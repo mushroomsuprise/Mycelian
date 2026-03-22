@@ -1,0 +1,1549 @@
+{
+    "template_name": "alerts",
+    "elements": [
+        {
+            "type": "text",
+            "id": "Font",
+            "label": "Font File",
+            "value": "Renogare.ttf",
+            "description": "Font file name (must be in /assets/default_assets/fonts/ directory)"
+        },
+        {
+            "type": "number",
+            "id": "AlertWidth",
+            "label": "Alert Width",
+            "value": 700,
+            "min": 100,
+            "max": 2000,
+            "description": "Width of the alert container in pixels"
+        },
+        {
+            "type": "number",
+            "id": "AlertHeight",
+            "label": "Alert Height",
+            "value": 200,
+            "min": 50,
+            "max": 1000,
+            "description": "Height of the alert container in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Alert Type Toggles"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableFollowAlerts",
+            "label": "Enable Follow Alerts",
+            "value": true,
+            "description": "Show alerts for new followers"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableSubAlerts",
+            "label": "Enable Subscription Alerts",
+            "value": true,
+            "description": "Show alerts for new subscriptions"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableResubAlerts",
+            "label": "Enable Resubscription Alerts",
+            "value": true,
+            "description": "Show alerts for resubscriptions"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableGiftsubAlerts",
+            "label": "Enable Gift Sub Alerts",
+            "value": true,
+            "description": "Show alerts for gift subscriptions"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableBitAlerts",
+            "label": "Enable Bit Alerts",
+            "value": true,
+            "description": "Show alerts for bit donations"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableRaidAlerts",
+            "label": "Enable Raid Alerts",
+            "value": true,
+            "description": "Show alerts for raids"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnablePointAlerts",
+            "label": "Enable Channel Point Alerts",
+            "value": true,
+            "description": "Show alerts for channel point redemptions"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableDonationAlerts",
+            "label": "Enable Donation Alerts",
+            "value": true,
+            "description": "Show alerts for donations"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableHypeTrainAlerts",
+            "label": "Enable Hype Train Alerts",
+            "value": true,
+            "description": "Show alerts for hype train events"
+        },
+        {
+            "type": "separator",
+            "label": "Alert Timing Settings"
+        },
+        {
+            "type": "number",
+            "id": "DelayBetweenAlerts",
+            "label": "Delay Between Alerts",
+            "value": 0.5,
+            "min": 0,
+            "max": 10,
+            "step": 0.1,
+            "description": "Delay in seconds between consecutive alerts"
+        },
+        {
+            "type": "separator",
+            "label": "Background Settings"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundColor",
+            "label": "Background Color",
+            "value": "transparent",
+            "description": "Background color of the alert",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "BackgroundOpacity",
+            "label": "Background Opacity",
+            "value": 0.8,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Opacity of the background (0 = transparent, 1 = opaque)"
+        },
+        {
+            "type": "number",
+            "id": "BorderWidth",
+            "label": "Border Width",
+            "value": 1.0,
+            "min": 0,
+            "max": 20,
+            "description": "Width of the alert border in pixels"
+        },
+        {
+            "type": "select",
+            "id": "BorderColor",
+            "label": "Border Color",
+            "value": "transparent",
+            "description": "Color of the alert border",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "BorderRadius",
+            "label": "Border Radius",
+            "value": 10,
+            "min": 0,
+            "max": 50,
+            "description": "Border radius for rounded corners in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Background Media"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundMediaType",
+            "label": "Background Media Type",
+            "value": "image",
+            "options": [
+                "none",
+                "image",
+                "video"
+            ],
+            "description": "Type of background media to display"
+        },
+        {
+            "type": "text",
+            "id": "BackgroundImageURL",
+            "label": "Background Image URL",
+            "value": "/assets/alerts/AlertBackgroundOpac.png",
+            "description": "URL or path to background image (when media type is 'image')"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundImageSize",
+            "label": "Background Image Size",
+            "value": "100% 100%",
+            "options": [
+                "cover",
+                "contain",
+                "auto",
+                "100% 100%"
+            ],
+            "description": "How the background image should be sized"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundImagePosition",
+            "label": "Background Image Position",
+            "value": "center",
+            "options": [
+                "center",
+                "top",
+                "bottom",
+                "left",
+                "right",
+                "top left",
+                "top right",
+                "bottom left",
+                "bottom right"
+            ],
+            "description": "Position of the background image"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundImageRepeat",
+            "label": "Background Image Repeat",
+            "value": "no-repeat",
+            "options": [
+                "no-repeat",
+                "repeat",
+                "repeat-x",
+                "repeat-y"
+            ],
+            "description": "How the background image should repeat"
+        },
+        {
+            "type": "text",
+            "id": "BackgroundVideoURL",
+            "label": "Background Video URL",
+            "value": "",
+            "description": "URL or path to background video (when media type is 'video')"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundVideoFit",
+            "label": "Background Video Fit",
+            "value": "cover",
+            "options": [
+                "cover",
+                "contain",
+                "fill",
+                "scale-down",
+                "none"
+            ],
+            "description": "How the background video should fit within its container"
+        },
+        {
+            "type": "checkbox",
+            "id": "BackgroundVideoLoop",
+            "label": "Loop Background Video",
+            "value": false,
+            "description": "When off, the video plays once and stays on the last frame for the remainder of the alert (matches long on-screen time to per-alert duration)."
+        },
+        {
+            "type": "number",
+            "id": "BackgroundVideoFreezeAfterSeconds",
+            "label": "Freeze Video After (seconds)",
+            "value": 2.0,
+            "min": 0,
+            "max": 600,
+            "step": 0.1,
+            "description": "0 = freeze only when the clip ends (with looping off) or when the clip naturally ends. Greater than 0 = pause on the current frame after this many seconds; hold stays until the alert ends, so hold length follows each alert's duration."
+        },
+        {
+            "type": "separator",
+            "label": "GIF Settings"
+        },
+        {
+            "type": "number",
+            "id": "GifTop",
+            "label": "GIF Top Position",
+            "value": 5.0,
+            "min": 0,
+            "max": 500,
+            "description": "Top position of the GIF within the alert"
+        },
+        {
+            "type": "number",
+            "id": "GifLeft",
+            "label": "GIF Left Position",
+            "value": 5.0,
+            "min": 0,
+            "max": 500,
+            "description": "Left position of the GIF within the alert"
+        },
+        {
+            "type": "number",
+            "id": "GifWidth",
+            "label": "GIF Width",
+            "value": 190.0,
+            "min": 50,
+            "max": 500,
+            "description": "Width of the GIF in pixels"
+        },
+        {
+            "type": "number",
+            "id": "GifHeight",
+            "label": "GIF Height",
+            "value": 190.0,
+            "min": 50,
+            "max": 500,
+            "description": "Height of the GIF in pixels"
+        },
+        {
+            "type": "select",
+            "id": "GifBackgroundColor",
+            "label": "GIF Background Color",
+            "value": "#000000",
+            "description": "Background color behind the GIF",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "GifBorderWidth",
+            "label": "GIF Border Width",
+            "value": 1,
+            "min": 0,
+            "max": 10,
+            "description": "Width of the GIF border in pixels"
+        },
+        {
+            "type": "select",
+            "id": "GifBorderColor",
+            "label": "GIF Border Color",
+            "value": "transparent",
+            "description": "Color of the GIF border",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "GifBorderRadius",
+            "label": "GIF Border Radius",
+            "value": 0.0,
+            "min": 0,
+            "max": 25,
+            "description": "Border radius for the GIF in pixels"
+        },
+        {
+            "type": "select",
+            "id": "GifFit",
+            "label": "GIF Fit Mode",
+            "value": "contain",
+            "options": [
+                "contain",
+                "cover",
+                "fill",
+                "scale-down",
+                "none"
+            ],
+            "description": "How the GIF should fit within its container"
+        },
+        {
+            "type": "separator",
+            "label": "Header Container Settings"
+        },
+        {
+            "type": "number",
+            "id": "HeaderTop",
+            "label": "Header Top Position",
+            "value": 5.0,
+            "min": 0,
+            "max": 500,
+            "description": "Top position of the header container (username + alert text)"
+        },
+        {
+            "type": "number",
+            "id": "HeaderLeft",
+            "label": "Header Left Position",
+            "value": 205.0,
+            "min": 0,
+            "max": 1000,
+            "description": "Left position of the header container"
+        },
+        {
+            "type": "number",
+            "id": "HeaderWidth",
+            "label": "Header Width",
+            "value": 495.0,
+            "min": 100,
+            "max": 1000,
+            "description": "Width of the header container in pixels"
+        },
+        {
+            "type": "number",
+            "id": "HeaderHeight",
+            "label": "Header Height",
+            "value": 30.0,
+            "min": 20,
+            "max": 100,
+            "description": "Height of the header container in pixels"
+        },
+        {
+            "type": "select",
+            "id": "HeaderJustify",
+            "label": "Header Content Alignment",
+            "value": "flex-start",
+            "options": [
+                "flex-start",
+                "center",
+                "flex-end",
+                "space-between",
+                "space-around"
+            ],
+            "description": "How to align username and text within the header container"
+        },
+        {
+            "type": "number",
+            "id": "HeaderGap",
+            "label": "Header Gap",
+            "value": 0,
+            "min": 0,
+            "max": 50,
+            "description": "Gap between username and alert text in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Username Settings"
+        },
+        {
+            "type": "number",
+            "id": "UsernameFontSize",
+            "label": "Username Font Size",
+            "value": 20,
+            "min": 8,
+            "max": 72,
+            "description": "Font size for the username in pixels"
+        },
+        {
+            "type": "select",
+            "id": "UsernameColor",
+            "label": "Username Color",
+            "value": "#991b1b",
+            "description": "Color of the username text",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "select",
+            "id": "UsernameFontWeight",
+            "label": "Username Font Weight",
+            "value": "bold",
+            "options": [
+                "normal",
+                "bold",
+                "bolder",
+                "lighter",
+                "100",
+                "200",
+                "300",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800",
+                "900"
+            ],
+            "description": "Font weight for the username"
+        },
+        {
+            "type": "text",
+            "id": "UsernameShadow",
+            "label": "Username Shadow",
+            "value": "2px 2px 4px rgba(0,0,0,0.8)",
+            "description": "CSS text shadow for the username"
+        },
+        {
+            "type": "separator",
+            "label": "Alert Text Settings"
+        },
+        {
+            "type": "number",
+            "id": "TextFontSize",
+            "label": "Text Font Size",
+            "value": 24,
+            "min": 8,
+            "max": 72,
+            "description": "Font size for the alert text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "TextColor",
+            "label": "Text Color",
+            "value": "#ffffff",
+            "description": "Color of the alert text",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "select",
+            "id": "TextAlign",
+            "label": "Text Alignment",
+            "value": "center",
+            "options": [
+                "left",
+                "center",
+                "right"
+            ],
+            "description": "Text alignment within the text area"
+        },
+        {
+            "type": "select",
+            "id": "TextFontWeight",
+            "label": "Text Font Weight",
+            "value": "bold",
+            "options": [
+                "normal",
+                "bold",
+                "bolder",
+                "lighter",
+                "100",
+                "200",
+                "300",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800",
+                "900"
+            ],
+            "description": "Font weight for the alert text"
+        },
+        {
+            "type": "text",
+            "id": "TextShadow",
+            "label": "Text Shadow",
+            "value": "2px 2px 4px rgba(0,0,0,0.8)",
+            "description": "CSS text shadow for the alert text"
+        },
+        {
+            "type": "separator",
+            "label": "Message Settings"
+        },
+        {
+            "type": "number",
+            "id": "MessageTop",
+            "label": "Message Top Position",
+            "value": 40.0,
+            "min": 0,
+            "max": 500,
+            "description": "Top position of the user message"
+        },
+        {
+            "type": "number",
+            "id": "MessageLeft",
+            "label": "Message Left Position",
+            "value": 200.0,
+            "min": 0,
+            "max": 1000,
+            "description": "Left position of the user message"
+        },
+        {
+            "type": "number",
+            "id": "MessageWidth",
+            "label": "Message Width",
+            "value": 490.0,
+            "min": 100,
+            "max": 1000,
+            "description": "Width of the message area in pixels"
+        },
+        {
+            "type": "number",
+            "id": "MessageHeight",
+            "label": "Message Height",
+            "value": 155.0,
+            "min": 20,
+            "max": 300,
+            "description": "Height of the message area in pixels"
+        },
+        {
+            "type": "number",
+            "id": "MessageFontSize",
+            "label": "Message Font Size",
+            "value": 16,
+            "min": 8,
+            "max": 48,
+            "description": "Font size for the user message in pixels"
+        },
+        {
+            "type": "select",
+            "id": "MessageColor",
+            "label": "Message Color",
+            "value": "#ffffff",
+            "description": "Color of the user message text",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "select",
+            "id": "MessageAlign",
+            "label": "Message Alignment",
+            "value": "left",
+            "options": [
+                "left",
+                "center",
+                "right"
+            ],
+            "description": "Text alignment for the user message"
+        },
+        {
+            "type": "select",
+            "id": "MessageJustify",
+            "label": "Message Justify",
+            "value": "flex-start",
+            "options": [
+                "flex-start",
+                "center",
+                "flex-end"
+            ],
+            "description": "Vertical alignment of message within the container"
+        },
+        {
+            "type": "select",
+            "id": "MessageFontWeight",
+            "label": "Message Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "bold",
+                "bolder",
+                "lighter",
+                "100",
+                "200",
+                "300",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800",
+                "900"
+            ],
+            "description": "Font weight for the user message"
+        },
+        {
+            "type": "text",
+            "id": "MessageShadow",
+            "label": "Message Shadow",
+            "value": "1px 1px 2px rgba(0,0,0,0.6)",
+            "description": "CSS text shadow for the user message"
+        },
+        {
+            "type": "number",
+            "id": "MessagePadding",
+            "label": "Message Padding",
+            "value": 5,
+            "min": 0,
+            "max": 20,
+            "description": "Padding around the message text in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Background Animations"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundAnimationIn",
+            "label": "Background Animation In",
+            "value": "none",
+            "options": [
+                "none",
+                "fadeIn",
+                "slideInLeft",
+                "slideInRight",
+                "slideInTop",
+                "slideInBottom",
+                "bounceIn",
+                "zoomIn",
+                "flipInX",
+                "flipInY",
+                "rotateIn",
+                "pulse",
+                "rubberBand"
+            ],
+            "description": "Animation for when the background appears"
+        },
+        {
+            "type": "number",
+            "id": "BackgroundAnimationInDuration",
+            "label": "Background Animation In Duration",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the background entrance animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundAnimationInEasing",
+            "label": "Background Animation In Easing",
+            "value": "ease-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the background entrance animation"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundAnimationOut",
+            "label": "Background Animation Out",
+            "value": "none",
+            "options": [
+                "none",
+                "fadeOut",
+                "slideOutLeft",
+                "slideOutRight",
+                "slideOutTop",
+                "slideOutBottom",
+                "bounceOut",
+                "zoomOut",
+                "flipOutX",
+                "flipOutY",
+                "rotateOut"
+            ],
+            "description": "Animation for when the background disappears"
+        },
+        {
+            "type": "number",
+            "id": "BackgroundAnimationOutDuration",
+            "label": "Background Animation Out Duration",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the background exit animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundAnimationOutEasing",
+            "label": "Background Animation Out Easing",
+            "value": "ease-in",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the background exit animation"
+        },
+        {
+            "type": "separator",
+            "label": "GIF Animations"
+        },
+        {
+            "type": "select",
+            "id": "GifAnimationIn",
+            "label": "GIF Animation In",
+            "value": "none",
+            "options": [
+                "none",
+                "fadeIn",
+                "slideInLeft",
+                "slideInRight",
+                "slideInTop",
+                "slideInBottom",
+                "bounceIn",
+                "zoomIn",
+                "flipInX",
+                "flipInY",
+                "rotateIn",
+                "pulse",
+                "rubberBand"
+            ],
+            "description": "Animation for when the GIF appears"
+        },
+        {
+            "type": "number",
+            "id": "GifAnimationInDuration",
+            "label": "GIF Animation In Duration",
+            "value": 1.5,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the GIF entrance animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "GifAnimationInEasing",
+            "label": "GIF Animation In Easing",
+            "value": "ease-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the GIF entrance animation"
+        },
+        {
+            "type": "number",
+            "id": "GifAnimationDelay",
+            "label": "GIF Animation Delay",
+            "value": 0.0,
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "description": "Delay before the GIF animation starts in seconds"
+        },
+        {
+            "type": "select",
+            "id": "GifAnimationOut",
+            "label": "GIF Animation Out",
+            "value": "none",
+            "options": [
+                "none",
+                "fadeOut",
+                "slideOutLeft",
+                "slideOutRight",
+                "slideOutTop",
+                "slideOutBottom",
+                "bounceOut",
+                "zoomOut",
+                "flipOutX",
+                "flipOutY",
+                "rotateOut"
+            ],
+            "description": "Animation for when the GIF disappears"
+        },
+        {
+            "type": "number",
+            "id": "GifAnimationOutDuration",
+            "label": "GIF Animation Out Duration",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the GIF exit animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "GifAnimationOutEasing",
+            "label": "GIF Animation Out Easing",
+            "value": "ease-in",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the GIF exit animation"
+        },
+        {
+            "type": "number",
+            "id": "GifAnimationOutDelay",
+            "label": "GIF Animation Out Delay",
+            "value": 0,
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "description": "Delay before the GIF exit animation starts in seconds"
+        },
+        {
+            "type": "separator",
+            "label": "Header Animations"
+        },
+        {
+            "type": "select",
+            "id": "HeaderAnimationIn",
+            "label": "Header Animation In",
+            "value": "none",
+            "options": [
+                "none",
+                "fadeIn",
+                "slideInLeft",
+                "slideInRight",
+                "slideInTop",
+                "slideInBottom",
+                "bounceIn",
+                "zoomIn",
+                "flipInX",
+                "flipInY",
+                "rotateIn",
+                "pulse",
+                "rubberBand"
+            ],
+            "description": "Animation for when the header (username + text) appears"
+        },
+        {
+            "type": "number",
+            "id": "HeaderAnimationInDuration",
+            "label": "Header Animation In Duration",
+            "value": 1.2,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the header entrance animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "HeaderAnimationInEasing",
+            "label": "Header Animation In Easing",
+            "value": "ease-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the header entrance animation"
+        },
+        {
+            "type": "number",
+            "id": "HeaderAnimationDelay",
+            "label": "Header Animation Delay",
+            "value": 0.0,
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "description": "Delay before the header animation starts in seconds"
+        },
+        {
+            "type": "select",
+            "id": "HeaderAnimationOut",
+            "label": "Header Animation Out",
+            "value": "none",
+            "options": [
+                "none",
+                "fadeOut",
+                "slideOutLeft",
+                "slideOutRight",
+                "slideOutTop",
+                "slideOutBottom",
+                "bounceOut",
+                "zoomOut",
+                "flipOutX",
+                "flipOutY",
+                "rotateOut"
+            ],
+            "description": "Animation for when the header disappears"
+        },
+        {
+            "type": "number",
+            "id": "HeaderAnimationOutDuration",
+            "label": "Header Animation Out Duration",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the header exit animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "HeaderAnimationOutEasing",
+            "label": "Header Animation Out Easing",
+            "value": "ease-in",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the header exit animation"
+        },
+        {
+            "type": "number",
+            "id": "HeaderAnimationOutDelay",
+            "label": "Header Animation Out Delay",
+            "value": 0.0,
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "description": "Delay before the header exit animation starts in seconds"
+        },
+        {
+            "type": "separator",
+            "label": "Message Animations"
+        },
+        {
+            "type": "select",
+            "id": "MessageAnimationIn",
+            "label": "Message Animation In",
+            "value": "none",
+            "options": [
+                "none",
+                "fadeIn",
+                "slideInLeft",
+                "slideInRight",
+                "slideInTop",
+                "slideInBottom",
+                "bounceIn",
+                "zoomIn",
+                "flipInX",
+                "flipInY",
+                "rotateIn",
+                "pulse",
+                "rubberBand"
+            ],
+            "description": "Animation for when the message appears"
+        },
+        {
+            "type": "number",
+            "id": "MessageAnimationInDuration",
+            "label": "Message Animation In Duration",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the message entrance animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "MessageAnimationInEasing",
+            "label": "Message Animation In Easing",
+            "value": "ease-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the message entrance animation"
+        },
+        {
+            "type": "number",
+            "id": "MessageAnimationDelay",
+            "label": "Message Animation Delay",
+            "value": 0.0,
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "description": "Delay before the message animation starts in seconds"
+        },
+        {
+            "type": "select",
+            "id": "MessageAnimationOut",
+            "label": "Message Animation Out",
+            "value": "none",
+            "options": [
+                "none",
+                "fadeOut",
+                "slideOutLeft",
+                "slideOutRight",
+                "slideOutTop",
+                "slideOutBottom",
+                "bounceOut",
+                "zoomOut",
+                "flipOutX",
+                "flipOutY",
+                "rotateOut"
+            ],
+            "description": "Animation for when the message disappears"
+        },
+        {
+            "type": "number",
+            "id": "MessageAnimationOutDuration",
+            "label": "Message Animation Out Duration",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the message exit animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "MessageAnimationOutEasing",
+            "label": "Message Animation Out Easing",
+            "value": "ease-in",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the message exit animation"
+        },
+        {
+            "type": "number",
+            "id": "MessageAnimationOutDelay",
+            "label": "Message Animation Out Delay",
+            "value": 0.0,
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "description": "Delay before the message exit animation starts in seconds"
+        },
+        {
+            "type": "separator",
+            "label": "Container Animations"
+        },
+        {
+            "type": "select",
+            "id": "ContainerAnimationIn",
+            "label": "Container Animation In",
+            "value": "slideInLeft",
+            "options": [
+                "none",
+                "fadeIn",
+                "slideInLeft",
+                "slideInRight",
+                "slideInTop",
+                "slideInBottom",
+                "bounceIn",
+                "zoomIn",
+                "flipInX",
+                "flipInY",
+                "rotateIn",
+                "pulse",
+                "rubberBand"
+            ],
+            "description": "Animation for when the entire alert container appears"
+        },
+        {
+            "type": "number",
+            "id": "ContainerAnimationInDuration",
+            "label": "Container Animation In Duration",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the container entrance animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "ContainerAnimationInEasing",
+            "label": "Container Animation In Easing",
+            "value": "ease-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the container entrance animation"
+        },
+        {
+            "type": "number",
+            "id": "ContainerAnimationDelay",
+            "label": "Container Animation Delay",
+            "value": 0.0,
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "description": "Delay before the container animation starts in seconds"
+        },
+        {
+            "type": "select",
+            "id": "ContainerAnimationOut",
+            "label": "Container Animation Out",
+            "value": "slideOutLeft",
+            "options": [
+                "none",
+                "fadeOut",
+                "slideOutLeft",
+                "slideOutRight",
+                "slideOutTop",
+                "slideOutBottom",
+                "bounceOut",
+                "zoomOut",
+                "flipOutX",
+                "flipOutY",
+                "rotateOut"
+            ],
+            "description": "Animation for when the entire alert container disappears"
+        },
+        {
+            "type": "number",
+            "id": "ContainerAnimationOutDuration",
+            "label": "Container Animation Out Duration",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of the container exit animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "ContainerAnimationOutEasing",
+            "label": "Container Animation Out Easing",
+            "value": "ease-in",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for the container exit animation"
+        },
+        {
+            "type": "number",
+            "id": "ContainerAnimationOutDelay",
+            "label": "Container Animation Out Delay",
+            "value": 0.0,
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "description": "Delay before the container exit animation starts in seconds"
+        }
+    ],
+    "connector_actions": {
+        "play_alert": {
+            "action_name": "Play alert",
+            "trigger": "play_alert"
+        },
+        "skip_alert": {
+            "action_name": "Skip alert",
+            "trigger": "skip_alert"
+        }
+    }
+}

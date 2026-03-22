@@ -1,0 +1,3453 @@
+{
+    "template_name": "roulette",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Font Settings"
+        },
+        {
+            "type": "text",
+            "id": "FontName",
+            "label": "Font Name",
+            "value": "Renogare.ttf",
+            "description": "Font file name for the roulette wheel text (defaults to Inter for modern look)"
+        },
+        {
+            "type": "separator",
+            "label": "Background Settings"
+        },
+        {
+            "type": "color",
+            "id": "BackgroundColor",
+            "label": "Background Color",
+            "value": "transparent",
+            "description": "Background color or gradient for the page",
+            "transparent": true
+        },
+        {
+            "type": "separator",
+            "label": "Container Settings"
+        },
+        {
+            "type": "number",
+            "id": "CanvasSize",
+            "label": "Canvas Size",
+            "value": 500.0,
+            "min": 300,
+            "max": 800,
+            "description": "Size of the roulette wheel canvas in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Container Style Settings"
+        },
+        {
+            "type": "number",
+            "id": "ContainerBorderRadius",
+            "label": "Container Border Radius",
+            "value": 16,
+            "min": 0,
+            "max": 32,
+            "description": "Border radius for the main container in pixels"
+        },
+        {
+            "type": "text",
+            "id": "ContainerShadow",
+            "label": "Container Shadow",
+            "value": "0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.08), inset 0 1px 0 rgba(255,255,255,0.1)",
+            "description": "CSS box shadow for the main container"
+        },
+        {
+            "type": "text",
+            "id": "ContainerHoverShadow",
+            "label": "Container Hover Shadow",
+            "value": "0 25px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.12), inset 0 1px 0 rgba(255,255,255,0.15)",
+            "description": "CSS box shadow for the main container on hover"
+        },
+        {
+            "type": "text",
+            "id": "ContainerHoverTransform",
+            "label": "Container Hover Transform",
+            "value": "translateY(-1px)",
+            "description": "CSS transform for the main container on hover"
+        },
+        {
+            "type": "color",
+            "id": "ContainerBackground",
+            "label": "Container Background",
+            "value": "rgba(18, 18, 20, 0.8)",
+            "description": "Background color for the main container (dark glassmorphism)",
+            "transparent": true
+        },
+        {
+            "type": "text",
+            "id": "ContainerBackdropFilter",
+            "label": "Container Backdrop Filter",
+            "value": "blur(24px) saturate(180%)",
+            "description": "CSS backdrop filter for glassmorphism effect"
+        },
+        {
+            "type": "number",
+            "id": "ContainerBorderWidth",
+            "label": "Container Border Width",
+            "value": 1,
+            "min": 0,
+            "max": 3,
+            "description": "Border width for the main container in pixels"
+        },
+        {
+            "type": "color",
+            "id": "ContainerBorderColor",
+            "label": "Container Border Color",
+            "value": "rgba(255,255,255,0.08)",
+            "description": "Border color for the main container",
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "ContainerPadding",
+            "label": "Container Padding",
+            "value": 32,
+            "min": 16,
+            "max": 48,
+            "description": "Padding inside the main container in pixels"
+        },
+        {
+            "type": "number",
+            "id": "ResultSpacing",
+            "label": "Result Spacing",
+            "value": 24,
+            "min": 8,
+            "max": 48,
+            "description": "Space between wheel and result display in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Wheel Settings"
+        },
+        {
+            "type": "text",
+            "id": "WheelShadow",
+            "label": "Wheel Shadow",
+            "value": "0 16px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05), inset 0 2px 4px rgba(255,255,255,0.1)",
+            "description": "CSS box shadow for the wheel canvas"
+        },
+        {
+            "type": "color",
+            "id": "WheelBackground",
+            "label": "Wheel Background",
+            "value": "rgba(26, 26, 28, 0.95)",
+            "description": "Background color for the wheel canvas",
+            "transparent": true
+        },
+        {
+            "type": "color",
+            "id": "WheelOverlayGradient",
+            "label": "Wheel Overlay Gradient",
+            "value": "radial-gradient(circle at 25% 25%, rgba(255,255,255,0.08) 0%, transparent 60%)",
+            "description": "Gradient overlay for the wheel to add depth",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "WheelOverlayOpacity",
+            "label": "Wheel Overlay Opacity",
+            "value": 0.7,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Opacity of the wheel overlay gradient"
+        },
+        {
+            "type": "separator",
+            "label": "Wheel Dimensions"
+        },
+        {
+            "type": "number",
+            "id": "OutsideRadius",
+            "label": "Outside Radius",
+            "value": 240,
+            "min": 100,
+            "max": 350,
+            "description": "Outer radius of the wheel segments in pixels"
+        },
+        {
+            "type": "number",
+            "id": "TextRadius",
+            "label": "Text Radius",
+            "value": 180,
+            "min": 80,
+            "max": 280,
+            "description": "Radius where text is positioned in pixels"
+        },
+        {
+            "type": "number",
+            "id": "InsideRadius",
+            "label": "Inside Radius",
+            "value": 0,
+            "min": 0,
+            "max": 100,
+            "description": "Inner radius of the wheel segments (0 for filled center)"
+        },
+        {
+            "type": "separator",
+            "label": "Animation Settings"
+        },
+        {
+            "type": "number",
+            "id": "SpinTransitionDuration",
+            "label": "Spin Transition Duration",
+            "value": 0.3,
+            "min": 0.1,
+            "max": 1,
+            "step": 0.1,
+            "description": "Duration of spin transition effects in seconds"
+        },
+        {
+            "type": "select",
+            "id": "SpinEasing",
+            "label": "Spin Easing",
+            "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out",
+                "cubic-bezier(0.4, 0, 0.2, 1)",
+                "cubic-bezier(0.25, 0.46, 0.45, 0.94)"
+            ],
+            "description": "Easing function for spin transitions"
+        },
+        {
+            "type": "separator",
+            "label": "Segment Settings"
+        },
+        {
+            "type": "color",
+            "id": "SegmentBorderColor",
+            "label": "Segment Border Color",
+            "value": "rgba(255,255,255,0.15)",
+            "description": "Color of the borders between wheel segments",
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "SegmentBorderWidth",
+            "label": "Segment Border Width",
+            "value": 2,
+            "min": 0,
+            "max": 4,
+            "description": "Width of the borders between segments in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Text Settings"
+        },
+        {
+            "type": "color",
+            "id": "TextColor",
+            "label": "Text Color",
+            "value": "#ffffff",
+            "description": "Color of the text on wheel segments",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "TextFontSize",
+            "label": "Text Font Size",
+            "value": 14.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for segment text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "TextFontWeight",
+            "label": "Text Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for segment text"
+        },
+        {
+            "type": "separator",
+            "label": "Text Shadow Settings"
+        },
+        {
+            "type": "select",
+            "id": "TextShadow",
+            "label": "Text Shadow",
+            "value": "enabled",
+            "options": [
+                "none",
+                "enabled"
+            ],
+            "description": "Whether to enable text shadow"
+        },
+        {
+            "type": "color",
+            "id": "TextShadowColor",
+            "label": "Text Shadow Color",
+            "value": "rgba(0,0,0,0.8)",
+            "description": "Color of the text shadow",
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "TextShadowOffsetX",
+            "label": "Text Shadow Offset X",
+            "value": 0,
+            "min": -4,
+            "max": 4,
+            "description": "Horizontal offset of text shadow in pixels"
+        },
+        {
+            "type": "number",
+            "id": "TextShadowOffsetY",
+            "label": "Text Shadow Offset Y",
+            "value": 1,
+            "min": -4,
+            "max": 4,
+            "description": "Vertical offset of text shadow in pixels"
+        },
+        {
+            "type": "number",
+            "id": "TextShadowBlur",
+            "label": "Text Shadow Blur",
+            "value": 3,
+            "min": 0,
+            "max": 8,
+            "description": "Blur radius of text shadow in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Center Dot Settings"
+        },
+        {
+            "type": "number",
+            "id": "CenterDotRadius",
+            "label": "Center Dot Radius",
+            "value": 0,
+            "min": 0,
+            "max": 30,
+            "description": "Radius of the center dot in pixels (0 to disable)"
+        },
+        {
+            "type": "color",
+            "id": "CenterDotColor",
+            "label": "Center Dot Color",
+            "value": "#9333ea",
+            "description": "Fill color of the center dot",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "CenterDotBorderColor",
+            "label": "Center Dot Border Color",
+            "value": "rgba(255,255,255,0.3)",
+            "description": "Border color of the center dot",
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "CenterDotBorderWidth",
+            "label": "Center Dot Border Width",
+            "value": 2,
+            "min": 0,
+            "max": 4,
+            "description": "Border width of the center dot in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Arrow Settings"
+        },
+        {
+            "type": "number",
+            "id": "ArrowSize",
+            "label": "Arrow Size",
+            "value": 8,
+            "min": 4,
+            "max": 16,
+            "description": "Size of the arrow pointer in pixels"
+        },
+        {
+            "type": "number",
+            "id": "ArrowOffset",
+            "label": "Arrow Offset",
+            "value": 8,
+            "min": 0,
+            "max": 20,
+            "description": "Distance of arrow from wheel edge in pixels"
+        },
+        {
+            "type": "color",
+            "id": "ArrowColor",
+            "label": "Arrow Color",
+            "value": "#1a1a1a",
+            "description": "Fill color of the arrow pointer",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "ArrowBorderColor",
+            "label": "Arrow Border Color",
+            "value": "#9333ea",
+            "description": "Border color of the arrow pointer",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "ArrowBorderWidth",
+            "label": "Arrow Border Width",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Border width of the arrow pointer in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Glow Effect Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableGlow",
+            "label": "Enable Glow Effect",
+            "value": true,
+            "description": "Whether to show a glow effect around the wheel when spinning"
+        },
+        {
+            "type": "number",
+            "id": "GlowSize",
+            "label": "Glow Size",
+            "value": 40,
+            "min": 10,
+            "max": 80,
+            "description": "Size of the glow effect in pixels"
+        },
+        {
+            "type": "color",
+            "id": "GlowColor",
+            "label": "Glow Color",
+            "value": "radial-gradient(circle, rgba(147,51,234,0.3) 0%, rgba(147,51,234,0.1) 50%, transparent 70%)",
+            "description": "Color or gradient for the glow effect",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "GlowBlur",
+            "label": "Glow Blur",
+            "value": 16,
+            "min": 5,
+            "max": 32,
+            "description": "Blur radius for the glow effect in pixels"
+        },
+        {
+            "type": "number",
+            "id": "GlowOpacity",
+            "label": "Glow Opacity",
+            "value": 0.6,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Opacity of the glow effect when active"
+        },
+        {
+            "type": "separator",
+            "label": "Glow Animation Settings"
+        },
+        {
+            "type": "number",
+            "id": "GlowAnimationDuration",
+            "label": "Glow Animation Duration",
+            "value": 0.4,
+            "min": 0.1,
+            "max": 1,
+            "step": 0.1,
+            "description": "Duration of glow fade in/out animation in seconds"
+        },
+        {
+            "type": "select",
+            "id": "GlowAnimationEasing",
+            "label": "Glow Animation Easing",
+            "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out",
+                "cubic-bezier(0.4, 0, 0.2, 1)"
+            ],
+            "description": "Easing function for glow animations"
+        },
+        {
+            "type": "text",
+            "id": "GlowPulse",
+            "label": "Glow Pulse Animation",
+            "value": "none",
+            "description": "CSS animation for glow pulse effect (use 'none' to disable)"
+        },
+        {
+            "type": "number",
+            "id": "GlowPulseDuration",
+            "label": "Glow Pulse Duration",
+            "value": 1.5,
+            "min": 0.5,
+            "max": 3,
+            "step": 0.1,
+            "description": "Duration of glow pulse animation in seconds"
+        },
+        {
+            "type": "separator",
+            "label": "Result Display Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableResultOverlay",
+            "label": "Enable Result Display",
+            "value": true,
+            "description": "Whether to show the result display below the wheel"
+        },
+        {
+            "type": "text",
+            "id": "DefaultResultText",
+            "label": "Default Result Text",
+            "value": "",
+            "description": "Text shown in result display when no result is available (empty for no placeholder)"
+        },
+        {
+            "type": "number",
+            "id": "ResultMinHeight",
+            "label": "Result Display Min Height",
+            "value": 60,
+            "min": 40,
+            "max": 120,
+            "description": "Minimum height of the result display area in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Result Display Style"
+        },
+        {
+            "type": "color",
+            "id": "ResultBackground",
+            "label": "Result Background",
+            "value": "rgba(12, 12, 14, 0.9)",
+            "description": "Background color for the result display",
+            "transparent": true
+        },
+        {
+            "type": "text",
+            "id": "ResultBackdropFilter",
+            "label": "Result Backdrop Filter",
+            "value": "blur(16px) saturate(180%)",
+            "description": "CSS backdrop filter for result display glassmorphism"
+        },
+        {
+            "type": "color",
+            "id": "ResultTextColor",
+            "label": "Result Text Color",
+            "value": "#ffffff",
+            "description": "Text color for the result display",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "ResultPadding",
+            "label": "Result Padding",
+            "value": 20,
+            "min": 12,
+            "max": 32,
+            "description": "Padding inside the result display in pixels"
+        },
+        {
+            "type": "number",
+            "id": "ResultBorderRadius",
+            "label": "Result Border Radius",
+            "value": 12,
+            "min": 0,
+            "max": 24,
+            "description": "Border radius for the result display in pixels"
+        },
+        {
+            "type": "number",
+            "id": "ResultBorder",
+            "label": "Result Border Width",
+            "value": 1,
+            "min": 0,
+            "max": 3,
+            "description": "Border width for the result display in pixels"
+        },
+        {
+            "type": "color",
+            "id": "ResultBorderColor",
+            "label": "Result Border Color",
+            "value": "rgba(147,51,234,0.3)",
+            "description": "Border color for the result display",
+            "transparent": true
+        },
+        {
+            "type": "text",
+            "id": "ResultShadow",
+            "label": "Result Shadow",
+            "value": "0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05)",
+            "description": "CSS box shadow for the result display"
+        },
+        {
+            "type": "separator",
+            "label": "Result Text Style"
+        },
+        {
+            "type": "number",
+            "id": "ResultFontSize",
+            "label": "Result Font Size",
+            "value": 18,
+            "min": 12,
+            "max": 32,
+            "description": "Font size for the result text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "ResultFontWeight",
+            "label": "Result Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for the result text"
+        },
+        {
+            "type": "text",
+            "id": "ResultTextShadow",
+            "label": "Result Text Shadow",
+            "value": "0 2px 8px rgba(0,0,0,0.6)",
+            "description": "CSS text shadow for the result text"
+        },
+        {
+            "type": "number",
+            "id": "ResultLetterSpacing",
+            "label": "Result Letter Spacing",
+            "value": 0.5,
+            "min": -1,
+            "max": 3,
+            "step": 0.25,
+            "description": "Letter spacing for result text in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Result Animation Settings"
+        },
+        {
+            "type": "number",
+            "id": "ResultOpacity",
+            "label": "Result Opacity",
+            "value": 1,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Opacity of the result display when shown"
+        },
+        {
+            "type": "number",
+            "id": "ResultAnimationDuration",
+            "label": "Result Animation Duration",
+            "value": 0.3,
+            "min": 0.1,
+            "max": 1,
+            "step": 0.1,
+            "description": "Duration of result display animations in seconds"
+        },
+        {
+            "type": "select",
+            "id": "ResultAnimationEasing",
+            "label": "Result Animation Easing",
+            "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out",
+                "cubic-bezier(0.4, 0, 0.2, 1)"
+            ],
+            "description": "Easing function for result display animations"
+        },
+        {
+            "type": "checkbox",
+            "id": "AutoHideResult",
+            "label": "Auto Hide Result",
+            "value": true,
+            "description": "Whether to automatically hide the result display"
+        },
+        {
+            "type": "number",
+            "id": "ResultDisplayDuration",
+            "label": "Result Display Duration",
+            "value": 5,
+            "min": 2,
+            "max": 15,
+            "description": "How long to display the result before hiding in seconds"
+        },
+        {
+            "type": "separator",
+            "label": "Spin Duration Settings"
+        },
+        {
+            "type": "number",
+            "id": "MinSpinDuration",
+            "label": "Minimum Spin Duration",
+            "value": 20.0,
+            "min": 8,
+            "max": 20,
+            "step": 0.5,
+            "description": "Minimum duration for wheel spin in seconds"
+        },
+        {
+            "type": "number",
+            "id": "MaxSpinDuration",
+            "label": "Maximum Spin Duration",
+            "value": 25,
+            "min": 12,
+            "max": 25,
+            "step": 0.5,
+            "description": "Maximum duration for wheel spin in seconds"
+        },
+        {
+            "type": "separator",
+            "label": "Sound Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableSound",
+            "label": "Enable Sound Effects",
+            "value": true,
+            "description": "Whether to enable sound effects for the roulette wheel"
+        },
+        {
+            "type": "text",
+            "id": "ClickSoundFile",
+            "label": "Click Sound File",
+            "value": "click.mp3",
+            "description": "Sound file to play when wheel clicks between segments"
+        },
+        {
+            "type": "number",
+            "id": "ClickSoundVolume",
+            "label": "Click Sound Volume",
+            "value": 0.2,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Volume level for click sound effects (0 = muted, 1 = full volume)"
+        },
+        {
+            "type": "text",
+            "id": "ResultSoundFile",
+            "label": "Result Sound File",
+            "value": "result.mp3",
+            "description": "Sound file to play when wheel stops and shows result"
+        },
+        {
+            "type": "number",
+            "id": "ResultSoundVolume",
+            "label": "Result Sound Volume",
+            "value": 0.2,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Volume level for result sound effects (0 = muted, 1 = full volume)"
+        },
+        {
+            "type": "separator",
+            "label": "Particle Effects"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableParticles",
+            "label": "Enable Particle Effects",
+            "value": true,
+            "description": "Whether to show particle effects during wheel spinning"
+        },
+        {
+            "type": "color",
+            "id": "ParticleColor",
+            "label": "Particle Color",
+            "value": "rgba(147,51,234,0.4)",
+            "description": "Color of the particle effects",
+            "transparent": true
+        },
+        {
+            "type": "checkbox",
+            "id": "ModernEffects",
+            "label": "Enable Modern Effects",
+            "value": true,
+            "description": "Whether to enable modern visual effects like gradients and subtle glows"
+        },
+        {
+            "type": "separator",
+            "label": "Roulette Options Configuration"
+        },
+        {
+            "type": "separator",
+            "label": "Option 1"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option1Enabled",
+            "label": "Enable Option 1",
+            "value": true,
+            "description": "Whether option 1 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option1Name",
+            "label": "Option 1 Name",
+            "value": "Option 1",
+            "description": "Text displayed for option 1"
+        },
+        {
+            "type": "select",
+            "id": "Option1Color",
+            "label": "Option 1 Color",
+            "value": "#e11d48",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 1",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option1TextColor",
+            "label": "Option 1 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 1",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option1TextFontSize",
+            "label": "Option 1 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 1 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option1TextFontWeight",
+            "label": "Option 1 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 1 text"
+        },
+        {
+            "type": "number",
+            "id": "Option1TextRotation",
+            "label": "Option 1 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 1 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 2"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option2Enabled",
+            "label": "Enable Option 2",
+            "value": true,
+            "description": "Whether option 2 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option2Name",
+            "label": "Option 2 Name",
+            "value": "Option 2",
+            "description": "Text displayed for option 2"
+        },
+        {
+            "type": "select",
+            "id": "Option2Color",
+            "label": "Option 2 Color",
+            "value": "#0891b2",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 2",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option2TextColor",
+            "label": "Option 2 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 2",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option2TextFontSize",
+            "label": "Option 2 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 2 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option2TextFontWeight",
+            "label": "Option 2 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 2 text"
+        },
+        {
+            "type": "number",
+            "id": "Option2TextRotation",
+            "label": "Option 2 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 2 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 3"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option3Enabled",
+            "label": "Enable Option 3",
+            "value": true,
+            "description": "Whether option 3 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option3Name",
+            "label": "Option 3 Name",
+            "value": "Option 3",
+            "description": "Text displayed for option 3"
+        },
+        {
+            "type": "select",
+            "id": "Option3Color",
+            "label": "Option 3 Color",
+            "value": "#16a34a",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 3",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option3TextColor",
+            "label": "Option 3 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 3",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option3TextFontSize",
+            "label": "Option 3 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 3 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option3TextFontWeight",
+            "label": "Option 3 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 3 text"
+        },
+        {
+            "type": "number",
+            "id": "Option3TextRotation",
+            "label": "Option 3 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 3 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 4"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option4Enabled",
+            "label": "Enable Option 4",
+            "value": true,
+            "description": "Whether option 4 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option4Name",
+            "label": "Option 4 Name",
+            "value": "Option 4",
+            "description": "Text displayed for option 4"
+        },
+        {
+            "type": "select",
+            "id": "Option4Color",
+            "label": "Option 4 Color",
+            "value": "#9333ea",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 4",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option4TextColor",
+            "label": "Option 4 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 4",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option4TextFontSize",
+            "label": "Option 4 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 4 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option4TextFontWeight",
+            "label": "Option 4 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 4 text"
+        },
+        {
+            "type": "number",
+            "id": "Option4TextRotation",
+            "label": "Option 4 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 4 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 5"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option5Enabled",
+            "label": "Enable Option 5",
+            "value": true,
+            "description": "Whether option 5 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option5Name",
+            "label": "Option 5 Name",
+            "value": "Option 5",
+            "description": "Text displayed for option 5"
+        },
+        {
+            "type": "select",
+            "id": "Option5Color",
+            "label": "Option 5 Color",
+            "value": "#ea580c",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 5",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option5TextColor",
+            "label": "Option 5 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 5",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option5TextFontSize",
+            "label": "Option 5 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 5 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option5TextFontWeight",
+            "label": "Option 5 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 5 text"
+        },
+        {
+            "type": "number",
+            "id": "Option5TextRotation",
+            "label": "Option 5 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 5 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 6"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option6Enabled",
+            "label": "Enable Option 6",
+            "value": true,
+            "description": "Whether option 6 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option6Name",
+            "label": "Option 6 Name",
+            "value": "Option 6",
+            "description": "Text displayed for option 6"
+        },
+        {
+            "type": "select",
+            "id": "Option6Color",
+            "label": "Option 6 Color",
+            "value": "#ca8a04",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 6",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option6TextColor",
+            "label": "Option 6 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 6",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option6TextFontSize",
+            "label": "Option 6 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 6 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option6TextFontWeight",
+            "label": "Option 6 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 6 text"
+        },
+        {
+            "type": "number",
+            "id": "Option6TextRotation",
+            "label": "Option 6 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 6 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 7"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option7Enabled",
+            "label": "Enable Option 7",
+            "value": true,
+            "description": "Whether option 7 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option7Name",
+            "label": "Option 7 Name",
+            "value": "Option 7",
+            "description": "Text displayed for option 7"
+        },
+        {
+            "type": "select",
+            "id": "Option7Color",
+            "label": "Option 7 Color",
+            "value": "#2563eb",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 7",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option7TextColor",
+            "label": "Option 7 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 7",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option7TextFontSize",
+            "label": "Option 7 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 7 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option7TextFontWeight",
+            "label": "Option 7 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 7 text"
+        },
+        {
+            "type": "number",
+            "id": "Option7TextRotation",
+            "label": "Option 7 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 7 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 8"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option8Enabled",
+            "label": "Enable Option 8",
+            "value": true,
+            "description": "Whether option 8 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option8Name",
+            "label": "Option 8 Name",
+            "value": "Option 8",
+            "description": "Text displayed for option 8"
+        },
+        {
+            "type": "select",
+            "id": "Option8Color",
+            "label": "Option 8 Color",
+            "value": "#db2777",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 8",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option8TextColor",
+            "label": "Option 8 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 8",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option8TextFontSize",
+            "label": "Option 8 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 8 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option8TextFontWeight",
+            "label": "Option 8 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 8 text"
+        },
+        {
+            "type": "number",
+            "id": "Option8TextRotation",
+            "label": "Option 8 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 8 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 9"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option9Enabled",
+            "label": "Enable Option 9",
+            "value": true,
+            "description": "Whether option 9 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option9Name",
+            "label": "Option 9 Name",
+            "value": "Option 9",
+            "description": "Text displayed for option 9"
+        },
+        {
+            "type": "select",
+            "id": "Option9Color",
+            "label": "Option 9 Color",
+            "value": "#059669",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 9",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option9TextColor",
+            "label": "Option 9 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 9",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option9TextFontSize",
+            "label": "Option 9 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 9 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option9TextFontWeight",
+            "label": "Option 9 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 9 text"
+        },
+        {
+            "type": "number",
+            "id": "Option9TextRotation",
+            "label": "Option 9 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 9 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 10"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option10Enabled",
+            "label": "Enable Option 10",
+            "value": true,
+            "description": "Whether option 10 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option10Name",
+            "label": "Option 10 Name",
+            "value": "Option 10",
+            "description": "Text displayed for option 10"
+        },
+        {
+            "type": "select",
+            "id": "Option10Color",
+            "label": "Option 10 Color",
+            "value": "#c026d3",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 10",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option10TextColor",
+            "label": "Option 10 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 10",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option10TextFontSize",
+            "label": "Option 10 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 10 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option10TextFontWeight",
+            "label": "Option 10 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 10 text"
+        },
+        {
+            "type": "number",
+            "id": "Option10TextRotation",
+            "label": "Option 10 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 10 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 11"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option11Enabled",
+            "label": "Enable Option 11",
+            "value": true,
+            "description": "Whether option 11 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option11Name",
+            "label": "Option 11 Name",
+            "value": "Option 11",
+            "description": "Text displayed for option 11"
+        },
+        {
+            "type": "select",
+            "id": "Option11Color",
+            "label": "Option 11 Color",
+            "value": "#7e22ce",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 11",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option11TextColor",
+            "label": "Option 11 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 11",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option11TextFontSize",
+            "label": "Option 11 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 11 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option11TextFontWeight",
+            "label": "Option 11 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 11 text"
+        },
+        {
+            "type": "number",
+            "id": "Option11TextRotation",
+            "label": "Option 11 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 11 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 12"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option12Enabled",
+            "label": "Enable Option 12",
+            "value": true,
+            "description": "Whether option 12 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option12Name",
+            "label": "Option 12 Name",
+            "value": "Option 12",
+            "description": "Text displayed for option 12"
+        },
+        {
+            "type": "select",
+            "id": "Option12Color",
+            "label": "Option 12 Color",
+            "value": "#0284c7",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 12",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option12TextColor",
+            "label": "Option 12 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 12",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option12TextFontSize",
+            "label": "Option 12 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 12 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option12TextFontWeight",
+            "label": "Option 12 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 12 text"
+        },
+        {
+            "type": "number",
+            "id": "Option12TextRotation",
+            "label": "Option 12 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 12 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 13"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option13Enabled",
+            "label": "Enable Option 13",
+            "value": true,
+            "description": "Whether option 13 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option13Name",
+            "label": "Option 13 Name",
+            "value": "Option 13",
+            "description": "Text displayed for option 13"
+        },
+        {
+            "type": "select",
+            "id": "Option13Color",
+            "label": "Option 13 Color",
+            "value": "#a21caf",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 13",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option13TextColor",
+            "label": "Option 13 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 13",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option13TextFontSize",
+            "label": "Option 13 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 13 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option13TextFontWeight",
+            "label": "Option 13 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 13 text"
+        },
+        {
+            "type": "number",
+            "id": "Option13TextRotation",
+            "label": "Option 13 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 13 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 14"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option14Enabled",
+            "label": "Enable Option 14",
+            "value": true,
+            "description": "Whether option 14 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option14Name",
+            "label": "Option 14 Name",
+            "value": "Option 14",
+            "description": "Text displayed for option 14"
+        },
+        {
+            "type": "select",
+            "id": "Option14Color",
+            "label": "Option 14 Color",
+            "value": "#be185d",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 14",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option14TextColor",
+            "label": "Option 14 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 14",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option14TextFontSize",
+            "label": "Option 14 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 14 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option14TextFontWeight",
+            "label": "Option 14 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 14 text"
+        },
+        {
+            "type": "number",
+            "id": "Option14TextRotation",
+            "label": "Option 14 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 14 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 15"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option15Enabled",
+            "label": "Enable Option 15",
+            "value": true,
+            "description": "Whether option 15 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option15Name",
+            "label": "Option 15 Name",
+            "value": "Option 15",
+            "description": "Text displayed for option 15"
+        },
+        {
+            "type": "select",
+            "id": "Option15Color",
+            "label": "Option 15 Color",
+            "value": "#65a30d",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 15",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option15TextColor",
+            "label": "Option 15 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 15",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option15TextFontSize",
+            "label": "Option 15 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 15 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option15TextFontWeight",
+            "label": "Option 15 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 15 text"
+        },
+        {
+            "type": "number",
+            "id": "Option15TextRotation",
+            "label": "Option 15 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 15 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 16"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option16Enabled",
+            "label": "Enable Option 16",
+            "value": true,
+            "description": "Whether option 16 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option16Name",
+            "label": "Option 16 Name",
+            "value": "Option 16",
+            "description": "Text displayed for option 16"
+        },
+        {
+            "type": "select",
+            "id": "Option16Color",
+            "label": "Option 16 Color",
+            "value": "#d97706",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 16",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option16TextColor",
+            "label": "Option 16 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 16",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option16TextFontSize",
+            "label": "Option 16 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 16 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option16TextFontWeight",
+            "label": "Option 16 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 16 text"
+        },
+        {
+            "type": "number",
+            "id": "Option16TextRotation",
+            "label": "Option 16 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 16 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 17"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option17Enabled",
+            "label": "Enable Option 17",
+            "value": true,
+            "description": "Whether option 17 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option17Name",
+            "label": "Option 17 Name",
+            "value": "Option 17",
+            "description": "Text displayed for option 17"
+        },
+        {
+            "type": "select",
+            "id": "Option17Color",
+            "label": "Option 17 Color",
+            "value": "#4f46e5",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 17",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option17TextColor",
+            "label": "Option 17 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 17",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option17TextFontSize",
+            "label": "Option 17 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 17 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option17TextFontWeight",
+            "label": "Option 17 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 17 text"
+        },
+        {
+            "type": "number",
+            "id": "Option17TextRotation",
+            "label": "Option 17 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 17 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 18"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option18Enabled",
+            "label": "Enable Option 18",
+            "value": true,
+            "description": "Whether option 18 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option18Name",
+            "label": "Option 18 Name",
+            "value": "Option 18",
+            "description": "Text displayed for option 18"
+        },
+        {
+            "type": "select",
+            "id": "Option18Color",
+            "label": "Option 18 Color",
+            "value": "#0369a1",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 18",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option18TextColor",
+            "label": "Option 18 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 18",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option18TextFontSize",
+            "label": "Option 18 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 18 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option18TextFontWeight",
+            "label": "Option 18 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 18 text"
+        },
+        {
+            "type": "number",
+            "id": "Option18TextRotation",
+            "label": "Option 18 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 18 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 19"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option19Enabled",
+            "label": "Enable Option 19",
+            "value": true,
+            "description": "Whether option 19 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option19Name",
+            "label": "Option 19 Name",
+            "value": "Option 19",
+            "description": "Text displayed for option 19"
+        },
+        {
+            "type": "select",
+            "id": "Option19Color",
+            "label": "Option 19 Color",
+            "value": "#15803d",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 19",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option19TextColor",
+            "label": "Option 19 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 19",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option19TextFontSize",
+            "label": "Option 19 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 19 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option19TextFontWeight",
+            "label": "Option 19 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 19 text"
+        },
+        {
+            "type": "number",
+            "id": "Option19TextRotation",
+            "label": "Option 19 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 19 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 20"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option20Enabled",
+            "label": "Enable Option 20",
+            "value": false,
+            "description": "Whether option 20 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option20Name",
+            "label": "Option 20 Name",
+            "value": "Option 20",
+            "description": "Text displayed for option 20"
+        },
+        {
+            "type": "select",
+            "id": "Option20Color",
+            "label": "Option 20 Color",
+            "value": "#92400e",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 20",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option20TextColor",
+            "label": "Option 20 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 20",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option20TextFontSize",
+            "label": "Option 20 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 20 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option20TextFontWeight",
+            "label": "Option 20 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 20 text"
+        },
+        {
+            "type": "number",
+            "id": "Option20TextRotation",
+            "label": "Option 20 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 20 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 21"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option21Enabled",
+            "label": "Enable Option 21",
+            "value": false,
+            "description": "Whether option 21 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option21Name",
+            "label": "Option 21 Name",
+            "value": "Option 21",
+            "description": "Text displayed for option 21"
+        },
+        {
+            "type": "select",
+            "id": "Option21Color",
+            "label": "Option 21 Color",
+            "value": "#1d4ed8",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 21",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option21TextColor",
+            "label": "Option 21 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 21",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option21TextFontSize",
+            "label": "Option 21 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 21 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option21TextFontWeight",
+            "label": "Option 21 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 21 text"
+        },
+        {
+            "type": "number",
+            "id": "Option21TextRotation",
+            "label": "Option 21 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 21 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 22"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option22Enabled",
+            "label": "Enable Option 22",
+            "value": false,
+            "description": "Whether option 22 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option22Name",
+            "label": "Option 22 Name",
+            "value": "Option 22",
+            "description": "Text displayed for option 22"
+        },
+        {
+            "type": "select",
+            "id": "Option22Color",
+            "label": "Option 22 Color",
+            "value": "#991b1b",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 22",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option22TextColor",
+            "label": "Option 22 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 22",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option22TextFontSize",
+            "label": "Option 22 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 22 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option22TextFontWeight",
+            "label": "Option 22 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 22 text"
+        },
+        {
+            "type": "number",
+            "id": "Option22TextRotation",
+            "label": "Option 22 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 22 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 23"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option23Enabled",
+            "label": "Enable Option 23",
+            "value": true,
+            "description": "Whether option 23 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option23Name",
+            "label": "Option 23 Name",
+            "value": "Option 23",
+            "description": "Text displayed for option 23"
+        },
+        {
+            "type": "select",
+            "id": "Option23Color",
+            "label": "Option 23 Color",
+            "value": "#3730a3",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 23",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option23TextColor",
+            "label": "Option 23 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 23",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option23TextFontSize",
+            "label": "Option 23 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 23 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option23TextFontWeight",
+            "label": "Option 23 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 23 text"
+        },
+        {
+            "type": "number",
+            "id": "Option23TextRotation",
+            "label": "Option 23 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 23 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 24"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option24Enabled",
+            "label": "Enable Option 24",
+            "value": true,
+            "description": "Whether option 24 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option24Name",
+            "label": "Option 24 Name",
+            "value": "Option 24",
+            "description": "Text displayed for option 24"
+        },
+        {
+            "type": "select",
+            "id": "Option24Color",
+            "label": "Option 24 Color",
+            "value": "#047857",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 24",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option24TextColor",
+            "label": "Option 24 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 24",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option24TextFontSize",
+            "label": "Option 24 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 24 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option24TextFontWeight",
+            "label": "Option 24 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 24 text"
+        },
+        {
+            "type": "number",
+            "id": "Option24TextRotation",
+            "label": "Option 24 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 24 text in degrees (-90 to 90, 0 = radial)"
+        },
+        {
+            "type": "separator",
+            "label": "Option 25"
+        },
+        {
+            "type": "checkbox",
+            "id": "Option25Enabled",
+            "label": "Enable Option 25",
+            "value": true,
+            "description": "Whether option 25 is enabled and included in the wheel"
+        },
+        {
+            "type": "text",
+            "id": "Option25Name",
+            "label": "Option 25 Name",
+            "value": "Option 25",
+            "description": "Text displayed for option 25"
+        },
+        {
+            "type": "select",
+            "id": "Option25Color",
+            "label": "Option 25 Color",
+            "value": "#6d28d9",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d"
+            ],
+            "description": "Vibrant color for option 25",
+            "transparent": false
+        },
+        {
+            "type": "color",
+            "id": "Option25TextColor",
+            "label": "Option 25 Text Color",
+            "value": "#ffffff",
+            "description": "Text color for option 25",
+            "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "Option25TextFontSize",
+            "label": "Option 25 Font Size",
+            "value": 18.0,
+            "min": 10,
+            "max": 24,
+            "description": "Font size for option 25 text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "Option25TextFontWeight",
+            "label": "Option 25 Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800"
+            ],
+            "description": "Font weight for option 25 text"
+        },
+        {
+            "type": "number",
+            "id": "Option25TextRotation",
+            "label": "Option 25 Text Rotation",
+            "value": -90.0,
+            "min": -90,
+            "max": 90,
+            "step": 1,
+            "description": "Rotation angle for option 25 text in degrees (-90 to 90, 0 = radial)"
+        }
+    ],
+    "dynamic_controls": {
+        "elements": [
+            {
+                "type": "button",
+                "id": "spin_wheel",
+                "label": "Spin the Wheel",
+                "description": "Spin the roulette wheel to select a random option",
+                "action": "spin",
+                "button_text": "Spin"
+            },
+            {
+                "type": "button",
+                "id": "refresh_wheel",
+                "label": "Refresh Wheel",
+                "description": "Refresh and reset the wheel to its initial state",
+                "action": "refresh",
+                "button_text": "Refresh"
+            }
+        ]
+    },
+    "connector_actions": {
+        "spin_wheel": {
+            "action_name": "Spin the wheel",
+            "trigger": "spin_wheel",
+            "elements": [
+                {
+                    "type": "switch",
+                    "id": "auto_spin",
+                    "label": "Auto Spin",
+                    "value": false,
+                    "description": "Automatically spin the wheel when triggered"
+                }
+            ]
+        },
+        "land_on_option": {
+            "action_name": "Land on specific option",
+            "trigger": "land_on_option",
+            "elements": [
+                {
+                    "type": "select",
+                    "id": "target_option",
+                    "label": "Target Option",
+                    "value": "1",
+                    "options": [
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "14",
+                        "15",
+                        "16",
+                        "17",
+                        "18",
+                        "19",
+                        "20",
+                        "21",
+                        "22",
+                        "23",
+                        "24",
+                        "25"
+                    ],
+                    "description": "Which option the wheel should land on"
+                }
+            ]
+        }
+    }
+}

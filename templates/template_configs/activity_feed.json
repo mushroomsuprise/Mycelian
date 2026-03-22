@@ -1,0 +1,217 @@
+{
+    "template_name": "activity_feed",
+    "elements": [
+        {
+            "type": "slider",
+            "id": "control_button_spacing",
+            "label": "Control Button Spacing",
+            "value": 4,
+            "min": 2,
+            "max": 16,
+            "step": 1,
+            "description": "Space between control buttons (px)"
+        },
+        {
+            "type": "slider",
+            "id": "control_button_padding",
+            "label": "Control Button Padding",
+            "value": 4,
+            "min": 2,
+            "max": 12,
+            "step": 1,
+            "description": "Internal padding of control buttons (px)"
+        },
+        {
+            "type": "slider",
+            "id": "control_font_size",
+            "label": "Control Button Font Size",
+            "value": 11,
+            "min": 8,
+            "max": 16,
+            "step": 1,
+            "description": "Font size for control buttons (px)"
+        },
+        {
+            "type": "slider",
+            "id": "alert_card_height",
+            "label": "Alert Card Height",
+            "value": 32,
+            "min": 24,
+            "max": 48,
+            "step": 2,
+            "description": "Height of each alert card (px)"
+        },
+        {
+            "type": "slider",
+            "id": "alert_card_padding",
+            "label": "Alert Card Padding",
+            "value": 8,
+            "min": 4,
+            "max": 16,
+            "step": 1,
+            "description": "Internal padding of alert cards (px)"
+        },
+        {
+            "type": "slider",
+            "id": "alert_card_margin",
+            "label": "Alert Card Margin",
+            "value": 2,
+            "min": 1,
+            "max": 8,
+            "step": 1,
+            "description": "Space between alert cards (px)"
+        },
+        {
+            "type": "slider",
+            "id": "alert_font_size",
+            "label": "Alert Message Font Size",
+            "value": 12,
+            "min": 8,
+            "max": 18,
+            "step": 1,
+            "description": "Font size for alert messages (px)"
+        },
+        {
+            "type": "slider",
+            "id": "badge_font_size",
+            "label": "Badge Font Size",
+            "value": 9,
+            "min": 6,
+            "max": 14,
+            "step": 1,
+            "description": "Font size for alert type badges (px)"
+        },
+        {
+            "type": "slider",
+            "id": "badge_padding",
+            "label": "Badge Padding",
+            "value": 2,
+            "min": 1,
+            "max": 6,
+            "step": 1,
+            "description": "Internal padding of badges (px)"
+        },
+        {
+            "type": "slider",
+            "id": "badge_width",
+            "label": "Badge Minimum Width",
+            "value": 50,
+            "min": 40,
+            "max": 80,
+            "step": 2,
+            "description": "Minimum width of badges (px)"
+        },
+        {
+            "type": "slider",
+            "id": "timestamp_font_size",
+            "label": "Timestamp Font Size",
+            "value": 9,
+            "min": 6,
+            "max": 14,
+            "step": 1,
+            "description": "Font size for timestamps (px)"
+        },
+        {
+            "type": "slider",
+            "id": "timestamp_width",
+            "label": "Timestamp Area Width",
+            "value": 60,
+            "min": 40,
+            "max": 100,
+            "step": 5,
+            "description": "Reserved width for timestamps (px)"
+        },
+        {
+            "type": "slider",
+            "id": "action_buttons_width",
+            "label": "Action Buttons Area Width",
+            "value": 60,
+            "min": 40,
+            "max": 100,
+            "step": 5,
+            "description": "Reserved width for action buttons (px)"
+        },
+        {
+            "type": "checkbox",
+            "id": "enable_text_wrapping",
+            "label": "Enable Text Wrapping",
+            "value": true,
+            "description": "Allow alert messages to wrap to multiple lines"
+        },
+        {
+            "type": "checkbox",
+            "id": "compact_mode",
+            "label": "Compact Mode",
+            "value": false,
+            "description": "Use more compact spacing throughout the interface"
+        },
+        {
+            "type": "slider",
+            "id": "content_padding",
+            "label": "Content Section Padding",
+            "value": 8,
+            "min": 4,
+            "max": 20,
+            "step": 2,
+            "description": "Padding around the main content area (px)"
+        },
+        {
+            "type": "select",
+            "id": "primary_color",
+            "label": "Primary Accent Color",
+            "value": "#7300ff",
+            "description": "Primary color for highlights and accents",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#7300ff",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "checkbox",
+            "id": "condense_include_historical",
+            "label": "Include Historical Alerts",
+            "value": true,
+            "description": "Include alerts from the past X hours in the condensed view"
+        },
+        {
+            "type": "slider",
+            "id": "condense_historical_hours",
+            "label": "Historical Alerts Hours",
+            "value": 12,
+            "min": 1,
+            "max": 72,
+            "step": 1,
+            "description": "Number of hours to include in historical alerts for condensed view"
+        }
+    ]
+}

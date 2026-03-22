@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Sub Bar</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+    <style>
+        @font-face {
+            font-family: subbar-font;
+            src: url("/assets/default_assets/fonts/{{FontName}}");
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: subbar-font, Arial, sans-serif;
+        }
+
+        .subbar-container {
+            position: absolute;
+            bottom: {{ContainerBottom}}px;
+            left: {{ContainerLeft}}px;
+            width: {{ContainerWidth}}px;
+            padding: {{ContainerPadding}}px;
+            background: {{ContainerBG}};
+            border-radius: {{ContainerRadius}}px;
+            border: {{ContainerBorder}}px solid {{ContainerBorderColor}};
+            box-shadow: {{ContainerShadow}};
+        }
+
+        .subbar-title {
+            font-size: {{TitleFontSize}}px;
+            font-weight: {{TitleFontWeight}};
+            color: {{TitleColor}};
+            text-shadow: {{TitleTextShadow}};
+            margin: 0 0 {{TitleMargin}}px 0;
+            text-align: {{TitleAlign}};
+        }
+
+        .progress-container {
+            position: relative;
+            width: 100%;
+            height: {{BarHeight}}px;
+            background: {{BarBG}};
+            border-radius: {{BarRadius}}px;
+            border: {{BarBorder}}px solid {{BarBorderColor}};
+            overflow: hidden;
+            box-shadow: {{BarShadow}};
+            margin-bottom: {{ProgressMargin}}px;
+        }
+
+        .progress-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: {{BarColor}};
+            border-radius: {{BarRadius}}px;
+            transition: width {{BarAnimationDuration}}s {{BarAnimationEasing}};
+            box-shadow: {{BarInnerShadow}};
+            min-width: 0;
+        }
+
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: {{ProgressFontSize}}px;
+            font-weight: {{ProgressFontWeight}};
+            color: {{ProgressTextColor}};
+            text-shadow: {{ProgressTextShadow}};
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .subbar-message {
+            font-size: {{MessageFontSize}}px;
+            font-weight: {{MessageFontWeight}};
+            color: {{MessageColor}};
+            text-shadow: {{MessageTextShadow}};
+            margin: 0;
+            text-align: {{MessageAlign}};
+        }
+
+        .sub-indicator {
+            position: absolute;
+            top: {{SubIndicatorTop}}px;
+            right: {{SubIndicatorRight}}px;
+            font-size: {{SubIndicatorFontSize}}px;
+            font-weight: {{SubIndicatorFontWeight}};
+            color: {{SubIndicatorColor}};
+            text-shadow: {{SubIndicatorTextShadow}};
+            opacity: 0;
+            transform: translateY(0);
+            transition: all {{SubIndicatorAnimationDuration}}s {{SubIndicatorAnimationEasing}};
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        .sub-indicator.show {
+            opacity: 1;
+            transform: translateY(-{{SubIndicatorFloatDistance}}px);
+        }
+
+        .goal-reached-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: {{GoalOverlayBG}};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: {{GoalFontSize}}px;
+            font-weight: {{GoalFontWeight}};
+            color: {{GoalColor}};
+            text-shadow: {{GoalTextShadow}};
+            opacity: 0;
+            transition: opacity {{GoalAnimationDuration}}s ease;
+            z-index: 30;
+            border-radius: {{ContainerRadius}}px;
+        }
+
+        .goal-reached-overlay.show {
+            opacity: 1;
+        }
+
+        /* Pulse animation for near goal */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        .progress-bar.near-goal {
+            animation: pulse {{PulseSpeed}}s infinite;
+        }
+
+        /* Glow effect for goal reached */
+        @keyframes glow {
+            0%, 100% { box-shadow: {{BarShadow}}; }
+            50% { box-shadow: {{BarShadow|tojson}}, 0 0 20px {{GoalGlowColor}}; }
+        }
+
+        .progress-container.goal-reached {
+            animation: glow 1s ease-in-out;
+        }
+
+        /* Shake animation for new subs */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-1px); }
+            75% { transform: translateX(1px); }
+        }
+
+        .subbar-container.shake {
+            animation: shake 0.2s ease-in-out;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .subbar-container {
+                width: calc({{ContainerWidth}}px * 0.9);
+                padding: calc({{ContainerPadding}}px * 0.8);
+            }
+            
+            .subbar-title {
+                font-size: calc({{TitleFontSize}}px * 0.9);
+            }
+            
+            .subbar-message {
+                font-size: calc({{MessageFontSize}}px * 0.9);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="subbar-container" id="subbarContainer">
+        <h2 class="subbar-title" id="subbarTitle">{{DefaultTitle}}</h2>
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar" id="progressBar"></div>
+            <div class="progress-text" id="progressText">{{DefaultCurrentSubs}}/{{DefaultGoal}} subs</div>
+            <div class="goal-reached-overlay" id="goalOverlay">{{GoalReachedText}}</div>
+        </div>
+        <p class="subbar-message" id="subbarMessage">{{DefaultMessage}}</p>
+        <div class="sub-indicator" id="subIndicator"></div>
+    </div>
+
+    <script>
+        // Global variables
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var isEnabled = {{Enabled|tojson}};
+        var subbarData = {
+            currentSubs: {{DefaultCurrentSubs|tojson}},
+            goalSubs: {{DefaultGoal|tojson}},
+            title: {{DefaultTitle|tojson}},
+            message: {{DefaultMessage|tojson}}
+        };
+        
+        var settings = {
+            nearGoalThreshold: {{NearGoalThreshold|tojson}},
+            autoReset: {{AutoReset|tojson}},
+            resetDelay: {{ResetDelay|tojson}},
+            excludedUsers: [{{ExcludedUsers|tojson}}],
+            trackSubs: {{TrackSubs|tojson}},
+            trackGiftsubs: {{TrackGiftsubs|tojson}},
+            trackResubs: {{TrackResubs|tojson}},
+            giftsubMultiplier: {{GiftsubMultiplier|tojson}},
+            resubMultiplier: {{ResubMultiplier|tojson}},
+            skipTestAlerts: {{SkipTestAlerts|tojson}},
+            processReplays: {{ProcessReplays|tojson}},
+            processTests: {{ProcessTests|tojson}}
+        };
+
+        var animationInProgress = false;
+        var subIndicatorTimeout = null;
+        
+        // Alert queue system
+        var alertQueue = [];
+        var processingQueue = false;
+
+        // Socket event listeners
+        socket.on('connect', function() {
+            console.log('Connected to subbar server');
+            if (!isEnabled) {
+                console.log('SubBar is disabled, hiding widget');
+                document.body.style.display = 'none';
+                return;
+            }
+            updateDisplay();
+        });
+
+        socket.on('instant_alert', function(alertData) {
+            if (!isEnabled) {
+                console.log('SubBar is disabled, skipping alert processing');
+                return;
+            }
+            if (alertData && shouldProcessAlert(alertData)) {
+                // Add alert to queue instead of processing immediately
+                addAlertToQueue(alertData);
+            }
+        });
+
+        socket.on('subbar_update', function(data) {
+            if (data) {
+                updateSubbarData(data);
+            }
+        });
+
+        socket.on('subbar_reset', function() {
+            resetSubbar();
+        });
+
+        socket.on('subbar_set_goal', function(newGoal) {
+            if (typeof newGoal === 'number' && newGoal > 0) {
+                subbarData.goalSubs = newGoal;
+                updateDisplay();
+                saveSubbarState();
+            }
+        });
+
+        // Alert queue management functions
+        function addAlertToQueue(alertData) {
+            alertQueue.push(alertData);
+            console.log('Added alert to queue. Queue length:', alertQueue.length);
+            
+            // Start processing if not already processing
+            if (!processingQueue) {
+                processNextAlert();
+            }
+        }
+
+        function processNextAlert() {
+            if (alertQueue.length === 0) {
+                processingQueue = false;
+                console.log('Alert queue empty, processing stopped');
+                return;
+            }
+            
+            if (animationInProgress) {
+                console.log('Animation in progress, scheduling retry in 500ms');
+                // Schedule a retry instead of just returning
+                setTimeout(function() {
+                    processNextAlert();
+                }, 500);
+                return;
+            }
+            
+            processingQueue = true;
+            var alertData = alertQueue.shift();
+            console.log('Processing queued alert. Remaining queue length:', alertQueue.length);
+            
+            processAlert(alertData);
+        }
+
+        function onAnimationComplete() {
+            console.log('Animation complete, checking for next alert in queue');
+            setTimeout(function() {
+                processNextAlert();
+            }, 100);
+        }
+
+        // Check if alert should be processed
+        function shouldProcessAlert(alert) {
+            if (!alert || !alert.username) return false;
+            
+            // Check if replays should be processed
+            if (!settings.processReplays && alert.is_replay) {
+                console.log('Subbar skipping replay alert');
+                return false;
+            }
+            
+            // Check if tests should be processed
+            if (!settings.processTests && isTestAlert(alert)) {
+                console.log('Subbar skipping test alert');
+                return false;
+            }
+            
+            // Check if this is a test alert and we should skip it (legacy support)
+            if (settings.skipTestAlerts) {
+                var username = alert.username.toLowerCase();
+                var testUsernames = ['testuser', 'test_user', 'test-user', 'testalert', 'test_alert', 'test-alert'];
+                if (testUsernames.includes(username)) {
+                    return false;
+                }
+            }
+            
+            // Check excluded users
+            if (settings.excludedUsers.includes(alert.username.toLowerCase())) {
+                return false;
+            }
+            
+            // Check alert type and settings - check multiple possible property names
+            var alertType = alert.alerttype || alert.alert_type || alert.type;
+            if (alertType === 'sub' && settings.trackSubs) return true;
+            if (alertType === 'giftsub' && settings.trackGiftsubs) return true;
+            if (alertType === 'resub' && settings.trackResubs) return true;
+            
+            return false;
+        }
+
+        // Helper function to check if an alert is a test alert
+        function isTestAlert(alert) {
+            if (!alert) return false;
+            
+            // Check username for test patterns
+            var username = alert.username ? alert.username.toLowerCase() : '';
+            var testUsernames = ['testuser', 'test_user', 'test-user', 'testalert', 'test_alert', 'test-alert'];
+            if (testUsernames.includes(username)) {
+                return true;
+            }
+            
+            // Check if alert has test flags or properties
+            if (alert.is_test || alert.test_alert || alert.isTest) {
+                return true;
+            }
+            
+            return false;
+        }
+
+        // Process incoming sub alert
+        function processAlert(alert) {
+            var subAmount = 0;
+            var alertText = '';
+            var alertType = alert.alerttype || alert.alert_type || alert.type;
+            var quantity = alert.quantity || alert.amount || 1;
+            
+            // Calculate sub amount based on alert type
+            if (alertType === 'sub') {
+                subAmount = 1;
+                alertText = '+1 Sub';
+            } else if (alertType === 'giftsub') {
+                subAmount = quantity * settings.giftsubMultiplier;
+                alertText = '+' + quantity + ' Gift Sub' + (quantity > 1 ? 's' : '');
+            } else if (alertType === 'resub') {
+                subAmount = 1 * settings.resubMultiplier;
+                alertText = '+1 Resub (' + (alert.months || 1) + ' months)';
+            }
+            
+            if (subAmount <= 0) {
+                console.log('No sub amount calculated, skipping alert');
+                onAnimationComplete(); // Continue processing queue even if no change
+                return;
+            }
+            
+            var oldSubs = subbarData.currentSubs;
+            subbarData.currentSubs += subAmount;
+            
+            // Check if goal was reached
+            var goalReached = oldSubs < subbarData.goalSubs && subbarData.currentSubs >= subbarData.goalSubs;
+            
+            // Animate changes
+            animateSubChange(alertText, goalReached);
+            
+            // Save state
+            saveSubbarState();
+            
+            // Auto reset if enabled and goal reached
+            if (goalReached && settings.autoReset) {
+                setTimeout(function() {
+                    resetSubbar();
+                }, settings.resetDelay * 1000);
+            }
+        }
+
+        // Animate sub changes
+        function animateSubChange(alertText, goalReached) {
+            animationInProgress = true;
+            
+            // Show sub indicator
+            showSubIndicator(alertText);
+            
+            // Add shake effect
+            var container = document.getElementById('subbarContainer');
+            container.classList.add('shake');
+            setTimeout(function() {
+                container.classList.remove('shake');
+            }, 200);
+            
+            // Show goal overlay if goal reached
+            if (goalReached) {
+                showGoalOverlay();
+                
+                // Add glow effect
+                var progressContainer = document.getElementById('progressContainer');
+                progressContainer.classList.add('goal-reached');
+                setTimeout(function() {
+                    progressContainer.classList.remove('goal-reached');
+                }, 1000);
+            }
+            
+            // Update display after a short delay
+            setTimeout(function() {
+                updateDisplay();
+                animationInProgress = false;
+                onAnimationComplete(); // Process next alert in queue
+            }, goalReached ? 1000 : 300);
+        }
+
+        // Show sub indicator
+        function showSubIndicator(alertText) {
+            var indicator = document.getElementById('subIndicator');
+            
+            if (subIndicatorTimeout) {
+                clearTimeout(subIndicatorTimeout);
+            }
+            
+            indicator.textContent = alertText;
+            indicator.className = 'sub-indicator show';
+            
+            subIndicatorTimeout = setTimeout(function() {
+                indicator.classList.remove('show');
+            }, {{SubIndicatorDisplayDuration|tojson}} * 1000);
+        }
+
+        // Show goal overlay
+        function showGoalOverlay() {
+            var overlay = document.getElementById('goalOverlay');
+            overlay.classList.add('show');
+            
+            setTimeout(function() {
+                overlay.classList.remove('show');
+            }, {{GoalDisplayDuration|tojson}} * 1000);
+        }
+
+        // Update display
+        function updateDisplay() {
+            var progressBar = document.getElementById('progressBar');
+            var progressText = document.getElementById('progressText');
+            var subbarTitle = document.getElementById('subbarTitle');
+            var subbarMessage = document.getElementById('subbarMessage');
+            
+            // Update title and message
+            subbarTitle.textContent = subbarData.title;
+            
+            // Update message with current values
+            var messageText = subbarData.message;
+            messageText = messageText.replace('{current}', subbarData.currentSubs);
+            messageText = messageText.replace('{goal}', subbarData.goalSubs);
+            messageText = messageText.replace('{remaining}', Math.max(0, subbarData.goalSubs - subbarData.currentSubs));
+            subbarMessage.textContent = messageText;
+            
+            // Update progress bar
+            var percentage = Math.min(100, (subbarData.currentSubs / subbarData.goalSubs) * 100);
+            progressBar.style.width = percentage + '%';
+            
+            // Update progress text
+            progressText.textContent = subbarData.currentSubs + '/' + subbarData.goalSubs + ' subs';
+            
+            // Add near goal effect
+            if (percentage >= settings.nearGoalThreshold) {
+                progressBar.classList.add('near-goal');
+            } else {
+                progressBar.classList.remove('near-goal');
+            }
+        }
+
+        // Save subbar state to localStorage
+        function saveSubbarState() {
+            var state = {
+                currentSubs: subbarData.currentSubs,
+                goalSubs: subbarData.goalSubs,
+                title: subbarData.title,
+                message: subbarData.message,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('subbar_state', JSON.stringify(state));
+        }
+
+        // Load subbar state from localStorage
+        function loadSubbarState() {
+            try {
+                var saved = localStorage.getItem('subbar_state');
+                if (saved) {
+                    var state = JSON.parse(saved);
+                    // Load saved state (no expiration check)
+                    subbarData.currentSubs = state.currentSubs || subbarData.currentSubs;
+                    subbarData.goalSubs = state.goalSubs || subbarData.goalSubs;
+                    subbarData.title = state.title || subbarData.title;
+                    subbarData.message = state.message || subbarData.message;
+                    return true;
+                }
+            } catch (e) {
+                console.error('Error loading subbar state:', e);
+            }
+            return false;
+        }
+
+        // Reset subbar to defaults
+        function resetSubbar() {
+            subbarData = {
+                currentSubs: {{DefaultCurrentSubs|tojson}},
+                goalSubs: {{DefaultGoal|tojson}},
+                title: {{DefaultTitle|tojson}},
+                message: {{DefaultMessage|tojson}}
+            };
+            
+            updateDisplay();
+            saveSubbarState();
+        }
+
+        // Update subbar data from server
+        function updateSubbarData(data) {
+            if (typeof data.currentSubs === 'number') subbarData.currentSubs = data.currentSubs;
+            if (typeof data.goalSubs === 'number') subbarData.goalSubs = data.goalSubs;
+            if (data.title) subbarData.title = data.title;
+            if (data.message) subbarData.message = data.message;
+            
+            updateDisplay();
+            saveSubbarState();
+        }
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                updateDisplay();
+            }
+        });
+
+        // Load template config directly from API
+        async function loadTemplateConfig() {
+            try {
+                const response = await fetch('/api/all-template-configs');
+                if (response.ok) {
+                    const allConfigs = await response.json();
+                    console.log('Loaded all template configs:', Object.keys(allConfigs));
+                    
+                    // Get the subbar config specifically
+                    const subbarConfigData = allConfigs.subbar;
+                    if (subbarConfigData && subbarConfigData.elements) {
+                        console.log('Found subbar template config:', subbarConfigData);
+                        
+                        // Extract the config values from the elements array
+                        const config = {};
+                        subbarConfigData.elements.forEach(element => {
+                            if (element.type !== 'section') {
+                                config[element.id] = element.value;
+                            }
+                        });
+                        
+                        console.log('Parsed config values:', config);
+                        applyTemplateConfig(config);
+                    } else {
+                        console.warn('No subbar config found in response');
+                    }
+                } else {
+                    console.error('Failed to load template configs:', response.status);
+                }
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        function applyTemplateConfig(config) {
+            console.log('Applying template config:', config);
+            
+            const subbarContainer = document.getElementById('subbarContainer');
+            
+            // Apply container position and size
+            if (config.ContainerLeft !== undefined) {
+                subbarContainer.style.left = config.ContainerLeft + 'px';
+            }
+            if (config.ContainerTop !== undefined) {
+                subbarContainer.style.top = config.ContainerTop + 'px';
+            }
+            if (config.ContainerWidth !== undefined) {
+                subbarContainer.style.width = config.ContainerWidth + 'px';
+            }
+            if (config.ContainerHeight !== undefined) {
+                subbarContainer.style.height = config.ContainerHeight + 'px';
+            }
+
+            // Apply text styling
+            const titleElement = document.getElementById('subbarTitle');
+            if (titleElement) {
+                if (config.TitleFontFamily) {
+                    titleElement.style.fontFamily = config.TitleFontFamily;
+                }
+                if (config.TitleFontSize !== undefined) {
+                    titleElement.style.fontSize = config.TitleFontSize + 'px';
+                }
+                if (config.TitleColor) {
+                    titleElement.style.color = config.TitleColor;
+                }
+                if (config.DefaultTitle !== undefined) {
+                    subbarData.title = config.DefaultTitle;
+                }
+            }
+
+            const messageElement = document.getElementById('subbarMessage');
+            if (messageElement) {
+                if (config.MessageFontFamily) {
+                    messageElement.style.fontFamily = config.MessageFontFamily;
+                }
+                if (config.MessageFontSize !== undefined) {
+                    messageElement.style.fontSize = config.MessageFontSize + 'px';
+                }
+                if (config.MessageColor) {
+                    messageElement.style.color = config.MessageColor;
+                }
+                if (config.DefaultMessage !== undefined) {
+                    subbarData.message = config.DefaultMessage;
+                }
+            }
+
+            const progressText = document.getElementById('progressText');
+            if (progressText) {
+                if (config.ProgressFontFamily) {
+                    progressText.style.fontFamily = config.ProgressFontFamily;
+                }
+                if (config.ProgressFontSize !== undefined) {
+                    progressText.style.fontSize = config.ProgressFontSize + 'px';
+                }
+                if (config.ProgressColor) {
+                    progressText.style.color = config.ProgressColor;
+                }
+            }
+
+            // Apply progress bar styling
+            const progressBar = document.getElementById('progressBar');
+            if (progressBar) {
+                if (config.ProgressBarColor) {
+                    progressBar.style.backgroundColor = config.ProgressBarColor;
+                }
+                if (config.ProgressBarHeight !== undefined) {
+                    progressBar.style.height = config.ProgressBarHeight + 'px';
+                }
+                if (config.ProgressBarBorderRadius !== undefined) {
+                    progressBar.style.borderRadius = config.ProgressBarBorderRadius + 'px';
+                }
+            }
+
+            // Apply background settings
+            if (config.EnableBackground) {
+                subbarContainer.style.backgroundColor = config.BackgroundColor || 'rgba(0,0,0,0.5)';
+                subbarContainer.style.padding = (config.BackgroundPadding || 10) + 'px';
+                subbarContainer.style.borderRadius = (config.BackgroundBorderRadius || 5) + 'px';
+                if (config.BackgroundOpacity !== undefined) {
+                    subbarContainer.style.opacity = config.BackgroundOpacity;
+                }
+            } else {
+                subbarContainer.style.backgroundColor = 'transparent';
+                subbarContainer.style.padding = '0';
+                subbarContainer.style.borderRadius = '0';
+            }
+
+            // Apply sub bar settings
+            if (config.DefaultCurrentSubs !== undefined) {
+                subbarData.currentSubs = config.DefaultCurrentSubs;
+            }
+            if (config.DefaultGoal !== undefined) {
+                subbarData.goalSubs = config.DefaultGoal;
+            }
+
+            // Apply multiplier settings
+            if (config.GiftsubMultiplier !== undefined) {
+                settings.giftsubMultiplier = config.GiftsubMultiplier;
+            }
+            if (config.ResubMultiplier !== undefined) {
+                settings.resubMultiplier = config.ResubMultiplier;
+            }
+
+            // Apply animation settings
+            if (config.EnableAnimations !== undefined) {
+                settings.enableAnimations = config.EnableAnimations;
+            }
+            if (config.SubIndicatorDisplayDuration !== undefined) {
+                settings.subIndicatorDisplayDuration = config.SubIndicatorDisplayDuration;
+            }
+            if (config.GoalDisplayDuration !== undefined) {
+                settings.goalDisplayDuration = config.GoalDisplayDuration;
+            }
+
+            // Apply auto-reset settings
+            if (config.AutoReset !== undefined) {
+                settings.autoReset = config.AutoReset;
+            }
+            if (config.ResetDelay !== undefined) {
+                settings.resetDelay = config.ResetDelay;
+            }
+            if (config.NearGoalThreshold !== undefined) {
+                settings.nearGoalThreshold = config.NearGoalThreshold;
+            }
+
+            // Update display with new settings
+            updateDisplay();
+        }
+
+        // Initialize
+        if (!loadSubbarState()) {
+            updateDisplay();
+        }
+        
+        // Load config on startup
+        loadTemplateConfig();
+        
+        // Start processing any alerts that might have been queued during initialization
+        setTimeout(function() {
+            if (alertQueue.length > 0 && !processingQueue) {
+                console.log('Processing alerts queued during initialization');
+                processNextAlert();
+            }
+        }, 1000);
+        
+        // Periodically reload config to pick up changes (every 5 seconds)
+        // setInterval(loadTemplateConfig, 5000);
+        
+        console.log('Mycelian Sub Bar initialized with instant_alert queue system');
+        console.log('Queue system functions: clearSubBarQueue(), getSubBarQueueStatus()');
+
+        // Manual queue management functions that can be called from console
+        window.clearSubBarQueue = function() {
+            console.log('Manually clearing SubBar alert queue...');
+            alertQueue = [];
+            processingQueue = false;
+            animationInProgress = false;
+            console.log('Alert queue cleared');
+        };
+
+        window.getSubBarQueueStatus = function() {
+            console.log('SubBar Queue Status:');
+            console.log('- Queue length:', alertQueue.length);
+            console.log('- Processing queue:', processingQueue);
+            console.log('- Animation in progress:', animationInProgress);
+            console.log('- Queue contents:', alertQueue);
+            return {
+                queueLength: alertQueue.length,
+                processingQueue: processingQueue,
+                animationInProgress: animationInProgress,
+                queue: alertQueue
+            };
+        };
+    </script>
+</body>
+</html> 

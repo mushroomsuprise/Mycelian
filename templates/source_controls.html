@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Source Controls</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--color-bg-base, linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%));
+            color: var(--color-text-primary, #ffffff);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05));
+            border-radius: 6px;
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(10px);
+        }
+
+        .header-content {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-text h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1px;
+            background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-text p {
+            color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));
+            font-size: 0.7rem;
+            margin: 0;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.7rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            text-decoration: none;
+            color: white;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7));
+        }
+
+        .btn-secondary {
+            background: var(--color-hover-overlay, rgba(255, 255, 255, 0.1));
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.2));
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--color-primary-light, rgba(115, 0, 255, 0.3));
+        }
+
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+
+        .content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .content::-webkit-scrollbar-track {
+            background: var(--color-hover-overlay, rgba(255, 255, 255, 0.1));
+            border-radius: 4px;
+        }
+
+        .content::-webkit-scrollbar-thumb {
+            background: var(--color-primary, rgba(115, 0, 255, 0.6));
+            border-radius: 4px;
+        }
+
+        .template-section {
+            background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05));
+            border-radius: 8px;
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+            margin-bottom: 12px;
+            padding: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .template-section:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            border-color: var(--color-border-accent, rgba(115, 0, 255, 0.3));
+        }
+
+        .template-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .template-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--color-text-primary, #ffffff);
+        }
+
+        .control-count {
+            background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7));
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.65rem;
+            font-weight: 500;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .group-title {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--color-text-secondary, rgba(255, 255, 255, 0.8));
+            margin-bottom: 8px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+        }
+
+        .controls-grid {
+            display: grid;
+            gap: 8px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+
+        .control-item {
+            background: var(--color-bg-surface, rgba(255, 255, 255, 0.03));
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+            border-radius: 6px;
+            padding: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .control-item:hover {
+            background: var(--color-hover-overlay, rgba(255, 255, 255, 0.05));
+            border-color: var(--color-border-accent, rgba(115, 0, 255, 0.3));
+        }
+
+        .control-label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-bottom: 3px;
+            color: var(--color-text-primary, #ffffff);
+        }
+
+        .control-description {
+            font-size: 0.65rem;
+            color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+            margin-bottom: 6px;
+            line-height: 1.3;
+        }
+
+        .control-input {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.2));
+            border-radius: 4px;
+            background: var(--color-bg-surface, rgba(255, 255, 255, 0.05));
+            color: var(--color-text-primary, #ffffff);
+            font-size: 0.75rem;
+            transition: all 0.2s ease;
+        }
+
+        .control-input:focus {
+            outline: none;
+            border-color: var(--color-primary, #7300ff);
+            box-shadow: 0 0 0 2px var(--color-focus-ring, rgba(115, 0, 255, 0.2));
+        }
+
+        .control-input::placeholder {
+            color: var(--color-text-muted, rgba(255, 255, 255, 0.4));
+        }
+
+        .control-button {
+            width: 100%;
+            padding: 6px;
+            border: none;
+            border-radius: 4px;
+            background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7));
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .control-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px var(--color-primary-light, rgba(115, 0, 255, 0.4));
+        }
+
+        .control-button:active {
+            transform: translateY(0);
+        }
+
+        .counter-controls {
+            display: flex;
+            gap: 4px;
+        }
+
+        .counter-btn {
+            flex: 1;
+            padding: 6px;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.7rem;
+        }
+
+        .counter-btn.decrement {
+            background: linear-gradient(135deg, #dc2626, #ef4444);
+        }
+
+        .counter-btn.increment {
+            background: linear-gradient(135deg, #16a34a, #22c55e);
+        }
+
+        .counter-btn.reset {
+            background: linear-gradient(135deg, #6b7280, #9ca3af);
+            font-size: 0.65rem;
+        }
+
+        .counter-btn:hover {
+            transform: translateY(-1px);
+            opacity: 0.9;
+        }
+
+        .slider-container {
+            position: relative;
+        }
+
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--color-active-overlay, rgba(255, 255, 255, 0.2));
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7));
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7));
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--color-active-overlay, rgba(255, 255, 255, 0.2));
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7));
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+
+        .spin-button {
+            background: linear-gradient(135deg, #f59e0b, #f97316);
+        }
+
+        .spin-button:hover {
+            box-shadow: 0 4px 12px var(--color-warning, rgba(245, 158, 11, 0.4));
+        }
+
+        .no-controls {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+        }
+
+        .no-controls h3 {
+            margin-bottom: 10px;
+            color: var(--color-text-secondary, rgba(255, 255, 255, 0.8));
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+        }
+
+
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .header {
+                padding: 8px 12px;
+                margin-bottom: 10px;
+            }
+
+            .header-content {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header-text h1 {
+                font-size: 1.2rem;
+            }
+
+            .header-text p {
+                font-size: 0.75rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    
+    <div class="container">
+        <div class="header fade-in">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1>Source Controls</h1>
+                </div>
+                <div class="header-row">
+                    <p>Interactive controls for your templates</p>
+                    <div class="header-controls">
+                        <button class="btn btn-primary" onclick="refreshControls()">
+                            <span>🔄</span> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div id="controlsContainer">
+                <div class="loading">
+                    <h3>Loading controls...</h3>
+                    <p>Parsing template configurations...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket broadcasting
+        let broadcastSocket = null;
+        let broadcastStatus = 'ready';
+        
+        // Template configurations cache
+        let templateConfigs = {};
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeBroadcastSocket();
+            loadTemplateConfigs();
+        });
+
+        function initializeBroadcastSocket() {
+            try {
+                // Initialize WebSocket for broadcasting to other sources
+                // This will broadcast events to templates that are listening
+                // Use the same connection format as other templates for consistency
+                broadcastSocket = io.connect('http://' + document.domain + ':' + location.port);
+                
+                broadcastSocket.on('connect', function() {
+                    console.log('Broadcast socket connected');
+                    console.log('Source controls socket ID:', broadcastSocket.id);
+                    console.log('Source controls socket connected:', broadcastSocket.connected);
+                    updateBroadcastStatus('connected');
+
+                    // Request current theme on connect
+                    broadcastSocket.emit('get_current_theme');
+                });
+
+                // Theme update handler - applies theme CSS variables in real-time
+                broadcastSocket.on('theme_update', function(data) {
+                    if (data && data.css) {
+                        var style = document.getElementById('mycelian-theme-vars');
+                        if (!style) {
+                            style = document.createElement('style');
+                            style.id = 'mycelian-theme-vars';
+                            document.head.insertBefore(style, document.head.firstChild);
+                        }
+                        style.textContent = data.css;
+                        console.log('Theme updated:', data.theme_name, '(' + data.theme_type + ')');
+                    }
+                });
+                
+                broadcastSocket.on('disconnect', function() {
+                    console.log('Broadcast socket disconnected');
+                    updateBroadcastStatus('disconnected');
+                });
+                
+                broadcastSocket.on('connect_error', function(error) {
+                    console.debug('Broadcast connection not available:', error);
+                    updateBroadcastStatus('standalone');
+                });
+                
+                // Set initial status
+                updateBroadcastStatus('standalone');
+                
+            } catch (error) {
+                console.debug('WebSocket not available, running in standalone mode:', error);
+                updateBroadcastStatus('standalone');
+            }
+        }
+
+        function updateBroadcastStatus(status) {
+            broadcastStatus = status;
+            // Status indicator removed for cleaner UI
+            console.log(`Broadcast status: ${status}`);
+        }
+
+        async function loadTemplateConfigs() {
+            try {
+                // Load template configurations from the server API
+                templateConfigs = await fetchTemplateConfigs();
+                renderControls();
+                
+            } catch (error) {
+                console.error('Error loading template configs:', error);
+                showError('Failed to load template configurations');
+            }
+        }
+
+        async function fetchTemplateConfigs() {
+            // Fetch template configurations from the server API
+            try {
+                console.log('Fetching template configs from server...');
+                const response = await fetch('/api/template-configs');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const configs = await response.json();
+                console.log('Successfully loaded template configs from server:', Object.keys(configs));
+                return configs;
+                
+            } catch (error) {
+                console.error('Error fetching template configs from server:', error);
+                
+                // Fall back to embedded configs if server fetch fails
+                console.log('Falling back to embedded configs...');
+                return getEmbeddedConfigs();
+            }
+        }
+
+        function getEmbeddedConfigs() {
+            // Fallback embedded template configs with dynamic controls
+            // This serves as a backup if the server endpoint is not available
+            const embeddedConfigs = {
+                counter: {
+                    elements: [
+                        {
+                            type: "counter_control",
+                            id: "counter_controls",
+                            label: "Counter Controls",
+                            description: "Increment, decrement, or reset the counter",
+                            action_increment: "counter_increment",
+                            action_decrement: "counter_decrement",
+                            action_reset: "counter_reset"
+                        },
+                        {
+                            type: "text_input",
+                            id: "counter_message",
+                            label: "Set Counter Message",
+                            description: "Update the counter message text",
+                            placeholder: "Enter new message...",
+                            action: "counter_message"
+                        },
+                        {
+                            type: "number_input",
+                            id: "counter_value",
+                            label: "Set Counter Value",
+                            description: "Set the counter to a specific value",
+                            min: 0,
+                            max: 999999,
+                            value: 0,
+                            action: "counter_update"
+                        }
+                    ]
+                },
+                roulette: {
+                    elements: [
+                        {
+                            type: "spin_control",
+                            id: "spin_wheel",
+                            label: "Spin Wheel",
+                            description: "Spin the roulette wheel",
+                            action: "spin"
+                        },
+                        {
+                            type: "button",
+                            id: "reset_wheel",
+                            label: "Reset Wheel",
+                            description: "Reset the wheel to its starting position",
+                            button_text: "Reset",
+                            action: "reset",
+                            data: {}
+                        },
+                        {
+                            type: "text_input",
+                            id: "add_option",
+                            label: "Add Option",
+                            description: "Add a new option to the wheel",
+                            placeholder: "Enter new option...",
+                            action: "add_option"
+                        },
+                        {
+                            type: "button",
+                            id: "clear_options",
+                            label: "Clear All Options",
+                            description: "Remove all options from the wheel",
+                            button_text: "Clear All",
+                            action: "clear_options",
+                            data: {}
+                        }
+                    ]
+                },
+                memecalc: {
+                    elements: [
+                        {
+                            type: "button",
+                            id: "memecalc_reset",
+                            label: "Reset Calculator",
+                            description: "Reset the bit calculator to zero",
+                            button_text: "Reset",
+                            action: "reset",
+                            data: {}
+                        },
+                        {
+                            type: "number_input",
+                            id: "memecalc_set",
+                            label: "Set Bit Count",
+                            description: "Set the bit calculator to a specific value",
+                            min: 0,
+                            max: 999999,
+                            value: 0,
+                            action: "update"
+                        },
+                        {
+                            type: "number_input",
+                            id: "memecalc_add",
+                            label: "Add Bits",
+                            description: "Add a specific amount of bits to the calculator",
+                            min: 1,
+                            max: 10000,
+                            value: 100,
+                            action: "add_bits"
+                        }
+                    ]
+                }
+            };
+            
+            console.log('Using embedded fallback configs:', Object.keys(embeddedConfigs));
+            return embeddedConfigs;
+        }
+
+        function loadEmbeddedConfigs() {
+            // This function is now just a wrapper around getEmbeddedConfigs
+            // Keep for backward compatibility
+            templateConfigs = getEmbeddedConfigs();
+            console.log('Loaded embedded template configs:', Object.keys(templateConfigs));
+        }
+
+        function renderControls() {
+            const container = document.getElementById('controlsContainer');
+            
+            if (Object.keys(templateConfigs).length === 0) {
+                container.innerHTML = `
+                    <div class="no-controls fade-in">
+                        <h3>No dynamic controls found</h3>
+                        <p>Add a 'dynamic_controls' section to your template config files to enable interactive controls</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            
+            Object.entries(templateConfigs).forEach(([templateName, controlsConfig]) => {
+                const elements = controlsConfig.elements || [];
+                const groupedControls = groupControlsByType(elements);
+                
+                html += `
+                    <div class="template-section fade-in">
+                        <div class="template-header">
+                            <h2 class="template-title">${templateName.charAt(0).toUpperCase() + templateName.slice(1)} Controls</h2>
+                            <span class="control-count">${elements.length} controls</span>
+                        </div>
+                `;
+                
+                Object.entries(groupedControls).forEach(([groupName, groupElements]) => {
+                    if (groupName !== 'Other') {
+                        html += `<div class="group-title">${groupName}</div>`;
+                    }
+                    
+                    html += '<div class="controls-grid">';
+                    
+                    groupElements.forEach(element => {
+                        html += createControlElement(templateName, element);
+                    });
+                    
+                    html += '</div>';
+                });
+                
+                html += '</div>';
+            });
+            
+            container.innerHTML = html;
+            
+            // Add event listeners after rendering
+            addEventListeners();
+        }
+
+        function groupControlsByType(elements) {
+            const groups = {};
+            
+            elements.forEach(element => {
+                const elementType = element.type || 'unknown';
+                let groupName;
+                
+                switch (elementType) {
+                    case 'button':
+                        groupName = 'Actions';
+                        break;
+                    case 'counter_control':
+                    case 'number_input':
+                        groupName = 'Counters & Numbers';
+                        break;
+                    case 'text_input':
+                        groupName = 'Text Input';
+                        break;
+                    case 'slider':
+                    case 'toggle':
+                        groupName = 'Adjustments';
+                        break;
+                    case 'spin_control':
+                        groupName = 'Special Controls';
+                        break;
+                    default:
+                        groupName = 'Other';
+                }
+                
+                if (!groups[groupName]) {
+                    groups[groupName] = [];
+                }
+                
+                groups[groupName].push(element);
+            });
+            
+            return groups;
+        }
+
+        function createControlElement(templateName, element) {
+            const elementType = element.type || 'unknown';
+            const elementId = element.id || 'unknown';
+            const label = element.label || elementId;
+            const description = element.description || '';
+            
+            let controlHtml = '';
+            
+            switch (elementType) {
+                case 'button':
+                    controlHtml = createButtonControl(templateName, element);
+                    break;
+                case 'slider':
+                    controlHtml = createSliderControl(templateName, element);
+                    break;
+                case 'toggle':
+                    controlHtml = createToggleControl(templateName, element);
+                    break;
+                case 'counter_control':
+                    controlHtml = createCounterControl(templateName, element);
+                    break;
+                case 'spin_control':
+                    controlHtml = createSpinControl(templateName, element);
+                    break;
+                case 'text_input':
+                    controlHtml = createTextInputControl(templateName, element);
+                    break;
+                case 'number_input':
+                    controlHtml = createNumberInputControl(templateName, element);
+                    break;
+                default:
+                    controlHtml = `<div class="control-input" style="color: #ef4444;">Unknown control type: ${elementType}</div>`;
+            }
+            
+            return `
+                <div class="control-item slide-in">
+                    <div class="control-label">${label}</div>
+                    ${description ? `<div class="control-description">${description}</div>` : ''}
+                    ${controlHtml}
+                </div>
+            `;
+        }
+
+        function createButtonControl(templateName, element) {
+            const buttonText = element.button_text || 'Action';
+            const action = element.action || '';
+            const isSpinButton = element.type === 'spin_control' || action === 'spin';
+            const buttonClass = isSpinButton ? 'control-button spin-button' : 'control-button';
+            
+            return `
+                <button class="${buttonClass}" 
+                        onclick="sendWebSocketEvent('${templateName}', '${action}', ${JSON.stringify(element.data || {})})">
+                    ${buttonText}
+                </button>
+            `;
+        }
+
+        function createSliderControl(templateName, element) {
+            const min = element.min || 0;
+            const max = element.max || 100;
+            const value = element.value || min;
+            const step = element.step || 1;
+            const action = element.action || '';
+            
+            return `
+                <div class="slider-container">
+                    <input type="range" class="slider" 
+                           min="${min}" max="${max}" value="${value}" step="${step}"
+                           oninput="sendWebSocketEvent('${templateName}', '${action}', {value: this.value})">
+                </div>
+            `;
+        }
+
+        function createToggleControl(templateName, element) {
+            const value = element.value !== undefined ? element.value : (element.default_state !== undefined ? element.default_state : false);
+            const action = element.action || '';
+            const checked = value ? 'checked' : '';
+            
+            return `
+                <label class="toggle-switch">
+                    <input type="checkbox" ${checked}
+                           onchange="sendWebSocketEvent('${templateName}', '${action}', {enabled: this.checked})">
+                    <span class="toggle-slider"></span>
+                </label>
+            `;
+        }
+
+        function createCounterControl(templateName, element) {
+            const actionIncrement = element.action_increment || 'counter_increment';
+            const actionDecrement = element.action_decrement || 'counter_decrement';
+            const actionReset = element.action_reset || 'counter_reset';
+            
+            return `
+                <div class="counter-controls">
+                    <button class="counter-btn decrement" 
+                            onclick="sendWebSocketEvent('${templateName}', '${actionDecrement}', {})">-</button>
+                    <button class="counter-btn increment" 
+                            onclick="sendWebSocketEvent('${templateName}', '${actionIncrement}', {})"">+</button>
+                    <button class="counter-btn reset" 
+                            onclick="sendWebSocketEvent('${templateName}', '${actionReset}', {})">Reset</button>
+                </div>
+            `;
+        }
+
+        function createSpinControl(templateName, element) {
+            const action = element.action || 'spin';
+            
+            return `
+                <button class="control-button spin-button" 
+                        onclick="sendWebSocketEvent('${templateName}', '${action}', {})">
+                    Spin
+                </button>
+            `;
+        }
+
+        function createTextInputControl(templateName, element) {
+            const placeholder = element.placeholder || '';
+            const action = element.action || '';
+            
+            return `
+                <input type="text" class="control-input" placeholder="${placeholder}"
+                       oninput="sendWebSocketEvent('${templateName}', '${action}', {text: this.value})">
+            `;
+        }
+
+        function createNumberInputControl(templateName, element) {
+            const min = element.min || 0;
+            const max = element.max || 999999;
+            const value = element.value || 0;
+            const action = element.action || '';
+            
+            return `
+                <input type="number" class="control-input" 
+                       min="${min}" max="${max}" value="${value}"
+                       oninput="sendWebSocketEvent('${templateName}', '${action}', {value: parseInt(this.value)})">
+            `;
+        }
+
+        function addEventListeners() {
+            // Event listeners are added inline in the HTML for simplicity
+            // This function can be used for additional setup if needed
+        }
+
+        function sendWebSocketEvent(templateName, action, data) {
+            const eventName = `${templateName}_${action}`;
+            
+            // Always log the event for debugging
+            console.log(`Broadcasting event: ${eventName}`, data);
+            console.log(`Broadcast socket status: ${broadcastStatus}`);
+            console.log(`Broadcast socket connected: ${broadcastSocket && broadcastSocket.connected}`);
+            
+            // Ensure we have a valid socket connection
+            if (!broadcastSocket) {
+                console.error('No broadcast socket available');
+                showNotification(`Failed to send ${action} to ${templateName} - No socket`, 'error');
+                return;
+            }
+            
+            // Check if socket is connected, if not try to connect
+            if (!broadcastSocket.connected) {
+                console.log('Socket not connected, attempting to reconnect...');
+                try {
+                    broadcastSocket.connect();
+                    // Give it a moment to connect
+                    setTimeout(function() {
+                        if (broadcastSocket.connected) {
+                            sendRelayEvent(templateName, action, eventName, data);
+                        } else {
+                            showNotification(`Failed to connect for ${action} to ${templateName}`, 'error');
+                        }
+                    }, 100);
+                    return;
+                } catch (error) {
+                    console.error('Error reconnecting socket:', error);
+                    showNotification(`Connection failed for ${action} to ${templateName}`, 'error');
+                    return;
+                }
+            }
+            
+            // Socket is connected, send via relay
+            sendRelayEvent(templateName, action, eventName, data);
+        }
+
+        function sendRelayEvent(templateName, action, eventName, data) {
+            try {
+                // Use the generic relay system instead of direct event emission
+                const relayData = {
+                    event_name: eventName,
+                    target_template: templateName,
+                    event_data: data
+                };
+                
+                console.log(`Sending relay event:`, relayData);
+                broadcastSocket.emit('source_controls_relay', relayData);
+                showNotification(`Relayed ${action} to ${templateName}`, 'success');
+            } catch (error) {
+                console.error(`Error sending relay event ${action} for ${templateName}:`, error);
+                showNotification(`Error relaying ${action} to ${templateName}`, 'error');
+            }
+        }
+
+        function refreshControls() {
+            templateConfigs = {};
+            document.getElementById('controlsContainer').innerHTML = `
+                <div class="loading">
+                    <h3>Refreshing controls...</h3>
+                    <p>Reloading template configurations...</p>
+                </div>
+            `;
+            loadTemplateConfigs();
+        }
+
+        function showDebugInfo() {
+            const debugInfo = {
+                broadcastStatus: broadcastStatus,
+                loadedTemplates: Object.keys(templateConfigs),
+                totalControls: Object.values(templateConfigs).reduce((sum, config) => sum + (config.elements?.length || 0), 0),
+                hasWebSocket: !!broadcastSocket,
+                socketIOAvailable: typeof io !== 'undefined'
+            };
+            
+            alert(`Debug Information:\n\nBroadcast Status: ${debugInfo.broadcastStatus}\nLoaded Templates: ${debugInfo.loadedTemplates.join(', ')}\nTotal Controls: ${debugInfo.totalControls}\nWebSocket Available: ${debugInfo.hasWebSocket}\nSocket.IO Available: ${debugInfo.socketIOAvailable}`);
+        }
+
+        function showError(message) {
+            document.getElementById('controlsContainer').innerHTML = `
+                <div class="no-controls fade-in">
+                    <h3>Error</h3>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+
+        function showNotification(message, type = 'info') {
+            // Simple notification system
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 5px;
+                right: 10px;
+                padding: 10px 15px;
+                border-radius: 8px;
+                color: white;
+                font-size: 0.9rem;
+                z-index: 1001;
+                transition: all 0.3s ease;
+                ${type === 'success' ? 'background: linear-gradient(135deg, #16a34a, #22c55e);' : ''}
+                ${type === 'error' ? 'background: linear-gradient(135deg, #dc2626, #ef4444);' : ''}
+                ${type === 'info' ? 'background: linear-gradient(135deg, #3b82f6, #60a5fa);' : ''}
+            `;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html> 

@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Paused Alerts</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js" integrity="sha512-YeeA/Qxn5hYdkukScTCNNOhTrv1C2RubAGButJ1rmgQwZf/HdRaCGl+JAVkqsqaNRaYNHdheiuKKuPf9mDcqKg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        div.relative {
+            --StreamWidth: {{StreamWidth}}px;
+            --StreamHeight: {{StreamHeight}}px;
+            position: relative;
+            width: var(--StreamWidth);
+            height: var(--StreamHeight);
+        }
+
+        div.absolute {
+            --Displayimg: {{DefaultDisplay}};
+            position: absolute;
+            top: {{IconTop}}px;
+            left: {{IconLeft}}px;
+            display: var(--Displayimg);
+            transition: opacity {{FadeAnimationDuration}}s {{FadeAnimationEasing}};
+        }
+
+        .pause-icon {
+            width: {{IconWidth}}px;
+            height: {{IconHeight}}px;
+            border-radius: {{IconBorderRadius}}px;
+            border: {{IconBorder}}px solid {{IconBorderColor}};
+            box-shadow: {{IconShadow}};
+            opacity: {{IconOpacity}};
+            transition: all {{AnimationDuration}}s {{AnimationEasing}};
+        }
+
+        /* Animation classes */
+        .fade-in {
+            animation: fadeIn {{FadeAnimationDuration}}s {{FadeAnimationEasing}};
+        }
+
+        .fade-out {
+            animation: fadeOut {{FadeAnimationDuration}}s {{FadeAnimationEasing}};
+        }
+
+        .pulse {
+            animation: pulse {{PulseAnimationDuration}}s {{PulseAnimationEasing}} infinite;
+        }
+
+        .bounce {
+            animation: bounce {{BounceAnimationDuration}}s {{BounceAnimationEasing}} infinite;
+        }
+
+        .resume-pulse {
+            animation: resumePulse 1s ease-in-out 3;
+        }
+
+        .green-filter {
+            filter: invert(1) sepia(1) hue-rotate(90deg) saturate(2) brightness(1.1);
+        }
+
+        /* Keyframe animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: {{IconOpacity}}; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: {{IconOpacity}}; }
+            to { opacity: 0; }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: {{IconOpacity}}; }
+            50% { transform: scale({{PulseScale}}); opacity: {{PulseOpacity}}; }
+            100% { transform: scale(1); opacity: {{IconOpacity}}; }
+        }
+
+        @keyframes bounce {
+            0%, 20%, 53%, 80%, 100% { transform: translate3d(0,0,0); }
+            40%, 43% { transform: translate3d(0, -{{BounceHeight}}px, 0); }
+            70% { transform: translate3d(0, -{{BounceHeight / 2}}px, 0); }
+            90% { transform: translate3d(0, -{{BounceHeight / 4}}px, 0); }
+        }
+
+        @keyframes resumePulse {
+            0% { transform: scale(1); opacity: {{IconOpacity}}; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: {{IconOpacity}}; }
+        }
+
+        /* Background styling */
+        .pause-background {
+            position: absolute;
+            top: -{{BackgroundPadding}}px;
+            left: -{{BackgroundPadding}}px;
+            width: calc({{IconWidth}}px + {{BackgroundPadding * 2}}px);
+            height: calc({{IconHeight}}px + {{BackgroundPadding * 2}}px);
+            background: {{BackgroundColor}};
+            border-radius: {{BackgroundBorderRadius}}px;
+            border: {{BackgroundBorder}}px solid {{BackgroundBorderColor}};
+            box-shadow: {{BackgroundShadow}};
+            opacity: {{BackgroundOpacity}};
+            z-index: -1;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            div.relative {
+                --StreamWidth: calc({{StreamWidth}}px * 0.9);
+                --StreamHeight: calc({{StreamHeight}}px * 0.9);
+            }
+            
+            .pause-icon {
+                width: calc({{IconWidth}}px * 0.9);
+                height: calc({{IconHeight}}px * 0.9);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="relative">
+        <div class="absolute" id="pauseContainer">
+            {% if ShowBackground %}
+            <div class="pause-background"></div>
+            {% endif %}
+            <img class="pause-icon" id="pauseIcon" src="{{IconSource}}" alt="Alerts Paused">
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var pauseData = {
+            isPaused: {{DefaultPaused|tojson}},
+            lastUpdate: Date.now()
+        };
+
+        var settings = {
+            enableAnimations: {{EnableAnimations|tojson}},
+            animationType: {{AnimationType|tojson}},
+            enablePulse: {{EnablePulse|tojson}},
+            enableBounce: {{EnableBounce|tojson}},
+            autoHide: {{AutoHide|tojson}},
+            hideDelay: {{HideDelay}} * 1000
+        };
+
+        var animationTimeout = null;
+        var hideTimeout = null;
+
+        // Socket event listeners
+        socket.on('connect', function() {
+            console.log('Connected to pausedalerts server');
+            
+            // Emit pause-loaded signal (like original)
+            socket.emit('pause-loaded');
+            
+            // Request current pause status with a slight delay to ensure server is ready
+            // setTimeout(function() {
+            //     updateDisplay();
+            // }, 100);
+            
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Disconnected from pausedalerts server');
+        });
+
+        socket.on('pause_status_update', function(data) {
+            console.log('Received pause status update:', data);
+            if (data && typeof data.paused === 'boolean') {
+                updatePauseStatus(data.paused);
+            }
+        });
+
+        socket.on('alerts_paused', function(data) {
+            console.log('Pausedalerts received alerts_paused event:', data);
+            var paused = data && typeof data.paused === 'boolean' ? data.paused : true;
+            updatePauseStatus(paused);
+        });
+
+        socket.on('alerts_resumed', function(data) {
+            console.log('Pausedalerts received alerts_resumed event:', data);
+            var paused = data && typeof data.paused === 'boolean' ? data.paused : false;
+            updatePauseStatus(paused);
+        });
+
+        // Update pause status
+        function updatePauseStatus(isPaused) {
+            if (isPaused !== pauseData.isPaused) {
+                pauseData.isPaused = isPaused;
+                pauseData.lastUpdate = Date.now();
+                
+                if (isPaused) {
+                    showPauseIcon();
+                } else {
+                    hidePauseIcon();
+                }
+                
+                savePauseState();
+            }
+        }
+
+        // Show pause icon
+        function showPauseIcon() {
+            var container = document.getElementById('pauseContainer');
+            var icon = document.getElementById('pauseIcon');
+            
+            // Clear any existing timeouts
+            if (hideTimeout) {
+                clearTimeout(hideTimeout);
+                hideTimeout = null;
+            }
+            
+            if (animationTimeout) {
+                clearTimeout(animationTimeout);
+                animationTimeout = null;
+            }
+            
+            // Show the container
+            container.style.setProperty('--Displayimg', 'block');
+            
+            // Apply animations if enabled
+            if (settings.enableAnimations) {
+                // Remove existing animation classes
+                icon.classList.remove('fade-in', 'fade-out', 'pulse', 'bounce');
+                
+                // Add fade in animation
+                icon.classList.add('fade-in');
+                
+                // Add continuous animations
+                animationTimeout = setTimeout(function() {
+                    icon.classList.remove('fade-in');
+                    
+                    if (settings.enablePulse) {
+                        icon.classList.add('pulse');
+                    }
+                    
+                    if (settings.enableBounce) {
+                        icon.classList.add('bounce');
+                    }
+                }, {{FadeAnimationDuration|tojson}} * 1000);
+            }
+        }
+
+        // Hide pause icon (with resume animation for state transitions)
+        function hidePauseIcon() {
+            var container = document.getElementById('pauseContainer');
+            var icon = document.getElementById('pauseIcon');
+            
+            // Clear any existing timeouts
+            if (animationTimeout) {
+                clearTimeout(animationTimeout);
+                animationTimeout = null;
+            }
+            
+            // Show resume animation instead of immediately hiding
+            showResumeAnimation();
+        }
+
+        // Hide pause icon immediately (for initialization, no animation)
+        function hidePauseIconImmediate() {
+            var container = document.getElementById('pauseContainer');
+            var icon = document.getElementById('pauseIcon');
+            
+            // Clear any existing timeouts
+            if (animationTimeout) {
+                clearTimeout(animationTimeout);
+                animationTimeout = null;
+            }
+            
+            if (hideTimeout) {
+                clearTimeout(hideTimeout);
+                hideTimeout = null;
+            }
+            
+            // Remove all animation classes
+            icon.classList.remove('fade-in', 'fade-out', 'pulse', 'bounce', 'resume-pulse', 'green-filter');
+            
+            // Hide immediately without animation
+            container.style.setProperty('--Displayimg', 'none');
+            
+            // Reset to original pause icon
+            icon.src = '{{IconSource}}';
+            icon.alt = 'Alerts Paused';
+        }
+
+        // Show resume animation (play icon with green filter, pulse for 3s, then fade out)
+        function showResumeAnimation() {
+            var container = document.getElementById('pauseContainer');
+            var icon = document.getElementById('pauseIcon');
+            
+            // First, fade out the current pause icon
+            if (settings.enableAnimations) {
+                icon.classList.remove('fade-in', 'pulse', 'bounce');
+                icon.classList.add('fade-out');
+                
+                // After fade out, change to play icon and start resume sequence (faster)
+                setTimeout(function() {
+                    // Change to play icon
+                    icon.src = 'assets/pausedalerts/PlayBtnDM.png';
+                    icon.alt = 'Alerts Resumed';
+                    
+                    // Add green filter
+                    // icon.classList.add('green-filter');
+                    
+                    // Remove fade-out and add fade-in
+                    icon.classList.remove('fade-out');
+                    icon.classList.add('fade-in');
+                    
+                    // After fade in completes, start pulsing (reduced delay)
+                    setTimeout(function() {
+                        icon.classList.remove('fade-in');
+                        icon.classList.add('resume-pulse');
+                        
+                        // After 3 seconds of pulsing, fade out and hide
+                        setTimeout(function() {
+                            icon.classList.remove('resume-pulse');
+                            icon.classList.add('fade-out');
+                            
+                            // Hide container after final fade out
+                            setTimeout(function() {
+                                container.style.setProperty('--Displayimg', 'none');
+                                icon.classList.remove('fade-out');
+                                // Reset to original pause icon for next time
+                                icon.src = '{{IconSource}}';
+                                icon.alt = 'Alerts Paused';
+                            }, {{FadeAnimationDuration}} * 1000);
+                        }, 3000); // 3 seconds of pulsing
+                    }, 300); // Reduced from full fade duration to 300ms
+                }, 300); // Reduced from full fade duration to 300ms
+            } else {
+                // If animations disabled, just hide immediately
+                container.style.setProperty('--Displayimg', 'none');
+            }
+            
+            // Auto-hide functionality (keeping original logic)
+            if (settings.autoHide && settings.hideDelay > 0) {
+                hideTimeout = setTimeout(function() {
+                    container.style.setProperty('--Displayimg', 'none');
+                }, settings.hideDelay);
+            }
+        }
+
+        // Update display (for initialization and refresh)
+        function updateDisplay() {
+            if (pauseData.isPaused) {
+                showPauseIcon();
+            } else {
+                hidePauseIconImmediate(); // Use immediate hide for initialization
+            }
+        }
+
+        // Save pause state to localStorage
+        function savePauseState() {
+            var state = {
+                isPaused: pauseData.isPaused,
+                lastUpdate: pauseData.lastUpdate,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('pausedalerts_state', JSON.stringify(state));
+        }
+
+        // Load pause state from localStorage
+        function loadPauseState() {
+            try {
+                var saved = localStorage.getItem('pausedalerts_state');
+                if (saved) {
+                    var state = JSON.parse(saved);
+                    // Load saved state (no expiration check as requested)
+                    pauseData.isPaused = state.isPaused || pauseData.isPaused;
+                    pauseData.lastUpdate = state.lastUpdate || pauseData.lastUpdate;
+                    return true;
+                }
+            } catch (e) {
+                console.error('Error loading pausedalerts state:', e);
+            }
+            return false;
+        }
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                // Request current status when page becomes visible
+                socket.emit('get_pause_status');
+                updateDisplay();
+            }
+        });
+
+        // Handle window focus
+        window.addEventListener('focus', function() {
+            socket.emit('get_pause_status');
+            updateDisplay();
+        });
+
+        // Load template config directly from API
+        async function loadTemplateConfig() {
+            try {
+                const response = await fetch('/api/all-template-configs');
+                if (response.ok) {
+                    const allConfigs = await response.json();
+                    console.log('Loaded all template configs:', Object.keys(allConfigs));
+                    
+                    // Get the pausedalerts config specifically
+                    const pausedalertsConfigData = allConfigs.pausedalerts;
+                    if (pausedalertsConfigData && pausedalertsConfigData.elements) {
+                        console.log('Found pausedalerts template config:', pausedalertsConfigData);
+                        
+                        // Extract the config values from the elements array
+                        const config = {};
+                        pausedalertsConfigData.elements.forEach(element => {
+                            if (element.type !== 'section') {
+                                config[element.id] = element.value;
+                            }
+                        });
+                        
+                        console.log('Parsed config values:', config);
+                        applyTemplateConfig(config);
+                    } else {
+                        console.warn('No pausedalerts config found in response');
+                    }
+                } else {
+                    console.error('Failed to load template configs:', response.status);
+                }
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        function applyTemplateConfig(config) {
+            console.log('Applying template config:', config);
+            
+            const pauseContainer = document.getElementById('pauseContainer');
+            const pauseIcon = document.getElementById('pauseIcon');
+            
+            // Apply container position and size
+            if (config.ContainerLeft !== undefined) {
+                pauseContainer.style.left = config.ContainerLeft + 'px';
+            }
+            if (config.ContainerTop !== undefined) {
+                pauseContainer.style.top = config.ContainerTop + 'px';
+            }
+            if (config.ContainerWidth !== undefined) {
+                pauseContainer.style.width = config.ContainerWidth + 'px';
+            }
+            if (config.ContainerHeight !== undefined) {
+                pauseContainer.style.height = config.ContainerHeight + 'px';
+            }
+
+            // Apply icon settings
+            if (pauseIcon) {
+                if (config.PauseImageSource) {
+                    pauseIcon.src = config.PauseImageSource;
+                }
+                if (config.IconSize !== undefined) {
+                    pauseIcon.style.width = config.IconSize + 'px';
+                    pauseIcon.style.height = config.IconSize + 'px';
+                }
+                if (config.IconBorderRadius !== undefined) {
+                    pauseIcon.style.borderRadius = config.IconBorderRadius + 'px';
+                }
+            }
+
+            // Apply background settings
+            if (config.EnableBackground) {
+                pauseContainer.style.backgroundColor = config.BackgroundColor || 'rgba(0,0,0,0.5)';
+                pauseContainer.style.padding = (config.BackgroundPadding || 10) + 'px';
+                pauseContainer.style.borderRadius = (config.BackgroundBorderRadius || 5) + 'px';
+                if (config.BackgroundOpacity !== undefined) {
+                    pauseContainer.style.opacity = config.BackgroundOpacity;
+                }
+            } else {
+                pauseContainer.style.backgroundColor = 'transparent';
+                pauseContainer.style.padding = '0';
+                pauseContainer.style.borderRadius = '0';
+            }
+
+            // Apply animation settings
+            if (config.EnableAnimations !== undefined) {
+                settings.enableAnimations = config.EnableAnimations;
+            }
+            if (config.EnablePulse !== undefined) {
+                settings.enablePulse = config.EnablePulse;
+            }
+            if (config.EnableBounce !== undefined) {
+                settings.enableBounce = config.EnableBounce;
+            }
+            if (config.FadeAnimationDuration !== undefined) {
+                settings.fadeAnimationDuration = config.FadeAnimationDuration;
+            }
+
+            // Apply auto-hide settings
+            if (config.AutoHide !== undefined) {
+                settings.autoHide = config.AutoHide;
+            }
+            if (config.HideDelay !== undefined) {
+                settings.hideDelay = config.HideDelay * 1000; // Convert to milliseconds
+            }
+
+            // Update display with new settings
+            updateDisplay();
+        }
+
+        // Initialize
+        // Load saved state but don't immediately update display
+        // Wait for server response to get current status
+        loadPauseState();
+        
+        // Load config on startup
+        loadTemplateConfig();
+        
+        // Periodically reload config to pick up changes (every 5 seconds)
+        // setInterval(loadTemplateConfig, 5000);
+        
+        console.log('Mycelian Paused Alerts initialized');
+    </script>
+</body>
+</html> 

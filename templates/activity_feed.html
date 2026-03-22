@@ -1,0 +1,2647 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Activity Feed</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        /* 
+         * Configurable CSS Variables:
+         * --control-button-spacing: Space between control buttons
+         * --control-button-padding: Internal padding of control buttons  
+         * --control-font-size: Font size for control buttons
+         * --alert-card-height: Height of each alert card
+         * --alert-card-padding: Internal padding of alert cards
+         * --alert-card-margin: Space between alert cards
+         * --alert-font-size: Font size for alert messages
+         * --badge-font-size: Font size for alert type badges
+         * --badge-padding: Internal padding of badges
+         * --badge-width: Minimum width of badges
+         * --timestamp-font-size: Font size for timestamps
+         * --timestamp-width: Reserved width for timestamps
+         * --action-buttons-width: Reserved width for action buttons
+         * --content-padding: Padding around the main content area
+         * --primary-color: Primary color for highlights and accents
+         * --primary-color-rgb: RGB values of primary color for rgba() usage
+         */
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--color-bg-base, #0a0a0a);
+            color: var(--color-text-primary, white);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Main content area styling */
+        .main-content {
+            background: var(--color-bg-elevated, #121212);
+            border-radius: 8px;
+            margin: 8px;
+            height: calc(100vh - 16px);
+            overflow: hidden;
+            border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.05));
+            display: flex;
+            flex-direction: column;
+            width: calc(100% - 16px);
+        }
+
+        /* Content section styling */
+        .content-section {
+            background: var(--color-bg-surface, #161616);
+            border-radius: 6px;
+            border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.05));
+            margin: var(--content-padding, 8px);
+            padding: var(--content-padding, 8px);
+            flex: 1;
+            width: calc(100% - calc(var(--content-padding, 8px) * 2));
+            height: calc(100% - calc(var(--content-padding, 8px) * 2));
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100% - calc(var(--content-padding, 8px) * 2));
+            overflow: hidden;
+        }
+
+        /* Control buttons row */
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: var(--control-button-spacing, 4px);
+            margin-bottom: var(--content-padding, 8px);
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .control-button {
+            background-color: var(--color-hover-overlay, rgba(255, 255, 255, 0.1));
+            border-radius: 4px;
+            padding: var(--control-button-padding, 4px) calc(var(--control-button-padding, 4px) * 2);
+            font-size: var(--control-font-size, 11px);
+            font-weight: 500;
+            color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
+            transition: all 0.2s ease-in-out;
+            border: none;
+            display: flex;
+            align-items: center;
+            gap: calc(var(--control-button-padding, 4px) / 2);
+            cursor: pointer;
+            white-space: nowrap;
+            min-height: 24px;
+        }
+
+        .control-button:hover {
+            background-color: var(--color-active-overlay, rgba(255, 255, 255, 0.15));
+        }
+
+        .control-button.paused {
+            background-color: rgba(var(--primary-color-rgb, 115, 0, 255), 0.2);
+            color: var(--primary-color, #7300ff);
+        }
+
+        .control-button i {
+            font-size: calc(var(--control-font-size, 11px) + 3px);
+        }
+
+        .flex-grow {
+            flex-grow: 1;
+        }
+
+        /* Tab system styling */
+        .tab-row {
+            display: flex;
+            margin-bottom: var(--content-padding, 8px);
+            width: 100%;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: calc(var(--control-button-padding, 4px) * 1.5) calc(var(--control-button-padding, 4px) * 3);
+            font-size: calc(var(--control-font-size, 11px) + 1px);
+            font-weight: 500;
+            background-color: var(--color-hover-overlay, rgba(255, 255, 255, 0.05));
+            color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-button:first-child {
+            border-top-left-radius: 6px;
+            border-bottom-left-radius: 6px;
+        }
+
+        .tab-button:last-child {
+            border-top-right-radius: 6px;
+            border-bottom-right-radius: 6px;
+            border-left: none;
+        }
+
+        .tab-button:hover {
+            background-color: var(--color-active-overlay, rgba(255, 255, 255, 0.1));
+            color: var(--color-text-secondary, rgba(255, 255, 255, 0.8));
+        }
+
+        .tab-button.active {
+            background-color: var(--color-primary-light, rgba(var(--primary-color-rgb, 115, 0, 255), 0.3));
+            color: var(--color-text-primary, white);
+            border-color: var(--color-border-accent, rgba(var(--primary-color-rgb, 115, 0, 255), 0.5));
+        }
+
+        /* Filter dropdown styling */
+        .filter-container {
+            position: relative;
+        }
+
+        .filter-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            z-index: 50;
+            margin-top: 4px;
+            background-color: var(--color-bg-elevated, #1e1e1e);
+            border-radius: 6px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            width: 224px;
+            display: none;
+            visibility: hidden;
+            opacity: 0;
+            transition: all 0.2s ease;
+        }
+
+        .filter-dropdown-visible {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+
+        .filter-dropdown.hidden {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+        }
+
+        .filter-dropdown-content {
+            max-height: 240px;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .filter-checkbox {
+            display: flex;
+            align-items: center;
+            margin-bottom: 4px;
+            width: 100%;
+            white-space: nowrap;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
+        }
+
+        .filter-checkbox:hover {
+            background-color: var(--color-hover-overlay, rgba(255, 255, 255, 0.05));
+        }
+
+        .filter-checkbox input {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .filter-checkbox label {
+            font-size: 14px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* Scroll content styling */
+        .scroll-content {
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: var(--content-padding, 8px);
+            background: var(--color-bg-surface, #161616);
+            border-radius: 6px;
+            border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.05));
+            margin: var(--content-padding, 8px);
+            flex: 1;
+            width: calc(100% - calc(var(--content-padding, 8px) * 2));
+            max-height: calc(100% - calc(var(--content-padding, 8px) * 2));
+        }
+
+        /* Pagination controls styling */
+        .pagination-container {
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .pagination-container.hidden {
+            display: none;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .pagination-btn {
+            background-color: var(--color-bg-surface, #374151);
+            color: var(--color-text-primary, white);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            min-width: 40px;
+            height: 32px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background-color: var(--color-active-overlay, #4b5563);
+            transform: translateY(-1px);
+        }
+
+        .pagination-btn:disabled {
+            background-color: var(--color-bg-base, #1f2937);
+            color: var(--color-text-muted, #6b7280);
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .pagination-info {
+            font-size: 14px;
+            color: var(--color-text-secondary, #d1d5db);
+            padding: 0 8px;
+        }
+
+        .pagination-total {
+            font-size: 12px;
+            color: var(--color-text-muted, #9ca3af);
+            padding: 0 8px;
+        }
+
+        /* Alert card styling */
+        .alert-card {
+            margin-bottom: var(--alert-card-margin, 2px);
+            padding: var(--alert-card-padding, 8px);
+            border-radius: 4px;
+            background-color: var(--color-bg-overlay, rgba(30, 30, 30, 0.6));
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+            transition: all 0.2s ease-in-out;
+            min-height: var(--alert-card-height, 32px);
+            display: flex;
+            align-items: stretch;
+            animation: slideIn 0.3s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Dynamic height when text wrapping is enabled */
+        .alert-card.text-wrapping-enabled {
+            height: auto;
+            overflow: visible;
+        }
+
+        .alert-card.text-wrapping-enabled .alert-content {
+            height: auto;
+            min-height: var(--alert-card-height, 32px);
+        }
+
+        .alert-card.text-wrapping-enabled .alert-main-row {
+            height: auto;
+            min-height: var(--alert-card-height, 32px);
+            align-items: flex-start;
+            padding-top: calc(var(--alert-card-padding, 8px) / 4);
+        }
+
+        .alert-card.text-wrapping-enabled .alert-left-content {
+            height: auto;
+            min-height: var(--alert-card-height, 32px);
+            align-items: flex-start;
+        }
+
+        @keyframes slideIn {
+            0% {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .alert-card.recent {
+            border-left: 2px solid var(--color-primary, var(--primary-color, #7300ff));
+            animation: slideIn 0.3s ease-out;
+        }
+
+        /* Recent card border animation - only on hover and when visible */
+        .alert-card.recent:hover:not(.not-visible) {
+            animation: slideIn 0.3s ease-out, pulseBorder 2s infinite;
+        }
+
+        @keyframes pulseBorder {
+            0% {
+                box-shadow: 0 0 0 0 rgba(var(--primary-color-rgb, 115, 0, 255), 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 4px rgba(var(--primary-color-rgb, 115, 0, 255), 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(var(--primary-color-rgb, 115, 0, 255), 0);
+            }
+        }
+
+        .alert-card:hover {
+            background-color: rgba(var(--primary-color-rgb, 115, 0, 255), 0.1);
+        }
+
+        .alert-card.hidden {
+            display: none;
+        }
+
+        .alert-card.visible {
+            display: flex;
+        }
+
+        /* Alert content */
+        .alert-content {
+            width: 100%;
+            position: relative;
+            min-height: var(--alert-card-height, 32px);
+            display: flex;
+            align-items: stretch;
+        }
+
+        .alert-main-row {
+            flex: 1;
+            min-height: var(--alert-card-height, 32px);
+            display: flex;
+            align-items: center;
+            padding: 0;
+            margin-right: calc(var(--timestamp-width, 60px) + var(--action-buttons-width, 60px));
+        }
+
+        .alert-left-content {
+            flex: 1;
+            min-height: var(--alert-card-height, 32px);
+            display: flex;
+            align-items: center;
+            gap: calc(var(--alert-card-padding, 8px) / 2);
+            overflow: hidden;
+        }
+
+        /* Badge styling */
+        .badge {
+            padding: var(--badge-padding, 2px) calc(var(--badge-padding, 2px) * 2);
+            border-radius: 3px;
+            font-size: var(--badge-font-size, 9px);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(255, 255, 255, 0.1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: var(--badge-width, 50px);
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            height: calc(var(--alert-card-height, 32px) * 0.7);
+            line-height: 1;
+            margin-right: calc(var(--alert-card-padding, 8px) / 2);
+            background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.2));
+            flex-shrink: 0;
+        }
+
+        /* Badge animations - only on hover and when visible */
+        .alert-card:hover .badge:not(.not-visible) {
+            animation: badgePulse 3s infinite;
+        }
+
+        @keyframes badgePulse {
+            0% {
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 3px rgba(255, 255, 255, 0.1);
+            }
+
+            50% {
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 6px rgba(255, 255, 255, 0.2);
+            }
+
+            100% {
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 3px rgba(255, 255, 255, 0.1);
+            }
+        }
+
+        /* Follow alerts */
+        .badge.follow {
+            background: linear-gradient(to bottom, #7c3aed, #5b21b6);
+            color: white;
+            border-color: #8b5cf6;
+        }
+
+        /* Subscription alerts */
+        .badge.sub,
+        .badge.resub {
+            background: linear-gradient(to bottom, #2563eb, #1d4ed8);
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .badge.sub.tier2,
+        .badge.resub.tier2 {
+            background: linear-gradient(to bottom, #dc2626, #b91c1c);
+            border-color: #ef4444;
+        }
+
+        .badge.sub.tier3,
+        .badge.resub.tier3 {
+            background: linear-gradient(to bottom, #7c2d12, #92400e);
+            border-color: #ea580c;
+        }
+
+        /* Gift subscription alerts */
+        .badge.giftsub {
+            background: linear-gradient(to bottom, #059669, #047857);
+            color: white;
+            border-color: #10b981;
+        }
+
+        /* Bits alerts */
+        .badge.bits {
+            background: linear-gradient(to bottom, #7c2d12, #92400e);
+            color: white;
+            border-color: #ea580c;
+        }
+
+        /* Channel points alerts */
+        .badge.points {
+            background: linear-gradient(to bottom, #be185d, #9d174d);
+            color: white;
+            border-color: #ec4899;
+        }
+
+        /* Donation alerts */
+        .badge.donation {
+            background: linear-gradient(to bottom, #059669, #047857);
+            color: white;
+            border-color: #10b981;
+        }
+
+        /* Raid alerts */
+        .badge.raid {
+            background: linear-gradient(to bottom, #dc2626, #b91c1c);
+            color: white;
+            border-color: #ef4444;
+        }
+
+        /* Hype train alerts */
+        .badge.hype_train {
+            background: linear-gradient(to bottom, #7c3aed, #5b21b6);
+            color: white;
+            border-color: #8b5cf6;
+        }
+
+        /* Tier specific styling */
+        .badge.sub.tier2,
+        .badge.resub.tier2 {
+            animation: badgePulse 3s infinite, tier2Glow 2s infinite;
+        }
+
+        /* Pause tier 2 animations when not visible */
+        .badge.sub.tier2.not-visible,
+        .badge.resub.tier2.not-visible {
+            animation-play-state: paused, paused;
+        }
+
+        @keyframes tier2Glow {
+            0% {
+                border-color: rgba(255, 255, 255, 0.3);
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 5px rgba(255, 255, 255, 0.2);
+            }
+
+            50% {
+                border-color: rgba(0, 188, 212, 0.5);
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 8px rgba(0, 188, 212, 0.4);
+            }
+
+            100% {
+                border-color: rgba(255, 255, 255, 0.3);
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 5px rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        .badge.sub.tier3,
+        .badge.resub.tier3 {
+            animation: badgePulse 3s infinite, tier3Glow 2s infinite;
+        }
+
+        /* Pause tier 3 animations when not visible */
+        .badge.sub.tier3.not-visible,
+        .badge.resub.tier3.not-visible {
+            animation-play-state: paused, paused;
+        }
+
+        @keyframes tier3Glow {
+            0% {
+                border-color: rgba(255, 255, 255, 0.3);
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 5px rgba(255, 255, 255, 0.2);
+            }
+
+            50% {
+                border-color: rgba(255, 215, 0, 0.6);
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 12px rgba(255, 215, 0, 0.6);
+            }
+
+            100% {
+                border-color: rgba(255, 255, 255, 0.3);
+                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 5px rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        .badge.sub.tier2::after,
+        .badge.resub.tier2::after {
+            content: 'T2';
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            font-size: 8px;
+            padding: 0px 3px;
+            border-radius: 0 3px 0 3px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        .badge.sub.tier3::after,
+        .badge.resub.tier3::after {
+            content: 'T3';
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            font-size: 8px;
+            padding: 0px 3px;
+            border-radius: 0 3px 0 3px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Alert message */
+        .alert-message {
+            font-size: var(--alert-font-size, 12px);
+            color: var(--color-text-primary, white);
+            flex: 1;
+            line-height: 1.3;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            hyphens: auto;
+            min-width: 0;
+        }
+
+        .alert-message.wrapping-enabled {
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .alert-message:not(.wrapping-enabled) {
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        .alert-message .user-message {
+            color: var(--color-text-muted, #9ca3af);
+            font-style: italic;
+        }
+
+        /* Timestamp */
+        .alert-timestamp {
+            position: absolute;
+            right: calc(var(--action-buttons-width, 60px) + var(--alert-card-padding, 8px));
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+            font-size: var(--timestamp-font-size, 9px);
+            width: var(--timestamp-width, 60px);
+            text-align: right;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Action buttons */
+        .alert-actions {
+            position: absolute;
+            right: var(--alert-card-padding, 8px);
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+            display: flex;
+            gap: calc(var(--alert-card-padding, 8px) / 4);
+            width: var(--action-buttons-width, 60px);
+            justify-content: flex-end;
+        }
+
+        .alert-card:hover .alert-actions {
+            opacity: 1;
+        }
+
+        .action-button {
+            height: calc(var(--alert-card-height, 32px) * 0.6);
+            width: calc(var(--alert-card-height, 32px) * 0.6);
+            min-width: calc(var(--alert-card-height, 32px) * 0.6);
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--color-hover-overlay, rgba(255, 255, 255, 0.1));
+            border: none;
+            border-radius: 3px;
+            color: var(--color-text-primary, white);
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .action-button:hover {
+            background-color: var(--color-active-overlay, rgba(255, 255, 255, 0.2));
+        }
+
+        .action-button i {
+            font-size: calc(var(--alert-card-height, 32px) * 0.5);
+        }
+
+        /* New badge */
+        .new-badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: linear-gradient(to right, rgba(147, 51, 234, 0.25), rgba(147, 51, 234, 0.15));
+            color: rgb(147, 51, 234);
+            font-size: 10px;
+            padding: 0px 3px;
+            border-radius: 4px;
+            min-width: 24px;
+            height: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 0 2px rgba(147, 51, 234, 0.5);
+            border: 1px solid rgba(147, 51, 234, 0.2);
+        }
+
+        /* New badge animation - only on hover and when visible */
+        .alert-card:hover .new-badge:not(.not-visible) {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .new-badge.hidden {
+            display: none;
+        }
+
+        /* Restored alert styling - muted appearance */
+        .alert-card.restored {
+            opacity: 0.7;
+            background-color: rgba(20, 20, 20, 0.4);
+        }
+
+        .alert-card.restored .badge {
+            background: linear-gradient(to bottom, rgba(128, 128, 128, 0.1), rgba(96, 96, 96, 0.2)) !important;
+            color: rgba(255, 255, 255, 0.6) !important;
+            border: 1px solid rgba(128, 128, 128, 0.3) !important;
+            animation: none !important;
+            /* Remove any badge animations for restored alerts */
+        }
+
+        .alert-card.restored:hover {
+            background-color: rgba(30, 30, 30, 0.6);
+        }
+
+        /* Activity feed container styling */
+        .activity-feed-container {
+            width: 100%;
+            min-height: 100px;
+        }
+
+        .activity-feed-container.hidden {
+            display: none;
+        }
+
+        /* Condense toggle styling */
+        .condense-toggle-container {
+            margin-left: 16px;
+        }
+
+        .condense-toggle-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .condense-toggle-checkbox {
+            display: none;
+        }
+
+        .condense-toggle-slider {
+            position: relative;
+            width: 40px;
+            height: 20px;
+            background-color: var(--color-active-overlay, rgba(255, 255, 255, 0.2));
+            border-radius: 10px;
+            transition: background-color 0.3s ease;
+            margin-right: 8px;
+        }
+
+        .condense-toggle-slider::before {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background-color: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        .condense-toggle-checkbox:checked+.condense-toggle-slider {
+            background-color: rgba(var(--primary-color-rgb, 115, 0, 255), 0.8);
+        }
+
+        .condense-toggle-checkbox:checked+.condense-toggle-slider::before {
+            transform: translateX(20px);
+        }
+
+        .condense-toggle-text {
+            color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        /* Condensed view styling */
+        .condensed-view {
+            padding: 12px;
+            background: var(--color-hover-overlay, rgba(255, 255, 255, 0.02));
+            border-radius: 6px;
+            border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.05));
+        }
+
+        .user-group {
+            margin-bottom: var(--content-padding, 8px);
+            padding: var(--content-padding, 8px);
+            background: var(--color-hover-overlay, rgba(255, 255, 255, 0.03));
+            border-radius: 6px;
+            border-left: 3px solid rgba(var(--primary-color-rgb, 115, 0, 255), 0.6);
+        }
+
+        .user-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .username {
+            font-weight: 600;
+            color: var(--color-text-primary, white);
+            margin-bottom: 6px;
+            font-size: 15px;
+        }
+
+        .alert-item {
+            color: var(--color-text-secondary, rgba(255, 255, 255, 0.8));
+            font-size: var(--alert-font-size, 12px);
+            margin-left: calc(var(--content-padding, 8px) * 2);
+            margin-bottom: calc(var(--alert-card-margin, 2px) * 2);
+            position: relative;
+        }
+
+        .alert-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .alert-item::before {
+            content: "•";
+            color: rgba(var(--primary-color-rgb, 115, 0, 255), 0.8);
+            margin-right: var(--content-padding, 8px);
+            position: absolute;
+            left: calc(var(--content-padding, 8px) * -2);
+        }
+
+        /* Historical alerts indicator in condensed view */
+        .condensed-view .text-xs {
+            font-size: 11px;
+        }
+
+        .condensed-view .text-gray-400 {
+            color: var(--color-text-muted, rgba(255, 255, 255, 0.4));
+        }
+
+        .condensed-view .mb-2 {
+            margin-bottom: 8px;
+        }
+
+        .condensed-view .italic {
+            font-style: italic;
+        }
+
+        /* No alerts message */
+        .no-alerts {
+            text-align: center;
+            color: var(--color-text-muted, #9ca3af);
+            font-size: 14px;
+            padding: 20px;
+        }
+
+        /* Loading message */
+        .loading {
+            text-align: center;
+            color: var(--color-text-muted, #9ca3af);
+            font-size: 14px;
+            padding: 20px;
+        }
+
+        /* Notification styling */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+            min-width: 200px;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .notification.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .notification-info {
+            background-color: rgba(59, 130, 246, 0.9);
+            border-left: 4px solid #3b82f6;
+        }
+
+        .notification-warning {
+            background-color: rgba(245, 158, 11, 0.9);
+            border-left: 4px solid #f59e0b;
+        }
+
+        .notification-error {
+            background-color: rgba(239, 68, 68, 0.9);
+            border-left: 4px solid #ef4444;
+        }
+
+        .notification-success {
+            background-color: rgba(34, 197, 94, 0.9);
+            border-left: 4px solid #22c55e;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-content">
+        <div class="content-section">
+            <!-- Control buttons row -->
+            <div class="control-row">
+                <button id="pauseBtn" class="control-button">
+                    <i class="material-icons">pause</i>
+                    <span>PAUSE ALERTS</span>
+                </button>
+                <button id="muteBtn" class="control-button">
+                    <i class="material-icons">notifications_off</i>
+                    <span>MUTE ALERTS</span>
+                </button>
+                <button id="skipBtn" class="control-button">
+                    <i class="material-icons">skip_next</i>
+                    <span>SKIP ALERT</span>
+                </button>
+
+
+                <div class="flex-grow"></div>
+
+                <!-- Condense List toggle (only visible on Current Alerts tab) -->
+                <div id="condenseToggleContainer" class="condense-toggle-container">
+                    <label class="condense-toggle-label">
+                        <input type="checkbox" id="condenseToggle" class="condense-toggle-checkbox">
+                        <span class="condense-toggle-slider"></span>
+                        <span class="condense-toggle-text">Condense List</span>
+                    </label>
+                </div>
+
+                <!-- Filter dropdown -->
+                <div class="filter-container">
+                    <button id="filterBtn" class="control-button">
+                        <i class="material-icons">filter_list</i>
+                        <span>FILTERS</span>
+                    </button>
+
+                    <div id="filterDropdown" class="filter-dropdown hidden">
+                        <div class="filter-dropdown-content">
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-all" checked>
+                                <label for="filter-all">All Events</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-follows" checked>
+                                <label for="filter-follows">Follows</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-subs" checked>
+                                <label for="filter-subs">Subscriptions</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-resubs" checked>
+                                <label for="filter-resubs">Resubscriptions</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-giftsubs" checked>
+                                <label for="filter-giftsubs">Gift Subs</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-bits" checked>
+                                <label for="filter-bits">Bits</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-points" checked>
+                                <label for="filter-points">Channel Points</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-donations" checked>
+                                <label for="filter-donations">Donations</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-raids" checked>
+                                <label for="filter-raids">Raids</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-hype_train" checked>
+                                <label for="filter-hype_train">Hype Train</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab system -->
+            <div class="tab-row">
+                <button id="currentTabBtn" class="tab-button active">CURRENT ALERTS</button>
+                <button id="previousTabBtn" class="tab-button">PREVIOUS ALERTS</button>
+            </div>
+
+            <!-- Scroll content area -->
+            <div class="scroll-content">
+                <!-- Pagination controls -->
+                <div id="paginationContainer" class="pagination-container"></div>
+
+                <!-- Current Alerts container -->
+                <div id="currentAlertsFeed" class="activity-feed-container">
+                    <div class="no-alerts">No alerts yet</div>
+                </div>
+
+                <!-- Condensed view container -->
+                <div id="condensedViewContainer" class="activity-feed-container condensed-view hidden">
+                    <div class="no-alerts">No alerts to condense</div>
+                </div>
+
+                <!-- Previous Alerts container -->
+                <div id="previousAlertsFeed" class="activity-feed-container hidden">
+                    <div class="loading">Loading activity feed...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration and CSS variables setup
+        function loadTemplateConfig() {
+            // Default configuration values
+            var defaultConfig = {
+                control_button_spacing: 4,
+                control_button_padding: 4,
+                control_font_size: 11,
+                alert_card_height: 32,
+                alert_card_padding: 8,
+                alert_card_margin: 2,
+                alert_font_size: 12,
+                badge_font_size: 9,
+                badge_padding: 2,
+                badge_width: 50,
+                timestamp_font_size: 9,
+                timestamp_width: 60,
+                action_buttons_width: 60,
+                enable_text_wrapping: true,
+                compact_mode: false,
+                content_padding: 8,
+                primary_color: '#7300ff',
+                condense_historical_hours: 12
+            };
+
+            // Try to get configuration from window.templateConfig (set by the parent application)
+            var config = window.templateConfig || defaultConfig;
+
+            // Apply CSS custom properties
+            var root = document.documentElement;
+            root.style.setProperty('--control-button-spacing', config.control_button_spacing + 'px');
+            root.style.setProperty('--control-button-padding', config.control_button_padding + 'px');
+            root.style.setProperty('--control-font-size', config.control_font_size + 'px');
+            root.style.setProperty('--alert-card-height', config.alert_card_height + 'px');
+            root.style.setProperty('--alert-card-padding', config.alert_card_padding + 'px');
+            root.style.setProperty('--alert-card-margin', config.alert_card_margin + 'px');
+            root.style.setProperty('--alert-font-size', config.alert_font_size + 'px');
+            root.style.setProperty('--badge-font-size', config.badge_font_size + 'px');
+            root.style.setProperty('--badge-padding', config.badge_padding + 'px');
+            root.style.setProperty('--badge-width', config.badge_width + 'px');
+            root.style.setProperty('--timestamp-font-size', config.timestamp_font_size + 'px');
+            root.style.setProperty('--timestamp-width', config.timestamp_width + 'px');
+            root.style.setProperty('--action-buttons-width', config.action_buttons_width + 'px');
+            root.style.setProperty('--content-padding', config.content_padding + 'px');
+            root.style.setProperty('--primary-color', config.primary_color);
+
+            // Convert hex color to RGB values for rgba() usage
+            var primaryColor = config.primary_color;
+            if (primaryColor.startsWith('#')) {
+                var hex = primaryColor.slice(1);
+                var r = parseInt(hex.substr(0, 2), 16);
+                var g = parseInt(hex.substr(2, 2), 16);
+                var b = parseInt(hex.substr(4, 2), 16);
+                root.style.setProperty('--primary-color-rgb', r + ', ' + g + ', ' + b);
+            }
+
+            // Apply compact mode adjustments
+            if (config.compact_mode) {
+                root.style.setProperty('--control-button-spacing', Math.max(2, config.control_button_spacing - 2) + 'px');
+                root.style.setProperty('--control-button-padding', Math.max(2, config.control_button_padding - 1) + 'px');
+                root.style.setProperty('--alert-card-margin', Math.max(1, config.alert_card_margin - 1) + 'px');
+                root.style.setProperty('--content-padding', Math.max(4, config.content_padding - 2) + 'px');
+            }
+
+            // Store wrapping preference for use in alert creation
+            window.enableTextWrapping = config.enable_text_wrapping;
+
+            // Store condensed view settings for use in alert processing
+            window.condenseHistoricalHours = config.condense_historical_hours;
+
+            console.log('Template configuration loaded:', config);
+        }
+
+        // Load configuration on script load
+        loadTemplateConfig();
+
+        // Function to update configuration (called by parent application when settings change)
+        window.updateTemplateConfig = function (newConfig) {
+            window.templateConfig = newConfig;
+            loadTemplateConfig();
+
+            // Update existing alert messages and cards with new wrapping setting
+            var alertMessages = document.querySelectorAll('.alert-message');
+            var alertCards = document.querySelectorAll('.alert-card');
+
+            alertMessages.forEach(function (message) {
+                if (window.enableTextWrapping) {
+                    message.classList.add('wrapping-enabled');
+                } else {
+                    message.classList.remove('wrapping-enabled');
+                }
+            });
+
+            alertCards.forEach(function (card) {
+                if (window.enableTextWrapping) {
+                    card.classList.add('text-wrapping-enabled');
+                } else {
+                    card.classList.remove('text-wrapping-enabled');
+                }
+            });
+
+            // Update condensed view if it's currently active
+            if (activityFeedState.condenseList && activityFeedState.currentTab === "current") {
+                updateCondensedView();
+            }
+
+            console.log('Template configuration updated');
+        };
+
+        // Connect to WebSocket
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        // State management
+        var activityFeedState = {
+            liveAlerts: [],  // Live alerts for Current Alerts tab
+            historicalAlerts: [],  // Historical alerts for Previous Alerts tab
+            filterState: {
+                all: true,
+                follows: true,
+                subs: true,
+                resubs: true,
+                giftsubs: true,
+                bits: true,
+                points: true,
+                donations: true,
+                raids: true,
+                hype_train: true
+            },
+            currentTab: "current",  // "current" or "previous"
+            currentPage: 1,
+            totalPages: 1,
+            paginationLimit: 25,
+            restoredAlertsLoaded: false,
+            pauseStatus: false,
+            condenseList: false,  // Track condense list toggle state
+            loadingForCondensedView: false  // Track if we're loading data for condensed view
+        };
+
+        // Alert type to filter key mapping
+        var alertTypeToFilter = {
+            'Follow': 'follows',
+            'Sub': 'subs',
+            'Resub': 'resubs',
+            'Giftsub': 'giftsubs',
+            'Bits': 'bits',
+            'Points': 'points',
+            'Donation': 'donations',
+            'Raid': 'raids',
+            'Hype Train': 'hype_train'
+        };
+
+        // Function to generate appropriate message for alert types
+        function generateAlertMessage(alertData) {
+            var username = alertData.username || extractUsernameFromMessage(alertData.message || '');
+            var alertType = (alertData.alert_type || alertData.type || '').toLowerCase();
+
+            if (alertType === 'resub' || (alertType === 'sub' && (alertData.resub_month > 1 || alertData.months > 1))) {
+                var months = alertData.resub_month || alertData.months || alertData.total_months || 1;
+                return username + ' has resubscribed for ' + months + ' months!';
+            }
+
+            // Return original message for other types
+            return alertData.message;
+        }
+
+        // DOM elements
+        var pauseBtn = document.getElementById('pauseBtn');
+        var muteBtn = document.getElementById('muteBtn');
+        var skipBtn = document.getElementById('skipBtn');
+        var currentTabBtn = document.getElementById('currentTabBtn');
+        var previousTabBtn = document.getElementById('previousTabBtn');
+        var filterBtn = document.getElementById('filterBtn');
+        var filterDropdown = document.getElementById('filterDropdown');
+        var currentAlertsFeed = document.getElementById('currentAlertsFeed');
+        var previousAlertsFeed = document.getElementById('previousAlertsFeed');
+        var paginationContainer = document.getElementById('paginationContainer');
+        var condenseToggle = document.getElementById('condenseToggle');
+        var condenseToggleContainer = document.getElementById('condenseToggleContainer');
+        var condensedViewContainer = document.getElementById('condensedViewContainer');
+
+        // Utility functions
+        function formatTimestamp(timestamp) {
+            if (timestamp === "now") {
+                return "just now";
+            }
+
+            var currentTime = Date.now() / 1000;
+            var diffSeconds = currentTime - timestamp;
+
+            if (diffSeconds < 60) {
+                return "just now";
+            } else if (diffSeconds < 3600) {
+                var minutes = Math.floor(diffSeconds / 60);
+                return minutes + "m ago";
+            } else if (diffSeconds < 86400) {
+                var hours = Math.floor(diffSeconds / 3600);
+                return hours + "h ago";
+            } else {
+                var days = Math.floor(diffSeconds / 86400);
+                return days + "d ago";
+            }
+        }
+
+        function isRecentAlert(timestamp) {
+            var currentTime = Date.now() / 1000;
+            return (currentTime - timestamp) < 300; // 5 minutes
+        }
+
+        function getFilterKeyForAlertType(alertType) {
+            return alertTypeToFilter[alertType] || null;
+        }
+
+        function shouldShowAlert(alertType) {
+            var filterKey = getFilterKeyForAlertType(alertType);
+            return activityFeedState.filterState.all || activityFeedState.filterState[filterKey];
+        }
+
+        // Alert creation functions
+        function createAlertElement(alertData) {
+            var alertDiv = document.createElement('div');
+            alertDiv.className = 'alert-card';
+
+            var isRecent = isRecentAlert(alertData.timestamp || alertData.created_at);
+            if (isRecent) {
+                alertDiv.classList.add('recent');
+            }
+
+            // Add "restored" class for muted styling if this is a restored alert
+            if (alertData.is_restored) {
+                alertDiv.classList.add('restored');
+            }
+
+            // Add text wrapping class if enabled
+            if (window.enableTextWrapping) {
+                alertDiv.classList.add('text-wrapping-enabled');
+            }
+
+            // Apply visibility based on filter state
+            if (!shouldShowAlert(alertData.type)) {
+                alertDiv.classList.add('hidden');
+            }
+
+            // Create new badge
+            var newBadge = document.createElement('div');
+            newBadge.className = 'new-badge';
+            newBadge.textContent = 'NEW';
+            if (!isRecent) {
+                newBadge.classList.add('hidden');
+            }
+
+            // Create alert content
+            var alertContent = document.createElement('div');
+            alertContent.className = 'alert-content';
+
+            var mainRow = document.createElement('div');
+            mainRow.className = 'alert-main-row';
+
+            var leftContent = document.createElement('div');
+            leftContent.className = 'alert-left-content';
+
+            // Create badge
+            var badge = document.createElement('div');
+            var badgeClasses = 'badge ' + (alertData.badge_type || 'follow');
+            if (alertData.tier && (alertData.badge_type === 'sub' || alertData.badge_type === 'resub')) {
+                badgeClasses += ' tier' + alertData.tier;
+            }
+            badge.className = badgeClasses;
+            badge.textContent = alertData.type;
+
+            // Create message
+            var message = document.createElement('div');
+            message.className = 'alert-message';
+
+            // Apply text wrapping configuration
+            if (window.enableTextWrapping) {
+                message.classList.add('wrapping-enabled');
+            }
+
+            var displayMessage = generateAlertMessage(alertData);
+            if (alertData.user_message) {
+                displayMessage += ' - <span class="user-message">' + alertData.user_message + '</span>';
+            }
+            message.innerHTML = displayMessage;
+
+            leftContent.appendChild(badge);
+            leftContent.appendChild(message);
+            mainRow.appendChild(leftContent);
+
+            // Create timestamp
+            var timestamp = document.createElement('div');
+            timestamp.className = 'alert-timestamp';
+            timestamp.textContent = formatTimestamp(alertData.timestamp || alertData.created_at);
+
+            // Create action buttons
+            var actions = document.createElement('div');
+            actions.className = 'alert-actions';
+
+            var replayBtn = document.createElement('button');
+            replayBtn.className = 'action-button';
+            replayBtn.innerHTML = '<i class="material-icons">replay</i>';
+            replayBtn.title = 'Replay Alert';
+            replayBtn.onclick = function () { replayAlert(alertData); };
+
+            var skipBtn = document.createElement('button');
+            skipBtn.className = 'action-button';
+            skipBtn.innerHTML = '<i class="material-icons">skip_next</i>';
+            skipBtn.title = 'Skip Alert';
+            skipBtn.onclick = function () { skipAlert(alertData); };
+
+            actions.appendChild(replayBtn);
+            actions.appendChild(skipBtn);
+
+            alertContent.appendChild(mainRow);
+            alertContent.appendChild(timestamp);
+            alertContent.appendChild(actions);
+
+            alertDiv.appendChild(newBadge);
+            alertDiv.appendChild(alertContent);
+
+            // Store references for updates
+            alertData.element = alertDiv;
+            alertData.newBadge = newBadge;
+            alertData.timestampLabel = timestamp;
+
+            return alertDiv;
+        }
+
+        function addAlertToFeed(alertData) {
+            // Ensure alert data has all necessary fields for replay/skip
+            var enhancedAlertData = {
+                ...alertData,
+                username: alertData.username || extractUsernameFromMessage(alertData.message || ''),
+                alert_type: (alertData.type || '').toLowerCase(),
+                alert_id: alertData.alert_id || 'generated_' + Date.now(),
+                // Preserve original data
+                original_data: alertData
+            };
+
+            // Always add to live alerts only
+            activityFeedState.liveAlerts.unshift(enhancedAlertData);
+
+            // Only visually display the alert if we're on the current alerts tab
+            if (activityFeedState.currentTab === "current") {
+                // If condense list is enabled, update condensed view
+                if (activityFeedState.condenseList) {
+                    updateCondensedView();
+                } else {
+                    // Create and add element to current alerts container
+                    var alertElement = createAlertElement(enhancedAlertData);
+
+                    // Check if we need to clear placeholder messages
+                    var loadingMsg = currentAlertsFeed.querySelector('.loading');
+                    var noAlertsMsg = currentAlertsFeed.querySelector('.no-alerts');
+
+                    if (loadingMsg || noAlertsMsg) {
+                        // Clear placeholder messages and add the new alert
+                        currentAlertsFeed.innerHTML = '';
+                        currentAlertsFeed.appendChild(alertElement);
+                    } else {
+                        // Insert at the beginning of the feed
+                        var firstChild = currentAlertsFeed.firstChild;
+                        if (firstChild) {
+                            currentAlertsFeed.insertBefore(alertElement, firstChild);
+                        } else {
+                            currentAlertsFeed.appendChild(alertElement);
+                        }
+                    }
+
+                    // Re-observe new animated elements for performance optimization
+                    if (animationObserver) {
+                        var newAnimatedElements = alertElement.querySelectorAll('.alert-card.recent, .new-badge, .badge');
+                        newAnimatedElements.forEach(function (element) {
+                            animationObserver.observe(element);
+                        });
+
+                        // Also observe the alert element itself if it has animations
+                        if (alertElement.classList.contains('recent') || alertElement.querySelector('.recent')) {
+                            animationObserver.observe(alertElement);
+                        }
+                    }
+                }
+
+                console.log('Displayed new alert:', enhancedAlertData.type,
+                    '(current tab:', activityFeedState.currentTab,
+                    ', page:', activityFeedState.currentPage + ')');
+            } else {
+                // Alert added to state but not displayed visually
+                console.log('New alert', alertData.type, 'added to state but not displayed - on', activityFeedState.currentTab, 'tab');
+            }
+        }
+
+        function extractUsernameFromMessage(message) {
+            // Extract username from alert message
+            try {
+                // Common patterns: "username just followed!", "username cheered 100 bits!", etc.
+                var patterns = [
+                    /^([^\s]+)\s+(?:just\s+)?(?:followed|subscribed|resubscribed|cheered|redeemed|donated|raided)/i,
+                    /^([^\s]+)\s+/  // Fallback: first word
+                ];
+
+                for (var i = 0; i < patterns.length; i++) {
+                    var match = message.match(patterns[i]);
+                    if (match) {
+                        return match[1];
+                    }
+                }
+
+                return "Unknown";
+            } catch (error) {
+                return "Unknown";
+            }
+        }
+
+        function clearFeed() {
+            // Clear all feed containers
+            currentAlertsFeed.innerHTML = '<div class="no-alerts">No alerts yet</div>';
+            previousAlertsFeed.innerHTML = '<div class="loading">Loading activity feed...</div>';
+            condensedViewContainer.innerHTML = '';
+
+            // Clear state arrays
+            activityFeedState.liveAlerts = [];
+            activityFeedState.historicalAlerts = [];
+        }
+
+        function updateAlertVisibility() {
+            // Get the appropriate alert collection based on current tab
+            var alertsToProcess = [];
+
+            if (activityFeedState.currentTab === "current") {
+                alertsToProcess = activityFeedState.liveAlerts;
+            } else if (activityFeedState.currentTab === "previous") {
+                alertsToProcess = activityFeedState.historicalAlerts;
+            }
+
+            alertsToProcess.forEach(function (alertData) {
+                if (alertData.element) {
+                    var shouldShow = shouldShowAlert(alertData.type);
+                    if (shouldShow) {
+                        alertData.element.classList.remove('hidden');
+                        alertData.element.classList.add('visible');
+                        alertData.element.style.display = 'flex';
+                    } else {
+                        alertData.element.classList.add('hidden');
+                        alertData.element.classList.remove('visible');
+                        alertData.element.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        function updateTimestamps() {
+            // Update live alerts timestamps
+            activityFeedState.liveAlerts.forEach(function (alertData) {
+                if (alertData.timestampLabel) {
+                    alertData.timestampLabel.textContent = formatTimestamp(alertData.timestamp || alertData.created_at);
+                }
+
+                // Update recent status
+                var isRecent = isRecentAlert(alertData.timestamp || alertData.created_at);
+                if (alertData.element) {
+                    if (isRecent) {
+                        alertData.element.classList.add('recent');
+                    } else {
+                        alertData.element.classList.remove('recent');
+                    }
+                }
+
+                if (alertData.newBadge) {
+                    if (isRecent) {
+                        alertData.newBadge.classList.remove('hidden');
+                    } else {
+                        alertData.newBadge.classList.add('hidden');
+                    }
+                }
+            });
+
+            // Update historical alerts timestamps (but no recent status changes)
+            activityFeedState.historicalAlerts.forEach(function (alertData) {
+                if (alertData.timestampLabel) {
+                    alertData.timestampLabel.textContent = formatTimestamp(alertData.timestamp || alertData.created_at);
+                }
+            });
+        }
+
+        function updatePaginationUI(paginationInfo) {
+            paginationContainer.innerHTML = '';
+
+            if (paginationInfo.total_count > 0) {
+                var controls = document.createElement('div');
+                controls.className = 'pagination-controls';
+
+                // Previous button
+                var prevBtn = document.createElement('button');
+                prevBtn.className = 'pagination-btn';
+                prevBtn.innerHTML = '<i class="material-icons">chevron_left</i>';
+                prevBtn.disabled = !paginationInfo.has_prev;
+                prevBtn.onclick = function () { goToPage(activityFeedState.currentPage - 1); };
+
+                // Page info
+                var pageInfo = document.createElement('div');
+                pageInfo.className = 'pagination-info';
+                pageInfo.textContent = 'Page ' + paginationInfo.page + ' of ' + paginationInfo.total_pages;
+
+                var totalInfo = document.createElement('div');
+                totalInfo.className = 'pagination-total';
+                totalInfo.textContent = '(' + paginationInfo.total_count + ' total alerts)';
+
+                // Next button
+                var nextBtn = document.createElement('button');
+                nextBtn.className = 'pagination-btn';
+                nextBtn.innerHTML = '<i class="material-icons">chevron_right</i>';
+                nextBtn.disabled = !paginationInfo.has_next;
+                nextBtn.onclick = function () { goToPage(activityFeedState.currentPage + 1); };
+
+                controls.appendChild(prevBtn);
+                controls.appendChild(pageInfo);
+                controls.appendChild(totalInfo);
+                controls.appendChild(nextBtn);
+
+                paginationContainer.appendChild(controls);
+            } else {
+                var noAlerts = document.createElement('div');
+                noAlerts.className = 'no-alerts';
+                noAlerts.textContent = 'No stored alerts found';
+                paginationContainer.appendChild(noAlerts);
+            }
+        }
+
+        // Action functions
+        function replayAlert(alertData) {
+            console.log('Replaying alert:', alertData);
+            try {
+                // Get the alert ID from the alert data
+                var alertId = alertData.alert_id;
+                if (!alertId) {
+                    console.error('No alert_id found in alert data, cannot replay');
+                    showNotification('Cannot replay alert: no alert ID available', 'error');
+                    return;
+                }
+
+                // Send only the alert_id to the server - it will fetch complete stored data
+                var replayRequestData = {
+                    alert_id: alertId
+                };
+
+                console.log('Sending replay request with alert_id:', alertId);
+
+                // Emit the replay request with just the alert_id
+                socket.emit('activity_feed_replay_alert', replayRequestData, function (response) {
+                    if (response && response.success) {
+                        console.log('Alert replay successful');
+                        showNotification('Replaying ' + (alertData.type || 'alert'), 'info');
+                    } else {
+                        console.error('Alert replay failed:', response);
+                        showNotification('Failed to replay alert: ' + (response ? response.error : 'Unknown error'), 'error');
+                    }
+                });
+
+                // Show immediate feedback
+                showNotification('Replaying ' + (alertData.type || 'alert') + '...', 'info');
+
+            } catch (error) {
+                console.error('Error replaying alert:', error);
+                showNotification('Error replaying alert', 'error');
+            }
+        }
+
+        function skipAlert(alertData) {
+            console.log('Skipping alert:', alertData);
+            try {
+                // Create enhanced alert data for skip with additional fields
+                var enhancedAlertData = {
+                    type: alertData.type,
+                    message: alertData.message,
+                    badge_type: alertData.badge_type,
+                    timestamp: alertData.timestamp,
+                    user_message: alertData.user_message,
+                    tier: alertData.tier,
+                    alert_id: alertData.alert_id,
+                    username: alertData.username,
+                    alert_type: (alertData.type || '').toLowerCase(),
+                    is_skip: true
+                };
+
+                // Emit the skip request with enhanced data
+                socket.emit('activity_feed_skip_alert', enhancedAlertData, function (response) {
+                    if (response && response.success) {
+                        console.log('Alert skip successful');
+                        showNotification('Skipped ' + (alertData.type || 'alert'), 'warning');
+                    } else {
+                        console.error('Alert skip failed:', response);
+                        showNotification('Failed to skip alert', 'error');
+                    }
+                });
+
+                // Show immediate feedback
+                showNotification('Skipped ' + (alertData.type || 'alert'), 'warning');
+
+            } catch (error) {
+                console.error('Error skipping alert:', error);
+                showNotification('Error skipping alert', 'error');
+            }
+        }
+
+        // Utility function to show notifications
+        function showNotification(message, type) {
+            type = type || 'info';
+            console.log('[' + type.toUpperCase() + '] ' + message);
+
+            // Create notification element
+            var notification = document.createElement('div');
+            notification.className = 'notification notification-' + type;
+            notification.textContent = message;
+
+            // Add notification styles if not already present
+            if (!document.querySelector('#notification-styles')) {
+                var style = document.createElement('style');
+                style.id = 'notification-styles';
+                style.textContent = `
+                    .notification {
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        padding: 12px 16px;
+                        border-radius: 6px;
+                        color: white;
+                        font-size: 14px;
+                        font-weight: 500;
+                        z-index: 1000;
+                        opacity: 0;
+                        transform: translateX(100%);
+                        transition: all 0.3s ease;
+                        min-width: 200px;
+                        max-width: 400px;
+                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                    }
+                    .notification.show {
+                        opacity: 1;
+                        transform: translateX(0);
+                    }
+                    .notification-info {
+                        background-color: rgba(59, 130, 246, 0.9);
+                        border-left: 4px solid #3b82f6;
+                    }
+                    .notification-warning {
+                        background-color: rgba(245, 158, 11, 0.9);
+                        border-left: 4px solid #f59e0b;
+                    }
+                    .notification-error {
+                        background-color: rgba(239, 68, 68, 0.9);
+                        border-left: 4px solid #ef4444;
+                    }
+                    .notification-success {
+                        background-color: rgba(34, 197, 94, 0.9);
+                        border-left: 4px solid #22c55e;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            // Add to document
+            document.body.appendChild(notification);
+
+            // Trigger animation
+            setTimeout(function () {
+                notification.classList.add('show');
+            }, 10);
+
+            // Remove after delay
+            setTimeout(function () {
+                notification.classList.remove('show');
+                setTimeout(function () {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        function togglePause() {
+            console.log('Toggle pause clicked. Current pause status:', activityFeedState.pauseStatus);
+            var newPauseState = !activityFeedState.pauseStatus;
+
+            // Primary method: Emit the pause status change to the server
+            socket.emit('set_pause_status', { paused: newPauseState }, function (response) {
+                console.log('Pause status change response:', response);
+                if (response && response.success) {
+                    console.log('Pause status successfully changed to:', newPauseState);
+                    showNotification(newPauseState ? 'Alerts paused' : 'Alerts resumed', 'success');
+                } else {
+                    console.error('Failed to change pause status:', response);
+                    showNotification('Failed to change pause status', 'error');
+                }
+            });
+
+            // Show immediate feedback
+            showNotification(newPauseState ? 'Pausing alerts...' : 'Resuming alerts...', 'info');
+        }
+
+        function switchToTab(tabName) {
+            activityFeedState.currentTab = tabName;
+
+            if (tabName === "previous") {
+                // Switching to previous alerts tab
+                previousTabBtn.classList.add('active');
+                currentTabBtn.classList.remove('active');
+
+                // Hide condense toggle and condensed view
+                condenseToggleContainer.style.display = 'none';
+                condensedViewContainer.classList.add('hidden');
+
+                // Show previous alerts container and hide current alerts container
+                currentAlertsFeed.classList.add('hidden');
+                previousAlertsFeed.classList.remove('hidden');
+
+                // Show pagination container
+                paginationContainer.style.display = 'block';
+
+                activityFeedState.currentPage = 1; // Always start at page 1
+                loadStoredAlerts();
+
+                // Apply filters after loading stored alerts
+                setTimeout(function () {
+                    updateAlertVisibility();
+                }, 100);
+            } else {
+                // Switching to current alerts tab
+                currentTabBtn.classList.add('active');
+                previousTabBtn.classList.remove('active');
+
+                // Show condense toggle
+                condenseToggleContainer.style.display = 'flex';
+
+                // Show/hide appropriate containers based on condense toggle state
+                if (activityFeedState.condenseList) {
+                    currentAlertsFeed.classList.add('hidden');
+                    condensedViewContainer.classList.remove('hidden');
+                    updateCondensedView();
+                } else {
+                    currentAlertsFeed.classList.remove('hidden');
+                    condensedViewContainer.classList.add('hidden');
+                }
+
+                // Hide previous alerts container and pagination
+                previousAlertsFeed.classList.add('hidden');
+                paginationContainer.style.display = 'none';
+
+                clearRestoredAlerts();
+
+                // Rebuild current alerts feed if not in condensed mode
+                if (!activityFeedState.condenseList) {
+                    rebuildCurrentAlertsFeed();
+                }
+
+                // Apply filters to current alerts
+                updateAlertVisibility();
+            }
+        }
+
+        function clearRestoredAlerts() {
+            // Remove historical alerts from DOM
+            activityFeedState.historicalAlerts.forEach(function (alert) {
+                if (alert.element) {
+                    alert.element.remove();
+                }
+            });
+
+            // Clear historical alerts state
+            activityFeedState.historicalAlerts = [];
+
+            // Clear the previous alerts feed container
+            var existingRestored = previousAlertsFeed.querySelectorAll('[data-restored="true"]');
+            existingRestored.forEach(function (element) {
+                element.remove();
+            });
+
+            // Clear pagination container
+            paginationContainer.innerHTML = '';
+        }
+
+        function clearRestoredAlertsForPagination() {
+            var alertCount = activityFeedState.historicalAlerts.length;
+            console.log('Clearing', alertCount, 'historical alerts for pagination');
+
+            // Remove historical alerts from DOM
+            activityFeedState.historicalAlerts.forEach(function (alert) {
+                if (alert.element) {
+                    alert.element.remove();
+                }
+            });
+
+            // Clear historical alerts state
+            activityFeedState.historicalAlerts = [];
+
+            // Clear the previous alerts feed container
+            var existingRestored = previousAlertsFeed.querySelectorAll('[data-restored="true"]');
+            console.log('Removing', existingRestored.length, 'restored alert elements from DOM');
+            existingRestored.forEach(function (element) {
+                element.remove();
+            });
+
+            // Don't clear pagination container during page navigation
+        }
+
+        function rebuildCurrentAlertsFeed() {
+            // Clear the current alerts feed
+            currentAlertsFeed.innerHTML = '';
+
+            if (activityFeedState.liveAlerts.length === 0) {
+                currentAlertsFeed.innerHTML = '<div class="no-alerts">No alerts yet</div>';
+                return;
+            }
+
+            // Rebuild all live alerts in order (newest first)
+            activityFeedState.liveAlerts.forEach(function (alertData) {
+                var alertElement = createAlertElement(alertData);
+                currentAlertsFeed.appendChild(alertElement);
+            });
+
+            console.log('Rebuilt current alerts feed with', activityFeedState.liveAlerts.length, 'live alerts');
+        }
+
+        function loadStoredAlerts(page) {
+            page = page || 1;
+            socket.emit('get_stored_alerts_paginated', { page: page, limit: activityFeedState.paginationLimit });
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > activityFeedState.totalPages) {
+                console.log('Invalid page number:', page, 'Total pages:', activityFeedState.totalPages);
+                return;
+            }
+            console.log('Navigating to page:', page, 'of', activityFeedState.totalPages);
+            activityFeedState.currentPage = page;
+            loadStoredAlerts(page);
+
+            // Apply filters after loading new page
+            setTimeout(function () {
+                updateAlertVisibility();
+            }, 100);
+        }
+
+        // Condense view functions
+        function updateCondensedView() {
+            if (!activityFeedState.condenseList || activityFeedState.currentTab !== "current") {
+                return;
+            }
+
+            // Get template configuration for condensed view settings
+            var config = window.templateConfig || {};
+            var condenseHistoricalHours = config.condense_historical_hours || 12;
+
+            // Load ALL alerts within the time window by requesting them from Python backend
+            console.log('Loading alerts for condensed view from past', condenseHistoricalHours, 'hours...');
+
+            // Request all alerts within the time window from the backend
+            socket.emit('get_condensed_view_alerts', { hours: condenseHistoricalHours });
+        }
+
+        function updateCondensedViewWithAlerts(alertsToProcess, condenseHistoricalHours) {
+
+            // Load historical alerts for condensed view
+            var currentTime = Date.now() / 1000;
+            var cutoffTime = currentTime - (condenseHistoricalHours * 3600); // Convert hours to seconds
+
+            // Add historical alerts that are within the time window
+            var historicalCount = 0;
+
+            // Use existing historical alerts (will be empty if user hasn't visited Previous Alerts tab)
+            activityFeedState.historicalAlerts.forEach(function (alertData) {
+                if (alertData.is_restored) {
+                    var alertTimestamp = alertData.timestamp || alertData.created_at || 0;
+                    if (alertTimestamp >= cutoffTime) {
+                        alertsToProcess.push(alertData);
+                        historicalCount++;
+                    }
+                }
+            });
+
+            // If no cached historical alerts, try loading them directly (only once)
+            if (historicalCount === 0 && activityFeedState.historicalAlerts.length === 0) {
+                console.log('No cached historical alerts available for condensed view. Loading from storage...');
+
+                // Set flag to indicate we're loading for condensed view
+                activityFeedState.loadingForCondensedView = true;
+
+                // Try to load historical alerts using the same mechanism as Previous Alerts tab
+                socket.emit('get_stored_alerts_paginated', { page: 1, limit: 25 });
+
+                // Exit early since we're loading asynchronously
+                return;
+            } else {
+                console.log('Condensed view showing', historicalCount, 'historical alerts from past', condenseHistoricalHours, 'hours');
+            }
+
+            // Continue with synchronous processing
+            createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours);
+        }
+
+        function createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours) {
+
+            // Group alerts by user and type, excluding hype train and point alerts
+            var userAlerts = {};
+            var excludedCount = 0;
+            var unknownUsernameCount = 0;
+
+            alertsToProcess.forEach(function (alertData) {
+                var alertType = (alertData.type || '').toLowerCase();
+                var badgeType = (alertData.badge_type || '').toLowerCase();
+
+                // Exclude hype train and point alerts (channel point redemptions)
+                if (alertType === 'hype train' || alertType === 'point' ||
+                    badgeType === 'hype_train' || badgeType === 'point') {
+                    excludedCount++;
+                    console.log('Excluding', alertType + '/' + badgeType, 'alert from condensed view');
+                    return;
+                }
+
+                // Get username from alert data, with fallback to message extraction
+                var username = alertData.username;
+                if (!username) {
+                    username = extractUsernameFromMessage(alertData.message || '');
+                }
+
+                if (!username || username === 'Unknown') {
+                    unknownUsernameCount++;
+                    console.log('Skipping alert with unknown username:', alertData.message, '(alert_id:', alertData.alert_id || 'N/A', ')');
+                    return;
+                }
+
+                if (!userAlerts[username]) {
+                    userAlerts[username] = {};
+                }
+
+                // Create specific grouping key based on alert type, tier, and duration
+                var groupingKey = alertType;
+
+                // For subs, resubs, and gift subs, include tier and duration information
+                if (alertType === 'sub' || alertType === 'resub' || alertType === 'giftsub') {
+                    var tier = alertData.tier || 1;
+                    groupingKey = alertType + '_tier' + tier;
+
+                    // For resubs and gift subs, also separate by duration
+                    if (alertType === 'resub' || alertType === 'giftsub') {
+                        // Get duration information
+                        var durationMonths = 1;
+                        var storedData = alertData.stored_alert_data || {};
+
+                        if (storedData) {
+                            // Try stored data first
+                            durationMonths = (storedData.resub_month || storedData.months || storedData.total_months || 1);
+                        } else {
+                            // Fall back to message parsing
+                            var message = alertData.message || '';
+                            var monthMatch = message.match(/(\d+)\s*months?/i);
+                            if (monthMatch) {
+                                durationMonths = parseInt(monthMatch[1]);
+                            }
+                        }
+
+                        // Create duration-specific key
+                        if (durationMonths > 1) {
+                            groupingKey = alertType + '_tier' + tier + '_multi_month';
+                        } else {
+                            groupingKey = alertType + '_tier' + tier + '_1month';
+                        }
+                    }
+                }
+
+                // Group by the specific key and accumulate data
+                if (!userAlerts[username][groupingKey]) {
+                    userAlerts[username][groupingKey] = {
+                        count: 0,
+                        totalAmount: 0,
+                        tier: alertData.tier || 1,
+                        months: 0,  // For resubs, track months
+                        originalType: alertType  // Keep track of original alert type
+                    };
+                }
+
+                userAlerts[username][groupingKey].count += 1;
+
+                // Extract amounts based on alert type - prioritize stored_alert_data values over message parsing
+                var message = alertData.message || '';
+                var storedData = alertData.stored_alert_data || {};
+
+                if (alertType === 'bit' || alertType === 'bits') {
+                    // Try to get amount from stored data first
+                    var amtCheered = storedData.amt_cheered;
+                    if (amtCheered) {
+                        userAlerts[username][groupingKey].totalAmount += parseInt(amtCheered);
+                    } else {
+                        // Fall back to message parsing
+                        var bitMatch = message.match(/(\d+)\s*bits?/i);
+                        if (bitMatch) {
+                            userAlerts[username][groupingKey].totalAmount += parseInt(bitMatch[1]);
+                        }
+                    }
+                } else if (alertType === 'donation') {
+                    // Try to get amount from stored data first
+                    var donationAmount = storedData.donation_amount;
+                    if (donationAmount) {
+                        userAlerts[username][groupingKey].totalAmount += parseFloat(donationAmount);
+                    } else {
+                        // Fall back to message parsing
+                        var donationMatch = message.match(/donated\s+\$?(\d+(?:\.\d{2})?)/i);
+                        if (donationMatch) {
+                            userAlerts[username][groupingKey].totalAmount += parseFloat(donationMatch[1]);
+                        }
+                    }
+                } else if (alertType === 'giftsub') {
+                    // Try to get amount from stored data first
+                    var giftQty = storedData.gift_qty;
+                    if (giftQty) {
+                        userAlerts[username][groupingKey].totalAmount += parseInt(giftQty);
+                    } else {
+                        // Fall back to message parsing
+                        var giftMatch = message.match(/gifted\s+(\d+)/i);
+                        if (giftMatch) {
+                            userAlerts[username][groupingKey].totalAmount += parseInt(giftMatch[1]);
+                        }
+                    }
+                } else if (alertType === 'resub') {
+                    // For resubs, get the month count
+                    var resubMonth = storedData.resub_month || storedData.months || storedData.total_months;
+                    var months;
+                    if (resubMonth) {
+                        months = parseInt(resubMonth);
+                    } else {
+                        // Fall back to message parsing
+                        var monthMatch = message.match(/(\d+)\s*months?/i);
+                        if (monthMatch) {
+                            months = parseInt(monthMatch[1]);
+                        } else {
+                            months = 1;
+                        }
+                    }
+                    // Keep the highest month count for this user
+                    if (months > userAlerts[username][groupingKey].months) {
+                        userAlerts[username][groupingKey].months = months;
+                    }
+                } else if (alertType === 'raid') {
+                    // Try to get viewers from stored data first
+                    var raiderCount = storedData.raider_count;
+                    var viewers;
+                    if (raiderCount) {
+                        viewers = parseInt(raiderCount);
+                    } else {
+                        // Fall back to message parsing
+                        var raidMatch = message.match(/(\d+)\s*viewers?/i);
+                        if (raidMatch) {
+                            viewers = parseInt(raidMatch[1]);
+                        } else {
+                            viewers = 0;
+                        }
+                    }
+                    // Keep the largest raid for this user
+                    if (viewers > userAlerts[username][groupingKey].totalAmount) {
+                        userAlerts[username][groupingKey].totalAmount = viewers;
+                    }
+                }
+            });
+
+            // Debug summary
+            console.log('Condensed view processing complete:');
+            console.log('  - Processed', alertsToProcess.length, 'total alerts');
+            console.log('  - Excluded', excludedCount, 'hype train/point alerts');
+            console.log('  - Skipped', unknownUsernameCount, 'alerts with unknown usernames');
+            console.log('  - Final result:', Object.keys(userAlerts).length, 'users with alerts');
+
+            // Clear and rebuild condensed view
+            condensedViewContainer.innerHTML = '';
+
+            if (Object.keys(userAlerts).length === 0) {
+                // If no alerts to condense, show nothing (just clear the container)
+                condensedViewContainer.innerHTML = '';
+            } else {
+                // Add indicator showing historical alerts are being used
+                if (historicalCount > 0) {
+                    var indicator = document.createElement('div');
+                    indicator.className = 'text-xs text-gray-400 mb-2 italic';
+                    indicator.textContent = 'Showing ' + historicalCount + ' historical alerts from past ' + condenseHistoricalHours + ' hours';
+                    condensedViewContainer.appendChild(indicator);
+                }
+
+                for (var username in userAlerts) {
+                    if (Object.keys(userAlerts[username]).length > 0) {
+                        var userGroup = document.createElement('div');
+                        userGroup.className = 'user-group';
+
+                        var usernameDiv = document.createElement('div');
+                        usernameDiv.className = 'username';
+                        usernameDiv.textContent = username + ':';
+                        userGroup.appendChild(usernameDiv);
+
+                        for (var groupingKey in userAlerts[username]) {
+                            var data = userAlerts[username][groupingKey];
+                            var aggregatedText = createAggregatedAlertText(groupingKey, data);
+                            if (aggregatedText) {
+                                var alertItem = document.createElement('div');
+                                alertItem.className = 'alert-item';
+                                alertItem.textContent = aggregatedText;
+                                userGroup.appendChild(alertItem);
+                            }
+                        }
+
+                        condensedViewContainer.appendChild(userGroup);
+                    }
+                }
+            }
+        }
+
+        function createAggregatedAlertText(groupingKey, data) {
+            var count = data.count;
+            var totalAmount = data.totalAmount;
+            var tier = data.tier;
+            var months = data.months;
+            var originalType = data.originalType || groupingKey.split('_')[0];
+
+            try {
+                // Handle tier and duration-specific keys for subs, resubs, and giftsubs
+                if (groupingKey.startsWith('sub_tier')) {
+                    var tierNum = tier;
+                    if (count > 1) {
+                        return 'Subscribed ' + count + ' times (Tier ' + tierNum + ')!';
+                    } else {
+                        return 'Subscribed (Tier ' + tierNum + ')!';
+                    }
+                } else if (groupingKey.startsWith('resub_tier') && groupingKey.includes('_1month')) {
+                    var tierNum = tier;
+                    if (count > 1) {
+                        return 'Resubscribed ' + count + ' times for 1 month (Tier ' + tierNum + ')!';
+                    } else {
+                        return 'Resubscribed for 1 month (Tier ' + tierNum + ')!';
+                    }
+                } else if (groupingKey.startsWith('resub_tier') && groupingKey.includes('_multi_month')) {
+                    var tierNum = tier;
+                    if (count > 1) {
+                        return 'Resubscribed ' + count + ' times for ' + months + ' months (Tier ' + tierNum + ')!';
+                    } else {
+                        return 'Resubscribed for ' + months + ' months (Tier ' + tierNum + ')!';
+                    }
+                } else if (groupingKey.startsWith('giftsub_tier') && groupingKey.includes('_1month')) {
+                    var tierNum = tier;
+                    // Format with commas for readability
+                    var formattedAmount = totalAmount.toLocaleString();
+                    return 'Gifted ' + formattedAmount + ' Tier ' + tierNum + ' subs (1 month)!';
+                } else if (groupingKey.startsWith('giftsub_tier') && groupingKey.includes('_multi_month')) {
+                    var tierNum = tier;
+                    // Format with commas for readability
+                    var formattedAmount = totalAmount.toLocaleString();
+                    return 'Gifted ' + formattedAmount + ' Tier ' + tierNum + ' subs (' + months + ' months)!';
+                } else if (groupingKey === 'follow') {
+                    if (count > 1) {
+                        return 'Followed ' + count + ' times!';
+                    } else {
+                        return 'Followed!';
+                    }
+                } else if (groupingKey === 'bits') {
+                    // Format with commas for readability
+                    var formattedAmount = totalAmount.toLocaleString();
+                    return 'Gave ' + formattedAmount + ' bits!';
+                } else if (groupingKey === 'donation') {
+                    // Format donation amount
+                    var formattedAmount;
+                    if (totalAmount === Math.floor(totalAmount)) {
+                        formattedAmount = '$' + Math.floor(totalAmount);
+                    } else {
+                        formattedAmount = '$' + totalAmount.toFixed(2);
+                    }
+                    return 'Donated ' + formattedAmount + '!';
+                } else if (groupingKey === 'raid') {
+                    // For raids, show the largest raid
+                    var formattedViewers = totalAmount.toLocaleString();
+                    if (count > 1) {
+                        return 'Raided ' + count + ' times (largest: ' + formattedViewers + ' viewers)!';
+                    } else {
+                        return 'Raided with ' + formattedViewers + ' viewers!';
+                    }
+                } else {
+                    // Fallback for any other alert types
+                    var displayName = groupingKey.replace(/_/g, ' ').replace(/\b\w/g, function(l){ return l.toUpperCase(); });
+                    if (count > 1) {
+                        return displayName + ' ' + count + ' times!';
+                    } else {
+                        return displayName + '!';
+                    }
+                }
+            } catch (error) {
+                console.error('Error creating aggregated alert text:', error);
+                return groupingKey.charAt(0).toUpperCase() + groupingKey.slice(1) + '!';
+            }
+        }
+
+        function createCondensedAlertText(alertData) {
+            var alertType = (alertData.type || '').toLowerCase();
+            var message = alertData.message || '';
+
+            try {
+                if (alertType === 'follow') {
+                    return 'Followed!';
+                } else if (alertType === 'sub') {
+                    var tier = alertData.tier || 1;
+                    return 'Subscribed (Tier ' + tier + ')!';
+                } else if (alertType === 'resub') {
+                    // Extract months from message
+                    var monthMatch = message.match(/(\d+)\s*months?/i);
+                    var months = monthMatch ? monthMatch[1] : '?';
+                    return 'Resubscribed for ' + months + ' months!';
+                } else if (alertType === 'giftsub') {
+                    // Extract gift quantity from message
+                    var giftMatch = message.match(/gifted\s+(\d+)/i);
+                    var qty = giftMatch ? giftMatch[1] : '1';
+                    return 'Gifted ' + qty + ' subs!';
+                } else if (alertType === 'bits') {
+                    // Extract bit amount from message
+                    var bitMatch = message.match(/(\d+)\s*bits?/i);
+                    var amount = bitMatch ? bitMatch[1] : '?';
+                    // Format with commas for readability
+                    try {
+                        var amountInt = parseInt(amount);
+                        amount = amountInt.toLocaleString();
+                    } catch (e) {
+                        // Keep original amount if parsing fails
+                    }
+                    return 'Gave ' + amount + ' bits!';
+                } else if (alertType === 'donation') {
+                    // Extract donation amount from message
+                    var donationMatch = message.match(/donated\s+\$?(\d+(?:\.\d{2})?)/i);
+                    var amount = donationMatch ? donationMatch[1] : '?';
+                    return 'Donated $' + amount + '!';
+                } else if (alertType === 'raid') {
+                    // Extract viewer count from message
+                    var raidMatch = message.match(/(\d+)\s*viewers?/i);
+                    var viewers = raidMatch ? raidMatch[1] : '?';
+                    // Format with commas for readability
+                    try {
+                        var viewersInt = parseInt(viewers);
+                        viewers = viewersInt.toLocaleString();
+                    } catch (e) {
+                        // Keep original viewers if parsing fails
+                    }
+                    return 'Raided with ' + viewers + ' viewers!';
+                } else {
+                    return alertType.charAt(0).toUpperCase() + alertType.slice(1) + '!';
+                }
+            } catch (error) {
+                console.error('Error creating condensed alert text:', error);
+                return (alertData.type || 'Alert') + '!';
+            }
+        }
+
+        function toggleCondenseList() {
+            activityFeedState.condenseList = condenseToggle.checked;
+
+            if (activityFeedState.currentTab === "current") {
+                if (activityFeedState.condenseList) {
+                    // Hide regular alerts and show condensed view
+                    currentAlertsFeed.classList.add('hidden');
+                    condensedViewContainer.classList.remove('hidden');
+                    updateCondensedView();
+                } else {
+                    // Show regular alerts and hide condensed view
+                    currentAlertsFeed.classList.remove('hidden');
+                    condensedViewContainer.classList.add('hidden');
+                }
+            }
+        }
+
+        // Event handlers
+        pauseBtn.onclick = togglePause;
+        currentTabBtn.onclick = function () { switchToTab("current"); };
+        previousTabBtn.onclick = function () { switchToTab("previous"); };
+        condenseToggle.onchange = toggleCondenseList;
+
+        // Filter dropdown handling
+        var filterDropdownVisible = false;
+
+        filterBtn.onclick = function (e) {
+            e.stopPropagation();
+            filterDropdownVisible = !filterDropdownVisible;
+            if (filterDropdownVisible) {
+                filterDropdown.classList.remove('hidden');
+                filterDropdown.classList.add('filter-dropdown-visible');
+            } else {
+                filterDropdown.classList.remove('filter-dropdown-visible');
+                filterDropdown.classList.add('hidden');
+            }
+        };
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function (e) {
+            if (!filterDropdown.contains(e.target) && !filterBtn.contains(e.target)) {
+                filterDropdownVisible = false;
+                filterDropdown.classList.remove('filter-dropdown-visible');
+                filterDropdown.classList.add('hidden');
+            }
+        });
+
+        // Filter checkbox handling
+        function setupFilterCheckboxes() {
+            var checkboxes = filterDropdown.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(function (checkbox) {
+                checkbox.addEventListener('change', function (e) {
+                    e.stopPropagation();
+                    var key = this.id.replace('filter-', '');
+                    activityFeedState.filterState[key] = this.checked;
+
+                    // Handle "All Events" logic
+                    if (key === 'all' && this.checked) {
+                        // Enable all filters
+                        Object.keys(activityFeedState.filterState).forEach(function (k) {
+                            activityFeedState.filterState[k] = true;
+                        });
+                        checkboxes.forEach(function (cb) {
+                            cb.checked = true;
+                        });
+                    } else if (key === 'all' && !this.checked) {
+                        // Keep individual filter states
+                    } else if (key !== 'all') {
+                        // Check if all individual filters are checked
+                        var allOthersChecked = Object.keys(activityFeedState.filterState)
+                            .filter(function (k) { return k !== 'all' && k !== key; })
+                            .every(function (k) { return activityFeedState.filterState[k]; });
+
+                        if (this.checked && allOthersChecked) {
+                            activityFeedState.filterState.all = true;
+                            document.getElementById('filter-all').checked = true;
+                        } else {
+                            activityFeedState.filterState.all = false;
+                            document.getElementById('filter-all').checked = false;
+                        }
+                    }
+
+                    updateAlertVisibility();
+                });
+            });
+        }
+
+        // WebSocket event handlers
+        socket.on('connect', function () {
+            console.log('Connected to WebSocket');
+
+            // Clear existing feed to prevent duplicates on reconnection
+            clearFeed();
+
+            // Reset pagination state
+            activityFeedState.currentPage = 1;
+            activityFeedState.totalPages = 1;
+            activityFeedState.restoredAlertsLoaded = false;
+
+            // Request initial data with a slight delay to ensure server is ready
+            setTimeout(function () {
+                socket.emit('get_pause_status');
+                socket.emit('get_current_theme');
+                console.log('Requested initial pause status and theme from activity feed');
+            }, 150);
+
+            // Initialize on current alerts tab (no need to load stored alerts)
+            // The pagination is initially hidden
+        });
+
+        // Theme update handler - applies theme CSS variables in real-time
+        socket.on('theme_update', function (data) {
+            if (data && data.css) {
+                var style = document.getElementById('mycelian-theme-vars');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'mycelian-theme-vars';
+                    document.head.insertBefore(style, document.head.firstChild);
+                }
+                style.textContent = data.css;
+                console.log('Theme updated:', data.theme_name, '(' + data.theme_type + ')');
+            }
+        });
+
+        socket.on('activity_feed_alert', function (alertData) {
+            console.log('Received new alert:', alertData);
+            addAlertToFeed(alertData);
+        });
+
+        socket.on('pause_status_update', function (data) {
+            console.log('Activity feed received pause_status_update:', data);
+            if (data && typeof data.paused === 'boolean') {
+                activityFeedState.pauseStatus = data.paused;
+                updatePauseButton();
+            }
+        });
+
+        // Also listen for other pause-related events for better compatibility
+        socket.on('alerts_paused', function (data) {
+            console.log('Activity feed received alerts_paused event:', data);
+            var paused = data && typeof data.paused === 'boolean' ? data.paused : true;
+            activityFeedState.pauseStatus = paused;
+            updatePauseButton();
+        });
+
+        socket.on('alerts_resumed', function (data) {
+            console.log('Activity feed received alerts_resumed event:', data);
+            var paused = data && typeof data.paused === 'boolean' ? data.paused : false;
+            activityFeedState.pauseStatus = paused;
+            updatePauseButton();
+        });
+
+        // Function to update pause button state
+        function updatePauseButton() {
+            console.log('Updating pause button state. Paused:', activityFeedState.pauseStatus);
+            if (activityFeedState.pauseStatus) {
+                pauseBtn.innerHTML = '<i class="material-icons">play_arrow</i><span>RESUME ALERTS</span>';
+                pauseBtn.classList.add('paused');
+            } else {
+                pauseBtn.innerHTML = '<i class="material-icons">pause</i><span>PAUSE ALERTS</span>';
+                pauseBtn.classList.remove('paused');
+            }
+        }
+
+        // New socket listener specifically for condensed view alerts
+        socket.on('condensed_view_alerts', function (data) {
+            console.log('Received condensed view alerts:', data);
+
+            var alertsToProcess = data.alerts || [];
+            var historicalCount = data.historical_count || alertsToProcess.length;
+            var condenseHistoricalHours = data.hours || 12;
+
+            console.log('Condensed view loaded', historicalCount, 'alerts from storage (past', condenseHistoricalHours, 'hours)');
+
+            // Create condensed view with loaded data
+            createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours);
+        });
+
+        socket.on('stored_alerts_paginated', function (data) {
+            console.log('Received stored alerts:', data);
+
+            // Check if this was requested for condensed view (fallback for older implementations)
+            if (activityFeedState.loadingForCondensedView) {
+                console.log('Processing stored alerts for condensed view (fallback)');
+                activityFeedState.loadingForCondensedView = false;
+
+                // Get template configuration for condensed view settings
+                var config = window.templateConfig || {};
+                var condenseHistoricalHours = config.condense_historical_hours || 12;
+
+                // Filter alerts by time window and prepare for condensed view
+                var alertsToProcess = [];
+                var historicalCount = 0;
+
+                if (data.alerts && data.alerts.length > 0) {
+                    var currentTime = Date.now() / 1000;
+                    var cutoffTime = currentTime - (condenseHistoricalHours * 3600);
+
+                    data.alerts.forEach(function (alertData) {
+                        alertData.is_restored = true;
+                        var alertTimestamp = alertData.timestamp || alertData.created_at || 0;
+                        if (alertTimestamp >= cutoffTime) {
+                            alertsToProcess.push(alertData);
+                            historicalCount++;
+                        }
+                    });
+
+                    console.log('Loaded', historicalCount, 'historical alerts from storage for condensed view (fallback)');
+                } else {
+                    console.log('No historical alerts found in storage for condensed view (fallback)');
+                }
+
+                // Create condensed view with loaded data
+                createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours);
+                return;
+            }
+
+            // Normal processing for Previous Alerts tab
+            // Clear existing restored alerts for all pages to ensure pagination works correctly
+            clearRestoredAlertsForPagination();
+
+            // Update pagination state
+            activityFeedState.currentPage = data.page;
+            activityFeedState.totalPages = data.total_pages;
+
+            // Add restored alerts to historical alerts list
+            if (data.alerts && data.alerts.length > 0) {
+                console.log('Adding', data.alerts.length, 'alerts to page', data.page);
+                data.alerts.forEach(function (alertData) {
+                    alertData.is_restored = true;
+                    var alertElement = createAlertElement(alertData);
+                    alertElement.setAttribute('data-restored', 'true'); // Mark for easier identification
+                    previousAlertsFeed.appendChild(alertElement);
+                    activityFeedState.historicalAlerts.push(alertData);
+                });
+
+                // Apply filters to the newly loaded historical alerts
+                updateAlertVisibility();
+            } else {
+                // If no stored alerts for this page, show appropriate message
+                previousAlertsFeed.innerHTML = '<div class="no-alerts">No alerts found for this page</div>';
+            }
+
+            // Update pagination UI
+            updatePaginationUI({
+                page: data.page,
+                total_pages: data.total_pages,
+                total_count: data.total_count,
+                has_prev: data.has_prev,
+                has_next: data.has_next
+            });
+
+            activityFeedState.restoredAlertsLoaded = true;
+        });
+
+        // Intersection Observer for animation performance optimization
+        var animationObserver = null;
+
+        function initializeAnimationObserver() {
+            // Clean up existing observer
+            if (animationObserver) {
+                animationObserver.disconnect();
+            }
+
+            // Create new observer with optimized settings
+            animationObserver = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    var element = entry.target;
+
+                    if (entry.isIntersecting) {
+                        // Element is visible - resume animations
+                        element.classList.remove('not-visible');
+                    } else {
+                        // Element is not visible - pause animations
+                        element.classList.add('not-visible');
+                    }
+                });
+            }, {
+                // Only trigger when element is completely out of view or comes into view
+                threshold: [0, 0.1],
+                // Add some margin to avoid too frequent triggers
+                rootMargin: '50px'
+            });
+
+            // Observe all animated elements
+            observeAnimatedElements();
+        }
+
+        function observeAnimatedElements() {
+            if (!animationObserver) return;
+
+            // Find all elements with animations
+            var animatedElements = document.querySelectorAll('.alert-card.recent, .new-badge, .badge');
+
+            animatedElements.forEach(function (element) {
+                animationObserver.observe(element);
+            });
+        }
+
+        // Initialize
+        function initialize() {
+            setupFilterCheckboxes();
+
+            // Initialize animation observer for performance
+            initializeAnimationObserver();
+
+            // Start timestamp update timer
+            setInterval(updateTimestamps, 1000);
+
+            // Hide pagination initially (only show for previous alerts tab)
+            paginationContainer.style.display = 'none';
+
+            // Show condense toggle on current alerts tab
+            condenseToggleContainer.style.display = 'flex';
+
+            // Hide condensed view initially
+            condensedViewContainer.classList.add('hidden');
+
+            // Clear loading message
+            currentAlertsFeed.innerHTML = '<div class="no-alerts">No alerts yet</div>';
+        }
+
+        // Start initialization when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initialize);
+        } else {
+            initialize();
+        }
+    </script>
+</body>
+
+</html>

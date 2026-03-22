@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Alerts</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <style>
+        @font-face {
+            font-family: alertFont;
+            src: url("/assets/default_assets/fonts/{{Font}}");
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: alertFont, Arial, sans-serif;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #alertContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .alert-display {
+            position: relative;
+
+            width: {{ AlertWidth }}px;
+
+            height: {{ AlertHeight }}px;
+            display: none;
+            opacity: 0;
+        }
+
+        .alert-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+
+            background-color: {{ BackgroundColor }};
+
+            border: {{ BorderWidth }}px solid {{ BorderColor }};
+
+            border-radius: {{ BorderRadius }}px;
+            opacity: 0;
+        }
+
+        .alert-background.has-image {
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        .alert-background-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+
+            object-fit: {{ BackgroundVideoFit }};
+            border-radius: {{ BorderRadius }}px;
+            opacity: 0;
+            z-index: 1;
+        }
+
+        .alert-gif {
+            position: absolute;
+
+            top: {{ GifTop }}px;
+
+            left: {{ GifLeft }}px;
+
+            width: {{ GifWidth }}px;
+
+            height: {{ GifHeight }}px;
+
+            background-color: {{ GifBackgroundColor }};
+
+            border: {{ GifBorderWidth }}px solid {{ GifBorderColor }};
+
+            border-radius: {{ GifBorderRadius }}px;
+
+            object-fit: {{ GifFit }};
+            opacity: 0;
+            z-index: 2;
+        }
+
+        .alert-header {
+            position: absolute;
+
+            top: {{ HeaderTop }}px;
+
+            left: {{ HeaderLeft }}px;
+
+            width: {{ HeaderWidth }}px;
+
+            height: {{ HeaderHeight }}px;
+            display: flex;
+            align-items: center;
+
+            justify-content: {{ HeaderJustify }};
+            z-index: 3;
+            opacity: 0;
+        }
+
+        .alert-username {
+            font-size: {{ UsernameFontSize }}px;
+
+            color: {{ UsernameColor }};
+
+            font-weight: {{ UsernameFontWeight }};
+
+            text-shadow: {{ UsernameShadow }};
+            white-space: nowrap;
+            flex-shrink: 0;
+            margin-right: 0.3em;
+        }
+
+        .alert-text {
+            font-size: {{ UsernameFontSize }}px;
+
+            color: {{ TextColor }};
+
+            font-weight: {{ TextFontWeight }};
+
+            text-shadow: {{ TextShadow }};
+            flex-shrink: 0;
+        }
+
+        .alert-message {
+            position: absolute;
+
+            top: {{ MessageTop }}px;
+
+            left: {{ MessageLeft }}px;
+
+            width: {{ MessageWidth }}px;
+
+            height: {{ MessageHeight }}px;
+
+            font-size: {{ MessageFontSize }}px;
+
+            color: {{ MessageColor }};
+
+            text-align: {{ MessageAlign }};
+
+            font-weight: {{ MessageFontWeight }};
+
+            text-shadow: {{ MessageShadow }};
+            display: flex;
+            align-items: flex-start;
+
+            justify-content: {{ MessageJustify }};
+            z-index: 3;
+            word-wrap: break-word;
+            overflow: hidden;
+
+            padding: {{ MessagePadding }}px;
+            opacity: 0;
+        }
+
+        /* Hidden audio element for playing alert sounds */
+        #alertAudio {
+            display: none;
+        }
+
+        /* Animation keyframes */
+        @keyframes slideInLeft {
+            0% {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInRight {
+            0% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInTop {
+            0% {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInBottom {
+            0% {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOutLeft {
+            0% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideOutRight {
+            0% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideOutTop {
+            0% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideOutBottom {
+            0% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes fadeIn {
+            0% {
+                opacity: 0;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            0% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0;
+            }
+        }
+
+        @keyframes bounceIn {
+            0% {
+                transform: scale(0.3);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
+
+            70% {
+                transform: scale(0.9);
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes bounceOut {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0.3);
+                opacity: 0;
+            }
+        }
+
+        @keyframes zoomIn {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes zoomOut {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0);
+                opacity: 0;
+            }
+        }
+
+        @keyframes flipInX {
+            0% {
+                transform: perspective(400px) rotateX(90deg);
+                opacity: 0;
+            }
+
+            40% {
+                transform: perspective(400px) rotateX(-20deg);
+            }
+
+            60% {
+                transform: perspective(400px) rotateX(10deg);
+            }
+
+            80% {
+                transform: perspective(400px) rotateX(-5deg);
+            }
+
+            100% {
+                transform: perspective(400px) rotateX(0deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes flipOutX {
+            0% {
+                transform: perspective(400px) rotateX(0deg);
+                opacity: 1;
+            }
+
+            100% {
+                transform: perspective(400px) rotateX(90deg);
+                opacity: 0;
+            }
+        }
+
+        @keyframes flipInY {
+            0% {
+                transform: perspective(400px) rotateY(90deg);
+                opacity: 0;
+            }
+
+            40% {
+                transform: perspective(400px) rotateY(-20deg);
+            }
+
+            60% {
+                transform: perspective(400px) rotateY(10deg);
+            }
+
+            80% {
+                transform: perspective(400px) rotateY(-5deg);
+            }
+
+            100% {
+                transform: perspective(400px) rotateY(0deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes flipOutY {
+            0% {
+                transform: perspective(400px) rotateY(0deg);
+                opacity: 1;
+            }
+
+            100% {
+                transform: perspective(400px) rotateY(90deg);
+                opacity: 0;
+            }
+        }
+
+        @keyframes rotateIn {
+            0% {
+                transform: rotate(-200deg);
+                opacity: 0;
+            }
+
+            100% {
+                transform: rotate(0deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes rotateOut {
+            0% {
+                transform: rotate(0deg);
+                opacity: 1;
+            }
+
+            100% {
+                transform: rotate(200deg);
+                opacity: 0;
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        @keyframes shake {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: translateX(-10px);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: translateX(10px);
+            }
+        }
+
+        @keyframes rubberBand {
+            0% {
+                transform: scale(1);
+            }
+
+            30% {
+                transform: scaleX(1.25) scaleY(0.75);
+            }
+
+            40% {
+                transform: scaleX(0.75) scaleY(1.25);
+            }
+
+            50% {
+                transform: scaleX(1.15) scaleY(0.85);
+            }
+
+            65% {
+                transform: scaleX(0.95) scaleY(1.05);
+            }
+
+            75% {
+                transform: scaleX(1.05) scaleY(0.95);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* Animation classes for individual elements */
+        .background-animate-in {
+            animation: {{ BackgroundAnimationIn }} {{ BackgroundAnimationInDuration }}s {{ BackgroundAnimationInEasing }};
+        }
+
+        .background-animate-out {
+            animation: {{ BackgroundAnimationOut }} {{ BackgroundAnimationOutDuration }}s {{ BackgroundAnimationOutEasing }};
+        }
+
+        .gif-animate-in {
+            animation: {{ GifAnimationIn }} {{ GifAnimationInDuration }}s {{ GifAnimationInEasing }};
+        }
+
+        .gif-animate-out {
+            animation: {{ GifAnimationOut }} {{ GifAnimationOutDuration }}s {{ GifAnimationOutEasing }};
+        }
+
+        .header-animate-in {
+            animation: {{ HeaderAnimationIn }} {{ HeaderAnimationInDuration }}s {{ HeaderAnimationInEasing }};
+        }
+
+        .header-animate-out {
+            animation: {{ HeaderAnimationOut }} {{ HeaderAnimationOutDuration }}s {{ HeaderAnimationOutEasing }};
+        }
+
+        .message-animate-in {
+            animation: {{ MessageAnimationIn }} {{ MessageAnimationInDuration }}s {{ MessageAnimationInEasing }};
+        }
+
+        .message-animate-out {
+            animation: {{ MessageAnimationOut }} {{ MessageAnimationOutDuration }}s {{ MessageAnimationOutEasing }};
+        }
+
+        /* Container animation classes */
+        .container-animate-in {
+            animation: {{ ContainerAnimationIn }} {{ ContainerAnimationInDuration }}s {{ ContainerAnimationInEasing }};
+        }
+
+        .container-animate-out {
+            animation: {{ ContainerAnimationOut }} {{ ContainerAnimationOutDuration }}s {{ ContainerAnimationOutEasing }};
+        }
+    </style>
+</head>
+
+<body>
+    <div id="alertContainer">
+        <div id="alertDisplay" class="alert-display">
+            <div id="alertBackground" class="alert-background"></div>
+            <video id="alertBackgroundVideo" class="alert-background-video" style="display: none;" muted {% if BackgroundVideoLoop %}loop{% endif %}
+                autoplay></video>
+            <img id="alertGif" class="alert-gif" src="" alt="">
+            <div id="alertHeader" class="alert-header">
+                <div id="alertUsername" class="alert-username"></div>
+                <div id="alertText" class="alert-text"></div>
+            </div>
+            <div id="alertMessage" class="alert-message"></div>
+        </div>
+    </div>
+
+    <!-- Hidden audio element for playing alert sounds -->
+    <audio id="alertAudio" preload="none"></audio>
+
+    <script>
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var currentAlert = null;
+        var alertTimeout = null;
+        var animationTimeouts = [];
+        var audioUnlocked = false;
+        var alertStartTime = null;
+        var alertDuration = 5000; // Default 5 seconds in milliseconds
+        var exitAnimationStartTime = null;
+        var exitAnimationDuration = 1000; // Default 1 second for exit animations
+        var isRandomizedAlert = false;
+        var videoFreezeTimeout = null;
+
+        // Add socket connection debugging
+        socket.on('connect', function () {
+            console.log('Socket connected successfully');
+        });
+
+        socket.on('disconnect', function () {
+            console.warn('Socket disconnected');
+        });
+
+        socket.on('connect_error', function (error) {
+            console.error('Socket connection error:', error);
+        });
+
+        // Send initial alert_complete signal and log it
+        console.log('Sending initial alert_complete signal');
+        socket.emit('alert_complete');
+
+        // Alert type toggles from config
+        var alertToggles = {
+            follow: {{ EnableFollowAlerts| tojson}},
+        sub: {{ EnableSubAlerts | tojson }},
+        resub: {{ EnableResubAlerts | tojson }},
+        giftsub: {{ EnableGiftsubAlerts | tojson }},
+        bit: {{ EnableBitAlerts | tojson }},
+        raid: {{ EnableRaidAlerts | tojson }},
+        point: {{ EnablePointAlerts | tojson }},
+        donation: {{ EnableDonationAlerts | tojson }},
+        hype_train_start: {{ EnableHypeTrainAlerts | tojson }},
+        hype_train_progress: {{ EnableHypeTrainAlerts | tojson }},
+        hype_train_end: {{ EnableHypeTrainAlerts | tojson }}
+        };
+
+        // Handle resub alerts - they use the same toggle as sub alerts but are processed as 'resub' type
+        // This allows separate enabling/disabling of new subs vs resubs while using the same alert configs
+        if (alertToggles.resub === undefined) {
+            alertToggles.resub = alertToggles.sub;
+        }
+
+        // Configuration for background media
+        var backgroundConfig = {
+            imageURL: '{{BackgroundImageURL}}',
+            imageSize: '{{BackgroundImageSize}}',
+            imagePosition: '{{BackgroundImagePosition}}',
+            imageRepeat: '{{BackgroundImageRepeat}}',
+            videoURL: '{{BackgroundVideoURL}}',
+            videoFit: '{{BackgroundVideoFit}}',
+            videoLoop: {{ BackgroundVideoLoop | tojson }},
+            videoFreezeAfter: {{ BackgroundVideoFreezeAfterSeconds }},
+            mediaType: '{{BackgroundMediaType}}'
+        };
+
+        // Try to unlock audio on any user interaction
+        function unlockAudio() {
+            if (!audioUnlocked) {
+                const audioElement = document.getElementById('alertAudio');
+                audioElement.play().then(() => {
+                    audioElement.pause();
+                    audioElement.currentTime = 0;
+                    audioUnlocked = true;
+                    console.log('Audio context unlocked');
+                    // Remove event listeners since we only need to do this once
+                    document.removeEventListener('click', unlockAudio);
+                    document.removeEventListener('touchstart', unlockAudio);
+                    document.removeEventListener('keydown', unlockAudio);
+                }).catch(() => {
+                    // Audio unlock failed, but that's ok
+                });
+            }
+        }
+
+        // Add event listeners for user interaction
+        document.addEventListener('click', unlockAudio);
+        document.addEventListener('touchstart', unlockAudio);
+        document.addEventListener('keydown', unlockAudio);
+
+        // Comprehensive alert state detection functions
+        function isAudioPlaying() {
+            const audioElement = document.getElementById('alertAudio');
+            return audioElement && !audioElement.paused && !audioElement.ended && audioElement.currentTime > 0;
+        }
+
+        function areVisualElementsVisible() {
+            const alertDisplay = document.getElementById('alertDisplay');
+            if (!alertDisplay || alertDisplay.style.display === 'none') {
+                return false;
+            }
+
+            // Check if any exit animations are still running
+            const hasExitAnimations = alertDisplay.classList.contains('container-animate-out') ||
+                                    document.getElementById('alertBackground').classList.contains('background-animate-out') ||
+                                    document.getElementById('alertGif').classList.contains('gif-animate-out') ||
+                                    document.getElementById('alertHeader').classList.contains('header-animate-out') ||
+                                    document.getElementById('alertMessage').classList.contains('message-animate-out');
+
+            return hasExitAnimations;
+        }
+
+        function getTimeRemaining() {
+            if (!alertStartTime) return 0;
+            const elapsed = Date.now() - alertStartTime;
+            return Math.max(0, alertDuration - elapsed);
+        }
+
+        function getExitAnimationStartTime() {
+            if (!alertStartTime || !exitAnimationDuration) return alertStartTime + alertDuration;
+            // Start exit animation with enough time to complete before alert duration ends
+            return alertStartTime + alertDuration - exitAnimationDuration - 200; // 200ms buffer
+        }
+
+        function shouldStartExitAnimation() {
+            if (!alertStartTime) return false;
+            const currentTime = Date.now();
+            const exitStartTime = getExitAnimationStartTime();
+            return currentTime >= exitStartTime && !exitAnimationStartTime;
+        }
+
+        function calculateAnimationTimings() {
+            // Calculate maximum animation durations from template config
+            const backgroundInDuration = {{ BackgroundAnimationInDuration | default(1.0) }};
+            const gifInDuration = {{ GifAnimationInDuration | default(1.5) }};
+            const headerInDuration = {{ HeaderAnimationInDuration | default(1.2) }};
+            const messageInDuration = {{ MessageAnimationInDuration | default(1.0) }};
+            const containerInDuration = {{ ContainerAnimationInDuration | default(1.0) }};
+
+            const backgroundOutDuration = {{ BackgroundAnimationOutDuration | default(1.0) }};
+            const gifOutDuration = {{ GifAnimationOutDuration | default(1.0) }};
+            const headerOutDuration = {{ HeaderAnimationOutDuration | default(1.0) }};
+            const messageOutDuration = {{ MessageAnimationOutDuration | default(1.0) }};
+            const containerOutDuration = {{ ContainerAnimationOutDuration | default(1.0) }};
+
+            // Entry animation duration is the longest entry animation plus delays
+            const maxEntryDelay = Math.max(
+                {{ BackgroundAnimationDelay | default(0.0) }},
+                {{ GifAnimationDelay | default(0.0) }},
+                {{ HeaderAnimationDelay | default(0.0) }},
+                {{ MessageAnimationDelay | default(0.0) }},
+                {{ ContainerAnimationDelay | default(0.0) }}
+            );
+
+            const maxEntryDuration = Math.max(backgroundInDuration, gifInDuration, headerInDuration, messageInDuration, containerInDuration);
+            const totalEntryTime = maxEntryDelay + maxEntryDuration;
+
+            // Exit animation duration is the longest exit animation plus delays
+            const maxExitDelay = Math.max(
+                {{ BackgroundAnimationOutDelay | default(0.0) }},
+                {{ GifAnimationOutDelay | default(0.0) }},
+                {{ HeaderAnimationOutDelay | default(0.0) }},
+                {{ MessageAnimationOutDelay | default(0.0) }},
+                {{ ContainerAnimationOutDelay | default(0.0) }}
+            );
+
+            const maxExitDuration = Math.max(backgroundOutDuration, gifOutDuration, headerOutDuration, messageOutDuration, containerOutDuration);
+            const totalExitTime = maxExitDelay + maxExitDuration;
+
+            // Ensure we have enough time for both entry and exit animations within the alert duration
+            const minRequiredDuration = totalEntryTime + totalExitTime + 1000; // 1 second buffer
+            if (alertDuration < minRequiredDuration) {
+                console.warn(`Alert duration (${alertDuration}ms) is too short for animations. Required: ${minRequiredDuration}ms`);
+            }
+
+            return {
+                totalEntryTime: totalEntryTime,
+                totalExitTime: totalExitTime,
+                maxExitDuration: maxExitDuration
+            };
+        }
+
+        // Alert completion handling with proper timing
+        function checkAndSendAlertComplete() {
+            console.log('Checking if alert can be completed...');
+
+            // For randomized alerts, wait for both audio and visual elements to finish
+            if (isRandomizedAlert) {
+                const audioPlaying = isAudioPlaying();
+                const visualVisible = areVisualElementsVisible();
+
+                console.log(`Randomized alert status - Audio playing: ${audioPlaying}, Visual visible: ${visualVisible}`);
+
+                if (audioPlaying || visualVisible) {
+                    // Still waiting for elements to finish
+                    setTimeout(checkAndSendAlertComplete, 100); // Check again in 100ms
+                    return;
+                }
+            }
+            // For regular alerts, respect the set duration but ensure exit animations complete
+            else {
+                const timeRemaining = getTimeRemaining();
+                const visualVisible = areVisualElementsVisible();
+
+                if (timeRemaining > 0 && !visualVisible) {
+                    // Alert duration not finished and no visual elements showing, wait
+                    setTimeout(checkAndSendAlertComplete, Math.min(100, timeRemaining));
+                    return;
+                } else if (visualVisible) {
+                    // Visual elements still animating, wait for them to finish
+                    setTimeout(checkAndSendAlertComplete, 100);
+                    return;
+                }
+            }
+
+            // All conditions met, apply delay between alerts before sending completion signal
+            const delayBetweenAlerts = {{ DelayBetweenAlerts | default(0.5) }} * 1000; // Convert to milliseconds
+            console.log(`Alert completion conditions met, waiting ${delayBetweenAlerts}ms before sending alert_complete signal`);
+
+            setTimeout(() => {
+                console.log('Delay completed, sending alert_complete signal');
+                socket.emit('alert_complete');
+                currentAlert = null;
+                alertStartTime = null;
+                exitAnimationStartTime = null;
+                isRandomizedAlert = false;
+            }, delayBetweenAlerts);
+        }
+
+        // Function to setup background media (image or video)
+        function setupBackgroundMedia(backgroundElement, videoElement) {
+            // Reset both elements
+            backgroundElement.classList.remove('has-image');
+            backgroundElement.style.backgroundImage = '';
+            videoElement.style.display = 'none';
+            videoElement.src = '';
+
+            if (backgroundConfig.mediaType === 'image' && backgroundConfig.imageURL && backgroundConfig.imageURL.trim() !== '' && backgroundConfig.imageURL !== 'undefined') {
+                // Set background image
+                backgroundElement.style.backgroundImage = `url('${backgroundConfig.imageURL}')`;
+                backgroundElement.style.backgroundSize = backgroundConfig.imageSize || 'cover';
+                backgroundElement.style.backgroundPosition = backgroundConfig.imagePosition || 'center';
+                backgroundElement.style.backgroundRepeat = backgroundConfig.imageRepeat || 'no-repeat';
+                backgroundElement.classList.add('has-image');
+                console.log('Background image set:', backgroundConfig.imageURL);
+            } else if (backgroundConfig.mediaType === 'video' && backgroundConfig.videoURL && backgroundConfig.videoURL.trim() !== '' && backgroundConfig.videoURL !== 'undefined') {
+                // Set background video
+                videoElement.style.display = 'block';
+                videoElement.style.objectFit = backgroundConfig.videoFit || 'cover';
+                videoElement.loop = backgroundConfig.videoLoop;
+                videoElement.currentTime = 0;
+                videoElement.src = backgroundConfig.videoURL;
+
+                if (videoFreezeTimeout) clearTimeout(videoFreezeTimeout);
+
+                if (backgroundConfig.videoFreezeAfter > 0) {
+                    videoFreezeTimeout = setTimeout(() => {
+                        videoElement.pause();
+                        console.log('Video frozen after', backgroundConfig.videoFreezeAfter, 'seconds');
+                    }, backgroundConfig.videoFreezeAfter * 1000);
+                }
+
+                videoElement.play().catch(e => console.log('Video autoplay prevented:', e));
+                console.log('Background video set:', backgroundConfig.videoURL, '| loop:', backgroundConfig.videoLoop, '| freezeAfter:', backgroundConfig.videoFreezeAfter);
+            }
+        }
+
+        // Listen for new alerts
+        socket.on('next_alert', function (alertData) {
+            console.log('Received alert:', alertData);
+
+            // Determine alert type if not present or map existing types
+            let alertType = alertData.alert_type;
+            if (!alertType) {
+                // Try to determine from other properties
+                if (alertData.type) {
+                    alertType = alertData.type.toLowerCase();
+                } else if (alertData.badge_type) {
+                    alertType = alertData.badge_type.toLowerCase();
+                }
+            }
+
+            // Map alert types to standardized names used in AlertSettings.alert_types
+            const alertTypeMap = {
+                'bits': 'bit',
+                'cheer': 'bit',
+                'cheers': 'bit',
+                'points': 'point',
+                'channel_points': 'point',
+                'channelpoints': 'point',
+                'subs': 'sub',
+                'subscription': 'sub',
+                'subscriptions': 'sub',
+                'follows': 'follow',
+                'follower': 'follow',
+                'followers': 'follow',
+                'raids': 'raid',
+                'raider': 'raid',
+                'raiders': 'raid',
+                'giftsubs': 'giftsub',
+                'gift_sub': 'giftsub',
+                'gift_subs': 'giftsub',
+                'giftsubscription': 'giftsub',
+                'giftsubscriptions': 'giftsub',
+                'donations': 'donation',
+                'donate': 'donation',
+                'tip': 'donation',
+                'tips': 'donation',
+                'hypetrain': 'hype_train_start',
+                'hype_train': 'hype_train_start'
+            };
+
+            if (alertType && alertTypeMap[alertType]) {
+                alertType = alertTypeMap[alertType];
+            }
+
+            // Special case: 'resub' is kept as-is since it has its own toggle,
+            // but uses sub alert configurations for fetching alert data
+
+            // Update alertData with determined type
+            alertData.alert_type = alertType;
+
+            // Skip follow alerts entirely (separate template will handle these)
+            if (alertType === 'follow') {
+                console.log('Follow alert detected, skipping (handled by separate template):', alertType);
+                console.log("Sending alert_complete event to server");
+                return;
+            }
+
+            // Check if this alert type is enabled
+            if (!alertType || !alertToggles[alertType]) {
+                console.log('Alert type disabled or unknown, skipping:', alertType);
+                console.log("Sending alert_complete event to server");
+                socket.emit('alert_complete');
+                return;
+            }
+
+            showAlert(alertData);
+        });
+
+        // Listen for alert refresh commands
+        socket.on('refresh-alerts', function () {
+            location.reload(true);
+        });
+
+        // Connector action event listeners
+        socket.on('alerts_play_alert', function (data) {
+            console.log('Connector action: play alert', data);
+            // Create a test alert if no alert data provided
+            var alertData = data || {
+                type: 'test',
+                username: 'Connector Test',
+                message: 'Test alert triggered by connector',
+                timestamp: Date.now() / 1000
+            };
+            // Process the alert through the normal alert system
+            showAlert(alertData);
+        });
+
+        socket.on('alerts_skip_alert', function (data) {
+            console.log('Connector action: skip alert', data);
+            // Skip current alert if one is playing
+            if (currentAlert) {
+                // For skipped alerts, immediately hide and complete (ignore timing and delay)
+                hideAlert();
+                isRandomizedAlert = false; // Force immediate completion
+                // Bypass the delay and send completion immediately for skipped alerts
+                console.log('Alert skipped via connector action, sending immediate completion');
+                socket.emit('alert_complete');
+                currentAlert = null;
+                alertStartTime = null;
+                exitAnimationStartTime = null;
+                isRandomizedAlert = false;
+                console.log('Alert skipped via connector action');
+            }
+        });
+
+        function showAlert(alertData) {
+            // Clear any existing alert
+            if (currentAlert) {
+                hideAlert();
+            }
+
+            currentAlert = alertData;
+
+            // Initialize alert timing
+            alertStartTime = Date.now();
+            alertDuration = (alertData.duration || 5) * 1000; // Convert to milliseconds
+
+            // Determine if this is a randomized alert (has randomization enabled)
+            isRandomizedAlert = alertData.randomized ||
+                               (alertData.randomized_dir && alertData.randomized_dir.trim() !== '');
+
+            // Calculate animation timings
+            const timings = calculateAnimationTimings();
+            exitAnimationDuration = timings.maxExitDuration;
+
+            console.log(`Starting alert - Duration: ${alertDuration}ms, Randomized: ${isRandomizedAlert}, Exit animation duration: ${exitAnimationDuration}ms`);
+
+            // Handle audio playback with randomization logic (async)
+            playAlertAudio(alertData);
+
+            // Check if this is an audio-only alert
+            if (alertData.audio_only) {
+                console.log('Audio-only alert detected, skipping visual elements');
+
+                // For audio-only alerts, use the new completion checking system
+                // Set up a periodic check to see when audio finishes
+                const checkAudioOnlyComplete = () => {
+                    if (isRandomizedAlert) {
+                        // For randomized audio-only alerts, wait for audio to finish
+                        if (isAudioPlaying()) {
+                            setTimeout(checkAudioOnlyComplete, 100);
+                            return;
+                        }
+                    } else {
+                        // For regular audio-only alerts, respect duration
+                        const timeRemaining = getTimeRemaining();
+                        if (timeRemaining > 0) {
+                            setTimeout(checkAudioOnlyComplete, Math.min(100, timeRemaining));
+                            return;
+                        }
+                    }
+
+                    // Audio finished or duration elapsed
+                    console.log("Audio-only alert completed:", alertData.username);
+                    checkAndSendAlertComplete();
+                };
+
+                // Start checking after a brief delay to let audio begin
+                setTimeout(checkAudioOnlyComplete, 100);
+                return; // Skip all visual rendering
+            }
+
+
+            // Get DOM elements for visual alerts
+            const alertDisplay = document.getElementById('alertDisplay');
+            const alertBackground = document.getElementById('alertBackground');
+            const alertBackgroundVideo = document.getElementById('alertBackgroundVideo');
+            const alertGif = document.getElementById('alertGif');
+            const alertHeader = document.getElementById('alertHeader');
+            const alertUsername = document.getElementById('alertUsername');
+            const alertText = document.getElementById('alertText');
+            const alertMessage = document.getElementById('alertMessage');
+
+            console.log('Setting up alert display with data:', alertData);
+
+            // Set alert content
+            alertUsername.innerHTML = formatUsername(alertData);
+            alertText.innerHTML = formatAlertText(alertData);
+            alertMessage.innerHTML = formatAlertMessage(alertData);
+
+            console.log('Alert content set - Username:', alertUsername.innerHTML, 'Text:', alertText.innerHTML, 'Message:', alertMessage.innerHTML);
+
+            // Set background media if configured
+            setupBackgroundMedia(alertBackground, alertBackgroundVideo);
+
+            // Set GIF source if available (non-randomized GIFs)
+            if (alertData.gif_dir && alertData.gif_name) {
+                // gif_dir and gif_name now contain full paths from the database
+                alertGif.src = `${alertData.gif_dir}/${alertData.gif_name}`;
+                alertGif.style.display = 'block';
+                console.log('GIF set:', alertGif.src);
+            } else {
+                alertGif.style.display = 'none';
+                console.log('No GIF data available');
+            }
+
+            // Show the alert
+            alertDisplay.style.display = 'block';
+            alertDisplay.style.opacity = '1';
+            console.log('Alert display shown');
+
+            // Add container animation if enabled
+            if ('{{ContainerAnimationIn}}' !== 'none' && '{{ContainerAnimationIn}}' !== '') {
+                setTimeout(() => {
+                    alertDisplay.classList.add('container-animate-in');
+                }, {{ ContainerAnimationDelay }} * 1000);
+        }
+
+        // Add animation classes to individual elements with delays
+        setTimeout(() => {
+            alertBackground.style.opacity = '{{BackgroundOpacity}}';
+            if ('{{BackgroundAnimationIn}}' !== 'none' && '{{BackgroundAnimationIn}}' !== '') {
+                alertBackground.classList.add('background-animate-in');
+            }
+            // Also handle background video if present
+            if (alertBackgroundVideo.style.display !== 'none') {
+                alertBackgroundVideo.style.opacity = '{{BackgroundOpacity}}';
+            }
+        }, 0);
+
+        setTimeout(() => {
+            if (alertGif.style.display !== 'none') {
+                alertGif.style.opacity = '1';
+                if ('{{GifAnimationIn}}' !== 'none' && '{{GifAnimationIn}}' !== '') {
+                    alertGif.classList.add('gif-animate-in');
+                }
+            }
+        }, {{ GifAnimationDelay }} * 1000);
+
+        setTimeout(() => {
+            alertHeader.style.opacity = '1';
+            if ('{{HeaderAnimationIn}}' !== 'none' && '{{HeaderAnimationIn}}' !== '') {
+                alertHeader.classList.add('header-animate-in');
+            }
+        }, {{ HeaderAnimationDelay }} * 1000);
+
+        setTimeout(() => {
+            if (alertMessage.innerHTML.trim() !== '') {
+                alertMessage.style.opacity = '1';
+                if ('{{MessageAnimationIn}}' !== 'none' && '{{MessageAnimationIn}}' !== '') {
+                    alertMessage.classList.add('message-animate-in');
+                }
+            }
+        }, {{ MessageAnimationDelay }} * 1000);
+
+        // Set up timing-based exit animation trigger
+        const checkForExitAnimation = () => {
+            if (shouldStartExitAnimation()) {
+                console.log('Starting exit animation');
+                exitAnimationStartTime = Date.now();
+                hideAlert();
+                return;
+            }
+
+            // Continue checking
+            const timeRemaining = getTimeRemaining();
+            if (timeRemaining > 0) {
+                setTimeout(checkForExitAnimation, Math.min(50, timeRemaining)); // Check frequently
+            } else {
+                // Duration expired, force exit animation start
+                console.log('Alert duration expired, forcing exit animation');
+                exitAnimationStartTime = Date.now();
+                hideAlert();
+            }
+        };
+
+        // Start monitoring for exit animation timing
+        setTimeout(checkForExitAnimation, 50);
+        }
+
+        function hideAlert() {
+            if (videoFreezeTimeout) {
+                clearTimeout(videoFreezeTimeout);
+                videoFreezeTimeout = null;
+            }
+
+            const alertDisplay = document.getElementById('alertDisplay');
+            const alertBackground = document.getElementById('alertBackground');
+            const alertGif = document.getElementById('alertGif');
+            const alertHeader = document.getElementById('alertHeader');
+            const alertMessage = document.getElementById('alertMessage');
+
+            if (alertDisplay.style.display !== 'none') {
+                // Remove in animations and add out animations
+                alertBackground.classList.remove('background-animate-in');
+                alertGif.classList.remove('gif-animate-in');
+                alertHeader.classList.remove('header-animate-in');
+                alertMessage.classList.remove('message-animate-in');
+                alertDisplay.classList.remove('container-animate-in');
+
+                // Add container animation out if enabled
+                if ('{{ContainerAnimationOut}}' !== 'none' && '{{ContainerAnimationOut}}' !== '') {
+                    setTimeout(() => {
+                        alertDisplay.classList.add('container-animate-out');
+                    }, {{ ContainerAnimationOutDelay }} * 1000);
+            }
+
+            // Add out animations with delays
+            if ('{{BackgroundAnimationOut}}' !== 'none' && '{{BackgroundAnimationOut}}' !== '') {
+                alertBackground.classList.add('background-animate-out');
+            }
+
+            setTimeout(() => {
+                if ('{{GifAnimationOut}}' !== 'none' && '{{GifAnimationOut}}' !== '') {
+                    alertGif.classList.add('gif-animate-out');
+                }
+            }, {{ GifAnimationOutDelay }} * 1000);
+
+        setTimeout(() => {
+            if ('{{HeaderAnimationOut}}' !== 'none' && '{{HeaderAnimationOut}}' !== '') {
+                alertHeader.classList.add('header-animate-out');
+            }
+        }, {{ HeaderAnimationOutDelay }} * 1000);
+
+        setTimeout(() => {
+            if ('{{MessageAnimationOut}}' !== 'none' && '{{MessageAnimationOut}}' !== '') {
+                alertMessage.classList.add('message-animate-out');
+            }
+        }, {{ MessageAnimationOutDelay }} * 1000);
+
+        // Find the longest animation duration to determine when to hide completely
+        const maxDuration = Math.max(
+            {{ BackgroundAnimationOutDuration }},
+        {{ GifAnimationOutDuration }},
+        {{ HeaderAnimationOutDuration }},
+        {{ MessageAnimationOutDuration }},
+        {{ ContainerAnimationOutDuration }}
+                );
+
+        console.log("Setting timeout to hide alert at", maxDuration * 1000);
+        setTimeout(() => {
+            alertDisplay.style.display = 'none';
+
+            // Clean up animation classes
+            alertBackground.classList.remove('background-animate-out');
+            alertGif.classList.remove('gif-animate-out');
+            alertHeader.classList.remove('header-animate-out');
+            alertMessage.classList.remove('message-animate-out');
+            alertDisplay.classList.remove('container-animate-out');
+
+            // Start checking for alert completion after animations finish
+            setTimeout(() => {
+                checkAndSendAlertComplete();
+            }, 100); // Brief delay to ensure animations have started
+        }, maxDuration * 1000);
+        }
+
+        if (alertTimeout) {
+            clearTimeout(alertTimeout);
+            alertTimeout = null;
+        }
+
+        // Clear any pending animation timeouts
+        animationTimeouts.forEach(timeout => clearTimeout(timeout));
+        animationTimeouts = [];
+    }
+
+        // Cache for file listings to avoid repeated API calls
+        var folderFilesCache = {};
+        var cacheTimeout = 30000; // 30 seconds
+
+        async function playAlertAudio(alertData) {
+            const audioElement = document.getElementById('alertAudio');
+            let audioSource = null;
+
+            // Helper function to normalize paths (convert backslashes to forward slashes and handle double slashes)
+            function normalizePath(path) {
+                if (!path) return path;
+                return path.replace(/\\/g, '/') // Convert backslashes to forward slashes
+                    .replace(/\/+$/, '') // Remove trailing slashes
+                    .replace(/\/+/g, '/'); // Replace multiple consecutive slashes with single slash
+            }
+
+            // Scenario 1: No randomization - play static file
+            if (!alertData.randomized && alertData.single_audio_dir && alertData.single_audio_name) {
+                const normalizedDir = normalizePath(alertData.single_audio_dir);
+                const normalizedName = normalizePath(alertData.single_audio_name);
+                // single_audio_dir and single_audio_name now contain full paths from the database
+                audioSource = `${normalizedDir}/${normalizedName}`;
+                console.log('Static audio source:', audioSource);
+            }
+            // Scenarios 2, 3, 4: Randomization enabled
+            else if (alertData.randomized) {
+                // Check for extra rare audio first (scenario 3 & 4)
+                if (alertData.randomized_extra && alertData.randomized_extra_chance > 0) {
+                    const extraRareRoll = Math.floor(Math.random() * 100) + 1; // 1-100
+                    if (extraRareRoll <= alertData.randomized_extra_chance && alertData.randomized_extra_dir) {
+                        console.log(`Extra rare audio triggered! Roll: ${extraRareRoll}/${alertData.randomized_extra_chance}`);
+                        audioSource = await getRandomAudioFromFolder(normalizePath(alertData.randomized_extra_dir));
+                    }
+                }
+
+                // If no extra rare audio triggered, check for regular randomization
+                if (!audioSource && alertData.randomized_chance > 0 && alertData.randomized_dir) {
+                    const randomRoll = Math.floor(Math.random() * 100) + 1; // 1-100
+                    if (randomRoll <= alertData.randomized_chance) {
+                        console.log(`Random audio triggered! Roll: ${randomRoll}/${alertData.randomized_chance}`);
+                        audioSource = await getRandomAudioFromFolder(normalizePath(alertData.randomized_dir));
+                    }
+                    // Scenario 2 & 3: Fall back to static file if random doesn't trigger and static file exists
+                    else if (alertData.single_audio_dir && alertData.single_audio_name) {
+                        const normalizedDir = normalizePath(alertData.single_audio_dir);
+                        const normalizedName = normalizePath(alertData.single_audio_name);
+                        // single_audio_dir and single_audio_name now contain full paths from the database
+                        audioSource = `${normalizedDir}/${normalizedName}`;
+                    }
+                }
+
+                // Scenario 4: Always pick from randomized_dir if no extra rare and no static fallback
+                if (!audioSource && alertData.randomized_dir && (!alertData.single_audio_dir || !alertData.single_audio_name)) {
+                    console.log('No static fallback, using random audio from primary folder');
+                    audioSource = await getRandomAudioFromFolder(normalizePath(alertData.randomized_dir));
+                }
+                console.log('Random audio source:', audioSource);
+            }
+
+            // Play the audio if we have a source
+            if (audioSource) {
+                console.log('Playing audio:', audioSource);
+                audioElement.src = audioSource;
+
+                // Set volume if specified
+                if (alertData.volume !== undefined && alertData.volume !== null) {
+                    audioElement.volume = Math.max(0, Math.min(1, alertData.volume / 100));
+                }
+
+                // Attempt to play audio with better error handling
+                const playPromise = audioElement.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        if (error.name === 'NotAllowedError') {
+                            console.warn('Audio autoplay was prevented by browser policy. User interaction required.');
+                        } else {
+                            console.error('Error playing audio:', error);
+                        }
+                    });
+                }
+            } else {
+                console.log('No audio source determined for alert');
+            }
+        }
+
+        function getRandomAudioFromFolder(folderName) {
+            return new Promise((resolve, reject) => {
+                // Check cache first
+                const cacheKey = folderName;
+                const now = Date.now();
+
+                if (folderFilesCache[cacheKey] && (now - folderFilesCache[cacheKey].timestamp < cacheTimeout)) {
+                    // Use cached files
+                    const cachedFiles = folderFilesCache[cacheKey].files;
+                    if (cachedFiles && cachedFiles.length > 0) {
+                        const randomFile = cachedFiles[Math.floor(Math.random() * cachedFiles.length)];
+                        // folderName contains the full path from the database
+                        resolve(`${folderName}/${randomFile}`);
+                        console.log(`Selected random audio: ${randomFile} from ${data.files.length} files in ${folderName}`);
+                        return;
+                    }
+                }
+
+                // Convert full path to relative path expected by server
+                // Server now supports subdirectories properly
+                // e.g., "/assets/alerts/points/donald_sounds/" becomes "points/donald_sounds"
+                let serverFolderPath = folderName;
+                if (serverFolderPath.startsWith('/assets/alerts/')) {
+                    serverFolderPath = serverFolderPath.substring('/assets/alerts/'.length);
+                }
+                // Remove trailing slash
+                if (serverFolderPath.endsWith('/')) {
+                    serverFolderPath = serverFolderPath.slice(0, -1);
+                }
+
+                // Request file list from server via websocket
+                const requestId = 'audio_files_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                console.log('Requesting audio files from folder:', serverFolderPath);
+                console.log('Request ID:', requestId);
+                // Set up one-time listener for the response
+                const responseHandler = (data) => {
+                    if (data.request_id === requestId) {
+                        socket.off('audio_files_response', responseHandler);
+
+                        if (data.success && data.files && data.files.length > 0) {
+                            // Cache the files
+                            folderFilesCache[cacheKey] = {
+                                files: data.files,
+                                timestamp: now
+                            };
+
+                            // Select random file
+                            const randomFile = data.files[Math.floor(Math.random() * data.files.length)];
+                            console.log(`Selected random audio: ${randomFile} from ${data.files.length} files in ${folderName}`);
+                            // Return with original full path for audio source
+                            resolve(`${folderName}/${randomFile}`);
+                        } else {
+                            console.warn(`No audio files found in folder: ${folderName} (server path: ${serverFolderPath}), skipping audio playback`);
+                            resolve(null); // Resolve with null instead of rejecting to avoid uncaught promise errors
+                        }
+                    }
+                };
+
+                // Set timeout for the request
+                const timeoutId = setTimeout(() => {
+                    socket.off('audio_files_response', responseHandler);
+                    console.warn(`Timeout waiting for audio files from folder: ${folderName} (server path: ${serverFolderPath}), skipping audio playback`);
+                    resolve(null); // Resolve with null instead of rejecting to avoid uncaught promise errors
+                }, 5000); // 5 second timeout
+
+                // Listen for response
+                socket.on('audio_files_response', responseHandler);
+
+                // Make the request with the converted server path
+                console.log('Sending get_audio_files request to server with folder:', serverFolderPath);
+                socket.emit('get_audio_files', {
+                    folder: serverFolderPath,
+                    request_id: requestId
+                });
+            });
+        }
+
+        function formatUsername(alertData) {
+            if (alertData.anonymous) {
+                return 'Anonymous';
+            }
+            return alertData.username || 'Unknown User';
+        }
+
+        function formatAlertText(alertData) {
+            let text = '';
+
+            switch (alertData.alert_type) {
+                case 'follow':
+                    text = `thanks for the follow!`;
+                    break;
+                case 'sub':
+                    text = `thanks for subscribing!`;
+                    if (alertData.tier && alertData.tier > 1) {
+                        text = `thanks for the Tier ${alertData.tier} sub!`;
+                    }
+                    break;
+                case 'resub':
+                    text = `${alertData.resub_month} month subscriber!`;
+                    break;
+                case 'giftsub':
+                    text = `gifted ${alertData.gift_qty} sub${alertData.gift_qty > 1 ? 's' : ''}!`;
+                    if (alertData.tier && alertData.tier > 1) {
+                        text = `gifted ${alertData.gift_qty} Tier ${alertData.tier} sub${alertData.gift_qty > 1 ? 's' : ''}!`;
+                    }
+                    break;
+                case 'bit':
+                    text = `cheered ${alertData.amt_cheered} bit${alertData.amt_cheered > 1 ? 's' : ''}!`;
+                    break;
+                case 'raid':
+                    text = `raided with ${alertData.raider_count} viewers!`;
+                    break;
+                case 'point':
+                    text = `redeemed: ${alertData.title || 'Channel Points'}!`;
+                    if (alertData.point_cost > 0) {
+                        text = `redeemed: ${alertData.title || 'Channel Points'} (${alertData.point_cost} points)!`;
+                    }
+                    break;
+                case 'donation':
+                    const amount = alertData.amount || alertData.donation_amount || 0;
+                    text = `donated $${amount.toFixed(2)}!`;
+                    break;
+                case 'hype_train_start':
+                    text = `hype Train started!`;
+                    break;
+                case 'hype_train_progress':
+                    text = `hype Train Level ${alertData.hype_train_level}!`;
+                    break;
+                case 'hype_train_end':
+                    text = `hype Train ended at Level ${alertData.hype_train_level}!`;
+                    break;
+                default:
+                    text = `triggered an alert!`;
+            }
+
+            return text;
+        }
+
+        function formatAlertMessage(alertData) {
+            if (alertData.message && alertData.message.trim() !== '') {
+                return alertData.message;
+            }
+            return '';
+        }
+
+        // Load template config directly from API
+        async function loadTemplateConfig() {
+            try {
+                const response = await fetch('/api/all-template-configs');
+                if (response.ok) {
+                    const allConfigs = await response.json();
+                    console.log('Loaded all template configs:', Object.keys(allConfigs));
+
+                    // Get the alerts config specifically
+                    const alertsConfigData = allConfigs.alerts;
+                    if (alertsConfigData && alertsConfigData.elements) {
+                        console.log('Found alerts template config:', alertsConfigData);
+
+                        // Extract the config values from the elements array
+                        const config = {};
+                        alertsConfigData.elements.forEach(element => {
+                            if (element.type !== 'section') {
+                                config[element.id] = element.value;
+                            }
+                        });
+
+                        console.log('Parsed config values:', config);
+                        applyTemplateConfig(config);
+                    } else {
+                        console.warn('No alerts config found in response');
+                    }
+                } else {
+                    console.error('Failed to load template configs:', response.status);
+                }
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        function applyTemplateConfig(config) {
+            console.log('Applying template config:', config);
+
+            // Use the correct selector - the alert display container
+            const alertDisplay = document.getElementById('alertDisplay');
+
+            if (!alertDisplay) {
+                console.warn('Alert display element not found, skipping template config application');
+                return;
+            }
+
+            // Apply position and size settings to the alert display
+            if (config.AlertWidth !== undefined) {
+                alertDisplay.style.width = config.AlertWidth + 'px';
+            }
+            if (config.AlertHeight !== undefined) {
+                alertDisplay.style.height = config.AlertHeight + 'px';
+            }
+
+            // Apply global duration settings if available (these are used by the showAlert function)
+            if (config.AlertDuration !== undefined) {
+                window.alertDuration = config.AlertDuration * 1000; // Convert to milliseconds
+            }
+
+            // Apply background settings to the alert background element
+            const alertBackground = document.getElementById('alertBackground');
+            if (alertBackground) {
+                if (config.BackgroundColor) {
+                    alertBackground.style.backgroundColor = config.BackgroundColor;
+                }
+                if (config.BorderRadius !== undefined) {
+                    alertBackground.style.borderRadius = config.BorderRadius + 'px';
+                }
+            }
+
+            // Apply text styling to username and message elements
+            const usernameElements = document.querySelectorAll('.alert-username');
+            const messageElements = document.querySelectorAll('.alert-message');
+
+            if (config.UsernameFontFamily) {
+                usernameElements.forEach(el => el.style.fontFamily = config.UsernameFontFamily);
+            }
+            if (config.UsernameFontSize !== undefined) {
+                usernameElements.forEach(el => el.style.fontSize = config.UsernameFontSize + 'px');
+            }
+            if (config.UsernameColor) {
+                usernameElements.forEach(el => el.style.color = config.UsernameColor);
+            }
+
+            if (config.MessageFontFamily) {
+                messageElements.forEach(el => el.style.fontFamily = config.MessageFontFamily);
+            }
+            if (config.MessageFontSize !== undefined) {
+                messageElements.forEach(el => el.style.fontSize = config.MessageFontSize + 'px');
+            }
+            if (config.MessageColor) {
+                messageElements.forEach(el => el.style.color = config.MessageColor);
+            }
+
+            // Apply shadow effects
+            if (config.EnableTextShadow && config.ShadowColor) {
+                const offsetX = config.ShadowOffsetX || 2;
+                const offsetY = config.ShadowOffsetY || 2;
+                const blur = config.ShadowBlur || 4;
+                const shadow = `${offsetX}px ${offsetY}px ${blur}px ${config.ShadowColor}`;
+
+                usernameElements.forEach(el => el.style.textShadow = shadow);
+                messageElements.forEach(el => el.style.textShadow = shadow);
+            }
+
+            // Apply animation settings
+            if (config.AnimationType) {
+                // Store animation type for use during alert display
+                window.alertConfig = window.alertConfig || {};
+                window.alertConfig.animationType = config.AnimationType;
+            }
+            if (config.EnableSounds !== undefined) {
+                window.alertConfig = window.alertConfig || {};
+                window.alertConfig.enableSounds = config.EnableSounds;
+            }
+            if (config.GlobalVolume !== undefined) {
+                window.alertConfig = window.alertConfig || {};
+                window.alertConfig.globalVolume = config.GlobalVolume / 100;
+            }
+
+            // Apply queue settings
+            if (config.QueueAlerts !== undefined) {
+                window.alertConfig = window.alertConfig || {};
+                window.alertConfig.queueAlerts = config.QueueAlerts;
+            }
+        }
+
+        // Load config on startup
+        loadTemplateConfig();
+
+        // Periodically reload config to pick up changes (every 5 seconds)
+        // setInterval(loadTemplateConfig, 5000);
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden && currentAlert) {
+                console.log('Page hidden, alert paused');
+            } else if (!document.hidden && currentAlert) {
+                console.log('Page visible, alert resumed');
+            }
+        });
+    </script>
+</body>
+
+
+</html>

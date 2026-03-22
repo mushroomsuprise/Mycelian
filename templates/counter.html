@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Counter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <style>
+        @font-face {
+            font-family: counter-font;
+            src: url("/assets/default_assets/fonts/{{FontName}}");
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: counter-font, Arial, sans-serif;
+        }
+
+        .counter-container {
+            position: absolute;
+
+            top: {{ContainerTop}}px;
+
+            left: {{ContainerLeft}}px;
+
+            width: {{ContainerWidth}}px;
+            height: {{ContainerHeight}}px;
+            vertical-align: middle;
+            line-height: {{ContainerHeight}}px;
+
+            text-align: {{TextAlign}};
+            display: flex;
+            align-items: center;
+
+            justify-content: {{JustifyContent}};
+        }
+
+        .counter-text {
+            font-family: counter-font, Arial, sans-serif;
+
+            color: {{TextColor}};
+
+            font-size: {{FontSize}}px;
+
+            font-weight: {{FontWeight}};
+
+            text-shadow: {{TextShadow}};
+
+            line-height: {{ContainerHeight}}px;
+
+            height: {{ContainerHeight}}px;
+            vertical-align: middle;
+
+            white-space: {{WhiteSpace}};
+
+            word-wrap: {{WordWrap}};
+
+            transition: all {{AnimationDuration}}s {{AnimationEasing}};
+        }
+
+        /* Animation classes */
+        .fade-in {
+            animation: fadeIn {{AnimationDuration}}s {{AnimationEasing}};
+        }
+
+        .fade-out {
+            animation: fadeOut {{AnimationDuration}}s {{AnimationEasing}};
+        }
+
+        .slide-in {
+            animation: slideIn {{AnimationDuration}}s {{AnimationEasing}};
+        }
+
+        .bounce {
+            animation: bounce {{AnimationDuration}}s {{AnimationEasing}};
+        }
+
+        .pulse {
+            animation: pulse {{AnimationDuration}}s {{AnimationEasing}} infinite;
+        }
+
+        /* Keyframe animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+
+            to {
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-100%);
+            }
+
+            to {
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes bounce {
+
+            0%,
+            20%,
+            53%,
+            80%,
+            100% {
+                transform: translate3d(0, 0, 0);
+            }
+
+            40%,
+            43% {
+                transform: translate3d(0, -30px, 0);
+            }
+
+            70% {
+                transform: translate3d(0, -15px, 0);
+            }
+
+            90% {
+                transform: translate3d(0, -4px, 0);
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale({{PulseScale}});
+            }
+
+        100% {
+            transform: scale(1);
+        }
+        }
+
+        /* Background styling */
+        .counter-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+
+            background: {{BackgroundColor}};
+
+            border-radius: {{BackgroundRadius}}px;
+
+            border: {{BackgroundBorder}}px solid {{BackgroundBorderColor}};
+
+            box-shadow: {{BackgroundShadow}};
+
+            opacity: {{BackgroundOpacity}};
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .counter-container {
+                width: calc({{ContainerWidth}}px * 0.9);
+                height: calc({{ContainerHeight}}px * 0.9);
+            }
+
+            .counter-text {
+                font-size: calc({{FontSize}}px * 0.9);
+                line-height: calc({{ContainerHeight}}px * 0.9);
+                height: calc({{ContainerHeight}}px * 0.9);
+            }
+        }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="counter-container">
+        {% if ShowBackground %}
+        <div class="counter-background"></div>
+        {% endif %}
+        <div class="counter-text" id="counterText">{{Message}}</div>
+    </div>
+
+    <script>
+        // Global variables
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var counterData = {
+            message: {{ Message| tojson }},
+            lastUpdate: Date.now()
+        };
+
+        var settings = {
+            enableAnimations: {{ EnableAnimations| tojson }},
+            animationType: {{ AnimationType | tojson }},
+            enablePulse: {{ EnablePulse | tojson }},
+            autoRefresh: {{ AutoRefresh | tojson }},
+            refreshInterval: {{ RefreshInterval | tojson }} * 1000
+        };
+
+        var refreshTimeout = null;
+
+        // Socket event listeners
+        socket.on('connect', function () {
+            console.log('Connected to counter server');
+            updateDisplay();
+        });
+
+        socket.on('refresh-counter', function () {
+            if (settings.enableAnimations) {
+                animateRefresh();
+            } else {
+                location.reload(true);
+            }
+        });
+
+        socket.on('counter_update', function (data) {
+            if (data && data.message !== undefined) {
+                updateCounter(data.message);
+            }
+        });
+
+        socket.on('counter_message', function (data) {
+            if (data && data.message !== undefined) {
+                updateCounter(data.message);
+            }
+        });
+
+        // Handle dynamic control events from source_controls
+        socket.on('counter_increment', function (data) {
+            console.log('Counter increment received');
+            handleCounterOperation('increment');
+        });
+
+        socket.on('counter_decrement', function (data) {
+            console.log('Counter decrement received');
+            handleCounterOperation('decrement');
+        });
+
+        socket.on('counter_reset', function (data) {
+            console.log('Counter reset received');
+            handleCounterOperation('reset');
+        });
+
+        socket.on('counter_update', function (data) {
+            console.log('Counter update received');
+            handleCounterOperation('update', data.value);
+        });
+
+        // Connector action event listeners
+        socket.on('counter_increase_counter', function (data) {
+            console.log('Connector action: increase counter', data);
+            handleCounterOperation('increment');
+        });
+
+        socket.on('counter_decrease_counter', function (data) {
+            console.log('Connector action: decrease counter', data);
+            handleCounterOperation('decrement');
+        });
+
+        socket.on('counter_reset_counter', function (data) {
+            console.log('Connector action: reset counter', data);
+            handleCounterOperation('reset');
+        });
+
+        // Handle counter operations (increment, decrement, reset, set)
+        function handleCounterOperation(operation, value) {
+            var currentText = document.getElementById('counterText').textContent;
+            var currentValue = 0;
+            var messageTemplate = currentText;
+
+            // Try to extract number from the current message
+            var numberMatch = currentText.match(/\d+/);
+            if (numberMatch) {
+                currentValue = parseInt(numberMatch[0]);
+                messageTemplate = currentText.replace(/\d+/, '{VALUE}');
+            } else {
+                // If no number found, assume it's just the number or use a default template
+                if (!isNaN(parseInt(currentText))) {
+                    currentValue = parseInt(currentText) || 0;
+                    messageTemplate = '{VALUE}';
+                } else {
+                    // Default template if no number found
+                    messageTemplate = currentText + ' {VALUE}';
+                }
+            }
+
+            var newValue = currentValue;
+
+            switch (operation) {
+                case 'increment':
+                    newValue = currentValue + 1;
+                    break;
+                case 'decrement':
+                    newValue = Math.max(0, currentValue - 1);
+                    break;
+                case 'reset':
+                    newValue = 0;
+                    break;
+                case 'update':
+                    newValue = Math.max(0, parseInt(value) || 0);
+                    break;
+            }
+
+            // Create new message with the updated value
+            var newMessage = messageTemplate.replace('{VALUE}', newValue.toString());
+
+            console.log('Counter operation:', operation, 'Old value:', currentValue, 'New value:', newValue, 'New message:', newMessage);
+
+            updateCounter(newMessage);
+        }
+
+        // Update counter with new message
+        function updateCounter(newMessage) {
+            if (newMessage !== counterData.message) {
+                counterData.message = newMessage;
+                counterData.lastUpdate = Date.now();
+
+                if (settings.enableAnimations) {
+                    animateUpdate(newMessage);
+                } else {
+                    document.getElementById('counterText').textContent = newMessage;
+                }
+
+                saveCounterState();
+            }
+        }
+
+        // Animate counter update
+        function animateUpdate(newMessage) {
+            var textElement = document.getElementById('counterText');
+
+            // Remove existing animation classes
+            textElement.className = 'counter-text';
+
+            // Add fade out effect
+            textElement.classList.add('fade-out');
+
+            setTimeout(function () {
+                textElement.textContent = newMessage;
+                textElement.classList.remove('fade-out');
+                textElement.classList.add(settings.animationType);
+
+                // Remove animation class after animation completes
+                setTimeout(function () {
+                    textElement.classList.remove(settings.animationType);
+                }, {{ AnimationDuration| tojson}} * 1000);
+            }, {{ AnimationDuration | tojson }} * 500);
+        }
+
+        // Animate refresh
+        function animateRefresh() {
+            var textElement = document.getElementById('counterText');
+
+            textElement.classList.add('fade-out');
+
+            setTimeout(function () {
+                location.reload(true);
+            }, {{ AnimationDuration| tojson}} * 500);
+        }
+
+        // Update display
+        function updateDisplay() {
+            var textElement = document.getElementById('counterText');
+            textElement.textContent = counterData.message;
+
+            // Apply pulse animation if enabled
+            if (settings.enablePulse) {
+                textElement.classList.add('pulse');
+            }
+
+            // Apply entry animation if enabled
+            if (settings.enableAnimations) {
+                textElement.classList.add(settings.animationType);
+
+                setTimeout(function () {
+                    textElement.classList.remove(settings.animationType);
+                }, {{ AnimationDuration| tojson}} * 1000);
+            }
+        }
+
+        // Auto refresh functionality
+        function startAutoRefresh() {
+            if (settings.autoRefresh && settings.refreshInterval > 0) {
+                refreshTimeout = setTimeout(function () {
+                    location.reload(true);
+                }, settings.refreshInterval);
+            }
+        }
+
+        function stopAutoRefresh() {
+            if (refreshTimeout) {
+                clearTimeout(refreshTimeout);
+                refreshTimeout = null;
+            }
+        }
+
+        // Save counter state to localStorage
+        function saveCounterState() {
+            var state = {
+                message: counterData.message,
+                lastUpdate: counterData.lastUpdate,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('counter_state', JSON.stringify(state));
+        }
+
+        // Load counter state from localStorage
+        function loadCounterState() {
+            try {
+                var saved = localStorage.getItem('counter_state');
+                if (saved) {
+                    var state = JSON.parse(saved);
+                    // Load saved state (no expiration check as requested)
+                    counterData.message = state.message || counterData.message;
+                    counterData.lastUpdate = state.lastUpdate || counterData.lastUpdate;
+                    return true;
+                }
+            } catch (e) {
+                console.error('Error loading counter state:', e);
+            }
+            return false;
+        }
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else {
+                updateDisplay();
+                startAutoRefresh();
+            }
+        });
+
+        // Handle window focus/blur
+        window.addEventListener('focus', function () {
+            updateDisplay();
+            startAutoRefresh();
+        });
+
+        window.addEventListener('blur', function () {
+            stopAutoRefresh();
+        });
+
+        // Load template config directly from API
+        async function loadTemplateConfig() {
+            try {
+                const response = await fetch('/api/all-template-configs');
+                if (response.ok) {
+                    const allConfigs = await response.json();
+                    console.log('Loaded all template configs:', Object.keys(allConfigs));
+
+                    // Get the counter config specifically
+                    const counterConfigData = allConfigs.counter;
+                    if (counterConfigData && counterConfigData.elements) {
+                        console.log('Found counter template config:', counterConfigData);
+
+                        // Extract the config values from the elements array
+                        const config = {};
+                        counterConfigData.elements.forEach(element => {
+                            if (element.type !== 'section') {
+                                config[element.id] = element.value;
+                            }
+                        });
+
+                        console.log('Parsed config values:', config);
+                        applyTemplateConfig(config);
+                    } else {
+                        console.warn('No counter config found in response');
+                    }
+                } else {
+                    console.error('Failed to load template configs:', response.status);
+                }
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        function applyTemplateConfig(config) {
+            console.log('Applying template config:', config);
+
+            const counterContainer = document.querySelector('.counter-container');
+            const counterText = document.getElementById('counterText');
+
+            // Apply container position and size
+            if (config.ContainerLeft !== undefined) {
+                counterContainer.style.left = config.ContainerLeft + 'px';
+            }
+            if (config.ContainerTop !== undefined) {
+                counterContainer.style.top = config.ContainerTop + 'px';
+            }
+            if (config.ContainerWidth !== undefined) {
+                counterContainer.style.width = config.ContainerWidth + 'px';
+            }
+            if (config.ContainerHeight !== undefined) {
+                counterContainer.style.height = config.ContainerHeight + 'px';
+            }
+
+            // Apply text styling
+            if (config.FontFamily) {
+                counterText.style.fontFamily = config.FontFamily;
+            }
+            if (config.FontSize !== undefined) {
+                counterText.style.fontSize = config.FontSize + 'px';
+            }
+            if (config.FontWeight) {
+                counterText.style.fontWeight = config.FontWeight;
+            }
+            if (config.TextColor) {
+                counterText.style.color = config.TextColor;
+            }
+            if (config.TextAlign) {
+                counterText.style.textAlign = config.TextAlign;
+            }
+
+            // Apply shadow effects
+            if (config.EnableTextShadow && config.ShadowColor) {
+                const offsetX = config.ShadowOffsetX || 2;
+                const offsetY = config.ShadowOffsetY || 2;
+                const blur = config.ShadowBlur || 4;
+                counterText.style.textShadow = `${offsetX}px ${offsetY}px ${blur}px ${config.ShadowColor}`;
+            } else {
+                counterText.style.textShadow = 'none';
+            }
+
+            // Apply outline effects
+            if (config.EnableTextOutline && config.OutlineColor) {
+                const width = config.OutlineWidth || 1;
+                counterText.style.webkitTextStroke = `${width}px ${config.OutlineColor}`;
+            } else {
+                counterText.style.webkitTextStroke = 'none';
+            }
+
+            // Apply background settings
+            if (config.ShowBackground !== undefined) {
+                const background = counterContainer.querySelector('.counter-background');
+                if (config.ShowBackground && !background) {
+                    // Create background element if it doesn't exist
+                    const bgElement = document.createElement('div');
+                    bgElement.className = 'counter-background';
+                    counterContainer.insertBefore(bgElement, counterText);
+                } else if (!config.ShowBackground && background) {
+                    // Remove background element if it exists
+                    background.remove();
+                }
+            }
+
+            // Apply background styling
+            const background = counterContainer.querySelector('.counter-background');
+            if (background) {
+                if (config.BackgroundColor) {
+                    background.style.backgroundColor = config.BackgroundColor;
+                }
+                if (config.BackgroundOpacity !== undefined) {
+                    background.style.opacity = config.BackgroundOpacity;
+                }
+                if (config.BorderRadius !== undefined) {
+                    background.style.borderRadius = config.BorderRadius + 'px';
+                }
+            }
+
+            // Apply animation settings
+            if (config.EnableAnimations !== undefined) {
+                settings.enableAnimations = config.EnableAnimations;
+            }
+            if (config.AnimationType) {
+                settings.animationType = config.AnimationType;
+            }
+            if (config.EnablePulse !== undefined) {
+                settings.enablePulse = config.EnablePulse;
+                if (config.EnablePulse) {
+                    counterText.classList.add('pulse');
+                } else {
+                    counterText.classList.remove('pulse');
+                }
+            }
+            if (config.AnimationDuration !== undefined) {
+                // Update CSS custom property if needed
+                document.documentElement.style.setProperty('--animation-duration', config.AnimationDuration + 's');
+            }
+
+            // Apply refresh settings
+            if (config.AutoRefresh !== undefined) {
+                settings.autoRefresh = config.AutoRefresh;
+                if (config.AutoRefresh) {
+                    startAutoRefresh();
+                } else {
+                    stopAutoRefresh();
+                }
+            }
+            if (config.RefreshInterval !== undefined) {
+                settings.refreshInterval = config.RefreshInterval * 1000;
+                if (settings.autoRefresh) {
+                    stopAutoRefresh();
+                    startAutoRefresh(); // Restart with new interval
+                }
+            }
+
+            // Update message if provided
+            if (config.Message !== undefined) {
+                updateCounter(config.Message);
+            }
+        }
+
+        // Initialize
+        if (!loadCounterState()) {
+            updateDisplay();
+        }
+
+        // Load config on startup
+        loadTemplateConfig();
+
+        // Periodically reload config to pick up changes (every 5 seconds)
+        // setInterval(loadTemplateConfig, 5000);
+
+        startAutoRefresh();
+
+        console.log('Mycelian Counter initialized');
+    </script>
+</body>
+
+</html>

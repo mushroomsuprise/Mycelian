@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Title Display</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <style>
+        @font-face {
+            font-family: title-font;
+            src: url("/assets/default_assets/fonts/{{FontName}}");
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: title-font, Arial, sans-serif;
+        }
+
+        .title-container {
+            position: absolute;
+
+            top: {{TitleTop}}px;
+
+            left: {{TitleLeft}}px;
+
+            width: {{TitleWidth}}px;
+
+            height: {{TitleHeight}}px;
+            display: flex;
+            align-items: center;
+
+            justify-content: {{TitleAlign}};
+
+            background: {{ContainerBG}};
+
+            border-radius: {{ContainerRadius}}px;
+
+            border: {{ContainerBorder}}px solid {{ContainerBorderColor}};
+
+            box-shadow: {{ContainerShadow}};
+
+            padding: {{ContainerPadding}}px;
+            box-sizing: border-box;
+        }
+
+        .title-text {
+            font-size: {{FontSize}}px;
+
+            font-weight: {{FontWeight}};
+
+            color: {{FontColor}};
+
+            text-shadow: {{TextShadow}};
+
+            text-align: {{TitleAlign}};
+
+            line-height: {{LineHeight}};
+            white-space: nowrap;
+            max-width: 100%;
+            max-height: 100%;
+            overflow: hidden;
+        }
+
+        /* Animation for text changes */
+        .title-text.updating {
+            opacity: 0.7;
+
+            transition: opacity {{TransitionDuration}}s ease;
+        }
+
+        .title-text.updated {
+            opacity: 1;
+
+            transition: opacity {{TransitionDuration}}s ease;
+        }
+
+        /* Wipe animation container */
+        .wipe-container {
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+
+        .wipe-old-text,
+        .wipe-new-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+
+            justify-content: {{TitleAlign}};
+        }
+
+        .wipe-new-text {
+            transform: translateX(100%);
+
+            transition: transform {{TransitionDuration}}s cubic-bezier({{WipeEasing}}, 0.46, 0.45, 0.94);
+        }
+
+        .wipe-new-text.wipe-active {
+            transform: translateX(0%);
+        }
+
+        .wipe-old-text {
+            transition: transform {{TransitionDuration}}s cubic-bezier({{WipeEasing}}, 0.46, 0.45, 0.94);
+        }
+
+        .wipe-old-text.wipe-active {
+            transform: translateX(-100%);
+        }
+
+        /* Alternative wipe directions */
+        .wipe-right-to-left .wipe-new-text {
+            transform: translateX(-100%);
+        }
+
+        .wipe-right-to-left .wipe-old-text.wipe-active {
+            transform: translateX(100%);
+        }
+
+        .wipe-top-to-bottom .wipe-new-text {
+            transform: translateY(-100%);
+        }
+
+        .wipe-top-to-bottom .wipe-new-text.wipe-active {
+            transform: translateY(0%);
+        }
+
+        .wipe-top-to-bottom .wipe-old-text.wipe-active {
+            transform: translateY(100%);
+        }
+
+        .wipe-bottom-to-top .wipe-new-text {
+            transform: translateY(100%);
+        }
+
+        .wipe-bottom-to-top .wipe-new-text.wipe-active {
+            transform: translateY(0%);
+        }
+
+        .wipe-bottom-to-top .wipe-old-text.wipe-active {
+            transform: translateY(-100%);
+        }
+
+        /* Pulse animation for live updates */
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: {{PulseOpacity}};
+            }
+        }
+
+        .title-text.pulse {
+            animation: pulse {{PulseSpeed}}s infinite;
+        }
+
+        /* Glow effect */
+        .title-text.glow {
+            text-shadow: {{TextShadow|tojson}},
+            0 0 10px {{GlowColor}},
+            0 0 20px {{GlowColor}};
+        }
+
+
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .title-container {
+                width: calc({{TitleWidth}}px * 0.9);
+
+            height: calc({{TitleHeight}}px * 0.9);
+
+        padding: calc({{ContainerPadding}}px * 0.8);
+        }
+
+        /* Font size is now handled dynamically by JavaScript */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="title-container" id="titleContainer">
+        <div class="title-text" id="titleText">Stream Title</div>
+    </div>
+
+
+
+    <script>
+        // Global variables
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var titleData = {
+            currentTitle: "Stream Title",
+        showCategory: {{ ShowCategory | tojson }},
+        categoryPrefix: {{ CategoryPrefix | tojson }},
+        categorySuffix: "{{CategorySuffix}}"
+        };
+
+        var settings = {
+            enableAnimations: {{ EnableAnimations| tojson}},
+        enablePulse: {{ EnablePulse | tojson }},
+        enableGlow: {{ EnableGlow | tojson }},
+        enableWipe: {{ EnableWipe | tojson }},
+        wipeDirection: {{ WipeDirection | tojson }},
+        wipeEasing: {{ WipeEasing | tojson }}
+        };
+
+        // Font sizing settings
+        var baseFontSize = {{ FontSize }};
+        var minFontSize = Math.max(12, baseFontSize * 0.3); // Minimum 12px or 30% of base
+
+        var currentCategory = "";
+        var isManualMode = false;
+        var manualTitle = "";
+        var retryTimeout = null;
+        var isRetryingCategory = false;
+        var currentStreamerName = "";
+
+        // Local storage keys
+        var STORAGE_KEYS = {
+            MANUAL_MODE: 'mycelian_title_manual_mode',
+            MANUAL_TITLE: 'mycelian_title_manual_title'
+        };
+
+        // Socket event listeners
+        socket.on('connect', function () {
+            console.log('Connected to title server');
+            console.log('Title socket ID:', socket.id);
+            console.log('Title socket connected:', socket.connected);
+            // Request streamer info and then make initial API call
+            requestStreamerInfo();
+        });
+
+        socket.on('disconnect', function () {
+            console.log('Title socket disconnected');
+        });
+
+        socket.on('connect_error', function (error) {
+            console.error('Title socket connection error:', error);
+        });
+
+        // Get streamer info from server
+        socket.on('streamer-info', function (data) {
+            if (data && data.streamer_name) {
+                console.log('Received streamer info:', data.streamer_name);
+                currentStreamerName = data.streamer_name;
+                makeInitialTwitchApiCall(data.streamer_name);
+            } else {
+                console.log(data)
+                console.error('No streamer info received');
+            }
+        });
+
+        // Handle Twitch API response for initial call
+        socket.on('twitch-api-response', function (data) {
+            console.log('[DEBUG] twitch-api-response event received:', JSON.stringify(data));
+            
+            // Check if this is our request by looking at the requestId
+            if (data.requestId && data.requestId.startsWith('initial_stream_info_')) {
+                console.log('[INFO] Processing initial stream info response for request:', data.requestId);
+                
+                if (data.success && data.data && data.data.data && data.data.data.length > 0) {
+                    var streamInfo = data.data.data[0];
+                    console.log('[DEBUG] Stream info received:', JSON.stringify(streamInfo));
+                    
+                    if (streamInfo.game_name) {
+                        console.log('[SUCCESS] Initial category from API:', streamInfo.game_name);
+                        console.log('[DEBUG] Updating currentCategory from "' + currentCategory + '" to "' + streamInfo.game_name + '"');
+                        currentCategory = streamInfo.game_name;
+                        stopCategoryRetry(); // Stop retrying since we got a successful response
+                        updateTitle();
+                        console.log('[SUCCESS] Initial API call processed successfully');
+                    } else {
+                        console.log('[WARNING] No game_name in API response, keeping current category');
+                        // Don't overwrite existing category data - keep current value
+                        updateTitle();
+                    }
+                } else {
+                    console.log('[INFO] No stream data in API response, stream may be offline - scheduling retry');
+                    console.log('[DEBUG] API response structure:', {
+                        success: data.success,
+                        hasData: !!data.data,
+                        hasDataArray: !!(data.data && data.data.data),
+                        dataArrayLength: data.data && data.data.data ? data.data.data.length : 0
+                    });
+                    
+                    // Don't overwrite existing category data when stream is offline
+                    // This preserves any valid category from previous EventSub updates
+                    updateTitle();
+                    
+                    // Schedule retry if we have a streamer name
+                    if (currentStreamerName) {
+                        console.log('[INFO] Scheduling retry for streamer:', currentStreamerName);
+                        scheduleCategoryRetry(currentStreamerName);
+                    } else {
+                        console.log('[ERROR] Cannot schedule retry - no streamer name available');
+                    }
+                }
+            } else {
+                console.log('[DEBUG] Ignoring API response - not our request');
+            }
+        });
+
+        // Listen for category updates from websocket
+        socket.on('twitch_data_update', function (data) {
+            console.log('[DEBUG] twitch_data_update event received:', JSON.stringify(data));
+            console.log('[DEBUG] Current state:', {
+                isManualMode: isManualMode,
+                currentCategory: currentCategory,
+                manualTitle: manualTitle,
+                showCategory: titleData.showCategory
+            });
+            
+            if (data && data.current_category !== undefined) {
+                console.log('[INFO] Category update received:', data.current_category, 'isManualMode:', isManualMode);
+                if (!isManualMode) {
+                    console.log('[INFO] Processing category update - setting currentCategory to:', data.current_category);
+                    currentCategory = data.current_category || "";
+                    stopCategoryRetry(); // Stop retrying since EventSub is now providing updates
+                    updateTitle();
+                    console.log('[SUCCESS] Category update processed successfully');
+                } else {
+                    console.log('[IGNORED] Category update ignored - manual mode is active');
+                }
+            } else {
+                console.log('[WARNING] Invalid or empty twitch_data_update received:', data);
+            }
+        });
+
+        // Dynamic control event handlers
+        socket.on('title_toggle_auto_update', function (data) {
+            console.log('[DEBUG] Auto update toggle received:', JSON.stringify(data));
+            console.log('[DEBUG] Current isManualMode before toggle:', isManualMode, 'manualTitle:', manualTitle);
+            
+            if (data && typeof data.enabled === 'boolean') {
+                var oldMode = isManualMode;
+                isManualMode = !data.enabled;
+                console.log('[INFO] Manual mode toggle:', oldMode, '->', isManualMode, '(enabled =', data.enabled, ')');
+                saveManualTitleSettings(); // Save the mode change
+                
+                if (!isManualMode) {
+                    // Switching back to auto mode - fetch fresh category data
+                    console.log('[INFO] Switched to auto mode - fetching fresh category data');
+                    console.log('[DEBUG] Current state before fetching:', {
+                        currentCategory: currentCategory,
+                        currentStreamerName: currentStreamerName
+                    });
+                    // Trigger fresh API call to get current category
+                    if (currentStreamerName) {
+                        makeInitialTwitchApiCall(currentStreamerName);
+                    } else {
+                        console.log('[ERROR] Cannot fetch fresh data - no streamer name available');
+                    }
+                } else {
+                    console.log('[INFO] Switched to manual mode');
+                    // Always update when switching to manual mode to show manual title (if any)
+                    updateTitle();
+                }
+            } else {
+                console.log('[ERROR] Invalid toggle data received:', data);
+            }
+        });
+
+        socket.on('title_set_manual_title', function (data) {
+            console.log('Manual title input received:', data);
+            if (data && typeof data.text === 'string') {
+                manualTitle = data.text.trim();
+                saveManualTitleSettings(); // Save the title change
+                // Just store the manual title, don't automatically switch modes
+                // Only update title if we're currently in manual mode
+                if (isManualMode) {
+                    updateTitle();
+                    console.log('Updated manual title:', manualTitle);
+                } else {
+                    console.log('Manual title stored (not in manual mode):', manualTitle);
+                }
+            }
+        });
+
+        socket.on('title_clear_manual_title', function (data) {
+            console.log('Clear manual title triggered');
+            isManualMode = false;
+            manualTitle = "";
+            saveManualTitleSettings(); // Save the cleared state
+            updateTitle();
+            console.log('Cleared manual title, reverted to auto mode');
+        });
+
+        socket.on('title_set_wipe_direction', function (data) {
+            console.log('Wipe direction button pressed:', data);
+            if (data && data.direction) {
+                var direction = data.direction;
+                if (['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'].includes(direction)) {
+                    settings.wipeDirection = direction;
+                    console.log('Wipe direction set via dynamic control:', direction);
+                }
+            }
+        });
+
+        socket.on('title_toggle_wipe_animation', function (data) {
+            console.log('Wipe animation toggle received:', data);
+            if (data && typeof data.enabled === 'boolean') {
+                settings.enableWipe = data.enabled;
+                console.log('Wipe animation', data.enabled ? 'enabled' : 'disabled', 'via dynamic control');
+            }
+        });
+
+        socket.on('title_refresh_title', function (data) {
+            console.log('Title refresh triggered');
+            if (!isManualMode) {
+                requestStreamerInfo(); // This will trigger a fresh API call
+            }
+            console.log('Title refresh triggered via dynamic control');
+        });
+
+        // Connector action event listeners
+        socket.on('title_change_title', function (data) {
+            console.log('Connector action: change title', data);
+            if (data && data.title) {
+                // Set manual title and switch to manual mode
+                manualTitle = data.title;
+                isManualMode = true;
+                updateTitle();
+                console.log('Title changed via connector to:', data.title);
+            }
+        });
+
+        // Request streamer info from server
+        function requestStreamerInfo() {
+            socket.emit('get-streamer-info');
+        }
+
+        // Make initial Twitch API call to get current stream info
+        function makeInitialTwitchApiCall(streamerName) {
+            var apiRequest = {
+                endpoint: `https://api.twitch.tv/helix/streams?user_login=${streamerName}`,
+                requestId: 'initial_stream_info_' + Date.now()
+            };
+
+            console.log('Making initial Twitch API call for streamer:', streamerName);
+            socket.emit('twitch-api-request', apiRequest);
+        }
+
+        // Schedule retry for category API call
+        function scheduleCategoryRetry(streamerName) {
+            // Clear any existing retry to prevent multiple overlapping retries
+            stopCategoryRetry();
+            
+            isRetryingCategory = true;
+            console.log('Scheduling category retry in 5 seconds');
+
+            retryTimeout = setTimeout(function() {
+                console.log('Retrying category API call');
+                makeInitialTwitchApiCall(streamerName);
+                isRetryingCategory = false; // Reset flag so next error can schedule again
+            }, 5000);
+        }
+
+        // Stop category retrying
+        function stopCategoryRetry() {
+            if (retryTimeout) {
+                clearTimeout(retryTimeout);
+                retryTimeout = null;
+                isRetryingCategory = false;
+                console.log('Stopped category retry');
+            }
+        }
+
+        // Local storage functions for manual title persistence
+        function saveManualTitleSettings() {
+            try {
+                localStorage.setItem(STORAGE_KEYS.MANUAL_MODE, isManualMode.toString());
+                localStorage.setItem(STORAGE_KEYS.MANUAL_TITLE, manualTitle);
+                console.log('Saved manual title settings to localStorage');
+            } catch (e) {
+                console.warn('Failed to save manual title settings:', e);
+            }
+        }
+
+        function loadManualTitleSettings() {
+            try {
+                var savedMode = localStorage.getItem(STORAGE_KEYS.MANUAL_MODE);
+                var savedTitle = localStorage.getItem(STORAGE_KEYS.MANUAL_TITLE);
+
+                if (savedMode !== null) {
+                    isManualMode = savedMode === 'true';
+                    console.log('Loaded manual mode from localStorage:', isManualMode);
+                }
+
+                if (savedTitle !== null) {
+                    manualTitle = savedTitle;
+                    console.log('Loaded manual title from localStorage:', manualTitle);
+                }
+            } catch (e) {
+                console.warn('Failed to load manual title settings:', e);
+            }
+        }
+
+        function clearManualTitleSettings() {
+            try {
+                localStorage.removeItem(STORAGE_KEYS.MANUAL_MODE);
+                localStorage.removeItem(STORAGE_KEYS.MANUAL_TITLE);
+                console.log('Cleared manual title settings from localStorage');
+            } catch (e) {
+                console.warn('Failed to clear manual title settings:', e);
+            }
+        }
+
+        // Update the displayed title based on current settings
+        function updateTitle() {
+            var titleElement = document.getElementById('titleText');
+            var newTitle = "";
+
+            console.log('[DEBUG] updateTitle() called with state:', {
+                isManualMode: isManualMode,
+                manualTitle: manualTitle,
+                displayMode: titleData.displayMode,
+                showCategory: titleData.showCategory,
+                currentCategory: currentCategory,
+                categoryPrefix: titleData.categoryPrefix,
+                categorySuffix: titleData.categorySuffix
+            });
+
+            // If in manual mode and have manual title, use manual title
+            if (isManualMode && manualTitle && manualTitle.trim().length > 0) {
+                newTitle = manualTitle;
+                console.log('[INFO] Using manual title:', newTitle);
+            } else {
+                // Show category if enabled and available
+                if (titleData.showCategory && currentCategory) {
+                    newTitle = titleData.categoryPrefix + currentCategory + titleData.categorySuffix;
+                    console.log('[INFO] Using category title:', newTitle, '(category:', currentCategory, ')');
+                } else {
+                    newTitle = titleData.currentTitle;
+                    console.log('[INFO] Using default title:', newTitle, '(showCategory:', titleData.showCategory, ', currentCategory:', currentCategory, ')');
+                }
+            }
+
+            console.log('[DEBUG] Final title decision:', newTitle);
+            console.log('[DEBUG] Title element exists:', !!titleElement, 'Current content:', titleElement ? titleElement.textContent : 'N/A');
+
+            // Update title if it has changed or if we need to force update
+            if (titleElement && (newTitle !== titleElement.textContent || newTitle.length > 0)) {
+                console.log('[INFO] Updating title from "' + (titleElement ? titleElement.textContent : 'null') + '" to "' + newTitle + '"');
+                if (settings.enableAnimations && newTitle !== titleElement.textContent) {
+                    animateTextChange(titleElement, newTitle);
+                } else {
+                    titleElement.textContent = newTitle;
+                    // Adjust font size after setting text
+                    adjustFontSize(titleElement);
+                }
+
+                // Apply effects
+                applyEffects(titleElement);
+            }
+        }
+
+        // Animate text changes
+        function animateTextChange(element, newText) {
+            if (settings.enableWipe) {
+                animateWipeTransition(element, newText);
+            } else {
+                // Fallback to original opacity animation
+                element.classList.add('updating');
+
+                setTimeout(function () {
+                    element.textContent = newText;
+                    element.classList.remove('updating');
+                    element.classList.add('updated');
+
+                    // Adjust font size after setting text
+                    adjustFontSize(element);
+
+                    setTimeout(function () {
+                        element.classList.remove('updated');
+                    }, {{ TransitionDuration| tojson }} * 1000);
+        }, {{ TransitionDuration }} * 500);
+            }
+        }
+
+        // Wipe animation transition
+        function animateWipeTransition(element, newText) {
+            var container = element.parentElement;
+            var oldText = element.textContent;
+
+            // Create wipe container
+            var wipeContainer = document.createElement('div');
+            wipeContainer.className = 'wipe-container';
+
+            // Add direction class
+            if (settings.wipeDirection === 'right-to-left') {
+                wipeContainer.classList.add('wipe-right-to-left');
+            } else if (settings.wipeDirection === 'top-to-bottom') {
+                wipeContainer.classList.add('wipe-top-to-bottom');
+            } else if (settings.wipeDirection === 'bottom-to-top') {
+                wipeContainer.classList.add('wipe-bottom-to-top');
+            }
+
+            // Create old text element
+            var oldTextElement = document.createElement('div');
+            oldTextElement.className = 'wipe-old-text title-text';
+            oldTextElement.textContent = oldText;
+            // Copy the current font size from the original element
+            oldTextElement.style.fontSize = getComputedStyle(element).fontSize;
+
+            // Create new text element
+            var newTextElement = document.createElement('div');
+            newTextElement.className = 'wipe-new-text title-text';
+            newTextElement.textContent = newText;
+
+            // Assemble wipe container
+            wipeContainer.appendChild(oldTextElement);
+            wipeContainer.appendChild(newTextElement);
+
+            // Replace original element with wipe container
+            container.replaceChild(wipeContainer, element);
+
+            // Adjust font size for the new text element
+            adjustFontSize(newTextElement);
+
+            // Force reflow to ensure initial positions are set
+            wipeContainer.offsetHeight;
+
+            // Start wipe animation
+            setTimeout(function () {
+                oldTextElement.classList.add('wipe-active');
+                newTextElement.classList.add('wipe-active');
+
+                // After animation completes, clean up
+                setTimeout(function () {
+                    // Create new simple text element
+                    var finalElement = document.createElement('div');
+                    finalElement.className = 'title-text';
+                    finalElement.id = 'titleText';
+                    finalElement.textContent = newText;
+
+                    // Replace wipe container with final element
+                    container.replaceChild(finalElement, wipeContainer);
+
+                    // Adjust font size after setting text
+                    adjustFontSize(finalElement);
+
+                    // Apply effects to the final element
+                    applyEffects(finalElement);
+                }, {{ TransitionDuration| tojson }} * 1000);
+            }, 50); // Small delay to ensure DOM is ready
+        }
+
+        // Apply visual effects
+        function applyEffects(element) {
+            // Remove existing effects
+            element.classList.remove('pulse', 'glow');
+
+            // Apply pulse effect if enabled
+            if (settings.enablePulse) {
+                element.classList.add('pulse');
+            }
+
+            // Apply glow effect if enabled
+            if (settings.enableGlow) {
+                element.classList.add('glow');
+            }
+        }
+
+        // Dynamic font sizing function
+        function adjustFontSize(element) {
+            if (!element || !element.textContent || element.textContent.trim() === '') {
+                return;
+            }
+
+            var container = element.parentElement;
+            var availableWidth = container.offsetWidth - (parseFloat(getComputedStyle(container).paddingLeft) || 0) - (parseFloat(getComputedStyle(container).paddingRight) || 0);
+
+            // Start with base font size
+            var currentFontSize = baseFontSize;
+            element.style.fontSize = currentFontSize + 'px';
+
+            // Create a temporary element to measure text width
+            var tempElement = document.createElement('span');
+            tempElement.style.visibility = 'hidden';
+            tempElement.style.position = 'absolute';
+            tempElement.style.whiteSpace = 'nowrap';
+            tempElement.style.fontFamily = getComputedStyle(element).fontFamily;
+            tempElement.style.fontWeight = getComputedStyle(element).fontWeight;
+            tempElement.style.fontSize = currentFontSize + 'px';
+            tempElement.textContent = element.textContent;
+            document.body.appendChild(tempElement);
+
+            // Reduce font size until text fits or we reach minimum
+            while (tempElement.offsetWidth > availableWidth && currentFontSize > minFontSize) {
+                currentFontSize = Math.max(minFontSize, currentFontSize - 1);
+                tempElement.style.fontSize = currentFontSize + 'px';
+            }
+
+            // Apply the final font size
+            element.style.fontSize = currentFontSize + 'px';
+
+            // Clean up temporary element
+            document.body.removeChild(tempElement);
+
+            console.log('Font size adjusted:', {
+                baseFontSize: baseFontSize,
+                finalFontSize: currentFontSize,
+                availableWidth: availableWidth,
+                textWidth: tempElement.offsetWidth,
+                text: element.textContent
+            });
+        }
+
+        // Initialize
+        console.log('Mycelian Title Display initialized');
+        console.log('Wipe animation enabled:', settings.enableWipe);
+        console.log('Wipe direction:', settings.wipeDirection);
+        console.log('Dynamic controls available via template interface');
+
+        // Adjust font size for initial title on page load
+        document.addEventListener('DOMContentLoaded', function () {
+            var titleElement = document.getElementById('titleText');
+            if (titleElement) {
+                adjustFontSize(titleElement);
+            }
+        });
+
+        // Also adjust immediately if DOM is already loaded
+        if (document.readyState === 'loading') {
+            // DOM is still loading, event listener above will handle it
+        } else {
+            // DOM is already loaded
+            var titleElement = document.getElementById('titleText');
+            if (titleElement) {
+                adjustFontSize(titleElement);
+            }
+        }
+
+        // Handle window resize to readjust font size if container size changes
+        var resizeTimeout;
+        window.addEventListener('resize', function () {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(function () {
+                var titleElement = document.getElementById('titleText');
+                if (titleElement) {
+                    adjustFontSize(titleElement);
+                }
+            }, 100); // Debounce resize events
+        });
+
+        // Load saved manual title settings on page load
+        loadManualTitleSettings();
+    </script>
+</body>
+
+</html>

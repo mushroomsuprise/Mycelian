@@ -1,0 +1,63 @@
+{
+	"Name": "Mycelian",
+	"Version": "0.1.0.0",
+	"Author": "mushroomsuprise",
+	"Actions": [
+		{
+			"Name": "Toggle Alerts",
+			"UUID": "com.mushroomsuprise.mycelian.togglealerts",
+			"Icon": "imgs/actions/togglealerts/icon",
+			"Tooltip": "Toggles the playing of alerts in Mycelian. Shows current status.",
+			"PropertyInspectorPath": "ui/toggle-alerts.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/togglealerts/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Template Action",
+			"UUID": "com.mushroomsuprise.mycelian.templateaction",
+			"Icon": "imgs/actions/templateaction/icon",
+			"Tooltip": "Executes configurable template actions from Mycelian. Select template and action, then configure parameters.",
+			"PropertyInspectorPath": "ui/template-action.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/templateaction/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		}
+	],
+	"Category": "Mycelian",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Official Stream Deck plugin for the Mycelian streaming app",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.5"
+	},
+	"OS": [
+		{
+			"Platform": "mac",
+			"MinimumVersion": "12"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	},
+	"UUID": "com.mushroomsuprise.mycelian"
+}

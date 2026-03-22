@@ -1,0 +1,12 @@
+# Documentation dependencies only
+# These are the minimal requirements needed to build Sphinx documentation
+
+# Sphinx and extensions
+sphinx>=4.0
+sphinx-rtd-theme
+sphinx-autodoc-typehints
+myst-parser
+
+# Mock the main dependencies so autodoc can import modules
+# without installing heavy platform-specific packages
+mock

@@ -1,0 +1,2392 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <style>
+        @font-face {
+            font-family: chat-font;
+            src: url("/assets/default_assets/fonts/{{FontName}}");
+        }
+
+        @font-face {
+            font-family: event-font;
+            src: url("/assets/default_assets/fonts/{{EventFontName}}");
+        }
+
+        /* Dynamic font classes for randomization */
+        .random-message-font {
+            /* Font will be set dynamically via JavaScript */
+            font-family: inherit; /* Placeholder to avoid empty ruleset warning */
+        }
+
+        .random-username-font {
+            /* Font will be set dynamically via JavaScript */
+            font-family: inherit; /* Placeholder to avoid empty ruleset warning */
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: chat-font, Arial, sans-serif;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        #chat {
+            background-color: {{ BGColor }};
+            opacity: {{ BGOpacity }};
+            width: 100vw;
+            height: 100vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+
+            padding: {{ ChatPadding }}px;
+            box-sizing: border-box;
+            scrollbar-width: none;
+            /* Firefox */
+            -ms-overflow-style: none;
+            /* Internet Explorer 10+ */
+        }
+
+        #chat::-webkit-scrollbar {
+            display: none;
+            /* WebKit */
+        }
+
+        .chat-message {
+            list-style-type: none;
+
+            background-color: {{ MessageBG }};
+            box-sizing: border-box;
+
+            padding: {{ MessagePadding }}px;
+
+            margin: {{ MessageMargin }}px 0;
+
+            font-size: {{ FontSize }}px;
+
+            color: {{ FontColor }};
+
+            border-radius: {{ MessageRadius }}px;
+
+            border: {{ MessageBorder }}px solid {{ MessageBorderColor }};
+            word-wrap: break-word;
+            display: block;
+
+            animation: {{ MessageAnimation }} {{ AnimationDuration }}s {{ AnimationEasing }};
+
+            min-height: {{ MinMessageHeight }}px;
+            flex-shrink: 0;
+
+            /* Prevent messages from shrinking */
+            line-height: {{ LineHeight }};
+        }
+
+        .message-header {
+            display: inline-block;
+            white-space: nowrap;
+            margin-right: 5px;
+            vertical-align: top;
+        }
+
+        .chat-message.event-message {
+            font-family: event-font, chat-font, Arial, sans-serif;
+            background-color: {{ EventBG }};
+            color: {{ EventColor }};
+            font-style: italic;
+            border-left: {{ EventBorderWidth }}px solid {{ EventBorderColor }};
+        }
+
+        /* Activity feed event message styles */
+        .chat-message.activity-event {
+            font-style: italic;
+            color: rgba(180, 180, 180, 0.8);
+            background-color: transparent;
+            border: none;
+            border-left: 2px solid rgba(120, 120, 120, 0.3);
+
+            font-size: calc({{ FontSize }}px * 0.85);
+            opacity: 0.8;
+            margin: calc({{ MessageMargin }}px * 0.3) 0;
+            padding: calc({{ MessagePadding }}px * 0.4) calc({{ MessagePadding }}px * 0.6);
+        min-height: auto;
+        font-weight: 300;
+        }
+
+        .chat-message.activity-event .message-content {
+            color: inherit;
+            font-size: inherit;
+        }
+
+        /* Moderation event styles */
+        .chat-message.moderation-delete {
+            background-color: rgba(255, 0, 0, 0.2);
+            border-left: 4px solid #ff0000;
+        }
+
+        .chat-message.moderation-timeout {
+            background-color: rgba(255, 165, 0, 0.2);
+            border-left: 4px solid #ffa500;
+        }
+
+        .chat-message.moderation-ban {
+            background-color: rgba(128, 0, 128, 0.2);
+            border-left: 4px solid #800080;
+        }
+
+        .chat-message.moderation-warning {
+            background-color: rgba(255, 255, 0, 0.2);
+            border-left: 4px solid #ffff00;
+        }
+
+        .message-badges {
+            display: inline;
+            margin-right: {{ BadgeGap }}px;
+        }
+
+        .badge-img {
+            width: {{ BadgeSize }}px;
+            height: {{ BadgeSize }}px;
+            vertical-align: middle;
+            border-radius: {{ BadgeRadius }}px;
+            margin-right: {{ BadgeGap }}px;
+        }
+
+        .message-username {
+            font-weight: {{ UsernameFontWeight }};
+            color: {{ UsernameColor }};
+            margin-right: {{ UsernameMargin }}px;
+            flex-shrink: 0;
+            text-shadow: {{ UsernameTextShadow }};
+        }
+
+        .message-content {
+            display: inline;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .message-content-block {
+            display: block;
+            margin-top: 2px;
+            margin-left: 0;
+            text-indent: 0;
+        }
+
+        .emote-img {
+            transform: scale({{ EmoteScale }});
+            vertical-align: middle;
+            margin: 0 {{ EmoteMargin }}px;
+            border-radius: {{ EmoteRadius }}px;
+        }
+
+        /* Zero-width emote support for 7TV */
+        .emote-container {
+            position: relative;
+            display: inline-block;
+            margin: 0 {{ EmoteMargin }}px;
+        }
+
+        .emote-base {
+            transform: scale({{ EmoteScale }});
+            vertical-align: middle;
+            border-radius: {{ EmoteRadius }}px;
+            display: block;
+        }
+
+        .emote-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: scale({{ EmoteScale }});
+            border-radius: {{ EmoteRadius }}px;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .emote-zw {
+            transform: scale({{ EmoteScale }});
+            border-radius: {{ EmoteRadius }}px;
+            /* Visual indicator for standalone zero-width emotes */
+            opacity: 0.8;
+            border: 1px dashed rgba(255, 255, 255, 0.3);
+        }
+
+        /* Gigantified emote styling */
+        .gigantified-emote {
+            transform: scale(3) !important;
+            vertical-align: middle;
+            margin: 0 8px;
+        }
+
+        .gigantified-emote.emote-zw {
+            /* Zero-width gigantified emotes should still be visible */
+            opacity: 1;
+            border: none;
+        }
+
+        /* Messages containing gigantified emotes need extra line height to prevent overlap */
+        .chat-message.gigantified-message {
+            line-height: calc({{ LineHeight }} * 3);
+            padding: calc({{ MessagePadding }}px * 1.5) {{ MessagePadding }}px;
+        }
+
+        .cheermote-container {
+            display: inline-block;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .cheermote-img {
+            transform: scale({{ EmoteScale }});
+            vertical-align: middle;
+        }
+
+        .cheermote-amount {
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .timestamp {
+            font-size: {{ TimestampSize }}px;
+            color: {{ TimestampColor }};
+            margin-right: {{ TimestampMargin }}px;
+            opacity: {{ TimestampOpacity }};
+            vertical-align: baseline;
+        }
+
+        /* Animation keyframes */
+        @keyframes slideIn {
+            0% {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeIn {
+            0% {
+                opacity: 0;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        @keyframes bounceIn {
+            0% {
+                transform: scale(0.3);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
+
+            70% {
+                transform: scale(0.9);
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .chat-message {
+                font-size: calc({{ FontSize }}px * 0.9);
+                padding: calc({{ MessagePadding }}px * 0.8);
+            }
+
+        .chat-message.activity-event {
+            font-size: calc({{ FontSize }}px * 0.75);
+            padding: calc({{ MessagePadding }}px * 0.3) calc({{ MessagePadding }}px * 0.5);
+            margin: calc({{ MessageMargin }}px * 0.2) 0;
+        }
+
+        .message-header {
+            margin-right: 3px;
+        }
+
+        .message-content {
+            /* Remove margin-top for inline flow */
+            margin-top: 0; /* Explicitly set to avoid empty ruleset warning */
+        }
+
+        .emote-img,
+        .badge-img,
+        .emote-base,
+        .emote-overlay,
+        .emote-zw {
+            transform: scale(calc({{ EmoteScale }} * 0.8));
+        }
+
+        .emote-container {
+            margin: 0 calc({{ EmoteMargin }}px * 0.8);
+        }
+        }
+
+        /* Text wrapping styles */
+        .message-content {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat"></div>
+
+    <script>
+        // Global variables
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var messageCount = 0;
+        var maxMessages = {{ MaxMessages | tojson }};
+        var showTimestamps = {{ ShowTimestamps | tojson }};
+        var timestampFormat = {{ TimestampFormat | tojson }};
+        var enableEmotes = {{ EnableEmotes | tojson }};
+        var enableBadges = {{ EnableBadges | tojson }};
+        var streamerID = null;
+        var emoteFetchInProgress = false;
+        var badgeFetchInProgress = false;
+
+        // Font randomization settings
+        var enableMessageFontRandomization = {{ EnableMessageFontRandomization | tojson }};
+        var enableUsernameFontRandomization = {{ EnableUsernameFontRandomization | tojson }};
+        var randomFontList = {{ RandomFontList | tojson }}.split('\n').map(function (font) {
+            return font.trim();
+        }).filter(function (font) {
+            return font.length > 0;
+        });
+
+        // Username filtering settings
+        var enableUsernameFiltering = {{ EnableUsernameFiltering | tojson }};
+        var filteredUsernames = {{ FilteredUsernames | tojson }}.toLowerCase().split('\n').map(function (username) {
+            return username.trim();
+        }).filter(function (username) {
+            return username.length > 0;
+        });
+
+        // Username color randomization
+        var randomUsernameColors = [
+            "rgb(255, 0, 0)",
+            "rgb(0, 0, 255)",
+            "rgb(0, 128, 0)",
+            "rgb(178, 34, 34)",
+            "rgb(255, 127, 80)",
+            "rgb(154, 205, 50)",
+            "rgb(255, 69, 0)",
+            "rgb(46, 139, 87)",
+            "rgb(218, 165, 32)",
+            "rgb(210, 105, 30)",
+            "rgb(95, 158, 160)",
+            "rgb(30, 144, 255)",
+            "rgb(255, 105, 180)",
+            "rgb(138, 43, 226)",
+            "rgb(0, 255, 127)"
+        ];
+        var usernameColorCache = {};
+
+        // Emote and badge data caches
+        var emoteCache = {
+            bttv: { global: [], user: [] },
+            seventv: { global: [], user: [] },
+            ffz: { global: [], user: [] },
+            twitch: { global: [], user: [] },
+            cheermotes: {}
+        };
+
+        var badgeCache = {
+            global: [],
+            user: []
+        };
+
+        var disabledBadges = {
+            moderator: {{ DisableModerator | tojson }},
+            vip: {{ DisableVIP | tojson }},
+            subscriber: {{ DisableSubscriber | tojson }},
+            founder: {{ DisableFounder | tojson }},
+            broadcaster: {{ DisableBroadcaster | tojson }},
+            turbo: {{ DisableTurbo | tojson }},
+            staff: {{ DisableStaff | tojson }},
+            bits: {{ DisableBits | tojson }},
+            admin: {{ DisableAdmin | tojson }},
+            partner: {{ DisablePartner | tojson }}
+        };
+
+        // Font randomization functions
+        function getRandomFont() {
+            if (randomFontList.length === 0) {
+                return '{{FontName}}'; // Fallback to default font
+            }
+            var randomIndex = Math.floor(Math.random() * randomFontList.length);
+            return randomFontList[randomIndex];
+        }
+
+        // Username color functions
+        function getUsernameColor(username, twitchColor) {
+            // Check if we've already assigned a color for this user
+            if (usernameColorCache[username]) {
+                return usernameColorCache[username];
+            }
+
+            var finalColor;
+
+            // If user has a Twitch-assigned color, use it
+            if (twitchColor && twitchColor.trim() !== '') {
+                finalColor = twitchColor;
+                console.log('Using Twitch color', finalColor, 'for username', username);
+            } else {
+                // Assign a random color from our list
+                var randomIndex = Math.floor(Math.random() * randomUsernameColors.length);
+                finalColor = randomUsernameColors[randomIndex];
+                console.log('Assigned random color', finalColor, 'to username', username);
+            }
+
+            // Store the color assignment for consistency (both Twitch and random colors)
+            usernameColorCache[username] = finalColor;
+
+            return finalColor;
+        }
+
+        function loadRandomFont(fontName) {
+            // Create a unique font family name for this random font
+            var fontFamily = 'random-font-' + fontName.replace(/[^a-zA-Z0-9]/g, '-');
+
+            // Check if this font is already loaded
+            if (document.querySelector('style[data-font="' + fontFamily + '"]')) {
+                return fontFamily;
+            }
+
+            // Create and inject CSS for this font
+            var style = document.createElement('style');
+            style.setAttribute('data-font', fontFamily);
+            style.textContent =
+                '@font-face {' +
+                '    font-family: "' + fontFamily + '";' +
+                '    src: url("/assets/default_assets/fonts/' + fontName + '");' +
+                '}';
+            document.head.appendChild(style);
+
+            console.log('Loaded random font:', fontName, 'as', fontFamily);
+
+            return fontFamily;
+        }
+
+        function applyRandomFont(element, isUsername) {
+            if (isUsername && !enableUsernameFontRandomization) return;
+            if (!isUsername && !enableMessageFontRandomization) return;
+
+            try {
+                var randomFont = getRandomFont();
+                var fontFamily = loadRandomFont(randomFont);
+
+                // Apply the random font to the element with fallbacks
+                element.style.fontFamily = fontFamily + ', chat-font, Arial, sans-serif';
+
+                console.log('Applied random font:', randomFont, 'to', isUsername ? 'username' : 'message');
+            } catch (error) {
+                console.error('Error applying random font:', error);
+                // Fallback to default font
+                element.style.fontFamily = 'chat-font, Arial, sans-serif';
+            }
+        }
+
+        // Socket event listeners
+        socket.on('connect', function () {
+            console.log('Connected to chat server');
+            requestStreamerInfo();
+        });
+
+        socket.on('clear-chat', function () {
+            clearChat();
+        });
+
+        socket.on('new-message', function (messageData) {
+            addMessage(messageData);
+        });
+
+        socket.on('remove-messages', function (messageIds) {
+            removeMessages(messageIds);
+        });
+
+        socket.on('message_moderation', function (moderationData) {
+            handleModerationEvent(moderationData);
+        });
+
+        socket.on('update-settings', function (settings) {
+            updateChatSettings(settings);
+        });
+
+        socket.on('refresh-chat', function () {
+            location.reload(true);
+        });
+
+        socket.on('streamer-info', function (data) {
+            console.log('Received streamer-info event:', data);
+            if (data && data.user_id) {
+                streamerID = data.user_id;
+                console.log('Received streamer ID:', streamerID);
+                fetchAllEmotesAndBadges();
+            } else {
+                console.warn('Invalid or missing streamer info:', data);
+            }
+        });
+
+        socket.on('twitch-api-response', function (data) {
+            handleTwitchApiResponse(data);
+        });
+
+        socket.on('activity_feed_alert', function (alertData) {
+            console.log('Received activity_feed_alert event:', alertData);
+            addActivityEventMessage(alertData);
+        });
+
+        // Connector action event listeners
+        socket.on('chat_add_message', function (data) {
+            console.log('Connector action: add message', data);
+            var messageData = data || {};
+
+            // Create a test message if no message data provided
+            if (!messageData.text && !messageData.message) {
+                messageData = {
+                    username: messageData.username || 'Connector',
+                    text: messageData.text || messageData.message || 'Test message from connector',
+                    color: messageData.color || '#007acc',
+                    timestamp: Date.now()
+                };
+            }
+
+            // Add the message to chat
+            addMessage(messageData);
+        });
+
+        socket.on('chat_temporary_random_font', function (data) {
+            console.log('Connector action: temporary random font', data);
+            var duration = (data && data.duration) ? parseInt(data.duration) : 10000; // Default 10 seconds
+
+            // Get available font families from CSS or use a set of common fonts
+            var fonts = [
+                'Arial, sans-serif',
+                'Georgia, serif',
+                'Comic Sans MS, cursive',
+                'Impact, fantasy',
+                'Courier New, monospace',
+                'Times New Roman, serif',
+                'Trebuchet MS, sans-serif',
+                'Verdana, sans-serif'
+            ];
+
+            var randomFont = fonts[Math.floor(Math.random() * fonts.length)];
+            var chatContainer = document.getElementById('chatContainer');
+
+            if (chatContainer) {
+                // Store original font
+                var originalFont = chatContainer.style.fontFamily || 'inherit';
+
+                // Apply random font
+                chatContainer.style.fontFamily = randomFont;
+                console.log('Applied temporary font:', randomFont, 'for', duration + 'ms');
+
+                // Restore original font after duration
+                setTimeout(function () {
+                    chatContainer.style.fontFamily = originalFont;
+                    console.log('Restored original font');
+                }, duration);
+            }
+        });
+
+        // Request streamer info from server
+        function requestStreamerInfo() {
+            socket.emit('get-streamer-info');
+        }
+
+        // Fetch all emotes and badges
+        function fetchAllEmotesAndBadges() {
+            if (!streamerID || emoteFetchInProgress) return;
+
+            emoteFetchInProgress = true;
+            console.log('Starting emote and badge fetch...');
+
+            // Fetch third-party emotes (no auth required)
+            fetchBTTVEmotes();
+            fetchSevenTVEmotes();
+            fetchFFZEmotes();
+
+            // Fetch Twitch data (requires auth via websocket)
+            fetchTwitchEmotes();
+            fetchTwitchBadges();
+            fetchCheermotes();
+        }
+
+        // Handle Twitch API responses
+        function handleTwitchApiResponse(data) {
+            console.log('Received twitch-api-response:', data);
+
+            if (!data || !data.requestId) {
+                console.error('Invalid response data:', data);
+                return;
+            }
+
+            try {
+                console.log('Processing request ID:', data.requestId, 'Success:', data.success);
+
+                if (!data.success) {
+                    console.error('API request failed:', data.error, 'for request:', data.requestId);
+                    return;
+                }
+
+                switch (data.requestId) {
+                    case 'twitch-global-emotes':
+                        console.log('Processing twitch-global-emotes response:', data.data);
+                        if (data.success && data.data && data.data.data) {
+                            emoteCache.twitch.global = data.data.data;
+                            console.log('Twitch global emotes loaded:', emoteCache.twitch.global.length);
+                        } else {
+                            console.error('Invalid twitch-global-emotes response structure:', data.data);
+                        }
+                        break;
+
+                    case 'twitch-global-badges':
+                        console.log('Processing twitch-global-badges response:', data.data);
+                        if (data.success && data.data && data.data.data) {
+                            badgeCache.global = data.data.data;
+                            console.log('Twitch global badges loaded:', badgeCache.global.length);
+                        } else {
+                            console.error('Invalid twitch-global-badges response structure:', data.data);
+                        }
+                        break;
+
+                    case 'twitch-user-badges':
+                        console.log('Processing twitch-user-badges response:', data.data);
+                        if (data.success && data.data && data.data.data) {
+                            badgeCache.user = data.data.data;
+                            console.log('Twitch user badges loaded:', badgeCache.user.length);
+                        } else {
+                            console.error('Invalid twitch-user-badges response structure:', data.data);
+                        }
+                        break;
+
+                    case 'twitch-cheermotes':
+                        console.log('Processing twitch-cheermotes response:', data.data);
+                        if (data.success && data.data && data.data.data) {
+                            processCheermotes(data.data.data);
+                            console.log('Cheermotes loaded');
+                        } else {
+                            console.error('Invalid twitch-cheermotes response structure:', data.data);
+                        }
+                        break;
+
+                    default:
+                        console.warn('Unknown request ID:', data.requestId);
+                        break;
+                }
+            } catch (error) {
+                console.error('Error handling Twitch API response:', error, 'for data:', data);
+            }
+
+            // Mark fetch as complete after all requests
+            setTimeout(() => {
+                emoteFetchInProgress = false;
+            }, 1000);
+        }
+
+        // Process cheermotes into usable format
+        function processCheermotes(cheermoteData) {
+            emoteCache.cheermotes = {};
+
+            cheermoteData.forEach(function (cheermote) {
+                var prefix = cheermote.prefix.toLowerCase();
+                emoteCache.cheermotes[prefix] = {};
+
+                cheermote.tiers.forEach(function (tier) {
+                    var minBits = tier.min_bits;
+                    var images = tier.images;
+
+                    // Use the animated version if available, otherwise static
+                    var imageUrl = '';
+                    var color = tier.color || '#ffffff';
+
+                    if (images.dark && images.dark.animated && images.dark.animated['1']) {
+                        imageUrl = images.dark.animated['1'];
+                    } else if (images.dark && images.dark.static && images.dark.static['1']) {
+                        imageUrl = images.dark.static['1'];
+                    } else if (images.light && images.light.animated && images.light.animated['1']) {
+                        imageUrl = images.light.animated['1'];
+                    } else if (images.light && images.light.static && images.light.static['1']) {
+                        imageUrl = images.light.static['1'];
+                    }
+
+                    if (imageUrl) {
+                        emoteCache.cheermotes[prefix][minBits] = {};
+                        emoteCache.cheermotes[prefix][minBits][imageUrl] = color;
+                    }
+                });
+            });
+        }
+
+        // Add an activity feed event message to chat
+        function addActivityEventMessage(alertData) {
+            console.log('Adding activity event message:', alertData);
+
+            var chatContainer = document.getElementById('chat');
+            var messageElement = document.createElement('li');
+            messageElement.className = 'chat-message activity-event';
+            messageElement.id = 'activity-event-' + Date.now();
+
+            // Use the message directly from the activity feed data format
+            var eventText = '';
+
+            // The activity feed already formats the message, so we can use it directly
+            if (alertData.message) {
+                eventText = alertData.message;
+            } else {
+                // Fallback: Extract info and format manually if message is missing
+                var alertType = alertData.type || 'Unknown';
+                var username = extractUsernameFromMessage(alertData) || 'Someone';
+
+                switch (alertType.toLowerCase()) {
+                    case 'bits':
+                        eventText = username + ' donated bits!';
+                        break;
+                    case 'sub':
+                        eventText = username + ' subscribed!';
+                        break;
+                    case 'resub':
+                        eventText = username + ' resubscribed!';
+                        break;
+                    case 'giftsub':
+                        eventText = username + ' gifted a subscription!';
+                        break;
+                    case 'follow':
+                        eventText = username + ' followed!';
+                        break;
+                    case 'raid':
+                        eventText = username + ' raided!';
+                        break;
+                    case 'donation':
+                        eventText = username + ' donated!';
+                        break;
+                    case 'points':
+                        eventText = username + ' redeemed channel points!';
+                        break;
+                    case 'hype train':
+                        eventText = 'Hype Train activated!';
+                        break;
+                    default:
+                        eventText = alertType + ' event occurred!';
+                        break;
+                }
+            }
+
+            messageElement.innerHTML = '<div class="message-content">' + escapeHtml(eventText) + '</div>';
+
+            chatContainer.appendChild(messageElement);
+
+            // Scroll to bottom
+            scrollToBottom();
+
+            // Manage message count
+            messageCount++;
+            if (messageCount > maxMessages) {
+                removeOldestMessage();
+            }
+        }
+
+        // Helper function to extract username from alert message
+        function extractUsernameFromMessage(alertData) {
+            // Try various possible username fields
+            var username = alertData.username ||
+                alertData.user_name ||
+                alertData.display_name ||
+                alertData.from_user_name ||
+                alertData.gifter_user_name;
+
+            // If no username field, try to extract from message
+            if (!username && alertData.message) {
+                // Look for patterns like "username followed!" or "username donated"
+                var messageMatch = alertData.message.match(/^([^\s]+)\s+(followed|subscribed|donated|redeemed|raided)/i);
+                if (messageMatch) {
+                    username = messageMatch[1];
+                }
+            }
+
+            return username;
+        }
+
+        // Add a new message to chat
+        function addMessage(messageData) {
+            console.log('Adding message:', messageData);
+
+            // Check if username filtering is enabled and if this username should be filtered
+            if (enableUsernameFiltering && messageData.username) {
+                var lowerUsername = messageData.username.toLowerCase();
+                if (filteredUsernames.indexOf(lowerUsername) !== -1) {
+                    console.log('Filtering out message from:', messageData.username);
+                    return; // Skip this message
+                }
+            }
+
+            var chatContainer = document.getElementById('chat');
+            var messageElement = document.createElement('li');
+            messageElement.className = 'chat-message';
+            messageElement.id = 'msg-' + messageData.id;
+            // Store user ID for moderation purposes
+            messageElement.setAttribute('data-user-id', messageData.userid || messageData.user_id || '');
+
+            // Check if this is an ACTION message and process it
+            var isActionMessage = false;
+            var processedMessage = (messageData.message || '').trim();
+
+            // Strip CTCP wrapper characters (SOH \u0001) if present at start/end
+            if (processedMessage.length > 0 && processedMessage.charCodeAt(0) === 1) {
+                processedMessage = processedMessage.substring(1);
+            }
+            if (processedMessage.length > 0 && processedMessage.charCodeAt(processedMessage.length - 1) === 1) {
+                processedMessage = processedMessage.substring(0, processedMessage.length - 1);
+            }
+
+            // Detect CTCP ACTION (case-insensitive) or /me prefix
+            if (processedMessage.length >= 7 && processedMessage.substring(0, 7).toUpperCase() === 'ACTION ') {
+                isActionMessage = true;
+                processedMessage = processedMessage.substring(7).trim();
+                console.log('ACTION message detected (CTCP). Original:', messageData.message, 'Processed:', processedMessage);
+            } else if (processedMessage.startsWith('/me ')) {
+                isActionMessage = true;
+                processedMessage = processedMessage.substring(4).trim();
+                console.log('ACTION message detected (/me). Original:', messageData.message, 'Processed:', processedMessage);
+            }
+
+            // Apply random font to message if enabled
+            if (enableMessageFontRandomization) {
+                applyRandomFont(messageElement, false);
+            }
+
+            // Check if it's an event message
+            if (messageData.type === 'event') {
+                messageElement.classList.add('event-message');
+            }
+
+            // Build message content
+            var messageHTML = '';
+
+            // Create message header with timestamp, badges, and username
+            var headerHTML = '';
+
+            // Add timestamp if enabled
+            if (showTimestamps) {
+                headerHTML += '<span class="timestamp">' + formatTimestamp(messageData.timestamp) + '</span>';
+            }
+
+            // Add badges if enabled and available
+            if (enableBadges && messageData.badges) {
+                console.log('Processing badges for', messageData.username, ':', messageData.badges);
+                var badgesHTML = parseBadges(messageData.badges);
+                console.log('Generated badges HTML:', badgesHTML);
+                if (badgesHTML) {
+                    headerHTML += '<div class="message-badges">' + badgesHTML + '</div>';
+                }
+            } else {
+                console.log('Badges disabled or no badges for', messageData.username, 'enableBadges:', enableBadges, 'badges:', messageData.badges);
+            }
+
+            // Add username with color
+            var usernameColor = getUsernameColor(messageData.username, messageData.color);
+            var usernameSpan = '<span class="message-username" style="color: ' + usernameColor + '">' +
+                escapeHtml(messageData.username) + ':</span>';
+            headerHTML += usernameSpan;
+
+            // Add header and content with proper structure for wrapping
+            messageHTML += '<div class="message-header">' + headerHTML + '</div>';
+
+            // Add message content with emote parsing and special ACTION handling
+            var messageContent;
+            if (isActionMessage) {
+                // For ACTION messages, process emotes/mentions but apply username color to the entire message
+                if (enableEmotes) {
+                    messageContent = parseEmotesForAction(processedMessage, messageData.emotes, usernameColor);
+                } else {
+                    // When emotes are disabled, still process @mentions but apply username color
+                    messageContent = processTextForEmotesAction(processedMessage, usernameColor);
+                }
+            } else {
+                // Regular message processing
+                if (enableEmotes) {
+                    messageContent = parseEmotes(processedMessage, messageData.emotes);
+                } else {
+                    // When emotes are disabled, still process @mentions
+                    messageContent = processTextForEmotes(processedMessage);
+                }
+            }
+
+            messageHTML += '<div class="message-content">' + messageContent + '</div>';
+
+            console.log('Final message HTML:', messageHTML);
+
+            // Try to set innerHTML safely
+            try {
+                messageElement.innerHTML = messageHTML;
+                console.log('HTML set successfully');
+            } catch (error) {
+                console.error('Error setting innerHTML:', error);
+                // Fallback to text content if HTML fails
+                messageElement.textContent = 'Error displaying message: ' + messageData.message;
+            }
+
+            // Apply random font to username if enabled (after HTML is set)
+            if (enableUsernameFontRandomization) {
+                var usernameElement = messageElement.querySelector('.message-username');
+                if (usernameElement) {
+                    applyRandomFont(usernameElement, true);
+                }
+            }
+
+            // Apply gigantified styling to emotes if this is a gigantified emote message
+            if (messageData.message_type === 'power_ups_gigantified_emote') {
+                console.log('Applying gigantified styling to message:', messageData.id);
+                // Add gigantified class to the message container for proper spacing
+                messageElement.classList.add('gigantified-message');
+                var emoteElements = messageElement.querySelectorAll('.emote-img, .emote-base, .emote-overlay, .emote-zw');
+                emoteElements.forEach(function(emoteElement) {
+                    emoteElement.classList.add('gigantified-emote');
+                    console.log('Applied gigantified class to emote:', emoteElement);
+                });
+            }
+
+            chatContainer.appendChild(messageElement);
+
+            // Scroll to bottom
+            scrollToBottom();
+
+            // Manage message count
+            messageCount++;
+            if (messageCount > maxMessages) {
+                removeOldestMessage();
+            }
+        }
+
+        // Parse badges into HTML
+        function parseBadges(badgeString) {
+            console.log('parseBadges called with:', badgeString);
+
+            if (!badgeString || badgeString === 'null') {
+                console.log('No badges to parse');
+                return '';
+            }
+
+            var badges = badgeString.split(',');
+            var badgeHTML = '';
+
+            console.log('Split badges:', badges);
+
+            badges.forEach(function (badge) {
+                var parts = badge.split('/');
+                if (parts.length !== 2) {
+                    console.log('Invalid badge format:', badge);
+                    return;
+                }
+
+                var badgeSet = parts[0];
+                var badgeId = parts[1];
+
+                console.log('Processing badge:', badgeSet, '/', badgeId);
+
+                // Check if badge is disabled
+                if (disabledBadges[badgeSet]) {
+                    console.log('Badge disabled:', badgeSet);
+                    return;
+                }
+
+                var badgeUrl = findBadgeUrl(badgeSet, badgeId);
+                console.log('Found badge URL for', badgeSet, '/', badgeId, ':', badgeUrl);
+
+                if (badgeUrl) {
+                    badgeHTML += '<img src="' + badgeUrl + '" class="badge-img" alt="' + badgeSet + '">';
+                } else {
+                    console.log('No URL found for badge:', badgeSet, '/', badgeId);
+                }
+            });
+
+            console.log('Final badge HTML:', badgeHTML);
+            return badgeHTML;
+        }
+
+        // Find badge URL in cache
+        function findBadgeUrl(badgeSet, badgeId) {
+            // Check user badges first
+            for (var i = 0; i < badgeCache.user.length; i++) {
+                var badge = badgeCache.user[i];
+                if (badge.set_id === badgeSet) {
+                    for (var j = 0; j < badge.versions.length; j++) {
+                        if (badge.versions[j].id === badgeId) {
+                            return badge.versions[j].image_url_1x;
+                        }
+                    }
+                }
+            }
+
+            // Check global badges
+            for (var i = 0; i < badgeCache.global.length; i++) {
+                var badge = badgeCache.global[i];
+                if (badge.set_id === badgeSet) {
+                    for (var j = 0; j < badge.versions.length; j++) {
+                        if (badge.versions[j].id === badgeId) {
+                            return badge.versions[j].image_url_1x;
+                        }
+                    }
+                    // If exact match not found, try to find a fallback version
+                    if (badge.versions.length > 0) {
+                        // For subscriber badges, try to find the appropriate tier
+                        if (badgeSet === 'subscriber') {
+                            var targetMonths = parseInt(badgeId);
+                            var bestMatch = null;
+
+                            // Sort versions by month count (ascending)
+                            var sortedVersions = badge.versions.slice().sort(function (a, b) {
+                                return parseInt(a.id) - parseInt(b.id);
+                            });
+
+                            // Find the highest tier that's still <= target months
+                            for (var k = sortedVersions.length - 1; k >= 0; k--) {
+                                var versionMonths = parseInt(sortedVersions[k].id);
+                                if (versionMonths <= targetMonths) {
+                                    bestMatch = sortedVersions[k];
+                                    break;
+                                }
+                            }
+
+                            // If no suitable tier found (target is less than all tiers), use the lowest tier
+                            if (!bestMatch && sortedVersions.length > 0) {
+                                bestMatch = sortedVersions[0];
+                            }
+
+                            if (bestMatch) {
+                                console.log('Using subscriber badge tier for', targetMonths, 'months:', bestMatch.id + '-month badge');
+                                return bestMatch.image_url_1x;
+                            }
+                        }
+
+                        // For other badges, use the first available version
+                        return badge.versions[0].image_url_1x;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+
+
+        // Parse emotes in message
+        function parseEmotes(message, twitchEmotes) {
+            // First, handle Twitch native emotes on the original message
+            var twitchProcessedMessage = message;
+            var usedTwitchEmotePositions = [];
+
+            if (twitchEmotes && twitchEmotes !== 'null') {
+                var result = parseTwitchEmotesInOriginalMessage(message, twitchEmotes);
+                twitchProcessedMessage = result.message;
+                usedTwitchEmotePositions = result.usedPositions;
+            }
+
+            // If the message contains HTML from Twitch emotes, handle it differently
+            if (twitchProcessedMessage.includes('<img') && twitchProcessedMessage.includes('emote-img')) {
+                // Split on HTML img tags to preserve them
+                var parts = twitchProcessedMessage.split(/(<img[^>]*>)/);
+                var processedParts = [];
+
+                for (var i = 0; i < parts.length; i++) {
+                    var part = parts[i];
+
+                    // If this part is an HTML img tag, keep it as-is
+                    if (part.startsWith('<img') && part.includes('emote-img')) {
+                        processedParts.push(part);
+                        continue;
+                    }
+
+                    // Otherwise, process this text part for third-party emotes and mentions
+                    if (part.trim()) {
+                        var processedTextPart = processTextForEmotesWithContext(part, processedParts);
+                        processedParts.push(processedTextPart);
+                    } else {
+                        // Keep empty parts (spaces) as they might be important for positioning
+                        processedParts.push(part);
+                    }
+                }
+
+                return processedParts.join('');
+            } else {
+                // No Twitch emotes, process normally
+                return processTextForEmotes(twitchProcessedMessage);
+            }
+        }
+
+        // Parse emotes in ACTION message with username color
+        function parseEmotesForAction(message, twitchEmotes, usernameColor) {
+            // First, handle Twitch native emotes on the original message
+            var twitchProcessedMessage = message;
+            var usedTwitchEmotePositions = [];
+
+            if (twitchEmotes && twitchEmotes !== 'null') {
+                var result = parseTwitchEmotesInOriginalMessage(message, twitchEmotes);
+                twitchProcessedMessage = result.message;
+                usedTwitchEmotePositions = result.usedPositions;
+            }
+
+            // If the message contains HTML from Twitch emotes, handle it differently
+            if (twitchProcessedMessage.includes('<img') && twitchProcessedMessage.includes('emote-img')) {
+                // Split on HTML img tags to preserve them
+                var parts = twitchProcessedMessage.split(/(<img[^>]*>)/);
+                var processedParts = [];
+
+                for (var i = 0; i < parts.length; i++) {
+                    var part = parts[i];
+
+                    // If this part is an HTML img tag, keep it as-is
+                    if (part.startsWith('<img') && part.includes('emote-img')) {
+                        processedParts.push(part);
+                        continue;
+                    }
+
+                    // Otherwise, process this text part for third-party emotes and mentions with ACTION formatting
+                    if (part.trim()) {
+                        var processedTextPart = processTextForEmotesActionWithContext(part, processedParts, usernameColor);
+                        processedParts.push(processedTextPart);
+                    } else {
+                        // Keep empty parts (spaces) as they might be important for positioning
+                        processedParts.push(part);
+                    }
+                }
+
+                return processedParts.join('');
+            } else {
+                // No Twitch emotes, process normally with ACTION formatting
+                return processTextForEmotesAction(twitchProcessedMessage, usernameColor);
+            }
+        }
+
+        // Helper function to process text for third-party emotes, cheermotes, and @mentions
+        function processTextForEmotes(text) {
+            var words = text.split(' ');
+            var parsedWords = [];
+
+            // Process each word
+            for (var i = 0; i < words.length; i++) {
+                var word = words[i];
+
+                // Skip empty words
+                if (!word.trim()) {
+                    parsedWords.push(word);
+                    continue;
+                }
+
+                // Check for @mentions first
+                var mentionMatch = word.match(/^@([a-zA-Z0-9_]+)(.*)$/);
+                if (mentionMatch) {
+                    var username = mentionMatch[1];
+                    var remainder = mentionMatch[2]; // Any punctuation or text after the username
+
+                    // Get the color for this username from the cache
+                    var usernameColor = null;
+                    if (usernameColorCache[username]) {
+                        usernameColor = usernameColorCache[username];
+                    } else {
+                        // If not in cache, use the default font color
+                        usernameColor = '{{FontColor}}';
+                    }
+
+                    // Create the colored @mention
+                    var coloredMention = '<span style="color: ' + usernameColor + '">@' + escapeHtml(username) + '</span>';
+                    if (remainder) {
+                        coloredMention += escapeHtml(remainder);
+                    }
+
+                    parsedWords.push(coloredMention);
+                    continue;
+                }
+
+                // Check for cheermotes
+                var cheermoteResult = parseCheerMote(word);
+                if (cheermoteResult) {
+                    parsedWords.push(cheermoteResult);
+                    continue;
+                }
+
+                // Check third-party emotes with zero-width support
+                var emoteResult = findEmoteWithMetadata(word);
+                if (emoteResult) {
+                    console.log('Processing emote:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
+
+                    // Check if this is a zero-width emote and if there's a previous word to check
+                    if (emoteResult.isZeroWidth && i > 0) {
+                        var previousWord = words[i - 1]; // Get the previous word
+                        console.log('Zero-width emote detected:', word, 'Previous word:', previousWord);
+
+                        // Check if previous word is an emote (either HTML or text)
+                        var isPreviousWordEmote = false;
+                        var isPreviousWordCheermote = false;
+
+                        if (previousWord.startsWith('<img') && previousWord.includes('emote-img')) {
+                            // Previous word is already processed HTML emote
+                            isPreviousWordEmote = true;
+                        } else {
+                            // Check if previous word is a cheermote or third-party emote
+                            isPreviousWordCheermote = parseCheerMote(previousWord) !== null;
+                            var previousEmoteResult = findEmoteWithMetadata(previousWord);
+                            isPreviousWordEmote = previousEmoteResult !== null;
+                        }
+
+                        console.log('Previous word analysis - isEmote:', isPreviousWordEmote, 'isCheermote:', isPreviousWordCheermote);
+
+                        if (isPreviousWordEmote && !isPreviousWordCheermote) {
+                            // Create overlay with previous emote
+                            var baseEmoteHtml = previousWord;
+                            if (!baseEmoteHtml.startsWith('<img')) {
+                                // Convert text emote to HTML
+                                var prevEmoteResult = findEmoteWithMetadata(previousWord);
+                                if (prevEmoteResult) {
+                                    baseEmoteHtml = '<img src="' + prevEmoteResult.url + '" class="emote-img" alt="' + escapeHtml(prevEmoteResult.name) + '">';
+                                }
+                            }
+
+                            var overlayResult = createEmoteOverlay(baseEmoteHtml, emoteResult.url, emoteResult.name);
+
+                            // Replace the previous word in parsedWords with the overlay
+                            parsedWords[parsedWords.length - 1] = overlayResult;
+
+                            console.log('Created zero-width overlay for:', word, 'on base emote:', previousWord);
+                            continue;
+                        }
+                    }
+
+                    // Regular emote or zero-width emote without base
+                    if (emoteResult.url) {
+                        var emoteImg;
+                        if (emoteResult.isZeroWidth) {
+                            // Zero-width emote without base, render as regular emote with special class
+                            console.log('Rendering zero-width emote as standalone:', word);
+                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                        } else {
+                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                        }
+                        console.log('Generated emote HTML:', emoteImg);
+                        parsedWords.push(emoteImg);
+                    } else {
+                        console.error('Emote found but no URL available for:', word, emoteResult);
+                        parsedWords.push(escapeHtml(word));
+                    }
+                    continue;
+                }
+
+                // If no emote or mention found, escape HTML and add as text
+                parsedWords.push(escapeHtml(word));
+            }
+
+            return parsedWords.join(' ');
+        }
+
+        // Process text for ACTION messages with username color applied to regular text
+        function processTextForEmotesAction(text, usernameColor) {
+            var words = text.split(' ');
+            var parsedWords = [];
+
+            // Process each word
+            for (var i = 0; i < words.length; i++) {
+                var word = words[i];
+
+                // Skip empty words
+                if (!word.trim()) {
+                    parsedWords.push(word);
+                    continue;
+                }
+
+                // Check for @mentions first - these keep their original colors
+                var mentionMatch = word.match(/^@([a-zA-Z0-9_]+)(.*)$/);
+                if (mentionMatch) {
+                    var username = mentionMatch[1];
+                    var remainder = mentionMatch[2]; // Any punctuation or text after the username
+
+                    // Get the color for this username from the cache
+                    var mentionColor = null;
+                    if (usernameColorCache[username]) {
+                        mentionColor = usernameColorCache[username];
+                    } else {
+                        // If not in cache, use the default font color
+                        mentionColor = '{{FontColor}}';
+                    }
+
+                    // Create the colored @mention
+                    var coloredMention = '<span style="color: ' + mentionColor + '">@' + escapeHtml(username) + '</span>';
+                    if (remainder) {
+                        // Apply username color to the remainder
+                        coloredMention += '<span style="color: ' + usernameColor + '">' + escapeHtml(remainder) + '</span>';
+                    }
+
+                    parsedWords.push(coloredMention);
+                    continue;
+                }
+
+                // Check for cheermotes
+                var cheermoteResult = parseCheerMote(word);
+                if (cheermoteResult) {
+                    parsedWords.push(cheermoteResult);
+                    continue;
+                }
+
+                // Check third-party emotes with zero-width support
+                var emoteResult = findEmoteWithMetadata(word);
+                if (emoteResult) {
+                    console.log('Processing emote in ACTION:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
+
+                    // Check if this is a zero-width emote and if there's a previous word to check
+                    if (emoteResult.isZeroWidth && i > 0) {
+                        var previousWord = words[i - 1]; // Get the previous word
+                        console.log('Zero-width emote detected in ACTION:', word, 'Previous word:', previousWord);
+
+                        // Check if previous word is an emote (either HTML or text)
+                        var isPreviousWordEmote = false;
+                        var isPreviousWordCheermote = false;
+
+                        if (previousWord.startsWith('<img') && previousWord.includes('emote-img')) {
+                            // Previous word is already processed HTML emote
+                            isPreviousWordEmote = true;
+                        } else {
+                            // Check if previous word is a cheermote or third-party emote
+                            isPreviousWordCheermote = parseCheerMote(previousWord) !== null;
+                            var previousEmoteResult = findEmoteWithMetadata(previousWord);
+                            isPreviousWordEmote = previousEmoteResult !== null;
+                        }
+
+                        console.log('Previous word analysis in ACTION - isEmote:', isPreviousWordEmote, 'isCheermote:', isPreviousWordCheermote);
+
+                        if (isPreviousWordEmote && !isPreviousWordCheermote) {
+                            // Create overlay with previous emote
+                            var baseEmoteHtml = previousWord;
+                            if (!baseEmoteHtml.startsWith('<img')) {
+                                // Convert text emote to HTML
+                                var prevEmoteResult = findEmoteWithMetadata(previousWord);
+                                if (prevEmoteResult) {
+                                    baseEmoteHtml = '<img src="' + prevEmoteResult.url + '" class="emote-img" alt="' + escapeHtml(prevEmoteResult.name) + '">';
+                                }
+                            }
+
+                            var overlayResult = createEmoteOverlay(baseEmoteHtml, emoteResult.url, emoteResult.name);
+
+                            // Replace the previous word in parsedWords with the overlay
+                            parsedWords[parsedWords.length - 1] = overlayResult;
+
+                            console.log('Created zero-width overlay in ACTION for:', word, 'on base emote:', previousWord);
+                            continue;
+                        }
+                    }
+
+                    // Regular emote or zero-width emote without base
+                    if (emoteResult.url) {
+                        var emoteImg;
+                        if (emoteResult.isZeroWidth) {
+                            // Zero-width emote without base, render as regular emote with special class
+                            console.log('Rendering zero-width emote as standalone in ACTION:', word);
+                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                        } else {
+                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                        }
+                        console.log('Generated emote HTML in ACTION:', emoteImg);
+                        parsedWords.push(emoteImg);
+                    } else {
+                        console.error('Emote found but no URL available in ACTION for:', word, emoteResult);
+                        // Apply username color to text fallback
+                        parsedWords.push('<span style="color: ' + usernameColor + '">' + escapeHtml(word) + '</span>');
+                    }
+                    continue;
+                }
+
+                // If no emote or mention found, apply username color and escape HTML
+                parsedWords.push('<span style="color: ' + usernameColor + '">' + escapeHtml(word) + '</span>');
+            }
+
+            return parsedWords.join(' ');
+        }
+
+        // Enhanced version of processTextForEmotes that has context about previous parts
+        function processTextForEmotesWithContext(text, previousParts) {
+            var words = text.split(' ');
+            var parsedWords = [];
+
+            // Process each word
+            for (var i = 0; i < words.length; i++) {
+                var word = words[i];
+
+                // Skip empty words
+                if (!word.trim()) {
+                    parsedWords.push(word);
+                    continue;
+                }
+
+                // Check for @mentions first
+                var mentionMatch = word.match(/^@([a-zA-Z0-9_]+)(.*)$/);
+                if (mentionMatch) {
+                    var username = mentionMatch[1];
+                    var remainder = mentionMatch[2]; // Any punctuation or text after the username
+
+                    // Get the color for this username from the cache
+                    var usernameColor = null;
+                    if (usernameColorCache[username]) {
+                        usernameColor = usernameColorCache[username];
+                    } else {
+                        // If not in cache, use the default font color
+                        usernameColor = '{{FontColor}}';
+                    }
+
+                    // Create the colored @mention
+                    var coloredMention = '<span style="color: ' + usernameColor + '">@' + escapeHtml(username) + '</span>';
+                    if (remainder) {
+                        coloredMention += escapeHtml(remainder);
+                    }
+
+                    parsedWords.push(coloredMention);
+                    continue;
+                }
+
+                // Check for cheermotes
+                var cheermoteResult = parseCheerMote(word);
+                if (cheermoteResult) {
+                    parsedWords.push(cheermoteResult);
+                    continue;
+                }
+
+                // Check third-party emotes with zero-width support
+                var emoteResult = findEmoteWithMetadata(word);
+                if (emoteResult) {
+                    console.log('Processing emote with context:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
+
+                    // Check if this is a zero-width emote
+                    if (emoteResult.isZeroWidth) {
+                        var baseEmoteFound = false;
+                        var baseEmoteHtml = null;
+                        var baseEmoteIndex = -1;
+
+                        // First, check for previous word in the current text part
+                        if (i > 0) {
+                            var previousWord = words[i - 1];
+                            console.log('Zero-width emote detected:', word, 'Previous word in part:', previousWord);
+
+                            // Check if previous word is an emote (either HTML or text)
+                            var isPreviousWordEmote = false;
+                            var isPreviousWordCheermote = false;
+
+                            if (previousWord.startsWith('<img') && previousWord.includes('emote-img')) {
+                                // Previous word is already processed HTML emote
+                                isPreviousWordEmote = true;
+                                baseEmoteHtml = previousWord;
+                            } else {
+                                // Check if previous word is a cheermote or third-party emote
+                                isPreviousWordCheermote = parseCheerMote(previousWord) !== null;
+                                var previousEmoteResult = findEmoteWithMetadata(previousWord);
+                                isPreviousWordEmote = previousEmoteResult !== null;
+
+                                if (isPreviousWordEmote && !isPreviousWordCheermote) {
+                                    baseEmoteHtml = '<img src="' + previousEmoteResult.url + '" class="emote-img" alt="' + escapeHtml(previousEmoteResult.name) + '">';
+                                }
+                            }
+
+                            if (isPreviousWordEmote && !isPreviousWordCheermote) {
+                                baseEmoteFound = true;
+                                baseEmoteIndex = -1; // Indicates current part
+                                console.log('Found base emote in current part for:', word);
+                            }
+                        }
+
+                        // If no base emote found in current part, check the last part in previousParts
+                        if (!baseEmoteFound && previousParts && previousParts.length > 0) {
+                            // Look for the most recent emote in previous parts
+                            for (var j = previousParts.length - 1; j >= 0; j--) {
+                                var prevPart = previousParts[j];
+
+                                // Check if this part is a Twitch emote HTML
+                                if (prevPart.startsWith('<img') && prevPart.includes('emote-img')) {
+                                    baseEmoteHtml = prevPart;
+                                    baseEmoteFound = true;
+                                    baseEmoteIndex = j;
+                                    console.log('Found Twitch emote in previous part for zero-width:', word, 'Base emote:', baseEmoteHtml);
+                                    break;
+                                }
+
+                                // Check if this part contains third-party emotes
+                                if (prevPart.includes('<img') && prevPart.includes('emote-img')) {
+                                    // Extract the last emote from this part
+                                    var emoteMatches = prevPart.match(/<img[^>]*class="[^"]*emote-img[^"]*"[^>]*>/g);
+                                    if (emoteMatches && emoteMatches.length > 0) {
+                                        baseEmoteHtml = emoteMatches[emoteMatches.length - 1]; // Get the last emote
+                                        baseEmoteFound = true;
+                                        baseEmoteIndex = j;
+                                        console.log('Found third-party emote in previous part for zero-width:', word, 'Base emote:', baseEmoteHtml);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // If we found a base emote, create overlay
+                        if (baseEmoteFound && baseEmoteHtml) {
+                            var overlayResult = createEmoteOverlay(baseEmoteHtml, emoteResult.url, emoteResult.name);
+
+                            // If the base emote was from the previous word in current part, replace it
+                            if (baseEmoteIndex === -1 && i > 0 && parsedWords.length > 0) {
+                                var lastParsedWord = parsedWords[parsedWords.length - 1];
+                                if (lastParsedWord.includes('emote-img')) {
+                                    parsedWords[parsedWords.length - 1] = overlayResult;
+                                    console.log('Replaced previous word with overlay for:', word);
+                                    continue;
+                                }
+                            }
+
+                            // If the base emote was from a previous part, replace it in previousParts
+                            if (baseEmoteIndex >= 0 && previousParts && previousParts.length > baseEmoteIndex) {
+                                // Handle the case where the base emote is the entire previous part
+                                if (previousParts[baseEmoteIndex] === baseEmoteHtml) {
+                                    previousParts[baseEmoteIndex] = overlayResult;
+                                    console.log('Replaced entire previous part with overlay for:', word);
+                                    continue;
+                                }
+
+                                // Handle the case where the base emote is part of a larger previous part
+                                if (previousParts[baseEmoteIndex].includes(baseEmoteHtml)) {
+                                    // Replace the specific emote within the part
+                                    previousParts[baseEmoteIndex] = previousParts[baseEmoteIndex].replace(baseEmoteHtml, overlayResult);
+                                    console.log('Replaced emote within previous part with overlay for:', word);
+                                    continue;
+                                }
+                            }
+
+                            console.log('Warning: Found base emote but could not replace it properly for:', word);
+                        }
+                    }
+
+                    // Regular emote or zero-width emote without base
+                    if (emoteResult.url) {
+                        var emoteImg;
+                        if (emoteResult.isZeroWidth) {
+                            // Zero-width emote without base, render as regular emote with special class
+                            console.log('Rendering zero-width emote as standalone:', word);
+                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                        } else {
+                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                        }
+                        console.log('Generated emote HTML with context:', emoteImg);
+                        parsedWords.push(emoteImg);
+                    } else {
+                        console.error('Emote found but no URL available for:', word, emoteResult);
+                        parsedWords.push(escapeHtml(word));
+                    }
+                    continue;
+                }
+
+                // If no emote found, escape HTML and add as text
+                parsedWords.push(escapeHtml(word));
+            }
+
+            return parsedWords.join(' ');
+        }
+
+        // Enhanced version of processTextForEmotesAction that has context about previous parts
+        function processTextForEmotesActionWithContext(text, previousParts, usernameColor) {
+            var words = text.split(' ');
+            var parsedWords = [];
+
+            // Process each word
+            for (var i = 0; i < words.length; i++) {
+                var word = words[i];
+
+                // Skip empty words
+                if (!word.trim()) {
+                    parsedWords.push(word);
+                    continue;
+                }
+
+                // Check for @mentions first - these keep their original colors
+                var mentionMatch = word.match(/^@([a-zA-Z0-9_]+)(.*)$/);
+                if (mentionMatch) {
+                    var username = mentionMatch[1];
+                    var remainder = mentionMatch[2]; // Any punctuation or text after the username
+
+                    // Get the color for this username from the cache
+                    var mentionColor = null;
+                    if (usernameColorCache[username]) {
+                        mentionColor = usernameColorCache[username];
+                    } else {
+                        // If not in cache, use the default font color
+                        mentionColor = '{{FontColor}}';
+                    }
+
+                    // Create the colored @mention
+                    var coloredMention = '<span style="color: ' + mentionColor + '">@' + escapeHtml(username) + '</span>';
+                    if (remainder) {
+                        // Apply username color to the remainder
+                        coloredMention += '<span style="color: ' + usernameColor + '">' + escapeHtml(remainder) + '</span>';
+                    }
+
+                    parsedWords.push(coloredMention);
+                    continue;
+                }
+
+                // Check for cheermotes
+                var cheermoteResult = parseCheerMote(word);
+                if (cheermoteResult) {
+                    parsedWords.push(cheermoteResult);
+                    continue;
+                }
+
+                // Check third-party emotes with zero-width support
+                var emoteResult = findEmoteWithMetadata(word);
+                if (emoteResult) {
+                    console.log('Processing emote with context in ACTION:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
+
+                    // Check if this is a zero-width emote
+                    if (emoteResult.isZeroWidth) {
+                        var baseEmoteFound = false;
+                        var baseEmoteHtml = null;
+                        var baseEmoteIndex = -1;
+
+                        // First, check for previous word in the current text part
+                        if (i > 0) {
+                            var previousWord = words[i - 1];
+                            console.log('Zero-width emote detected in ACTION:', word, 'Previous word in part:', previousWord);
+
+                            // Check if previous word is an emote (either HTML or text)
+                            var isPreviousWordEmote = false;
+                            var isPreviousWordCheermote = false;
+
+                            if (previousWord.startsWith('<img') && previousWord.includes('emote-img')) {
+                                // Previous word is already processed HTML emote
+                                isPreviousWordEmote = true;
+                                baseEmoteHtml = previousWord;
+                            } else {
+                                // Check if previous word is a cheermote or third-party emote
+                                isPreviousWordCheermote = parseCheerMote(previousWord) !== null;
+                                var previousEmoteResult = findEmoteWithMetadata(previousWord);
+                                isPreviousWordEmote = previousEmoteResult !== null;
+
+                                if (isPreviousWordEmote && !isPreviousWordCheermote) {
+                                    baseEmoteHtml = '<img src="' + previousEmoteResult.url + '" class="emote-img" alt="' + escapeHtml(previousEmoteResult.name) + '">';
+                                }
+                            }
+
+                            if (isPreviousWordEmote && !isPreviousWordCheermote) {
+                                baseEmoteFound = true;
+                                baseEmoteIndex = -1; // Indicates current part
+                                console.log('Found base emote in current part for ACTION:', word);
+                            }
+                        }
+
+                        // If no base emote found in current part, check the last part in previousParts
+                        if (!baseEmoteFound && previousParts && previousParts.length > 0) {
+                            // Look for the most recent emote in previous parts
+                            for (var j = previousParts.length - 1; j >= 0; j--) {
+                                var prevPart = previousParts[j];
+
+                                // Check if this part is a Twitch emote HTML
+                                if (prevPart.startsWith('<img') && prevPart.includes('emote-img')) {
+                                    baseEmoteHtml = prevPart;
+                                    baseEmoteFound = true;
+                                    baseEmoteIndex = j;
+                                    console.log('Found Twitch emote in previous part for zero-width ACTION:', word, 'Base emote:', baseEmoteHtml);
+                                    break;
+                                }
+
+                                // Check if this part contains third-party emotes
+                                if (prevPart.includes('<img') && prevPart.includes('emote-img')) {
+                                    // Extract the last emote from this part
+                                    var emoteMatches = prevPart.match(/<img[^>]*class="[^"]*emote-img[^"]*"[^>]*>/g);
+                                    if (emoteMatches && emoteMatches.length > 0) {
+                                        baseEmoteHtml = emoteMatches[emoteMatches.length - 1]; // Get the last emote
+                                        baseEmoteFound = true;
+                                        baseEmoteIndex = j;
+                                        console.log('Found third-party emote in previous part for zero-width ACTION:', word, 'Base emote:', baseEmoteHtml);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // If we found a base emote, create overlay
+                        if (baseEmoteFound && baseEmoteHtml) {
+                            var overlayResult = createEmoteOverlay(baseEmoteHtml, emoteResult.url, emoteResult.name);
+
+                            // If the base emote was from the previous word in current part, replace it
+                            if (baseEmoteIndex === -1 && i > 0 && parsedWords.length > 0) {
+                                var lastParsedWord = parsedWords[parsedWords.length - 1];
+                                if (lastParsedWord.includes('emote-img')) {
+                                    parsedWords[parsedWords.length - 1] = overlayResult;
+                                    console.log('Replaced previous word with overlay for ACTION:', word);
+                                    continue;
+                                }
+                            }
+
+                            // If the base emote was from a previous part, replace it in previousParts
+                            if (baseEmoteIndex >= 0 && previousParts && previousParts.length > baseEmoteIndex) {
+                                // Handle the case where the base emote is the entire previous part
+                                if (previousParts[baseEmoteIndex] === baseEmoteHtml) {
+                                    previousParts[baseEmoteIndex] = overlayResult;
+                                    console.log('Replaced entire previous part with overlay for ACTION:', word);
+                                    continue;
+                                }
+
+                                // Handle the case where the base emote is part of a larger previous part
+                                if (previousParts[baseEmoteIndex].includes(baseEmoteHtml)) {
+                                    // Replace the specific emote within the part
+                                    previousParts[baseEmoteIndex] = previousParts[baseEmoteIndex].replace(baseEmoteHtml, overlayResult);
+                                    console.log('Replaced emote within previous part with overlay for ACTION:', word);
+                                    continue;
+                                }
+                            }
+
+                            console.log('Warning: Found base emote but could not replace it properly for ACTION:', word);
+                        }
+                    }
+
+                    // Regular emote or zero-width emote without base
+                    if (emoteResult.url) {
+                        var emoteImg;
+                        if (emoteResult.isZeroWidth) {
+                            // Zero-width emote without base, render as regular emote with special class
+                            console.log('Rendering zero-width emote as standalone in ACTION:', word);
+                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                        } else {
+                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                        }
+                        console.log('Generated emote HTML with context in ACTION:', emoteImg);
+                        parsedWords.push(emoteImg);
+                    } else {
+                        console.error('Emote found but no URL available in ACTION for:', word, emoteResult);
+                        // Apply username color to text fallback
+                        parsedWords.push('<span style="color: ' + usernameColor + '">' + escapeHtml(word) + '</span>');
+                    }
+                    continue;
+                }
+
+                // If no emote found, apply username color and escape HTML
+                parsedWords.push('<span style="color: ' + usernameColor + '">' + escapeHtml(word) + '</span>');
+            }
+
+            return parsedWords.join(' ');
+        }
+
+        // Parse Twitch emotes on the original message before processing other emotes
+        function parseTwitchEmotesInOriginalMessage(message, emotesString) {
+            console.log('Parsing Twitch emotes. Message:', message, 'Emotes:', emotesString);
+
+            if (!emotesString || emotesString === 'null') {
+                return { message: message, usedPositions: [] };
+            }
+
+            var emotes = emotesString.split('/');
+            var replacements = [];
+            var usedPositions = [];
+
+            emotes.forEach(function (emote) {
+                var parts = emote.split(':');
+                if (parts.length !== 2) return;
+
+                var emoteId = parts[0];
+                var positions = parts[1].split(',');
+
+                console.log('Processing Twitch emote ID:', emoteId, 'Positions:', positions);
+
+                positions.forEach(function (position) {
+                    var range = position.split('-');
+                    if (range.length !== 2) return;
+
+                    var start = parseInt(range[0]);
+                    var end = parseInt(range[1]);
+
+                    console.log('Twitch emote position:', start, '-', end, 'Text:', message.substring(start, end + 1));
+
+                    replacements.push({
+                        start: start,
+                        end: end,
+                        emoteId: emoteId
+                    });
+
+                    usedPositions.push({ start: start, end: end });
+                });
+            });
+
+            // Sort by start position (descending) to replace from end to start
+            replacements.sort(function (a, b) { return b.start - a.start; });
+
+            console.log('Twitch emote replacements:', replacements);
+
+            // Apply replacements to the original message
+            var processedMessage = message;
+            replacements.forEach(function (replacement) {
+                var emoteUrl = 'https://static-cdn.jtvnw.net/emoticons/v2/' + replacement.emoteId + '/default/light/1.0';
+                var emoteImg = '<img src="' + emoteUrl + '" class="emote-img" alt="emote" onerror="console.error(\'Failed to load Twitch emote:\', this.src); this.style.display=\'none\';">';
+
+                console.log('Replacing Twitch emote at position', replacement.start, '-', replacement.end, 'with URL:', emoteUrl);
+
+                var before = processedMessage.substring(0, replacement.start);
+                var after = processedMessage.substring(replacement.end + 1);
+                processedMessage = before + emoteImg + after;
+
+                console.log('Message after replacement:', processedMessage);
+            });
+
+            return { message: processedMessage, usedPositions: usedPositions };
+        }
+
+        // Create emote overlay combination
+        function createEmoteOverlay(baseEmoteHtml, overlayUrl, overlayName) {
+            console.log('Creating emote overlay. Base HTML:', baseEmoteHtml, 'Overlay URL:', overlayUrl, 'Overlay name:', overlayName);
+
+            // If the base is already a container, extract the base emote
+            if (baseEmoteHtml.includes('emote-container')) {
+                console.log('Base is already a container, extracting base emote');
+                var baseMatch = baseEmoteHtml.match(/<img[^>]*class="[^"]*emote-base[^"]*"[^>]*>/);
+                if (baseMatch) {
+                    baseEmoteHtml = baseMatch[0];
+                    console.log('Extracted base emote:', baseEmoteHtml);
+                }
+            }
+
+            // Extract the src from the base emote
+            var srcMatch = baseEmoteHtml.match(/src="([^"]*)"/);
+            var altMatch = baseEmoteHtml.match(/alt="([^"]*)"/);
+            var classMatch = baseEmoteHtml.match(/class="([^"]*)"/);
+
+            if (!srcMatch) {
+                console.error('Could not extract src from base emote HTML:', baseEmoteHtml);
+                return baseEmoteHtml; // Fallback if we can't parse
+            }
+
+            var baseSrc = srcMatch[1];
+            var baseAlt = altMatch ? altMatch[1] : 'emote';
+            var baseClasses = classMatch ? classMatch[1] : 'emote-img';
+
+            console.log('Extracted base emote - src:', baseSrc, 'alt:', baseAlt, 'classes:', baseClasses);
+
+            // Create the overlay container with the base emote and overlay
+            var result = '<span class="emote-container">' +
+                '<img src="' + baseSrc + '" class="emote-base" alt="' + escapeHtml(baseAlt) + '">' +
+                '<img src="' + overlayUrl + '" class="emote-overlay" alt="' + escapeHtml(overlayName) + '" title="Zero-width overlay: ' + escapeHtml(overlayName) + '">' +
+                '</span>';
+
+            console.log('Created overlay container:', result);
+            return result;
+        }
+
+        // Enhanced emote finder that returns metadata including zero-width info
+        function findEmoteWithMetadata(emoteName) {
+            // Debug: Log when we're searching for specific emotes that might be problematic
+            if (emoteName === 'Buhhloon') {
+                console.log('DEBUG: Searching for Buhhloon emote');
+                console.log('7TV global cache:', emoteCache.seventv.global);
+                console.log('7TV user cache:', emoteCache.seventv.user);
+            }
+
+            // Check BTTV emotes
+            var bttvEmote = findInEmoteArray(emoteCache.bttv.global, emoteName, 'code') ||
+                findInEmoteArray(emoteCache.bttv.user, emoteName, 'code');
+            if (bttvEmote) {
+                return {
+                    url: 'https://cdn.betterttv.net/emote/' + bttvEmote.id + '/1x',
+                    name: emoteName,
+                    isZeroWidth: false,
+                    source: 'BTTV'
+                };
+            }
+
+            // Check 7TV emotes with zero-width support
+            var seventvEmote = findInEmoteArray(emoteCache.seventv.global, emoteName, 'name') ||
+                findInEmoteArray(emoteCache.seventv.user, emoteName, 'name');
+            if (seventvEmote) {
+                // Check if this emote has zero-width flag
+                var isZeroWidth = false;
+
+                // Debug logging for 7TV emote structure
+                console.log('Found 7TV emote:', emoteName, 'Structure:', seventvEmote);
+
+                // Check flags in data section first (primary location for 7TV API v3)
+                if (seventvEmote.data && seventvEmote.data.flags !== undefined) {
+                    isZeroWidth = (seventvEmote.data.flags & 256) !== 0;
+                    console.log('7TV emote', emoteName, 'data.flags:', seventvEmote.data.flags, 'isZeroWidth:', isZeroWidth);
+                }
+                // Fallback to top-level flags
+                else if (seventvEmote.flags !== undefined) {
+                    isZeroWidth = (seventvEmote.flags & 256) !== 0;
+                    console.log('7TV emote', emoteName, 'top-level flags:', seventvEmote.flags, 'isZeroWidth:', isZeroWidth);
+                }
+
+                console.log('7TV emote', emoteName, 'final isZeroWidth:', isZeroWidth);
+
+                // Construct the 7TV emote URL - try different formats
+                var emoteUrl = null;
+
+                console.log('7TV emote raw data for', emoteName, ':', seventvEmote);
+
+                if (seventvEmote.data && seventvEmote.data.host && seventvEmote.data.host.url && seventvEmote.data.host.files) {
+                    // New 7TV API v3 format
+                    var files = seventvEmote.data.host.files;
+                    console.log('7TV emote files available:', files);
+
+                    var file1x = files.find(function (file) {
+                        return file.name === '1x.webp' || file.name === '1x.avif' || file.name === '1x.png' || file.name.startsWith('1x.');
+                    });
+
+                    if (file1x) {
+                        emoteUrl = 'https:' + seventvEmote.data.host.url + '/' + file1x.name;
+                        console.log('Using 7TV v3 format:', emoteUrl);
+                    }
+                }
+
+                // Fallback to legacy URL formats
+                if (!emoteUrl) {
+                    // Try different legacy formats
+                    var legacyUrls = [
+                        'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x.webp',
+                        'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x.avif',
+                        'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x.png',
+                        'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x'
+                    ];
+
+                    emoteUrl = legacyUrls[0]; // Default to first format
+                    console.log('Using 7TV legacy format:', emoteUrl);
+                }
+
+                console.log('Final 7TV emote URL for', emoteName, ':', emoteUrl);
+
+                return {
+                    url: emoteUrl,
+                    name: emoteName,
+                    isZeroWidth: isZeroWidth,
+                    source: '7TV'
+                };
+            }
+
+            // Debug: Log when we can't find the emote
+            if (emoteName === 'Buhhloon') {
+                console.log('DEBUG: Could not find Buhhloon emote in any cache');
+            }
+
+            // Check FFZ emotes
+            var ffzEmote = findInEmoteArray(emoteCache.ffz.global, emoteName, 'name') ||
+                findInEmoteArray(emoteCache.ffz.user, emoteName, 'name');
+            if (ffzEmote) {
+                var ffzUrl = null;
+                if (ffzEmote.urls) {
+                    // Try different size formats
+                    ffzUrl = ffzEmote.urls['1'] || ffzEmote.urls['2'] || ffzEmote.urls['4'];
+                    // Make sure URL is absolute
+                    if (ffzUrl && !ffzUrl.startsWith('http')) {
+                        ffzUrl = 'https:' + ffzUrl;
+                    }
+                }
+
+                console.log('FFZ emote URL for', emoteName, ':', ffzUrl);
+
+                return {
+                    url: ffzUrl,
+                    name: emoteName,
+                    isZeroWidth: false,
+                    source: 'FFZ'
+                };
+            }
+
+            // Check Twitch global emotes
+            var twitchEmote = findInEmoteArray(emoteCache.twitch.global, emoteName, 'name');
+            if (twitchEmote) {
+                var twitchUrl = 'https://static-cdn.jtvnw.net/emoticons/v2/' + twitchEmote.id + '/default/light/1.0';
+                console.log('Twitch emote URL for', emoteName, ':', twitchUrl);
+
+                return {
+                    url: twitchUrl,
+                    name: emoteName,
+                    isZeroWidth: false,
+                    source: 'Twitch'
+                };
+            }
+
+            return null;
+        }
+
+        // Legacy function for backward compatibility
+        function findEmoteUrl(emoteName) {
+            var result = findEmoteWithMetadata(emoteName);
+            return result ? result.url : null;
+        }
+
+        // Helper function to find emote in array
+        function findInEmoteArray(array, name, property) {
+            if (!array || !Array.isArray(array)) return null;
+
+            for (var i = 0; i < array.length; i++) {
+                if (array[i][property] === name) {
+                    return array[i];
+                }
+            }
+            return null;
+        }
+
+        // Parse cheermotes
+        function parseCheerMote(word) {
+            var match = word.match(/^([a-zA-Z]+)(\d+)$/);
+            if (!match) return null;
+
+            var prefix = match[1].toLowerCase();
+            var amount = parseInt(match[2]);
+
+            if (!emoteCache.cheermotes[prefix]) return null;
+
+            // Find the appropriate tier
+            var tiers = Object.keys(emoteCache.cheermotes[prefix]).map(Number).sort(function (a, b) { return b - a; });
+            var tier = null;
+
+            for (var i = 0; i < tiers.length; i++) {
+                if (amount >= tiers[i]) {
+                    tier = tiers[i];
+                    break;
+                }
+            }
+
+            if (!tier) return null;
+
+            var cheermoteData = emoteCache.cheermotes[prefix][tier];
+            var emoteUrl = Object.keys(cheermoteData)[0]; // Get the first (and likely only) URL
+            var color = cheermoteData[emoteUrl];
+
+            return '<span class="cheermote-container">' +
+                '<img src="' + emoteUrl + '" class="cheermote-img" alt="' + prefix + '">' +
+                '<span class="cheermote-amount" style="color: ' + color + '">' + amount + '</span>' +
+                '</span>';
+        }
+
+        // Format timestamp
+        function formatTimestamp(timestamp) {
+            var date = new Date(timestamp * 1000);
+            var options = {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: timestampFormat === '12h'
+            };
+            return date.toLocaleTimeString([], options);
+        }
+
+        // Utility functions
+        function escapeHtml(text) {
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function scrollToBottom() {
+            var chatContainer = document.getElementById('chat');
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function clearChat() {
+            var chatContainer = document.getElementById('chat');
+            chatContainer.innerHTML = '';
+            messageCount = 0;
+        }
+
+        function removeMessages(messageIds) {
+            messageIds.forEach(function (id) {
+                var element = document.getElementById('msg-' + id);
+                if (element) {
+                    element.remove();
+                    messageCount--;
+                }
+            });
+        }
+
+        function removeOldestMessage() {
+            var chatContainer = document.getElementById('chat');
+            var firstMessage = chatContainer.querySelector('.chat-message');
+            if (firstMessage) {
+                firstMessage.remove();
+                messageCount--;
+            }
+        }
+
+        function updateChatSettings(settings) {
+            // Update dynamic settings without reload
+            if (settings.maxMessages) maxMessages = settings.maxMessages;
+            if (settings.showTimestamps !== undefined) showTimestamps = settings.showTimestamps;
+            if (settings.timestampFormat) timestampFormat = settings.timestampFormat;
+            if (settings.enableEmotes !== undefined) enableEmotes = settings.enableEmotes;
+            if (settings.enableBadges !== undefined) enableBadges = settings.enableBadges;
+
+            // Update font randomization settings
+            if (settings.enableMessageFontRandomization !== undefined) {
+                enableMessageFontRandomization = settings.enableMessageFontRandomization;
+            }
+            if (settings.enableUsernameFontRandomization !== undefined) {
+                enableUsernameFontRandomization = settings.enableUsernameFontRandomization;
+            }
+            if (settings.randomFontList) {
+                randomFontList = settings.randomFontList.split('\n').map(function (font) {
+                    return font.trim();
+                }).filter(function (font) {
+                    return font.length > 0;
+                });
+            }
+
+            // Update username filtering settings
+            if (settings.enableUsernameFiltering !== undefined) {
+                enableUsernameFiltering = settings.enableUsernameFiltering;
+            }
+            if (settings.filteredUsernames) {
+                filteredUsernames = settings.filteredUsernames.toLowerCase().split('\n').map(function (username) {
+                    return username.trim();
+                }).filter(function (username) {
+                    return username.length > 0;
+                });
+            }
+
+            console.log('Chat settings updated:', settings);
+        }
+
+        // Handle moderation events
+        function handleModerationEvent(moderationData) {
+            console.log('Moderation event received:', moderationData);
+
+            try {
+                if (moderationData.actions) {
+                    // Handle message deletion
+                    if (moderationData.actions.delete) {
+                        var deleteAction = moderationData.actions.delete;
+                        if (deleteAction.message_id) {
+                            removeMessageById(deleteAction.message_id);
+                            console.log('Removed message by ID:', deleteAction.message_id);
+                        }
+                    }
+
+                    // Handle user timeout
+                    if (moderationData.actions.timeout) {
+                        var timeoutAction = moderationData.actions.timeout;
+                        // Remove recent messages from timed out user
+                        removeMessagesByUser(timeoutAction.user_id);
+                        console.log('Removed messages from timed out user:', timeoutAction.user_name, timeoutAction.user_id);
+                    }
+
+                    // Handle user ban
+                    if (moderationData.actions.ban) {
+                        var banAction = moderationData.actions.ban;
+                        // Remove all messages from banned user
+                        removeMessagesByUser(banAction.user_id);
+                        console.log('Removed messages from banned user:', banAction.user_name, banAction.user_id);
+                    }
+
+                    // Handle warning - no message removal needed for warnings
+                    if (moderationData.actions.warning) {
+                        var warningAction = moderationData.actions.warning;
+                        console.log('Warning received for user:', warningAction.user_name, warningAction.user_id);
+                    }
+                }
+            } catch (error) {
+                console.error('Error handling moderation event:', error);
+            }
+        }
+
+        // Show moderation indicator
+        function showModerationIndicator(message, type) {
+            var chatContainer = document.getElementById('chat');
+            var moderationElement = document.createElement('div');
+            moderationElement.className = 'chat-message event-message moderation-' + type;
+            moderationElement.innerHTML = '<div class="message-content"><em>[MODERATION] ' + escapeHtml(message) + '</em></div>';
+
+            chatContainer.appendChild(moderationElement);
+            scrollToBottom();
+
+            // Auto-remove moderation indicator after 10 seconds
+            setTimeout(function () {
+                if (moderationElement.parentNode) {
+                    moderationElement.remove();
+                }
+            }, 10000);
+        }
+
+        // Remove message by ID
+        function removeMessageById(messageId) {
+            var element = document.getElementById('msg-' + messageId);
+            if (element) {
+                element.remove();
+                messageCount--;
+                console.log('Removed message by ID:', messageId);
+            }
+        }
+
+        // Remove messages by user ID
+        function removeMessagesByUser(userId) {
+            var chatContainer = document.getElementById('chat');
+            var messages = chatContainer.querySelectorAll('.chat-message[data-user-id="' + userId + '"]');
+            var removedCount = 0;
+
+            messages.forEach(function (message) {
+                message.remove();
+                removedCount++;
+                console.log('Removed message from user:', userId, 'Message ID:', message.id);
+            });
+
+            if (removedCount > 0) {
+                messageCount -= removedCount;
+                console.log('Removed ' + removedCount + ' messages from user:', userId);
+            } else {
+                console.log('No messages found for user:', userId);
+            }
+        }
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) {
+                // Page became visible, scroll to bottom
+                scrollToBottom();
+            }
+        });
+
+        // Refresh emotes periodically (every 30 minutes)
+        setInterval(function () {
+            if (streamerID && !emoteFetchInProgress) {
+                console.log('Refreshing emotes...');
+                fetchAllEmotesAndBadges();
+            }
+        }, 30 * 60 * 1000);
+
+        // Initialize
+        console.log('Mycelian Chat initialized');
+
+        // BTTV Emote Fetching
+        function fetchBTTVEmotes() {
+            // Global BTTV emotes
+            fetch('https://api.betterttv.net/3/cached/emotes/global')
+                .then(response => response.json())
+                .then(data => {
+                    emoteCache.bttv.global = data;
+                    console.log('BTTV global emotes loaded:', data.length);
+                })
+                .catch(error => console.error('Error fetching BTTV global emotes:', error));
+
+            // User BTTV emotes
+            if (streamerID) {
+                fetch(`https://api.betterttv.net/3/cached/users/twitch/${streamerID}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        emoteCache.bttv.user = (data.channelEmotes || []).concat(data.sharedEmotes || []);
+                        console.log('BTTV user emotes loaded:', emoteCache.bttv.user.length);
+                    })
+                    .catch(error => console.error('Error fetching BTTV user emotes:', error));
+            }
+        }
+
+        // 7TV Emote Fetching
+        function fetchSevenTVEmotes() {
+            // Global 7TV emotes
+            fetch('https://7tv.io/v3/emote-sets/global')
+                .then(response => response.json())
+                .then(data => {
+                    emoteCache.seventv.global = data.emotes || [];
+                    console.log('7TV global emotes loaded:', emoteCache.seventv.global.length);
+                    console.log('7TV global emotes:', emoteCache.seventv.global);
+                })
+                .catch(error => console.error('Error fetching 7TV global emotes:', error));
+
+            // User 7TV emotes
+            if (streamerID) {
+                fetch(`https://7tv.io/v3/users/twitch/${streamerID}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        emoteCache.seventv.user = (data.emote_set && data.emote_set.emotes) || [];
+                        console.log('7TV user emotes loaded:', emoteCache.seventv.user.length);
+                    })
+                    .catch(error => console.error('Error fetching 7TV user emotes:', error));
+            }
+        }
+
+        // FFZ Emote Fetching
+        function fetchFFZEmotes() {
+            // Global FFZ emotes
+            fetch('https://api.frankerfacez.com/v1/set/global')
+                .then(response => response.json())
+                .then(data => {
+                    emoteCache.ffz.global = (data.sets && data.sets['3'] && data.sets['3'].emoticons) || [];
+                    console.log('FFZ global emotes loaded:', emoteCache.ffz.global.length);
+                })
+                .catch(error => console.error('Error fetching FFZ global emotes:', error));
+
+            // User FFZ emotes
+            if (streamerID) {
+                fetch(`https://api.frankerfacez.com/v1/room/id/${streamerID}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.room && data.room.set && data.sets && data.sets[data.room.set]) {
+                            emoteCache.ffz.user = data.sets[data.room.set].emoticons || [];
+                            console.log('FFZ user emotes loaded:', emoteCache.ffz.user.length);
+                        }
+                    })
+                    .catch(error => console.error('Error fetching FFZ user emotes:', error));
+            }
+        }
+
+        // Twitch Emote Fetching (via websocket proxy)
+        function fetchTwitchEmotes() {
+            console.log('Requesting Twitch global emotes...');
+            socket.emit('twitch-api-request', {
+                endpoint: 'https://api.twitch.tv/helix/chat/emotes/global',
+                method: 'GET',
+                requestId: 'twitch-global-emotes'
+            });
+        }
+
+        // Twitch Badge Fetching (via websocket proxy)
+        function fetchTwitchBadges() {
+            console.log('Requesting Twitch global badges...');
+            // Global badges
+            socket.emit('twitch-api-request', {
+                endpoint: 'https://api.twitch.tv/helix/chat/badges/global',
+                method: 'GET',
+                requestId: 'twitch-global-badges'
+            });
+
+            // User badges
+            if (streamerID) {
+                console.log('Requesting Twitch user badges for ID:', streamerID);
+                socket.emit('twitch-api-request', {
+                    endpoint: `https://api.twitch.tv/helix/chat/badges?broadcaster_id=${streamerID}`,
+                    method: 'GET',
+                    requestId: 'twitch-user-badges'
+                });
+            } else {
+                console.warn('No streamer ID available for user badges request');
+            }
+        }
+
+        // Cheermote Fetching (via websocket proxy)
+        function fetchCheermotes() {
+            if (streamerID) {
+                console.log('Requesting cheermotes for ID:', streamerID);
+                socket.emit('twitch-api-request', {
+                    endpoint: `https://api.twitch.tv/helix/bits/cheermotes?broadcaster_id=${streamerID}`,
+                    method: 'GET',
+                    requestId: 'twitch-cheermotes'
+                });
+            } else {
+                console.warn('No streamer ID available for cheermotes request');
+            }
+        }
+    </script>
+</body>
+
+</html>

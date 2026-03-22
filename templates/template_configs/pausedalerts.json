@@ -1,0 +1,535 @@
+{
+    "template_name": "pausedalerts",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Stream Settings"
+        },
+        {
+            "type": "number",
+            "id": "StreamWidth",
+            "label": "Stream Width",
+            "value": 1920,
+            "min": 800,
+            "max": 4000,
+            "description": "Width of the stream canvas in pixels"
+        },
+        {
+            "type": "number",
+            "id": "StreamHeight",
+            "label": "Stream Height",
+            "value": 1080,
+            "min": 600,
+            "max": 2400,
+            "description": "Height of the stream canvas in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Icon Settings"
+        },
+        {
+            "type": "text",
+            "id": "IconSource",
+            "label": "Pause Icon Source",
+            "value": "/assets/pausedalerts/pause.png",
+            "description": "Path to the pause icon image file"
+        },
+        {
+            "type": "number",
+            "id": "IconTop",
+            "label": "Icon Top Position",
+            "value": 20,
+            "min": 0,
+            "max": 2000,
+            "description": "Top position of the pause icon in pixels"
+        },
+        {
+            "type": "number",
+            "id": "IconLeft",
+            "label": "Icon Left Position",
+            "value": 1450,
+            "min": 0,
+            "max": 4000,
+            "description": "Left position of the pause icon in pixels"
+        },
+        {
+            "type": "number",
+            "id": "IconWidth",
+            "label": "Icon Width",
+            "value": 80,
+            "min": 20,
+            "max": 200,
+            "description": "Width of the pause icon in pixels"
+        },
+        {
+            "type": "number",
+            "id": "IconHeight",
+            "label": "Icon Height",
+            "value": 80,
+            "min": 20,
+            "max": 200,
+            "description": "Height of the pause icon in pixels"
+        },
+        {
+            "type": "number",
+            "id": "IconBorderRadius",
+            "label": "Icon Border Radius",
+            "value": 0,
+            "min": 0,
+            "max": 50,
+            "description": "Border radius for the pause icon in pixels"
+        },
+        {
+            "type": "number",
+            "id": "IconBorder",
+            "label": "Icon Border Width",
+            "value": 0,
+            "min": 0,
+            "max": 10,
+            "description": "Border width around the pause icon in pixels"
+        },
+        {
+            "type": "select",
+            "id": "IconBorderColor",
+            "label": "Icon Border Color",
+            "value": "#ffffff",
+            "description": "Color of the pause icon border",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "text",
+            "id": "IconShadow",
+            "label": "Icon Shadow",
+            "value": "0 2px 10px rgba(0,0,0,0)",
+            "description": "CSS box shadow for the pause icon"
+        },
+        {
+            "type": "number",
+            "id": "IconOpacity",
+            "label": "Icon Opacity",
+            "value": 1,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Opacity of the pause icon (0 = transparent, 1 = opaque)"
+        },
+        {
+            "type": "separator",
+            "label": "Default States"
+        },
+        {
+            "type": "select",
+            "id": "DefaultDisplay",
+            "label": "Default Display State",
+            "value": "none",
+            "options": [
+                "none",
+                "block"
+            ],
+            "description": "Default display state of the pause icon"
+        },
+        {
+            "type": "checkbox",
+            "id": "DefaultPaused",
+            "label": "Default Paused State",
+            "value": false,
+            "description": "Whether alerts are paused by default"
+        },
+        {
+            "type": "separator",
+            "label": "Background Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowBackground",
+            "label": "Show Background",
+            "value": false,
+            "description": "Whether to show a background behind the pause icon"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundColor",
+            "label": "Background Color",
+            "value": "transparent",
+            "description": "Background color behind the pause icon",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "BackgroundPadding",
+            "label": "Background Padding",
+            "value": 10,
+            "min": 0,
+            "max": 50,
+            "description": "Padding around the pause icon background in pixels"
+        },
+        {
+            "type": "number",
+            "id": "BackgroundBorderRadius",
+            "label": "Background Border Radius",
+            "value": 10,
+            "min": 0,
+            "max": 50,
+            "description": "Border radius for the background in pixels"
+        },
+        {
+            "type": "number",
+            "id": "BackgroundBorder",
+            "label": "Background Border Width",
+            "value": 0,
+            "min": 0,
+            "max": 10,
+            "description": "Border width around the background in pixels"
+        },
+        {
+            "type": "select",
+            "id": "BackgroundBorderColor",
+            "label": "Background Border Color",
+            "value": "#334155",
+            "description": "Color of the background border",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "text",
+            "id": "BackgroundShadow",
+            "label": "Background Shadow",
+            "value": "0 4px 20px rgba(0,0,0,0)",
+            "description": "CSS box shadow for the background"
+        },
+        {
+            "type": "number",
+            "id": "BackgroundOpacity",
+            "label": "Background Opacity",
+            "value": 0.8,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Opacity of the background (0 = transparent, 1 = opaque)"
+        },
+        {
+            "type": "separator",
+            "label": "Animation Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableAnimations",
+            "label": "Enable Animations",
+            "value": true,
+            "description": "Whether to enable animations for the pause icon"
+        },
+        {
+            "type": "select",
+            "id": "AnimationType",
+            "label": "Animation Type",
+            "value": "fade",
+            "options": [
+                "fade",
+                "pulse",
+                "bounce"
+            ],
+            "description": "Type of animation for the pause icon"
+        },
+        {
+            "type": "number",
+            "id": "AnimationDuration",
+            "label": "Animation Duration",
+            "value": 0.5,
+            "min": 0.1,
+            "max": 3,
+            "step": 0.1,
+            "description": "Duration of general animations in seconds"
+        },
+        {
+            "type": "select",
+            "id": "AnimationEasing",
+            "label": "Animation Easing",
+            "value": "ease-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for general animations"
+        },
+        {
+            "type": "number",
+            "id": "FadeAnimationDuration",
+            "label": "Fade Animation Duration",
+            "value": 0.5,
+            "min": 0.1,
+            "max": 3,
+            "step": 0.1,
+            "description": "Duration of fade in/out animations in seconds"
+        },
+        {
+            "type": "select",
+            "id": "FadeAnimationEasing",
+            "label": "Fade Animation Easing",
+            "value": "ease-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for fade animations"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnablePulse",
+            "label": "Enable Pulse Animation",
+            "value": true,
+            "description": "Whether to enable pulse animation when paused"
+        },
+        {
+            "type": "number",
+            "id": "PulseAnimationDuration",
+            "label": "Pulse Animation Duration",
+            "value": 2,
+            "min": 0.5,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of one pulse cycle in seconds"
+        },
+        {
+            "type": "select",
+            "id": "PulseAnimationEasing",
+            "label": "Pulse Animation Easing",
+            "value": "ease-in-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for pulse animation"
+        },
+        {
+            "type": "number",
+            "id": "PulseScale",
+            "label": "Pulse Scale Factor",
+            "value": 1.2,
+            "min": 1,
+            "max": 2,
+            "step": 0.1,
+            "description": "Scale factor for pulse animation (1 = no scaling)"
+        },
+        {
+            "type": "number",
+            "id": "PulseOpacity",
+            "label": "Pulse Opacity",
+            "value": 0.7,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Opacity at the peak of pulse animation"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableBounce",
+            "label": "Enable Bounce Animation",
+            "value": false,
+            "description": "Whether to enable bounce animation when paused"
+        },
+        {
+            "type": "number",
+            "id": "BounceAnimationDuration",
+            "label": "Bounce Animation Duration",
+            "value": 2,
+            "min": 0.5,
+            "max": 5,
+            "step": 0.1,
+            "description": "Duration of one bounce cycle in seconds"
+        },
+        {
+            "type": "select",
+            "id": "BounceAnimationEasing",
+            "label": "Bounce Animation Easing",
+            "value": "ease-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out"
+            ],
+            "description": "Easing function for bounce animation"
+        },
+        {
+            "type": "number",
+            "id": "BounceHeight",
+            "label": "Bounce Height",
+            "value": 20,
+            "min": 5,
+            "max": 100,
+            "description": "Height of the bounce animation in pixels"
+        },
+        {
+            "type": "checkbox",
+            "id": "AutoHide",
+            "label": "Auto Hide",
+            "value": false,
+            "description": "Whether to automatically hide the icon after a delay"
+        },
+        {
+            "type": "number",
+            "id": "HideDelay",
+            "label": "Auto Hide Delay",
+            "value": 5,
+            "min": 1,
+            "max": 60,
+            "description": "Delay before auto-hiding the icon in seconds"
+        }
+    ]
+}

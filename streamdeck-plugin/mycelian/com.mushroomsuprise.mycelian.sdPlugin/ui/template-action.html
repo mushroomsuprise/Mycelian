@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <title>Template Action Settings</title>
+    <meta charset="utf-8" />
+    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <style>
+        /* Custom styles for better layout */
+        .template-section {
+            margin-bottom: 20px;
+        }
+
+        .action-section {
+            margin-bottom: 20px;
+        }
+
+        .config-section {
+            margin-bottom: 20px;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .error-message {
+            color: #dc3545;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        .success-message {
+            color: #28a745;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        .action-description {
+            font-size: 11px;
+            color: #666;
+            margin-top: 5px;
+            line-height: 1.3;
+        }
+
+        .config-field {
+            margin-bottom: 10px;
+        }
+
+        .config-field label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 3px;
+            font-weight: bold;
+        }
+
+        .config-field input,
+        .config-field select,
+        .config-field textarea {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .config-field textarea {
+            min-height: 60px;
+            resize: vertical;
+        }
+
+        .boolean-toggle {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .boolean-toggle label {
+            margin: 0;
+            font-size: 12px;
+        }
+
+        .refresh-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-left: 10px;
+        }
+
+        .refresh-button:hover {
+            background: #0056b3;
+        }
+
+        .refresh-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Hidden SDPI components to store complex settings -->
+    <sdpi-item style="display: none;">
+        <sdpi-textfield setting="selectedTemplate" id="selectedTemplateSetting"></sdpi-textfield>
+        <sdpi-textfield setting="selectedAction" id="selectedActionSetting"></sdpi-textfield>
+        <sdpi-textfield setting="actionData" id="actionDataSetting"></sdpi-textfield>
+    </sdpi-item>
+
+    <sdpi-item label="Server Configuration" class="template-section">
+        <sdpi-textfield setting="serverUrl" label="Server URL" placeholder="127.0.0.1:5000" default="127.0.0.1:5000"></sdpi-textfield>
+        <button class="refresh-button" id="test-connection">Test Connection</button>
+        <div id="connection-status"></div>
+    </sdpi-item>
+
+    <sdpi-item label="Template Selection" class="template-section">
+        <div class="config-field">
+            <label for="template-select">Select Template:</label>
+            <select id="template-select" disabled>
+                <option value="">Select a template...</option>
+            </select>
+            <button class="refresh-button" id="refresh-templates">Refresh</button>
+        </div>
+        <div id="template-error" class="error-message" style="display: none;"></div>
+    </sdpi-item>
+
+    <sdpi-item label="Action Selection" class="action-section">
+        <div class="config-field">
+            <label for="action-select">Select Action:</label>
+            <select id="action-select" disabled>
+                <option value="">Select a template first</option>
+            </select>
+            <button class="refresh-button" id="refresh-actions">Refresh</button>
+        </div>
+        <div id="action-description" class="action-description" style="display: none;"></div>
+        <div id="action-error" class="error-message" style="display: none;"></div>
+    </sdpi-item>
+
+    <sdpi-item label="Action Configuration" class="config-section">
+        <div id="action-config" style="display: none;">
+            <!-- Dynamic configuration fields will be added here -->
+        </div>
+        <div id="config-error" class="error-message" style="display: none;"></div>
+    </sdpi-item>
+
+    <sdpi-item label="About">
+        <sdpi-text>
+            This action executes configurable template actions from your Mycelian web server.
+            <br><br>
+            Features:
+            <br>• Select from available templates with controls
+            <br>• Choose specific actions from the selected template
+            <br>• Configure action parameters (values, text, toggles, etc.)
+            <br>• Each button can be configured for different templates/actions
+            <br><br>
+            The button will display the selected template and action name.
+            <br><br>
+            Make sure your Mycelian web server is running before configuring this action.
+        </sdpi-text>
+    </sdpi-item>
+
+    <script>
+        // Global state
+        let currentSettings = {};
+        let availableTemplates = [];
+        let availableActions = [];
+        let selectedTemplateActions = [];
+        let isSDReady = false;
+
+        // DOM elements
+        const templateSelect = document.getElementById('template-select');
+        const actionSelect = document.getElementById('action-select');
+        const actionConfig = document.getElementById('action-config');
+        const actionDescription = document.getElementById('action-description');
+        const connectionStatus = document.getElementById('connection-status');
+        const templateError = document.getElementById('template-error');
+        const actionError = document.getElementById('action-error');
+        const configError = document.getElementById('config-error');
+        const refreshTemplatesBtn = document.getElementById('refresh-templates');
+        const refreshActionsBtn = document.getElementById('refresh-actions');
+        const testConnectionBtn = document.getElementById('test-connection');
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check for SDPI availability immediately
+            if (window.$SD && typeof $SD.on === 'function') {
+                isSDReady = true;
+                $SD.on('connected', function() {
+                    isSDReady = true;
+                });
+            }
+
+            initialize();
+        });
+
+        // Fallback timeout in case SDPI never loads
+        setTimeout(() => {
+            if (!isSDReady) {
+                isSDReady = false;
+                // Still try to initialize with default settings
+                currentSettings = { serverUrl: '127.0.0.1:5000' };
+                updateUI();
+            }
+        }, 3000);
+
+        function initialize() {
+            // Set up event listeners first
+            setupEventListeners();
+
+            // Enable UI elements immediately
+            refreshTemplatesBtn.disabled = false;
+            templateSelect.disabled = false;
+            refreshActionsBtn.disabled = false;
+
+            // Initialize with defaults
+            currentSettings = { serverUrl: '127.0.0.1:5000', actionData: {} };
+            updateUI();
+
+            // Try to load templates immediately
+            loadAvailableTemplates();
+
+            // Also try to get settings in the background
+            loadSettings();
+        }
+
+        let settingsLoadAttempts = 0;
+        const MAX_SETTINGS_LOAD_ATTEMPTS = 50; // 5 seconds max
+
+        function loadSettings() {
+            // SDPI components automatically load their saved values
+            // Read the current values from the components after a short delay to ensure they're loaded
+            setTimeout(() => {
+                readSettingsFromComponents();
+                updateUI();
+                loadAvailableTemplates();
+            }, 100);
+        }
+
+        function readSettingsFromComponents() {
+            const selectedTemplateSetting = document.getElementById('selectedTemplateSetting');
+            const selectedActionSetting = document.getElementById('selectedActionSetting');
+            const actionDataSetting = document.getElementById('actionDataSetting');
+
+            if (selectedTemplateSetting && selectedTemplateSetting.value) {
+                currentSettings.selectedTemplate = selectedTemplateSetting.value;
+            }
+            if (selectedActionSetting && selectedActionSetting.value) {
+                currentSettings.selectedAction = selectedActionSetting.value;
+            }
+            if (actionDataSetting && actionDataSetting.value) {
+                try {
+                    currentSettings.actionData = JSON.parse(actionDataSetting.value);
+                } catch (e) {
+                    currentSettings.actionData = {};
+                }
+            }
+        }
+
+        function setupEventListeners() {
+            // Server URL change
+            document.querySelector('[setting="serverUrl"]').addEventListener('change', function() {
+                currentSettings.serverUrl = this.value;
+                // The visible SDPI component will handle saving automatically for serverUrl
+                // But we need to save the other settings manually
+                saveSettings();
+                testServerConnection();
+            });
+
+            // Template selection change
+            templateSelect.addEventListener('change', function() {
+                const templateName = this.value;
+                currentSettings.selectedTemplate = templateName;
+                saveSettings();
+
+                if (templateName) {
+                    loadActionsForTemplate(templateName);
+                    // Enable the action refresh button
+                    refreshActionsBtn.disabled = false;
+                } else {
+                    clearActionSelection();
+                }
+            });
+
+            // Action selection change
+            actionSelect.addEventListener('change', function() {
+                const actionKey = this.value;
+                currentSettings.selectedAction = actionKey;
+                saveSettings();
+
+                if (actionKey) {
+                    configureAction(actionKey);
+                } else {
+                    clearActionConfiguration();
+                }
+            });
+
+            // Test connection button
+            testConnectionBtn.addEventListener('click', testServerConnection);
+
+            // Refresh buttons
+            refreshTemplatesBtn.addEventListener('click', loadAvailableTemplates);
+            refreshActionsBtn.addEventListener('click', () => {
+                if (currentSettings.selectedTemplate) {
+                    loadActionsForTemplate(currentSettings.selectedTemplate);
+                }
+            });
+        }
+
+        function updateUI() {
+            // Update visible server URL field - ensure it has a default value
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            if (serverUrlField) {
+                serverUrlField.value = currentSettings.serverUrl || '127.0.0.1:5000';
+            }
+
+            // Enable refresh buttons and template select immediately
+            refreshTemplatesBtn.disabled = false;
+            templateSelect.disabled = false;
+            refreshActionsBtn.disabled = false;
+            actionSelect.disabled = false;
+
+            // If we have available templates, populate the dropdown and select the saved template
+            if (availableTemplates.length > 0) {
+                populateTemplateSelect();
+                if (currentSettings.selectedTemplate && availableTemplates.includes(currentSettings.selectedTemplate)) {
+                    templateSelect.value = currentSettings.selectedTemplate;
+                    loadActionsForTemplate(currentSettings.selectedTemplate);
+                }
+            } else {
+                // Clear template selection if no templates available
+                templateSelect.innerHTML = '<option value="">Loading templates...</option>';
+            }
+
+            // If we have available actions and a selected template, populate the dropdown and select the saved action
+            if (availableActions.length > 0 && currentSettings.selectedTemplate) {
+                populateActionSelect();
+                if (currentSettings.selectedAction) {
+                    const actionExists = availableActions.some(action => action.key === currentSettings.selectedAction);
+                    if (actionExists) {
+                        actionSelect.value = currentSettings.selectedAction;
+                        configureAction(currentSettings.selectedAction);
+                    }
+                }
+            } else if (currentSettings.selectedTemplate) {
+                // We have a selected template but no actions loaded yet - this will be handled when actions load
+            }
+        }
+
+        async function testServerConnection() {
+            const serverUrl = currentSettings.serverUrl || '127.0.0.1:5000';
+            const { host, port } = parseServerUrl(serverUrl);
+
+            showConnectionStatus('Testing connection...', 'info');
+
+            try {
+                const response = await fetch(`http://${host}:${port}/api/streamdeck/check_connection`);
+                const result = await response.json();
+
+                if (result.success) {
+                    showConnectionStatus('✅ Connected successfully', 'success');
+                    loadAvailableTemplates();
+                } else {
+                    showConnectionStatus('❌ Connection failed', 'error');
+                    // Still enable refresh buttons even if connection fails
+                    refreshTemplatesBtn.disabled = false;
+                    templateSelect.disabled = false;
+                    templateSelect.innerHTML = '<option value="">Connection failed - click Refresh</option>';
+                }
+            } catch (error) {
+                showConnectionStatus('❌ Connection failed - check server URL and ensure Mycelian is running', 'error');
+                // Still enable refresh button and try to load templates anyway
+                refreshTemplatesBtn.disabled = false;
+                templateSelect.disabled = false;
+                templateSelect.innerHTML = '<option value="">Connection failed - click Refresh</option>';
+                // Try to load templates anyway in case the server is running but connection check failed
+                loadAvailableTemplates();
+            }
+        }
+
+        async function loadAvailableTemplates() {
+            // Get server URL from the UI field, with fallback
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            const serverUrl = (serverUrlField && serverUrlField.value) || currentSettings.serverUrl || '127.0.0.1:5000';
+
+            if (!serverUrl) {
+                showTemplateError('Please configure server URL first');
+                return;
+            }
+
+            const { host, port } = parseServerUrl(serverUrl);
+
+            showTemplateLoading(true);
+
+            try {
+                const response = await fetch(`http://${host}:${port}/api/streamdeck/get_template_actions`);
+                const result = await response.json();
+
+                if (result.success && result.actions) {
+                    // Extract unique template names
+                    availableTemplates = [...new Set(result.actions.map(action => action.template_name))].sort();
+                    populateTemplateSelect();
+                    hideTemplateError();
+
+                    // After loading templates, check if we have a saved template to select
+                    if (currentSettings.selectedTemplate && availableTemplates.includes(currentSettings.selectedTemplate)) {
+                        templateSelect.value = currentSettings.selectedTemplate;
+                        loadActionsForTemplate(currentSettings.selectedTemplate);
+                    }
+                } else {
+                    showTemplateError('Failed to load templates from server');
+                    // Still enable the template select for manual refresh
+                    templateSelect.disabled = false;
+                    templateSelect.innerHTML = '<option value="">Failed to load - click Refresh</option>';
+                }
+            } catch (error) {
+                showTemplateError('Failed to load templates - check server connection');
+                // Still enable the template select for manual refresh
+                templateSelect.disabled = false;
+                templateSelect.innerHTML = '<option value="">Failed to load - click Refresh</option>';
+                // Enable the refresh button so they can try again
+                refreshTemplatesBtn.disabled = false;
+            } finally {
+                showTemplateLoading(false);
+            }
+        }
+
+        function populateTemplateSelect() {
+            templateSelect.innerHTML = '<option value="">Select a template...</option>';
+
+            availableTemplates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template;
+                option.textContent = template;
+                templateSelect.appendChild(option);
+            });
+
+            templateSelect.disabled = false;
+            refreshTemplatesBtn.disabled = false;
+
+
+            // Update current selection if it exists
+            if (currentSettings.selectedTemplate) {
+                templateSelect.value = currentSettings.selectedTemplate;
+            }
+        }
+
+        async function loadActionsForTemplate(templateName) {
+            const serverUrl = currentSettings.serverUrl;
+            const { host, port } = parseServerUrl(serverUrl);
+
+            showActionLoading(true);
+
+            try {
+                const response = await fetch(`http://${host}:${port}/api/streamdeck/get_template_actions`);
+                const result = await response.json();
+
+                if (result.success && result.actions) {
+                    // Filter actions for the selected template
+                    selectedTemplateActions = result.actions.filter(action => action.template_name === templateName);
+                    availableActions = selectedTemplateActions.map(action => ({
+                        key: action.action_key,
+                        name: action.action_name,
+                        description: action.description,
+                        defaultData: action.default_data || {},
+                        elementType: action.element_type,
+                        category: action.category
+                    }));
+
+                    populateActionSelect();
+                    hideActionError();
+
+                    // After loading actions, check if we have a saved action to select
+                    if (currentSettings.selectedAction) {
+                        const actionExists = availableActions.some(action => action.key === currentSettings.selectedAction);
+                        if (actionExists) {
+                            actionSelect.value = currentSettings.selectedAction;
+                            configureAction(currentSettings.selectedAction);
+                        } else {
+                        }
+                    }
+                } else {
+                    showActionError('Failed to load actions for template');
+                }
+            } catch (error) {
+                showActionError('Failed to load actions - check server connection');
+            } finally {
+                showActionLoading(false);
+            }
+        }
+
+        function populateActionSelect() {
+            actionSelect.innerHTML = '<option value="">Select an action...</option>';
+
+            availableActions.forEach(action => {
+                const option = document.createElement('option');
+                option.value = action.key;
+                option.textContent = action.name;
+                actionSelect.appendChild(option);
+            });
+
+            actionSelect.disabled = false;
+            refreshActionsBtn.disabled = false;
+
+            // Update current selection if it exists
+            if (currentSettings.selectedAction) {
+                actionSelect.value = currentSettings.selectedAction;
+            }
+        }
+
+        function configureAction(actionKey) {
+            const action = availableActions.find(a => a.key === actionKey);
+            if (!action) {
+                return;
+            }
+
+            // Show action description
+            if (action.description) {
+                actionDescription.textContent = action.description;
+                actionDescription.style.display = 'block';
+            } else {
+                actionDescription.style.display = 'none';
+            }
+
+            // Generate configuration UI based on action type and default data
+            generateActionConfiguration(action);
+
+            // Store the selected action in settings
+            currentSettings.selectedAction = actionKey;
+            saveSettings();
+        }
+
+        function generateActionConfiguration(action) {
+            actionConfig.innerHTML = '';
+
+            // Add configuration fields based on the action's default data
+            if (action.defaultData && Object.keys(action.defaultData).length > 0) {
+                Object.entries(action.defaultData).forEach(([key, defaultValue]) => {
+                    const fieldDiv = document.createElement('div');
+                    fieldDiv.className = 'config-field';
+
+                    const label = document.createElement('label');
+                    label.textContent = key.charAt(0).toUpperCase() + key.slice(1) + ':';
+
+                    let input;
+                    const currentValue = currentSettings.actionData?.[key];
+
+                    if (typeof defaultValue === 'boolean') {
+                        // Boolean toggle
+                        fieldDiv.classList.add('boolean-toggle');
+                        input = document.createElement('div');
+                        input.style.display = 'flex';
+                        input.style.gap = '10px';
+
+                        ['True', 'False'].forEach(boolValue => {
+                            const radioInput = document.createElement('input');
+                            radioInput.type = 'radio';
+                            radioInput.name = `config_${key}`;
+                            radioInput.value = boolValue.toLowerCase();
+                            radioInput.checked = (currentValue?.toString() === boolValue.toLowerCase());
+
+                            const radioLabel = document.createElement('label');
+                            radioLabel.textContent = boolValue;
+                            radioLabel.style.fontSize = '12px';
+
+                            radioInput.addEventListener('change', () => {
+                                if (!currentSettings.actionData) currentSettings.actionData = {};
+                                currentSettings.actionData[key] = (boolValue === 'True');
+                                saveSettings();
+                            });
+
+                            input.appendChild(radioInput);
+                            input.appendChild(radioLabel);
+                        });
+                    } else if (typeof defaultValue === 'number') {
+                        // Number input
+                        input = document.createElement('input');
+                        input.type = 'number';
+                        input.value = currentValue !== undefined ? currentValue : defaultValue;
+                        input.step = 'any';
+                        input.addEventListener('input', () => {
+                            if (!currentSettings.actionData) currentSettings.actionData = {};
+                            currentSettings.actionData[key] = parseFloat(input.value) || 0;
+                            saveSettings();
+                        });
+                    } else if (typeof defaultValue === 'string' && defaultValue.length > 50) {
+                        // Text area for long strings
+                        input = document.createElement('textarea');
+                        input.value = currentValue !== undefined ? currentValue : defaultValue;
+                        input.addEventListener('input', () => {
+                            if (!currentSettings.actionData) currentSettings.actionData = {};
+                            currentSettings.actionData[key] = input.value;
+                            saveSettings();
+                        });
+                    } else {
+                        // Regular text input
+                        input = document.createElement('input');
+                        input.type = 'text';
+                        input.value = currentValue !== undefined ? currentValue : defaultValue;
+                        input.addEventListener('input', () => {
+                            if (!currentSettings.actionData) currentSettings.actionData = {};
+                            currentSettings.actionData[key] = input.value;
+                            saveSettings();
+                        });
+                    }
+
+                    fieldDiv.appendChild(label);
+                    fieldDiv.appendChild(input);
+                    actionConfig.appendChild(fieldDiv);
+                });
+            }
+
+            // Show the configuration section
+            actionConfig.style.display = 'block';
+        }
+
+        function clearActionSelection() {
+            actionSelect.innerHTML = '<option value="">Select a template first</option>';
+            actionSelect.disabled = true;
+            // Keep refresh button enabled for manual refresh
+            refreshActionsBtn.disabled = false;
+            clearActionConfiguration();
+        }
+
+        function clearActionConfiguration() {
+            actionDescription.style.display = 'none';
+            actionConfig.innerHTML = '';
+            actionConfig.style.display = 'none';
+            currentSettings.selectedAction = null;
+            currentSettings.actionData = {};
+            saveSettings();
+        }
+
+        function parseServerUrl(serverUrl) {
+            const parts = serverUrl.split(':');
+            if (parts.length === 2) {
+                return {
+                    host: parts[0],
+                    port: parseInt(parts[1], 10)
+                };
+            } else {
+                return {
+                    host: parts[0],
+                    port: 5000
+                };
+            }
+        }
+
+        function saveSettings() {
+            // Update hidden SDPI components - they will automatically save the settings
+            const selectedTemplateSetting = document.getElementById('selectedTemplateSetting');
+            const selectedActionSetting = document.getElementById('selectedActionSetting');
+            const actionDataSetting = document.getElementById('actionDataSetting');
+
+            if (selectedTemplateSetting) selectedTemplateSetting.value = currentSettings.selectedTemplate || '';
+            if (selectedActionSetting) selectedActionSetting.value = currentSettings.selectedAction || '';
+            if (actionDataSetting) actionDataSetting.value = JSON.stringify(currentSettings.actionData || {});
+        }
+
+        function showConnectionStatus(message, type) {
+            connectionStatus.textContent = message;
+            connectionStatus.className = type;
+        }
+
+        function showTemplateError(message) {
+            templateError.textContent = message;
+            templateError.style.display = 'block';
+        }
+
+        function hideTemplateError() {
+            templateError.style.display = 'none';
+        }
+
+        function showActionError(message) {
+            actionError.textContent = message;
+            actionError.style.display = 'block';
+        }
+
+        function hideActionError() {
+            actionError.style.display = 'none';
+        }
+
+        function showTemplateLoading(loading) {
+            if (loading) {
+                templateSelect.disabled = true;
+                refreshTemplatesBtn.disabled = true;
+                templateSelect.classList.add('loading');
+            } else {
+                templateSelect.classList.remove('loading');
+            }
+        }
+
+        function showActionLoading(loading) {
+            if (loading) {
+                actionSelect.disabled = true;
+                refreshActionsBtn.disabled = true;
+                actionSelect.classList.add('loading');
+            } else {
+                actionSelect.classList.remove('loading');
+            }
+        }
+
+        // Handle settings changes from Stream Deck
+        if (typeof $SD !== 'undefined' && typeof $SD.on === 'function') {
+            $SD.on('didReceiveSettings', (settings) => {
+                const newSettings = settings || {};
+                // Ensure we have default values
+                if (!newSettings.serverUrl) newSettings.serverUrl = '127.0.0.1:5000';
+                if (!newSettings.actionData) newSettings.actionData = {};
+
+                // Check if settings actually changed
+                const settingsChanged = JSON.stringify(currentSettings) !== JSON.stringify(newSettings);
+
+                if (settingsChanged) {
+                    currentSettings = newSettings;
+                    updateUI();
+
+                    // If templates haven't been loaded yet, try to load them
+                    if (availableTemplates.length === 0) {
+                        loadAvailableTemplates();
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

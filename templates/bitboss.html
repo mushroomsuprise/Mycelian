@@ -1,0 +1,1609 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Bit Boss</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <style>
+        @font-face {
+            font-family: bitboss-font;
+            src: url("/assets/default_assets/fonts/{{FontName}}");
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: bitboss-font, Arial, sans-serif;
+        }
+
+        .bitboss-container {
+            position: fixed;
+            bottom: 2vh;
+            left: 2vw;
+            width: clamp(400px, 40vw, 600px);
+            height: clamp(100px, 12vh, 180px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: clamp(8px, 1vw, 20px);
+            box-sizing: border-box;
+            padding: clamp(8px, 1vh, 15px);
+        }
+
+        .boss-avatar {
+            position: relative;
+            width: clamp(60px, 8vh, 120px);
+            height: clamp(60px, 8vh, 120px);
+
+            border-radius: {{AvatarRadius}}px;
+
+            border: {{AvatarBorder}}px solid {{AvatarBorderColor}};
+            overflow: hidden;
+
+            box-shadow: {{AvatarShadow}};
+            background: {{AvatarBG}};
+            flex-shrink: 0;
+        }
+
+        .boss-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .boss-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: clamp(4px, 0.5vh, 12px);
+            min-width: 0;
+            height: 100%;
+            justify-content: center;
+        }
+
+        .boss-name {
+            font-size: clamp(14px, {{NameFontSize}}px, 2.5vh);
+
+        font-weight: {{NameFontWeight}};
+
+        color: {{NameColor}};
+
+        text-shadow: {{NameTextShadow}};
+        margin: 0;
+
+        text-align: {{NameAlign}};
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.1;
+        }
+
+        .hp-container {
+            position: relative;
+            width: 100%;
+
+            height: clamp(15px, {{BarHeight}}px, 3vh);
+
+        background: {{BarBG}};
+        border-radius: {{BarRadius}}px;
+
+        border: {{BarBorder}}px solid {{BarBorderColor}};
+        overflow: hidden;
+
+        box-shadow: {{BarShadow}};
+        }
+
+        .hp-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+
+            background: {{BarColor}};
+
+            border-radius: {{BarRadius}}px;
+
+            transition: width {{BarAnimationDuration}}s {{BarAnimationEasing}},
+            background-color 0.3s ease;
+
+            box-shadow: {{BarInnerShadow}};
+        }
+
+        .hp-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+
+            font-size: clamp(10px, {{HPFontSize}}px, 2vh);
+        font-weight: {{HPFontWeight}};
+
+        color: {{HPTextColor}};
+        text-shadow: {{HPTextShadow}};
+        z-index: 10;
+        white-space: nowrap;
+        line-height: 1;
+        }
+
+        .damage-indicator {
+            position: absolute;
+            top: clamp(-10px, -1vh, 5px);
+            right: clamp(5px, 1vw, 15px);
+
+            font-size: clamp(14px, {{DamageFontSize}}px, 3vh);
+        font-weight: {{DamageFontWeight}};
+
+        text-shadow: {{DamageTextShadow}};
+        opacity: 0;
+        transform: translateY(0);
+
+        transition: all {{DamageAnimationDuration}}s {{DamageAnimationEasing}};
+        z-index: 20;
+        pointer-events: none;
+        }
+
+        .damage-indicator.positive {
+            color: {{HealColor}};
+        }
+
+        .damage-indicator.negative {
+            color: {{DamageColor}};
+        }
+
+        .damage-indicator.show {
+            opacity: 1;
+            transform: translateY(clamp(-20px, -3vh, -40px));
+        }
+
+        .boss-defeated-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+
+            background: {{DefeatOverlayBG}};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            font-size: clamp(16px, {{DefeatFontSize}}px, 3vh);
+        font-weight: {{DefeatFontWeight}};
+        color: {{DefeatColor}};
+        text-shadow: {{DefeatTextShadow}};
+        opacity: 0;
+
+        transition: opacity {{DefeatAnimationDuration}}s ease;
+        z-index: 30;
+
+        border-radius: {{BarRadius}}px;
+        }
+
+        .boss-defeated-overlay.show {
+            opacity: 1;
+        }
+
+        /* Pulse animation for low HP */
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .hp-bar.low-hp {
+            animation: pulse {{PulseSpeed}}s infinite;
+        }
+
+        /* Shake animation for damage */
+        @keyframes shake {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            25% {
+                transform: translateX(-2px);
+            }
+
+            75% {
+                transform: translateX(2px);
+            }
+        }
+
+        .bitboss-container.shake {
+            animation: shake 0.3s ease-in-out;
+        }
+
+        /* Death shake animation for avatar */
+        @keyframes deathShake {
+
+            0%,
+            100% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+
+            10% {
+                transform: translate(-3px, -2px) rotate(-1deg);
+            }
+
+            20% {
+                transform: translate(3px, 2px) rotate(1deg);
+            }
+
+            30% {
+                transform: translate(-2px, 3px) rotate(-1deg);
+            }
+
+            40% {
+                transform: translate(2px, -3px) rotate(1deg);
+            }
+
+            50% {
+                transform: translate(-3px, 2px) rotate(-1deg);
+            }
+
+            60% {
+                transform: translate(3px, -2px) rotate(1deg);
+            }
+
+            70% {
+                transform: translate(-2px, -3px) rotate(-1deg);
+            }
+
+            80% {
+                transform: translate(2px, 3px) rotate(1deg);
+            }
+
+            90% {
+                transform: translate(-1px, -2px) rotate(-1deg);
+            }
+        }
+
+        .boss-avatar.death-shake {
+            animation: deathShake 0.15s infinite;
+        }
+
+        .boss-avatar.death-red-tint {
+            filter: sepia(1) hue-rotate(320deg) saturate(3) brightness(0.8);
+        }
+
+        .boss-avatar.fade-out {
+            transition: opacity var(--fade-out-duration, 2s) ease-out;
+            opacity: 0;
+        }
+
+        .boss-avatar.fade-in {
+            transition: opacity var(--fade-in-duration, 1s) ease-in;
+            opacity: 1;
+        }
+
+        /* Glow effect for healing */
+        @keyframes glow {
+
+            0%,
+            100% {
+                box-shadow: {{BarShadow}};
+            }
+
+            50% {
+                box-shadow: {{BarShadow}}, 0 0 20px {{HealGlowColor}};
+            }
+        }
+
+        .hp-bar.healing {
+            animation: glow 0.8s ease-in-out;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .bitboss-container {
+                width: clamp(350px, 45vw, 500px);
+                height: clamp(90px, 10vh, 150px);
+                bottom: 1vh;
+                left: 1vw;
+            }
+        }
+
+        /* Extra small screens */
+        @media (max-width: 480px) {
+            .bitboss-container {
+                width: clamp(300px, 90vw, 400px);
+                height: clamp(80px, 8vh, 120px);
+                bottom: 0.5vh;
+                left: 0.5vw;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bitboss-container" id="bitbossContainer">
+        <div class="boss-avatar" id="bossAvatarContainer">
+            <img id="bossAvatar" src="{{DefaultAvatar}}" alt="Boss Avatar">
+        </div>
+        <div class="boss-info">
+            <h2 class="boss-name" id="bossName">{{DefaultBossName}}</h2>
+            <div class="hp-container">
+                <div class="hp-bar" id="hpBar"></div>
+                <div class="hp-text" id="hpText">{{DefaultHP}}/{{DefaultMaxHP}} HP</div>
+                <div class="boss-defeated-overlay" id="defeatOverlay">DEFEATED!</div>
+            </div>
+        </div>
+        <div class="damage-indicator" id="damageIndicator"></div>
+    </div>
+
+    <!-- Audio element for death sound -->
+    <audio id="deathAudio" preload="auto" loop="false">
+        <source src="{{DeathSoundFile}}" type="audio/mpeg">
+    </audio>
+
+    <script>
+        // Global variables
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var isEnabled = {{ Enabled| tojson}};
+        var currentBoss = {
+            name: {{ DefaultBossName| tojson }},
+            avatar: {{ DefaultAvatar | tojson }},
+            currentHP: {{ DefaultHP | tojson }},
+            maxHP: {{ DefaultMaxHP | tojson }},
+            minHP: {{ MinHP | tojson }}
+        };
+
+        var gameSettings = {
+            healingEnabled: {{ HealingEnabled| tojson }},
+            maxHPIncreaseEnabled: {{ MaxHPIncreaseEnabled | tojson }},
+            damageValues: {
+                bits: {{ BitDamage | tojson }},
+                tier1: {{ Tier1Damage | tojson }},
+                tier2: {{ Tier2Damage | tojson }},
+                tier3: {{ Tier3Damage | tojson }}
+            },
+            lowHPThreshold: {{ LowHPThreshold | tojson }},
+            excludedUsers: {{ ExcludedUsers | tojson }}.toLowerCase().split(',').map(u => u.trim()).filter(u => u.length > 0),
+            skipTestAlerts: {{ SkipTestAlerts | tojson }},
+            processReplays: {{ ProcessReplays | tojson }},
+            processTests: {{ ProcessTests | tojson }},
+            hpColors: {
+                dynamicEnabled: {{ EnableDynamicHPColors | tojson }},
+                staticColor: {{ BarColor | tojson }},
+                fullColor: {{ HPColorFull | tojson }},
+                midColor: {{ HPColorMid | tojson }},
+                lowColor: {{ HPColorLow | tojson }},
+                transitionPoint: {{ HPColorTransitionPoint | tojson }}
+            },
+            deathSound: {
+                enabled: {{ DeathSoundEnabled | tojson }},
+                file: {{ DeathSoundFile | tojson }},
+                volume: {{ DeathSoundVolume | tojson }},
+                animationDuration: {{ DeathAnimationDuration | tojson }},
+                shakeEnabled: {{ DeathShakeEnabled | tojson }},
+                redTintEnabled: {{ DeathRedTintEnabled | tojson }},
+                fadeOutDuration: {{ AvatarFadeOutDuration | tojson }},
+                fadeInDuration: {{ AvatarFadeInDuration | tojson }}
+            }
+        };
+
+        var animationInProgress = false;
+        var damageTimeout = null;
+        var deathAnimationInProgress = false;
+        var deathSoundPlaying = false;
+
+        // Alert queue system
+        var alertQueue = [];
+        var processingQueue = false;
+
+        // Death audio during alerts configuration
+        var deathAudioConfig = {
+            enableDelayDuringAlerts: {{ EnableDeathAudioDelayDuringAlerts| tojson }},
+            audioDelay: {{ DeathAudioDelay | tojson }},
+            enableReductionDuringAlerts: {{ EnableDeathAudioReductionDuringAlerts | tojson }},
+            audioReductionDivisor: {{ DeathAudioReductionDivisor | tojson }},
+            muteDuringAlerts: {{ MuteDeathAudioDuringAlerts | tojson }}
+        };
+
+        // Alert state tracking
+        var alertsCurrentlyPlaying = false;
+        var alertsCurrentlyPaused = false;
+
+        // Socket event listeners
+        socket.on('connect', function () {
+            console.log('Connected to bitboss server');
+            if (!isEnabled) {
+                console.log('BitBoss is disabled, hiding widget');
+                document.body.style.display = 'none';
+                return;
+            }
+            updateDisplay();
+        });
+
+        socket.on('instant_alert', function (alertData) {
+            console.log('Received instant_alert:', alertData);
+            if (!isEnabled) {
+                console.log('BitBoss is disabled, skipping alert processing');
+                return;
+            }
+
+            // Track that alerts are now playing
+            alertsCurrentlyPlaying = true;
+            console.log('Alert started - alerts are now playing');
+
+            if (alertData && shouldProcessAlert(alertData)) {
+                // Add alert to queue instead of processing immediately
+                addAlertToQueue(alertData);
+            }
+        });
+
+        // Alert state tracking listeners
+        socket.on('alert_complete', function () {
+            alertsCurrentlyPlaying = false;
+            console.log('Alert completed - alerts no longer playing');
+        });
+
+        socket.on('pause_status_update', function (data) {
+            if (data && typeof data.paused === 'boolean') {
+                alertsCurrentlyPaused = data.paused;
+                if (data.paused) {
+                    alertsCurrentlyPlaying = false;
+                    console.log('Alerts paused - no longer playing');
+                } else {
+                    console.log('Alerts unpaused - ready to play');
+                }
+            }
+        });
+
+        // Handle Twitch API responses for avatar fetching
+        socket.on('twitch-api-response', function (data) {
+            console.log('Received twitch-api-response:', data);
+            if (data && data.requestId && data.requestId.startsWith('boss-avatar-')) {
+                if (data.success && data.data && data.data.data && data.data.data.length > 0) {
+                    var userData = data.data.data[0];
+                    if (userData.profile_image_url) {
+                        currentBoss.avatar = userData.profile_image_url;
+
+                        // Only update the avatar image immediately if death animation is not in progress
+                        if (!deathAnimationInProgress) {
+                            document.getElementById('bossAvatar').src = currentBoss.avatar;
+                            console.log('Updated boss avatar for:', userData.display_name || userData.login);
+                        } else {
+                            console.log('Death animation in progress, avatar will be updated when animation completes for:', userData.display_name || userData.login);
+                        }
+
+                        saveBossState();
+                    }
+                } else {
+                    console.warn('Failed to fetch avatar data:', data.error || 'Unknown error');
+                }
+            }
+        });
+
+        // Handle database responses for boss state loading
+        socket.on('get_data', function (response) {
+            // Check if this is a response to our BitBoss state request
+            if (response && typeof response === 'object' && !window.bossStateLoaded) {
+                console.log('Received database response:', response);
+
+                // Check if we have valid boss state data
+                if (response.name && typeof response.currentHP === 'number' && typeof response.maxHP === 'number') {
+                    applyBossState(response, 'database');
+                } else {
+                    console.log('Invalid database response, falling back to localStorage');
+                    loadBossStateFromLocalStorage();
+                }
+            }
+        });
+
+        // Connector action event listeners
+        socket.on('bitboss_heal_boss', function (data) {
+            console.log('Connector action: heal boss', data);
+            var healAmount = (data && data.amount) ? parseInt(data.amount) : 100; // Default 100 HP
+            if (healAmount > 0 && gameSettings.healingEnabled) {
+                var newHP = currentBoss.currentHP;
+                var newMaxHP = currentBoss.maxHP;
+
+                if (gameSettings.maxHPIncreaseEnabled) {
+                    // Can increase max HP
+                    newHP = Math.min(currentBoss.currentHP + healAmount, currentBoss.maxHP);
+                    if (currentBoss.currentHP + healAmount > currentBoss.maxHP) {
+                        newMaxHP = currentBoss.currentHP + healAmount;
+                        newHP = newMaxHP;
+                    }
+                } else {
+                    // Healing capped at max HP
+                    newHP = Math.min(currentBoss.currentHP + healAmount, currentBoss.maxHP);
+                }
+
+                var actualHealing = newHP - currentBoss.currentHP;
+                currentBoss.currentHP = newHP;
+                currentBoss.maxHP = newMaxHP;
+
+                if (actualHealing > 0) {
+                    // Animate healing
+                    animateHealthChange(actualHealing, false);
+
+                    // Save state
+                    saveBossState();
+                }
+            }
+        });
+
+        socket.on('bitboss_damage_boss', function (data) {
+            console.log('Connector action: damage boss', data);
+            var damageAmount = (data && data.amount) ? parseInt(data.amount) : 100; // Default 100 damage
+            if (damageAmount > 0) {
+                var newHP = Math.max(0, currentBoss.currentHP - damageAmount);
+                var bossChanged = false;
+
+                if (newHP <= 0) {
+                    // Boss defeated - reset to new boss with minimum HP
+                    var newBossName = data.newBossName || 'New Boss';
+                    currentBoss.name = newBossName;
+                    currentBoss.currentHP = currentBoss.minHP;
+                    currentBoss.maxHP = currentBoss.minHP;
+                    bossChanged = true;
+                    fetchBossAvatar(newBossName);
+                } else {
+                    currentBoss.currentHP = newHP;
+                }
+
+                // Animate damage
+                if (bossChanged) {
+                    animateHealthChange(-damageAmount, bossChanged, currentBoss.name, currentBoss.avatar);
+                } else {
+                    animateHealthChange(-damageAmount, bossChanged);
+                }
+
+                // Save state
+                saveBossState();
+            }
+        });
+
+        socket.on('bitboss_kill_boss', function (data) {
+            console.log('Connector action: kill boss', data);
+            var newBossName = data.newBossName || 'New Boss';
+
+            // Force boss death
+            currentBoss.name = newBossName;
+            currentBoss.currentHP = currentBoss.minHP;
+            currentBoss.maxHP = currentBoss.minHP;
+            fetchBossAvatar(newBossName);
+
+            // Animate death
+            animateHealthChange(-currentBoss.currentHP, true, currentBoss.name, currentBoss.avatar);
+
+            // Save state
+            saveBossState();
+        });
+
+        // Alert queue management functions
+        function addAlertToQueue(alertData) {
+            alertQueue.push(alertData);
+            console.log('Added alert to queue. Queue length:', alertQueue.length);
+
+            // Start processing if not already processing
+            if (!processingQueue) {
+                processNextAlert();
+            }
+        }
+
+        function processNextAlert() {
+            if (alertQueue.length === 0) {
+                processingQueue = false;
+                console.log('Alert queue empty, processing stopped');
+                return;
+            }
+
+            if (animationInProgress) {
+                console.log('Animation in progress, scheduling retry in 500ms');
+                // Schedule a retry instead of just returning
+                setTimeout(function () {
+                    processNextAlert();
+                }, 500);
+                return;
+            }
+
+            processingQueue = true;
+            var alertData = alertQueue.shift();
+            console.log('Processing queued alert. Remaining in queue:', alertQueue.length);
+
+            processAlert(alertData);
+        }
+
+        function onAnimationComplete() {
+            console.log('Animation completed, checking for next alert in queue');
+            // Small delay to ensure clean transition between animations
+            setTimeout(function () {
+                processNextAlert();
+            }, 100);
+        }
+
+        // Check if alert should be processed
+        function shouldProcessAlert(alert) {
+            if (!alert || !alert.username) {
+                console.log('Alert rejected: missing username');
+                return false;
+            }
+
+            // Check if replays should be processed
+            if (!gameSettings.processReplays && alert.is_replay) {
+                console.log('Bitboss skipping replay alert');
+                return false;
+            }
+
+            // Check if tests should be processed
+            if (!gameSettings.processTests && isTestAlert(alert)) {
+                console.log('Bitboss skipping test alert');
+                return false;
+            }
+
+            // Check if this is a test alert and we should skip it (legacy support)
+            if (gameSettings.skipTestAlerts) {
+                var username = alert.username.toLowerCase();
+                var testUsernames = ['testuser', 'test_user', 'test-user', 'testalert', 'test_alert', 'test-alert'];
+                if (testUsernames.includes(username)) {
+                    console.log('Alert rejected: test alert from:', username);
+                    return false;
+                }
+            }
+
+            // Check excluded users
+            var username = alert.username.toLowerCase();
+            if (gameSettings.excludedUsers.includes(username)) {
+                console.log('Alert rejected: user excluded:', username);
+                return false;
+            }
+
+            // Check valid alert types - exclude follows, raids, hype trains
+            var alertType = alert.alerttype || alert.alert_type || alert.type || '';
+            var validTypes = ['bits', 'bit', 'cheer', 'sub', 'resub', 'giftsub'];
+            var excludedTypes = ['follow', 'raid', 'hype_train', 'hype_train_start', 'hype_train_progress', 'hype_train_end'];
+
+            alertType = alertType.toLowerCase();
+
+            // Explicitly exclude unwanted types
+            if (excludedTypes.includes(alertType)) {
+                console.log('Alert rejected: excluded type:', alertType);
+                return false;
+            }
+
+            var isValid = validTypes.includes(alertType);
+
+            if (!isValid) {
+                console.log('Alert rejected: invalid type:', alertType);
+            }
+
+            return isValid;
+        }
+
+        // Helper function to check if an alert is a test alert
+        function isTestAlert(alert) {
+            if (!alert) return false;
+
+            // Check username for test patterns
+            var username = alert.username ? alert.username.toLowerCase() : '';
+            var testUsernames = ['testuser', 'test_user', 'test-user', 'testalert', 'test_alert', 'test-alert'];
+            if (testUsernames.includes(username)) {
+                return true;
+            }
+
+            // Check if alert has test flags or properties
+            if (alert.is_test || alert.test_alert || alert.isTest) {
+                return true;
+            }
+
+            return false;
+        }
+
+        // Calculate damage based on alert
+        function calculateDamage(alert) {
+            var damage = 0;
+            var alertType = (alert.alerttype || alert.alert_type || alert.type || '').toLowerCase();
+
+            console.log('Full alert object:', alert);
+            console.log('Alert type detected:', alertType);
+
+            // Extract values based on alert type
+            var quantity = 0;
+            var tier = alert.tier || alert.sub_plan || 'tier1';
+
+            switch (alertType) {
+                case 'bits':
+                case 'bit':
+                case 'cheer':
+                    // Use the correct property for bits
+                    quantity = alert.amt_cheered || 0;
+
+                    damage = quantity * gameSettings.damageValues.bits;
+                    console.log('Bits damage calculation: amt_cheered =', quantity, 'x multiplier =', gameSettings.damageValues.bits, '= damage =', damage);
+                    break;
+
+                case 'sub':
+                case 'subscription':
+                    // For regular subs, quantity is usually 1
+                    quantity = 1;
+                    // Use tier from alert, map 0->tier1, 1->tier1, 2->tier2, 3->tier3
+                    var subTier = 'tier1'; // default
+                    if (alert.tier === 1 || alert.tier === '1') subTier = 'tier1';
+                    else if (alert.tier === 2 || alert.tier === '2') subTier = 'tier2';
+                    else if (alert.tier === 3 || alert.tier === '3') subTier = 'tier3';
+
+                    damage = gameSettings.damageValues[subTier] || gameSettings.damageValues.tier1;
+                    console.log('Sub damage calculation: tier =', alert.tier, '-> damage tier =', subTier, 'damage =', damage);
+                    break;
+
+                case 'resub':
+                case 'resubscription':
+                    // For resubs, quantity is usually 1
+                    quantity = 1;
+                    var months = alert.resub_month || 1;
+
+                    // Use tier from alert
+                    var resubTier = 'tier1'; // default
+                    if (alert.tier === 1 || alert.tier === '1') resubTier = 'tier1';
+                    else if (alert.tier === 2 || alert.tier === '2') resubTier = 'tier2';
+                    else if (alert.tier === 3 || alert.tier === '3') resubTier = 'tier3';
+
+                    damage = gameSettings.damageValues[resubTier] || gameSettings.damageValues.tier1;
+                    console.log('Resub damage calculation: tier =', alert.tier, '-> damage tier =', resubTier, 'months =', months, 'damage =', damage);
+                    break;
+
+                case 'giftsub':
+                case 'gift_subscription':
+                case 'subgift':
+                    // Use the correct property for gift subs
+                    quantity = alert.gift_qty || 1;
+
+                    // Use tier from alert
+                    var giftTier = 'tier1'; // default
+                    if (alert.tier === 1 || alert.tier === '1') giftTier = 'tier1';
+                    else if (alert.tier === 2 || alert.tier === '2') giftTier = 'tier2';
+                    else if (alert.tier === 3 || alert.tier === '3') giftTier = 'tier3';
+
+                    var tierDamage = gameSettings.damageValues[giftTier] || gameSettings.damageValues.tier1;
+                    damage = tierDamage * quantity;
+                    console.log('Giftsub damage calculation: gift_qty =', quantity, 'x tier damage =', tierDamage, '(tier =', alert.tier, '-> damage tier =', giftTier + ') = damage =', damage);
+                    break;
+
+                default:
+                    console.log('Unknown alert type for damage calculation:', alertType);
+                    break;
+            }
+
+            var finalDamage = Math.max(0, damage);
+            console.log('Final calculated damage:', finalDamage, 'for alert type:', alertType);
+            return finalDamage;
+        }
+
+        // Process incoming alert
+        function processAlert(alert) {
+            var damage = calculateDamage(alert);
+            if (damage === 0) {
+                console.log('No damage calculated, skipping alert');
+                onAnimationComplete(); // Continue processing queue even if no damage
+                return;
+            }
+
+            console.log('Processing alert with damage:', damage, 'from user:', alert.username);
+
+            var isBossAttacking = alert.username.toLowerCase() === currentBoss.name.toLowerCase();
+            var actualDamage = 0;
+            var newHP = currentBoss.currentHP;
+            var newMaxHP = currentBoss.maxHP;
+            var bossChanged = false;
+
+            if (isBossAttacking && gameSettings.healingEnabled) {
+                // Boss is healing
+                console.log('Boss healing with damage:', damage);
+                if (gameSettings.maxHPIncreaseEnabled) {
+                    // Can increase max HP
+                    newHP = Math.min(currentBoss.currentHP + damage, currentBoss.maxHP);
+                    if (currentBoss.currentHP + damage > currentBoss.maxHP) {
+                        newMaxHP = currentBoss.currentHP + damage;
+                        newHP = newMaxHP;
+                    }
+                    actualDamage = newHP - currentBoss.currentHP;
+                } else {
+                    // Healing capped at max HP
+                    newHP = Math.min(currentBoss.currentHP + damage, currentBoss.maxHP);
+                    actualDamage = newHP - currentBoss.currentHP;
+                }
+            } else {
+                // Taking damage
+                console.log('Boss taking damage:', damage);
+                newHP = currentBoss.currentHP - damage;
+                actualDamage = -damage;
+
+                if (newHP <= 0) {
+                    // Boss defeated, attacker becomes new boss
+                    console.log('Boss defeated! New boss:', alert.username);
+                    if (newHP <= -currentBoss.minHP) {
+                        // Overkill - new boss starts with overkill HP
+                        newHP = Math.abs(newHP);
+                        newMaxHP = newHP;
+                    } else {
+                        // Normal defeat - new boss starts with min HP
+                        newHP = currentBoss.minHP;
+                        newMaxHP = currentBoss.minHP;
+                    }
+
+                    currentBoss.name = alert.username;
+                    bossChanged = true;
+                    fetchBossAvatar(alert.username);
+                }
+            }
+
+            // Update boss stats
+            currentBoss.currentHP = Math.max(0, newHP);
+            currentBoss.maxHP = Math.max(currentBoss.minHP, newMaxHP);
+
+            console.log('New boss stats:', currentBoss);
+
+            // Animate changes
+            if (bossChanged) {
+                // Pass new boss info for death animation
+                animateHealthChange(actualDamage, bossChanged, currentBoss.name, currentBoss.avatar);
+            } else {
+                animateHealthChange(actualDamage, bossChanged);
+            }
+
+            // Save state
+            saveBossState();
+        }
+
+        // Animate health changes
+        function animateHealthChange(damage, bossChanged, newBossName, newBossAvatar) {
+            animationInProgress = true;
+
+            // Show damage indicator
+            showDamageIndicator(damage);
+
+            // Add visual effects
+            var container = document.getElementById('bitbossContainer');
+            var hpBar = document.getElementById('hpBar');
+
+            if (damage < 0) {
+                // Damage - shake effect
+                container.classList.add('shake');
+                setTimeout(function () {
+                    container.classList.remove('shake');
+                }, 300);
+            } else if (damage > 0) {
+                // Healing - glow effect
+                hpBar.classList.add('healing');
+                setTimeout(function () {
+                    hpBar.classList.remove('healing');
+                }, 800);
+            }
+
+            // Handle boss defeat with death animation
+            if (bossChanged) {
+                // Show defeat overlay
+                showDefeatOverlay();
+
+                // Play death sound
+                playDeathSound();
+
+                // Start death animation sequence
+                startDeathAnimation(newBossName, newBossAvatar);
+
+                // Update display after death animation completes
+                setTimeout(function () {
+                    updateDisplay();
+                    animationInProgress = false;
+                    onAnimationComplete(); // Process next alert in queue
+                }, gameSettings.deathSound.animationDuration * 1000);
+            } else {
+                // Normal damage/healing - update display quickly
+                setTimeout(function () {
+                    updateDisplay();
+                    animationInProgress = false;
+                    onAnimationComplete(); // Process next alert in queue
+                }, 500);
+            }
+        }
+
+        // Show damage indicator
+        function showDamageIndicator(damage) {
+            var indicator = document.getElementById('damageIndicator');
+
+            if (damageTimeout) {
+                clearTimeout(damageTimeout);
+            }
+
+            indicator.textContent = damage > 0 ? '+' + damage : damage.toString();
+            indicator.className = 'damage-indicator ' + (damage > 0 ? 'positive' : 'negative') + ' show';
+
+            damageTimeout = setTimeout(function () {
+                indicator.classList.remove('show');
+            }, {{ DamageDisplayDuration | tojson }} * 1000);
+        }
+
+        // Show defeat overlay
+        function showDefeatOverlay() {
+            var overlay = document.getElementById('defeatOverlay');
+            overlay.classList.add('show');
+
+            setTimeout(function () {
+                overlay.classList.remove('show');
+            }, {{ DefeatDisplayDuration | tojson }} * 1000);
+        }
+
+        // Play death sound with alert-aware logic
+        function playDeathSound() {
+            if (!gameSettings.deathSound.enabled) {
+                console.log('Death sound disabled');
+                return;
+            }
+
+            // Check if death sound is already playing
+            if (deathSoundPlaying) {
+                console.log('Death sound already playing, skipping');
+                return;
+            }
+
+            // Check if we should mute during paused alerts
+            if (alertsCurrentlyPaused && deathAudioConfig.muteDuringAlerts) {
+                console.log('Death sound muted - alerts are paused and mute is enabled');
+                return;
+            }
+
+            var playSound = function () {
+                var audio = document.getElementById('deathAudio');
+                if (audio) {
+                    // Set the playing flag
+                    deathSoundPlaying = true;
+                    console.log('Death sound playing flag set to true');
+
+                    // Stop any currently playing audio first
+                    audio.pause();
+
+                    // Apply volume reduction if alerts are playing and reduction is enabled
+                    if (alertsCurrentlyPlaying && deathAudioConfig.enableReductionDuringAlerts) {
+                        var reducedVolume = gameSettings.deathSound.volume / deathAudioConfig.audioReductionDivisor;
+                        audio.volume = Math.max(0.01, Math.min(1.0, reducedVolume)); // Clamp between 0.01 and 1.0
+                        console.log('Death sound volume reduced to:', audio.volume, '(divisor:', deathAudioConfig.audioReductionDivisor + ')');
+                    } else {
+                        audio.volume = gameSettings.deathSound.volume;
+                    }
+
+                    // Add event listeners to clear the flag when audio ends or stops
+                    var clearPlayingFlag = function () {
+                        deathSoundPlaying = false;
+                        console.log('Death sound playing flag cleared');
+                    };
+
+                    // Remove any existing listeners first to prevent duplicates
+                    audio.removeEventListener('ended', clearPlayingFlag);
+                    audio.removeEventListener('pause', clearPlayingFlag);
+                    audio.removeEventListener('error', clearPlayingFlag);
+
+                    // Add new listeners
+                    audio.addEventListener('ended', clearPlayingFlag, { once: true });
+                    audio.addEventListener('pause', clearPlayingFlag, { once: true });
+                    audio.addEventListener('error', clearPlayingFlag, { once: true });
+
+                    // Ensure audio is ready to play
+                    var attemptPlay = function () {
+                        // Reset to beginning only if audio is ready
+                        if (audio.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+                            audio.currentTime = 0;
+
+                            // Small delay to ensure seek operation completes
+                            setTimeout(function () {
+                                var playPromise = audio.play();
+                                if (playPromise !== undefined) {
+                                    playPromise.then(function () {
+                                        console.log('Death sound started playing successfully');
+                                    }).catch(function (error) {
+                                        console.warn('Failed to play death sound:', error);
+                                        // Clear the playing flag if play failed
+                                        deathSoundPlaying = false;
+                                    });
+                                }
+                            }, 50); // 50ms delay after seek
+                        } else {
+                            // Audio not ready, wait for it to load
+                            console.log('Audio not ready, waiting for load. ReadyState:', audio.readyState);
+                            audio.addEventListener('canplay', function onCanPlay() {
+                                audio.removeEventListener('canplay', onCanPlay);
+                                audio.currentTime = 0;
+                                setTimeout(function () {
+                                    var playPromise = audio.play();
+                                    if (playPromise !== undefined) {
+                                        playPromise.then(function () {
+                                            console.log('Death sound started playing successfully after load');
+                                        }).catch(function (error) {
+                                            console.warn('Failed to play death sound after load:', error);
+                                            // Clear the playing flag if play failed
+                                            deathSoundPlaying = false;
+                                        });
+                                    }
+                                }, 50);
+                            }, { once: true });
+                        }
+                    };
+
+                    attemptPlay();
+                    console.log('Attempting to play death sound');
+
+                    // Fallback timeout to clear the flag if something goes wrong
+                    setTimeout(function () {
+                        if (deathSoundPlaying) {
+                            console.log('Death sound flag timeout - clearing flag as fallback');
+                            deathSoundPlaying = false;
+                        }
+                    }, 10000); // 10 second timeout
+                }
+            };
+
+            // Check if we should delay during alerts
+            if (alertsCurrentlyPlaying && deathAudioConfig.enableDelayDuringAlerts) {
+                var delayMs = deathAudioConfig.audioDelay * 1000;
+                console.log('Delaying death sound by', deathAudioConfig.audioDelay, 'seconds due to active alerts');
+                setTimeout(playSound, delayMs);
+            } else {
+                playSound();
+            }
+        }
+
+        // Start death animation sequence
+        function startDeathAnimation(newBossName, newBossAvatar) {
+            var avatarContainer = document.getElementById('bossAvatarContainer');
+            var avatarImg = document.getElementById('bossAvatar');
+            var bossNameElement = document.getElementById('bossName');
+
+            console.log('Starting death animation sequence');
+
+            // Set flag to prevent avatar updates during animation
+            deathAnimationInProgress = true;
+
+            // Set CSS custom properties for fade durations
+            avatarContainer.style.setProperty('--fade-out-duration', gameSettings.deathSound.fadeOutDuration + 's');
+            avatarContainer.style.setProperty('--fade-in-duration', gameSettings.deathSound.fadeInDuration + 's');
+
+            // Apply death effects to current avatar
+            if (gameSettings.deathSound.shakeEnabled) {
+                avatarContainer.classList.add('death-shake');
+            }
+            if (gameSettings.deathSound.redTintEnabled) {
+                avatarContainer.classList.add('death-red-tint');
+            }
+
+            // Start fade out after a short delay
+            setTimeout(function () {
+                avatarContainer.classList.add('fade-out');
+            }, 500);
+
+            // Change to new boss and fade in
+            setTimeout(function () {
+                // Remove death effects
+                avatarContainer.classList.remove('death-shake', 'death-red-tint', 'fade-out');
+
+                // Update boss data - use the most current avatar from currentBoss in case API updated it
+                avatarImg.src = currentBoss.avatar || newBossAvatar;
+                bossNameElement.textContent = newBossName;
+
+                // Fade in new avatar
+                avatarContainer.classList.add('fade-in');
+
+                // Clean up fade-in class after animation
+                setTimeout(function () {
+                    avatarContainer.classList.remove('fade-in');
+
+                    // Clear the death animation flag when completely done
+                    deathAnimationInProgress = false;
+                    console.log('Death animation sequence completed');
+                }, gameSettings.deathSound.fadeInDuration * 1000);
+
+            }, gameSettings.deathSound.fadeOutDuration * 1000 + 500);
+        }
+
+        // Parse HSL color string to get individual values
+        function parseHSL(hslString) {
+            var match = hslString.match(/hsl\((\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)%,\s*(\d+(?:\.\d+)?)%\)/);
+            if (match) {
+                return {
+                    h: parseFloat(match[1]),
+                    s: parseFloat(match[2]),
+                    l: parseFloat(match[3])
+                };
+            }
+            // Fallback values if parsing fails
+            console.warn('Failed to parse HSL color:', hslString);
+            return { h: 0, s: 100, l: 50 };
+        }
+
+        // Calculate HP bar color based on percentage
+        function getHPBarColor(percentage) {
+            // Return static color if dynamic colors are disabled
+            if (!gameSettings.hpColors.dynamicEnabled) {
+                console.log('Using static HP color:', gameSettings.hpColors.staticColor);
+                return gameSettings.hpColors.staticColor;
+            }
+
+            // Clamp percentage to 0-100 range
+            percentage = Math.max(0, Math.min(100, percentage));
+
+            // Parse the configured colors
+            var fullColor = parseHSL(gameSettings.hpColors.fullColor);
+            var midColor = parseHSL(gameSettings.hpColors.midColor);
+            var lowColor = parseHSL(gameSettings.hpColors.lowColor);
+            var transitionPoint = gameSettings.hpColors.transitionPoint;
+
+            console.log('HP Color calculation - Percentage:', percentage, 'Transition point:', transitionPoint);
+            console.log('Color config - Full:', gameSettings.hpColors.fullColor, 'Mid:', gameSettings.hpColors.midColor, 'Low:', gameSettings.hpColors.lowColor);
+            console.log('Parsed colors - Full:', fullColor, 'Mid:', midColor, 'Low:', lowColor);
+
+            var hue, saturation, lightness;
+
+            if (percentage >= transitionPoint) {
+                // Full to Mid color transition
+                var ratio = (percentage - transitionPoint) / (100 - transitionPoint); // 0 to 1
+                hue = midColor.h + (ratio * (fullColor.h - midColor.h));
+                saturation = midColor.s + (ratio * (fullColor.s - midColor.s));
+                lightness = midColor.l + (ratio * (fullColor.l - midColor.l));
+                console.log('High HP color - Ratio:', ratio.toFixed(2), 'HSL:', hue.toFixed(1), saturation.toFixed(1), lightness.toFixed(1));
+            } else {
+                // Mid to Low color transition
+                var ratio = percentage / transitionPoint; // 0 to 1
+                hue = lowColor.h + (ratio * (midColor.h - lowColor.h));
+                saturation = lowColor.s + (ratio * (midColor.s - lowColor.s));
+                lightness = lowColor.l + (ratio * (midColor.l - lowColor.l));
+                console.log('Low HP color - Ratio:', ratio.toFixed(2), 'HSL:', hue.toFixed(1), saturation.toFixed(1), lightness.toFixed(1));
+            }
+
+            var resultColor = 'hsl(' + Math.round(hue) + ', ' + Math.round(saturation) + '%, ' + Math.round(lightness) + '%)';
+            console.log('Final HP color:', resultColor);
+            return resultColor;
+        }
+
+        // Update display
+        function updateDisplay() {
+            var hpBar = document.getElementById('hpBar');
+            var hpText = document.getElementById('hpText');
+            var bossName = document.getElementById('bossName');
+
+            // Update boss name
+            bossName.textContent = currentBoss.name;
+
+            // Update HP bar
+            var percentage = (currentBoss.currentHP / currentBoss.maxHP) * 100;
+            hpBar.style.width = Math.max(0, Math.min(100, percentage)) + '%';
+
+            // Update HP bar color based on percentage
+            var hpColor = getHPBarColor(percentage);
+            hpBar.style.backgroundColor = hpColor;
+
+            // Update HP text
+            hpText.textContent = currentBoss.currentHP + '/' + currentBoss.maxHP + ' HP';
+
+            // Add low HP effect (pulsing animation)
+            if (percentage <= gameSettings.lowHPThreshold) {
+                hpBar.classList.add('low-hp');
+            } else {
+                hpBar.classList.remove('low-hp');
+            }
+
+            console.log('Display updated - HP:', currentBoss.currentHP + '/' + currentBoss.maxHP, 'Percentage:', percentage.toFixed(1) + '%', 'Color:', hpColor);
+        }
+
+        // Fetch boss avatar from Twitch API
+        function fetchBossAvatar(username) {
+            console.log('Fetching avatar for:', username);
+            socket.emit('twitch-api-request', {
+                endpoint: 'https://api.twitch.tv/helix/users?login=' + encodeURIComponent(username),
+                method: 'GET',
+                requestId: 'boss-avatar-' + username
+            });
+        }
+
+        // Save boss state to database and localStorage
+        function saveBossState() {
+            var state = {
+                name: currentBoss.name,
+                avatar: currentBoss.avatar,
+                currentHP: currentBoss.currentHP,
+                maxHP: currentBoss.maxHP,
+                timestamp: Date.now()
+            };
+
+            // Save to localStorage as backup
+            localStorage.setItem('bitboss_state', JSON.stringify(state));
+
+            // Save to database
+            socket.emit('set_data', {
+                path: 'BitBoss/state',
+                data: state
+            });
+
+            console.log('Saved boss state:', state);
+        }
+
+        // Load boss state from database with localStorage fallback
+        function loadBossState() {
+            console.log('Attempting to load boss state from database...');
+
+            // Request data from database
+            socket.emit('get_data', {
+                path: 'BitBoss/state'
+            });
+
+            // Set a timeout to fall back to localStorage if database doesn't respond quickly
+            setTimeout(function () {
+                if (!window.bossStateLoaded) {
+                    loadBossStateFromLocalStorage();
+                }
+            }, 2000);
+        }
+
+        // Load boss state from localStorage (fallback)
+        function loadBossStateFromLocalStorage() {
+            try {
+                var saved = localStorage.getItem('bitboss_state');
+                if (saved) {
+                    var state = JSON.parse(saved);
+                    applyBossState(state, 'localStorage');
+                    return true;
+                }
+            } catch (e) {
+                console.error('Error loading boss state from localStorage:', e);
+            }
+            console.log('No saved state found, using defaults');
+            return false;
+        }
+
+        // Apply boss state from loaded data
+        function applyBossState(state, source) {
+            if (!state) return false;
+
+            // Load saved state
+            currentBoss.name = state.name || currentBoss.name;
+            currentBoss.avatar = state.avatar || currentBoss.avatar;
+            currentBoss.currentHP = state.currentHP || currentBoss.currentHP;
+            currentBoss.maxHP = state.maxHP || currentBoss.maxHP;
+
+            document.getElementById('bossAvatar').src = currentBoss.avatar;
+            updateDisplay();
+
+            window.bossStateLoaded = true;
+            console.log('Loaded boss state from', source + ':', state);
+            return true;
+        }
+
+        // Reset boss to defaults
+        function resetBoss() {
+            currentBoss = {
+                name: {{ DefaultBossName | tojson }},
+                avatar: {{ DefaultAvatar | tojson }},
+                currentHP: {{ DefaultHP | tojson }},
+                maxHP: {{ DefaultMaxHP | tojson }},
+                minHP: {{ MinHP | tojson }}
+            };
+
+        document.getElementById('bossAvatar').src = currentBoss.avatar;
+        updateDisplay();
+        saveBossState();
+        console.log('Reset boss to defaults');
+        }
+
+        // Manual reset function that can be called from console
+        window.resetBitBoss = function () {
+            console.log('Manually resetting Bit Boss...');
+            resetBoss();
+        };
+
+        // Manual save function that can be called from console
+        window.saveBitBoss = function () {
+            console.log('Manually saving Bit Boss state...');
+            saveBossState();
+        };
+
+        // Manual load function that can be called from console
+        window.loadBitBoss = function () {
+            console.log('Manually loading Bit Boss state...');
+            window.bossStateLoaded = false;
+            loadBossState();
+        };
+
+        // Manual queue management functions that can be called from console
+        window.clearBitBossQueue = function () {
+            console.log('Manually clearing Bit Boss alert queue...');
+            alertQueue = [];
+            processingQueue = false;
+            animationInProgress = false;
+            console.log('Alert queue cleared');
+        };
+
+        window.getBitBossQueueStatus = function () {
+            console.log('Bit Boss Queue Status:');
+            console.log('- Queue length:', alertQueue.length);
+            console.log('- Processing queue:', processingQueue);
+            console.log('- Animation in progress:', animationInProgress);
+            console.log('- Death animation in progress:', deathAnimationInProgress);
+            console.log('- Death sound playing:', deathSoundPlaying);
+            return {
+                queueLength: alertQueue.length,
+                processingQueue: processingQueue,
+                animationInProgress: animationInProgress,
+                deathAnimationInProgress: deathAnimationInProgress,
+                deathSoundPlaying: deathSoundPlaying
+            };
+        };
+
+        // Manual function to clear death sound flag for debugging
+        window.clearDeathSoundFlag = function () {
+            console.log('Manually clearing death sound flag');
+            deathSoundPlaying = false;
+        };
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) {
+                updateDisplay();
+            }
+        });
+
+        // Initialize
+        window.bossStateLoaded = false;
+        loadBossState();
+
+        // Always update display after a short delay to ensure proper initialization
+        setTimeout(function () {
+            if (!window.bossStateLoaded) {
+                console.log('No state loaded, using defaults');
+                updateDisplay();
+                window.bossStateLoaded = true;
+            }
+
+            // Start processing any alerts that might have been queued during initialization
+            if (alertQueue.length > 0 && !processingQueue) {
+                console.log('Processing alerts queued during initialization');
+                processNextAlert();
+            }
+        }, 3000);
+
+        // Load template config directly from API
+        async function loadTemplateConfig() {
+            try {
+                const response = await fetch('/api/all-template-configs');
+                if (response.ok) {
+                    const allConfigs = await response.json();
+                    console.log('Loaded all template configs:', Object.keys(allConfigs));
+
+                    // Get the bitboss config specifically
+                    const bitbossConfigData = allConfigs.bitboss;
+                    if (bitbossConfigData && bitbossConfigData.elements) {
+                        console.log('Found bitboss template config:', bitbossConfigData);
+
+                        // Extract the config values from the elements array
+                        const config = {};
+                        bitbossConfigData.elements.forEach(element => {
+                            if (element.type !== 'section') {
+                                config[element.id] = element.value;
+                            }
+                        });
+
+                        console.log('Parsed config values:', config);
+                        applyTemplateConfig(config);
+                    } else {
+                        console.warn('No bitboss config found in response');
+                    }
+                } else {
+                    console.error('Failed to load template configs:', response.status);
+                }
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        function applyTemplateConfig(config) {
+            console.log('Applying template config:', config);
+
+            const bitbossContainer = document.querySelector('.bitboss-container');
+
+            // Apply container position and size
+            if (config.ContainerLeft !== undefined) {
+                bitbossContainer.style.left = config.ContainerLeft + 'px';
+            }
+            if (config.ContainerTop !== undefined) {
+                bitbossContainer.style.top = config.ContainerTop + 'px';
+            }
+            if (config.ContainerWidth !== undefined) {
+                bitbossContainer.style.width = config.ContainerWidth + 'px';
+            }
+            if (config.ContainerHeight !== undefined) {
+                bitbossContainer.style.height = config.ContainerHeight + 'px';
+            }
+
+            // Apply boss name styling
+            const bossNameElement = document.getElementById('bossName');
+            if (bossNameElement) {
+                if (config.BossNameFontFamily) {
+                    bossNameElement.style.fontFamily = config.BossNameFontFamily;
+                }
+                if (config.BossNameFontSize !== undefined) {
+                    bossNameElement.style.fontSize = config.BossNameFontSize + 'px';
+                }
+                if (config.BossNameColor) {
+                    bossNameElement.style.color = config.BossNameColor;
+                }
+            }
+
+            // Apply HP text styling
+            const hpTextElement = document.getElementById('hpText');
+            if (hpTextElement) {
+                if (config.HPTextFontFamily) {
+                    hpTextElement.style.fontFamily = config.HPTextFontFamily;
+                }
+                if (config.HPTextFontSize !== undefined) {
+                    hpTextElement.style.fontSize = config.HPTextFontSize + 'px';
+                }
+                if (config.HPTextColor) {
+                    hpTextElement.style.color = config.HPTextColor;
+                }
+            }
+
+            // Apply HP color settings
+            if (config.EnableDynamicHPColors !== undefined) {
+                gameSettings.hpColors.dynamicEnabled = config.EnableDynamicHPColors;
+                console.log('Applied dynamic HP colors setting:', config.EnableDynamicHPColors);
+            }
+            if (config.BarColor !== undefined) {
+                gameSettings.hpColors.staticColor = config.BarColor;
+                console.log('Applied static HP color:', config.BarColor);
+            }
+            if (config.HPColorFull !== undefined) {
+                gameSettings.hpColors.fullColor = config.HPColorFull;
+                console.log('Applied full HP color:', config.HPColorFull);
+            }
+            if (config.HPColorMid !== undefined) {
+                gameSettings.hpColors.midColor = config.HPColorMid;
+                console.log('Applied mid HP color:', config.HPColorMid);
+            }
+            if (config.HPColorLow !== undefined) {
+                gameSettings.hpColors.lowColor = config.HPColorLow;
+                console.log('Applied low HP color:', config.HPColorLow);
+            }
+            if (config.HPColorTransitionPoint !== undefined) {
+                gameSettings.hpColors.transitionPoint = config.HPColorTransitionPoint;
+                console.log('Applied HP color transition point:', config.HPColorTransitionPoint);
+            }
+
+            // Apply HP bar styling
+            const hpBar = document.getElementById('hpBar');
+            if (hpBar) {
+                if (config.HPBarHeight !== undefined) {
+                    hpBar.style.height = config.HPBarHeight + 'px';
+                }
+                if (config.HPBarBorderRadius !== undefined) {
+                    hpBar.style.borderRadius = config.HPBarBorderRadius + 'px';
+                }
+            }
+
+            // Apply avatar settings
+            const bossAvatar = document.getElementById('bossAvatar');
+            if (bossAvatar) {
+                if (config.AvatarSize !== undefined) {
+                    bossAvatar.style.width = config.AvatarSize + 'px';
+                    bossAvatar.style.height = config.AvatarSize + 'px';
+                }
+                if (config.AvatarBorderRadius !== undefined) {
+                    bossAvatar.style.borderRadius = config.AvatarBorderRadius + 'px';
+                }
+            }
+
+            // Apply background settings
+            if (config.EnableBackground) {
+                bitbossContainer.style.backgroundColor = config.BackgroundColor || 'rgba(0,0,0,0.5)';
+                bitbossContainer.style.padding = (config.BackgroundPadding || 10) + 'px';
+                bitbossContainer.style.borderRadius = (config.BackgroundBorderRadius || 5) + 'px';
+                if (config.BackgroundOpacity !== undefined) {
+                    bitbossContainer.style.opacity = config.BackgroundOpacity;
+                }
+            } else {
+                bitbossContainer.style.backgroundColor = 'transparent';
+                bitbossContainer.style.padding = '0';
+                bitbossContainer.style.borderRadius = '0';
+            }
+
+            // Apply boss settings (only if no boss state has been loaded yet)
+            if (!window.bossStateLoaded) {
+                if (config.DefaultBossName !== undefined) {
+                    currentBoss.name = config.DefaultBossName;
+                }
+                if (config.DefaultHP !== undefined) {
+                    currentBoss.currentHP = config.DefaultHP;
+                }
+                if (config.DefaultMaxHP !== undefined) {
+                    currentBoss.maxHP = config.DefaultMaxHP;
+                }
+                if (config.DefaultAvatar !== undefined) {
+                    currentBoss.avatar = config.DefaultAvatar;
+                    document.getElementById('bossAvatar').src = currentBoss.avatar;
+                }
+            }
+
+            // Apply game settings
+            if (config.DefeatThreshold !== undefined) {
+                gameSettings.defeatThreshold = config.DefeatThreshold;
+            }
+            if (config.LowHPThreshold !== undefined) {
+                gameSettings.lowHPThreshold = config.LowHPThreshold;
+            }
+            if (config.DamageDisplayDuration !== undefined) {
+                gameSettings.damageDisplayDuration = config.DamageDisplayDuration;
+            }
+            if (config.DefeatDisplayDuration !== undefined) {
+                gameSettings.defeatDisplayDuration = config.DefeatDisplayDuration;
+            }
+
+            // Apply death sound settings
+            if (config.DeathSoundEnabled !== undefined) {
+                gameSettings.deathSound.enabled = config.DeathSoundEnabled;
+            }
+            if (config.DeathSoundFile !== undefined) {
+                gameSettings.deathSound.file = config.DeathSoundFile;
+                // Update audio source
+                var audio = document.getElementById('deathAudio');
+                if (audio && audio.firstElementChild) {
+                    audio.firstElementChild.src = config.DeathSoundFile;
+                    audio.load(); // Reload audio with new source
+                }
+            }
+            if (config.DeathSoundVolume !== undefined) {
+                gameSettings.deathSound.volume = config.DeathSoundVolume;
+            }
+            if (config.DeathAnimationDuration !== undefined) {
+                gameSettings.deathSound.animationDuration = config.DeathAnimationDuration;
+            }
+            if (config.DeathShakeEnabled !== undefined) {
+                gameSettings.deathSound.shakeEnabled = config.DeathShakeEnabled;
+            }
+            if (config.DeathRedTintEnabled !== undefined) {
+                gameSettings.deathSound.redTintEnabled = config.DeathRedTintEnabled;
+            }
+            if (config.AvatarFadeOutDuration !== undefined) {
+                gameSettings.deathSound.fadeOutDuration = config.AvatarFadeOutDuration;
+            }
+            if (config.AvatarFadeInDuration !== undefined) {
+                gameSettings.deathSound.fadeInDuration = config.AvatarFadeInDuration;
+            }
+
+            // Apply animation settings
+            if (config.EnableAnimations !== undefined) {
+                gameSettings.enableAnimations = config.EnableAnimations;
+            }
+
+            // Update display with new settings
+            updateDisplay();
+        }
+
+        // Load config on startup after boss state is loaded
+        setTimeout(function () {
+            loadTemplateConfig();
+        }, 1000);
+
+        // Periodically reload config to pick up changes (every 30 seconds)
+        setInterval(loadTemplateConfig, 30000);
+
+        console.log('Mycelian Bit Boss initialized with instant_alert queue system');
+        console.log('Game settings:', gameSettings);
+        console.log('HP Color settings:', gameSettings.hpColors);
+        console.log('Current boss:', currentBoss);
+        console.log('Queue system functions: clearBitBossQueue(), getBitBossQueueStatus()');
+        console.log('Death sound functions: clearDeathSoundFlag()');
+    </script>
+</body>
+
+</html>

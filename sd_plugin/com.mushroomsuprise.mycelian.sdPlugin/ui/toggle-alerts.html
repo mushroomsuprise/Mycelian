@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <title>Toggle Alerts Settings</title>
+    <meta charset="utf-8" />
+    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+</head>
+
+<body>
+    <!--
+        Learn more about property inspector components at https://sdpi-components.dev/docs/components
+    -->
+    <sdpi-item label="Server Configuration">
+        <sdpi-textfield setting="serverUrl" label="Server URL" placeholder="127.0.0.1:5000" default="127.0.0.1:5000"></sdpi-textfield>
+    </sdpi-item>
+
+    <sdpi-item label="About">
+        <sdpi-text>
+            This action connects to your Mycelian web server to toggle alert playback.
+            <br><br>
+            Default settings:
+            <br>• Server URL: 127.0.0.1:5000 (host:port format)
+            <br><br>
+            The button will show "TOGGLE ALERTS" with "ACTIVE" below when alerts are playing,
+            and "PAUSED" below when alerts are paused.
+            <br><br>
+            The button automatically syncs with your app - it will update if alerts are paused/resumed
+            from within the Mycelian interface.
+        </sdpi-text>
+    </sdpi-item>
+</body>
+
+</html>

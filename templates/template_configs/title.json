@@ -1,0 +1,567 @@
+{
+    "template_name": "title",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Font Settings"
+        },
+        {
+            "type": "text",
+            "id": "FontName",
+            "label": "Font File",
+            "value": "Renogare.ttf",
+            "description": "Font file name (must be in /assets/default_assets/fonts/ directory)"
+        },
+        {
+            "type": "number",
+            "id": "FontSize",
+            "label": "Font Size",
+            "value": 60.0,
+            "min": 12,
+            "max": 120,
+            "description": "Font size for the title text in pixels"
+        },
+        {
+            "type": "select",
+            "id": "FontWeight",
+            "label": "Font Weight",
+            "value": "bold",
+            "options": [
+                "normal",
+                "bold",
+                "bolder",
+                "lighter",
+                "100",
+                "200",
+                "300",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800",
+                "900"
+            ],
+            "description": "Font weight for title text"
+        },
+        {
+            "type": "select",
+            "id": "FontColor",
+            "label": "Font Color",
+            "value": "#ffffff",
+            "description": "Color of the title text",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "text",
+            "id": "TextShadow",
+            "label": "Text Shadow",
+            "value": "2px 2px 4px rgba(0,0,0,0.8)",
+            "description": "CSS text shadow for title text"
+        },
+        {
+            "type": "number",
+            "id": "LineHeight",
+            "label": "Line Height",
+            "value": 1.2,
+            "min": 0.8,
+            "max": 2.0,
+            "step": 0.1,
+            "description": "Line height multiplier for text"
+        },
+        {
+            "type": "separator",
+            "label": "Container Settings"
+        },
+        {
+            "type": "number",
+            "id": "TitleTop",
+            "label": "Container Top Position",
+            "value": 50,
+            "min": 0,
+            "max": 2000,
+            "description": "Top position of the title container in pixels"
+        },
+        {
+            "type": "number",
+            "id": "TitleLeft",
+            "label": "Container Left Position",
+            "value": 50,
+            "min": 0,
+            "max": 2000,
+            "description": "Left position of the title container in pixels"
+        },
+        {
+            "type": "number",
+            "id": "TitleWidth",
+            "label": "Container Width",
+            "value": 800,
+            "min": 200,
+            "max": 1920,
+            "description": "Width of the title container in pixels"
+        },
+        {
+            "type": "number",
+            "id": "TitleHeight",
+            "label": "Container Height",
+            "value": 100,
+            "min": 50,
+            "max": 500,
+            "description": "Height of the title container in pixels"
+        },
+        {
+            "type": "select",
+            "id": "TitleAlign",
+            "label": "Text Alignment",
+            "value": "flex-start",
+            "options": [
+                "flex-start",
+                "center",
+                "flex-end"
+            ],
+            "description": "Horizontal alignment of title text (flex-start=left, center=center, flex-end=right)"
+        },
+        {
+            "type": "select",
+            "id": "ContainerBG",
+            "label": "Container Background",
+            "value": "transparent",
+            "description": "Background color of the container",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "ContainerRadius",
+            "label": "Container Border Radius",
+            "value": 0,
+            "min": 0,
+            "max": 50,
+            "description": "Border radius for container corners in pixels"
+        },
+        {
+            "type": "number",
+            "id": "ContainerBorder",
+            "label": "Container Border Width",
+            "value": 0,
+            "min": 0,
+            "max": 10,
+            "description": "Border width around container in pixels"
+        },
+        {
+            "type": "select",
+            "id": "ContainerBorderColor",
+            "label": "Container Border Color",
+            "value": "#9333ea",
+            "description": "Color of the container border",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "text",
+            "id": "ContainerShadow",
+            "label": "Container Shadow",
+            "value": "none",
+            "description": "CSS box shadow for container"
+        },
+        {
+            "type": "number",
+            "id": "ContainerPadding",
+            "label": "Container Padding",
+            "value": 10,
+            "min": 0,
+            "max": 50,
+            "description": "Internal padding of the container in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Display Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowCategory",
+            "label": "Show Category",
+            "value": true,
+            "description": "Show current stream category instead of default title"
+        },
+        {
+            "type": "text",
+            "id": "CategoryPrefix",
+            "label": "Category Prefix",
+            "value": "",
+            "description": "Text to show before the category name"
+        },
+        {
+            "type": "text",
+            "id": "CategorySuffix",
+            "label": "Category Suffix",
+            "value": "",
+            "description": "Text to show after the category name"
+        },
+
+        {
+            "type": "separator",
+            "label": "Behavior Settings"
+        },
+        {
+            "type": "separator",
+            "label": "Animation Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableAnimations",
+            "label": "Enable Animations",
+            "value": true,
+            "description": "Enable smooth transitions when text changes"
+        },
+        {
+            "type": "number",
+            "id": "TransitionDuration",
+            "label": "Transition Duration",
+            "value": 0.3,
+            "min": 0.1,
+            "max": 2.0,
+            "step": 0.1,
+            "description": "Duration of text change animations in seconds"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnablePulse",
+            "label": "Enable Pulse Effect",
+            "value": false,
+            "description": "Enable pulsing animation for the title"
+        },
+        {
+            "type": "number",
+            "id": "PulseSpeed",
+            "label": "Pulse Speed",
+            "value": 2.0,
+            "min": 0.5,
+            "max": 5.0,
+            "step": 0.1,
+            "description": "Speed of pulse animation in seconds"
+        },
+        {
+            "type": "number",
+            "id": "PulseOpacity",
+            "label": "Pulse Opacity",
+            "value": 0.7,
+            "min": 0.1,
+            "max": 0.9,
+            "step": 0.1,
+            "description": "Minimum opacity during pulse animation"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableGlow",
+            "label": "Enable Glow Effect",
+            "value": false,
+            "description": "Enable glow effect around the title text"
+        },
+        {
+            "type": "select",
+            "id": "GlowColor",
+            "label": "Glow Color",
+            "value": "#9333ea",
+            "description": "Color of the glow effect",
+            "display": "color_grid",
+            "options": [
+                "#e11d48",
+                "#dc2626",
+                "#ea580c",
+                "#d97706",
+                "#ca8a04",
+                "#65a30d",
+                "#16a34a",
+                "#059669",
+                "#0891b2",
+                "#0284c7",
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#9333ea",
+                "#c026d3",
+                "#db2777",
+                "#be123c",
+                "#991b1b",
+                "#9a3412",
+                "#92400e",
+                "#a16207",
+                "#4d7c0f",
+                "#15803d",
+                "#047857",
+                "#0e7490",
+                "#0369a1",
+                "#1d4ed8",
+                "#3730a3",
+                "#6d28d9",
+                "#7e22ce",
+                "#a21caf",
+                "#be185d",
+                "#ffffff",
+                "#f8fafc",
+                "#f1f5f9",
+                "#e2e8f0",
+                "#cbd5e1",
+                "#94a3b8",
+                "#64748b",
+                "#475569",
+                "#334155",
+                "#1e293b",
+                "#0f172a",
+                "#1a1a1a",
+                "#000000",
+                "transparent"
+            ],
+            "transparent": false
+        },
+        {
+            "type": "separator",
+            "label": "Wipe Animation Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableWipe",
+            "label": "Enable Wipe Animation",
+            "value": true,
+            "description": "Enable wipe transition when title changes"
+        },
+        {
+            "type": "select",
+            "id": "WipeDirection",
+            "label": "Wipe Direction",
+            "value": "left-to-right",
+            "options": [
+                "left-to-right",
+                "right-to-left",
+                "top-to-bottom",
+                "bottom-to-top"
+            ],
+            "description": "Direction of the wipe animation"
+        },
+        {
+            "type": "number",
+            "id": "WipeEasing",
+            "label": "Wipe Easing Strength",
+            "value": 0.25,
+            "min": 0.1,
+            "max": 1.0,
+            "step": 0.05,
+            "description": "Easing curve strength for wipe animation (0.1=linear, 1.0=dramatic)"
+        }
+    ],
+    "dynamic_controls": {
+        "elements": [
+            {
+                "type": "toggle",
+                "id": "auto_update_toggle",
+                "label": "Auto Update",
+                "description": "Toggle automatic title updates on/off",
+                "action": "toggle_auto_update",
+                "value": true
+            },
+            {
+                "type": "text_input",
+                "id": "manual_title_input",
+                "label": "Manual Title",
+                "description": "Enter a custom title to override automatic updates",
+                "placeholder": "Enter custom title...",
+                "action": "set_manual_title",
+                "max_length": 100
+            },
+            {
+                "type": "button",
+                "id": "clear_manual_title",
+                "label": "Clear Manual Title",
+                "description": "Clear manual title and revert to automatic updates",
+                "button_text": "Clear",
+                "action": "clear_manual_title",
+                "data": {}
+            },
+            {
+                "type": "button",
+                "id": "refresh_title",
+                "label": "Refresh Title",
+                "description": "Force refresh the title from current category",
+                "button_text": "Refresh",
+                "action": "refresh_title",
+                "data": {}
+            }
+        ]
+    },
+    "connector_actions": {
+        "change_title": {
+            "action_name": "Change title",
+            "trigger": "change_title",
+            "elements": [
+                {
+                    "type": "text",
+                    "id": "title_text",
+                    "label": "Title Text",
+                    "value": "{{username}} just followed!",
+                    "description": "The title text to display. Use {{placeholder}} for dynamic content."
+                },
+                {
+                    "type": "switch",
+                    "id": "set_custom",
+                    "label": "Set as Custom Title",
+                    "value": false,
+                    "description": "If enabled, this will override automatic title updates"
+                },
+                {
+                    "type": "number",
+                    "id": "display_duration",
+                    "label": "Display Duration (seconds)",
+                    "value": 10,
+                    "min": 1,
+                    "max": 120,
+                    "description": "How long to display this title before reverting (0 = permanent)"
+                }
+            ]
+        }
+    }
+}
