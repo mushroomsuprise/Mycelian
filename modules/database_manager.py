@@ -31,6 +31,7 @@ import json
 import os
 import threading
 from abc import ABC, abstractmethod
+from urllib.parse import urlparse
 from typing import Any, Dict, Optional, List
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -55,6 +56,35 @@ except ImportError:
     MONGODB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_firebase_database_url(url: str) -> str:
+    """Strip whitespace and ensure trailing slash for Firebase Admin databaseURL."""
+    u = (url or "").strip()
+    if not u:
+        return u
+    if not u.endswith("/"):
+        return u + "/"
+    return u
+
+
+def is_valid_firebase_rtdb_url(url: str) -> bool:
+    """Accept legacy *.firebaseio.com and regional *.firebasedatabase.app RTDB URLs."""
+    u = (url or "").strip()
+    if not u.lower().startswith("https://"):
+        return False
+    try:
+        parsed = urlparse(u)
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    if host.endswith(".firebaseio.com"):
+        return True
+    if host.endswith(".firebasedatabase.app"):
+        return True
+    return False
 
 
 @dataclass
@@ -528,7 +558,9 @@ class FirebaseDatabase(DatabaseInterface):
     def __init__(self, config: DatabaseConfig):
         self.config = config
         self.service_account_path = config.firebase_service_account_path
-        self.database_url = config.firebase_database_url
+        self.database_url = normalize_firebase_database_url(
+            config.firebase_database_url
+        )
         self.streamer_name = config.streamer_name
         self._app = None
         self._root_ref = None
@@ -583,12 +615,11 @@ class FirebaseDatabase(DatabaseInterface):
                 logger.error(f"Invalid Firebase service account key file: {str(e)}")
                 return False
 
-            # Validate database URL format
-            if not self.database_url.startswith(
-                "https://"
-            ) or not self.database_url.endswith(".firebaseio.com/"):
+            # Validate database URL format (firebaseio.com or regional firebasedatabase.app)
+            if not is_valid_firebase_rtdb_url(self.database_url):
                 logger.error(
-                    f"Invalid Firebase database URL format. Expected: https://your-project-default-rtdb.firebaseio.com/"
+                    "Invalid Firebase Realtime Database URL. Use https://…firebaseio.com/ "
+                    "or https://…firebasedatabase.app/ (trailing slash optional)."
                 )
                 return False
 
@@ -807,10 +838,7 @@ class FirebaseDatabase(DatabaseInterface):
                     )
                 if not self.database_url:
                     config_issues.append("Database URL not configured")
-                elif not (
-                    self.database_url.startswith("https://")
-                    and self.database_url.endswith(".firebaseio.com/")
-                ):
+                elif not is_valid_firebase_rtdb_url(self.database_url):
                     config_issues.append("Invalid database URL format")
 
                 if config_issues:
@@ -1300,6 +1328,8 @@ class DatabaseManager:
             # Update configuration
             for key, value in kwargs.items():
                 if hasattr(self._config, key):
+                    if key == "firebase_database_url" and isinstance(value, str):
+                        value = normalize_firebase_database_url(value)
                     old_value = getattr(self._config, key)
                     setattr(self._config, key, value)
                     logger.debug(f"Updated config {key}: {old_value} -> {value}")
@@ -1467,51 +1497,33 @@ class DatabaseManager:
                 logger.error("Failed to initialize target database")
                 return False
 
-            # Define the standard data paths to migrate
-            paths_to_migrate = [
-                "TwitchData",
-                "AppSettings",
-                "PSNSettings",
-                "SpotifyData",
-                "Alerts/BitAlerts",
-                "Alerts/BitRangeAlerts",
-                "Alerts/SubAlerts",
-                "Alerts/ResubAlerts",
-                "Alerts/GiftsubAlerts",
-                "Alerts/GiftsubRangeAlerts",
-                "Alerts/FollowAlerts",
-                "Alerts/RaidAlerts",
-                "Alerts/RaidRangeAlerts",
-                "Alerts/DonationAlerts",
-                "Alerts/DonationRangeAlerts",
-                "Alerts/PointAlerts",
-                "Alerts/AlertQueue",
-                "Alerts/AlertStorage",
-                "BotData/Quotes",
-                "BotData/Commands",
-                "BotData/Settings",
-                "ViewerData",
-                "Spotify",
-            ]
+            paths_to_migrate = source_db.get_all_paths()
+            logger.info(
+                f"Migrating {len(paths_to_migrate)} paths from "
+                f"{source_config.database_type} to {target_config.database_type}"
+            )
 
-            # Migrate each path
             migrated_count = 0
+            failed_count = 0
             for path in paths_to_migrate:
                 try:
                     data = source_db.get_data(path)
-                    if data:  # Only migrate if data exists
-                        if target_db.set_data(path, data):
-                            migrated_count += 1
-                            logger.debug(f"Migrated data from path: {path}")
-                        else:
-                            logger.warning(f"Failed to migrate data from path: {path}")
+                    if target_db.set_data(path, data):
+                        migrated_count += 1
+                        logger.debug(f"Migrated data from path: {path}")
+                    else:
+                        failed_count += 1
+                        logger.warning(f"Failed to migrate data from path: {path}")
                 except Exception as e:
+                    failed_count += 1
                     logger.error(f"Error migrating path {path}: {str(e)}")
 
             logger.info(
-                f"Migration completed. Migrated {migrated_count} data paths from {source_config.database_type} to {target_config.database_type}"
+                f"Migration completed. Wrote {migrated_count} paths, "
+                f"{failed_count} failures ({source_config.database_type} -> "
+                f"{target_config.database_type})"
             )
-            return migrated_count > 0
+            return failed_count == 0
 
         except Exception as e:
             logger.error(f"Error during data migration: {str(e)}", exc_info=True)

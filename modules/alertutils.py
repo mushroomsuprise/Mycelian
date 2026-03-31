@@ -1630,6 +1630,9 @@ class AlertObj:
     fade_out: int = 0
     volume: int = 0
     audio_only: bool = False  # If True, only play audio without any visual elements
+    tts_enabled: bool = False
+    tts_source: str = "alert_message"
+    tts_custom_message: str = ""
     # Static audio file (fallback)
     single_audio_dir: str = None
     single_audio_name: str = None

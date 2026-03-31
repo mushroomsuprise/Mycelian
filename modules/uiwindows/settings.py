@@ -27,6 +27,7 @@ import asyncio
 import logging
 import time
 import webbrowser
+from dataclasses import replace
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -36,7 +37,11 @@ from nicegui import ui
 from .. import dataobjects, psn_service, twitch
 from ..api_credentials_manager import api_credentials_manager
 from ..config_manager import config_manager
-from ..database_manager import DatabaseConfig, database_manager
+from ..database_manager import (
+    DatabaseConfig,
+    database_manager,
+    is_valid_firebase_rtdb_url,
+)
 from ..dataobjects import YouTubeData, state_manager
 from ..path_utils import get_working_directory
 from ..startup_profiler import StartupTimer, log_startup_summary
@@ -1441,7 +1446,7 @@ class SettingsUI:
                                             "• Service account key file (JSON format from Firebase Console)"
                                         ).classes("text-xs text-blue-200")
                                         ui.label(
-                                            "• Database URL in format: https://your-project-default-rtdb.firebaseio.com/"
+                                            "• Database URL: https://…firebaseio.com/ or https://…firebasedatabase.app/"
                                         ).classes("text-xs text-blue-200")
 
                                 # MongoDB Configuration
@@ -1712,6 +1717,12 @@ class SettingsUI:
         """Handle changes to field values"""
         # Safely get the value from the event object
         new_value = getattr(event, "value", None)
+        if new_value is None and hasattr(event, "args") and event.args is not None:
+            args = event.args
+            if isinstance(args, (list, tuple)) and len(args) > 0:
+                new_value = args[0]
+            elif not isinstance(args, (list, tuple)):
+                new_value = args
         if new_value is None:
             # If event doesn't have value, try to get it from the UI element directly
             field_key = f"{section}.{field}"
@@ -2947,6 +2958,16 @@ class SettingsUI:
         try:
             # Extract the new database type from the event
             new_type = getattr(event, "value", None)
+            if new_type is None and hasattr(event, "args") and event.args is not None:
+                args = event.args
+                if isinstance(args, (list, tuple)) and len(args) > 0:
+                    new_type = args[0]
+                elif not isinstance(args, (list, tuple)):
+                    new_type = args
+            if not new_type:
+                db_key = "database_settings.database_type"
+                if db_key in self.ui_elements:
+                    new_type = self.ui_elements[db_key].value
             if not new_type:
                 logger.warning(
                     "Could not extract value from database type change event"
@@ -2961,8 +2982,17 @@ class SettingsUI:
                 f"Database type changed to: {new_type}", type="positive", timeout=2000
             )
 
-            # Update the local database_settings object immediately
-            self.database_settings.database_type = new_type
+            # Ensure field handler sees the resolved value (NiceGUI select events vary)
+            resolved_event = type(
+                "DatabaseTypeEvent",
+                (),
+                {"value": new_type, "args": (new_type,)},
+            )()
+            self.on_field_change(
+                "database_settings", "database_type", resolved_event
+            )
+
+            new_type = self.database_settings.database_type
 
             # Update visibility of configuration sections
             if hasattr(self, "sql_config"):
@@ -2978,9 +3008,6 @@ class SettingsUI:
 
             if hasattr(self, "mongodb_config"):
                 self.mongodb_config.visible = new_type == "mongodb"
-
-            # Also call the regular field change handler to track changes
-            self.on_field_change("database_settings", "database_type", event)
 
         except Exception as e:
             logger.error(
@@ -3259,8 +3286,10 @@ class SettingsUI:
                     # Get current database configuration
                     current_config = database_manager.get_config()
 
-                    # Create source and target configurations
-                    if source_type == "firebase":
+                    # Prefer live manager config when source type matches the active database
+                    if source_type == current_config.database_type:
+                        source_config = replace(current_config)
+                    elif source_type == "firebase":
                         source_config = DatabaseConfig(
                             database_type="firebase",
                             firebase_service_account_path=self.database_settings.firebase_service_account_path,
@@ -3308,22 +3337,45 @@ class SettingsUI:
                     )
 
                     if success:
-                        # Update database settings to use the target type
-                        self.database_settings.database_type = target_type
-                        state_manager.update_database_setting(
-                            "database_type", target_type
+                        prior_type = self.database_settings.database_type
+                        snapshot_before_switch = replace(database_manager.get_config())
+                        switch_cfg = replace(
+                            DatabaseConfig(
+                                **self.database_settings.__dict__,
+                                streamer_name="mycelian",
+                            ),
+                            database_type=target_type,
                         )
-                        state_manager.save_changes()
-
-                        # Update the database manager configuration
-                        self.update_database_manager_config()
-
-                        migration_status["success"] = True
-                        migration_status["completed"] = True
-
-                        logger.info(
-                            f"Migration from {source_type} to {target_type} completed successfully"
-                        )
+                        if database_manager.update_config(**switch_cfg.__dict__):
+                            self.database_settings.database_type = target_type
+                            if not config_manager.update_database_config(
+                                **self.database_settings.__dict__
+                            ):
+                                logger.error(
+                                    "Migration succeeded but failed to persist config.json"
+                                )
+                            state_manager.update_database_setting(
+                                "database_type", target_type
+                            )
+                            state_manager.save_changes()
+                            self.update_database_config_visibility()
+                            migration_status["success"] = True
+                            migration_status["completed"] = True
+                            logger.info(
+                                f"Migration from {source_type} to {target_type} completed successfully"
+                            )
+                        else:
+                            self.database_settings.database_type = prior_type
+                            database_manager.initialize(snapshot_before_switch)
+                            migration_status["success"] = False
+                            migration_status["completed"] = True
+                            migration_status["error"] = (
+                                "Data was copied but the app could not switch to the "
+                                "target database. Check credentials and logs."
+                            )
+                            logger.error(
+                                "Migration copy succeeded but switching active DB failed"
+                            )
                     else:
                         migration_status["success"] = False
                         migration_status["completed"] = True
@@ -5738,14 +5790,12 @@ class SettingsUI:
                 except Exception as e:
                     key_status = f"❌ Invalid JSON: {str(e)}"
 
-            # Check database URL
+            # Check database URL (firebaseio.com or regional firebasedatabase.app)
             url_status = ""
             url_valid = False
             if not database_url:
                 url_status = "❌ URL not specified"
-            elif not database_url.startswith("https://") or not database_url.endswith(
-                ".firebaseio.com/"
-            ):
+            elif not is_valid_firebase_rtdb_url(database_url):
                 url_status = "❌ Invalid URL format"
             else:
                 url_status = "✅ Valid URL format"

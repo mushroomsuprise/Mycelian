@@ -40,6 +40,7 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 
 from .path_utils import get_data_path
+from .database_manager import normalize_firebase_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,8 @@ class ConfigManager:
         updated_fields = []
         for key, value in kwargs.items():
             if hasattr(self._config, key):
+                if key == "firebase_database_url" and isinstance(value, str):
+                    value = normalize_firebase_database_url(value)
                 old_value = getattr(self._config, key)
                 setattr(self._config, key, value)
                 updated_fields.append(f"{key}: {old_value} -> {value}")

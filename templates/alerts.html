@@ -590,6 +590,13 @@
         var exitAnimationDuration = 1000; // Default 1 second for exit animations
         var isRandomizedAlert = false;
         var videoFreezeTimeout = null;
+        var activeSpeechUtterance = null;
+        var ttsActive = false;
+        window.alertConfig = window.alertConfig || {
+            ttsRate: {{ TtsRate | default(1.0) }},
+            ttsPitch: {{ TtsPitch | default(1.0) }},
+            ttsVolume: {{ TtsVolume | default(1.0) }}
+        };
 
         // Add socket connection debugging
         socket.on('connect', function () {
@@ -650,6 +657,9 @@
                     audioElement.pause();
                     audioElement.currentTime = 0;
                     audioUnlocked = true;
+                    if ('speechSynthesis' in window) {
+                        window.speechSynthesis.getVoices();
+                    }
                     console.log('Audio context unlocked');
                     // Remove event listeners since we only need to do this once
                     document.removeEventListener('click', unlockAudio);
@@ -670,6 +680,107 @@
         function isAudioPlaying() {
             const audioElement = document.getElementById('alertAudio');
             return audioElement && !audioElement.paused && !audioElement.ended && audioElement.currentTime > 0;
+        }
+
+        function isTtsPlaying() {
+            if (!('speechSynthesis' in window)) {
+                return false;
+            }
+            return ttsActive || window.speechSynthesis.speaking;
+        }
+
+        function stopAlertSpeech() {
+            if (!('speechSynthesis' in window)) {
+                ttsActive = false;
+                activeSpeechUtterance = null;
+                return;
+            }
+
+            try {
+                window.speechSynthesis.cancel();
+            } catch (error) {
+                console.warn('Unable to cancel speech synthesis:', error);
+            }
+
+            ttsActive = false;
+            activeSpeechUtterance = null;
+        }
+
+        function stopAlertMediaPlayback() {
+            const audioElement = document.getElementById('alertAudio');
+            if (audioElement) {
+                audioElement.pause();
+                audioElement.currentTime = 0;
+                audioElement.removeAttribute('src');
+                audioElement.load();
+            }
+            stopAlertSpeech();
+        }
+
+        function getTtsText(alertData) {
+            const source = alertData.tts_source || 'alert_message';
+            if (source === 'custom_message') {
+                return (alertData.tts_custom_message || '').trim();
+            }
+            return (alertData.message || '').trim();
+        }
+
+        function shouldPlayTts(alertData) {
+            return Boolean(alertData.tts_enabled) && getTtsText(alertData) !== '';
+        }
+
+        function playAlertTts(alertData) {
+            if (!shouldPlayTts(alertData)) {
+                ttsActive = false;
+                activeSpeechUtterance = null;
+                return false;
+            }
+
+            if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
+                console.warn('Browser speech synthesis is not available');
+                ttsActive = false;
+                activeSpeechUtterance = null;
+                return false;
+            }
+
+            const text = getTtsText(alertData);
+            const utterance = new SpeechSynthesisUtterance(text);
+            const config = window.alertConfig || {};
+
+            utterance.rate = Number(config.ttsRate ?? 1.0);
+            utterance.pitch = Number(config.ttsPitch ?? 1.0);
+            utterance.volume = Number(config.ttsVolume ?? 1.0);
+
+            utterance.onstart = () => {
+                ttsActive = true;
+            };
+            utterance.onend = () => {
+                ttsActive = false;
+                if (activeSpeechUtterance === utterance) {
+                    activeSpeechUtterance = null;
+                }
+            };
+            utterance.onerror = (event) => {
+                console.warn('TTS playback failed:', event.error || event);
+                ttsActive = false;
+                if (activeSpeechUtterance === utterance) {
+                    activeSpeechUtterance = null;
+                }
+            };
+
+            activeSpeechUtterance = utterance;
+            ttsActive = true;
+
+            try {
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(utterance);
+                return true;
+            } catch (error) {
+                console.warn('Unable to start TTS playback:', error);
+                ttsActive = false;
+                activeSpeechUtterance = null;
+                return false;
+            }
         }
 
         function areVisualElementsVisible() {
@@ -766,10 +877,11 @@
             if (isRandomizedAlert) {
                 const audioPlaying = isAudioPlaying();
                 const visualVisible = areVisualElementsVisible();
+                const ttsPlaying = isTtsPlaying();
 
-                console.log(`Randomized alert status - Audio playing: ${audioPlaying}, Visual visible: ${visualVisible}`);
+                console.log(`Randomized alert status - Audio playing: ${audioPlaying}, TTS playing: ${ttsPlaying}, Visual visible: ${visualVisible}`);
 
-                if (audioPlaying || visualVisible) {
+                if (audioPlaying || ttsPlaying || visualVisible) {
                     // Still waiting for elements to finish
                     setTimeout(checkAndSendAlertComplete, 100); // Check again in 100ms
                     return;
@@ -779,6 +891,7 @@
             else {
                 const timeRemaining = getTimeRemaining();
                 const visualVisible = areVisualElementsVisible();
+                const ttsPlaying = isTtsPlaying();
 
                 if (timeRemaining > 0 && !visualVisible) {
                     // Alert duration not finished and no visual elements showing, wait
@@ -786,6 +899,10 @@
                     return;
                 } else if (visualVisible) {
                     // Visual elements still animating, wait for them to finish
+                    setTimeout(checkAndSendAlertComplete, 100);
+                    return;
+                } else if (ttsPlaying) {
+                    // Keep the queue paused while speech is still active.
                     setTimeout(checkAndSendAlertComplete, 100);
                     return;
                 }
@@ -939,6 +1056,7 @@
             console.log('Connector action: skip alert', data);
             // Skip current alert if one is playing
             if (currentAlert) {
+                stopAlertMediaPlayback();
                 // For skipped alerts, immediately hide and complete (ignore timing and delay)
                 hideAlert();
                 isRandomizedAlert = false; // Force immediate completion
@@ -956,6 +1074,7 @@
         function showAlert(alertData) {
             // Clear any existing alert
             if (currentAlert) {
+                stopAlertMediaPlayback();
                 hideAlert();
             }
 
@@ -975,8 +1094,8 @@
 
             console.log(`Starting alert - Duration: ${alertDuration}ms, Randomized: ${isRandomizedAlert}, Exit animation duration: ${exitAnimationDuration}ms`);
 
-            // Handle audio playback with randomization logic (async)
-            playAlertAudio(alertData);
+            // Start audio and TTS together when possible.
+            startAlertPlayback(alertData);
 
             // Check if this is an audio-only alert
             if (alertData.audio_only) {
@@ -985,16 +1104,17 @@
                 // For audio-only alerts, use the new completion checking system
                 // Set up a periodic check to see when audio finishes
                 const checkAudioOnlyComplete = () => {
+                    const ttsPlaying = isTtsPlaying();
                     if (isRandomizedAlert) {
                         // For randomized audio-only alerts, wait for audio to finish
-                        if (isAudioPlaying()) {
+                        if (isAudioPlaying() || ttsPlaying) {
                             setTimeout(checkAudioOnlyComplete, 100);
                             return;
                         }
                     } else {
                         // For regular audio-only alerts, respect duration
                         const timeRemaining = getTimeRemaining();
-                        if (timeRemaining > 0) {
+                        if (timeRemaining > 0 || ttsPlaying) {
                             setTimeout(checkAudioOnlyComplete, Math.min(100, timeRemaining));
                             return;
                         }
@@ -1209,8 +1329,7 @@
         var folderFilesCache = {};
         var cacheTimeout = 30000; // 30 seconds
 
-        async function playAlertAudio(alertData) {
-            const audioElement = document.getElementById('alertAudio');
+        async function resolveAlertAudioSource(alertData) {
             let audioSource = null;
 
             // Helper function to normalize paths (convert backslashes to forward slashes and handle double slashes)
@@ -1264,18 +1383,37 @@
                 console.log('Random audio source:', audioSource);
             }
 
-            // Play the audio if we have a source
+            return audioSource;
+        }
+
+        async function startAlertPlayback(alertData) {
+            const audioElement = document.getElementById('alertAudio');
+            const ttsEnabled = shouldPlayTts(alertData);
+            const audioSource = await resolveAlertAudioSource(alertData);
+
+            if (currentAlert !== alertData) {
+                console.log('Alert changed before playback started, aborting stale playback');
+                return;
+            }
+
             if (audioSource) {
                 console.log('Playing audio:', audioSource);
+                audioElement.pause();
+                audioElement.currentTime = 0;
                 audioElement.src = audioSource;
 
-                // Set volume if specified
                 if (alertData.volume !== undefined && alertData.volume !== null) {
-                    audioElement.volume = Math.max(0, Math.min(1, alertData.volume / 100));
+                    let audioVolume = Math.max(0, Math.min(1, alertData.volume / 100));
+                    if (ttsEnabled) {
+                        audioVolume = Math.max(0, Math.min(1, audioVolume * 0.25));
+                    }
+                    audioElement.volume = audioVolume;
                 }
 
-                // Attempt to play audio with better error handling
                 const playPromise = audioElement.play();
+                if (ttsEnabled) {
+                    playAlertTts(alertData);
+                }
                 if (playPromise !== undefined) {
                     playPromise.catch(error => {
                         if (error.name === 'NotAllowedError') {
@@ -1285,6 +1423,9 @@
                         }
                     });
                 }
+            } else if (ttsEnabled) {
+                console.log('No audio source determined for alert, starting TTS only');
+                playAlertTts(alertData);
             } else {
                 console.log('No audio source determined for alert');
             }
@@ -1552,6 +1693,18 @@
             if (config.GlobalVolume !== undefined) {
                 window.alertConfig = window.alertConfig || {};
                 window.alertConfig.globalVolume = config.GlobalVolume / 100;
+            }
+            if (config.TtsRate !== undefined) {
+                window.alertConfig = window.alertConfig || {};
+                window.alertConfig.ttsRate = Number(config.TtsRate);
+            }
+            if (config.TtsPitch !== undefined) {
+                window.alertConfig = window.alertConfig || {};
+                window.alertConfig.ttsPitch = Number(config.TtsPitch);
+            }
+            if (config.TtsVolume !== undefined) {
+                window.alertConfig = window.alertConfig || {};
+                window.alertConfig.ttsVolume = Number(config.TtsVolume);
             }
 
             // Apply queue settings

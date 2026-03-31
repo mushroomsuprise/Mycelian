@@ -109,6 +109,40 @@
         },
         {
             "type": "separator",
+            "label": "Text To Speech Settings"
+        },
+        {
+            "type": "number",
+            "id": "TtsRate",
+            "label": "TTS Speech Rate",
+            "value": 1.0,
+            "min": 0.1,
+            "max": 2.0,
+            "step": 0.1,
+            "description": "Speech rate for browser text-to-speech playback"
+        },
+        {
+            "type": "number",
+            "id": "TtsPitch",
+            "label": "TTS Pitch",
+            "value": 1.0,
+            "min": 0.0,
+            "max": 2.0,
+            "step": 0.1,
+            "description": "Voice pitch for browser text-to-speech playback"
+        },
+        {
+            "type": "number",
+            "id": "TtsVolume",
+            "label": "TTS Volume",
+            "value": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.1,
+            "description": "Volume for browser text-to-speech playback"
+        },
+        {
+            "type": "separator",
             "label": "Background Settings"
         },
         {

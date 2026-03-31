@@ -16,3 +16,22 @@ Source Settings UI
     [x] - Roulette option categories show the name in the category title. Ex: "Option 1 (Rain World)"
 Title Template
     [x] - Fix automatic category switching (refresh does not always work, and the eventsub callback seems to not work at all)
+TTS
+    [] - Add text to speech functionality (must play through alerts.html template)
+    [] - Create settings to toggle TTS on and off
+    [] - Add in a setting to beep out bad words
+Giveaway System
+    [] - Create a template to work in conjunction with the chatbot module
+    [] - Add a settings to the Chatbot settings to configure the giveaway system
+        Options to configure:
+        [] - No duplicate entries
+        [] - Remove winners from pool
+        [] - Number of winners to pick
+        [] - Keyword to enter the giveaway
+        [] - Disable certain users (Mods, VIPs, specific usernames)
+    [] - Send an announcement message to the chat when a winner is picked
+    [] - Add statistics tracking for giveaway entries and winners
+Database selection issues
+    [x] - Fix issue with database (and all related settings) not being saved when changing database type
+    [x] - Fix issue with Firebase url not being recognized
+    [x] - Implement database migration between different database types

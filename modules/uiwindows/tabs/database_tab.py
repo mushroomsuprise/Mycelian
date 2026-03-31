@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from dataclasses import replace
 from typing import Dict, Any, Optional, List
 
 from nicegui import ui
@@ -718,7 +720,7 @@ class DatabaseTab:
             if status_info.get("database_type") == "Firebase" and not status_info.get(
                 "is_connected", False
             ):
-                firebase_issues = status_info.get("firebase_config_issues", [])
+                firebase_issues = status_info.get("config_issues", [])
                 if firebase_issues:
                     issue_text = "Firebase Configuration Issues:\n" + "\n".join(
                         f"• {issue}"
@@ -743,44 +745,244 @@ class DatabaseTab:
         try:
             ui.notify("Testing database connection...", type="info")
 
-            # Test the connection
-            test_result = database_manager.test_connection()
-
-            if test_result.get("success", False):
+            if database_manager.test_connection():
                 ui.notify(
                     "Database connection successful!", type="positive", timeout=3000
                 )
             else:
-                error_msg = test_result.get("error", "Connection failed")
                 ui.notify(
-                    f"Database connection failed: {error_msg}",
+                    "Database connection failed. Check configuration and logs.",
                     type="negative",
                     timeout=5000,
                 )
 
-            # Refresh status
             self._refresh_status()
 
         except Exception as e:
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(f"Error testing database connection: {str(e)}", exc_info=True)
             ui.notify(f"Error testing connection: {str(e)}", type="negative")
 
+    def _event_select_value(self, e: Any) -> Any:
+        """Resolve NiceGUI select value from change events (value vs args)."""
+        v = getattr(e, "value", None)
+        if v is None and hasattr(e, "args") and e.args is not None:
+            args = e.args
+            if isinstance(args, (list, tuple)) and len(args) > 0:
+                v = args[0]
+            elif not isinstance(args, (list, tuple)):
+                v = args
+        return v
+
     def _show_migration_dialog(self) -> None:
-        """Show database migration dialog"""
+        """Show database migration dialog (same flow as Settings → migrate)."""
         try:
-            ui.notify("Database migration feature coming soon", type="info")
-            # In a real implementation, this would show a migration dialog
-            # For now, it's just a placeholder
+            available_dbs = database_manager.get_available_databases()
+            if not available_dbs:
+                ui.notify("No database backends available", type="negative")
+                return
+
+            with ui.dialog() as migration_dialog:
+                with ui.card().classes("w-full max-w-lg").style(
+                    "background: var(--color-bg-base); border: 1px solid var(--color-border-default);"
+                ):
+                    ui.label("Migrate database").classes("text-xl font-bold mb-2")
+                    ui.label(
+                        "Copies all paths from the source database to the target using "
+                        "the connection details below. Configure those fields before starting."
+                    ).classes("secondary-text mb-4")
+
+                    with ui.row().classes("w-full items-center mb-2"):
+                        ui.label("From:").classes("w-20")
+                        source_select = (
+                            ui.select(
+                                options=available_dbs,
+                                value=(
+                                    database_manager.get_config().database_type
+                                    if database_manager.get_config().database_type
+                                    in available_dbs
+                                    else available_dbs[0]
+                                ),
+                            ).classes("flex-1")
+                        )
+
+                    with ui.row().classes("w-full items-center mb-4"):
+                        ui.label("To:").classes("w-20")
+                        target_select = ui.select(
+                            options=available_dbs,
+                            value=(
+                                available_dbs[1]
+                                if len(available_dbs) > 1
+                                else available_dbs[0]
+                            ),
+                        ).classes("flex-1")
+
+                    ui.label(
+                        "Existing data at the same paths on the target may be overwritten."
+                    ).classes("text-orange-600 mb-4")
+
+                    with ui.row().classes("w-full justify-end gap-2"):
+                        ui.button("Cancel", on_click=migration_dialog.close).props(
+                            "outline"
+                        )
+                        ui.button(
+                            "Start migration",
+                            on_click=lambda: self._start_migration(
+                                source_select.value or "sql",
+                                target_select.value or "sql",
+                                migration_dialog,
+                            ),
+                        ).props("color=primary")
+
+            migration_dialog.open()
 
         except Exception as e:
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(f"Error showing migration dialog: {str(e)}", exc_info=True)
             ui.notify(f"Error opening migration dialog: {str(e)}", type="negative")
+
+    def _start_migration(self, source_type: str, target_type: str, dialog: Any) -> None:
+        """Run migration in a background thread; update config when complete."""
+        try:
+            if source_type == target_type:
+                ui.notify(
+                    "Source and target must be different database types",
+                    type="warning",
+                )
+                return
+
+            dialog.close()
+            ui.notify("Starting database migration…", type="info")
+
+            migration_status: Dict[str, Any] = {
+                "completed": False,
+                "success": False,
+                "error": None,
+                "notified": False,
+            }
+
+            buf = self.buffer
+
+            def migration_thread() -> None:
+                try:
+                    current_config = database_manager.get_config()
+
+                    if source_type == current_config.database_type:
+                        source_config = replace(current_config)
+                    elif source_type == "firebase":
+                        source_config = DatabaseConfig(
+                            database_type="firebase",
+                            firebase_service_account_path=buf.firebase_service_account_path,
+                            firebase_database_url=buf.firebase_database_url,
+                            streamer_name="mycelian",
+                        )
+                    elif source_type == "sql":
+                        source_config = DatabaseConfig(
+                            database_type="sql",
+                            sql_database_path=buf.sql_database_path,
+                            streamer_name="mycelian",
+                        )
+                    else:
+                        source_config = DatabaseConfig(
+                            database_type="mongodb",
+                            mongodb_connection_string=buf.mongodb_connection_string,
+                            mongodb_database_name=buf.mongodb_database_name,
+                            streamer_name="mycelian",
+                        )
+
+                    if target_type == "firebase":
+                        target_config = DatabaseConfig(
+                            database_type="firebase",
+                            firebase_service_account_path=buf.firebase_service_account_path,
+                            firebase_database_url=buf.firebase_database_url,
+                            streamer_name="mycelian",
+                        )
+                    elif target_type == "sql":
+                        target_config = DatabaseConfig(
+                            database_type="sql",
+                            sql_database_path=buf.sql_database_path,
+                            streamer_name="mycelian",
+                        )
+                    else:
+                        target_config = DatabaseConfig(
+                            database_type="mongodb",
+                            mongodb_connection_string=buf.mongodb_connection_string,
+                            mongodb_database_name=buf.mongodb_database_name,
+                            streamer_name="mycelian",
+                        )
+
+                    ok = database_manager.migrate_data(source_config, target_config)
+                    if ok:
+                        prior_type = buf.database_type
+                        snapshot_before_switch = replace(database_manager.get_config())
+                        switch_cfg = replace(
+                            DatabaseConfig(**buf.__dict__, streamer_name="mycelian"),
+                            database_type=target_type,
+                        )
+                        if database_manager.update_config(**switch_cfg.__dict__):
+                            buf.database_type = target_type
+                            if not config_manager.update_database_config(**buf.__dict__):
+                                logger.error(
+                                    "Migration OK but failed to write config.json"
+                                )
+                            migration_status["success"] = True
+                        else:
+                            buf.database_type = prior_type
+                            database_manager.initialize(snapshot_before_switch)
+                            migration_status["error"] = (
+                                "Data was copied but the app could not switch to the "
+                                "target database. Check credentials and logs."
+                            )
+                    else:
+                        migration_status["error"] = (
+                            f"Migration {source_type} → {target_type} failed "
+                            "(see logs)"
+                        )
+                    migration_status["completed"] = True
+                except Exception as ex:
+                    logger.error(f"Migration thread error: {ex}", exc_info=True)
+                    migration_status["completed"] = True
+                    migration_status["error"] = str(ex)
+
+            threading.Thread(target=migration_thread, daemon=True).start()
+
+            check_count = {"n": 0}
+            max_checks = 240
+
+            def poll() -> None:
+                check_count["n"] += 1
+                if check_count["n"] >= max_checks:
+                    if not migration_status["notified"]:
+                        migration_status["notified"] = True
+                        ui.notify("Migration timed out; check logs.", type="warning")
+                    return
+                if migration_status["completed"] and not migration_status["notified"]:
+                    migration_status["notified"] = True
+                    if migration_status["success"]:
+                        ui.notify(
+                            f"Migration to {target_type} finished successfully.",
+                            type="positive",
+                            timeout=5000,
+                        )
+                        self._load_from_config()
+                        for key, element in self.ui_elements.items():
+                            if hasattr(element, "value") and hasattr(self.buffer, key):
+                                element.value = getattr(self.buffer, key)
+                        self.dirty = False
+                    else:
+                        ui.notify(
+                            migration_status.get("error", "Migration failed"),
+                            type="negative",
+                            timeout=8000,
+                        )
+                    self._refresh_status()
+                    return
+                if not migration_status["completed"]:
+                    ui.timer(0.5, poll, once=True)
+
+            ui.timer(0.5, poll, once=True)
+
+        except Exception as e:
+            logger.error(f"Error starting migration: {e}", exc_info=True)
+            ui.notify(f"Error starting migration: {e}", type="negative")
 
     def _show_data_viewer_dialog(self) -> None:
         """Show database data viewer and editor dialog"""
@@ -894,7 +1096,8 @@ class DatabaseTab:
                                 "change",
                                 lambda e: self._set(
                                     "database_type",
-                                    getattr(e, "args", [getattr(e, "value", "")])[0],
+                                    self._event_select_value(e)
+                                    or self.ui_elements["database_type"].value,
                                 ),
                             )
                         )

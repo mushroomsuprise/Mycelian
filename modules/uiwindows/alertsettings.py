@@ -134,6 +134,99 @@ def update_volume_value(alert_type: str, volume_value: int):
         logger.error(f"Error updating volume value: {str(e)}", exc_info=True)
 
 
+TTS_SOURCE_OPTIONS = {
+    "alert_message": "Alert Message",
+    "custom_message": "Custom Message",
+}
+
+
+def update_tts_custom_message_visibility(alert_type: str):
+    """Custom TTS field is always visible; kept for compatibility."""
+    return
+
+
+def create_tts_settings_section(alert_type: str):
+    """Create the text-to-speech settings section for alerts."""
+    with ui.expansion("TTS", icon="record_voice_over").classes(
+        "w-full bg-theme-base rounded-lg overflow-hidden"
+    ).style("border: 1px solid var(--color-border-default);"):
+        with ui.grid(columns=1).classes("w-full gap-2 p-2"):
+            with ui.card().classes("w-full p-3 rounded-lg").style(
+                "background-color: var(--color-bg-surface);"
+            ):
+                ui.label("Speech Playback").classes("font-medium mb-2 text-sm")
+                alert_settings_state.get_elements(alert_type)["tts_enabled_switch"] = (
+                    ui.switch("Enable Text-to-Speech", value=False).classes(
+                        "w-full q-switch"
+                    )
+                )
+                alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].on(
+                    "change",
+                    lambda e, at=alert_type: track_field_change(
+                        "tts_enabled_switch",
+                        alert_settings_state.get_elements(at)["tts_enabled_switch"],
+                        e,
+                        at,
+                    ),
+                )
+                ui.tooltip(
+                    "Speak this alert using the browser text-to-speech system"
+                ).classes("bg-theme-surface")
+
+            with ui.card().classes("w-full p-3 rounded-lg").style(
+                "background-color: var(--color-bg-surface);"
+            ):
+                ui.label("Speech Source").classes("font-medium mb-2 text-sm")
+                alert_settings_state.get_elements(alert_type)["tts_source_select"] = (
+                    ui.select(
+                        TTS_SOURCE_OPTIONS,
+                        label="TTS Text Source",
+                        value="alert_message",
+                    ).classes("w-full bg-theme-base rounded-md")
+                )
+
+                def handle_tts_source_change(e, at=alert_type):
+                    update_tts_custom_message_visibility(at)
+                    track_field_change(
+                        "tts_source_select",
+                        alert_settings_state.get_elements(at)["tts_source_select"],
+                        e,
+                        at,
+                    )
+
+                alert_settings_state.get_elements(alert_type)["tts_source_select"].on(
+                    "change", handle_tts_source_change
+                )
+                ui.tooltip(
+                    "Choose whether TTS should speak the alert message or a custom static message"
+                ).classes("bg-theme-surface")
+
+                alert_settings_state.get_elements(alert_type)[
+                    "tts_custom_message_input"
+                ] = ui.input("Custom TTS Message").classes(
+                    "w-full mt-3 bg-theme-base rounded-md text-sm"
+                )
+                alert_settings_state.get_elements(alert_type)[
+                    "tts_custom_message_input"
+                ].props('placeholder="Thanks for the support!"')
+                alert_settings_state.get_elements(alert_type)[
+                    "tts_custom_message_input"
+                ].on(
+                    "change",
+                    lambda e, at=alert_type: track_field_change(
+                        "tts_custom_message_input",
+                        alert_settings_state.get_elements(at)[
+                            "tts_custom_message_input"
+                        ],
+                        e,
+                        at,
+                    ),
+                )
+                ui.tooltip(
+                    "Static message to speak when Custom Message is selected"
+                ).classes("bg-theme-surface")
+
+
 def create_alert_settings_tab():
     """Create the alert settings tab content"""
 
@@ -624,6 +717,7 @@ def create_alert_type_panel(alert_type: str):
 
                         # Audio Settings
                         create_audio_settings_section(alert_type)
+                        create_tts_settings_section(alert_type)
 
                     # Right column - Visual settings and Preview
                     with ui.column().classes("w-full gap-2"):
@@ -983,6 +1077,12 @@ def set_default_values_for_new_alert(alert_type: str):
     # Empty GIF settings - let user enter their own
     alert_settings_state.get_elements(alert_type)["gif_dir_input"].value = ""
     alert_settings_state.get_elements(alert_type)["gif_file_input"].value = ""
+    alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].value = False
+    alert_settings_state.get_elements(alert_type)["tts_source_select"].value = (
+        "alert_message"
+    )
+    alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value = ""
+    update_tts_custom_message_visibility(alert_type)
 
     # Set appropriate default values for amount-based alerts
     if alert_type in ["bits", "subs", "giftsubs", "donations", "raids"]:
@@ -1047,6 +1147,12 @@ def clear_alert_inputs(tab_type: str):
     # Clear GIF inputs
     alert_settings_state.get_elements(tab_type)["gif_dir_input"].value = ""
     alert_settings_state.get_elements(tab_type)["gif_file_input"].value = ""
+    alert_settings_state.get_elements(tab_type)["tts_enabled_switch"].value = False
+    alert_settings_state.get_elements(tab_type)["tts_source_select"].value = (
+        "alert_message"
+    )
+    alert_settings_state.get_elements(tab_type)["tts_custom_message_input"].value = ""
+    update_tts_custom_message_visibility(tab_type)
 
 
 def load_alert_settings(alert_type: str, alert_id: str):
@@ -1114,6 +1220,14 @@ def load_alert_settings(alert_type: str, alert_id: str):
         elements["fade_in_input"].value = int(alert_data.get("fade_in", 0))
         elements["fade_out_input"].value = int(alert_data.get("fade_out", 0))
         update_volume_value(alert_type, int(alert_data.get("volume", 100)))
+        elements["tts_enabled_switch"].value = bool(alert_data.get("tts_enabled", False))
+        elements["tts_source_select"].value = str(
+            alert_data.get("tts_source", "alert_message") or "alert_message"
+        )
+        elements["tts_custom_message_input"].value = str(
+            alert_data.get("tts_custom_message", "") or ""
+        )
+        update_tts_custom_message_visibility(alert_type)
         # Only set audio_only_switch if it exists (only available in points alerts)
         if "audio_only_switch" in elements and elements["audio_only_switch"]:
             elements["audio_only_switch"].value = bool(
@@ -1245,6 +1359,7 @@ def load_alert_settings(alert_type: str, alert_id: str):
                         "primary_file_input",
                         "random_dir_input",
                         "extra_dir_input",
+                        "tts_custom_message_input",
                     ]:
                         element = elements.get(input_name)
                         if element and hasattr(element, "value"):
@@ -2246,6 +2361,13 @@ def test_alert(alert_type: str):
             ),
             "gif_dir": str(elements.get("gif_dir_input", {}).value or ""),
             "gif_name": str(elements.get("gif_file_input", {}).value or ""),
+            "tts_enabled": bool(elements.get("tts_enabled_switch", {}).value or False),
+            "tts_source": str(
+                elements.get("tts_source_select", {}).value or "alert_message"
+            ),
+            "tts_custom_message": str(
+                elements.get("tts_custom_message_input", {}).value or ""
+            ),
             "alert_id": f"TestAlert{round(time.time())}",
             "timestamp": time.time(),
             "alert_name": "Test Alert",
@@ -2359,6 +2481,17 @@ def save_alert(alert_type: str):
         fade_in = alert_settings_state.get_elements(alert_type)["fade_in_input"].value
         fade_out = alert_settings_state.get_elements(alert_type)["fade_out_input"].value
         volume = alert_settings_state.get_elements(alert_type)["volume_input"].value
+        tts_enabled = alert_settings_state.get_elements(alert_type)[
+            "tts_enabled_switch"
+        ].value
+        tts_source = (
+            alert_settings_state.get_elements(alert_type)["tts_source_select"].value
+            or "alert_message"
+        )
+        tts_custom_message = (
+            alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value
+            or ""
+        )
         # Only get audio_only value if the switch exists (only available in points alerts)
         audio_only = (
             alert_settings_state.get_elements(alert_type)["audio_only_switch"].value
@@ -2414,6 +2547,9 @@ def save_alert(alert_type: str):
             "fade_in": fade_in,
             "fade_out": fade_out,
             "volume": volume,
+            "tts_enabled": tts_enabled,
+            "tts_source": tts_source,
+            "tts_custom_message": tts_custom_message,
             "audio_only": audio_only,
             "single_audio_dir": primary_dir,
             "single_audio_name": primary_file,
@@ -2897,6 +3033,7 @@ def create_points_alert_panel():
 
                         # Audio Settings (same as other alert types)
                         create_audio_settings_section(alert_type)
+                        create_tts_settings_section(alert_type)
 
                     # Right column - Visual and Twitch settings
                     with ui.column().classes("w-full gap-2"):
@@ -3851,6 +3988,12 @@ def set_default_values_for_new_point_reward(alert_type: str):
     # Set default visual settings
     alert_settings_state.get_elements(alert_type)["gif_dir_input"].value = ""
     alert_settings_state.get_elements(alert_type)["gif_file_input"].value = ""
+    alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].value = False
+    alert_settings_state.get_elements(alert_type)["tts_source_select"].value = (
+        "alert_message"
+    )
+    alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value = ""
+    update_tts_custom_message_visibility(alert_type)
 
     # Set default Twitch settings
     alert_settings_state.get_elements(alert_type)[
@@ -3906,6 +4049,12 @@ def set_default_values_for_new_point_reward_non_twitch(alert_type: str):
     # Set default visual settings
     alert_settings_state.get_elements(alert_type)["gif_dir_input"].value = ""
     alert_settings_state.get_elements(alert_type)["gif_file_input"].value = ""
+    alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].value = False
+    alert_settings_state.get_elements(alert_type)["tts_source_select"].value = (
+        "alert_message"
+    )
+    alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value = ""
+    update_tts_custom_message_visibility(alert_type)
 
     # NOTE: Twitch settings are intentionally NOT set here - they should be loaded from API data
 
@@ -4019,6 +4168,23 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
                 elements["fade_out_input"].value = int(alert_data.get("fade_out", 0))
             if "volume_input" in elements and elements["volume_input"]:
                 update_volume_value(alert_type, int(alert_data.get("volume", 100)))
+            if "tts_enabled_switch" in elements and elements["tts_enabled_switch"]:
+                elements["tts_enabled_switch"].value = bool(
+                    alert_data.get("tts_enabled", False)
+                )
+            if "tts_source_select" in elements and elements["tts_source_select"]:
+                elements["tts_source_select"].value = str(
+                    alert_data.get("tts_source", "alert_message")
+                    or "alert_message"
+                )
+            if (
+                "tts_custom_message_input" in elements
+                and elements["tts_custom_message_input"]
+            ):
+                elements["tts_custom_message_input"].value = (
+                    alert_data.get("tts_custom_message", "") or ""
+                )
+            update_tts_custom_message_visibility(alert_type)
             # Only set audio_only_switch if it exists (only available in points alerts)
             if "audio_only_switch" in elements and elements["audio_only_switch"]:
                 elements["audio_only_switch"].value = bool(
@@ -4182,6 +4348,17 @@ def save_point_alert():
         fade_in = alert_settings_state.get_elements(alert_type)["fade_in_input"].value
         fade_out = alert_settings_state.get_elements(alert_type)["fade_out_input"].value
         volume = alert_settings_state.get_elements(alert_type)["volume_input"].value
+        tts_enabled = alert_settings_state.get_elements(alert_type)[
+            "tts_enabled_switch"
+        ].value
+        tts_source = (
+            alert_settings_state.get_elements(alert_type)["tts_source_select"].value
+            or "alert_message"
+        )
+        tts_custom_message = (
+            alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value
+            or ""
+        )
         # Only get audio_only value if the switch exists (should always exist for points alerts)
         audio_only = (
             alert_settings_state.get_elements(alert_type)["audio_only_switch"].value
@@ -4238,6 +4415,9 @@ def save_point_alert():
             "fade_in": fade_in,
             "fade_out": fade_out,
             "volume": volume,
+            "tts_enabled": tts_enabled,
+            "tts_source": tts_source,
+            "tts_custom_message": tts_custom_message,
             "audio_only": audio_only,
             "single_audio_dir": primary_dir,
             "single_audio_name": primary_file,
