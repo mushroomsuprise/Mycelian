@@ -8,7 +8,7 @@ from nicegui import ui
 import logging
 from typing import Optional, Tuple
 from .help_manager import get_help_manager
-from .help_browser import show_help_browser
+from .help_browser import ensure_help_system_styles, show_help_browser
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +151,7 @@ def help_button(context: str = None, topic_id: str = None, tooltip: str = "Help"
     """
     def on_click():
         try:
+            ensure_help_system_styles()
             if topic_id:
                 show_help_browser(topic_id)
                 logger.debug(f"Opened help for topic: {topic_id}")
@@ -221,9 +222,10 @@ def inline_help(text: str, topic_id: str = None, context: str = None, show_icon:
         NiceGUI row element containing the help
     """
     try:
+        ensure_help_system_styles()
         with ui.row().classes("items-center gap-2 flex-wrap") as container:
             if show_icon:
-                ui.icon("info", size="sm").classes("text-blue-400 flex-shrink-0")
+                ui.icon("info", size="sm").classes("help-inline-icon")
 
             ui.label(text).classes("text-sm secondary-text flex-grow")
 
@@ -238,8 +240,8 @@ def inline_help(text: str, topic_id: str = None, context: str = None, show_icon:
             if link_topic_id:
                 ui.button(
                     "Learn more",
-                    on_click=lambda: show_help_browser(link_topic_id)
-                ).props("flat dense").classes("text-xs text-blue-400 hover:text-blue-300")
+                    on_click=lambda: show_help_browser(link_topic_id),
+                ).props("flat dense no-caps").classes("text-xs help-inline-link")
 
         return container
 
@@ -295,9 +297,9 @@ def help_accordion(title: str, content: str, topic_id: str = None, context: str 
         context: Optional context to find topic
     """
     try:
+        ensure_help_system_styles()
         with ui.expansion(title).classes("w-full") as accordion:
-            # Content
-            ui.markdown(content).classes("w-full prose prose-invert max-w-none")
+            ui.markdown(content).classes("w-full help-accordion-markdown max-w-none")
 
             # Optional link to full topic
             link_topic_id = topic_id
@@ -333,12 +335,13 @@ def help_card(title: str, summary: str, topic_id: str, show_category: bool = Tru
         show_category: Whether to show category badge
     """
     try:
+        ensure_help_system_styles()
         help_manager = get_help_manager()
         topic = help_manager.get_topic(topic_id)
 
-        with ui.card().classes("p-4 cursor-pointer hover-theme-surface transition-colors").on(
-            "click", lambda: show_help_browser(topic_id)
-        ) as card:
+        with ui.card().classes(
+            "p-4 cursor-pointer help-contextual-card transition-colors"
+        ).on("click", lambda: show_help_browser(topic_id)) as card:
 
             # Category badge
             if show_category and topic:
@@ -379,7 +382,8 @@ def create_help_section(title: str, topics: list, columns: int = 2):
         columns: Number of columns for grid layout
     """
     try:
-        ui.label(title).classes("text-xl font-bold mb-4")
+        ensure_help_system_styles()
+        ui.label(title).classes("text-xl font-bold mb-4 help-text-primary")
 
         with ui.grid(columns=columns).classes("gap-4"):
             for topic_id, card_title, summary in topics:

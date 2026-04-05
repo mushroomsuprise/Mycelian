@@ -8,327 +8,25 @@ Styled to match the Mycelian application design.
 from nicegui import ui
 import logging
 from typing import Optional, List
+
+from ..theme_manager import HELP_SYSTEM_CSS
 from .help_manager import get_help_manager, HelpTopic, HelpCategory
 
 logger = logging.getLogger(__name__)
 
-# CSS for help browser styling
-HELP_BROWSER_CSS = """
-/* Help Browser Dialog Styling */
-.help-browser-dialog .q-card {
-    background: #121212 !important;
-    border: 1px solid rgba(115, 0, 255, 0.3) !important;
-    border-radius: 12px !important;
-}
+_help_system_styles_injected = False
 
-/* Sidebar styling */
-.help-sidebar {
-    background: #161616 !important;
-    border-right: 1px solid rgba(115, 0, 255, 0.2) !important;
-}
 
-.help-sidebar-header {
-    background: linear-gradient(135deg, rgba(115, 0, 255, 0.15) 0%, rgba(115, 0, 255, 0.05) 100%) !important;
-    border-bottom: 1px solid rgba(115, 0, 255, 0.2) !important;
-}
-
-/* Search input styling */
-.help-search-input .q-field__control {
-    background: rgba(255, 255, 255, 0.05) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 8px !important;
-}
-
-.help-search-input .q-field__control:hover {
-    border-color: rgba(115, 0, 255, 0.4) !important;
-}
-
-.help-search-input .q-field__control:focus-within {
-    border-color: rgb(115, 0, 255) !important;
-    box-shadow: 0 0 0 2px rgba(115, 0, 255, 0.2) !important;
-}
-
-/* Category buttons */
-.help-category-btn {
-    background: rgba(255, 255, 255, 0.03) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 8px !important;
-    transition: all 0.2s ease !important;
-    margin-bottom: 4px !important;
-}
-
-.help-category-btn:hover {
-    background: rgba(115, 0, 255, 0.1) !important;
-    border-color: rgba(115, 0, 255, 0.3) !important;
-}
-
-.help-category-btn.expanded {
-    background: rgba(115, 0, 255, 0.15) !important;
-    border-color: rgba(115, 0, 255, 0.4) !important;
-}
-
-/* Topic buttons in sidebar */
-.help-topic-btn {
-    background: transparent !important;
-    border-left: 2px solid transparent !important;
-    border-radius: 0 6px 6px 0 !important;
-    transition: all 0.15s ease !important;
-    padding: 8px 12px 8px 16px !important;
-    margin: 2px 0 !important;
-}
-
-.help-topic-btn:hover {
-    background: rgba(115, 0, 255, 0.08) !important;
-    border-left-color: rgba(115, 0, 255, 0.5) !important;
-}
-
-.help-topic-btn.active {
-    background: rgba(115, 0, 255, 0.12) !important;
-    border-left-color: rgb(115, 0, 255) !important;
-}
-
-/* Content area */
-.help-content-area {
-    background: #1a1a1a !important;
-}
-
-/* Breadcrumb styling */
-.help-breadcrumb {
-    background: rgba(255, 255, 255, 0.03) !important;
-    border-radius: 6px !important;
-    padding: 8px 12px !important;
-}
-
-.help-breadcrumb-item {
-    color: rgba(200, 200, 220, 0.7) !important;
-    transition: color 0.15s ease !important;
-}
-
-.help-breadcrumb-item:hover {
-    color: rgb(115, 0, 255) !important;
-}
-
-.help-breadcrumb-separator {
-    color: rgba(200, 200, 220, 0.4) !important;
-    margin: 0 8px !important;
-}
-
-/* Topic cards */
-.help-topic-card {
-    background: rgba(35, 35, 45, 0.7) !important;
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    border-radius: 8px !important;
-    transition: all 0.2s ease !important;
-    cursor: pointer !important;
-}
-
-.help-topic-card:hover {
-    background: rgba(45, 45, 55, 0.8) !important;
-    border-color: rgba(115, 0, 255, 0.3) !important;
-    transform: translateY(-2px) !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-}
-
-/* Category badge */
-.help-category-badge {
-    background: rgba(115, 0, 255, 0.2) !important;
-    color: rgb(180, 140, 255) !important;
-    border: 1px solid rgba(115, 0, 255, 0.3) !important;
-    border-radius: 4px !important;
-    font-size: 0.7rem !important;
-    padding: 2px 8px !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-}
-
-/* Markdown content styling */
-.help-markdown-content {
-    color: rgba(240, 240, 255, 0.9) !important;
-    line-height: 1.7 !important;
-}
-
-.help-markdown-content h1,
-.help-markdown-content h2,
-.help-markdown-content h3,
-.help-markdown-content h4 {
-    color: rgb(240, 240, 255) !important;
-    margin-top: 1.5em !important;
-    margin-bottom: 0.75em !important;
-}
-
-.help-markdown-content h1 { font-size: 1.75rem !important; }
-.help-markdown-content h2 { font-size: 1.4rem !important; }
-.help-markdown-content h3 { font-size: 1.2rem !important; }
-
-.help-markdown-content p {
-    margin-bottom: 1em !important;
-}
-
-.help-markdown-content ul,
-.help-markdown-content ol {
-    margin-left: 1.5em !important;
-    margin-bottom: 1em !important;
-}
-
-.help-markdown-content li {
-    margin-bottom: 0.5em !important;
-}
-
-.help-markdown-content code {
-    background: rgba(115, 0, 255, 0.15) !important;
-    color: rgb(200, 170, 255) !important;
-    padding: 2px 6px !important;
-    border-radius: 4px !important;
-    font-family: 'Consolas', 'Monaco', monospace !important;
-}
-
-.help-markdown-content pre {
-    background: rgba(0, 0, 0, 0.3) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 8px !important;
-    padding: 16px !important;
-    overflow-x: auto !important;
-}
-
-.help-markdown-content pre code {
-    background: transparent !important;
-    padding: 0 !important;
-}
-
-.help-markdown-content a {
-    color: rgb(150, 120, 255) !important;
-    text-decoration: none !important;
-    border-bottom: 1px solid transparent !important;
-    transition: all 0.15s ease !important;
-}
-
-.help-markdown-content a:hover {
-    color: rgb(180, 150, 255) !important;
-    border-bottom-color: rgb(150, 120, 255) !important;
-}
-
-.help-markdown-content blockquote {
-    border-left: 3px solid rgb(115, 0, 255) !important;
-    background: rgba(115, 0, 255, 0.08) !important;
-    padding: 12px 16px !important;
-    margin: 1em 0 !important;
-    border-radius: 0 6px 6px 0 !important;
-}
-
-.help-markdown-content table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    margin: 1em 0 !important;
-}
-
-.help-markdown-content th,
-.help-markdown-content td {
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    padding: 8px 12px !important;
-}
-
-.help-markdown-content th {
-    background: rgba(115, 0, 255, 0.15) !important;
-    font-weight: 600 !important;
-}
-
-/* Search results */
-.help-search-result {
-    background: rgba(35, 35, 45, 0.6) !important;
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    border-radius: 6px !important;
-    transition: all 0.15s ease !important;
-    margin-bottom: 4px !important;
-}
-
-.help-search-result:hover {
-    background: rgba(115, 0, 255, 0.1) !important;
-    border-color: rgba(115, 0, 255, 0.3) !important;
-}
-
-/* Navigation buttons */
-.help-nav-btn {
-    background: rgba(255, 255, 255, 0.05) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 6px !important;
-    transition: all 0.15s ease !important;
-}
-
-.help-nav-btn:hover {
-    background: rgba(115, 0, 255, 0.15) !important;
-    border-color: rgba(115, 0, 255, 0.4) !important;
-}
-
-.help-nav-btn:disabled {
-    opacity: 0.4 !important;
-}
-
-/* Close button */
-.help-close-btn {
-    background: rgba(255, 255, 255, 0.05) !important;
-    border-radius: 6px !important;
-    transition: all 0.15s ease !important;
-}
-
-.help-close-btn:hover {
-    background: rgba(239, 68, 68, 0.2) !important;
-    color: rgb(239, 68, 68) !important;
-}
-
-/* Quick access cards */
-.help-quick-card {
-    background: linear-gradient(135deg, rgba(115, 0, 255, 0.1) 0%, rgba(115, 0, 255, 0.02) 100%) !important;
-    border: 1px solid rgba(115, 0, 255, 0.2) !important;
-    border-radius: 8px !important;
-    transition: all 0.2s ease !important;
-    cursor: pointer !important;
-}
-
-.help-quick-card:hover {
-    background: linear-gradient(135deg, rgba(115, 0, 255, 0.15) 0%, rgba(115, 0, 255, 0.05) 100%) !important;
-    border-color: rgba(115, 0, 255, 0.4) !important;
-    transform: translateY(-2px) !important;
-}
-
-/* Stat cards */
-.help-stat-card {
-    background: rgba(35, 35, 45, 0.5) !important;
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    border-radius: 8px !important;
-}
-
-/* Related topics */
-.help-related-btn {
-    background: rgba(255, 255, 255, 0.05) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 16px !important;
-    transition: all 0.15s ease !important;
-    font-size: 0.85rem !important;
-}
-
-.help-related-btn:hover {
-    background: rgba(115, 0, 255, 0.15) !important;
-    border-color: rgba(115, 0, 255, 0.4) !important;
-}
-
-/* Scrollbar styling */
-.help-scroll::-webkit-scrollbar {
-    width: 6px !important;
-}
-
-.help-scroll::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.02) !important;
-}
-
-.help-scroll::-webkit-scrollbar-thumb {
-    background: rgba(115, 0, 255, 0.3) !important;
-    border-radius: 3px !important;
-}
-
-.help-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(115, 0, 255, 0.5) !important;
-}
-"""
+def ensure_help_system_styles() -> None:
+    """Inject help UI stylesheet once (shared); uses :root theme CSS variables."""
+    global _help_system_styles_injected
+    if _help_system_styles_injected:
+        return
+    ui.add_head_html(
+        f'<style id="mycelian-help-system">{HELP_SYSTEM_CSS}</style>',
+        shared=True,
+    )
+    _help_system_styles_injected = True
 
 
 class HelpBrowser:
@@ -357,15 +55,14 @@ class HelpBrowser:
             category: Help category to navigate to (will show first topic in category)
         """
         try:
-            # Add CSS
-            ui.add_head_html(f"<style>{HELP_BROWSER_CSS}</style>")
+            ensure_help_system_styles()
 
             with ui.dialog() as self.dialog:
                 self.dialog.classes("help-browser-dialog")
                 self.dialog.props("maximized")
 
-                with ui.card().classes("w-full h-full p-0 m-0").style(
-                    "background: #121212; border-radius: 0; max-width: 100%; max-height: 100%;"
+                with ui.card().classes("w-full h-full p-0 m-0 help-card-root").style(
+                    "border-radius: 0; max-width: 100%; max-height: 100%;"
                 ):
                     with ui.row().classes("w-full h-full").style("display: flex; height: 100%;"):
                         # Sidebar
@@ -397,15 +94,15 @@ class HelpBrowser:
                 # Sidebar header
                 with ui.column().classes("help-sidebar-header w-full p-4"):
                     with ui.row().classes("w-full items-center justify-between mb-3"):
-                        ui.label("Help Center").classes("text-lg font-semibold").style("color: rgb(240, 240, 255);")
-                        ui.icon("help_outline", size="sm").style("color: rgb(115, 0, 255);")
+                        ui.label("Help Center").classes("text-lg font-semibold help-text-primary")
+                        ui.icon("help_outline", size="sm").classes("help-icon-accent")
                     
                     # Search input
                     with ui.input(
                         placeholder="Search help topics...",
                     ).props("outlined dense clearable").classes(
                         "help-search-input w-full"
-                    ).style("color: white;") as search_input:
+                    ) as search_input:
                         search_input.on("update:model-value", self._on_search)
 
                 # Search results container (hidden by default)
@@ -416,8 +113,8 @@ class HelpBrowser:
                 # Categories container
                 with ui.scroll_area().classes("help-scroll flex-grow").style("flex: 1;"):
                     with ui.column().classes("w-full p-3 gap-1"):
-                        ui.label("Categories").classes("text-xs font-medium uppercase tracking-wider mb-2").style(
-                            "color: rgba(200, 200, 220, 0.5);"
+                        ui.label("Categories").classes(
+                            "text-xs font-medium uppercase tracking-wider mb-2 help-text-muted"
                         )
                         
                         categories = self.help_manager.get_all_categories()
@@ -440,12 +137,14 @@ class HelpBrowser:
                 "help-category-btn w-full"
             ).style("padding: 10px 12px;") as header_btn:
                 with ui.row().classes("w-full items-center"):
-                    ui.icon(category_icon, size="xs").style("color: rgb(115, 0, 255); margin-right: 8px;")
-                    ui.label(category_name).classes("flex-grow text-left text-sm").style("color: rgba(240, 240, 255, 0.9);")
-                    expand_icon = ui.icon("expand_more", size="xs").style(
-                        "color: rgba(200, 200, 220, 0.5); transition: transform 0.2s ease;"
+                    ui.icon(category_icon, size="xs").classes("help-icon-accent").style("margin-right: 8px;")
+                    ui.label(category_name).classes(
+                        "flex-grow text-left text-sm help-text-primary"
                     )
-                    ui.badge(str(len(topics))).props("color=purple-9 outline").classes("ml-2").style("font-size: 0.65rem;")
+                    expand_icon = ui.icon("expand_more", size="xs").classes("help-expand-icon")
+                    ui.badge(str(len(topics))).props("outline").classes(
+                        "ml-2 help-category-count-badge"
+                    )
                 
                 header_btn.on("click", lambda c=category: self._toggle_category(c))
 
@@ -457,13 +156,11 @@ class HelpBrowser:
                     with ui.button().props("flat dense align=left no-caps").classes(
                         "help-topic-btn w-full"
                     ).on("click", lambda t=topic: self.navigate_to(t.id)) as topic_btn:
-                        ui.label(topic.title).classes("text-sm truncate").style(
-                            "color: rgba(200, 200, 220, 0.8); max-width: 200px;"
-                        )
+                        ui.label(topic.title).classes("text-sm truncate help-sidebar-topic-title")
                 
                 if len(topics) > 15:
-                    ui.label(f"+ {len(topics) - 15} more...").classes("text-xs pl-4 py-1").style(
-                        "color: rgba(200, 200, 220, 0.5);"
+                    ui.label(f"+ {len(topics) - 15} more...").classes(
+                        "text-xs pl-4 py-1 help-text-muted"
                     )
 
             # Store references
@@ -495,9 +192,7 @@ class HelpBrowser:
                 "flex: 1; min-width: 0; display: flex; flex-direction: column;"
             ):
                 # Header bar with navigation and close button
-                with ui.row().classes("w-full items-center p-3 gap-2").style(
-                    "background: rgba(0, 0, 0, 0.2); border-bottom: 1px solid rgba(255, 255, 255, 0.05);"
-                ):
+                with ui.row().classes("w-full items-center p-3 gap-2 help-toolbar"):
                     # Navigation buttons
                     self.back_btn = ui.button(icon="arrow_back").props("flat dense").classes(
                         "help-nav-btn"
@@ -548,13 +243,13 @@ class HelpBrowser:
             with self.content_container:
                 # Welcome header
                 with ui.column().classes("w-full mb-8"):
-                    ui.label("Welcome to Mycelian Help").classes("text-3xl font-bold mb-2").style(
-                        "color: rgb(240, 240, 255);"
+                    ui.label("Welcome to Mycelian Help").classes(
+                        "text-3xl font-bold mb-2 help-text-primary"
                     )
                     ui.label(
                         "Find answers to your questions about Mycelian's features, troubleshooting tips, "
                         "and guides to get the most out of your streaming toolkit."
-                    ).classes("text-base").style("color: rgba(240, 240, 255, 0.7); max-width: 700px;")
+                    ).classes("text-base help-text-secondary").style("max-width: 700px;")
 
                 # Stats row
                 with ui.row().classes("gap-4 mb-8"):
@@ -562,40 +257,44 @@ class HelpBrowser:
                     categories = len(self.help_manager.get_all_categories())
                     
                     with ui.element("div").classes("help-stat-card p-4"):
-                        ui.label(str(total_topics)).classes("text-2xl font-bold").style("color: rgb(115, 0, 255);")
-                        ui.label("Help Topics").classes("text-sm").style("color: rgba(200, 200, 220, 0.7);")
+                        ui.label(str(total_topics)).classes(
+                            "text-2xl font-bold help-stat-value-primary"
+                        )
+                        ui.label("Help Topics").classes("text-sm help-text-secondary")
                     
                     with ui.element("div").classes("help-stat-card p-4"):
-                        ui.label(str(categories)).classes("text-2xl font-bold").style("color: rgb(100, 200, 150);")
-                        ui.label("Categories").classes("text-sm").style("color: rgba(200, 200, 220, 0.7);")
+                        ui.label(str(categories)).classes(
+                            "text-2xl font-bold help-stat-value-success"
+                        )
+                        ui.label("Categories").classes("text-sm help-text-secondary")
 
                 # Getting Started section
                 getting_started_topic = self.help_manager.get_topic("getting_started_intro")
                 if getting_started_topic:
                     with ui.column().classes("w-full mb-8"):
-                        ui.label("Getting Started").classes("text-lg font-semibold mb-3").style(
-                            "color: rgb(240, 240, 255);"
+                        ui.label("Getting Started").classes(
+                            "text-lg font-semibold mb-3 help-text-primary"
                         )
                         
                         with ui.element("div").classes("help-quick-card p-4").on(
                             "click", lambda t=getting_started_topic: self.navigate_to(t.id)
                         ):
                             with ui.row().classes("items-center gap-3"):
-                                ui.icon("rocket_launch", size="md").style("color: rgb(115, 0, 255);")
+                                ui.icon("rocket_launch", size="md").classes("help-icon-accent")
                                 with ui.column().classes("gap-1"):
-                                    ui.label("Welcome to Mycelian").classes("font-semibold").style(
-                                        "color: rgb(240, 240, 255);"
+                                    ui.label("Welcome to Mycelian").classes(
+                                        "font-semibold help-text-primary"
                                     )
-                                    ui.label(getting_started_topic.summary).classes("text-sm").style(
-                                        "color: rgba(200, 200, 220, 0.7);"
+                                    ui.label(getting_started_topic.summary).classes(
+                                        "text-sm help-text-secondary"
                                     )
 
                 # Popular Topics section
                 popular_topics = self.help_manager.get_popular_topics(6)
                 if popular_topics:
                     with ui.column().classes("w-full mb-8"):
-                        ui.label("Popular Topics").classes("text-lg font-semibold mb-3").style(
-                            "color: rgb(240, 240, 255);"
+                        ui.label("Popular Topics").classes(
+                            "text-lg font-semibold mb-3 help-text-primary"
                         )
                         
                         with ui.grid(columns=2).classes("gap-4 w-full"):
@@ -604,19 +303,21 @@ class HelpBrowser:
                                     "click", lambda t=topic: self.navigate_to(t.id)
                                 ):
                                     with ui.row().classes("items-start gap-3"):
-                                        ui.icon("article", size="sm").style("color: rgb(115, 0, 255); margin-top: 2px;")
+                                        ui.icon("article", size="sm").classes(
+                                            "help-icon-accent"
+                                        ).style("margin-top: 2px;")
                                         with ui.column().classes("gap-1 flex-grow"):
-                                            ui.label(topic.title).classes("font-medium text-sm").style(
-                                                "color: rgb(240, 240, 255);"
+                                            ui.label(topic.title).classes(
+                                                "font-medium text-sm help-text-primary"
                                             )
                                             ui.label(topic.summary[:80] + "..." if len(topic.summary) > 80 else topic.summary).classes(
-                                                "text-xs"
-                                            ).style("color: rgba(200, 200, 220, 0.6);")
+                                                "text-xs help-text-muted"
+                                            )
 
                 # Browse by Category section
                 with ui.column().classes("w-full mb-8"):
-                    ui.label("Browse by Category").classes("text-lg font-semibold mb-3").style(
-                        "color: rgb(240, 240, 255);"
+                    ui.label("Browse by Category").classes(
+                        "text-lg font-semibold mb-3 help-text-primary"
                     )
                     
                     with ui.grid(columns=3).classes("gap-3 w-full"):
@@ -631,13 +332,13 @@ class HelpBrowser:
                                     "click", lambda c=category: self._show_category_topics(c)
                                 ):
                                     with ui.row().classes("items-center gap-3"):
-                                        ui.icon(icon, size="sm").style("color: rgb(115, 0, 255);")
+                                        ui.icon(icon, size="sm").classes("help-icon-accent")
                                         with ui.column().classes("gap-0"):
-                                            ui.label(category_name).classes("font-medium text-sm").style(
-                                                "color: rgb(240, 240, 255);"
+                                            ui.label(category_name).classes(
+                                                "font-medium text-sm help-text-primary"
                                             )
-                                            ui.label(f"{len(topics)} topics").classes("text-xs").style(
-                                                "color: rgba(200, 200, 220, 0.5);"
+                                            ui.label(f"{len(topics)} topics").classes(
+                                                "text-xs help-text-muted"
                                             )
 
                 # Quick Actions
@@ -703,16 +404,12 @@ class HelpBrowser:
                     with ui.row().classes("items-center gap-3 mb-2"):
                         ui.label(category_name).classes("help-category-badge")
                     
-                    ui.label(topic.title).classes("text-2xl font-bold mb-2").style(
-                        "color: rgb(240, 240, 255);"
-                    )
+                    ui.label(topic.title).classes("text-2xl font-bold mb-2 help-text-primary")
                     
                     if topic.summary:
-                        ui.label(topic.summary).classes("text-base italic").style(
-                            "color: rgba(240, 240, 255, 0.7);"
-                        )
+                        ui.label(topic.summary).classes("text-base italic help-text-secondary")
 
-                ui.separator().style("background: rgba(115, 0, 255, 0.2); margin: 16px 0;")
+                ui.separator().classes("help-separator-accent").style("margin: 16px 0;")
 
                 # Content
                 with ui.element("div").classes("help-markdown-content w-full"):
@@ -721,11 +418,11 @@ class HelpBrowser:
                 # Related topics
                 related = self.help_manager.get_related_topics(topic.id)
                 if related:
-                    ui.separator().style("background: rgba(255, 255, 255, 0.05); margin: 32px 0 24px 0;")
-                    
-                    ui.label("Related Topics").classes("font-semibold mb-3").style(
-                        "color: rgb(240, 240, 255);"
+                    ui.separator().classes("help-separator-subtle").style(
+                        "margin: 32px 0 24px 0;"
                     )
+                    
+                    ui.label("Related Topics").classes("font-semibold mb-3 help-text-primary")
                     
                     with ui.row().classes("gap-2 flex-wrap"):
                         for rel_topic in related:
@@ -757,8 +454,8 @@ class HelpBrowser:
             
             with self.search_results_container:
                 if results:
-                    ui.label(f"Results for \"{query}\"").classes("text-xs font-medium uppercase tracking-wider mb-2").style(
-                        "color: rgba(200, 200, 220, 0.5);"
+                    ui.label(f"Results for \"{query}\"").classes(
+                        "text-xs font-medium uppercase tracking-wider mb-2 help-text-muted"
                     )
                     
                     for topic in results:
@@ -766,15 +463,13 @@ class HelpBrowser:
                             "help-search-result w-full"
                         ).style("padding: 8px 12px;").on("click", lambda t=topic: self._on_search_result_click(t)):
                             with ui.column().classes("gap-0"):
-                                ui.label(topic.title).classes("text-sm").style(
-                                    "color: rgba(240, 240, 255, 0.9);"
-                                )
-                                ui.label(topic.category.value.replace("_", " ").title()).classes("text-xs").style(
-                                    "color: rgba(200, 200, 220, 0.5);"
+                                ui.label(topic.title).classes("text-sm help-text-primary")
+                                ui.label(topic.category.value.replace("_", " ").title()).classes(
+                                    "text-xs help-text-muted"
                                 )
                 else:
-                    ui.label(f"No results for \"{query}\"").classes("text-sm italic py-2").style(
-                        "color: rgba(200, 200, 220, 0.5);"
+                    ui.label(f"No results for \"{query}\"").classes(
+                        "text-sm italic py-2 help-text-muted"
                     )
 
         except Exception as e:
@@ -889,7 +584,7 @@ class HelpBrowser:
                             "click", action
                         )
                     else:
-                        ui.label(text).classes("text-sm").style("color: rgb(240, 240, 255);")
+                        ui.label(text).classes("text-sm help-breadcrumb-current")
                         
         except Exception as e:
             logger.error(f"Error updating breadcrumb: {e}")
@@ -908,9 +603,7 @@ class HelpBrowser:
             ])
 
             with self.content_container:
-                ui.label("Help Categories").classes("text-2xl font-bold mb-6").style(
-                    "color: rgb(240, 240, 255);"
-                )
+                ui.label("Help Categories").classes("text-2xl font-bold mb-6 help-text-primary")
 
                 categories = self.help_manager.get_all_categories()
                 for category in categories:
@@ -921,13 +614,11 @@ class HelpBrowser:
 
                         with ui.element("div").classes("help-topic-card p-5 mb-4"):
                             with ui.row().classes("w-full items-center mb-4"):
-                                ui.icon(icon, size="md").style("color: rgb(115, 0, 255);")
-                                ui.label(category_name).classes("text-lg font-semibold flex-grow ml-3").style(
-                                    "color: rgb(240, 240, 255);"
+                                ui.icon(icon, size="md").classes("help-icon-accent")
+                                ui.label(category_name).classes(
+                                    "text-lg font-semibold flex-grow ml-3 help-text-primary"
                                 )
-                                ui.label(f"{len(topics)} topics").classes("text-sm").style(
-                                    "color: rgba(200, 200, 220, 0.5);"
-                                )
+                                ui.label(f"{len(topics)} topics").classes("text-sm help-text-muted")
 
                             with ui.row().classes("gap-2 flex-wrap"):
                                 for topic in topics[:6]:
@@ -937,8 +628,8 @@ class HelpBrowser:
 
                                 if len(topics) > 6:
                                     ui.button(f"View all {len(topics)} topics").props("flat no-caps").classes(
-                                        "text-xs"
-                                    ).style("color: rgb(115, 0, 255);").on(
+                                        "text-xs help-flat-link"
+                                    ).on(
                                         "click", lambda c=category: self._show_category_topics(c)
                                     )
 
@@ -962,9 +653,9 @@ class HelpBrowser:
 
             with self.content_container:
                 with ui.row().classes("items-center gap-3 mb-6"):
-                    ui.icon(self._get_category_icon(category), size="lg").style("color: rgb(115, 0, 255);")
-                    ui.label(f"{category_name} Topics").classes("text-2xl font-bold").style(
-                        "color: rgb(240, 240, 255);"
+                    ui.icon(self._get_category_icon(category), size="lg").classes("help-icon-accent")
+                    ui.label(f"{category_name} Topics").classes(
+                        "text-2xl font-bold help-text-primary"
                     )
 
                 topics = self.help_manager.get_topics_by_category(category)
@@ -975,16 +666,12 @@ class HelpBrowser:
                             "click", lambda t=topic: self.navigate_to(t.id)
                         ):
                             with ui.row().classes("items-start gap-3"):
-                                ui.icon("article", size="sm").style(
-                                    "color: rgba(115, 0, 255, 0.7); margin-top: 2px;"
-                                )
+                                ui.icon("article", size="sm").classes(
+                                    "help-icon-accent-muted"
+                                ).style("margin-top: 2px;")
                                 with ui.column().classes("gap-1 flex-grow"):
-                                    ui.label(topic.title).classes("font-medium").style(
-                                        "color: rgb(240, 240, 255);"
-                                    )
-                                    ui.label(topic.summary).classes("text-sm").style(
-                                        "color: rgba(200, 200, 220, 0.7);"
-                                    )
+                                    ui.label(topic.title).classes("font-medium help-text-primary")
+                                    ui.label(topic.summary).classes("text-sm help-text-secondary")
 
         except Exception as e:
             logger.error(f"Error showing category topics: {e}")
