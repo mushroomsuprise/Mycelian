@@ -27,7 +27,7 @@ Mycelian provides streamers with a complete solution for managing alerts, creati
 * **Template System** - Customizable HTML/CSS/JavaScript templates with JSON configuration files
 * **WebSocket Communication** - Real-time data exchange between templates and the application
 * **Connector System** - Advanced automation framework for creating trigger-action workflows
-* **Chatbot System** - Interactive chat commands, automatic responses, quotes, and personalized greetings
+* **Chatbot System** - Interactive chat commands, automatic responses, quotes, personalized greetings, and giveaways
 * **Service Integrations** - OAuth-based connections to Twitch, Spotify, PlayStation Network, and more
 
 **Platform Integrations:**

@@ -46,6 +46,7 @@ from ..chatbot_core import (
 )
 from ..chatbot_manager import get_manager as get_chatbot_manager
 from ..database_manager import get_data, set_data
+from ..giveaway_manager import get_giveaway_manager
 from ..statistics_manager import get_statistics_manager
 from ..twitch import get_twitch_api
 from ..twitch_api_reference import TwitchAPIReference
@@ -736,6 +737,7 @@ commands_container = None
 events_container = None
 quotes_container = None
 greetings_container = None
+giveaways_container = None
 
 # Global search term (shared across tabs)
 search_term = ""
@@ -1347,6 +1349,7 @@ CUSTOM_CSS = """
 def create_chatbot_tab():
     """Create the Chatbot tab UI"""
     global commands_container, events_container, quotes_container, greetings_container
+    global giveaways_container
 
     # Add custom CSS to the page
     ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
@@ -1371,6 +1374,9 @@ def create_chatbot_tab():
                 "transition-all duration-200 hover-theme-surface rounded-md"
             )
             greetings_tab = ui.tab("Greetings").classes(
+                "transition-all duration-200 hover-theme-surface rounded-md"
+            )
+            giveaways_tab = ui.tab("Giveaways").classes(
                 "transition-all duration-200 hover-theme-surface rounded-md"
             )
 
@@ -1640,6 +1646,28 @@ def create_chatbot_tab():
                 with ui.scroll_area().classes("w-full flex-grow"):
                     greetings_container = ui.element("div").classes("w-full p-4")
 
+            # Giveaways Tab
+            with ui.tab_panel(giveaways_tab).classes(
+                "transition-all duration-300 w-full h-full flex flex-col"
+            ):
+                with ui.row().classes(
+                    "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.button(
+                            icon="refresh",
+                            text="Refresh",
+                            on_click=lambda: refresh_tab_content("giveaways"),
+                        ).classes("control-button btn-cancel px-3 py-2")
+                        help_button(
+                            topic_id="chatbot_giveaways",
+                            tooltip="Giveaways help",
+                            size="sm",
+                        )
+
+                with ui.scroll_area().classes("w-full flex-grow"):
+                    giveaways_container = ui.element("div").classes("w-full p-4")
+
         # Load and display chatbot items for all tabs
         load_chatbot_items()
 
@@ -1653,6 +1681,224 @@ def create_chatbot_tab():
         logger.error(f"Error loading custom variables on initialization: {e}")
 
 
+def render_giveaways_tab(container_el) -> None:
+    """Build the Giveaways sub-tab (settings, actions, stats)."""
+    gm = get_giveaway_manager()
+    cfg = gm.get_config()
+
+    def reload_giveaways():
+        refresh_tab_content("giveaways")
+
+    with container_el:
+        with ui.column().classes("w-full max-w-3xl gap-4 p-4"):
+            active = gm.is_giveaway_active()
+            ui.label("Giveaways").classes("text-xl font-medium")
+            with ui.row().classes("items-center gap-4 flex-wrap"):
+                ui.label(
+                    "Active giveaway: Yes (chat entries on)"
+                    if active
+                    else "Active giveaway: No"
+                ).classes("text-sm secondary-text")
+                ui.label(f"Pool size: {gm.get_pool_size()}").classes(
+                    "text-sm secondary-text"
+                )
+                ui.label(f"Winners per draw: {cfg.get('num_winners', 1)}").classes(
+                    "text-sm muted-text"
+                )
+
+            err = gm.get_last_error()
+            if err:
+                ui.label(f"Last issue: {err}").classes("text-sm text-amber-600")
+
+            ui.separator()
+
+            keyword_in = (
+                ui.input(
+                    label="Entry keyword",
+                    value=cfg.get("keyword") or "",
+                    placeholder="Exact chat line viewers must send (case-insensitive)",
+                )
+                .classes("w-full")
+                .props("outlined dense")
+            )
+
+            def save_keyword(_=None):
+                gm.set_config_field("keyword", (keyword_in.value or "").strip())
+                reload_giveaways()
+
+            keyword_in.on("blur", save_keyword)
+
+            num_in = (
+                ui.number(
+                    label="Number of winners per draw",
+                    value=int(cfg.get("num_winners", 1)),
+                    min=1,
+                    max=100,
+                    step=1,
+                )
+                .classes("w-48")
+                .props("outlined dense")
+            )
+
+            def save_num(_=None):
+                try:
+                    v = int(num_in.value)
+                except (TypeError, ValueError):
+                    v = 1
+                gm.set_config_field("num_winners", v)
+                reload_giveaways()
+
+            num_in.on("blur", save_num)
+
+            ui.switch(
+                text="No duplicate entries (one ticket per user in pool)",
+                value=bool(cfg.get("no_duplicate_entries", True)),
+                on_change=lambda e: (
+                    gm.set_config_field("no_duplicate_entries", bool(e.value)),
+                    reload_giveaways(),
+                ),
+            ).classes("w-full")
+
+            ui.switch(
+                text="Unique winners per draw (same user cannot take two slots in one draw)",
+                value=bool(cfg.get("unique_winners_per_draw", True)),
+                on_change=lambda e: (
+                    gm.set_config_field("unique_winners_per_draw", bool(e.value)),
+                    reload_giveaways(),
+                ),
+            ).classes("w-full")
+
+            ui.switch(
+                text="Exclude moderators",
+                value=bool(cfg.get("exclude_mods")),
+                on_change=lambda e: (
+                    gm.set_config_field("exclude_mods", bool(e.value)),
+                    reload_giveaways(),
+                ),
+            ).classes("w-full")
+
+            ui.switch(
+                text="Exclude VIPs",
+                value=bool(cfg.get("exclude_vips")),
+                on_change=lambda e: (
+                    gm.set_config_field("exclude_vips", bool(e.value)),
+                    reload_giveaways(),
+                ),
+            ).classes("w-full")
+
+            blocked_in = (
+                ui.textarea(
+                    label="Blocked usernames (one per line or comma-separated)",
+                    value="\n".join(cfg.get("blocked_usernames") or []),
+                )
+                .classes("w-full")
+                .props("outlined dense rows=3")
+            )
+
+            def save_blocked(_=None):
+                raw = blocked_in.value or ""
+                parts = re.split(r"[\n,]+", raw)
+                gm.set_config_field("blocked_usernames", [p.strip().lower() for p in parts if p.strip()])
+                reload_giveaways()
+
+            blocked_in.on("blur", save_blocked)
+
+            win_msg = (
+                ui.textarea(
+                    label="Winning announcement message",
+                    value=cfg.get("winning_message_template")
+                    or "Congratulations {winners}!",
+                )
+                .classes("w-full")
+                .props("outlined dense rows=2")
+            )
+            ui.label(
+                "Use {winners} or {winner} for all winner names (comma-separated)."
+            ).classes("text-xs muted-text")
+
+            def save_template(_=None):
+                gm.set_config_field(
+                    "winning_message_template", (win_msg.value or "").strip()
+                )
+                reload_giveaways()
+
+            win_msg.on("blur", save_template)
+
+            ui.separator()
+
+            def do_start():
+                ok, msg = get_giveaway_manager().start_giveaway()
+                ui.notify(
+                    msg or "Accepting entries.",
+                    type="positive" if ok else "negative",
+                )
+                reload_giveaways()
+
+            def do_stop():
+                get_giveaway_manager().stop_accepting()
+                ui.notify("Stopped accepting new entries.", type="info")
+                reload_giveaways()
+
+            def do_draw():
+                ok, msg, _w = get_giveaway_manager().draw_winners()
+                ui.notify(msg, type="positive" if ok else "negative")
+                reload_giveaways()
+
+            def do_clear():
+                get_giveaway_manager().clear_giveaway()
+                ui.notify("Giveaway cleared (pool and keyword).", type="info")
+                reload_giveaways()
+
+            with ui.row().classes("flex-wrap gap-2"):
+                ui.button(
+                    icon="play_arrow",
+                    text="Start giveaway",
+                    on_click=do_start,
+                ).classes("control-button btn-success px-3 py-2")
+                ui.button(
+                    icon="stop",
+                    text="Stop accepting",
+                    on_click=do_stop,
+                ).classes("control-button btn-cancel px-3 py-2")
+                ui.button(
+                    icon="casino",
+                    text="Draw winners",
+                    on_click=do_draw,
+                ).classes("control-button btn-primary px-3 py-2")
+                ui.button(
+                    icon="delete_sweep",
+                    text="Clear giveaway",
+                    on_click=do_clear,
+                ).classes("control-button btn-danger px-3 py-2")
+                ui.button(
+                    icon="refresh",
+                    text="Refresh",
+                    on_click=reload_giveaways,
+                ).classes("control-button btn-secondary px-3 py-2")
+
+            ui.separator()
+            ui.label("Statistics").classes("text-lg font-medium")
+            try:
+                st = get_statistics_manager().get_all_statistics().get("giveaways", {})
+                done = int(st.get("giveaways_completed", 0) or 0)
+                entries = int(st.get("total_entry_events", 0) or 0)
+                avg = float(st.get("average_entries_per_giveaway", 0) or 0)
+                ui.label(f"Giveaways completed: {done:,}").classes("text-sm")
+                ui.label(f"Total giveaway entries: {entries:,}").classes("text-sm")
+                ui.label(f"Average entries per giveaway: {avg:.2f}").classes("text-sm")
+                top = get_statistics_manager().get_top_users_by_statistic(
+                    "giveaway_wins", 8
+                )
+                if top:
+                    ui.label("Top giveaway wins").classes("text-sm font-medium mt-2")
+                    for row in top:
+                        ui.label(
+                            f"{row.get('username', '?')}: {row.get('value', 0):,}"
+                        ).classes("text-sm muted-text pl-2")
+            except Exception as ex:
+                ui.label(f"Stats unavailable: {ex}").classes("text-sm text-red-400")
+
+
 def refresh_tab_content(tab_type: str):
     """Refresh the content of a specific tab"""
     global search_term
@@ -1661,6 +1907,16 @@ def refresh_tab_content(tab_type: str):
     container = get_container_for_tab(tab_type)
     if container is None:
         logger.error(f"Tab container not initialized for {tab_type}")
+        return
+
+    if tab_type == "giveaways":
+        container.clear()
+        try:
+            render_giveaways_tab(container)
+        except Exception as e:
+            logger.error("Giveaways tab error: %s", e, exc_info=True)
+            with container:
+                ui.label(f"Error loading giveaways: {e}").classes("text-red-400")
         return
 
     # Clear existing content
@@ -1793,6 +2049,7 @@ def refresh_tab_content(tab_type: str):
 def get_container_for_tab(tab_type: str):
     """Get the container element for a specific tab"""
     global commands_container, events_container, quotes_container, greetings_container
+    global giveaways_container
 
     if tab_type == "commands":
         return commands_container
@@ -1802,6 +2059,8 @@ def get_container_for_tab(tab_type: str):
         return quotes_container
     elif tab_type == "greetings":
         return greetings_container
+    elif tab_type == "giveaways":
+        return giveaways_container
     else:
         return None
 
@@ -1978,6 +2237,17 @@ def load_chatbot_items():
             logger.error(f"Error loading greetings: {str(e)}", exc_info=True)
             with container:
                 ui.label("Error loading greetings").classes("text-red-400")
+
+    # Giveaways tab
+    container = get_container_for_tab("giveaways")
+    if container:
+        container.clear()
+        try:
+            render_giveaways_tab(container)
+        except Exception as e:
+            logger.error("Error loading giveaways: %s", e, exc_info=True)
+            with container:
+                ui.label(f"Error loading giveaways: {e}").classes("text-red-400")
 
 
 def create_command_card(command_id: str, command: ChatCommand):
@@ -7144,6 +7414,7 @@ def refresh_chatbot_items():
     refresh_tab_content("events")
     refresh_tab_content("quotes")
     refresh_tab_content("greetings")
+    refresh_tab_content("giveaways")
 
 
 # Greeting-specific functions

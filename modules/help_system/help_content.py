@@ -725,7 +725,13 @@ Response: 🎱 {random:Yes!,No way,Ask again,Maybe,Definitely}
 - **User Cooldown**: Time before same user can use again
         """,
         keywords=["commands", "chat", "bot", "custom", "response", "variables"],
-        related_topics=["chatbot_events", "chatbot_quotes", "chatbot_greetings", "chatbot_variables"]
+        related_topics=[
+            "chatbot_events",
+            "chatbot_quotes",
+            "chatbot_greetings",
+            "chatbot_giveaways",
+            "chatbot_variables",
+        ]
     ),
 
     "chatbot_events": HelpTopic(
@@ -1045,6 +1051,150 @@ Prevent spam with cooldowns:
         """,
         keywords=["greetings", "welcome", "hello", "chat", "viewers", "automatic"],
         related_topics=["chatbot_commands", "chatbot_events", "chatbot_variables"]
+    ),
+
+    "chatbot_giveaways": HelpTopic(
+        id="chatbot_giveaways",
+        title="Chatbot Giveaways",
+        category=HelpCategory.CHATBOT,
+        summary="Keyword-based giveaways, draws, and winner announcements",
+        content="""
+# Chatbot Giveaways
+
+Run giveaways from **Chatbot → Giveaways**. Viewers enter by typing a phrase you
+configure; you draw winners and the bot posts a **Twitch chat announcement**
+(as the chatbot account).
+
+## Active giveaway
+
+Chat entries are collected only when **both** are true:
+
+1. You set a **non-empty entry keyword** in the UI.
+2. You click **Start giveaway** (accepting entries is on).
+
+If the keyword is empty, **no** chat messages are counted as entries—even if
+Start was pressed. Clearing the keyword turns accepting off automatically.
+
+**Stop accepting** ends the active phase but keeps your keyword and pool until
+you change them.
+
+## Typical workflow
+
+1. Configure options (below), set **Entry keyword** to the exact line viewers
+   should type (match is the **full message**, case-insensitive).
+2. Click **Start giveaway**.
+3. Viewers type the keyword to enter; the **pool** lists every ticket.
+4. Click **Draw winners**. The app picks up to **Number of winners per draw**,
+   sends **one** announcement, and updates statistics.
+5. The pool is **not** cleared by a draw—you can draw again from the same
+   entries, or use **Clear giveaway** to reset.
+
+## Buttons
+
+| Button | What it does |
+|--------|----------------|
+| **Start giveaway** | Turns on accepting entries (requires keyword). Does not clear the pool. |
+| **Stop accepting** | Turns off accepting; keyword and pool stay. |
+| **Draw winners** | Picks winners, sends announcement, records stats. **Does not** clear pool or stop accepting. |
+| **Clear giveaway** | Empties the pool, clears the keyword, stops accepting. |
+| **Refresh** | Reloads this panel from saved settings. |
+
+## Settings (detailed)
+
+### Entry keyword
+
+- The viewer’s message must **equal** this text after trimming, **case-insensitive**.
+- The whole line is the keyword (not a substring).
+- Messages that start with `!` are handled as **commands first**; if a command
+  matches, the message is **not** treated as a giveaway entry.
+
+### No duplicate entries
+
+When enabled, each Twitch user ID can only have **one** ticket in the pool at
+a time. When off, the same user can stack multiple entries (better odds per
+ticket).
+
+### Unique winners per draw
+
+When **Number of winners per draw** is greater than 1:
+
+- **On:** each user can win at most **one slot** in that single draw (weighted
+  by tickets for the first slot only).
+- **Off:** `random.sample` over tickets can pick the same user multiple times
+  if they hold multiple tickets.
+
+### Number of winners per draw
+
+How many names are picked each time you click **Draw winners** (1–100).
+
+### Exclude moderators / Exclude VIPs
+
+Uses Twitch chat badges on the message (`moderator/…`, `vip/…`). Matching users
+cannot enter.
+
+### Blocked usernames
+
+List of logins (one per line or comma-separated), stored lowercase. Those users
+cannot enter.
+
+### Winning announcement message
+
+Sent as a **chat announcement** (highlight), not a normal chat line, using the
+**chatbot** OAuth token when a dedicated bot is connected.
+
+Placeholders (both expand to the **same** text):
+
+- **`{winners}`** — all winner display names for this draw, comma-separated.
+- **`{winner}`** — same as `{winners}` (for older templates).
+
+Example:
+
+`🎉 Winners: {winners} — thanks for entering!`
+
+## Announcements and permissions
+
+- The bot needs **`moderator:manage:announcements`** on the broadcaster’s chat
+  (see Twitch chatbot setup docs).
+- **Dedicated chatbot account:** announcements appear as that moderator.
+- **Fallback mode** (no separate bot): the app may send announcements via the
+  main account path—use a dedicated bot for strict “always the bot” behavior.
+
+## Statistics
+
+Tracked over time:
+
+- **Giveaways completed** — each successful **Draw winners** click (after the
+  announcement sends).
+- **Total giveaway entries** — each successful pool add.
+- **Average entries per giveaway** — total entries ÷ giveaways completed.
+- **Per-user wins** — how many times each display name has been drawn.
+
+Summaries appear on the Giveaways tab; the **Statistics** tab can show totals
+as well.
+
+## Troubleshooting
+
+| Problem | Things to check |
+|---------|----------------|
+| No one enters | Active giveaway (keyword + Start), keyword spelling, exclusions (mod/VIP/blocklist), duplicate-entries rule. |
+| Draw does nothing | Empty pool; check notification message. |
+| No announcement | Chatbot connected; Helix announcement scopes; see logs. |
+| Same people win again | Expected until **Clear giveaway**—draws do not remove tickets. |
+        """,
+        keywords=[
+            "giveaway",
+            "giveaways",
+            "contest",
+            "winner",
+            "raffle",
+            "chatbot",
+            "announcement",
+        ],
+        related_topics=[
+            "chatbot_commands",
+            "chatbot_variables",
+            "integrations_twitch",
+        ],
     ),
 
     "chatbot_variables": HelpTopic(

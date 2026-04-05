@@ -243,6 +243,15 @@ class QuoteStatistics:
 
 
 @dataclass
+class GiveawayStatistics:
+    """Statistics for chatbot giveaways"""
+
+    giveaways_completed: int = 0
+    total_entry_events: int = 0
+    user_wins: Dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
 class UserChatStatistics:
     """Per-user statistics for chat messages"""
 
@@ -291,6 +300,7 @@ class StatisticsData:
     connectors: ConnectorStatistics = field(default_factory=ConnectorStatistics)
     chatbot: ChatbotStatistics = field(default_factory=ChatbotStatistics)
     quotes: QuoteStatistics = field(default_factory=QuoteStatistics)
+    giveaways: GiveawayStatistics = field(default_factory=GiveawayStatistics)
     chat: ChatStatistics = field(default_factory=ChatStatistics)
     templates: Dict[str, TemplateStatistics] = field(
         default_factory=dict
@@ -1215,6 +1225,22 @@ class StatisticsManager:
                             user_stats[username] = UserQuoteStatistics(**user_data)
                     self.data.quotes.user_stats = user_stats
 
+                if "giveaways" in data_dict:
+                    gdict = data_dict["giveaways"]
+                    self.data.giveaways.giveaways_completed = int(
+                        gdict.get("giveaways_completed", 0) or 0
+                    )
+                    self.data.giveaways.total_entry_events = int(
+                        gdict.get("total_entry_events", 0) or 0
+                    )
+                    uw = gdict.get("user_wins", {})
+                    if isinstance(uw, dict):
+                        self.data.giveaways.user_wins = {
+                            str(k): int(v) for k, v in uw.items()
+                        }
+                    else:
+                        self.data.giveaways.user_wins = {}
+
                 if "chat" in data_dict:
                     chat_dict = data_dict["chat"]
                     # Handle user statistics separately
@@ -1400,6 +1426,11 @@ class StatisticsManager:
                             }
                             for username, stats in self.data.quotes.user_stats.items()
                         },
+                    },
+                    "giveaways": {
+                        "giveaways_completed": self.data.giveaways.giveaways_completed,
+                        "total_entry_events": self.data.giveaways.total_entry_events,
+                        "user_wins": dict(self.data.giveaways.user_wins),
                     },
                     "chat": {
                         "twitch_messages_received": self.data.chat.twitch_messages_received,
@@ -1958,6 +1989,32 @@ class StatisticsManager:
             f"Quote {quote_id} redeemed. Total: {self.data.quotes.total_quotes_redeemed}"
         )
 
+    # Giveaway statistics
+
+    def record_giveaway_entry(self, username: Optional[str] = None):
+        """Count a successful giveaway pool entry (chat keyword match)."""
+        self.data.giveaways.total_entry_events += 1
+        logger.debug(
+            "Giveaway entry recorded. Total entries: %s",
+            self.data.giveaways.total_entry_events,
+        )
+
+    def record_giveaway_winner(self, username: str):
+        """Increment lifetime wins for a display name."""
+        if not username:
+            return
+        d = self.data.giveaways.user_wins
+        d[username] = d.get(username, 0) + 1
+        logger.debug("Giveaway win recorded for %s", username)
+
+    def record_giveaway_round_complete(self):
+        """Count one completed draw (Draw winners click)."""
+        self.data.giveaways.giveaways_completed += 1
+        logger.debug(
+            "Giveaway round complete. Total: %s",
+            self.data.giveaways.giveaways_completed,
+        )
+
     def _track_user_chat(self, username: str):
         """Helper method to track per-user chat statistics"""
         if username not in self.data.chat.user_stats:
@@ -2250,6 +2307,17 @@ class StatisticsManager:
                 "total_quotes_redeemed": self.data.quotes.total_quotes_redeemed,
                 "individual_quote_usage": self.data.quotes.individual_quote_usage,
             },
+            "giveaways": {
+                "giveaways_completed": self.data.giveaways.giveaways_completed,
+                "total_entry_events": self.data.giveaways.total_entry_events,
+                "average_entries_per_giveaway": (
+                    self.data.giveaways.total_entry_events
+                    / self.data.giveaways.giveaways_completed
+                    if self.data.giveaways.giveaways_completed
+                    else 0.0
+                ),
+                "user_wins": dict(self.data.giveaways.user_wins),
+            },
             "chat": {
                 "twitch_messages_received": self.data.chat.twitch_messages_received,
                 "total_messages": self.data.chat.total_messages,
@@ -2311,6 +2379,9 @@ class StatisticsManager:
         elif category == "quotes":
             self.data.quotes = QuoteStatistics()
             logger.info("Quote statistics reset")
+        elif category == "giveaways":
+            self.data.giveaways = GiveawayStatistics()
+            logger.info("Giveaway statistics reset")
         elif category == "chat":
             self.data.chat = ChatStatistics()
             logger.info("Chat statistics reset")
@@ -2420,6 +2491,7 @@ class StatisticsManager:
             "connectors": {},
             "chatbot": {},
             "quotes": {},
+            "giveaways": {},
             "chat": {},
         }
 
@@ -2469,6 +2541,11 @@ class StatisticsManager:
                 "individual_quote_usage": quote_stats.individual_quote_usage.copy(),
                 "first_seen": quote_stats.first_seen,
                 "last_seen": quote_stats.last_seen,
+            }
+
+        if username in self.data.giveaways.user_wins:
+            user_stats["giveaways"] = {
+                "giveaway_wins": self.data.giveaways.user_wins[username],
             }
 
         # Get user chat statistics
@@ -2593,6 +2670,17 @@ class StatisticsManager:
                         "value": stats.total_interactions,
                         "first_seen": stats.first_seen,
                         "last_seen": stats.last_seen,
+                    }
+                )
+
+        elif stat_type == "giveaway_wins":
+            for username, wins in self.data.giveaways.user_wins.items():
+                users.append(
+                    {
+                        "username": username,
+                        "value": wins,
+                        "first_seen": 0.0,
+                        "last_seen": 0.0,
                     }
                 )
 

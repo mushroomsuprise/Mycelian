@@ -63,6 +63,9 @@ class StatisticsTab:
         self._events_created_label = None
         self._commands_triggered_label = None
         self._events_triggered_label = None
+        self._giveaways_completed_label = None
+        self._giveaways_entries_label = None
+        self._giveaways_avg_label = None
 
         # Quote statistic labels
         self._quotes_created_label = None
@@ -179,6 +182,9 @@ class StatisticsTab:
         self._events_created_label = None
         self._commands_triggered_label = None
         self._events_triggered_label = None
+        self._giveaways_completed_label = None
+        self._giveaways_entries_label = None
+        self._giveaways_avg_label = None
 
         # Quote statistic labels
         self._quotes_created_label = None
@@ -241,6 +247,9 @@ class StatisticsTab:
         self._events_created_label = None
         self._commands_triggered_label = None
         self._events_triggered_label = None
+        self._giveaways_completed_label = None
+        self._giveaways_entries_label = None
+        self._giveaways_avg_label = None
 
         # Quote statistic labels
         self._quotes_created_label = None
@@ -701,6 +710,28 @@ class StatisticsTab:
             except Exception as e:
                 print(f"Could not update events triggered: {e}")
 
+            try:
+                gw = stats_data.get("giveaways", {}) or {}
+                if (
+                    hasattr(self, "_giveaways_completed_label")
+                    and self._giveaways_completed_label
+                ):
+                    self._giveaways_completed_label.set_text(
+                        f"{int(gw.get('giveaways_completed', 0) or 0):,}"
+                    )
+                if (
+                    hasattr(self, "_giveaways_entries_label")
+                    and self._giveaways_entries_label
+                ):
+                    self._giveaways_entries_label.set_text(
+                        f"{int(gw.get('total_entry_events', 0) or 0):,}"
+                    )
+                if hasattr(self, "_giveaways_avg_label") and self._giveaways_avg_label:
+                    avg_gw = float(gw.get("average_entries_per_giveaway", 0) or 0)
+                    self._giveaways_avg_label.set_text(f"{avg_gw:.2f}")
+            except Exception as e:
+                print(f"Could not update giveaway statistics: {e}")
+
             # Update Quote Statistics
             try:
                 if (
@@ -1033,6 +1064,35 @@ class StatisticsTab:
                             f"{stats_data['chatbot']['events_triggered']:,}"
                         ).classes("text-2xl font-bold text-orange-400")
                         ui.label("Total executions").classes("text-xs secondary-text")
+
+                gw = stats_data.get("giveaways", {}) or {}
+                ui.label("🎁 Giveaways").classes("text-lg font-semibold mb-2 mt-4")
+                with ui.grid(columns=3).classes("w-full gap-4"):
+                    with ui.card().classes("settings-card text-center p-4"):
+                        ui.label("Draws completed").classes("font-semibold mb-2")
+                        self._giveaways_completed_label = ui.label(
+                            f"{int(gw.get('giveaways_completed', 0) or 0):,}"
+                        ).classes("text-2xl font-bold text-pink-400")
+                        ui.label("Draw winners clicks").classes(
+                            "text-xs secondary-text"
+                        )
+                    with ui.card().classes("settings-card text-center p-4"):
+                        ui.label("Total entries").classes("font-semibold mb-2")
+                        self._giveaways_entries_label = ui.label(
+                            f"{int(gw.get('total_entry_events', 0) or 0):,}"
+                        ).classes("text-2xl font-bold text-rose-400")
+                        ui.label("Chat keyword matches").classes(
+                            "text-xs secondary-text"
+                        )
+                    with ui.card().classes("settings-card text-center p-4"):
+                        ui.label("Avg entries / giveaway").classes("font-semibold mb-2")
+                        avg_gw = float(gw.get("average_entries_per_giveaway", 0) or 0)
+                        self._giveaways_avg_label = ui.label(f"{avg_gw:.2f}").classes(
+                            "text-2xl font-bold text-fuchsia-400"
+                        )
+                        ui.label("When at least one draw ran").classes(
+                            "text-xs secondary-text"
+                        )
 
             # Quote Statistics Section
             with ui.card().classes("content-section w-full"):

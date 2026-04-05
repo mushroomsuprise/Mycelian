@@ -722,6 +722,18 @@ class Twitch_API:
                     logger.error(f"Error sending chatbot response: {str(send_error)}")
             else:
                 print(f"[CHATBOT] No command matched for message: {message}")
+                try:
+                    from .giveaway_manager import get_giveaway_manager
+
+                    if get_giveaway_manager().try_register_entry(msg_dict):
+                        logger.debug(
+                            "Giveaway entry from %s",
+                            msg_dict.get("username", "?"),
+                        )
+                except Exception as ge:
+                    logger.error(
+                        "Giveaway entry handling failed: %s", ge, exc_info=True
+                    )
 
             # Process chat message events (after commands)
             try:

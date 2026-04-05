@@ -600,6 +600,7 @@ Mycelian includes a comprehensive chatbot automation system that goes beyond sim
 * **Automated Events** - Responses triggered by stream events (follows, subs, donations, etc.)
 * **Greeting System** - Automatic welcome messages for new viewers with cooldown management
 * **Quote Management** - Store and retrieve funny moments and quotes from chat
+* **Giveaways** - Keyword-based entry pool, draws, and winner announcements (see :doc:`chatbot`)
 * **Statistics Tracking** - Monitor command usage and chat activity
 
 **Chat Commands:**
@@ -660,7 +661,10 @@ Access the chatbot system through the **Chatbot** tab in the desktop application
 2. **Events Tab** - Configure automated responses to stream events
 3. **Greetings Tab** - Set up welcome messages and cooldowns
 4. **Quotes Tab** - Manage community quotes
-5. **Settings Tab** - Configure chatbot behavior and permissions
+5. **Giveaways Tab** - Configure keywords, filters, draws, and announcement text
+6. **Settings Tab** - Configure chatbot behavior and permissions
+
+For full giveaway behavior, options, and permissions, see the **Giveaways** section in :doc:`chatbot`.
 
 **Advanced Features:**
 

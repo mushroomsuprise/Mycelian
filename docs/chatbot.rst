@@ -1,7 +1,7 @@
 Chatbot System
 ==============
 
-The Mycelian Chatbot System is a comprehensive automation framework that enables you to create interactive chat commands, automatic event responses, quotes management, and personalized user greetings. Unlike the Connectors system which focuses on external integrations, the Chatbot system specializes in Twitch chat interactions and community engagement.
+The Mycelian Chatbot System is a comprehensive automation framework that enables you to create interactive chat commands, automatic event responses, quotes management, personalized user greetings, and keyword-based giveaways. Unlike the Connectors system which focuses on external integrations, the Chatbot system specializes in Twitch chat interactions and community engagement.
 
 Overview
 --------
@@ -12,6 +12,7 @@ The chatbot system consists of multiple interconnected components that work toge
   * ``chatbot.py`` - Twitch API integration and connection management
   * ``chatbot_core.py`` - Core classes and logic for commands, events, and greetings
   * ``chatbot_manager.py`` - Management and processing of all chatbot items
+  * ``giveaway_manager.py`` - Giveaway pool, configuration, draws, and statistics hooks
   * ``modules/uiwindows/chatbot.py`` - Desktop interface for configuration
   * ``api_credentials_manager.py`` - Separate credential management for chatbot
 
@@ -21,6 +22,7 @@ The chatbot system consists of multiple interconnected components that work toge
   * Automatic event responses to stream activity
   * Quote management system with search and random selection
   * Personalized greetings with user tracking and cooldowns
+  * Giveaways with keyword entry, configurable filters, draws, and Helix announcements
   * Dynamic variables for personalized responses
   * API integration for external data sources
   * Comprehensive statistics and monitoring
@@ -891,6 +893,34 @@ For developers extending the chatbot system:
   * New event types
   * Additional variable functions
   * Custom API integrations
+
+Giveaways
+---------
+
+The **Giveaways** sub-tab under **Chatbot** runs keyword-based contests tied to live chat.
+
+Architecture
+~~~~~~~~~~~~
+
+* Incoming Twitch chat is processed for ``!`` commands first. If no command matches, the message may be recorded as a giveaway entry when a giveaway is **active**.
+* **Active giveaway** means: a non-empty **entry keyword** is configured **and** **Start giveaway** has been clicked (accepting entries is on).
+* Entry text must **exactly** match the keyword (trimmed, case-insensitive).
+* **Draw winners** selects up to **Number of winners per draw** from the current ticket pool, formats the winning message, and sends a **chat announcement** via the chatbot API (``moderator:manage:announcements`` on the broadcaster channel). A dedicated bot account is recommended so announcements appear as the bot; fallback mode may use the main account path.
+* **Draw** does **not** clear the pool or stop accepting; run **Clear giveaway** to empty entries and clear the keyword.
+
+Configuration options
+~~~~~~~~~~~~~~~~~~~~~
+
+* **No duplicate entries** — at most one ticket per Twitch user ID in the pool.
+* **Unique winners per draw** — for multi-winner draws, the same user cannot take more than one slot in a single draw.
+* **Exclude moderators / VIPs** — uses Twitch badge metadata on the message.
+* **Blocked usernames** — list of logins that cannot enter.
+* **Winning announcement message** — supports ``{winners}`` and ``{winner}``; both expand to the same comma-separated list of all winners for that draw.
+
+Statistics
+~~~~~~~~~~
+
+The statistics subsystem records total giveaway entries, completed draws, average entries per completed draw, and per-display-name win counts (see the Giveaways and Statistics tabs).
 
 Future Enhancements
 -------------------
