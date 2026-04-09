@@ -2812,57 +2812,87 @@ class Twitch_API:
 
 
 # Point reward API functions
-async def get_point_rewards_async():
-    """Get all point rewards from Twitch API (async version)"""
+def _is_channel_points_forbidden(exc: BaseException) -> bool:
+    """True when Twitch denies custom rewards (e.g. broadcaster not Affiliate/Partner)."""
+    msg = str(exc).lower()
+    if "partner or affiliate" in msg:
+        return True
+    if "403" in msg and "forbidden" in msg:
+        return True
+    return False
+
+
+async def _fetch_channel_point_rewards_async():
+    """Fetch custom channel point rewards; returns (rewards_or_none, status).
+
+    status is one of: ok, not_connected, not_unlocked, error.
+    On ok, rewards is a list (possibly empty).
+    """
+    if not twitch_api or not twitch_api.is_connected:
+        logger.error("Twitch API not connected")
+        return (None, "not_connected")
+
+    url = f"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={twitch_api.user_id}"
+
     try:
-        if not twitch_api or not twitch_api.is_connected:
-            logger.error("Twitch API not connected")
-            return None
-
-        url = f"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={twitch_api.user_id}"
-
         response = await twitch_api.generic_api_call(url, "GET")
         if response and "data" in response:
-            return response["data"]
-        else:
-            logger.error("Invalid response format from Twitch API")
-            return None
-
+            return (response["data"], "ok")
+        logger.error("Invalid response format from Twitch API")
+        return (None, "error")
     except Exception as e:
         logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
-        return None
+        if _is_channel_points_forbidden(e):
+            return (None, "not_unlocked")
+        return (None, "error")
+
+
+async def get_point_rewards_async():
+    """Get all point rewards from Twitch API (async version)"""
+    rewards, status = await _fetch_channel_point_rewards_async()
+    if status == "ok":
+        return rewards
+    return None
+
+
+def fetch_channel_point_rewards():
+    """Sync: structured result for UI (rewards list only when status is ok)."""
+    import concurrent.futures
+
+    if not twitch_api or not twitch_api.is_connected:
+        return {"rewards": None, "status": "not_connected"}
+
+    def run_async():
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(_fetch_channel_point_rewards_async())
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Error in async thread: {str(e)}")
+            return (None, "error")
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_async)
+            rewards, status = future.result(timeout=10)
+    except Exception as e:
+        logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
+        return {"rewards": None, "status": "error"}
+
+    if status == "ok":
+        return {"rewards": rewards if rewards is not None else [], "status": "ok"}
+    return {"rewards": None, "status": status}
 
 
 def get_point_rewards():
     """Get all point rewards from Twitch API (sync wrapper)"""
-    try:
-        import concurrent.futures
-        import threading
-
-        if not twitch_api or not twitch_api.is_connected:
-            logger.error("Twitch API not connected")
-            return None
-
-        # Use a thread pool to run the async function
-        def run_async():
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(get_point_rewards_async())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error in async thread: {str(e)}")
-                return None
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            return future.result(timeout=10)  # 10 second timeout
-
-    except Exception as e:
-        logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
-        return None
+    result = fetch_channel_point_rewards()
+    if result["status"] == "ok":
+        return result["rewards"]
+    return None
 
 
 def get_point_reward_by_id(reward_id: str):
@@ -2881,6 +2911,7 @@ def get_point_reward_by_id(reward_id: str):
             "error",
             "no_rewards",
             "not_connected",
+            "no_channel_points",
         ]:
             logger.warning(f"Invalid reward ID provided: {reward_id}")
             return None

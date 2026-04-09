@@ -116,6 +116,33 @@ class AlertSettingsState:
 # Create global state instance
 alert_settings_state = AlertSettingsState()
 
+# Reserved Channel Points combobox values (not real Twitch custom reward IDs)
+POINTS_REWARD_SELECT_PLACEHOLDERS = frozenset(
+    {
+        "new",
+        "loading",
+        "error",
+        "no_rewards",
+        "not_connected",
+        "no_channel_points",
+    }
+)
+
+TWITCH_REWARD_UI_FIELD_NAMES = (
+    "twitch_title_input",
+    "twitch_cost_input",
+    "twitch_enabled_switch",
+    "twitch_user_input_switch",
+    "twitch_user_input_prompt",
+    "twitch_max_per_stream_switch",
+    "twitch_max_per_stream_input",
+    "twitch_max_per_user_switch",
+    "twitch_max_per_user_input",
+    "twitch_cooldown_switch",
+    "twitch_cooldown_input",
+    "twitch_skip_queue_switch",
+)
+
 
 def update_volume_value(alert_type: str, volume_value: int):
     """Helper function to update both volume slider and its display label
@@ -2950,6 +2977,22 @@ def create_points_alert_panel():
                         "bg-theme-surface"
                     )
 
+            channel_points_banner = ui.card().classes(
+                "w-full p-3 rounded-lg"
+            ).style(
+                "background-color: var(--color-bg-warning-muted, rgba(234, 179, 8, 0.15)); "
+                "border: 1px solid var(--color-border-default);"
+            )
+            with channel_points_banner:
+                ui.label(
+                    "Custom Channel Point rewards require Twitch Affiliate or Partner. "
+                    "This account does not have Channel Points unlocked yet."
+                ).classes("text-sm")
+            channel_points_banner.visible = False
+            alert_settings_state.get_elements(alert_type)[
+                "channel_points_locked_banner"
+            ] = channel_points_banner
+
             # Settings sections in a scrollable container
             with ui.element("div").classes("content-card"):
                 # Create a layout similar to other alert types but with Twitch integration
@@ -3082,31 +3125,8 @@ def create_points_alert_panel():
                     save_btn = ui.button(
                         "Save Alert", icon="save", on_click=lambda: save_point_alert()
                     ).classes("alert-save-btn transition-colors duration-200 text-sm")
+                    alert_settings_state.get_elements(alert_type)["save_btn"] = save_btn
                     ui.tooltip("Save your alert settings").classes(
-                        "bg-theme-surface"
-                    )
-
-                with ui.row().classes("items-center"):
-                    update_twitch_btn = ui.button(
-                        "Update Twitch Reward",
-                        icon="cloud_upload",
-                        on_click=lambda: update_twitch_point_reward(),
-                    ).classes(
-                        "btn-primary transition-colors duration-200 text-sm"
-                    )
-                    ui.tooltip("Update the Twitch point reward settings").classes(
-                        "bg-theme-surface"
-                    )
-
-                with ui.row().classes("items-center"):
-                    create_reward_btn = ui.button(
-                        "Create New Reward",
-                        icon="add_circle",
-                        on_click=lambda: show_create_reward_dialog(),
-                    ).classes(
-                        "btn-warning transition-colors duration-200 text-sm"
-                    )
-                    ui.tooltip("Create a new Twitch point reward").classes(
                         "bg-theme-surface"
                     )
 
@@ -3803,14 +3823,13 @@ def handle_point_reward_selection(e, alert_type: str):
             return
 
         if e.value == "new":
-            # Show notification for creating new alert
-            ui.notify("Creating new alert for existing reward...", type="info")
-            # Load default values for new alert
+            ui.notify(
+                "New reward: set Twitch Options and alert settings, then Save Alert.",
+                type="info",
+            )
             set_default_values_for_new_point_reward(alert_type)
-            # Store initial values as originals
             store_original_values(alert_type)
-        elif e.value in ["loading", "error", "no_rewards", "not_connected"]:
-            # Don't do anything for these special states
+        elif e.value in POINTS_REWARD_SELECT_PLACEHOLDERS:
             pass
         else:
             # Validate that it's a valid reward ID (should be a UUID-like string)
@@ -3831,132 +3850,153 @@ def handle_point_reward_selection(e, alert_type: str):
         ui.notify("Error loading point reward settings", type="negative")
 
 
+def _schedule_point_reward_select_refresh(select_element):
+    """Best-effort UI refresh for the point reward combobox after options change."""
+
+    if not select_element:
+        return
+
+    def force_refresh():
+        try:
+            if select_element and hasattr(select_element, "update"):
+                select_element.update()
+                logger.debug("Forced refresh of point rewards select dropdown")
+        except Exception as refresh_err:
+            logger.error(f"Error in force refresh: {str(refresh_err)}")
+
+    ui.timer(0.1, force_refresh, once=True)
+    ui.timer(0.3, force_refresh, once=True)
+    ui.timer(0.5, force_refresh, once=True)
+
+
 def load_twitch_point_rewards():
     """Load Twitch point rewards from the API and update the dropdown"""
+    alert_type = "points"
     try:
         from .. import twitch
 
-        # Update dropdown to show loading state
-        alert_type = "points"
-        select_element = alert_settings_state.get_elements(alert_type).get(
-            "alert_select"
-        )
+        elements = alert_settings_state.get_elements(alert_type)
+        select_element = elements.get("alert_select")
         if not select_element:
             logger.debug("Select element not found, cannot load rewards yet")
             return
 
-        logger.debug("Setting loading state on select element")
+        save_btn = elements.get("save_btn")
+        banner = elements.get("channel_points_locked_banner")
+
         select_element.options = {"loading": "Loading Twitch rewards..."}
         if hasattr(select_element, "update"):
             select_element.update()
 
-        # Check if Twitch API is available and connected
-        if not twitch.twitch_api:
-            logger.warning("Twitch API not initialized")
-            reward_options = {
+        result = twitch.fetch_channel_point_rewards()
+        status = result["status"]
+        rewards = result.get("rewards")
+
+        def set_save(enabled: bool):
+            if save_btn is not None:
+                save_btn.enabled = enabled
+
+        def set_banner(visible: bool):
+            if banner is not None:
+                banner.visible = visible
+
+        if status == "not_unlocked":
+            set_banner(True)
+            set_save(False)
+            select_element.options = {
+                "no_channel_points": (
+                    "Channel points not available — Affiliate or Partner required"
+                )
+            }
+            if hasattr(select_element, "update"):
+                select_element.update()
+            ui.notify(
+                "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+                type="warning",
+            )
+            _schedule_point_reward_select_refresh(select_element)
+            return
+
+        set_banner(False)
+
+        if status == "not_connected":
+            set_save(False)
+            select_element.options = {
                 "not_connected": "Twitch not connected - Please connect in Settings"
             }
-            select_element = alert_settings_state.get_elements(alert_type).get(
-                "alert_select"
-            )
-            if select_element:
-                select_element.options = reward_options
-                if hasattr(select_element, "update"):
-                    select_element.update()
+            if hasattr(select_element, "update"):
+                select_element.update()
             ui.notify(
                 "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
                 type="warning",
             )
+            _schedule_point_reward_select_refresh(select_element)
             return
 
-        if not twitch.twitch_api.is_connected:
-            logger.warning("Twitch API not connected")
-            reward_options = {
-                "not_connected": "Twitch not connected - Please connect in Settings"
+        if status == "error":
+            set_save(False)
+            select_element.options = {
+                "error": "Error loading rewards - Check connection or authentication"
             }
-            select_element = alert_settings_state.get_elements(alert_type).get(
-                "alert_select"
-            )
-            if select_element:
-                select_element.options = reward_options
-                if hasattr(select_element, "update"):
-                    select_element.update()
+            if hasattr(select_element, "update"):
+                select_element.update()
             ui.notify(
-                "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
-                type="warning",
+                "Error loading Twitch point rewards. Please check your Twitch connection and authentication in Settings.",
+                type="negative",
             )
+            _schedule_point_reward_select_refresh(select_element)
             return
 
-        # Get point rewards from Twitch API
-        rewards = twitch.get_point_rewards()
-
-        # Create dropdown options
-        reward_options = {"new": "+ Create New Alert for Existing Reward"}
-
+        set_save(True)
+        reward_options = {"new": "+ Create New Reward"}
         if rewards:
-            # Sort rewards alphabetically by title
             sorted_rewards = sorted(
                 rewards, key=lambda r: r.get("title", "Unnamed Reward").lower()
             )
-
             for reward in sorted_rewards:
                 reward_id = reward.get("id")
                 reward_title = reward.get("title", "Unnamed Reward")
                 reward_cost = reward.get("cost", 0)
                 display_name = f"{reward_title} ({reward_cost} points)"
                 reward_options[reward_id] = display_name
-
             ui.notify(
                 f"Loaded {len(rewards)} point rewards from Twitch", type="positive"
             )
         else:
-            # No rewards found (but connection is working)
             reward_options["no_rewards"] = (
-                "No rewards found - Use button below to create one"
+                "No rewards yet — choose + Create New Reward and click Save Alert"
             )
             ui.notify(
-                'No point rewards found on Twitch. You can create a new one using the "Create New Reward" button below.',
+                "No point rewards on Twitch yet. Use + Create New Reward, set Twitch Options, then Save Alert.",
                 type="info",
             )
 
-        # Update the select element with explicit UI refresh
-        select_element = alert_settings_state.get_elements(alert_type).get(
-            "alert_select"
-        )
-        if select_element:
-            select_element.options = reward_options
-            # Force UI update to ensure the dropdown shows the new options
-            if hasattr(select_element, "update"):
-                select_element.update()
-
-            # Schedule additional refresh attempts to ensure UI updates properly
-            def force_refresh():
-                try:
-                    if select_element and hasattr(select_element, "update"):
-                        select_element.update()
-                        logger.debug("Forced refresh of point rewards select dropdown")
-                except Exception as refresh_err:
-                    logger.error(f"Error in force refresh: {str(refresh_err)}")
-
-            # Multiple refresh attempts with small delays
-            ui.timer(0.1, force_refresh, once=True)
-            ui.timer(0.3, force_refresh, once=True)
-            ui.timer(0.5, force_refresh, once=True)
+        select_element.options = reward_options
+        if hasattr(select_element, "update"):
+            select_element.update()
+        _schedule_point_reward_select_refresh(select_element)
 
     except Exception as e:
         logger.error(f"Error loading Twitch point rewards: {str(e)}", exc_info=True)
-        # Show error in dropdown and notify user
         reward_options = {
             "error": "Error loading rewards - Check connection or authentication"
         }
         select_element = alert_settings_state.get_elements(alert_type).get(
             "alert_select"
         )
+        save_btn = alert_settings_state.get_elements(alert_type).get("save_btn")
+        banner = alert_settings_state.get_elements(alert_type).get(
+            "channel_points_locked_banner"
+        )
+        if banner is not None:
+            banner.visible = False
+        if save_btn is not None:
+            save_btn.enabled = False
         if select_element:
             select_element.options = reward_options
-            # Force UI update for error state too
             if hasattr(select_element, "update"):
                 select_element.update()
+            _schedule_point_reward_select_refresh(select_element)
         ui.notify(
             "Error loading Twitch point rewards. Please check your Twitch connection and authentication in Settings.",
             type="negative",
@@ -4321,92 +4361,166 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
         ui.notify("Error loading point reward settings", type="negative")
 
 
-def save_point_alert():
-    """Save the current point alert settings"""
-    try:
-        alert_type = "points"
+def _twitch_ui_values_equal(orig, cur) -> bool:
+    if isinstance(orig, (int, float)) or isinstance(cur, (int, float)):
+        try:
+            return float(orig) == float(cur)
+        except (TypeError, ValueError):
+            return orig == cur
+    if isinstance(orig, str) or isinstance(cur, str):
+        return (orig or "").strip() == (cur or "").strip()
+    return orig == cur
 
-        # Get the selected reward ID
-        selected_reward_id = alert_settings_state.get_elements(alert_type)[
-            "alert_select"
-        ].value
-        if selected_reward_id in [
-            "new",
-            "loading",
-            "error",
-            "no_rewards",
-            "not_connected",
-        ]:
+
+def twitch_reward_fields_changed(alert_type: str) -> bool:
+    """True if any Twitch Options field differs from values stored in store_original_values."""
+    originals = alert_settings_state.get_original_values(alert_type)
+    elements = alert_settings_state.get_elements(alert_type)
+    for field in TWITCH_REWARD_UI_FIELD_NAMES:
+        el = elements.get(field)
+        if not el or not hasattr(el, "value"):
+            continue
+        if not _twitch_ui_values_equal(originals.get(field), el.value):
+            return True
+    return False
+
+
+def build_twitch_reward_payload_from_ui(alert_type: str) -> dict:
+    """Build dict for twitch.create_point_reward / update_point_reward (_convert_ui_to_api_format)."""
+    els = alert_settings_state.get_elements(alert_type)
+    title = (els["twitch_title_input"].value or "").strip()
+    payload = {
+        "title": title,
+        "cost": int(els["twitch_cost_input"].value),
+        "is_enabled": els["twitch_enabled_switch"].value,
+        "is_user_input_required": els["twitch_user_input_switch"].value,
+        "prompt": els["twitch_user_input_prompt"].value,
+        "should_redemptions_skip_request_queue": els["twitch_skip_queue_switch"].value,
+    }
+    if els["twitch_max_per_stream_switch"].value:
+        payload["max_per_stream"] = {
+            "is_enabled": True,
+            "max_per_stream": int(els["twitch_max_per_stream_input"].value),
+        }
+    else:
+        payload["max_per_stream"] = {"is_enabled": False}
+
+    if els["twitch_max_per_user_switch"].value:
+        payload["max_per_user_per_stream"] = {
+            "is_enabled": True,
+            "max_per_user_per_stream": int(els["twitch_max_per_user_input"].value),
+        }
+    else:
+        payload["max_per_user_per_stream"] = {"is_enabled": False}
+
+    if els["twitch_cooldown_switch"].value:
+        payload["global_cooldown"] = {
+            "is_enabled": True,
+            "global_cooldown_seconds": int(els["twitch_cooldown_input"].value),
+        }
+    else:
+        payload["global_cooldown"] = {"is_enabled": False}
+
+    return payload
+
+
+def save_point_alert():
+    """Save the current point alert settings (creates or updates Twitch reward when needed)."""
+    try:
+        from .. import twitch
+
+        alert_type = "points"
+        elements = alert_settings_state.get_elements(alert_type)
+        selected = elements["alert_select"].value
+
+        if not twitch.twitch_api or not twitch.twitch_api.is_connected:
+            ui.notify(
+                "Twitch is not connected. Please connect to Twitch in Settings first.",
+                type="negative",
+            )
+            return
+
+        fetch = twitch.fetch_channel_point_rewards()
+        if fetch["status"] == "not_unlocked":
+            ui.notify(
+                "Channel Points are not unlocked for this Twitch account.",
+                type="warning",
+            )
+            return
+
+        if fetch["status"] not in ("ok",):
+            ui.notify(
+                "Cannot reach Twitch Channel Points right now. Try Refresh Rewards.",
+                type="warning",
+            )
+            return
+
+        if selected in POINTS_REWARD_SELECT_PLACEHOLDERS and selected != "new":
             ui.notify("Please select a valid point reward", type="warning")
             return
 
-        # Save the alert settings (similar to save_alert but for points)
-        duration = alert_settings_state.get_elements(alert_type)["duration_input"].value
-        stackable = alert_settings_state.get_elements(alert_type)[
-            "stackable_switch"
-        ].value
-        fade_in = alert_settings_state.get_elements(alert_type)["fade_in_input"].value
-        fade_out = alert_settings_state.get_elements(alert_type)["fade_out_input"].value
-        volume = alert_settings_state.get_elements(alert_type)["volume_input"].value
-        tts_enabled = alert_settings_state.get_elements(alert_type)[
-            "tts_enabled_switch"
-        ].value
-        tts_source = (
-            alert_settings_state.get_elements(alert_type)["tts_source_select"].value
-            or "alert_message"
-        )
-        tts_custom_message = (
-            alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value
-            or ""
-        )
-        # Only get audio_only value if the switch exists (should always exist for points alerts)
+        selected_reward_id = selected
+
+        if selected == "new":
+            title = (elements["twitch_title_input"].value or "").strip()
+            if not title:
+                ui.notify(
+                    "Please enter a reward title in Twitch Options.",
+                    type="warning",
+                )
+                return
+            cost_val = elements["twitch_cost_input"].value
+            if cost_val is None or int(cost_val) < 1:
+                ui.notify("Point cost must be at least 1.", type="warning")
+                return
+            ui.notify("Creating reward on Twitch...", type="info")
+            new_reward = twitch.create_point_reward(
+                build_twitch_reward_payload_from_ui(alert_type)
+            )
+            if not new_reward or not new_reward.get("id"):
+                ui.notify("Failed to create reward on Twitch.", type="negative")
+                return
+            selected_reward_id = new_reward["id"]
+        else:
+            if twitch_reward_fields_changed(alert_type):
+                if not twitch.update_point_reward(
+                    selected_reward_id,
+                    build_twitch_reward_payload_from_ui(alert_type),
+                ):
+                    ui.notify(
+                        "Error updating Twitch point reward. Local alert was not saved.",
+                        type="negative",
+                    )
+                    return
+
+        duration = elements["duration_input"].value
+        stackable = elements["stackable_switch"].value
+        fade_in = elements["fade_in_input"].value
+        fade_out = elements["fade_out_input"].value
+        volume = elements["volume_input"].value
+        tts_enabled = elements["tts_enabled_switch"].value
+        tts_source = elements["tts_source_select"].value or "alert_message"
+        tts_custom_message = elements["tts_custom_message_input"].value or ""
         audio_only = (
-            alert_settings_state.get_elements(alert_type)["audio_only_switch"].value
-            if "audio_only_switch" in alert_settings_state.get_elements(alert_type)
+            elements["audio_only_switch"].value
+            if "audio_only_switch" in elements
             else False
         )
 
-        # Get path values
-        primary_dir = (
-            alert_settings_state.get_elements(alert_type)["primary_dir_input"].value
-            or ""
-        )
-        primary_file = (
-            alert_settings_state.get_elements(alert_type)["primary_file_input"].value
-            or ""
-        )
-        randomized = alert_settings_state.get_elements(alert_type)[
-            "randomized_switch"
-        ].value
-        random_dir = (
-            alert_settings_state.get_elements(alert_type)["random_dir_input"].value
-            or ""
-        )
-        random_chance = alert_settings_state.get_elements(alert_type)[
-            "random_chance_input"
-        ].value
-        randomized_extra = alert_settings_state.get_elements(alert_type)[
-            "randomized_extra_switch"
-        ].value
-        extra_dir = (
-            alert_settings_state.get_elements(alert_type)["extra_dir_input"].value or ""
-        )
-        extra_chance = alert_settings_state.get_elements(alert_type)[
-            "extra_chance_input"
-        ].value
-        gif_dir = (
-            alert_settings_state.get_elements(alert_type)["gif_dir_input"].value or ""
-        )
-        gif_file = (
-            alert_settings_state.get_elements(alert_type)["gif_file_input"].value or ""
-        )
+        primary_dir = elements["primary_dir_input"].value or ""
+        primary_file = elements["primary_file_input"].value or ""
+        randomized = elements["randomized_switch"].value
+        random_dir = elements["random_dir_input"].value or ""
+        random_chance = elements["random_chance_input"].value
+        randomized_extra = elements["randomized_extra_switch"].value
+        extra_dir = elements["extra_dir_input"].value or ""
+        extra_chance = elements["extra_chance_input"].value
+        gif_dir = elements["gif_dir_input"].value or ""
+        gif_file = elements["gif_file_input"].value or ""
 
-        # Get enable alert setting
-        enable_alert = alert_settings_state.get_elements(alert_type)[
-            "enable_alert_switch"
-        ].value
+        enable_alert = elements["enable_alert_switch"].value
+        reward_title = (elements["twitch_title_input"].value or "").strip()
 
-        # Create alert data
         alert_data = {
             "alert_type": alert_type,
             "enable_alert": enable_alert,
@@ -4430,324 +4544,50 @@ def save_point_alert():
             "gif_dir": gif_dir,
             "gif_name": gif_file,
             "twitch_reward_id": selected_reward_id,
-            "point_cost": alert_settings_state.get_elements(alert_type)[
-                "twitch_cost_input"
-            ].value,
-            "title": alert_settings_state.get_elements(alert_type)[
-                "twitch_title_input"
-            ].value,
+            "point_cost": elements["twitch_cost_input"].value,
+            "title": reward_title,
             "alert_name": alertutils.alert_state_manager.get_display_name(
                 alert_type,
                 selected_reward_id,
-                {
-                    "title": alert_settings_state.get_elements(alert_type)[
-                        "twitch_title_input"
-                    ].value
-                },
+                {"title": reward_title},
             ),
             "timestamp": time.time(),
         }
 
-        # Save alert using AlertStateManager with the reward ID as the alert ID
         success = alertutils.alert_state_manager.save_alert(
             alert_type, selected_reward_id, alert_data
         )
 
         if success:
             ui.notify(f'Saved point alert: {alert_data["title"]}', type="positive")
-            # Store the new values as original values
-            store_original_values(alert_type)
-            # Clear changed styling
-            clear_changed_styling(alert_type)
+            load_twitch_point_rewards()
+            rid = selected_reward_id
+
+            def after_list_refresh():
+                try:
+                    sel = alert_settings_state.get_elements(alert_type).get(
+                        "alert_select"
+                    )
+                    if sel:
+                        sel.value = rid
+                        if hasattr(sel, "update"):
+                            sel.update()
+                    load_point_reward_settings(alert_type, rid)
+                except Exception as refresh_err:
+                    logger.error(
+                        f"Error re-selecting point reward after save: {refresh_err}",
+                        exc_info=True,
+                    )
+                    store_original_values(alert_type)
+                    clear_changed_styling(alert_type)
+
+            ui.timer(0.85, after_list_refresh, once=True)
         else:
             ui.notify("Error saving point alert settings", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving point alert: {str(e)}", exc_info=True)
         ui.notify("Error saving point alert settings", type="negative")
-
-
-def update_twitch_point_reward():
-    """Update the Twitch point reward with current settings"""
-    try:
-        from .. import twitch
-
-        # Check if Twitch is connected
-        if not twitch.twitch_api or not twitch.twitch_api.is_connected:
-            ui.notify(
-                "Twitch is not connected. Please connect to Twitch in Settings first.",
-                type="negative",
-            )
-            return
-
-        alert_type = "points"
-        selected_reward_id = alert_settings_state.get_elements(alert_type)[
-            "alert_select"
-        ].value
-
-        if selected_reward_id in [
-            "new",
-            "loading",
-            "error",
-            "no_rewards",
-            "not_connected",
-        ]:
-            ui.notify("Please select a valid point reward", type="warning")
-            return
-
-        # Build Twitch reward update data
-        update_data = {
-            "title": alert_settings_state.get_elements(alert_type)[
-                "twitch_title_input"
-            ].value,
-            "cost": int(
-                alert_settings_state.get_elements(alert_type)["twitch_cost_input"].value
-            ),
-            "is_enabled": alert_settings_state.get_elements(alert_type)[
-                "twitch_enabled_switch"
-            ].value,
-            "is_user_input_required": alert_settings_state.get_elements(alert_type)[
-                "twitch_user_input_switch"
-            ].value,
-            "prompt": alert_settings_state.get_elements(alert_type)[
-                "twitch_user_input_prompt"
-            ].value,
-            "should_redemptions_skip_request_queue": alert_settings_state.get_elements(
-                alert_type
-            )["twitch_skip_queue_switch"].value,
-        }
-
-        # Handle limits
-        if alert_settings_state.get_elements(alert_type)[
-            "twitch_max_per_stream_switch"
-        ].value:
-            update_data["max_per_stream"] = {
-                "is_enabled": True,
-                "max_per_stream": int(
-                    alert_settings_state.get_elements(alert_type)[
-                        "twitch_max_per_stream_input"
-                    ].value
-                ),
-            }
-        else:
-            update_data["max_per_stream"] = {"is_enabled": False}
-
-        if alert_settings_state.get_elements(alert_type)[
-            "twitch_max_per_user_switch"
-        ].value:
-            update_data["max_per_user_per_stream"] = {
-                "is_enabled": True,
-                "max_per_user_per_stream": int(
-                    alert_settings_state.get_elements(alert_type)[
-                        "twitch_max_per_user_input"
-                    ].value
-                ),
-            }
-        else:
-            update_data["max_per_user_per_stream"] = {"is_enabled": False}
-
-        # Handle cooldown
-        if alert_settings_state.get_elements(alert_type)[
-            "twitch_cooldown_switch"
-        ].value:
-            update_data["global_cooldown"] = {
-                "is_enabled": True,
-                "global_cooldown_seconds": int(
-                    alert_settings_state.get_elements(alert_type)[
-                        "twitch_cooldown_input"
-                    ].value
-                ),
-            }
-        else:
-            update_data["global_cooldown"] = {"is_enabled": False}
-
-        # Update the reward on Twitch
-        success = twitch.update_point_reward(selected_reward_id, update_data)
-
-        if success:
-            ui.notify("Successfully updated Twitch point reward", type="positive")
-        else:
-            ui.notify("Error updating Twitch point reward", type="negative")
-
-    except Exception as e:
-        logger.error(f"Error updating Twitch point reward: {str(e)}", exc_info=True)
-        ui.notify("Error updating Twitch point reward", type="negative")
-
-
-def show_create_reward_dialog():
-    """Show a dialog to create a new Twitch point reward"""
-    try:
-        # Create dialog state storage
-        dialog_state = {}
-
-        with ui.dialog() as dialog, ui.card().classes("w-96 p-4"):
-            ui.label("Create New Twitch Point Reward").classes("text-lg font-bold mb-4")
-
-            with ui.column().classes("w-full gap-3"):
-                # Basic settings
-                dialog_state["title"] = ui.input(
-                    "Reward Title", placeholder="Enter reward title"
-                ).classes("w-full")
-                dialog_state["cost"] = ui.number(
-                    "Point Cost", value=100, min=1
-                ).classes("w-full")
-
-                # Description
-                dialog_state["prompt"] = ui.textarea(
-                    "Description/Prompt",
-                    placeholder="Optional description for the reward",
-                ).classes("w-full")
-
-                # Toggles
-                dialog_state["is_enabled"] = ui.switch("Enable Reward", value=True)
-                dialog_state["user_input_required"] = ui.switch(
-                    "Require User Input", value=False
-                )
-                dialog_state["skip_queue"] = ui.switch(
-                    "Auto-Approve Redemptions", value=True
-                )
-
-                # Advanced settings in expansion
-                with ui.expansion("Advanced Settings", icon="settings").classes(
-                    "w-full"
-                ):
-                    with ui.column().classes("gap-2"):
-                        # Stream limits
-                        dialog_state["max_per_stream_enabled"] = ui.switch(
-                            "Limit Per Stream", value=False
-                        )
-                        dialog_state["max_per_stream"] = ui.number(
-                            "Max Per Stream", value=1, min=1
-                        ).classes("w-full")
-
-                        # User limits
-                        dialog_state["max_per_user_enabled"] = ui.switch(
-                            "Limit Per User", value=False
-                        )
-                        dialog_state["max_per_user"] = ui.number(
-                            "Max Per User Per Stream", value=1, min=1
-                        ).classes("w-full")
-
-                        # Cooldown
-                        dialog_state["cooldown_enabled"] = ui.switch(
-                            "Global Cooldown", value=False
-                        )
-                        dialog_state["cooldown_seconds"] = ui.number(
-                            "Cooldown (seconds)", value=60, min=1
-                        ).classes("w-full")
-
-                # Buttons
-                with ui.row().classes("w-full justify-end gap-2 mt-4"):
-                    ui.button("Cancel", on_click=dialog.close).classes(
-                        "btn-cancel"
-                    )
-                    ui.button(
-                        "Create Reward",
-                        on_click=lambda: create_new_twitch_reward(dialog, dialog_state),
-                    ).classes("btn-success")
-
-        dialog.open()
-
-    except Exception as e:
-        logger.error(f"Error showing create reward dialog: {str(e)}", exc_info=True)
-        ui.notify("Error opening create reward dialog", type="negative")
-
-
-def create_new_twitch_reward(dialog, dialog_state):
-    """Create a new Twitch point reward with the provided data"""
-    try:
-        from .. import twitch
-
-        # Check if Twitch is connected
-        if not twitch.twitch_api or not twitch.twitch_api.is_connected:
-            ui.notify(
-                "Twitch is not connected. Please connect to Twitch in Settings first.",
-                type="negative",
-            )
-            return
-
-        # Validate required fields
-        if not dialog_state["title"].value or not dialog_state["title"].value.strip():
-            ui.notify("Please enter a reward title", type="warning")
-            return
-
-        if not dialog_state["cost"].value or dialog_state["cost"].value < 1:
-            ui.notify("Point cost must be at least 1", type="warning")
-            return
-
-        # Build reward data
-        reward_data = {
-            "title": dialog_state["title"].value.strip(),
-            "cost": int(dialog_state["cost"].value),
-            "is_enabled": dialog_state["is_enabled"].value,
-            "is_user_input_required": dialog_state["user_input_required"].value,
-            "should_redemptions_skip_request_queue": dialog_state["skip_queue"].value,
-        }
-
-        # Add prompt if provided
-        if dialog_state["prompt"].value and dialog_state["prompt"].value.strip():
-            reward_data["prompt"] = dialog_state["prompt"].value.strip()
-
-        # Add limits if enabled
-        if dialog_state["max_per_stream_enabled"].value:
-            reward_data["max_per_stream"] = {
-                "is_enabled": True,
-                "max_per_stream": int(dialog_state["max_per_stream"].value),
-            }
-
-        if dialog_state["max_per_user_enabled"].value:
-            reward_data["max_per_user_per_stream"] = {
-                "is_enabled": True,
-                "max_per_user_per_stream": int(dialog_state["max_per_user"].value),
-            }
-
-        if dialog_state["cooldown_enabled"].value:
-            reward_data["global_cooldown"] = {
-                "is_enabled": True,
-                "global_cooldown_seconds": int(dialog_state["cooldown_seconds"].value),
-            }
-
-        # Create the reward on Twitch
-        ui.notify("Creating reward on Twitch...", type="info")
-        new_reward = twitch.create_point_reward(reward_data)
-
-        if new_reward:
-            reward_id = new_reward.get("id")
-            reward_title = new_reward.get("title", "New Reward")
-
-            ui.notify(f"Successfully created reward: {reward_title}", type="positive")
-
-            # Close the dialog
-            dialog.close()
-
-            # Refresh the rewards list
-            load_twitch_point_rewards()
-
-            # Select the new reward after a brief delay to allow the list to update
-            def select_new_reward():
-                try:
-                    alert_type = "points"
-                    select_element = alert_settings_state.get_elements(alert_type).get(
-                        "alert_select"
-                    )
-                    if select_element:
-                        select_element.value = reward_id
-                        # Force UI update to ensure the selection is visible
-                        if hasattr(select_element, "update"):
-                            select_element.update()
-                        # Load the reward settings
-                        load_point_reward_settings(alert_type, reward_id)
-                except Exception as e:
-                    logger.error(f"Error selecting new reward: {str(e)}")
-
-            ui.timer(1.0, select_new_reward, once=True)
-
-        else:
-            ui.notify("Failed to create reward on Twitch", type="negative")
-
-    except Exception as e:
-        logger.error(f"Error creating new Twitch reward: {str(e)}", exc_info=True)
-        ui.notify("Error creating new Twitch reward", type="negative")
 
 
 def show_delete_confirmation(alert_type: str):
@@ -4762,13 +4602,10 @@ def show_delete_confirmation(alert_type: str):
             "alert_select"
         ].value
 
-        if not selected_alert_id or selected_alert_id in [
-            "new",
-            "loading",
-            "error",
-            "no_rewards",
-            "not_connected",
-        ]:
+        if (
+            not selected_alert_id
+            or selected_alert_id in POINTS_REWARD_SELECT_PLACEHOLDERS
+        ):
             ui.notify("No valid alert selected for deletion", type="warning")
             return
 
@@ -4856,55 +4693,53 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
                 # Reload alerts from Firebase to get updated list
                 alertutils.alert_state_manager.reload_from_firebase()
 
-                # Get updated alerts for this type
-                alerts = get_alerts_for_type(alert_type)
-
-                # Create updated options
-                alert_options = {
-                    "new": "+ Create New Alert",
-                }
-
-                # Sort alerts and add remaining alerts to options
-                sorted_alerts = sort_alert_ids(alert_type, list(alerts.items()))
-                for a_id, a_data in sorted_alerts:
-                    # Use the centralized display name method from AlertStateManager
-                    display_name = alertutils.alert_state_manager.get_display_name(
-                        alert_type, a_id, a_data
+                if alert_type == "points":
+                    load_twitch_point_rewards()
+                    alert_settings_state.get_elements(alert_type)[
+                        "alert_select"
+                    ].value = "new"
+                    set_default_values_for_new_point_reward(alert_type)
+                    store_original_values(alert_type)
+                    update_delete_button_visibility(alert_type)
+                    logger.debug(
+                        "Updated points alert selector via Twitch rewards after deletion"
                     )
-                    alert_options[a_id] = display_name
+                else:
+                    alerts = get_alerts_for_type(alert_type)
 
-                # Ensure fallback entry is always present for subs
-                if alert_type == "subs":
-                    fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
-                    if fallback_id not in alert_options:
-                        alert_options[fallback_id] = "Resub Fallback"
+                    alert_options = {
+                        "new": "+ Create New Alert",
+                    }
 
-                # Update the select options
-                alert_settings_state.get_elements(alert_type)[
-                    "alert_select"
-                ].options = alert_options
+                    sorted_alerts = sort_alert_ids(alert_type, list(alerts.items()))
+                    for a_id, a_data in sorted_alerts:
+                        display_name = alertutils.alert_state_manager.get_display_name(
+                            alert_type, a_id, a_data
+                        )
+                        alert_options[a_id] = display_name
 
-                # Reset to 'new' selection
-                alert_settings_state.get_elements(alert_type)[
-                    "alert_select"
-                ].value = "new"
+                    if alert_type == "subs":
+                        fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
+                        if fallback_id not in alert_options:
+                            alert_options[fallback_id] = "Resub Fallback"
 
-                # Load default values for new alert
-                set_default_values_for_new_alert(
-                    alert_type
-                ) if alert_type != "points" else set_default_values_for_new_point_reward(
-                    alert_type
-                )
+                    alert_settings_state.get_elements(alert_type)[
+                        "alert_select"
+                    ].options = alert_options
 
-                # Store new original values
-                store_original_values(alert_type)
+                    alert_settings_state.get_elements(alert_type)[
+                        "alert_select"
+                    ].value = "new"
 
-                # Hide the delete button since we're now on 'new'
-                update_delete_button_visibility(alert_type)
+                    set_default_values_for_new_alert(alert_type)
 
-                logger.debug(
-                    f"Updated alert selector after deletion. New options: {alert_options}"
-                )
+                    store_original_values(alert_type)
+
+                    update_delete_button_visibility(alert_type)
+
+                    logger.debug(
+                        f"Updated alert selector after deletion. New options: {alert_options}"
+                    )
 
             except Exception as dropdown_err:
                 logger.error(
@@ -4939,13 +4774,15 @@ def refresh_alert_dropdowns():
             elements = alert_settings_state.get_elements(alert_type)
             alert_select = elements.get("alert_select")
             if alert_select:
-                # Get updated alerts for this type
+                if alert_type == "points":
+                    load_twitch_point_rewards()
+                    continue
+
                 alerts = get_alerts_for_type(alert_type)
                 alert_options = {
                     "new": "+ Create New Alert",
                 }
 
-                # Sort alerts and add to options
                 sorted_alerts = sort_alert_ids(alert_type, list(alerts.items()))
                 for alert_id, alert_data in sorted_alerts:
                     # Use the centralized display name method from AlertStateManager
@@ -4989,13 +4826,10 @@ def update_delete_button_visibility(alert_type: str):
         ].value
 
         # Show delete button only for existing alerts (not 'new' or special states)
-        if selected_alert_id and selected_alert_id not in [
-            "new",
-            "loading",
-            "error",
-            "no_rewards",
-            "not_connected",
-        ]:
+        if (
+            selected_alert_id
+            and selected_alert_id not in POINTS_REWARD_SELECT_PLACEHOLDERS
+        ):
             delete_btn.visible = True
         else:
             delete_btn.visible = False
