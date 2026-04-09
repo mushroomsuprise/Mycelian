@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian Giveaway</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <style>
+        @font-face {
+            font-family: giveaway-font;
+            src: url("/assets/default_assets/fonts/{{FontName}}");
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: transparent;
+            overflow: hidden;
+            font-family: giveaway-font, 'Segoe UI', Arial, sans-serif;
+            color: {{FontColor}};
+            font-size: {{FontSize}}px;
+            font-weight: {{FontWeight}};
+        }
+
+        .giveaway-container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: {{BGColor}};
+            border-radius: {{BorderRadius}}px;
+            border: {{BorderWidth}}px solid {{BorderColor}};
+            padding: {{ContainerPadding}}px;
+            overflow: hidden;
+        }
+
+        /* ── Container show/hide transitions ── */
+        .giveaway-container.container-hidden {
+            opacity: 0;
+            transform: scale(0.95) rotate(0.5deg);
+            filter: blur(6px);
+            pointer-events: none;
+        }
+
+        .giveaway-container.container-visible {
+            opacity: {{BGOpacity}};
+            transform: scale(1) rotate(0deg);
+            filter: blur(0px);
+            pointer-events: auto;
+        }
+
+        .dissolve-in {
+            animation: dissolveIn {{FadeInDuration}}s ease-in forwards;
+        }
+
+        .dissolve-out {
+            animation: dissolveOut {{FadeOutDuration}}s ease-out forwards;
+        }
+
+        @keyframes dissolveIn {
+            0% {
+                opacity: 0;
+                transform: scale(0.95) rotate(-0.3deg);
+                filter: blur(5px);
+            }
+            50% {
+                opacity: calc({{BGOpacity}} * 0.7);
+                transform: scale(0.98) rotate(-0.1deg);
+                filter: blur(2px);
+            }
+            100% {
+                opacity: {{BGOpacity}};
+                transform: scale(1) rotate(0deg);
+                filter: blur(0px);
+            }
+        }
+
+        @keyframes dissolveOut {
+            0% {
+                opacity: {{BGOpacity}};
+                transform: scale(1) rotate(0deg);
+                filter: blur(0px);
+            }
+            30% {
+                opacity: calc({{BGOpacity}} * 0.8);
+                transform: scale(0.98) rotate(0.2deg);
+                filter: blur(1px);
+            }
+            60% {
+                opacity: calc({{BGOpacity}} * 0.4);
+                transform: scale(0.96) rotate(0.4deg);
+                filter: blur(3px);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(0.95) rotate(0.5deg);
+                filter: blur(6px);
+            }
+        }
+
+        /* ── Keyword header ── */
+        .keyword-header {
+            text-align: center;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            font-size: {{KeywordFontSize}}px;
+            color: {{KeywordFontColor}};
+            background: {{KeywordBGColor}};
+            text-shadow: {{KeywordTextShadow}};
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+
+        .keyword-header .keyword {
+            color: {{KeywordHighlightColor}};
+            font-weight: bold;
+        }
+
+        .keyword-header.hidden {
+            display: none;
+        }
+
+        /* ── Entry counter ── */
+        .entry-counter {
+            text-align: center;
+            font-size: 13px;
+            color: {{EntryCountColor}};
+            padding: 4px 0 8px 0;
+            flex-shrink: 0;
+        }
+
+        .entry-counter.hidden {
+            display: none;
+        }
+
+        /* ── Closed message ── */
+        .closed-message {
+            text-align: center;
+            font-size: 15px;
+            color: {{ClosedMessageColor}};
+            padding: 6px 0;
+            font-style: italic;
+            flex-shrink: 0;
+        }
+
+        .closed-message.hidden {
+            display: none;
+        }
+
+        /* ── Entry list ── */
+        .entry-list {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: {{EntryMargin}}px;
+            scrollbar-width: none;
+        }
+
+        .entry-list::-webkit-scrollbar {
+            display: none;
+        }
+
+        .entry-item {
+            padding: {{EntryPadding}}px 12px;
+            font-size: {{EntryFontSize}}px;
+            color: {{EntryFontColor}};
+            background: {{EntryBGColor}};
+            border-radius: {{EntryRadius}}px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-shrink: 0;
+        }
+
+        /* ── Entry animations ── */
+        .anim-fadeIn {
+            animation: fadeIn {{EntryAnimationDuration}}s {{AnimationEasing}};
+        }
+
+        .anim-slideIn {
+            animation: slideIn {{EntryAnimationDuration}}s {{AnimationEasing}};
+        }
+
+        .anim-bounceIn {
+            animation: bounceIn {{EntryAnimationDuration}}s {{AnimationEasing}};
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to   { transform: translateX(0);     opacity: 1; }
+        }
+
+        @keyframes bounceIn {
+            0%   { transform: scale(0.3); opacity: 0; }
+            50%  { transform: scale(1.05); }
+            70%  { transform: scale(0.95); }
+            100% { transform: scale(1);   opacity: 1; }
+        }
+
+        /* ── Winner overlay ── */
+        .winner-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.6s ease;
+        }
+
+        .winner-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .winner-overlay .bg {
+            position: absolute;
+            inset: 0;
+            background: {{WinnerBGColor}};
+            opacity: {{WinnerBGOpacity}};
+        }
+
+        .winner-content {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            text-shadow: {{WinnerTextShadow}};
+        }
+
+        .winner-heading {
+            font-size: {{WinnerFontSize}}px;
+            color: {{WinnerFontColor}};
+            margin-bottom: 16px;
+            animation: winnerPulse 1.5s ease-in-out infinite;
+        }
+
+        .winner-name {
+            font-size: {{WinnerNameFontSize}}px;
+            color: {{WinnerNameColor}};
+            font-weight: bold;
+            margin: 8px 0;
+            animation: winnerSlideUp 0.6s ease-out both;
+        }
+
+        @keyframes winnerPulse {
+            0%, 100% { transform: scale(1); }
+            50%      { transform: scale(1.05); }
+        }
+
+        @keyframes winnerSlideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to   { transform: translateY(0);    opacity: 1; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="giveaway-container {{ 'container-hidden' if EnableAutoShow else 'container-visible' }}" id="giveawayContainer">
+        <div class="keyword-header {{ 'hidden' if not ShowKeyword }}" id="keywordHeader">
+            <span id="keywordText"></span>
+        </div>
+
+        <div class="entry-counter {{ 'hidden' if not ShowEntryCount }}" id="entryCounter">
+            <span id="entryCountText">0 entries</span>
+        </div>
+
+        <div class="closed-message hidden" id="closedMessage">
+            {{ClosedMessage}}
+        </div>
+
+        <div class="entry-list" id="entryList"></div>
+    </div>
+
+    <div class="winner-overlay" id="winnerOverlay">
+        <div class="bg"></div>
+        <div class="winner-content" id="winnerContent"></div>
+    </div>
+
+    <script>
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        var settings = {
+            enableAnimations: {{ EnableAnimations | tojson }},
+            entryAnimation: {{ EntryAnimation | tojson }},
+            animationDuration: {{ AnimationDuration | tojson }},
+            maxEntries: {{ MaxEntries | tojson }},
+            showKeyword: {{ ShowKeyword | tojson }},
+            keywordPrefix: {{ KeywordPrefix | tojson }},
+            keywordSuffix: {{ KeywordSuffix | tojson }},
+            showEntryCount: {{ ShowEntryCount | tojson }},
+            winnerMessage: {{ WinnerMessage | tojson }},
+            winnerDisplayDuration: {{ WinnerDisplayDuration | tojson }},
+            enableConfetti: {{ EnableConfetti | tojson }},
+            confettiParticleCount: {{ ConfettiParticleCount | tojson }},
+            confettiDuration: {{ ConfettiDuration | tojson }},
+            confettiSpread: {{ ConfettiSpread | tojson }},
+            confettiColors: {{ ConfettiColors | tojson }}.split('\n').map(function(c) { return c.trim(); }).filter(Boolean),
+            showClosedMessage: {{ ShowClosedMessage | tojson }},
+            closedMessage: {{ ClosedMessage | tojson }},
+            winnerFontSize: {{ WinnerFontSize | tojson }},
+            winnerFontColor: {{ WinnerFontColor | tojson }},
+            winnerNameFontSize: {{ WinnerNameFontSize | tojson }},
+            winnerNameColor: {{ WinnerNameColor | tojson }},
+            enableAutoShow: {{ EnableAutoShow | tojson }},
+            fadeInDuration: {{ FadeInDuration | tojson }},
+            fadeOutDuration: {{ FadeOutDuration | tojson }}
+        };
+
+        var entryCount = 0;
+        var winnerTimeout = null;
+        var confettiInterval = null;
+        var currentKeyword = '';
+        var isContainerVisible = !settings.enableAutoShow;
+
+        var elContainer      = document.getElementById('giveawayContainer');
+        var elKeywordHeader  = document.getElementById('keywordHeader');
+        var elKeywordText    = document.getElementById('keywordText');
+        var elEntryCounter   = document.getElementById('entryCounter');
+        var elEntryCountText = document.getElementById('entryCountText');
+        var elEntryList      = document.getElementById('entryList');
+        var elClosedMessage  = document.getElementById('closedMessage');
+        var elWinnerOverlay  = document.getElementById('winnerOverlay');
+        var elWinnerContent  = document.getElementById('winnerContent');
+
+        function showContainer() {
+            if (isContainerVisible || !settings.enableAutoShow) return;
+            elContainer.classList.remove('container-hidden', 'dissolve-out');
+            elContainer.classList.add('dissolve-in');
+            setTimeout(function() {
+                elContainer.classList.remove('dissolve-in');
+                elContainer.classList.add('container-visible');
+            }, settings.fadeInDuration * 1000);
+            isContainerVisible = true;
+            console.log('Giveaway container dissolving in');
+        }
+
+        function hideContainer() {
+            if (!isContainerVisible || !settings.enableAutoShow) return;
+            elContainer.classList.remove('container-visible', 'dissolve-in');
+            elContainer.classList.add('dissolve-out');
+            setTimeout(function() {
+                elContainer.classList.remove('dissolve-out');
+                elContainer.classList.add('container-hidden');
+            }, settings.fadeOutDuration * 1000);
+            isContainerVisible = false;
+            console.log('Giveaway container dissolving out');
+        }
+
+        function setKeyword(kw) {
+            currentKeyword = kw || '';
+            if (currentKeyword && settings.showKeyword) {
+                elKeywordText.innerHTML = escapeHtml(settings.keywordPrefix) +
+                    ' <span class="keyword">' + escapeHtml(currentKeyword) + '</span> ' +
+                    escapeHtml(settings.keywordSuffix);
+                elKeywordHeader.classList.remove('hidden');
+            } else {
+                elKeywordHeader.classList.add('hidden');
+            }
+        }
+
+        function updateEntryCount(count) {
+            entryCount = count;
+            if (settings.showEntryCount) {
+                elEntryCountText.textContent = count + (count === 1 ? ' entry' : ' entries');
+                elEntryCounter.classList.remove('hidden');
+            }
+        }
+
+        function addEntry(username) {
+            var el = document.createElement('div');
+            el.className = 'entry-item';
+            el.textContent = username;
+
+            if (settings.enableAnimations && settings.entryAnimation !== 'none') {
+                el.classList.add('anim-' + settings.entryAnimation);
+            }
+
+            elEntryList.insertBefore(el, elEntryList.firstChild);
+
+            while (elEntryList.children.length > settings.maxEntries) {
+                elEntryList.removeChild(elEntryList.lastChild);
+            }
+        }
+
+        function removeEntryByName(username) {
+            var items = elEntryList.querySelectorAll('.entry-item');
+            var lower = username.toLowerCase();
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].textContent.toLowerCase() === lower) {
+                    items[i].remove();
+                    break;
+                }
+            }
+        }
+
+        function rebuildEntryList(entries) {
+            elEntryList.innerHTML = '';
+            if (!entries) return;
+            for (var i = 0; i < entries.length; i++) {
+                var el = document.createElement('div');
+                el.className = 'entry-item';
+                el.textContent = entries[i];
+                elEntryList.appendChild(el);
+            }
+        }
+
+        function showWinner(winners) {
+            if (winnerTimeout) clearTimeout(winnerTimeout);
+
+            var html = '<div class="winner-heading">' + escapeHtml(settings.winnerMessage) + '</div>';
+            for (var i = 0; i < winners.length; i++) {
+                html += '<div class="winner-name" style="animation-delay:' +
+                    (i * 0.2) + 's; font-size:' + settings.winnerNameFontSize + 'px; color:' +
+                    settings.winnerNameColor + ';">' + escapeHtml(winners[i]) + '</div>';
+            }
+            elWinnerContent.innerHTML = html;
+            elWinnerOverlay.classList.add('visible');
+
+            if (settings.enableConfetti && typeof confetti === 'function') {
+                fireConfetti();
+            }
+
+            winnerTimeout = setTimeout(function() {
+                elWinnerOverlay.classList.remove('visible');
+            }, settings.winnerDisplayDuration * 1000);
+        }
+
+        function fireConfetti() {
+            if (confettiInterval) clearInterval(confettiInterval);
+
+            var end = Date.now() + settings.confettiDuration * 1000;
+
+            function burst() {
+                if (Date.now() > end) {
+                    clearInterval(confettiInterval);
+                    confettiInterval = null;
+                    return;
+                }
+                confetti({
+                    particleCount: Math.floor(settings.confettiParticleCount / 8),
+                    angle: 60,
+                    spread: settings.confettiSpread,
+                    origin: { x: 0, y: 0.6 },
+                    colors: settings.confettiColors,
+                    disableForReducedMotion: true
+                });
+                confetti({
+                    particleCount: Math.floor(settings.confettiParticleCount / 8),
+                    angle: 120,
+                    spread: settings.confettiSpread,
+                    origin: { x: 1, y: 0.6 },
+                    colors: settings.confettiColors,
+                    disableForReducedMotion: true
+                });
+            }
+
+            burst();
+            confettiInterval = setInterval(burst, 300);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
+        // ── Socket.IO event handlers ──
+
+        socket.on('connect', function() {
+            console.log('Giveaway template connected');
+        });
+
+        socket.on('giveaway_start', function(data) {
+            setKeyword(data.keyword || '');
+            elClosedMessage.classList.add('hidden');
+            elEntryList.innerHTML = '';
+            updateEntryCount(0);
+            showContainer();
+        });
+
+        socket.on('giveaway_entry', function(data) {
+            addEntry(data.username);
+            updateEntryCount(data.pool_size || entryCount + 1);
+        });
+
+        socket.on('giveaway_stop', function() {
+            if (settings.showClosedMessage) {
+                elClosedMessage.classList.remove('hidden');
+            }
+        });
+
+        socket.on('giveaway_winner', function(data) {
+            showWinner(data.winners || []);
+
+            if (data.pool_entries) {
+                rebuildEntryList(data.pool_entries);
+            }
+            updateEntryCount(data.pool_size || 0);
+        });
+
+        socket.on('giveaway_clear', function() {
+            hideContainer();
+            setTimeout(function() {
+                elEntryList.innerHTML = '';
+                updateEntryCount(0);
+                setKeyword('');
+                elClosedMessage.classList.add('hidden');
+            }, settings.fadeOutDuration * 1000);
+        });
+
+        console.log('Mycelian Giveaway template initialized');
+    </script>
+</body>
+
+</html>

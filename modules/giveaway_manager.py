@@ -20,6 +20,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "keyword": "",
     "no_duplicate_entries": True,
     "unique_winners_per_draw": True,
+    "remove_winners_from_pool": True,
     "num_winners": 1,
     "exclude_mods": False,
     "exclude_vips": False,
@@ -75,6 +76,7 @@ class GiveawayManager:
         cfg["keyword"] = str(cfg.get("keyword", "") or "").strip()
         cfg["no_duplicate_entries"] = bool(cfg.get("no_duplicate_entries", True))
         cfg["unique_winners_per_draw"] = bool(cfg.get("unique_winners_per_draw", True))
+        cfg["remove_winners_from_pool"] = bool(cfg.get("remove_winners_from_pool", True))
         try:
             n = int(cfg.get("num_winners", 1))
         except (TypeError, ValueError):
@@ -132,6 +134,21 @@ class GiveawayManager:
         with self._lock:
             return len(self._pool)
 
+    def get_pool_entries(self) -> List[str]:
+        """Return display names of all pool entries, newest first."""
+        with self._lock:
+            return [e.display_name for e in reversed(self._pool)]
+
+    def _emit_event(self, event: str, data: Dict[str, Any]) -> None:
+        """Emit a Socket.IO event to the giveaway browser template."""
+        try:
+            from . import web_engine
+
+            if web_engine.web_engine_instance and web_engine.web_engine_instance.socketio:
+                web_engine.web_engine_instance.socketio.emit(event, data)
+        except Exception as e:
+            logger.debug("giveaway emit %s: %s", event, e)
+
     def get_last_error(self) -> str:
         with self._lock:
             return self._last_error
@@ -145,11 +162,14 @@ class GiveawayManager:
             if not self._config.get("keyword", "").strip():
                 return False, "Set an entry keyword before starting."
             self._accepting_entries = True
-            return True, ""
+            keyword = self._config["keyword"]
+        self._emit_event("giveaway_start", {"keyword": keyword})
+        return True, ""
 
     def stop_accepting(self) -> None:
         with self._lock:
             self._accepting_entries = False
+        self._emit_event("giveaway_stop", {})
 
     def clear_giveaway(self) -> None:
         with self._lock:
@@ -158,6 +178,7 @@ class GiveawayManager:
             self._accepting_entries = False
             self._normalize_config_in_place(self._config)
             self._save_config()
+        self._emit_event("giveaway_clear", {})
 
     def _badges_str(self, msg_dict: Dict[str, Any]) -> str:
         b = msg_dict.get("badges")
@@ -197,17 +218,29 @@ class GiveawayManager:
                         return False
 
             self._pool.append(GiveawayEntry(user_id=user_id, display_name=username))
+            pool_size = len(self._pool)
+            pool_entries = [e.display_name for e in reversed(self._pool)]
             try:
                 from .statistics_manager import get_statistics_manager
 
                 get_statistics_manager().record_giveaway_entry(username)
             except Exception as e:
                 logger.debug("giveaway entry stat: %s", e)
-            return True
+
+        self._emit_event(
+            "giveaway_entry",
+            {
+                "username": username,
+                "pool_size": pool_size,
+                "pool_entries": pool_entries,
+            },
+        )
+        return True
 
     def draw_winners(self) -> Tuple[bool, str, List[str]]:
         """
-        Pick up to num_winners, announce, update stats. Does not clear pool.
+        Pick up to num_winners, announce, update stats.
+        Removes winners from pool when remove_winners_from_pool is enabled.
         Returns (success, message_for_ui, winner_display_names).
         """
         with self._lock:
@@ -219,26 +252,36 @@ class GiveawayManager:
             num = int(self._config.get("num_winners", 1))
             unique_per_draw = bool(self._config.get("unique_winners_per_draw"))
             template = self._config.get("winning_message_template") or ""
+            remove_from_pool = bool(self._config.get("remove_winners_from_pool", True))
 
-            # Work on a copy of ticket list for selection
             tickets = list(self._pool)
             winners: List[str] = []
+            winner_user_ids: List[str] = []
 
             if unique_per_draw:
                 remaining = tickets[:]
                 while len(winners) < num and remaining:
                     pick = random.choice(remaining)
                     winners.append(pick.display_name)
+                    winner_user_ids.append(pick.user_id)
                     uid = pick.user_id
                     remaining = [t for t in remaining if t.user_id != uid]
             else:
                 k = min(num, len(tickets))
                 picks = random.sample(tickets, k=k)
                 winners = [p.display_name for p in picks]
+                winner_user_ids = [p.user_id for p in picks]
 
             if not winners:
                 self._last_error = "No winners selected."
                 return False, self._last_error, []
+
+            if remove_from_pool:
+                winner_id_set = set(winner_user_ids)
+                self._pool = [e for e in self._pool if e.user_id not in winner_id_set]
+
+            pool_size = len(self._pool)
+            pool_entries = [e.display_name for e in reversed(self._pool)]
 
             winners_text = ", ".join(winners)
             text = template.replace("{winners}", winners_text).replace("{winner}", winners_text)
@@ -267,5 +310,13 @@ class GiveawayManager:
         except Exception as e:
             logger.debug("giveaway draw stats: %s", e)
 
+        self._emit_event(
+            "giveaway_winner",
+            {
+                "winners": winners,
+                "pool_size": pool_size,
+                "pool_entries": pool_entries,
+            },
+        )
         return True, f"Drew {len(winners)} winner(s).", winners
 

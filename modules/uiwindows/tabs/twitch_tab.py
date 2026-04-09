@@ -729,5 +729,3 @@ class TwitchTab:
 
             logger = logging.getLogger(__name__)
             logger.error(f"Error saving Twitch settings only: {str(e)}", exc_info=True)
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error saving Twitch settings only: {str(e)}", exc_info=True)

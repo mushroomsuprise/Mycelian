@@ -460,6 +460,11 @@ def get_twitch_credentials() -> Dict[str, str]:
     return api_credentials_manager.get_twitch_credentials()
 
 
+def update_twitch_credentials(client_id: str = None, client_secret: str = None) -> bool:
+    """Update Twitch API credentials"""
+    return api_credentials_manager.update_twitch_credentials(client_id=client_id, client_secret=client_secret)
+
+
 def get_chatbot_credentials() -> Dict[str, str]:
     """Get Twitch Chatbot API credentials"""
     return api_credentials_manager.get_chatbot_credentials()

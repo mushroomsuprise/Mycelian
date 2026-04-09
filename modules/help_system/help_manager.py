@@ -155,6 +155,31 @@ class HelpManager:
 
         return related
 
+    def get_adjacent_topics(self, topic_id: str) -> tuple:
+        """Get previous and next topics within the same category for sequential reading.
+
+        Returns:
+            Tuple of (prev_topic, next_topic), either may be None
+        """
+        topic = self.get_topic(topic_id)
+        if not topic:
+            return None, None
+
+        category_topics = self.get_topics_by_category(topic.category)
+        current_index = None
+        for i, t in enumerate(category_topics):
+            if t.id == topic_id:
+                current_index = i
+                break
+
+        if current_index is None:
+            return None, None
+
+        prev_topic = category_topics[current_index - 1] if current_index > 0 else None
+        next_topic = category_topics[current_index + 1] if current_index < len(category_topics) - 1 else None
+
+        return prev_topic, next_topic
+
     def get_popular_topics(self, limit: int = 5) -> List[HelpTopic]:
         """Get popular/recommended topics for quick access"""
         # Return some key topics that users commonly need

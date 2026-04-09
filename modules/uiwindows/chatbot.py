@@ -1682,7 +1682,7 @@ def create_chatbot_tab():
 
 
 def render_giveaways_tab(container_el) -> None:
-    """Build the Giveaways sub-tab (settings, actions, stats)."""
+    """Build the Giveaways sub-tab (settings, actions, stats + entrants panel)."""
     gm = get_giveaway_manager()
     cfg = gm.get_config()
 
@@ -1690,213 +1690,274 @@ def render_giveaways_tab(container_el) -> None:
         refresh_tab_content("giveaways")
 
     with container_el:
-        with ui.column().classes("w-full max-w-3xl gap-4 p-4"):
-            active = gm.is_giveaway_active()
-            ui.label("Giveaways").classes("text-xl font-medium")
-            with ui.row().classes("items-center gap-4 flex-wrap"):
+        with ui.row().classes("w-full gap-6 p-4 items-stretch"):
+            # ── Left panel: settings & controls ──
+            with ui.column().classes("flex-1 min-w-0 gap-4"):
+                active = gm.is_giveaway_active()
+                ui.label("Giveaways").classes("text-xl font-medium")
+                with ui.row().classes("items-center gap-4 flex-wrap"):
+                    ui.label(
+                        "Active giveaway: Yes (chat entries on)"
+                        if active
+                        else "Active giveaway: No"
+                    ).classes("text-sm secondary-text")
+                    ui.label(f"Pool size: {gm.get_pool_size()}").classes(
+                        "text-sm secondary-text"
+                    )
+                    ui.label(f"Winners per draw: {cfg.get('num_winners', 1)}").classes(
+                        "text-sm muted-text"
+                    )
+
+                err = gm.get_last_error()
+                if err:
+                    ui.label(f"Last issue: {err}").classes("text-sm text-amber-600")
+
+                ui.separator()
+
+                keyword_in = (
+                    ui.input(
+                        label="Entry keyword",
+                        value=cfg.get("keyword") or "",
+                        placeholder="Exact chat line viewers must send (case-insensitive)",
+                    )
+                    .classes("w-full")
+                    .props("outlined dense")
+                )
+
+                def save_keyword(_=None):
+                    gm.set_config_field("keyword", (keyword_in.value or "").strip())
+                    reload_giveaways()
+
+                keyword_in.on("blur", save_keyword)
+
+                num_in = (
+                    ui.number(
+                        label="Number of winners per draw",
+                        value=int(cfg.get("num_winners", 1)),
+                        min=1,
+                        max=100,
+                        step=1,
+                    )
+                    .classes("w-48")
+                    .props("outlined dense")
+                )
+
+                def save_num(_=None):
+                    try:
+                        v = int(num_in.value)
+                    except (TypeError, ValueError):
+                        v = 1
+                    gm.set_config_field("num_winners", v)
+                    reload_giveaways()
+
+                num_in.on("blur", save_num)
+
+                ui.switch(
+                    text="No duplicate entries (one ticket per user in pool)",
+                    value=bool(cfg.get("no_duplicate_entries", True)),
+                    on_change=lambda e: (
+                        gm.set_config_field("no_duplicate_entries", bool(e.value)),
+                        reload_giveaways(),
+                    ),
+                ).classes("w-full")
+
+                ui.switch(
+                    text="Unique winners per draw (same user cannot take two slots in one draw)",
+                    value=bool(cfg.get("unique_winners_per_draw", True)),
+                    on_change=lambda e: (
+                        gm.set_config_field("unique_winners_per_draw", bool(e.value)),
+                        reload_giveaways(),
+                    ),
+                ).classes("w-full")
+
+                ui.switch(
+                    text="Remove winners from pool after draw",
+                    value=bool(cfg.get("remove_winners_from_pool", True)),
+                    on_change=lambda e: (
+                        gm.set_config_field("remove_winners_from_pool", bool(e.value)),
+                        reload_giveaways(),
+                    ),
+                ).classes("w-full")
+
+                ui.switch(
+                    text="Exclude moderators",
+                    value=bool(cfg.get("exclude_mods")),
+                    on_change=lambda e: (
+                        gm.set_config_field("exclude_mods", bool(e.value)),
+                        reload_giveaways(),
+                    ),
+                ).classes("w-full")
+
+                ui.switch(
+                    text="Exclude VIPs",
+                    value=bool(cfg.get("exclude_vips")),
+                    on_change=lambda e: (
+                        gm.set_config_field("exclude_vips", bool(e.value)),
+                        reload_giveaways(),
+                    ),
+                ).classes("w-full")
+
+                blocked_in = (
+                    ui.textarea(
+                        label="Blocked usernames (one per line or comma-separated)",
+                        value="\n".join(cfg.get("blocked_usernames") or []),
+                    )
+                    .classes("w-full")
+                    .props("outlined dense rows=3")
+                )
+
+                def save_blocked(_=None):
+                    raw = blocked_in.value or ""
+                    parts = re.split(r"[\n,]+", raw)
+                    gm.set_config_field("blocked_usernames", [p.strip().lower() for p in parts if p.strip()])
+                    reload_giveaways()
+
+                blocked_in.on("blur", save_blocked)
+
+                win_msg = (
+                    ui.textarea(
+                        label="Winning announcement message",
+                        value=cfg.get("winning_message_template")
+                        or "Congratulations {winners}!",
+                    )
+                    .classes("w-full")
+                    .props("outlined dense rows=2")
+                )
                 ui.label(
-                    "Active giveaway: Yes (chat entries on)"
-                    if active
-                    else "Active giveaway: No"
-                ).classes("text-sm secondary-text")
-                ui.label(f"Pool size: {gm.get_pool_size()}").classes(
-                    "text-sm secondary-text"
-                )
-                ui.label(f"Winners per draw: {cfg.get('num_winners', 1)}").classes(
-                    "text-sm muted-text"
-                )
+                    "Use {winners} or {winner} for all winner names (comma-separated)."
+                ).classes("text-xs muted-text")
 
-            err = gm.get_last_error()
-            if err:
-                ui.label(f"Last issue: {err}").classes("text-sm text-amber-600")
+                def save_template(_=None):
+                    gm.set_config_field(
+                        "winning_message_template", (win_msg.value or "").strip()
+                    )
+                    reload_giveaways()
 
-            ui.separator()
+                win_msg.on("blur", save_template)
 
-            keyword_in = (
-                ui.input(
-                    label="Entry keyword",
-                    value=cfg.get("keyword") or "",
-                    placeholder="Exact chat line viewers must send (case-insensitive)",
-                )
-                .classes("w-full")
-                .props("outlined dense")
-            )
+                ui.separator()
 
-            def save_keyword(_=None):
-                gm.set_config_field("keyword", (keyword_in.value or "").strip())
-                reload_giveaways()
+                def do_start():
+                    ok, msg = get_giveaway_manager().start_giveaway()
+                    ui.notify(
+                        msg or "Accepting entries.",
+                        type="positive" if ok else "negative",
+                    )
+                    reload_giveaways()
 
-            keyword_in.on("blur", save_keyword)
+                def do_stop():
+                    get_giveaway_manager().stop_accepting()
+                    ui.notify("Stopped accepting new entries.", type="info")
+                    reload_giveaways()
 
-            num_in = (
-                ui.number(
-                    label="Number of winners per draw",
-                    value=int(cfg.get("num_winners", 1)),
-                    min=1,
-                    max=100,
-                    step=1,
-                )
-                .classes("w-48")
-                .props("outlined dense")
-            )
+                def do_draw():
+                    ok, msg, _w = get_giveaway_manager().draw_winners()
+                    ui.notify(msg, type="positive" if ok else "negative")
+                    reload_giveaways()
 
-            def save_num(_=None):
+                def do_clear():
+                    get_giveaway_manager().clear_giveaway()
+                    ui.notify("Giveaway cleared (pool and keyword).", type="info")
+                    reload_giveaways()
+
+                with ui.row().classes("flex-wrap gap-2"):
+                    ui.button(
+                        icon="play_arrow",
+                        text="Start giveaway",
+                        on_click=do_start,
+                    ).classes("control-button btn-success px-3 py-2")
+                    ui.button(
+                        icon="stop",
+                        text="Stop accepting",
+                        on_click=do_stop,
+                    ).classes("control-button btn-cancel px-3 py-2")
+                    ui.button(
+                        icon="casino",
+                        text="Draw winners",
+                        on_click=do_draw,
+                    ).classes("control-button btn-primary px-3 py-2")
+                    ui.button(
+                        icon="delete_sweep",
+                        text="Clear giveaway",
+                        on_click=do_clear,
+                    ).classes("control-button btn-danger px-3 py-2")
+                    ui.button(
+                        icon="refresh",
+                        text="Refresh",
+                        on_click=reload_giveaways,
+                    ).classes("control-button btn-secondary px-3 py-2")
+
+                ui.separator()
+                ui.label("Statistics").classes("text-lg font-medium")
                 try:
-                    v = int(num_in.value)
-                except (TypeError, ValueError):
-                    v = 1
-                gm.set_config_field("num_winners", v)
-                reload_giveaways()
+                    st = get_statistics_manager().get_all_statistics().get("giveaways", {})
+                    done = int(st.get("giveaways_completed", 0) or 0)
+                    entries = int(st.get("total_entry_events", 0) or 0)
+                    avg = float(st.get("average_entries_per_giveaway", 0) or 0)
+                    ui.label(f"Giveaways completed: {done:,}").classes("text-sm")
+                    ui.label(f"Total giveaway entries: {entries:,}").classes("text-sm")
+                    ui.label(f"Average entries per giveaway: {avg:.2f}").classes("text-sm")
+                    top = get_statistics_manager().get_top_users_by_statistic(
+                        "giveaway_wins", 8
+                    )
+                    if top:
+                        ui.label("Top giveaway wins").classes("text-sm font-medium mt-2")
+                        for row in top:
+                            ui.label(
+                                f"{row.get('username', '?')}: {row.get('value', 0):,}"
+                            ).classes("text-sm muted-text pl-2")
+                except Exception as ex:
+                    ui.label(f"Stats unavailable: {ex}").classes("text-sm text-red-400")
 
-            num_in.on("blur", save_num)
+            # ── Right panel: entrants display ──
+            with ui.column().classes(
+                "flex-1 min-w-0 gap-0 rounded-lg border border-[var(--color-border)]"
+            ):
+                with ui.row().classes(
+                    "w-full items-center justify-between px-4 py-3 "
+                    "bg-[var(--color-bg-elevated)] rounded-t-lg border-b "
+                    "border-[var(--color-border)]"
+                ):
+                    ui.label("Giveaway Entrants").classes("text-lg font-medium")
+                    pool_count = gm.get_pool_size()
+                    ui.badge(
+                        str(pool_count),
+                        color="primary" if pool_count else "grey",
+                    ).props("rounded")
 
-            ui.switch(
-                text="No duplicate entries (one ticket per user in pool)",
-                value=bool(cfg.get("no_duplicate_entries", True)),
-                on_change=lambda e: (
-                    gm.set_config_field("no_duplicate_entries", bool(e.value)),
-                    reload_giveaways(),
-                ),
-            ).classes("w-full")
+                entrants_container = ui.column().classes("w-full flex-1 min-h-0")
 
-            ui.switch(
-                text="Unique winners per draw (same user cannot take two slots in one draw)",
-                value=bool(cfg.get("unique_winners_per_draw", True)),
-                on_change=lambda e: (
-                    gm.set_config_field("unique_winners_per_draw", bool(e.value)),
-                    reload_giveaways(),
-                ),
-            ).classes("w-full")
+                def _build_entrants_list():
+                    entrants_container.clear()
+                    names = get_giveaway_manager().get_pool_entries()
+                    with entrants_container:
+                        with ui.scroll_area().classes("w-full").style(
+                            "height: 100%; "
+                            "background: var(--color-bg-sunken, #0d1117); "
+                            "border-bottom-left-radius: 0.5rem; "
+                            "border-bottom-right-radius: 0.5rem;"
+                        ):
+                            with ui.column().classes("w-full gap-0 p-2"):
+                                if not names:
+                                    ui.label("No entries yet").classes(
+                                        "text-sm muted-text italic py-4 self-center"
+                                    )
+                                else:
+                                    for name in names:
+                                        ui.label(name).classes(
+                                            "text-sm px-3 py-1.5 "
+                                            "hover:bg-[var(--color-bg-overlay)] "
+                                            "rounded transition-colors"
+                                        ).style(
+                                            "font-family: 'Segoe UI', 'Cascadia Code', "
+                                            "monospace; user-select: none;"
+                                        )
 
-            ui.switch(
-                text="Exclude moderators",
-                value=bool(cfg.get("exclude_mods")),
-                on_change=lambda e: (
-                    gm.set_config_field("exclude_mods", bool(e.value)),
-                    reload_giveaways(),
-                ),
-            ).classes("w-full")
-
-            ui.switch(
-                text="Exclude VIPs",
-                value=bool(cfg.get("exclude_vips")),
-                on_change=lambda e: (
-                    gm.set_config_field("exclude_vips", bool(e.value)),
-                    reload_giveaways(),
-                ),
-            ).classes("w-full")
-
-            blocked_in = (
-                ui.textarea(
-                    label="Blocked usernames (one per line or comma-separated)",
-                    value="\n".join(cfg.get("blocked_usernames") or []),
+                _build_entrants_list()
+                ui.timer(
+                    2.5,
+                    callback=_build_entrants_list,
                 )
-                .classes("w-full")
-                .props("outlined dense rows=3")
-            )
-
-            def save_blocked(_=None):
-                raw = blocked_in.value or ""
-                parts = re.split(r"[\n,]+", raw)
-                gm.set_config_field("blocked_usernames", [p.strip().lower() for p in parts if p.strip()])
-                reload_giveaways()
-
-            blocked_in.on("blur", save_blocked)
-
-            win_msg = (
-                ui.textarea(
-                    label="Winning announcement message",
-                    value=cfg.get("winning_message_template")
-                    or "Congratulations {winners}!",
-                )
-                .classes("w-full")
-                .props("outlined dense rows=2")
-            )
-            ui.label(
-                "Use {winners} or {winner} for all winner names (comma-separated)."
-            ).classes("text-xs muted-text")
-
-            def save_template(_=None):
-                gm.set_config_field(
-                    "winning_message_template", (win_msg.value or "").strip()
-                )
-                reload_giveaways()
-
-            win_msg.on("blur", save_template)
-
-            ui.separator()
-
-            def do_start():
-                ok, msg = get_giveaway_manager().start_giveaway()
-                ui.notify(
-                    msg or "Accepting entries.",
-                    type="positive" if ok else "negative",
-                )
-                reload_giveaways()
-
-            def do_stop():
-                get_giveaway_manager().stop_accepting()
-                ui.notify("Stopped accepting new entries.", type="info")
-                reload_giveaways()
-
-            def do_draw():
-                ok, msg, _w = get_giveaway_manager().draw_winners()
-                ui.notify(msg, type="positive" if ok else "negative")
-                reload_giveaways()
-
-            def do_clear():
-                get_giveaway_manager().clear_giveaway()
-                ui.notify("Giveaway cleared (pool and keyword).", type="info")
-                reload_giveaways()
-
-            with ui.row().classes("flex-wrap gap-2"):
-                ui.button(
-                    icon="play_arrow",
-                    text="Start giveaway",
-                    on_click=do_start,
-                ).classes("control-button btn-success px-3 py-2")
-                ui.button(
-                    icon="stop",
-                    text="Stop accepting",
-                    on_click=do_stop,
-                ).classes("control-button btn-cancel px-3 py-2")
-                ui.button(
-                    icon="casino",
-                    text="Draw winners",
-                    on_click=do_draw,
-                ).classes("control-button btn-primary px-3 py-2")
-                ui.button(
-                    icon="delete_sweep",
-                    text="Clear giveaway",
-                    on_click=do_clear,
-                ).classes("control-button btn-danger px-3 py-2")
-                ui.button(
-                    icon="refresh",
-                    text="Refresh",
-                    on_click=reload_giveaways,
-                ).classes("control-button btn-secondary px-3 py-2")
-
-            ui.separator()
-            ui.label("Statistics").classes("text-lg font-medium")
-            try:
-                st = get_statistics_manager().get_all_statistics().get("giveaways", {})
-                done = int(st.get("giveaways_completed", 0) or 0)
-                entries = int(st.get("total_entry_events", 0) or 0)
-                avg = float(st.get("average_entries_per_giveaway", 0) or 0)
-                ui.label(f"Giveaways completed: {done:,}").classes("text-sm")
-                ui.label(f"Total giveaway entries: {entries:,}").classes("text-sm")
-                ui.label(f"Average entries per giveaway: {avg:.2f}").classes("text-sm")
-                top = get_statistics_manager().get_top_users_by_statistic(
-                    "giveaway_wins", 8
-                )
-                if top:
-                    ui.label("Top giveaway wins").classes("text-sm font-medium mt-2")
-                    for row in top:
-                        ui.label(
-                            f"{row.get('username', '?')}: {row.get('value', 0):,}"
-                        ).classes("text-sm muted-text pl-2")
-            except Exception as ex:
-                ui.label(f"Stats unavailable: {ex}").classes("text-sm text-red-400")
 
 
 def refresh_tab_content(tab_type: str):

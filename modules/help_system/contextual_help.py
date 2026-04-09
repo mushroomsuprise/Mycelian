@@ -149,9 +149,10 @@ def help_button(context: str = None, topic_id: str = None, tooltip: str = "Help"
     Returns:
         NiceGUI button element
     """
+    ensure_help_system_styles()
+
     def on_click():
         try:
-            ensure_help_system_styles()
             if topic_id:
                 show_help_browser(topic_id)
                 logger.debug(f"Opened help for topic: {topic_id}")
@@ -192,9 +193,8 @@ def help_button(context: str = None, topic_id: str = None, tooltip: str = "Help"
     button = ui.button(
         icon=icon_name,
         on_click=on_click
-    ).props(f"{variant} round dense").tooltip(tooltip)
+    ).props(f"{variant} round dense").tooltip(tooltip).classes("help-inline-icon")
 
-    # Apply size classes
     size_classes = {
         "xs": "text-xs p-1",
         "sm": "text-sm p-1",
@@ -310,11 +310,12 @@ def help_accordion(title: str, content: str, topic_id: str = None, context: str 
                     link_topic_id = topic.id
 
             if link_topic_id:
-                ui.separator().classes("my-2")
+                ui.separator().classes("my-2 help-separator-subtle")
                 ui.button(
                     "Read full documentation",
+                    icon="open_in_new",
                     on_click=lambda: show_help_browser(link_topic_id)
-                ).props("outline").classes("text-sm")
+                ).props("outline no-caps").classes("text-sm help-related-btn")
 
         return accordion
 
@@ -343,23 +344,18 @@ def help_card(title: str, summary: str, topic_id: str, show_category: bool = Tru
             "p-4 cursor-pointer help-contextual-card transition-colors"
         ).on("click", lambda: show_help_browser(topic_id)) as card:
 
-            # Category badge
             if show_category and topic:
                 category_name = topic.category.value.replace("_", " ").title()
-                ui.badge(category_name).classes("mb-2 btn-secondary")
+                ui.label(category_name).classes("help-category-badge mb-2")
 
-            # Title
-            ui.label(title).classes("font-bold mb-1")
+            ui.label(title).classes("font-bold mb-1 help-text-primary")
 
-            # Summary
-            ui.label(summary).classes("text-sm secondary-text")
+            ui.label(summary).classes("text-sm help-text-secondary")
 
-            # Keywords (if available)
             if topic and topic.keywords:
-                keywords_text = "Keywords: " + ", ".join(topic.keywords[:3])
-                if len(topic.keywords) > 3:
-                    keywords_text += "..."
-                ui.label(keywords_text).classes("text-xs muted-text mt-2")
+                with ui.row().classes("gap-1 mt-2 flex-wrap"):
+                    for kw in topic.keywords[:3]:
+                        ui.label(kw).classes("help-keyword-pill")
 
         return card
 
@@ -383,7 +379,7 @@ def create_help_section(title: str, topics: list, columns: int = 2):
     """
     try:
         ensure_help_system_styles()
-        ui.label(title).classes("text-xl font-bold mb-4 help-text-primary")
+        ui.label(title).classes("text-lg font-semibold mb-4 help-text-primary")
 
         with ui.grid(columns=columns).classes("gap-4"):
             for topic_id, card_title, summary in topics:

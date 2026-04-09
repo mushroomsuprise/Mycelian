@@ -2718,6 +2718,15 @@ class Twitch_API:
             # Stop the current connection
             self.stop_connection()
 
+            # Reload credentials from api_credentials_manager in case user updated them via the UI
+            from modules import api_credentials_manager
+
+            creds = api_credentials_manager.get_twitch_credentials()
+            if creds.get("client_id"):
+                self.client_id = creds["client_id"]
+            if creds.get("client_secret"):
+                self.client_secret = creds["client_secret"]
+
             # Clear existing auth data to force OAuth
             self.auth_token = ""
             self.refresh_token = ""

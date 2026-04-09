@@ -21,16 +21,16 @@ TTS
     [x] - Create settings to toggle TTS on and off
     [x] - Add in a setting to beep out bad words
 Giveaway System
-    [] - Create a template to work in conjunction with the chatbot module
-    [] - Add a settings to the Chatbot settings to configure the giveaway system
+    [x] - Create a template to work in conjunction with the chatbot module
+    [x] - Add a settings to the Chatbot settings to configure the giveaway system
         Options to configure:
-        [] - No duplicate entries
-        [] - Remove winners from pool
-        [] - Number of winners to pick
-        [] - Keyword to enter the giveaway
-        [] - Disable certain users (Mods, VIPs, specific usernames)
-    [] - Send an announcement message to the chat when a winner is picked
-    [] - Add statistics tracking for giveaway entries and winners
+        [x] - No duplicate entries
+        [x] - Remove winners from pool
+        [x] - Number of winners to pick
+        [x] - Keyword to enter the giveaway
+        [x] - Disable certain users (Mods, VIPs, specific usernames)
+    [x] - Send an announcement message to the chat when a winner is picked
+    [x] - Add statistics tracking for giveaway entries and winners
 Database selection issues
     [x] - Fix issue with database (and all related settings) not being saved when changing database type
     [x] - Fix issue with Firebase url not being recognized

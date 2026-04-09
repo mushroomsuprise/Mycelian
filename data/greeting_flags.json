@@ -1,4 +1,6 @@
 {
-  "greeted_flags": {},
-  "last_reset_time": 1775358740.5428934
+  "greeted_flags": {
+    "37458899": true
+  },
+  "last_reset_time": 1775689190.6110337
 }

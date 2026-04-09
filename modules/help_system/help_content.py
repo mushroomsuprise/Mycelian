@@ -65,25 +65,27 @@ multiple platforms.
 
 ## Key Features
 
-- **Custom Alert System**: Fully customizable alerts for follows, subs, bits,
+- **Custom Alert System**: Fully customizable [alerts](help:alerts_overview) for follows, subs, bits,
   raids, donations, channel points, and PSN trophies
-- **Browser Sources**: Beautiful, animated overlays for your stream
-- **Chatbot**: Custom commands, events, quotes, and greetings
-- **Integrations**: Connect Twitch, Spotify, PlayStation Network, and more
-- **Template System**: Customize every visual aspect
+- **Browser Sources**: Beautiful, animated [overlays](help:templates_intro) for your stream
+- **Chatbot**: Custom [commands](help:chatbot_commands), events, quotes, and greetings
+- **Integrations**: Connect [Twitch](help:integrations_twitch), [Spotify](help:integrations_spotify), [PlayStation Network](help:integrations_psn), and more
+- **Template System**: Customize every [visual aspect](help:template_configuration)
 
 ## Quick Start
 
-1. **Connect Twitch**: Go to Settings → Twitch and connect your account
-2. **Set Up Alerts**: Configure alerts in the Alerts tab
-3. **Add Browser Sources**: Copy URLs from Templates tab to OBS
-4. **Customize**: Adjust settings to match your stream's style
+1. **Connect Twitch**: [Connect your Twitch account](help:twitch_setup) in Settings
+2. **Set Up Alerts**: [Configure alerts](help:alerts_overview) in the Alerts tab
+3. **Add Browser Sources**: [Copy URLs from Templates](help:templates_intro) to [OBS](help:obs_setup)
+4. **Customize**: Adjust [settings](help:settings_overview) to match your stream's style
+
+> **Tip:** Follow the Quick Start steps above in order for the smoothest setup experience.
 
 ## Need Help?
 
 - Click the **?** button next to any setting for context-specific help
 - Use the **Help** menu for searchable documentation
-- Check the **Troubleshooting** section for common issues
+- Check the [Troubleshooting](help:troubleshooting_alerts) section for common issues
         """,
         keywords=["start", "begin", "intro", "overview", "basics"],
         related_topics=["twitch_setup", "first_alert_setup", "alerts_overview", "templates_intro"]
@@ -97,13 +99,16 @@ multiple platforms.
         content="""
 # Connecting Your Twitch Account
 
-Mycelian requires Twitch connection to receive events like follows, subs, and bits.
+Mycelian requires a Twitch connection to receive events like follows, subs, and bits.
+See the full [Twitch Integration](help:integrations_twitch) guide for advanced details.
 
 ## Prerequisites
 
 You'll need:
 - A Twitch account
 - Twitch Developer Application credentials (optional for advanced users)
+
+> **Note:** You can start with the Quick Connection below and skip the manual setup entirely.
 
 ## Quick Connection (Recommended)
 
@@ -133,6 +138,8 @@ If you prefer to use your own Twitch application:
 
 ## Troubleshooting
 
+> **Tip:** For more detailed connection troubleshooting, see [Connection Issues](help:troubleshooting_connections).
+
 **"Authentication Failed"**
 - Clear browser cookies and try again
 - Ensure pop-ups are not blocked
@@ -159,9 +166,9 @@ This guide walks you through creating your first alert in Mycelian.
 ## Prerequisites
 
 Before creating alerts, ensure you have:
-- Connected your Twitch account (Settings → Twitch)
+- [Connected your Twitch account](help:twitch_setup) (Settings → Twitch)
 - OBS or streaming software ready
-- Basic understanding of browser sources
+- Basic understanding of [browser sources](help:obs_setup)
 
 ## Quick Start: Follow Alert
 
@@ -187,15 +194,15 @@ Let's create a simple follow alert:
 3. **Volume**: Adjust the sound volume
 
 ### Step 5: Add to OBS
-1. Go to **Templates** tab in Mycelian
+1. Go to the [Templates](help:templates_intro) tab in Mycelian
 2. Find the **Alerts** browser source URL
-3. In OBS: Add → Browser Source
+3. In OBS: Add → Browser Source (see [OBS setup guide](help:obs_setup))
 4. Paste the URL
 5. Set size (recommended: 800x600)
 
 ### Step 6: Test Your Alert
 1. Return to the **Alerts** tab
-2. Click **"Test Alert"** button
+2. Click **"Test Alert"** button (see [Testing Alerts](help:alert_testing))
 3. Watch for the alert in OBS
 4. Adjust settings as needed
 
@@ -229,10 +236,12 @@ Let's create a simple follow alert:
 ## Next Steps
 
 Once comfortable with basic alerts:
-- Explore **alert variations** for different amounts
-- Set up **alert sounds** for each type
-- Try **GIF alerts** for more visual impact
+- Explore [alert variations](help:alert_configuration) for different amounts
+- Set up [alert sounds](help:alert_media) for each type
+- Try [GIF alerts](help:alert_media) for more visual impact
 - Configure **channel points** alerts
+
+> **Tip:** Use the Test button to preview each change before going live.
         """,
         keywords=["first", "setup", "beginner", "start", "create", "alert"],
         related_topics=["alerts_overview", "twitch_setup", "obs_setup"]
@@ -246,7 +255,15 @@ Once comfortable with basic alerts:
         content="""
 # Setting Up Browser Sources in OBS
 
-Browser sources allow you to display Mycelian overlays, alerts, and interactive elements on your stream.
+Browser sources allow you to display Mycelian overlays, [alerts](help:alerts_overview), and interactive elements on your stream.
+
+> **Note:** Make sure Mycelian is running before adding browser sources to OBS.
+
+## Prerequisites
+
+- [OBS Studio](https://obsproject.com/download) installed (free, open-source)
+- Mycelian running on the same computer
+- For detailed OBS help, see the [OBS Knowledge Base](https://obsproject.com/kb)
 
 ## Adding a Browser Source
 
@@ -303,14 +320,18 @@ Mycelian serves templates at `http://localhost:5000/`:
 - Verify the URL is correct
 - Try refreshing the browser source
 
+> **Tip:** See [Troubleshooting Alerts](help:troubleshooting_alerts) for more detailed solutions.
+
 **Poor performance**
 - Reduce browser source resolution
 - Enable "Shutdown when not visible"
 - Close unused browser tabs in OBS
+- See [Performance Optimization](help:troubleshooting_performance) for more tips
 
 **Audio not working**
 - Browser sources handle video only
 - Audio plays through OBS media sources or separately
+- See [Audio Troubleshooting](help:troubleshooting_audio) for solutions
         """,
         keywords=["obs", "browser source", "overlay", "stream", "setup"],
         related_topics=["getting_started_intro", "templates_intro"],
@@ -329,6 +350,7 @@ Mycelian serves templates at `http://localhost:5000/`:
 # Alert System Overview
 
 The alert system displays notifications on your stream when viewers interact.
+Make sure you've [connected Twitch](help:twitch_setup) and [set up browser sources](help:obs_setup) first.
 
 ## Alert Types
 
@@ -375,7 +397,10 @@ Alerts are matched in this order:
 
 - Use shorter durations (3-5s) for frequent alerts
 - Reserve longer, dramatic alerts for milestones
-- Test alerts using the "Test" button before going live
+- [Test alerts](help:alert_testing) using the "Test" button before going live
+- Configure [alert media](help:alert_media) (GIFs, sounds) for visual impact
+
+> **Tip:** Start with simple alerts and gradually add [advanced configurations](help:alert_configuration) as you get comfortable.
         """,
         keywords=["alerts", "notifications", "follow", "sub", "bits", "raid"],
         related_topics=["first_alert_setup", "alert_configuration", "alert_media", "alert_testing"]
@@ -390,6 +415,7 @@ Alerts are matched in this order:
 # Configuring Alert Settings
 
 Learn how to create, edit, and manage your alert configurations.
+For a beginner walkthrough, see [Setting Up Your First Alert](help:first_alert_setup).
 
 ## Creating an Alert
 
@@ -479,7 +505,10 @@ assets/
 ### Performance
 - Optimize GIFs for web (reduce colors/frame rate)
 - Use MP3 format for audio (smaller than WAV)
-- Test alerts during stream setup, not during live stream
+- [Test alerts](help:alert_testing) during stream setup, not during live stream
+- See [Alert Media Configuration](help:alert_media) for file format details
+
+> **Warning:** Overlapping amount ranges can cause unexpected alert behavior. Always test range boundaries.
         """,
         keywords=["alert", "configuration", "setup", "settings", "range", "tier"],
         related_topics=["alerts_overview", "alert_media"]
@@ -495,7 +524,8 @@ assets/
 
 ## GIF/Image Settings
 
-Alerts can display animated GIFs or static images.
+Alerts can display animated GIFs or static images. See [Alert Configuration](help:alert_configuration)
+for general setup and [Testing Alerts](help:alert_testing) to verify your media works.
 
 ### File Requirements
 - **Formats**: GIF, PNG, JPEG, WebP
@@ -552,6 +582,8 @@ This means:
 - 65% chance: Play `default.mp3`
 - 30% chance: Play random file from `random/`
 - 5% chance: Play random file from `rare/`
+
+> **Tip:** If audio isn't playing, check the [Audio Troubleshooting](help:troubleshooting_audio) guide.
         """,
         keywords=["gif", "audio", "sound", "media", "randomization", "animation"],
         related_topics=["alerts_overview", "alert_configuration"]
@@ -565,11 +597,13 @@ This means:
         content="""
 # Testing Your Alerts
 
-Ensure your alerts work correctly before your stream goes live.
+Ensure your [alerts](help:alerts_overview) work correctly before your stream goes live.
+
+> **Important:** Always test alerts before going live to avoid surprises during your stream.
 
 ## Test Button
 
-Each alert configuration has a **"Test"** button:
+Each [alert configuration](help:alert_configuration) has a **"Test"** button:
 
 1. Go to **Alerts** tab
 2. Select an alert type
@@ -605,14 +639,14 @@ Each alert configuration has a **"Test"** button:
 ## Common Issues
 
 ### Alert Doesn't Show
-- Check browser source URL in OBS
+- Check [browser source URL](help:obs_setup) in OBS
 - Verify Mycelian web server is running
-- Test the browser source directly in OBS
+- See [Troubleshooting Alerts](help:troubleshooting_alerts) for more solutions
 
 ### Audio Doesn't Play
 - Check browser audio permissions
 - Verify file paths are correct
-- Test audio files independently
+- See [Audio Troubleshooting](help:troubleshooting_audio) for detailed solutions
 
 ### Wrong Alert Plays
 - Check alert ordering (drag to reorder)
@@ -659,6 +693,7 @@ Each alert configuration has a **"Test"** button:
 # Creating Chat Commands
 
 Custom commands let viewers trigger responses by typing `!command` in chat.
+Use [variables](help:chatbot_variables) to make responses dynamic.
 
 ## Creating a Command
 
@@ -723,6 +758,8 @@ Response: 🎱 {random:Yes!,No way,Ask again,Maybe,Definitely}
 
 - **Global Cooldown**: Time before anyone can use again
 - **User Cooldown**: Time before same user can use again
+
+> **Tip:** Pair commands with [Events](help:chatbot_events) and [Connectors](help:connectors_intro) for powerful automation workflows.
         """,
         keywords=["commands", "chat", "bot", "custom", "response", "variables"],
         related_topics=[
@@ -742,7 +779,8 @@ Response: 🎱 {random:Yes!,No way,Ask again,Maybe,Definitely}
         content="""
 # Chatbot Events and Automation
 
-Set up automatic chatbot responses for stream events.
+Set up automatic chatbot responses for stream events. For chat commands,
+see [Creating Chat Commands](help:chatbot_commands).
 
 ## Event Types
 
@@ -840,6 +878,8 @@ Set up different responses based on conditions:
 - Use events to build community
 - Encourage interaction
 - Share community guidelines
+
+> **Note:** Use [chatbot variables](help:chatbot_variables) like `{username}` and `{months}` to personalize event messages. You can also set up [greetings](help:chatbot_greetings) for first-time chatters.
         """,
         keywords=["events", "automation", "welcome", "messages", "responses"],
         related_topics=["chatbot_commands", "chatbot_quotes"]
@@ -853,7 +893,8 @@ Set up different responses based on conditions:
         content="""
 # Managing Quotes and Highlights
 
-Capture and share memorable moments from your chat.
+Capture and share memorable moments from your chat. Quotes work alongside
+[commands](help:chatbot_commands) and [events](help:chatbot_events).
 
 ## What are Quotes?
 
@@ -971,6 +1012,7 @@ Response: Quote of the stream: "{quote:qots}"
 # Chatbot Greetings
 
 Set up automatic greetings to welcome viewers when they first chat.
+Use [variables](help:chatbot_variables) to personalize your greeting messages.
 
 ## What are Greetings?
 
@@ -1042,7 +1084,7 @@ Prevent spam with cooldowns:
 ### Greetings Not Sending
 - Verify greetings are enabled
 - Check bot has chat permissions
-- Verify Twitch connection is active
+- Verify [Twitch connection](help:twitch_setup) is active
 
 ### Too Many Greetings
 - Increase cooldown timers
@@ -1063,7 +1105,7 @@ Prevent spam with cooldowns:
 
 Run giveaways from **Chatbot → Giveaways**. Viewers enter by typing a phrase you
 configure; you draw winners and the bot posts a **Twitch chat announcement**
-(as the chatbot account).
+(as the chatbot account). See [Twitch Integration](help:integrations_twitch) for chatbot permissions.
 
 ## Active giveaway
 
@@ -1180,6 +1222,8 @@ as well.
 | Draw does nothing | Empty pool; check notification message. |
 | No announcement | Chatbot connected; Helix announcement scopes; see logs. |
 | Same people win again | Expected until **Clear giveaway**—draws do not remove tickets. |
+
+> **Tip:** Use [chatbot variables](help:chatbot_variables) like `{winners}` in your announcement message for dynamic winner names.
         """,
         keywords=[
             "giveaway",
@@ -1205,7 +1249,8 @@ as well.
         content="""
 # Chatbot Variables
 
-Variables let you insert dynamic content into commands, alerts, and messages.
+Variables let you insert dynamic content into [commands](help:chatbot_commands),
+[alerts](help:alerts_overview), and messages.
 
 ## What are Variables?
 
@@ -1307,6 +1352,8 @@ Then use `{mood}` in other commands.
 - Some variables are event-specific
 - Check if variable applies to current context
 - Verify data source is connected
+
+> **Note:** Variables available in [greetings](help:chatbot_greetings) and [events](help:chatbot_events) differ from those in [commands](help:chatbot_commands). Check the variable table for each context.
         """,
         keywords=["variables", "placeholders", "dynamic", "text", "formatting", "custom"],
         related_topics=["chatbot_commands", "chatbot_greetings", "chatbot_events"]
@@ -1324,6 +1371,7 @@ Then use `{mood}` in other commands.
 # Connector System
 
 Connectors let you create automated workflows: "When X happens, do Y."
+See [Connector Examples](help:connector_examples) for ready-to-use templates.
 
 ## Components
 
@@ -1383,8 +1431,10 @@ Actions:
 
 - Start simple, add complexity later
 - Test thoroughly before going live
-- Use conditions to prevent spam
-- Chain multiple actions for impact
+- Use [conditions](help:connector_conditions) to prevent spam
+- Chain multiple [actions](help:connector_actions) for impact
+
+> **Tip:** Browse [Connector Examples](help:connector_examples) for inspiration and ready-to-use workflow templates.
         """,
         keywords=["connectors", "automation", "triggers", "actions", "workflow"],
         related_topics=["connector_triggers", "connector_conditions", "connector_actions", "connector_examples"]
@@ -1399,6 +1449,7 @@ Actions:
 # Connector Triggers
 
 Triggers are the "when" part of connectors - they start the automation.
+See also: [Actions](help:connector_actions) and [Conditions](help:connector_conditions).
 
 ## Twitch Event Triggers
 
@@ -1495,7 +1546,8 @@ Each trigger provides context variables for use in actions.
         content="""
 # Connector Actions
 
-Actions are what happens when a connector trigger activates.
+Actions are what happens when a connector [trigger](help:connector_triggers) activates.
+Add [conditions](help:connector_conditions) to control when actions execute.
 
 ## Chat Actions
 
@@ -1624,6 +1676,7 @@ Message: "Thanks {username} for {amount} bits!"
 - Avoid resource-intensive actions
 - Use delays for smooth execution
 - Monitor system impact
+- See [Performance Optimization](help:troubleshooting_performance) if actions cause lag
         """,
         keywords=["actions", "responses", "automation", "effects", "controls"],
         related_topics=["connectors_intro", "connector_triggers"]
@@ -1637,8 +1690,8 @@ Message: "Thanks {username} for {amount} bits!"
         content="""
 # Connector Conditions
 
-Conditions let you add logic to connectors so actions only run when
-specific criteria are met.
+Conditions let you add logic to [connectors](help:connectors_intro) so [actions](help:connector_actions)
+only run when specific criteria are met.
 
 ## What are Conditions?
 
@@ -1759,7 +1812,8 @@ Action: Send evening greeting
         content="""
 # Connector Examples
 
-Learn from these real-world connector examples you can recreate.
+Learn from these real-world connector examples you can recreate. For setup
+basics, see the [Connector Introduction](help:connectors_intro).
 
 ## Alert Enhancement
 
@@ -1905,6 +1959,8 @@ Actions:
 - What if triggered rapidly?
 - What about anonymous users?
 - Handle missing data gracefully
+
+> **Tip:** Start with the simpler examples above and combine [triggers](help:connector_triggers), [conditions](help:connector_conditions), and [actions](help:connector_actions) as you gain confidence.
         """,
         keywords=["examples", "templates", "recipes", "ideas", "use cases", "workflows"],
         related_topics=["connectors_intro", "connector_triggers", "connector_actions", "connector_conditions"]
@@ -1925,7 +1981,8 @@ Templates are browser-based overlays that display on your stream.
 
 ## What are Templates?
 
-Templates are HTML/CSS/JavaScript files served by Mycelian that you add to OBS as browser sources.
+Templates are HTML/CSS/JavaScript files served by Mycelian that you add to
+[OBS as browser sources](help:obs_setup).
 
 ## Available Templates
 
@@ -2010,6 +2067,8 @@ socket.on('alert', (data) => {
 - Preview templates before going live
 - Test with real data
 - Verify on different screen sizes
+
+> **Tip:** Learn about [WebSocket events](help:template_websocket) to understand how templates receive live data, and use [Source Controls](help:source_controls) to manage templates during your stream.
         """,
         keywords=["templates", "browser sources", "overlays", "obs", "customization"],
         related_topics=["template_configuration", "template_custom_css", "template_websocket", "source_controls"]
@@ -2023,7 +2082,7 @@ socket.on('alert', (data) => {
         content="""
 # Configuring Template Settings
 
-Customize the look and behavior of your browser source templates.
+Customize the look and behavior of your [browser source templates](help:templates_intro).
 
 ## Template Configuration Files
 
@@ -2185,6 +2244,8 @@ Create reusable themes:
 - Set font combinations
 - Create consistent styling
 - Apply across multiple templates
+
+> **Tip:** For advanced CSS customization, see [Custom CSS for Templates](help:template_custom_css). For live adjustments during your stream, use [Source Controls](help:source_controls).
         """,
         keywords=["configuration", "settings", "customization", "json", "css"],
         related_topics=["templates_intro", "source_controls", "template_custom_css"]
@@ -2198,7 +2259,7 @@ Create reusable themes:
         content="""
 # Custom CSS for Templates
 
-Use custom CSS to fully customize the appearance of your browser sources.
+Use custom CSS to fully customize the appearance of your [browser sources](help:templates_intro).
 
 ## What is Custom CSS?
 
@@ -2347,6 +2408,8 @@ Note: This applies to ALL content in that source.
 ### Learning CSS
 - [MDN Web Docs](https://developer.mozilla.org/en-US/docs/Web/CSS)
 - [CSS-Tricks](https://css-tricks.com)
+
+> **Note:** CSS changes in the [template configuration](help:template_configuration) override OBS Browser Source CSS. Use `!important` if your styles aren't being applied.
         """,
         keywords=["css", "styling", "custom", "design", "colors", "fonts", "animation"],
         related_topics=["templates_intro", "template_configuration"]
@@ -2361,11 +2424,11 @@ Note: This applies to ALL content in that source.
 # WebSocket Events
 
 WebSocket provides real-time communication between Mycelian and your
-browser sources.
+[browser sources](help:templates_intro).
 
 ## What is WebSocket?
 
-WebSocket is a protocol for real-time, two-way communication. Templates
+WebSocket is a protocol for real-time, two-way communication. [Templates](help:templates_intro)
 receive live updates without refreshing the page.
 
 ## How It Works
@@ -2485,7 +2548,7 @@ socket.emit('alert_displayed', {
 
 ### "Delayed Updates"
 - Network latency is normal
-- Check CPU usage
+- Check CPU usage (see [Performance Optimization](help:troubleshooting_performance))
 - Reduce event frequency
 - Optimize event handlers
 
@@ -2524,11 +2587,12 @@ socket.on('new_alert', (data) => {
         content="""
 # Real-time Source Controls
 
-Control template elements live during your stream.
+Control [template](help:templates_intro) elements live during your stream.
 
 ## What are Source Controls?
 
-Source controls let you modify template variables and states in real-time without editing configuration files.
+Source controls let you modify template variables and states in real-time
+without editing [configuration files](help:template_configuration).
 
 ## Available Controls
 
@@ -2593,7 +2657,7 @@ Controls that only work under certain conditions:
 ### Automated Controls
 - Timer-based updates
 - Event-triggered changes
-- Connector integration
+- [Connector](help:connectors_intro) integration
 
 ## Best Practices
 
@@ -2628,6 +2692,7 @@ Controls that only work under certain conditions:
 # Twitch Integration Setup
 
 Connect Mycelian to your Twitch channel for real-time events.
+For the quick-start version, see [Connecting Your Twitch Account](help:twitch_setup).
 
 ## Prerequisites
 
@@ -2720,8 +2785,10 @@ Mycelian requests these scopes:
 
 ### Custom Handling
 - Create custom event responses
-- Set up connector triggers
-- Configure alert mappings
+- Set up [connector triggers](help:connector_triggers)
+- Configure [alert](help:alerts_overview) mappings
+
+> **Important:** If events stop arriving, check [Connection Troubleshooting](help:troubleshooting_connections) for solutions.
 
 ## Security
 
@@ -2747,17 +2814,17 @@ Mycelian requests these scopes:
         content="""
 # StreamLabs Integration
 
-Connect StreamLabs to receive donation alerts and tip notifications.
+Connect StreamLabs to receive donation [alerts](help:alerts_overview) and tip notifications.
 
 ## What is StreamLabs?
 
-StreamLabs is a donation processing service that handles tips, donations, and merchandise sales.
+[StreamLabs](https://streamlabs.com/) is a donation processing service that handles tips, donations, and merchandise sales.
 
 ## Setup Process
 
 1. Go to **Settings** → **StreamLabs** tab
 2. Click **"Connect with StreamLabs"**
-3. Authorize Mycelian access
+3. Authorize Mycelian access via the [StreamLabs Dashboard](https://streamlabs.com/dashboard)
 4. Configure alert settings
 
 ## Required Permissions
@@ -2850,8 +2917,8 @@ Use in alerts and messages:
 ```
 
 ### Integration with Other Services
-- Combine with Twitch alerts
-- Use in connector actions
+- Combine with [Twitch alerts](help:alerts_overview)
+- Use in [connector actions](help:connector_actions)
 - Display in activity feeds
 
 ## Best Practices
@@ -2891,9 +2958,9 @@ Configure Mycelian to match your streaming setup and preferences.
 ## Settings Categories
 
 ### Integration Settings
-- **Twitch**: Connect your channel
-- **StreamLabs**: Donation processing
-- **Spotify**: Music integration
+- **Twitch**: [Connect your channel](help:twitch_setup)
+- **StreamLabs**: [Donation processing](help:integrations_streamlabs)
+- **Spotify**: [Music integration](help:integrations_spotify)
 - **OBS**: WebSocket connection
 
 ### Alert Settings
@@ -2953,6 +3020,8 @@ Settings are stored in:
 - Keep credentials secure
 - Use strong passwords
 - Regular backup schedule
+
+> **Tip:** If you're just getting started, follow the [Welcome to Mycelian](help:getting_started_intro) guide which walks through essential settings step by step.
         """,
         keywords=["settings", "configuration", "preferences", "setup"],
         related_topics=["integrations_twitch", "settings_backup"]
@@ -2972,14 +3041,14 @@ Settings are stored in:
 ## Alerts Not Showing
 
 ### Check Browser Source
-1. Verify URL is correct: `http://localhost:5000/alerts`
+1. Verify URL is correct: `http://localhost:5000/alerts` (see [OBS Setup](help:obs_setup))
 2. Refresh the browser source in OBS
 3. Check OBS source is visible (eye icon)
 
 ### Check Twitch Connection
-1. Go to Settings → Twitch
+1. Go to [Settings → Twitch](help:twitch_setup)
 2. Status should show "Connected"
-3. If not, click "Reconnect"
+3. If not, click "Reconnect" (see [Connection Issues](help:troubleshooting_connections))
 
 ### Check Alert Settings
 1. Go to Alerts tab
@@ -2987,6 +3056,8 @@ Settings are stored in:
 3. Test with the "Test" button
 
 ## Audio Not Playing
+
+> **Note:** For more in-depth audio help, see the dedicated [Audio Troubleshooting](help:troubleshooting_audio) guide.
 
 ### Browser Audio Policy
 Modern browsers block autoplay. Solutions:
@@ -3051,12 +3122,14 @@ Modern browsers block autoplay. Solutions:
 
 ## Twitch Connection Problems
 
+> **Tip:** Make sure you've followed the [Twitch Setup](help:twitch_setup) steps first.
+
 ### Connection Status: Disconnected
 
 **Symptoms:**
 - Status shows 🔴 Disconnected
 - No events received
-- Alerts not triggering
+- [Alerts](help:alerts_overview) not triggering
 
 **Solutions:**
 1. Click **"Reconnect"** button
@@ -3089,11 +3162,13 @@ Modern browsers block autoplay. Solutions:
 
 ## StreamLabs Issues
 
+See also: [StreamLabs Integration](help:integrations_streamlabs) setup guide.
+
 ### Missing Donations
 
 **Symptoms:**
 - Donations not appearing in Mycelian
-- Alerts not triggering for tips
+- [Alerts](help:alerts_overview) not triggering for tips
 
 **Solutions:**
 1. Check StreamLabs dashboard for donations
@@ -3167,8 +3242,8 @@ Modern browsers block autoplay. Solutions:
 ## Service Status
 
 ### Checking Service Status
-- **Twitch Status**: https://status.twitch.tv/
-- **StreamLabs Status**: Check their status page
+- **Twitch Status**: [status.twitch.tv](https://status.twitch.tv/)
+- **StreamLabs Status**: [streamlabs.com/status](https://streamlabs.com/status)
 - **OBS WebSocket**: Check OBS logs
 
 ### When Services are Down
@@ -3210,7 +3285,8 @@ Use diagnostic tools:
         content="""
 # Audio Troubleshooting
 
-Solve common issues with alert sounds, music widgets, and audio playback.
+Solve common issues with [alert](help:alerts_overview) sounds, music widgets, and audio playback.
+See [Alert Media Configuration](help:alert_media) for file format requirements.
 
 ## No Sound Playing
 
@@ -3333,7 +3409,7 @@ To hear browser audio in headphones:
 ## Spotify Widget Audio
 
 ### No Music Playing
-The Spotify widget displays info only - actual audio
+The [Spotify widget](help:integrations_spotify) displays info only - actual audio
 comes from Spotify app:
 - Widget shows "Now Playing" info
 - Audio plays from Spotify client
@@ -3372,6 +3448,8 @@ comes from Spotify app:
 # Performance Issues and Optimization
 
 ## High CPU Usage
+
+> **Tip:** If you're experiencing lag in OBS, also check your [browser source settings](help:obs_setup).
 
 ### Symptoms
 - Mycelian using excessive CPU
@@ -3466,10 +3544,10 @@ comes from Spotify app:
 ### WebSocket Disconnects
 **Symptoms:**
 - Real-time updates stop working
-- Template controls fail
+- [Template controls](help:source_controls) fail
 
 **Solutions:**
-1. Check WebSocket connection logs
+1. Check [WebSocket](help:template_websocket) connection logs
 2. Reduce message frequency
 3. Implement reconnection logic
 4. Verify firewall settings
@@ -3559,7 +3637,7 @@ comes from Spotify app:
 # Spotify Integration
 
 Connect Spotify to display your currently playing music on stream with beautiful
-"Now Playing" overlays.
+"Now Playing" overlays. Add overlays to your stream via [browser sources](help:obs_setup).
 
 ## Features
 
@@ -3577,9 +3655,16 @@ Connect Spotify to display your currently playing music on stream with beautiful
 4. Return to app - status shows "Connected"
 
 ### Spotify Requirements
-- Spotify Free or Premium account
+- A [Spotify](https://www.spotify.com/) Free or Premium account
 - Active Spotify session (desktop app, web player, or mobile)
 - Music must be playing for widget to display
+
+### Advanced: Custom Spotify App
+If you want to use your own Spotify application credentials:
+1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+2. Create a new application
+3. Set the redirect URI to match Mycelian's callback
+4. Enter the Client ID and Secret in Settings → Spotify
 
 ## Browser Source Setup
 
@@ -3646,6 +3731,8 @@ Connect Spotify to display your currently playing music on stream with beautiful
 - No listening history is stored
 - Credentials are securely encrypted
 - You can disconnect at any time
+
+> **Tip:** Customize the widget appearance in [Template Configuration](help:template_configuration) to match your stream's style.
         """,
         keywords=["spotify", "music", "now playing", "song", "audio", "integration"],
         related_topics=["templates_intro", "obs_setup"],
@@ -3661,11 +3748,11 @@ Connect Spotify to display your currently playing music on stream with beautiful
 # PlayStation Network Integration
 
 Connect your PlayStation Network account to display trophy achievements
-and gaming activity on your stream.
+and gaming activity on your stream via [browser source overlays](help:obs_setup).
 
 ## Features
 
-- **Trophy Alerts**: Show trophy pop-ups when you earn achievements
+- **Trophy Alerts**: Show trophy pop-ups when you earn achievements (uses the [alert system](help:alerts_overview))
 - **Trophy Progress**: Display completion percentage for games
 - **Now Playing**: Show which PS game you're currently playing
 - **Profile Display**: Show your PSN profile and avatar
@@ -3758,6 +3845,8 @@ On your PlayStation console:
 - No passwords are stored in plain text
 - Session tokens auto-refresh
 - You can revoke access anytime from PlayStation settings
+
+> **Warning:** NPSSO tokens expire after approximately 60 days. You'll need to re-authenticate when this happens.
         """,
         keywords=["psn", "playstation", "trophy", "achievements", "gaming", "ps4", "ps5"],
         related_topics=["alerts_overview", "templates_intro"],
@@ -3773,7 +3862,7 @@ On your PlayStation console:
 # YouTube Integration
 
 Monitor one or more YouTube channels and make their latest video information
-available for use in chatbot commands and automated messages.
+available for use in [chatbot commands](help:chatbot_commands) and automated messages.
 
 ## Features
 
@@ -3794,7 +3883,7 @@ available for use in chatbot commands and automated messages.
 You need a **YouTube Data API v3** key from the Google Cloud Console:
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a project (or select an existing one)
-3. Enable the **YouTube Data API v3**
+3. Enable the [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com)
 4. Create an API key under **Credentials**
 
 ### Connection Steps
@@ -3882,6 +3971,8 @@ characters removed):
   channel plus additional units if playlist filtering is active
 - Only public videos are detected
 - Data refreshes every 30 minutes automatically
+
+> **Tip:** Use YouTube [chatbot variables](help:chatbot_variables) like `{youtube.latest_video_url}` in custom [commands](help:chatbot_commands) to automatically share your latest uploads with viewers.
         """,
         keywords=["youtube", "videos", "channel", "google", "uploads", "content",
                    "playlist", "filter", "exclude", "api key"],

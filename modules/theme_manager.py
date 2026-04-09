@@ -324,6 +324,12 @@ HELP_SYSTEM_CSS = """
 .help-markdown-content h3,
 .help-accordion-markdown h3 { font-size: 1.2rem !important; }
 
+.help-markdown-content h2,
+.help-accordion-markdown h2 {
+    padding-bottom: 0.4em !important;
+    border-bottom: 1px solid var(--color-border-subtle) !important;
+}
+
 .help-markdown-content p,
 .help-accordion-markdown p {
     margin-bottom: 1em !important;
@@ -340,6 +346,25 @@ HELP_SYSTEM_CSS = """
 .help-markdown-content li,
 .help-accordion-markdown li {
     margin-bottom: 0.5em !important;
+}
+
+.help-markdown-content ul > li::marker,
+.help-accordion-markdown ul > li::marker {
+    color: var(--color-primary) !important;
+}
+
+.help-markdown-content ol > li::marker,
+.help-accordion-markdown ol > li::marker {
+    color: var(--color-primary) !important;
+    font-weight: 600 !important;
+}
+
+.help-markdown-content hr,
+.help-accordion-markdown hr {
+    border: none !important;
+    height: 1px !important;
+    background: linear-gradient(90deg, transparent, var(--color-border-default), transparent) !important;
+    margin: 2em 0 !important;
 }
 
 .help-markdown-content code,
@@ -408,6 +433,23 @@ HELP_SYSTEM_CSS = """
 .help-accordion-markdown th {
     background: var(--color-primary-light) !important;
     font-weight: 600 !important;
+}
+
+.help-markdown-content tr:nth-child(even) td,
+.help-accordion-markdown tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--color-bg-elevated) 50%, transparent) !important;
+}
+
+.help-markdown-content tr:hover td,
+.help-accordion-markdown tr:hover td {
+    background: color-mix(in srgb, var(--color-primary-light) 30%, transparent) !important;
+}
+
+.help-markdown-content table,
+.help-accordion-markdown table {
+    border-spacing: 0 !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
 }
 
 .help-search-result {
@@ -565,6 +607,343 @@ HELP_SYSTEM_CSS = """
 .help-contextual-card:hover {
     background: var(--color-bg-elevated) !important;
     border-color: var(--color-border-default) !important;
+}
+
+/* === Cross-link styles (help: protocol links) === */
+.help-markdown-content a[href^="help:"],
+.help-accordion-markdown a[href^="help:"] {
+    color: var(--color-primary) !important;
+    border-bottom: 1px dashed color-mix(in srgb, var(--color-primary) 50%, transparent) !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease !important;
+}
+
+.help-markdown-content a[href^="help:"]:hover,
+.help-accordion-markdown a[href^="help:"]:hover {
+    color: var(--color-primary-hover) !important;
+    border-bottom-style: solid !important;
+    border-bottom-color: var(--color-primary-hover) !important;
+}
+
+/* === Callout / admonition styles === */
+.help-callout {
+    padding: 14px 16px 14px 48px !important;
+    margin: 1.25em 0 !important;
+    border-radius: 0 8px 8px 0 !important;
+    position: relative !important;
+}
+
+.help-callout::before {
+    position: absolute !important;
+    left: 16px !important;
+    top: 15px !important;
+    font-family: 'Material Icons' !important;
+    font-size: 18px !important;
+}
+
+.help-callout p:first-child {
+    margin-top: 0 !important;
+}
+
+.help-callout p:last-child {
+    margin-bottom: 0 !important;
+}
+
+.help-callout-tip {
+    border-left: 3px solid var(--color-success) !important;
+    background: color-mix(in srgb, var(--color-success) 8%, transparent) !important;
+}
+.help-callout-tip::before { content: '\\e86c' !important; color: var(--color-success) !important; }
+.help-callout-tip strong:first-child { color: var(--color-success) !important; }
+
+.help-callout-warning {
+    border-left: 3px solid var(--color-warning) !important;
+    background: color-mix(in srgb, var(--color-warning) 8%, transparent) !important;
+}
+.help-callout-warning::before { content: '\\e002' !important; color: var(--color-warning) !important; }
+.help-callout-warning strong:first-child { color: var(--color-warning) !important; }
+
+.help-callout-note {
+    border-left: 3px solid var(--color-info) !important;
+    background: color-mix(in srgb, var(--color-info) 8%, transparent) !important;
+}
+.help-callout-note::before { content: '\\e88e' !important; color: var(--color-info) !important; }
+.help-callout-note strong:first-child { color: var(--color-info) !important; }
+
+.help-callout-important {
+    border-left: 3px solid var(--color-error) !important;
+    background: color-mix(in srgb, var(--color-error) 8%, transparent) !important;
+}
+.help-callout-important::before { content: '\\e000' !important; color: var(--color-error) !important; }
+.help-callout-important strong:first-child { color: var(--color-error) !important; }
+
+/* === Table of Contents === */
+.help-toc {
+    min-width: 180px !important;
+    max-width: 200px !important;
+    position: sticky !important;
+    top: 0 !important;
+    align-self: flex-start !important;
+    padding: 20px 16px !important;
+    border-left: 2px solid var(--color-border-subtle) !important;
+    max-height: 80vh !important;
+    overflow-y: auto !important;
+}
+
+.help-toc-title {
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+    color: var(--color-text-muted) !important;
+    margin-bottom: 12px !important;
+}
+
+.help-toc-item {
+    display: block !important;
+    padding: 4px 0 4px 12px !important;
+    font-size: 0.78rem !important;
+    color: var(--color-text-muted) !important;
+    text-decoration: none !important;
+    border-left: 2px solid transparent !important;
+    margin-left: -2px !important;
+    transition: all 0.15s ease !important;
+    cursor: pointer !important;
+    line-height: 1.4 !important;
+}
+
+.help-toc-item:hover {
+    color: var(--color-primary) !important;
+    border-left-color: var(--color-primary) !important;
+}
+
+.help-toc-item-h3 {
+    padding-left: 24px !important;
+    font-size: 0.72rem !important;
+}
+
+/* === Keyword pills === */
+.help-keyword-pill {
+    display: inline-block !important;
+    padding: 2px 10px !important;
+    font-size: 0.68rem !important;
+    border-radius: 12px !important;
+    background: var(--color-hover-overlay) !important;
+    color: var(--color-text-muted) !important;
+    border: 1px solid var(--color-border-subtle) !important;
+    margin-right: 4px !important;
+    margin-bottom: 4px !important;
+    transition: all 0.15s ease !important;
+}
+
+.help-keyword-pill:hover {
+    background: var(--color-primary-light) !important;
+    color: var(--color-primary) !important;
+    border-color: var(--color-border-accent) !important;
+}
+
+/* === Reading time / metadata bar === */
+.help-meta-bar {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    flex-wrap: wrap !important;
+    padding: 8px 0 !important;
+}
+
+.help-reading-time {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    font-size: 0.75rem !important;
+    color: var(--color-text-muted) !important;
+}
+
+/* === Prev/next navigation === */
+.help-prev-next-btn {
+    flex: 1 !important;
+    max-width: 48% !important;
+    padding: 14px 16px !important;
+    background: color-mix(in srgb, var(--color-bg-surface) 85%, var(--color-bg-elevated)) !important;
+    border: 1px solid var(--color-border-subtle) !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+.help-prev-next-btn:hover {
+    border-color: var(--color-border-accent) !important;
+    background: var(--color-bg-elevated) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 8px var(--color-bg-overlay) !important;
+}
+
+.help-prev-next-label {
+    font-size: 0.7rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    color: var(--color-text-muted) !important;
+    margin-bottom: 4px !important;
+}
+
+.help-prev-next-title {
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    color: var(--color-primary) !important;
+}
+
+/* === Welcome page hero === */
+.help-hero-title {
+    font-size: 2.2rem !important;
+    font-weight: 700 !important;
+    background: linear-gradient(135deg, var(--color-text-primary), var(--color-primary)) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
+    line-height: 1.2 !important;
+}
+
+.help-hero-subtitle {
+    font-size: 1.05rem !important;
+    color: var(--color-text-secondary) !important;
+    max-width: 680px !important;
+    line-height: 1.6 !important;
+}
+
+.help-hero-search .q-field__control {
+    background: var(--color-bg-elevated) !important;
+    border: 1px solid var(--color-border-default) !important;
+    border-radius: 10px !important;
+    height: 48px !important;
+}
+
+.help-hero-search .q-field__control:focus-within {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 0 3px var(--color-focus-ring) !important;
+}
+
+.help-hero-search .q-field__native,
+.help-hero-search input {
+    color: var(--color-text-primary) !important;
+    font-size: 0.95rem !important;
+}
+
+/* === Quick-start steps === */
+.help-step-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 16px 12px !important;
+    border-radius: 10px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    flex: 1 !important;
+    background: color-mix(in srgb, var(--color-bg-surface) 85%, var(--color-bg-elevated)) !important;
+    border: 1px solid var(--color-border-subtle) !important;
+    text-align: center !important;
+}
+
+.help-step-item:hover {
+    background: var(--color-primary-light) !important;
+    border-color: var(--color-border-accent) !important;
+    transform: translateY(-3px) !important;
+    box-shadow: 0 4px 12px var(--color-bg-overlay) !important;
+}
+
+.help-step-number {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 50% !important;
+    background: var(--color-primary) !important;
+    color: white !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    flex-shrink: 0 !important;
+}
+
+.help-step-connector {
+    width: 32px !important;
+    height: 2px !important;
+    background: linear-gradient(90deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 30%, transparent)) !important;
+    flex-shrink: 0 !important;
+    align-self: center !important;
+}
+
+/* === Related topic cards (enhanced) === */
+.help-related-card {
+    background: color-mix(in srgb, var(--color-bg-surface) 85%, var(--color-bg-elevated)) !important;
+    border: 1px solid var(--color-border-subtle) !important;
+    border-radius: 8px !important;
+    padding: 14px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+.help-related-card:hover {
+    border-color: var(--color-border-accent) !important;
+    background: var(--color-bg-elevated) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px var(--color-bg-overlay) !important;
+}
+
+/* === Category card with left accent === */
+.help-category-card-accent {
+    border-left: 3px solid var(--color-primary) !important;
+}
+
+/* === Active sidebar topic === */
+.help-topic-btn.help-sidebar-active {
+    background: color-mix(in srgb, var(--color-primary-light) 85%, transparent) !important;
+    border-left-color: var(--color-primary) !important;
+}
+
+.help-topic-btn.help-sidebar-active .help-sidebar-topic-title {
+    color: var(--color-primary) !important;
+    font-weight: 600 !important;
+}
+
+/* === Smooth scrolling for content area === */
+.help-content-area .q-scrollarea__container {
+    scroll-behavior: smooth !important;
+}
+
+/* === Sidebar collapse animation === */
+.help-sidebar-topics-wrapper {
+    overflow: hidden !important;
+    transition: max-height 0.25s ease-in-out !important;
+}
+
+/* === Category overview cards (enhanced) === */
+.help-category-overview-card {
+    background: color-mix(in srgb, var(--color-bg-surface) 85%, var(--color-bg-elevated)) !important;
+    border: 1px solid var(--color-border-subtle) !important;
+    border-left: 3px solid var(--color-primary) !important;
+    border-radius: 0 8px 8px 0 !important;
+    padding: 20px !important;
+    transition: all 0.2s ease !important;
+    cursor: pointer !important;
+}
+
+.help-category-overview-card:hover {
+    background: var(--color-bg-elevated) !important;
+    border-color: var(--color-border-accent) !important;
+    border-left-color: var(--color-primary-hover) !important;
+    transform: translateX(4px) !important;
+}
+
+/* === Content max-width for readability === */
+.help-markdown-content {
+    max-width: 780px !important;
+}
+
+/* === Strong text within markdown === */
+.help-markdown-content strong,
+.help-accordion-markdown strong {
+    color: var(--color-text-primary) !important;
 }
 """
 
