@@ -3648,23 +3648,27 @@ Connect Spotify to display your currently playing music on stream with beautiful
 
 ## Setup Process
 
+### Spotify Requirements
+- A [Spotify Premium](https://www.spotify.com/premium/) subscription
+- Active Spotify session (desktop app, web player, or mobile)
+- Music must be playing for the widget to display
+
 ### Quick Connect
 1. Go to **Settings** → **Spotify** tab
-2. Click **"Connect with Spotify"**
-3. Authorize Mycelian in the browser
-4. Return to app - status shows "Connected"
+2. If you use your own Spotify app (see **Create a Spotify app** below), paste **Client ID** and **Client Secret** into the fields, then click **Save**. Credentials are not stored until you save.
+3. Click **Connect**
+4. Authorize Mycelian in the browser
+5. Return to the app — status should show **Connected**
 
-### Spotify Requirements
-- A [Spotify](https://www.spotify.com/) Free or Premium account
-- Active Spotify session (desktop app, web player, or mobile)
-- Music must be playing for widget to display
+### Create a Spotify app (Developer Dashboard)
+Use these steps when Mycelian should use **your** Spotify application credentials (from the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)):
 
-### Advanced: Custom Spotify App
-If you want to use your own Spotify application credentials:
-1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-2. Create a new application
-3. Set the redirect URI to match Mycelian's callback
-4. Enter the Client ID and Secret in Settings → Spotify
+1. Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and sign in with the Spotify account you want to connect.
+2. Click **Create app**. Enter an app name and description when prompted.
+3. Under **Redirect URIs**, add **exactly** `http://localhost:9973` — this is Mycelian's OAuth callback. It must match character-for-character (`http`, `localhost`, port `9973`, no trailing slash).
+4. In the app's API settings, enable **Web API** and **Web Playback SDK** (use the same labels shown in the developer console).
+5. Save the app settings. On the app page, copy the **Client ID**. Reveal and copy the **Client secret** (Spotify may label it **Client Secret**).
+6. In Mycelian, open **Settings** → **Spotify**. Paste **Client ID** and **Client Secret** into the matching fields, click **Save**, then click **Connect** to finish signing in through your browser.
 
 ## Browser Source Setup
 
