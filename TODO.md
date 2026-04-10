@@ -35,3 +35,16 @@ Database selection issues
     [x] - Fix issue with database (and all related settings) not being saved when changing database type
     [x] - Fix issue with Firebase url not being recognized
     [x] - Implement database migration between different database types
+
+[] - Fix auto-update not notifying user of update upon startup.
+
+FF7 HTML Template
+    [] - Create HTML template that will hook onto the FF7 exe process to get data from the game.
+        [] - The template must be able to reliably hook onto the game process, rehook if the game has been closed and reopened, and fetch game data every .5 seconds.
+    [] - Create configurable elements for the template that display the following:
+        [] - Enemies - HP, Name, Level, and a progress bar for their ATB gauge.
+        [] - Party Members - HP, Name, Level, Limit Bar, and a progress bar for their ATB gauge.
+        [] - Current play time
+        [] - Current gil
+        [] - Bosses defeated (toggleable as a list of boss names, most recently killed boss name, or a total count) <-- This element must be resettable to nothing by clicking a button, or upon app restart.
+    [] - Template should be stylized to match FF7, by using its font, and setting up progress bars to look the same.
