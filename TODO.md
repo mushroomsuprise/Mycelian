@@ -62,6 +62,6 @@ Game Hooks
     [x] - Rewrite hook service to be game agnostic, so it can be used for any game that has a hook service. Game hooks should be able to be added and removed at runtime, and should be able to be configured to use different memory values for different games. Everything should be specified in the game hook file, the hook service is just a module that handles the reading and writing of game memory values.
 
 FF7 Hook
-    [] - Find the memory values that handle inputs, such as movement confirm/cancel, menu button, etc etc, and expose them as functions for the Connectors system to use.
+    [x] - Find the memory values that handle inputs, such as movement confirm/cancel, menu button, etc etc, and expose them as functions for the Connectors system to use.
     [x] - Add functions to kill all enemies, add gil, remove gil, kill a specific party member, add hp to a specific party member, remove hp from a specific party member, etc etc.
     [x] - Move the ff7_reader.py file to the game_hooks directory. Then rename the ff7_reader.py file to ff7_hook.py
