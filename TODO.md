@@ -58,6 +58,7 @@ Game Hooks
     [] - Functions for connector actions should be defined in the specific game's hook file. Example: ff7_hook.py should have a function called "add_gil" that takes a positive only integer argument.
     [] - Create a new directory in the modules folder called "game_hooks" for all of the new game hook files. (Just game hooks, not the core game hooks service)
     [] - Add game hook service to the help system. List out currently available game hooks, and explain in plain text what information is available for each game hook (both reading and writing options). I want this to be human readable, not just a list of function names and arguments.
+    [] - Rewrite hook service to be game agnostic, so it can be used for any game that has a hook service. Game hooks should be able to be added and removed at runtime, and should be able to be configured to use different memory values for different games. Everything should be specified in the game hook file, the hook service is just a module that handles the reading and writing of game memory values.
 
 FF7 Hook
     [] - Find the memory values that handle inputs, such as movement confirm/cancel, menu button, etc etc, and expose them as functions for the Connectors system to use.
