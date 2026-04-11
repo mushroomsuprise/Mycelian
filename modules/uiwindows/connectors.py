@@ -1525,7 +1525,7 @@ def create_keyboard_config(action_index: int, form_data: dict, initial_config: d
     # Key Sequence Input
     ui.input(
         label="Key Sequence",
-        placeholder="e.g., ctrl+c, alt+tab, f1, space, enter",
+        placeholder="e.g., ctrl+c, alt+tab, up, arrow_down, shift+left, f1, enter",
         value=initial_config.get("key_sequence", ""),
         on_change=lambda e: update_action_config(
             action_index, "key_sequence", e.value, form_data
@@ -1533,7 +1533,8 @@ def create_keyboard_config(action_index: int, form_data: dict, initial_config: d
     ).classes("w-full mb-2 action-input")
 
     ui.label(
-        "Enter key combinations using '+' (e.g., ctrl+c). Use {{placeholder}} for dynamic values."
+        "Use '+' for combos (e.g., ctrl+c). Arrow keys: up, down, left, right, or arrow_up style. "
+        "Use {{placeholder}} for dynamic values."
     ).classes("text-xs muted-text mb-2")
 
     # Mode-specific options container
