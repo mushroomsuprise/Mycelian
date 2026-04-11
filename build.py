@@ -94,8 +94,8 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.7.0"
-BUILD_DATE = "April 9th 2026"
+VERSION = "1.7.1"
+BUILD_DATE = "April 11th 2026"
 
 # Version file path (set to None if no version file, or provide path like 'version.txt')
 VERSION_FILE = None
