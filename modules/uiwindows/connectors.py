@@ -731,6 +731,10 @@ def get_action_display_name(action) -> str:
                 return f"{app_name} Volume: {action_mode}"
             else:
                 return f"System Volume: {action_mode}"
+        elif action_type == "game_hook":
+            gid = getattr(action, "game_id", "ff7")
+            op = getattr(action, "operation", "")
+            return f"Game {gid}: {op.replace('_', ' ')}"
         else:
             return action_type.replace("_", " ").title()
 
@@ -886,6 +890,25 @@ def create_connector_form(connector_id: str = None):
                     action_data["config"]["enabled"] = action.enabled
                 if hasattr(action, "force_send"):
                     action_data["config"]["force_send"] = action.force_send
+
+                if getattr(action, "action_type", None) == ActionType.GAME_HOOK:
+                    action_data["config"]["game_id"] = getattr(
+                        action, "game_id", "ff7"
+                    )
+                    action_data["config"]["operation"] = getattr(
+                        action, "operation", ""
+                    )
+                    ha = getattr(action, "hook_arguments", None) or {}
+                    if "amount" in ha:
+                        action_data["config"]["arg_amount"] = str(ha["amount"])
+                    if "slot" in ha:
+                        action_data["config"]["arg_slot"] = str(ha["slot"])
+                    if "value" in ha:
+                        action_data["config"]["arg_value"] = str(ha["value"])
+                    if "enemy_index" in ha:
+                        action_data["config"]["arg_enemy_index"] = str(
+                            ha["enemy_index"]
+                        )
 
                 form_data["actions"].append(action_data)
             except Exception as e:
@@ -1318,6 +1341,7 @@ def get_available_actions() -> Dict[str, str]:
         "execute_command": "Execute Command",
         "key_press": "Key Press / Mouse Click",
         "audio_control": "Audio Control",
+        "game_hook": "Game Hook (memory write)",
     }
 
 
@@ -1378,6 +1402,68 @@ def handle_action_type_change_with_data(
             create_key_press_config(action_index, form_data, initial_config)
         elif action_type == "audio_control":
             create_audio_control_config(action_index, form_data, initial_config)
+        elif action_type == "game_hook":
+            create_game_hook_config(action_index, form_data, initial_config)
+
+
+def create_game_hook_config(
+    action_index: int, form_data: dict, initial_config: dict = None
+):
+    """Configure crowd-control style game memory writes (FF7 first)."""
+    if initial_config is None:
+        initial_config = {}
+
+    from ..game_hooks.ff7_hook import FF7_CONNECTOR_CATALOG
+
+    ui.select(
+        options={"ff7": "Final Fantasy VII (PC)"},
+        label="Game",
+        value=initial_config.get("game_id", "ff7"),
+        on_change=lambda e: update_action_config(
+            action_index, "game_id", e.value, form_data
+        ),
+    ).classes("w-full mb-2 action-select")
+
+    op_options = {c["id"]: c["label"] for c in FF7_CONNECTOR_CATALOG}
+    op_container = ui.element("div").classes("w-full")
+
+    def refresh_args(op_id: str) -> None:
+        op_container.clear()
+        spec = next((c for c in FF7_CONNECTOR_CATALOG if c["id"] == op_id), None)
+        with op_container:
+            if not spec:
+                return
+            ui.label(spec.get("description", "")).classes("text-sm muted-text mb-2")
+            for arg in spec.get("args", []):
+                aname = arg["name"]
+                key = f"arg_{aname}"
+                val = str(initial_config.get(key, ""))
+                ui.input(
+                    label=arg.get("label", aname),
+                    value=val,
+                    on_change=lambda e, k=key: update_action_config(
+                        action_index, k, e.value, form_data
+                    ),
+                ).classes("w-full mb-2 action-input")
+
+    ui.select(
+        options=op_options,
+        label="Operation",
+        value=initial_config.get("operation", next(iter(op_options.keys()), "add_gil")),
+        on_change=lambda e: [
+            update_action_config(action_index, "operation", e.value, form_data),
+            refresh_args(e.value),
+        ],
+    ).classes("w-full mb-2 action-select")
+
+    cur_op = initial_config.get("operation", "add_gil")
+    if cur_op not in op_options:
+        cur_op = next(iter(op_options.keys()), "add_gil")
+    refresh_args(cur_op)
+
+    ui.label(
+        "Requires Game Hooks enabled and the game running. Battle-only actions fail safely when not in combat."
+    ).classes("text-xs muted-text mt-2")
 
 
 def create_key_press_config(
@@ -3631,6 +3717,18 @@ def save_new_connector(form_data: dict):
                     control_action=control_action,
                     control_data=control_data,
                 )
+            elif action_type == ActionType.GAME_HOOK:
+                from ..game_hooks.ff7_hook import ff7_connector_config_to_hook_kwargs
+
+                hook_args = ff7_connector_config_to_hook_kwargs(action_config)
+                action = connector_actions.create_action(
+                    action_type=action_type,
+                    action_id=action_id,
+                    name=f"{form_data['name']} Action {i+1}",
+                    game_id=action_config.get("game_id", "ff7"),
+                    operation=action_config.get("operation", ""),
+                    hook_arguments=hook_args,
+                )
             else:
                 action = connector_actions.create_action(
                     action_type=action_type,
@@ -3774,6 +3872,18 @@ def save_updated_connector(form_data: dict):
                     template_name=template_name,
                     control_action=control_action,
                     control_data=control_data,
+                )
+            elif action_type == ActionType.GAME_HOOK:
+                from ..game_hooks.ff7_hook import ff7_connector_config_to_hook_kwargs
+
+                hook_args = ff7_connector_config_to_hook_kwargs(action_config)
+                action = connector_actions.create_action(
+                    action_type=action_type,
+                    action_id=action_id,
+                    name=f"{form_data['name']} Action {i+1}",
+                    game_id=action_config.get("game_id", "ff7"),
+                    operation=action_config.get("operation", ""),
+                    hook_arguments=hook_args,
                 )
             else:
                 action = connector_actions.create_action(

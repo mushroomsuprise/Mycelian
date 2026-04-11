@@ -10,45 +10,27 @@ Commands from templates (see web_engine ``game_hook_command``)::
     { "hook": "ff7", "action": "clear_bosses" }
 
 Boss defeat log for FF7 is kept **in memory only** (cleared on Mycelian restart).
+
+Connector and template writes are serialized on the hook polling thread via a queue.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
+import queue
 import threading
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Tuple
 
 from .database_manager import database_manager
+from .game_hooks import Ff7BossTracker, create_hook_instance
+from .game_hooks.ff7_hook import FF7Hook
 
 logger = logging.getLogger(__name__)
 
 _FF7_DB_PATH = "GameHooks/ff7_enabled"
 _INTERVAL = 0.25
-
-# Curated boss-ish names / scene ids (expand as needed).
-_BOSS_SCENE_IDS: Set[int] = {
-    128, 256, 384, 400, 416, 432, 448, 464, 480, 496, 512, 528, 544, 560,
-}
-_BOSS_NAME_SUBSTR = (
-    "weapon",
-    "jenova",
-    "safer",
-    "sephiroth",
-    "ruby",
-    "emerald",
-    "diamond",
-    "hell house",
-    "rapps",
-    "hundred",
-    "palmer",
-    "reno",
-    "rude",
-    "elena",
-    "tseng",
-    "hojo",
-    "sample",
-)
 
 
 def _ff7_enabled() -> bool:
@@ -63,53 +45,43 @@ def _ff7_enabled() -> bool:
     return False
 
 
-def _is_boss_actor(actor: Dict[str, Any]) -> bool:
-    sid = int(actor.get("scene_id") or 0)
-    if sid in _BOSS_SCENE_IDS:
-        return True
-    name = (actor.get("name") or "").lower()
-    return any(s in name for s in _BOSS_NAME_SUBSTR)
-
-
 class GameHooksServiceImpl:
     def __init__(self) -> None:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        self._lock = threading.Lock()
-        self._ff7_reader = None
-        self._boss_names: List[str] = []
-        self._boss_last: str = ""
-        self._prev_battle_enemies: Dict[int, int] = {}
+        self._ff7_hook: Optional[FF7Hook] = None
+        self._ff7_boss_tracker = Ff7BossTracker()
         self._emit_count = 0
+        self._write_queue: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, str, Dict[str, Any]]]" = (
+            queue.Queue()
+        )
 
     def clear_ff7_bosses(self) -> None:
-        with self._lock:
-            self._boss_names.clear()
-            self._boss_last = ""
-            self._prev_battle_enemies.clear()
+        self._ff7_boss_tracker.clear()
 
-    def _update_boss_tracking(self, snap: Dict[str, Any]) -> None:
-        if not snap.get("battle"):
-            with self._lock:
-                self._prev_battle_enemies.clear()
-            return
-        enemies = snap.get("enemies") or []
-        with self._lock:
-            current: Dict[int, int] = {}
-            for e in enemies:
-                slot = int(e.get("slot", -1))
-                hp = int(e.get("hp", 0))
-                current[slot] = hp
-                prev = self._prev_battle_enemies.get(slot)
-                if prev is not None and prev > 0 and hp <= 0 and _is_boss_actor(e):
-                    name = (e.get("name") or "Unknown").strip()
-                    if name and (not self._boss_names or self._boss_names[-1] != name):
-                        self._boss_names.append(name)
-                        self._boss_last = name
-                self._prev_battle_enemies[slot] = hp
-            for slot in list(self._prev_battle_enemies.keys()):
-                if slot not in current:
-                    del self._prev_battle_enemies[slot]
+    def enqueue_game_hook_write(
+        self, game_id: str, operation: str, arguments: Optional[Dict[str, Any]] = None
+    ) -> concurrent.futures.Future:
+        """Schedule a write on the hook thread. Returns a concurrent.futures.Future."""
+        fut: concurrent.futures.Future = concurrent.futures.Future()
+        self._write_queue.put((fut, game_id, operation, dict(arguments or {})))
+        return fut
+
+    def _drain_write_queue(self) -> None:
+        while True:
+            try:
+                fut, game_id, op, kwargs = self._write_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if game_id != "ff7" or self._ff7_hook is None:
+                    fut.set_result((False, f"No active hook for '{game_id}'"))
+                    continue
+                result = self._ff7_hook.execute_operation(op, kwargs)
+                fut.set_result(result)
+            except Exception as e:
+                logger.warning("game hook write failed: %s", e, exc_info=True)
+                fut.set_result((False, str(e)))
 
     def _emit(self, payload: Dict[str, Any]) -> None:
         try:
@@ -133,21 +105,18 @@ class GameHooksServiceImpl:
     def _loop(self) -> None:
         while not self._stop.is_set():
             t0 = time.time()
+            self._drain_write_queue()
+
             hooks: Dict[str, Any] = {}
             if _ff7_enabled():
-                if self._ff7_reader is None:
-                    from .ff7_reader import FF7Reader
-
-                    self._ff7_reader = FF7Reader()
+                if self._ff7_hook is None:
+                    inst = create_hook_instance("ff7")
+                    assert isinstance(inst, FF7Hook)
+                    self._ff7_hook = inst
                 try:
-                    snap = self._ff7_reader.snapshot()
-                    self._update_boss_tracking(snap)
-                    with self._lock:
-                        snap["bosses"] = {
-                            "names": list(self._boss_names),
-                            "last": self._boss_last,
-                            "count": len(self._boss_names),
-                        }
+                    snap = self._ff7_hook.snapshot()
+                    self._ff7_boss_tracker.update_from_snapshot(snap)
+                    snap["bosses"] = self._ff7_boss_tracker.bosses_dict()
                     hooks["ff7"] = snap
                 except Exception as e:
                     logger.warning("FF7 snapshot error: %s", e, exc_info=True)
@@ -166,12 +135,12 @@ class GameHooksServiceImpl:
                         "debug": {"stage": "snapshot_exception", "message": str(e)},
                     }
             else:
-                if self._ff7_reader is not None:
+                if self._ff7_hook is not None:
                     try:
-                        self._ff7_reader.close()
+                        self._ff7_hook.close()
                     except Exception:
                         pass
-                    self._ff7_reader = None
+                    self._ff7_hook = None
                 hooks["ff7"] = {
                     "hook": "ff7",
                     "attached": False,
@@ -216,12 +185,12 @@ class GameHooksServiceImpl:
             if self._stop.wait(wait):
                 break
 
-        if self._ff7_reader is not None:
+        if self._ff7_hook is not None:
             try:
-                self._ff7_reader.close()
+                self._ff7_hook.close()
             except Exception:
                 pass
-            self._ff7_reader = None
+            self._ff7_hook = None
         logger.debug("Game hooks service thread exit")
 
     def start(self) -> None:

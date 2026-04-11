@@ -126,7 +126,8 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
             "Migration": "settings",              # Category
             "Statistics": "settings",             # Category
             "App Settings": "settings",           # Category
-            "About": "settings"                   # Category
+            "About": "settings",                   # Category
+            "Game Hooks": "game_hooks",
         }
         return settings_sub_tab_mapping.get(sub_tab)
 

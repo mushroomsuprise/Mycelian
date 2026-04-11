@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from nicegui import ui
 
 from ...database_manager import database_manager
+from ...help_system.contextual_help import help_button
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,9 @@ class GameHooksTab:
         self._load_from_db()
         with parent_container:
             with ui.card().classes("content-section w-full"):
-                ui.label("Game Hooks").classes("text-xl font-bold mb-2")
+                with ui.row().classes("w-full items-center gap-2 mb-2"):
+                    ui.label("Game Hooks").classes("text-xl font-bold")
+                    help_button(topic_id="game_hooks", tooltip="Game Hooks help")
                 ui.label(
                     "When enabled, Mycelian reads live data from supported PC games "
                     "and broadcasts it to browser templates (e.g. /ff7). "

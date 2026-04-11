@@ -27,7 +27,7 @@ import asyncio
 import logging
 import os
 import subprocess
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, Optional
 
 from .connector_core import ActionType, BaseAction
@@ -2853,6 +2853,45 @@ class SendGreetingAction(BaseAction):
         return True
 
 
+@dataclass
+class GameHookAction(BaseAction):
+    """Write to a supported game's memory (crowd control), via the game hooks service thread."""
+
+    game_id: str = "ff7"
+    operation: str = ""
+    hook_arguments: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.action_type = ActionType.GAME_HOOK
+
+    async def execute(
+        self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
+    ) -> bool:
+        try:
+            from .game_hooks_service import game_hooks_service
+
+            cfut = game_hooks_service.enqueue_game_hook_write(
+                self.game_id, self.operation, self.hook_arguments
+            )
+            ok, err_msg = await asyncio.wait_for(
+                asyncio.wrap_future(cfut), timeout=10.0
+            )
+            if not ok:
+                logger.warning(
+                    "Game hook write failed game_id=%s op=%s err=%s",
+                    self.game_id,
+                    self.operation,
+                    err_msg,
+                )
+            return bool(ok)
+        except asyncio.TimeoutError:
+            logger.error("Game hook write timed out: %s", self.operation)
+            return False
+        except Exception as e:
+            logger.error("Game hook action error: %s", e, exc_info=True)
+            return False
+
+
 # Factory function for creating actions
 def create_action(
     action_type: ActionType, action_id: str, name: str, **kwargs
@@ -2871,6 +2910,7 @@ def create_action(
         ActionType.EXECUTE_COMMAND: ExecuteCommandAction,
         ActionType.KEY_PRESS: KeyPressAction,
         ActionType.AUDIO_CONTROL: AudioControlAction,
+        ActionType.GAME_HOOK: GameHookAction,
     }
 
     action_class = action_classes.get(action_type)

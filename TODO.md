@@ -50,17 +50,18 @@ FF7 HTML Template
     [x] - Template should be stylized to match FF7, by using its font, and setting up progress bars to look the same.
     [x] - Fix issue with enemies segment blinking on when not in a battle
     [x] - Decrease time between data fetches to 0.25 seconds
-    [] - Find memory values for game menu colors and configure the template to use them so the template segment backgrounds match the game menu colors.
+    [x] - Find memory values for game menu colors and configure the template to use them so the template segment backgrounds match the game menu colors.
+    [x] - When a party member is killed, their name, current hp, and max hp, should be red. If their hp or mp is below 25% of their max, their current HP and MP should be yellow.
 
 Game Hooks
-    [] - Create a system to write to game memory values for "Crowd Control" style of streams.
-    [] - Expose the game memory writes (Must be easy names like, Add X Gil, Kill X Enemy, etc etc) with appropriate arguments to the Connectors system as actions so they can be triggered by Connector events.
-    [] - Functions for connector actions should be defined in the specific game's hook file. Example: ff7_hook.py should have a function called "add_gil" that takes a positive only integer argument.
-    [] - Create a new directory in the modules folder called "game_hooks" for all of the new game hook files. (Just game hooks, not the core game hooks service)
-    [] - Add game hook service to the help system. List out currently available game hooks, and explain in plain text what information is available for each game hook (both reading and writing options). I want this to be human readable, not just a list of function names and arguments.
-    [] - Rewrite hook service to be game agnostic, so it can be used for any game that has a hook service. Game hooks should be able to be added and removed at runtime, and should be able to be configured to use different memory values for different games. Everything should be specified in the game hook file, the hook service is just a module that handles the reading and writing of game memory values.
+    [x] - Create a system to write to game memory values for "Crowd Control" style of streams.
+    [x] - Expose the game memory writes (Must be easy names like, Add X Gil, Kill X Enemy, etc etc) with appropriate arguments to the Connectors system as actions so they can be triggered by Connector events.
+    [x] - Functions for connector actions should be defined in the specific game's hook file. Example: ff7_hook.py should have a function called "add_gil" that takes a positive only integer argument.
+    [x] - Create a new directory in the modules folder called "game_hooks" for all of the new game hook files. (Just game hooks, not the core game hooks service)
+    [x] - Add game hook service to the help system. List out currently available game hooks, and explain in plain text what information is available for each game hook (both reading and writing options). I want this to be human readable, not just a list of function names and arguments.
+    [x] - Rewrite hook service to be game agnostic, so it can be used for any game that has a hook service. Game hooks should be able to be added and removed at runtime, and should be able to be configured to use different memory values for different games. Everything should be specified in the game hook file, the hook service is just a module that handles the reading and writing of game memory values.
 
 FF7 Hook
     [] - Find the memory values that handle inputs, such as movement confirm/cancel, menu button, etc etc, and expose them as functions for the Connectors system to use.
-    [] - Add functions to kill all enemies, add gil, remove gil, kill a specific party member, add hp to a specific party member, remove hp from a specific party member, etc etc.
-    [] - Move the ff7_reader.py file to the game_hooks directory. Then rename the ff7_reader.py file to ff7_hook.py
+    [x] - Add functions to kill all enemies, add gil, remove gil, kill a specific party member, add hp to a specific party member, remove hp from a specific party member, etc etc.
+    [x] - Move the ff7_reader.py file to the game_hooks directory. Then rename the ff7_reader.py file to ff7_hook.py

@@ -107,6 +107,9 @@ class ActionType(Enum):
     KEY_PRESS = "key_press"
     AUDIO_CONTROL = "audio_control"
 
+    # Game memory (crowd control)
+    GAME_HOOK = "game_hook"
+
 
 @dataclass
 class TriggerCondition:

@@ -18,6 +18,11 @@
         :root {
             --ff7-bg-top: #263884;
             --ff7-bg-bot: #0a0a2e;
+            --ff7-bg-ul: #263884;
+            --ff7-bg-ur: #263884;
+            --ff7-bg-ll: #0a0a2e;
+            --ff7-bg-lr: #0a0a2e;
+            --ff7-bg-center: #182159;
             --ff7-border-outer: #aac4e8;
             --ff7-border-mid: #4868a0;
             --ff7-border-inner: #182048;
@@ -69,10 +74,15 @@
             width: 100%;
         }
 
-        /* --- FF7 authentic panel --- */
+        /* --- FF7 authentic panel (savemap four-corner window RGB) --- */
         .panel {
             position: relative;
-            background: linear-gradient(160deg, var(--ff7-bg-top) 0%, var(--ff7-bg-bot) 100%);
+            background-color: var(--ff7-bg-center);
+            background-image:
+                radial-gradient(ellipse 115% 115% at 0% 0%, var(--ff7-bg-ul) 0%, transparent 72%),
+                radial-gradient(ellipse 115% 115% at 100% 0%, var(--ff7-bg-ur) 0%, transparent 72%),
+                radial-gradient(ellipse 115% 115% at 0% 100%, var(--ff7-bg-ll) 0%, transparent 72%),
+                radial-gradient(ellipse 115% 115% at 100% 100%, var(--ff7-bg-lr) 0%, transparent 72%);
             border: 2px solid var(--ff7-border-outer);
             border-radius: 8px;
             padding: 10px 14px;
@@ -186,6 +196,16 @@
         .hp-ok   .stat-val { color: var(--ff7-text); }
         .hp-warn .stat-val { color: var(--ff7-hp-yellow); }
         .hp-dead .stat-val { color: var(--ff7-hp-red); }
+
+        /* Party row: per-stat colors (dead = name + both HP numbers red; warn = current HP + MP yellow only) */
+        .char-name.name-dead {
+            color: var(--ff7-hp-red);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+        }
+        .stat-val.val-dead { color: var(--ff7-hp-red); }
+        /* Beat .hp-ok .stat-val when party is in low-resource state */
+        .hp-cell .stat-val.val-warn,
+        .mp-cell .stat-val.val-warn { color: var(--ff7-hp-yellow); }
 
         /* --- Bar cell wrapper (LIMIT / TIME) --- */
         .bar-cell {
@@ -528,6 +548,13 @@
             return 'hp-ok';
         }
 
+        function partyLowResource(hp, maxHp, mp, maxMp) {
+            if (hp <= 0) return false;
+            var lowHp = maxHp > 0 && (hp / maxHp) < 0.25;
+            var lowMp = maxMp > 0 && (mp / maxMp) < 0.25;
+            return lowHp || lowMp;
+        }
+
         function renderPartyRow(container, actor) {
             var maxHp = actor.max_hp || 1;
             var hp = actor.hp || 0;
@@ -540,23 +567,29 @@
             var limFull = limRaw >= 255;
             var atbPct = Math.max(0, Math.min(100, (actor.atb || 0) * 100));
             var atbReady = atbPct >= 99;
-            var state = hpState(hp, maxHp);
+            var dead = hp <= 0;
+            var warn = !dead && partyLowResource(hp, maxHp, mp, maxMp);
+            var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
+
+            var hpCurrClass = 'stat-val hp-current' + (dead ? ' val-dead' : (warn ? ' val-warn' : ''));
+            var hpMaxClass = 'stat-val hp-max' + (dead ? ' val-dead' : '');
+            var mpValClass = 'stat-val mp-current' + (!dead && warn ? ' val-warn' : '');
 
             var row = document.createElement('div');
             row.className = 'char-row';
 
             var nameEl = document.createElement('div');
-            nameEl.className = 'char-name';
+            nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
             nameEl.textContent = actor.name || '?';
             row.appendChild(nameEl);
 
             var hpCell = document.createElement('div');
-            hpCell.className = 'stat-cell hp-cell ' + state;
+            hpCell.className = hpCellClass;
             hpCell.innerHTML =
                 '<div class="stat-values">' +
-                    '<span class="stat-val">' + hp + '</span>' +
+                    '<span class="' + hpCurrClass + '">' + hp + '</span>' +
                     '<span class="stat-sep">/</span>' +
-                    '<span class="stat-val">' + maxHp + '</span>' +
+                    '<span class="' + hpMaxClass + '">' + maxHp + '</span>' +
                 '</div>' +
                 '<div class="ff7-hpbar"><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
             row.appendChild(hpCell);
@@ -565,7 +598,7 @@
             mpCell.className = 'stat-cell mp-cell';
             mpCell.innerHTML =
                 '<div class="stat-values">' +
-                    '<span class="stat-val">' + mp + '</span>' +
+                    '<span class="' + mpValClass + '">' + mp + '</span>' +
                 '</div>' +
                 '<div class="ff7-mpbar"><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
             row.appendChild(mpCell);
@@ -682,6 +715,32 @@
             }
 
             if (d.disabled || d.error || !d.attached) return;
+
+            var mt = d.menu_theme;
+            var themeKey = mt ? JSON.stringify(mt) : '';
+            if (typeof window._ff7LastMenuThemeKey === 'undefined') {
+                window._ff7LastMenuThemeKey = '';
+            }
+            if (themeKey !== window._ff7LastMenuThemeKey) {
+                window._ff7LastMenuThemeKey = themeKey;
+                var root = document.documentElement;
+                if (mt) {
+                    if (mt.bg_top) root.style.setProperty('--ff7-bg-top', mt.bg_top);
+                    if (mt.bg_bot) root.style.setProperty('--ff7-bg-bot', mt.bg_bot);
+                    if (mt.bg_ul) root.style.setProperty('--ff7-bg-ul', mt.bg_ul);
+                    if (mt.bg_ur) root.style.setProperty('--ff7-bg-ur', mt.bg_ur);
+                    if (mt.bg_ll) root.style.setProperty('--ff7-bg-ll', mt.bg_ll);
+                    if (mt.bg_lr) root.style.setProperty('--ff7-bg-lr', mt.bg_lr);
+                    if (mt.bg_center) root.style.setProperty('--ff7-bg-center', mt.bg_center);
+                    if (mt.border_outer) root.style.setProperty('--ff7-border-outer', mt.border_outer);
+                    if (mt.border_mid) root.style.setProperty('--ff7-border-mid', mt.border_mid);
+                    if (mt.border_inner) root.style.setProperty('--ff7-border-inner', mt.border_inner);
+                } else {
+                    ['--ff7-bg-top', '--ff7-bg-bot', '--ff7-bg-ul', '--ff7-bg-ur', '--ff7-bg-ll', '--ff7-bg-lr', '--ff7-bg-center', '--ff7-border-outer', '--ff7-border-mid', '--ff7-border-inner'].forEach(function (p) {
+                        root.style.removeProperty(p);
+                    });
+                }
+            }
 
             var partyEl = document.getElementById('partyBody');
             partyEl.innerHTML = '';

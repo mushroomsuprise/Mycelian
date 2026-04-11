@@ -1627,6 +1627,10 @@ Add [conditions](help:connector_conditions) to control when actions execute.
 - **Action**: Create, modify, delete files
 - **Use case**: Log events, update configs
 
+### Game Hook (memory write)
+- **Action**: Game Hook (memory write) — see [Game Hooks](help:game_hooks) for supported games, live data, and each write operation in plain language
+- **Use case**: Crowd control on your own single-player session (e.g. add gil when channel points are redeemed)
+
 ## Advanced Actions
 
 ### Conditional Actions
@@ -1679,7 +1683,7 @@ Message: "Thanks {username} for {amount} bits!"
 - See [Performance Optimization](help:troubleshooting_performance) if actions cause lag
         """,
         keywords=["actions", "responses", "automation", "effects", "controls"],
-        related_topics=["connectors_intro", "connector_triggers"]
+        related_topics=["connectors_intro", "connector_triggers", "game_hooks"]
     ),
 
     "connector_conditions": HelpTopic(
@@ -3024,7 +3028,64 @@ Settings are stored in:
 > **Tip:** If you're just getting started, follow the [Welcome to Mycelian](help:getting_started_intro) guide which walks through essential settings step by step.
         """,
         keywords=["settings", "configuration", "preferences", "setup"],
-        related_topics=["integrations_twitch", "settings_backup"]
+        related_topics=["integrations_twitch", "settings_backup", "game_hooks"]
+    ),
+
+    "game_hooks": HelpTopic(
+        id="game_hooks",
+        title="Game Hooks (live game data)",
+        category=HelpCategory.SETTINGS,
+        summary="Read party and battle stats from supported games, optional crowd-control writes, and browser overlays.",
+        content="""
+# Game Hooks
+
+Game Hooks let Mycelian attach to a supported PC game (currently **Final Fantasy VII** English PC / Steam: `ff7_en.exe` or `ff7.exe`) and read live memory. Data is pushed over Socket.IO to browser templates such as the **FF7** overlay (`/ff7`).
+
+## Enabling FF7
+
+1. Open **Settings** → **Game Hooks**
+2. Turn on **Final Fantasy VII (PC)**
+3. Click **Save**
+4. Start the game on the same machine as Mycelian (Windows only for memory access)
+
+If the hook is disabled, templates still load but receive a stub payload with `disabled: true`.
+
+## What is read (FF7)
+
+When attached, the hook sends roughly four times per second:
+
+- **Party**: names, levels, HP, max HP, MP, max MP, limit gauge, ATB (in battle the values are live battle memory; on the field they come from the in-RAM savemap).
+- **Enemies** (battle only): name, level, HP, MP, ATB.
+- **Gil** and **play time** from the savemap.
+- **Boss session log**: names of defeated bosses this session (in memory until you clear them from the template or restart Mycelian).
+- **Menu colors**: window gradient RGB from the savemap is mapped to overlay panel colors so the browser source can match your configured window style.
+
+## Crowd control (writing memory)
+
+Connectors can run a **Game Hook (memory write)** action. Each action targets one game (FF7 today) and one **operation** with numeric arguments where needed.
+
+Implemented FF7 operations:
+
+- **Add gil** / **Remove gil**: changes gil in the active savemap (amount must be a positive integer; gil is clamped).
+- **Add HP to party slot** / **Remove HP from party slot**: in **battle**, edits live actor HP for party slots 0–2; on the **field**, edits the savemap character record for whoever occupies that party slot.
+- **Set party slot HP**: same battle/field rules; sets HP clamped to max.
+- **KO party slot**: sets HP to **zero in battle only** (field KO is not supported here).
+- **Kill all enemies**: sets every active enemy’s battle HP to zero (battle only).
+- **Damage enemy**: `enemy_index` 0–5 maps to internal battle slots 4–9; subtracts damage from that enemy’s HP (battle only).
+
+**Battle-only** actions return failure with a short message if you are not in combat. Running as Administrator may be required if Windows denies process memory access.
+
+## Security and fair play
+
+Memory reads and writes are powerful. Use writes responsibly on your own game session; anti-cheat or online services are not a target for this feature.
+
+## Related
+
+- [Connector Actions](help:connector_actions) — trigger wiring
+- [Settings overview](help:settings_overview)
+        """,
+        keywords=["ff7", "memory", "overlay", "battle", "gil", "crowd control", "connectors"],
+        related_topics=["settings_overview", "connector_actions", "templates_intro"],
     ),
 
     # =========================================
