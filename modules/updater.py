@@ -767,7 +767,7 @@ class UpdateManager:
 
             # Schedule initial check a bit after UI render
             if self._initial_timer is None:
-                self._initial_timer = ui.timer(15.0, self._run_initial_check, once=True)
+                self._initial_timer = ui.timer(5.0, self._run_initial_check, once=True)
             # Kick periodic scheduling shortly after
             ui.timer(3.0, self.reschedule_periodic_timer, once=True)
         except Exception as e:
@@ -851,7 +851,8 @@ class UpdateManager:
 
             self._check_running = True
 
-            ui.notify("Checking for updates...", type="info", timeout=2000)
+            if manual:
+                ui.notify("Checking for updates...", type="info", timeout=2000)
 
             result_holder: Dict[str, Any] = {"completed": False, "update_info": None, "error": None}
 

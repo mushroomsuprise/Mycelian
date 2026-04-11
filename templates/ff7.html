@@ -27,6 +27,24 @@
             --ff7-hp-red: #ff2020;
             --ff7-bar-bg: #181828;
             --ff7-bar-border: #404060;
+            --ff7-bar-track-red: #401018;
+            --ff7-bar-track-grey: #242428;
+            --ff7-hp-fill-teal: #0d9488;
+            --ff7-hp-fill-white: #ffffff;
+            --ff7-mp-fill-green: #22c55e;
+            --ff7-mp-fill-white: #ffffff;
+            --ff7-limit-fill-top: #f0899e;
+            --ff7-limit-fill-bot: #c83a55;
+            --ff7-limit-flash-pink: #e85d7a;
+            --ff7-limit-flash-yellow: #facc15;
+            --ff7-limit-flash-blue: #3b82f6;
+            --ff7-limit-flash-green: #22c55e;
+            --ff7-time-charging-top: #ecfdf5;
+            --ff7-time-charging-mid: #86efac;
+            --ff7-time-charging-bot: #4ade80;
+            --ff7-time-ready-top: #fff9c4;
+            --ff7-time-ready-mid: #fde68a;
+            --ff7-time-ready-bot: #e8d06a;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -145,6 +163,12 @@
             gap: 2px;
         }
 
+        .hp-cell .stat-values,
+        .mp-cell .stat-values {
+            justify-content: flex-end;
+            width: 100%;
+        }
+
         .stat-val {
             color: var(--ff7-text);
             text-shadow: 0 0 4px rgba(255,255,255,0.15);
@@ -175,7 +199,7 @@
         .ff7-hpbar {
             width: 100%;
             height: var(--hp-bar-h, 4px);
-            background: var(--ff7-bar-bg);
+            background: var(--ff7-bar-track-red);
             border-radius: 1px;
             overflow: hidden;
         }
@@ -184,23 +208,18 @@
             height: 100%;
             width: 0%;
             transition: width 0.15s linear;
-        }
-
-        .hp-ok .ff7-hpbar .fill {
-            background: linear-gradient(180deg, #00ff80 0%, #00c860 30%, #009848 60%, #006838 100%);
-        }
-        .hp-warn .ff7-hpbar .fill {
-            background: linear-gradient(180deg, #ffff60 0%, #c0c000 50%, #888800 100%);
-        }
-        .hp-dead .ff7-hpbar .fill {
-            background: linear-gradient(180deg, #ff6060 0%, #c02020 50%, #881010 100%);
+            background: linear-gradient(
+                90deg,
+                var(--ff7-hp-fill-teal) 0%,
+                var(--ff7-hp-fill-white) 100%
+            );
         }
 
         /* --- MP bar (thin green gradient under value) --- */
         .ff7-mpbar {
             width: 100%;
             height: var(--mp-bar-h, 4px);
-            background: var(--ff7-bar-bg);
+            background: var(--ff7-bar-track-red);
             border-radius: 1px;
             overflow: hidden;
         }
@@ -208,7 +227,11 @@
         .ff7-mpbar .fill {
             height: 100%;
             width: 0%;
-            background: linear-gradient(180deg, #60ff60 0%, #00c840 50%, #008830 100%);
+            background: linear-gradient(
+                90deg,
+                var(--ff7-mp-fill-green) 0%,
+                var(--ff7-mp-fill-white) 100%
+            );
             transition: width 0.15s linear;
         }
 
@@ -216,7 +239,7 @@
         .ff7-limitbar {
             width: 100%;
             height: var(--limit-bar-h, 8px);
-            background: var(--ff7-bar-bg);
+            background: var(--ff7-bar-track-grey);
             border: 1px solid var(--ff7-bar-border);
             border-radius: 1px;
             overflow: hidden;
@@ -225,25 +248,31 @@
         .ff7-limitbar .fill {
             height: 100%;
             width: 0%;
-            background: linear-gradient(180deg, #ff80a0 0%, #e03060 50%, #a01838 100%);
+            background: linear-gradient(
+                180deg,
+                var(--ff7-limit-fill-top) 0%,
+                var(--ff7-limit-fill-bot) 100%
+            );
             transition: width 0.15s linear;
         }
 
         .ff7-limitbar.full .fill {
-            background: linear-gradient(180deg, #ffb0c8 0%, #ff5080 50%, #d02050 100%);
-            animation: limitPulse 1s ease-in-out infinite;
+            animation: limitFullFlash 0.36s linear infinite;
         }
 
-        @keyframes limitPulse {
-            0%, 100% { filter: brightness(1); }
-            50% { filter: brightness(1.5); }
+        @keyframes limitFullFlash {
+            0%, 22% { background: var(--ff7-limit-flash-pink); }
+            25%, 47% { background: var(--ff7-limit-flash-yellow); }
+            50%, 72% { background: var(--ff7-limit-flash-blue); }
+            75%, 97% { background: var(--ff7-limit-flash-green); }
+            100% { background: var(--ff7-limit-flash-pink); }
         }
 
-        /* --- Time / ATB bar (boxed with border, cyan) --- */
+        /* --- Time / ATB bar (boxed with border) --- */
         .ff7-timebar {
             width: 100%;
             height: var(--time-bar-h, 8px);
-            background: var(--ff7-bar-bg);
+            background: var(--ff7-bar-track-grey);
             border: 1px solid var(--ff7-bar-border);
             border-radius: 1px;
             overflow: hidden;
@@ -252,12 +281,22 @@
         .ff7-timebar .fill {
             height: 100%;
             width: 0%;
-            background: linear-gradient(180deg, #a0ffd8 0%, #50d8a0 50%, #30a878 100%);
+            background: linear-gradient(
+                180deg,
+                var(--ff7-time-charging-top) 0%,
+                var(--ff7-time-charging-mid) 55%,
+                var(--ff7-time-charging-bot) 100%
+            );
             transition: width 0.12s linear;
         }
 
         .ff7-timebar.ready .fill {
-            background: linear-gradient(180deg, #b0ffe8 0%, #70e8b8 50%, #40c890 100%);
+            background: linear-gradient(
+                180deg,
+                var(--ff7-time-ready-top) 0%,
+                var(--ff7-time-ready-mid) 55%,
+                var(--ff7-time-ready-bot) 100%
+            );
         }
 
         /* --- Stats panel (Gil / Play time) --- */
