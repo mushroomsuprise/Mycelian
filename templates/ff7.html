@@ -444,6 +444,21 @@
             return Boolean(v);
         }
 
+        var FF7_MENU_THEME_KEYS = [
+            'bg_top', 'bg_bot', 'bg_ul', 'bg_ur', 'bg_ll', 'bg_lr', 'bg_center',
+            'border_outer', 'border_mid', 'border_inner'
+        ];
+
+        function ff7MenuThemeIsComplete(mt) {
+            if (!mt || typeof mt !== 'object' || Array.isArray(mt)) return false;
+            var hexRe = /^#[0-9a-fA-F]{6}$/;
+            for (var i = 0; i < FF7_MENU_THEME_KEYS.length; i++) {
+                var v = mt[FF7_MENU_THEME_KEYS[i]];
+                if (typeof v !== 'string' || !v || !hexRe.test(v)) return false;
+            }
+            return true;
+        }
+
         function applyTemplateConfig(c) {
             cfg = Object.assign({
                 ShowParty: true, ShowEnemies: true, ShowStats: true, ShowBosses: true,
@@ -717,24 +732,25 @@
             if (d.disabled || d.error || !d.attached) return;
 
             var mt = d.menu_theme;
-            var themeKey = mt ? JSON.stringify(mt) : '';
             if (typeof window._ff7LastMenuThemeKey === 'undefined') {
-                window._ff7LastMenuThemeKey = '';
+                window._ff7LastMenuThemeKey = null;
             }
+            var themeComplete = ff7MenuThemeIsComplete(mt);
+            var themeKey = themeComplete ? JSON.stringify(mt) : '__default__';
             if (themeKey !== window._ff7LastMenuThemeKey) {
                 window._ff7LastMenuThemeKey = themeKey;
                 var root = document.documentElement;
-                if (mt) {
-                    if (mt.bg_top) root.style.setProperty('--ff7-bg-top', mt.bg_top);
-                    if (mt.bg_bot) root.style.setProperty('--ff7-bg-bot', mt.bg_bot);
-                    if (mt.bg_ul) root.style.setProperty('--ff7-bg-ul', mt.bg_ul);
-                    if (mt.bg_ur) root.style.setProperty('--ff7-bg-ur', mt.bg_ur);
-                    if (mt.bg_ll) root.style.setProperty('--ff7-bg-ll', mt.bg_ll);
-                    if (mt.bg_lr) root.style.setProperty('--ff7-bg-lr', mt.bg_lr);
-                    if (mt.bg_center) root.style.setProperty('--ff7-bg-center', mt.bg_center);
-                    if (mt.border_outer) root.style.setProperty('--ff7-border-outer', mt.border_outer);
-                    if (mt.border_mid) root.style.setProperty('--ff7-border-mid', mt.border_mid);
-                    if (mt.border_inner) root.style.setProperty('--ff7-border-inner', mt.border_inner);
+                if (themeComplete) {
+                    root.style.setProperty('--ff7-bg-top', mt.bg_top);
+                    root.style.setProperty('--ff7-bg-bot', mt.bg_bot);
+                    root.style.setProperty('--ff7-bg-ul', mt.bg_ul);
+                    root.style.setProperty('--ff7-bg-ur', mt.bg_ur);
+                    root.style.setProperty('--ff7-bg-ll', mt.bg_ll);
+                    root.style.setProperty('--ff7-bg-lr', mt.bg_lr);
+                    root.style.setProperty('--ff7-bg-center', mt.bg_center);
+                    root.style.setProperty('--ff7-border-outer', mt.border_outer);
+                    root.style.setProperty('--ff7-border-mid', mt.border_mid);
+                    root.style.setProperty('--ff7-border-inner', mt.border_inner);
                 } else {
                     ['--ff7-bg-top', '--ff7-bg-bot', '--ff7-bg-ul', '--ff7-bg-ur', '--ff7-bg-ll', '--ff7-bg-lr', '--ff7-bg-center', '--ff7-border-outer', '--ff7-border-mid', '--ff7-border-inner'].forEach(function (p) {
                         root.style.removeProperty(p);
