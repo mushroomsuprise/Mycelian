@@ -1,0 +1,439 @@
+{
+    "template_name": "ff7",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Grid Layout"
+        },
+        {
+            "type": "number",
+            "id": "GridColumns",
+            "label": "Grid columns",
+            "value": 1.0,
+            "min": 1,
+            "max": 6,
+            "description": "Number of CSS grid columns"
+        },
+        {
+            "type": "number",
+            "id": "GridRows",
+            "label": "Grid rows",
+            "value": 3.0,
+            "min": 1,
+            "max": 6,
+            "description": "Number of CSS grid rows"
+        },
+        {
+            "type": "number",
+            "id": "GridGap",
+            "label": "Grid gap (px)",
+            "value": 4.0,
+            "min": 0,
+            "max": 48,
+            "description": "Gap between grid cells"
+        },
+        {
+            "type": "separator",
+            "label": "Party"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowParty",
+            "label": "Show party panel",
+            "value": true,
+            "description": "Character names, HP, MP, Limit, and ATB bars"
+        },
+        {
+            "type": "number",
+            "id": "PartyGridRow",
+            "label": "Grid row",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Starting row for party panel"
+        },
+        {
+            "type": "number",
+            "id": "PartyGridCol",
+            "label": "Grid column",
+            "value": 1.0,
+            "min": 1,
+            "max": 6,
+            "description": "Starting column for party panel"
+        },
+        {
+            "type": "number",
+            "id": "PartyRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Rows spanned by party panel"
+        },
+        {
+            "type": "number",
+            "id": "PartyColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Columns spanned by party panel"
+        },
+        {
+            "type": "number",
+            "id": "PartyTitleFontSize",
+            "label": "Title font size (px)",
+            "value": 14.0,
+            "min": 6,
+            "max": 32,
+            "description": "Font size for the panel title"
+        },
+        {
+            "type": "number",
+            "id": "PartyNameFontSize",
+            "label": "Name font size (px)",
+            "value": 21.0,
+            "min": 8,
+            "max": 32,
+            "description": "Font size for character names"
+        },
+        {
+            "type": "number",
+            "id": "PartyHPFontSize",
+            "label": "HP font size (px)",
+            "value": 18.0,
+            "min": 8,
+            "max": 32,
+            "description": "Font size for HP values"
+        },
+        {
+            "type": "number",
+            "id": "PartyMPFontSize",
+            "label": "MP font size (px)",
+            "value": 18.0,
+            "min": 8,
+            "max": 32,
+            "description": "Font size for MP values"
+        },
+        {
+            "type": "number",
+            "id": "PartyHPBarHeight",
+            "label": "HP bar height (px)",
+            "value": 4,
+            "min": 1,
+            "max": 24,
+            "description": "Height of the HP progress bar"
+        },
+        {
+            "type": "number",
+            "id": "PartyMPBarHeight",
+            "label": "MP bar height (px)",
+            "value": 4,
+            "min": 1,
+            "max": 24,
+            "description": "Height of the MP progress bar"
+        },
+        {
+            "type": "number",
+            "id": "PartyLimitBarHeight",
+            "label": "Limit bar height (px)",
+            "value": 16.0,
+            "min": 2,
+            "max": 24,
+            "description": "Height of the Limit progress bar"
+        },
+        {
+            "type": "number",
+            "id": "PartyTimeBarHeight",
+            "label": "Time bar height (px)",
+            "value": 16.0,
+            "min": 2,
+            "max": 24,
+            "description": "Height of the ATB/Time progress bar"
+        },
+        {
+            "type": "separator",
+            "label": "Enemies"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowEnemies",
+            "label": "Show enemies panel (battle only)",
+            "value": true,
+            "description": "Enemy names, HP, MP, and ATB bars while in battle"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesGridRow",
+            "label": "Grid row",
+            "value": 2.0,
+            "min": 1,
+            "max": 6,
+            "description": "Starting row for enemies panel"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesGridCol",
+            "label": "Grid column",
+            "value": 1.0,
+            "min": 1,
+            "max": 6,
+            "description": "Starting column for enemies panel"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Rows spanned by enemies panel"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Columns spanned by enemies panel"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesTitleFontSize",
+            "label": "Title font size (px)",
+            "value": 14.0,
+            "min": 6,
+            "max": 32,
+            "description": "Font size for the panel title"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesNameFontSize",
+            "label": "Name font size (px)",
+            "value": 21.0,
+            "min": 8,
+            "max": 32,
+            "description": "Font size for enemy names"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesHPFontSize",
+            "label": "HP font size (px)",
+            "value": 18.0,
+            "min": 8,
+            "max": 32,
+            "description": "Font size for HP values"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesMPFontSize",
+            "label": "MP font size (px)",
+            "value": 18.0,
+            "min": 8,
+            "max": 32,
+            "description": "Font size for MP values"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesHPBarHeight",
+            "label": "HP bar height (px)",
+            "value": 4,
+            "min": 1,
+            "max": 24,
+            "description": "Height of the HP progress bar"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesMPBarHeight",
+            "label": "MP bar height (px)",
+            "value": 4,
+            "min": 1,
+            "max": 24,
+            "description": "Height of the MP progress bar"
+        },
+        {
+            "type": "number",
+            "id": "EnemiesTimeBarHeight",
+            "label": "Time bar height (px)",
+            "value": 16.0,
+            "min": 2,
+            "max": 24,
+            "description": "Height of the ATB/Time progress bar"
+        },
+        {
+            "type": "separator",
+            "label": "Records"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowStats",
+            "label": "Show gil and play time",
+            "value": true,
+            "description": "Current gil and total play time"
+        },
+        {
+            "type": "number",
+            "id": "StatsGridRow",
+            "label": "Grid row",
+            "value": 3.0,
+            "min": 1,
+            "max": 6,
+            "description": "Starting row for records panel"
+        },
+        {
+            "type": "number",
+            "id": "StatsGridCol",
+            "label": "Grid column",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Starting column for records panel"
+        },
+        {
+            "type": "number",
+            "id": "StatsRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Rows spanned by records panel"
+        },
+        {
+            "type": "number",
+            "id": "StatsColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Columns spanned by records panel"
+        },
+        {
+            "type": "number",
+            "id": "StatsTitleFontSize",
+            "label": "Title font size (px)",
+            "value": 14.0,
+            "min": 6,
+            "max": 32,
+            "description": "Font size for the panel title"
+        },
+        {
+            "type": "number",
+            "id": "StatsLabelFontSize",
+            "label": "Label font size (px)",
+            "value": 18.0,
+            "min": 6,
+            "max": 32,
+            "description": "Font size for Gil/Time labels"
+        },
+        {
+            "type": "number",
+            "id": "StatsValueFontSize",
+            "label": "Value font size (px)",
+            "value": 18.0,
+            "min": 8,
+            "max": 32,
+            "description": "Font size for Gil/Time values"
+        },
+        {
+            "type": "separator",
+            "label": "Boss Tracker"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowBosses",
+            "label": "Show boss tracker",
+            "value": false,
+            "description": "Tracks likely boss kills during battle (heuristic)"
+        },
+        {
+            "type": "select",
+            "id": "BossDisplayMode",
+            "label": "Boss display mode",
+            "value": "list",
+            "description": "How to show defeated bosses from the current session",
+            "options": [
+                "list",
+                "last",
+                "count"
+            ]
+        },
+        {
+            "type": "number",
+            "id": "BossesGridRow",
+            "label": "Grid row",
+            "value": 2,
+            "min": 1,
+            "max": 6,
+            "description": "Starting row for boss tracker panel"
+        },
+        {
+            "type": "number",
+            "id": "BossesGridCol",
+            "label": "Grid column",
+            "value": 2,
+            "min": 1,
+            "max": 6,
+            "description": "Starting column for boss tracker panel"
+        },
+        {
+            "type": "number",
+            "id": "BossesRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Rows spanned by boss panel"
+        },
+        {
+            "type": "number",
+            "id": "BossesColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Columns spanned by boss panel"
+        },
+        {
+            "type": "number",
+            "id": "BossesTitleFontSize",
+            "label": "Title font size (px)",
+            "value": 11,
+            "min": 6,
+            "max": 32,
+            "description": "Font size for the panel title"
+        },
+        {
+            "type": "number",
+            "id": "BossesTextFontSize",
+            "label": "Text font size (px)",
+            "value": 13,
+            "min": 8,
+            "max": 32,
+            "description": "Font size for boss names and text"
+        },
+        {
+            "type": "separator",
+            "label": "Typography"
+        },
+        {
+            "type": "text",
+            "id": "FontFile",
+            "label": "Font file (in /assets/default_assets/fonts/)",
+            "value": "Reactor7.ttf",
+            "description": "FF7-style font filename"
+        }
+    ],
+    "dynamic_controls": {
+        "elements": [
+            {
+                "type": "button",
+                "id": "clear_bosses",
+                "label": "Reset Boss List",
+                "description": "Clear the list of defeated bosses for this session",
+                "action": "clear_bosses",
+                "button_text": "Reset"
+            }
+        ]
+    }
+}

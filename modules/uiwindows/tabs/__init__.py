@@ -22,6 +22,7 @@ from .streamlabs_tab import StreamlabsTab
 from .theme_tab import ThemeTab
 from .twitch_tab import TwitchTab
 from .youtube_tab import YouTubeTab
+from .game_hooks_tab import GameHooksTab
 
 __all__ = [
     "TabBase",
@@ -31,6 +32,7 @@ __all__ = [
     "PSNTab",
     "SpotifyTab",
     "YouTubeTab",
+    "GameHooksTab",
     "DatabaseTab",
     "MigrationTab",
     "StatisticsTab",

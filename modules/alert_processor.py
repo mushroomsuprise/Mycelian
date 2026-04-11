@@ -239,6 +239,14 @@ def initialize():
     else:
         logger.warning("Alert thread failed to start")
 
+    try:
+        from .game_hooks_service import game_hooks_service
+
+        game_hooks_service.start()
+        logger.info("Game hooks service started")
+    except Exception as e:
+        logger.error("Failed to start game hooks service: %s", e, exc_info=True)
+
     # Mark as initialized
     _initialized = True
     logger.info("Alert processor initialization completed")
@@ -255,6 +263,14 @@ def cleanup():
         web_engine.ALERTS_PAUSED = True
         alert_queue_active = False
         logger.debug("Alert queue paused")
+
+        try:
+            from .game_hooks_service import game_hooks_service
+
+            game_hooks_service.stop()
+            logger.debug("Game hooks service stopped")
+        except Exception as e:
+            logger.debug("Game hooks service stop: %s", e)
 
         # Stop web engine if it's running
         if web_engine_instance:

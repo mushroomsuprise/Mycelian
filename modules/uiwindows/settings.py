@@ -48,6 +48,7 @@ from ..startup_profiler import StartupTimer, log_startup_summary
 from .tabs import (
     AppSettingsTab,
     DatabaseTab,
+    GameHooksTab,
     MigrationTab,
     PSNTab,
     SpotifyTab,
@@ -5958,6 +5959,8 @@ class SettingsUI:
                 spotify_tab = SpotifyTab()
             with StartupTimer("settings_tab_objects_youtube"):
                 youtube_tab = YouTubeTab()
+            with StartupTimer("settings_tab_objects_game_hooks"):
+                game_hooks_tab = GameHooksTab()
             with StartupTimer("settings_tab_objects_database"):
                 database_tab = DatabaseTab()
             with StartupTimer("settings_tab_objects_migration"):
@@ -5973,6 +5976,7 @@ class SettingsUI:
                 "PSN": psn_tab,
                 "Spotify": spotify_tab,
                 "YouTube": youtube_tab,
+                "Game Hooks": game_hooks_tab,
                 "Database": database_tab,
                 "Migration": migration_tab,
                 "Statistics": statistics_tab,
@@ -6005,6 +6009,7 @@ class SettingsUI:
                             ui.tab("PSN", icon="sports_esports")
                             ui.tab("Spotify", icon="music_note")
                             ui.tab("YouTube", icon="video_library")
+                            ui.tab("Game Hooks", icon="memory")
                             ui.tab("Database", icon="storage")
                             ui.tab("Migration", icon="sync_alt")
                             ui.tab("Statistics", icon="analytics")
@@ -6068,6 +6073,8 @@ class SettingsUI:
                                     self._tabs_by_name["Spotify"].build(container)
                                 elif tab_name == "YouTube":
                                     self._tabs_by_name["YouTube"].build(container)
+                                elif tab_name == "Game Hooks":
+                                    self._tabs_by_name["Game Hooks"].build(container)
                                 elif tab_name == "Database":
                                     self._tabs_by_name["Database"].build(container)
                                 elif tab_name == "Migration":
@@ -6097,6 +6104,7 @@ class SettingsUI:
                             ("PSN", "settings_psn_tab"),
                             ("Spotify", "settings_spotify_tab"),
                             ("YouTube", "settings_youtube_tab"),
+                            ("Game Hooks", "settings_game_hooks_tab"),
                             ("Database", "settings_database_tab"),
                             ("Migration", "settings_migration_tab"),
                             ("Statistics", "settings_statistics_tab"),

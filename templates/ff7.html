@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FF7 Overlay</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <style>
+        @font-face {
+            font-family: 'FF7Reactor';
+            src: url("/assets/default_assets/fonts/{{ FontFile }}") format("truetype");
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        :root {
+            --ff7-bg-top: #263884;
+            --ff7-bg-bot: #0a0a2e;
+            --ff7-border-outer: #aac4e8;
+            --ff7-border-mid: #4868a0;
+            --ff7-border-inner: #182048;
+            --ff7-text: #ffffff;
+            --ff7-label: #9898c8;
+            --ff7-hp-yellow: #ffff00;
+            --ff7-hp-red: #ff2020;
+            --ff7-bar-bg: #181828;
+            --ff7-bar-border: #404060;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: transparent;
+            font-family: 'FF7Reactor', 'Consolas', monospace;
+            color: var(--ff7-text);
+            overflow: hidden;
+            font-size: 14px;
+            -webkit-font-smoothing: none;
+            image-rendering: pixelated;
+        }
+
+        #ff7Root {
+            min-height: 100vh;
+            padding: 4px;
+        }
+
+        #ff7Grid {
+            display: grid;
+            width: 100%;
+        }
+
+        /* --- FF7 authentic panel --- */
+        .panel {
+            position: relative;
+            background: linear-gradient(160deg, var(--ff7-bg-top) 0%, var(--ff7-bg-bot) 100%);
+            border: 2px solid var(--ff7-border-outer);
+            border-radius: 8px;
+            padding: 10px 14px;
+            box-shadow:
+                inset 0 0 0 2px var(--ff7-border-inner),
+                0 2px 8px rgba(0,0,0,0.6);
+        }
+
+        .panel-title {
+            font-size: var(--title-font, 11px);
+            letter-spacing: 0.12em;
+            color: var(--ff7-label);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+
+        /* --- Debug status bar --- */
+        .status-bar {
+            font-size: 10px;
+            color: var(--ff7-label);
+            margin-bottom: 4px;
+            min-height: 14px;
+            display: none;
+        }
+        .status-bar.visible { display: block; }
+        .status-bar.err { color: var(--ff7-hp-red); }
+
+        /* --- Column headers row --- */
+        .col-headers {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .col-h {
+            font-size: var(--title-font, 10px);
+            color: var(--ff7-label);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            text-align: center;
+        }
+
+        .col-name  { flex: 2; text-align: left; }
+        .col-hp    { flex: 2; }
+        .col-mp    { flex: 1; }
+        .col-limit { flex: 1.2; }
+        .col-time  { flex: 1.2; }
+
+        /* --- Character row (shared by party + enemy) --- */
+        .char-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .char-row:last-child {
+            border-bottom: none;
+        }
+
+        .char-name {
+            flex: 2;
+            font-size: var(--name-font, 15px);
+            color: var(--ff7-text);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* --- Stat cell (values above a thin bar) --- */
+        .stat-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 2px;
+        }
+        .stat-cell.hp-cell { flex: 2; }
+        .stat-cell.mp-cell { flex: 1; }
+
+        .stat-values {
+            display: flex;
+            justify-content: center;
+            align-items: baseline;
+            gap: 2px;
+        }
+
+        .stat-val {
+            color: var(--ff7-text);
+            text-shadow: 0 0 4px rgba(255,255,255,0.15);
+            text-align: right;
+        }
+
+        .hp-cell .stat-val { font-size: var(--hp-font, 14px); }
+        .mp-cell .stat-val { font-size: var(--mp-font, 14px); }
+
+        .stat-sep {
+            color: var(--ff7-label);
+            font-size: 12px;
+        }
+
+        .hp-ok   .stat-val { color: var(--ff7-text); }
+        .hp-warn .stat-val { color: var(--ff7-hp-yellow); }
+        .hp-dead .stat-val { color: var(--ff7-hp-red); }
+
+        /* --- Bar cell wrapper (LIMIT / TIME) --- */
+        .bar-cell {
+            display: flex;
+            align-items: center;
+        }
+        .bar-cell.limit-cell { flex: 1.2; }
+        .bar-cell.time-cell  { flex: 1.2; }
+
+        /* --- HP bar (thin gradient under values) --- */
+        .ff7-hpbar {
+            width: 100%;
+            height: var(--hp-bar-h, 4px);
+            background: var(--ff7-bar-bg);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+
+        .ff7-hpbar .fill {
+            height: 100%;
+            width: 0%;
+            transition: width 0.15s linear;
+        }
+
+        .hp-ok .ff7-hpbar .fill {
+            background: linear-gradient(180deg, #00ff80 0%, #00c860 30%, #009848 60%, #006838 100%);
+        }
+        .hp-warn .ff7-hpbar .fill {
+            background: linear-gradient(180deg, #ffff60 0%, #c0c000 50%, #888800 100%);
+        }
+        .hp-dead .ff7-hpbar .fill {
+            background: linear-gradient(180deg, #ff6060 0%, #c02020 50%, #881010 100%);
+        }
+
+        /* --- MP bar (thin green gradient under value) --- */
+        .ff7-mpbar {
+            width: 100%;
+            height: var(--mp-bar-h, 4px);
+            background: var(--ff7-bar-bg);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+
+        .ff7-mpbar .fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(180deg, #60ff60 0%, #00c840 50%, #008830 100%);
+            transition: width 0.15s linear;
+        }
+
+        /* --- Limit bar (boxed with border) --- */
+        .ff7-limitbar {
+            width: 100%;
+            height: var(--limit-bar-h, 8px);
+            background: var(--ff7-bar-bg);
+            border: 1px solid var(--ff7-bar-border);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+
+        .ff7-limitbar .fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(180deg, #ff80a0 0%, #e03060 50%, #a01838 100%);
+            transition: width 0.15s linear;
+        }
+
+        .ff7-limitbar.full .fill {
+            background: linear-gradient(180deg, #ffb0c8 0%, #ff5080 50%, #d02050 100%);
+            animation: limitPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes limitPulse {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.5); }
+        }
+
+        /* --- Time / ATB bar (boxed with border, cyan) --- */
+        .ff7-timebar {
+            width: 100%;
+            height: var(--time-bar-h, 8px);
+            background: var(--ff7-bar-bg);
+            border: 1px solid var(--ff7-bar-border);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+
+        .ff7-timebar .fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(180deg, #a0ffd8 0%, #50d8a0 50%, #30a878 100%);
+            transition: width 0.12s linear;
+        }
+
+        .ff7-timebar.ready .fill {
+            background: linear-gradient(180deg, #b0ffe8 0%, #70e8b8 50%, #40c890 100%);
+        }
+
+        /* --- Stats panel (Gil / Play time) --- */
+        .stat-line {
+            margin: 3px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+
+        .stat-line .slabel {
+            color: var(--ff7-label);
+            font-size: var(--stats-label-font, 11px);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .stat-line .sval {
+            color: var(--ff7-text);
+            font-size: var(--stats-value-font, 15px);
+            text-shadow: 0 0 3px rgba(255,255,255,0.1);
+        }
+
+        /* --- Bosses panel --- */
+        .boss-list {
+            list-style: none;
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: var(--boss-text-font, 13px);
+        }
+
+        .boss-list li {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            color: var(--ff7-text);
+        }
+
+        .boss-empty {
+            color: var(--ff7-label);
+            font-size: var(--boss-text-font, 12px);
+        }
+
+        .boss-text {
+            font-size: var(--boss-text-font, 13px);
+            color: var(--ff7-text);
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="ff7Root">
+        <div id="statusLine" class="status-bar">Waiting for data…</div>
+        <div id="ff7Grid">
+            <div id="panelParty" class="panel hidden">
+                <div class="col-headers">
+                    <span class="col-h col-name">Name</span>
+                    <span class="col-h col-hp">HP</span>
+                    <span class="col-h col-mp">MP</span>
+                    <span class="col-h col-limit">Limit</span>
+                    <span class="col-h col-time">Time</span>
+                </div>
+                <div id="partyBody"></div>
+            </div>
+            <div id="panelEnemies" class="panel hidden">
+                <div class="col-headers">
+                    <span class="col-h col-name">Name</span>
+                    <span class="col-h col-hp">HP</span>
+                    <span class="col-h col-mp">MP</span>
+                    <span class="col-h col-time">Time</span>
+                </div>
+                <div id="enemyBody"></div>
+            </div>
+            <div id="panelStats" class="panel hidden">
+                <div class="stat-line"><span class="slabel">Gil</span><span class="sval" id="gilVal">0</span></div>
+                <div class="stat-line"><span class="slabel">Time</span><span class="sval" id="timeVal">--:--:--</span></div>
+            </div>
+            <div id="panelBosses" class="panel hidden">
+                <div id="bossBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let cfg = {};
+        const FF7_DEBUG = new URLSearchParams(window.location.search).get('ff7debug') === '1';
+        let ff7PayloadCount = 0;
+        let ff7LastThrottleLog = 0;
+        let socket = null;
+        let battleOffTicks = 0;
+        const BATTLE_HIDE_THRESHOLD = 4;
+
+        if (FF7_DEBUG) {
+            document.getElementById('statusLine').classList.add('visible');
+        }
+
+        function ff7Summarize(d) {
+            if (!d) return null;
+            return {
+                attached: d.attached, disabled: d.disabled, error: d.error,
+                battle: d.battle, current_module: d.current_module, gil: d.gil,
+                playtime_text: d.playtime_text,
+                partyLen: (d.party || []).length, enemiesLen: (d.enemies || []).length,
+                debug: d.debug
+            };
+        }
+
+        function num(v, d) {
+            const n = Number(v);
+            return Number.isFinite(n) ? n : d;
+        }
+
+        function applyGrid(el, row, col, rowSpan, colSpan) {
+            const r = Math.max(1, num(row, 1));
+            const c = Math.max(1, num(col, 1));
+            const rs = Math.max(1, num(rowSpan, 1));
+            const cs = Math.max(1, num(colSpan, 1));
+            el.style.gridRow = r + ' / span ' + rs;
+            el.style.gridColumn = c + ' / span ' + cs;
+        }
+
+        function asBool(v, defaultTrue) {
+            if (v === undefined || v === null) return defaultTrue;
+            if (typeof v === 'string') return v !== 'false' && v !== '0';
+            return Boolean(v);
+        }
+
+        function applyTemplateConfig(c) {
+            cfg = Object.assign({
+                ShowParty: true, ShowEnemies: true, ShowStats: true, ShowBosses: true,
+                BossDisplayMode: 'list',
+                GridColumns: 2, GridRows: 2, GridGap: 8,
+                PartyGridRow: 1, PartyGridCol: 1, PartyRowSpan: 1, PartyColSpan: 1,
+                EnemiesGridRow: 1, EnemiesGridCol: 2, EnemiesRowSpan: 1, EnemiesColSpan: 1,
+                StatsGridRow: 2, StatsGridCol: 1, StatsRowSpan: 1, StatsColSpan: 1,
+                BossesGridRow: 2, BossesGridCol: 2, BossesRowSpan: 1, BossesColSpan: 1,
+                PartyTitleFontSize: 11, PartyNameFontSize: 15,
+                PartyHPFontSize: 14, PartyMPFontSize: 14,
+                PartyHPBarHeight: 4, PartyMPBarHeight: 4,
+                PartyLimitBarHeight: 8, PartyTimeBarHeight: 8,
+                EnemiesTitleFontSize: 11, EnemiesNameFontSize: 15,
+                EnemiesHPFontSize: 14, EnemiesMPFontSize: 14,
+                EnemiesHPBarHeight: 4, EnemiesMPBarHeight: 4,
+                EnemiesTimeBarHeight: 8,
+                StatsTitleFontSize: 11, StatsLabelFontSize: 11, StatsValueFontSize: 15,
+                BossesTitleFontSize: 11, BossesTextFontSize: 13
+            }, c || {});
+
+            var grid = document.getElementById('ff7Grid');
+            grid.style.gridTemplateColumns = 'repeat(' + num(cfg.GridColumns, 2) + ', 1fr)';
+            grid.style.gridTemplateRows = 'repeat(' + num(cfg.GridRows, 2) + ', auto)';
+            grid.style.gap = num(cfg.GridGap, 8) + 'px';
+
+            document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
+            document.getElementById('panelStats').classList.toggle('hidden', !asBool(cfg.ShowStats, true));
+            document.getElementById('panelBosses').classList.toggle('hidden', !asBool(cfg.ShowBosses, true));
+            if (!asBool(cfg.ShowEnemies, true)) {
+                document.getElementById('panelEnemies').classList.add('hidden');
+            }
+
+            applyGrid(document.getElementById('panelParty'), cfg.PartyGridRow, cfg.PartyGridCol, cfg.PartyRowSpan, cfg.PartyColSpan);
+            applyGrid(document.getElementById('panelEnemies'), cfg.EnemiesGridRow, cfg.EnemiesGridCol, cfg.EnemiesRowSpan, cfg.EnemiesColSpan);
+            applyGrid(document.getElementById('panelStats'), cfg.StatsGridRow, cfg.StatsGridCol, cfg.StatsRowSpan, cfg.StatsColSpan);
+            applyGrid(document.getElementById('panelBosses'), cfg.BossesGridRow, cfg.BossesGridCol, cfg.BossesRowSpan, cfg.BossesColSpan);
+
+            var pp = document.getElementById('panelParty');
+            pp.style.setProperty('--title-font', num(cfg.PartyTitleFontSize, 11) + 'px');
+            pp.style.setProperty('--name-font', num(cfg.PartyNameFontSize, 15) + 'px');
+            pp.style.setProperty('--hp-font', num(cfg.PartyHPFontSize, 14) + 'px');
+            pp.style.setProperty('--mp-font', num(cfg.PartyMPFontSize, 14) + 'px');
+            pp.style.setProperty('--hp-bar-h', num(cfg.PartyHPBarHeight, 4) + 'px');
+            pp.style.setProperty('--mp-bar-h', num(cfg.PartyMPBarHeight, 4) + 'px');
+            pp.style.setProperty('--limit-bar-h', num(cfg.PartyLimitBarHeight, 8) + 'px');
+            pp.style.setProperty('--time-bar-h', num(cfg.PartyTimeBarHeight, 8) + 'px');
+
+            var ep = document.getElementById('panelEnemies');
+            ep.style.setProperty('--title-font', num(cfg.EnemiesTitleFontSize, 11) + 'px');
+            ep.style.setProperty('--name-font', num(cfg.EnemiesNameFontSize, 15) + 'px');
+            ep.style.setProperty('--hp-font', num(cfg.EnemiesHPFontSize, 14) + 'px');
+            ep.style.setProperty('--mp-font', num(cfg.EnemiesMPFontSize, 14) + 'px');
+            ep.style.setProperty('--hp-bar-h', num(cfg.EnemiesHPBarHeight, 4) + 'px');
+            ep.style.setProperty('--mp-bar-h', num(cfg.EnemiesMPBarHeight, 4) + 'px');
+            ep.style.setProperty('--time-bar-h', num(cfg.EnemiesTimeBarHeight, 8) + 'px');
+
+            var sp = document.getElementById('panelStats');
+            sp.style.setProperty('--title-font', num(cfg.StatsTitleFontSize, 11) + 'px');
+            sp.style.setProperty('--stats-label-font', num(cfg.StatsLabelFontSize, 11) + 'px');
+            sp.style.setProperty('--stats-value-font', num(cfg.StatsValueFontSize, 15) + 'px');
+
+            var bp = document.getElementById('panelBosses');
+            bp.style.setProperty('--title-font', num(cfg.BossesTitleFontSize, 11) + 'px');
+            bp.style.setProperty('--boss-text-font', num(cfg.BossesTextFontSize, 13) + 'px');
+        }
+
+        async function loadTemplateConfig() {
+            try {
+                var response = await fetch('/api/all-template-configs');
+                if (!response.ok) return;
+                var all = await response.json();
+                var block = all.ff7;
+                if (!block || !block.elements) return;
+                var flat = {};
+                block.elements.forEach(function (el) {
+                    if (el.type !== 'section' && el.type !== 'separator' && el.id !== undefined) {
+                        flat[el.id] = el.value;
+                    }
+                });
+                applyTemplateConfig(flat);
+            } catch (e) {
+                console.error('[ff7] config load failed', e);
+            }
+        }
+
+        function hpPct(hp, maxHp) {
+            if (!maxHp || maxHp <= 0) return 0;
+            return Math.max(0, Math.min(100, (hp / maxHp) * 100));
+        }
+
+        function limitPct(lim) {
+            if (lim === undefined || lim === null) return 0;
+            var v = Number(lim);
+            if (v >= 255) return 100;
+            return Math.max(0, Math.min(100, (v / 255) * 100));
+        }
+
+        function hpState(hp, maxHp) {
+            if (hp <= 0) return 'hp-dead';
+            if (maxHp > 0 && (hp / maxHp) < 0.25) return 'hp-warn';
+            return 'hp-ok';
+        }
+
+        function renderPartyRow(container, actor) {
+            var maxHp = actor.max_hp || 1;
+            var hp = actor.hp || 0;
+            var maxMp = actor.max_mp || 0;
+            var mp = actor.mp || 0;
+            var hpPctVal = hpPct(hp, maxHp);
+            var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
+            var limRaw = actor.limit || 0;
+            var limPctVal = limitPct(limRaw);
+            var limFull = limRaw >= 255;
+            var atbPct = Math.max(0, Math.min(100, (actor.atb || 0) * 100));
+            var atbReady = atbPct >= 99;
+            var state = hpState(hp, maxHp);
+
+            var row = document.createElement('div');
+            row.className = 'char-row';
+
+            var nameEl = document.createElement('div');
+            nameEl.className = 'char-name';
+            nameEl.textContent = actor.name || '?';
+            row.appendChild(nameEl);
+
+            var hpCell = document.createElement('div');
+            hpCell.className = 'stat-cell hp-cell ' + state;
+            hpCell.innerHTML =
+                '<div class="stat-values">' +
+                    '<span class="stat-val">' + hp + '</span>' +
+                    '<span class="stat-sep">/</span>' +
+                    '<span class="stat-val">' + maxHp + '</span>' +
+                '</div>' +
+                '<div class="ff7-hpbar"><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
+            row.appendChild(hpCell);
+
+            var mpCell = document.createElement('div');
+            mpCell.className = 'stat-cell mp-cell';
+            mpCell.innerHTML =
+                '<div class="stat-values">' +
+                    '<span class="stat-val">' + mp + '</span>' +
+                '</div>' +
+                '<div class="ff7-mpbar"><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
+            row.appendChild(mpCell);
+
+            var limCell = document.createElement('div');
+            limCell.className = 'bar-cell limit-cell';
+            limCell.innerHTML =
+                '<div class="ff7-limitbar' + (limFull ? ' full' : '') + '">' +
+                    '<div class="fill" style="width:' + limPctVal + '%"></div>' +
+                '</div>';
+            row.appendChild(limCell);
+
+            var timeCell = document.createElement('div');
+            timeCell.className = 'bar-cell time-cell';
+            timeCell.innerHTML =
+                '<div class="ff7-timebar' + (atbReady ? ' ready' : '') + '">' +
+                    '<div class="fill" style="width:' + atbPct + '%"></div>' +
+                '</div>';
+            row.appendChild(timeCell);
+
+            container.appendChild(row);
+        }
+
+        function renderEnemyRow(container, actor) {
+            var maxHp = actor.max_hp || 1;
+            var hp = actor.hp || 0;
+            var maxMp = actor.max_mp || 0;
+            var mp = actor.mp || 0;
+            var hpPctVal = hpPct(hp, maxHp);
+            var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
+            var atbPct = Math.max(0, Math.min(100, (actor.atb || 0) * 100));
+            var atbReady = atbPct >= 99;
+            var state = hpState(hp, maxHp);
+
+            var row = document.createElement('div');
+            row.className = 'char-row';
+
+            var nameEl = document.createElement('div');
+            nameEl.className = 'char-name';
+            nameEl.textContent = actor.name || '?';
+            row.appendChild(nameEl);
+
+            var hpCell = document.createElement('div');
+            hpCell.className = 'stat-cell hp-cell ' + state;
+            hpCell.innerHTML =
+                '<div class="stat-values">' +
+                    '<span class="stat-val">' + hp + '</span>' +
+                    '<span class="stat-sep">/</span>' +
+                    '<span class="stat-val">' + maxHp + '</span>' +
+                '</div>' +
+                '<div class="ff7-hpbar"><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
+            row.appendChild(hpCell);
+
+            var mpCell = document.createElement('div');
+            mpCell.className = 'stat-cell mp-cell';
+            mpCell.innerHTML =
+                '<div class="stat-values">' +
+                    '<span class="stat-val">' + mp + '</span>' +
+                '</div>' +
+                '<div class="ff7-mpbar"><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
+            row.appendChild(mpCell);
+
+            var timeCell = document.createElement('div');
+            timeCell.className = 'bar-cell time-cell';
+            timeCell.innerHTML =
+                '<div class="ff7-timebar' + (atbReady ? ' ready' : '') + '">' +
+                    '<div class="fill" style="width:' + atbPct + '%"></div>' +
+                '</div>';
+            row.appendChild(timeCell);
+
+            container.appendChild(row);
+        }
+
+        function renderPayload(payload) {
+            ff7PayloadCount += 1;
+            var now = Date.now();
+            var status = document.getElementById('statusLine');
+            var d = payload && payload.hooks && payload.hooks.ff7;
+
+            if (FF7_DEBUG) {
+                console.log('[ff7] game_hook_payload #' + ff7PayloadCount, payload);
+            } else if (ff7PayloadCount <= 2) {
+                console.log('[ff7] first payloads', { n: ff7PayloadCount, summary: ff7Summarize(d) });
+            }
+
+            if (now - ff7LastThrottleLog > 2000) {
+                ff7LastThrottleLog = now;
+                if (FF7_DEBUG) {
+                    console.log('[ff7] heartbeat', { payloadsSeen: ff7PayloadCount, summary: ff7Summarize(d) });
+                }
+            }
+
+            if (!payload || !d) {
+                if (FF7_DEBUG) {
+                    status.textContent = d ? '' : 'No FF7 hook in payload.';
+                    status.className = 'status-bar visible err';
+                }
+                return;
+            }
+
+            if (FF7_DEBUG) {
+                status.className = 'status-bar visible';
+                if (d.disabled) {
+                    status.textContent = 'FF7 hook disabled in settings.';
+                } else if (d.error) {
+                    status.textContent = 'FF7: ' + d.error;
+                    status.className = 'status-bar visible err';
+                } else if (!d.attached) {
+                    status.textContent = 'FF7: not attached';
+                    status.className = 'status-bar visible err';
+                } else {
+                    status.textContent = d.battle ? 'In battle' : 'Field / menu';
+                }
+            }
+
+            if (d.disabled || d.error || !d.attached) return;
+
+            var partyEl = document.getElementById('partyBody');
+            partyEl.innerHTML = '';
+            if (asBool(cfg.ShowParty, true) && Array.isArray(d.party)) {
+                d.party.forEach(function (p) {
+                    if (p.slot_empty) return;
+                    renderPartyRow(partyEl, p);
+                });
+            }
+
+            var enemyEl = document.getElementById('enemyBody');
+            var showEnemies = asBool(cfg.ShowEnemies, true);
+            var hasEnemies = d.battle && Array.isArray(d.enemies) && d.enemies.length > 0;
+
+            if (hasEnemies) {
+                battleOffTicks = 0;
+            } else {
+                battleOffTicks++;
+            }
+
+            enemyEl.innerHTML = '';
+            if (showEnemies && hasEnemies) {
+                d.enemies.forEach(function (e) {
+                    renderEnemyRow(enemyEl, e);
+                });
+            }
+            document.getElementById('panelEnemies').classList.toggle('hidden',
+                !showEnemies || battleOffTicks >= BATTLE_HIDE_THRESHOLD);
+
+            if (asBool(cfg.ShowStats, true)) {
+                document.getElementById('gilVal').textContent = String(d.gil != null ? d.gil : 0);
+                document.getElementById('timeVal').textContent = d.playtime_text || '--:--:--';
+            }
+
+            var bossBody = document.getElementById('bossBody');
+            bossBody.innerHTML = '';
+            var bosses = d.bosses || { names: [], last: '', count: 0 };
+            var mode = cfg.BossDisplayMode || 'list';
+            if (asBool(cfg.ShowBosses, true)) {
+                if (mode === 'count') {
+                    var countSpan = document.createElement('span');
+                    countSpan.className = 'boss-text';
+                    countSpan.textContent = 'Defeated: ' + (bosses.count || 0);
+                    bossBody.appendChild(countSpan);
+                } else if (mode === 'last') {
+                    var lastSpan = document.createElement('span');
+                    lastSpan.className = 'boss-text';
+                    lastSpan.textContent = bosses.last ? ('Last: ' + bosses.last) : 'No boss kills yet.';
+                    bossBody.appendChild(lastSpan);
+                } else {
+                    var ul = document.createElement('ul');
+                    ul.className = 'boss-list';
+                    (bosses.names || []).forEach(function (n) {
+                        var li = document.createElement('li');
+                        li.textContent = n;
+                        ul.appendChild(li);
+                    });
+                    if (!ul.children.length) {
+                        var empty = document.createElement('span');
+                        empty.className = 'boss-empty';
+                        empty.textContent = 'No bosses recorded this session.';
+                        bossBody.appendChild(empty);
+                    } else {
+                        bossBody.appendChild(ul);
+                    }
+                }
+            }
+        }
+
+        applyTemplateConfig({});
+
+        var socketUrl = window.location.protocol + '//' + window.location.host;
+        socket = typeof io !== 'undefined'
+            ? io(socketUrl, { path: '/socket.io', transports: ['polling', 'websocket'] })
+            : null;
+
+        if (socket) {
+            socket.on('connect', function () {
+                if (FF7_DEBUG) console.log('[ff7] socket connected', socket.id);
+            });
+            socket.on('disconnect', function (reason) {
+                if (FF7_DEBUG) console.warn('[ff7] socket disconnect', reason);
+            });
+            socket.on('connect_error', function (err) {
+                console.error('[ff7] socket connect_error', err);
+            });
+            socket.on('game_hook_payload', renderPayload);
+
+            socket.on('ff7_clear_bosses', function () {
+                socket.emit('game_hook_command', { hook: 'ff7', action: 'clear_bosses' });
+            });
+        }
+
+        loadTemplateConfig();
+        setInterval(loadTemplateConfig, 4000);
+    </script>
+</body>
+</html>

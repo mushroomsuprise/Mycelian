@@ -1471,6 +1471,18 @@ class WebEngine:
             print(f" WEBSOCKET: Client disconnected - SID: {request.sid}")
             logger.debug(f"Client disconnected: {request.sid}")
 
+        @self.socketio.on("game_hook_command")
+        def handle_game_hook_command(data):
+            """Template → server commands for game hooks (e.g. clear boss list)."""
+            try:
+                from .game_hooks_service import handle_game_hook_command as _run_hook_cmd
+
+                _run_hook_cmd(data)
+            except Exception as e:
+                logger.error(
+                    f"Error handling game_hook_command: {str(e)}", exc_info=True
+                )
+
         @self.socketio.on("alert_complete")
         def handle_alert_complete():
             global ALERT_PLAYING
