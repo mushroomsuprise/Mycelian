@@ -63,8 +63,8 @@ _CHAR_BLOCK = [
 SAVE_OFF_PARTY_SLOTS = 0x04F8
 SAVE_OFF_GIL = 0x0B7C
 SAVE_OFF_PLAYTIME_SEC = 0x0B80
-# Data Crystal: "Name of location" (FF text), 24 bytes
-SAVE_OFF_LOCATION_NAME = 0x0F15
+# Savemap "Name of location" (FF text), 24 bytes — ff7-flat-wiki Savemap 0x0F0C
+SAVE_OFF_LOCATION_NAME = 0x0F0C
 SAVE_OFF_LOCATION_NAME_LEN = 24
 
 # Character record (field) — offsets within 132-byte block
@@ -220,23 +220,29 @@ _VALID_MATERIA_ORB_STEMS = frozenset(
     }
 )
 
+# Matches ff7-ultima GameModule (src/types.ts); unlisted bytes fall through to _current_module_label.
 _CURRENT_MODULE_NAMES: Dict[int, str] = {
     0: "None",
     1: "Field",
     2: "Battle",
     3: "World Map",
-    4: "Menu",
-    5: "FMV",
-    6: "Game Over",
-    7: "Battle swirl",
-    8: "Shop",
-    9: "Naming",
-    10: "Snowboard",
-    11: "Highway",
-    12: "Chocobo race",
-    13: "Submarine",
-    14: "Coaster",
-    15: "Gold saucer",
+    5: "Menu",
+    6: "Highway",
+    7: "Chocobo race",
+    8: "Snowboard",
+    9: "Fort Condor",
+    10: "Submarine",
+    11: "Jet",
+    12: "Change disc",
+    14: "Snowboard 2",
+    17: "Victory",  # post-battle / fanfare (not in ff7-ultima GameModule enum gap 15–18)
+    19: "Quit",
+    20: "Start",
+    23: "Battle swirl",
+    25: "Ending",
+    26: "Game Over",
+    27: "Intro",
+    28: "Credits",
 }
 
 
@@ -364,6 +370,69 @@ def _empty_gear_materia() -> Dict[str, Any]:
         "materia_weapon_slot_types": list(_DEFAULT_MATERIA_SLOT_TYPES),
         "materia_armor_slot_types": list(_DEFAULT_MATERIA_SLOT_TYPES),
     }
+
+
+def _party_row_party_slot(row: Dict[str, Any]) -> int:
+    ps = row.get("party_slot", row.get("slot", -1))
+    try:
+        i = int(ps)
+    except (TypeError, ValueError):
+        return -1
+    return i if i in (0, 1, 2) else -1
+
+
+def _count_equipped_materia_in_row(row: Dict[str, Any]) -> int:
+    n = 0
+    for key in ("materia_weapon", "materia_armor"):
+        for s in row.get(key) or []:
+            if not isinstance(s, dict) or s.get("empty"):
+                continue
+            try:
+                mid_i = int(s.get("id", 0xFF))
+            except (TypeError, ValueError):
+                continue
+            if mid_i != 0xFF and mid_i >= 0:
+                n += 1
+    return n
+
+
+def _savemap_party_slot_level(savemap: bytes, party_slot: int) -> int:
+    if party_slot < 0 or party_slot > 2 or len(savemap) <= SAVE_OFF_PARTY_SLOTS + party_slot:
+        return 0
+    cid = savemap[SAVE_OFF_PARTY_SLOTS + party_slot]
+    if cid >= len(_CHAR_BLOCK) or cid == 0xFF:
+        return 0
+    off = _CHAR_BLOCK[cid]
+    if off + 0x02 > len(savemap):
+        return 0
+    return int(savemap[off + 0x01])
+
+
+def _records_party_aggregates(
+    party: List[Dict[str, Any]], savemap: Optional[bytes]
+) -> Tuple[int, int]:
+    """Avg level (round(sum/3), empty slots 0) and total equipped materia for party slots 0–2."""
+    by_slot: Dict[int, Dict[str, Any]] = {}
+    for row in party:
+        ps = _party_row_party_slot(row)
+        if ps >= 0:
+            by_slot[ps] = row
+    levels: List[int] = []
+    materia_total = 0
+    for ps in range(3):
+        if ps in by_slot:
+            row = by_slot[ps]
+            levels.append(int(row.get("level", 0) or 0))
+            materia_total += _count_equipped_materia_in_row(row)
+        elif savemap:
+            levels.append(_savemap_party_slot_level(savemap, ps))
+            gear = _party_gear_from_savemap(savemap, ps)
+            if gear:
+                materia_total += _count_equipped_materia_in_row(gear)
+        else:
+            levels.append(0)
+    avg = round(sum(levels) / 3) if levels else 0
+    return avg, materia_total
 
 
 if sys.platform == "win32":
@@ -1111,6 +1180,8 @@ class FF7Hook:
                 "gil": 0,
                 "playtime_seconds": 0,
                 "playtime_text": "--:--:--",
+                "avg_party_level": 0,
+                "equipped_materia_count": 0,
                 "debug": {"stage": "unsupported_os", "platform": sys.platform},
             }
 
@@ -1127,6 +1198,8 @@ class FF7Hook:
                 "gil": 0,
                 "playtime_seconds": 0,
                 "playtime_text": "--:--:--",
+                "avg_party_level": 0,
+                "equipped_materia_count": 0,
                 "debug": {"stage": "attach_failed", "message": err or "not attached"},
             }
 
@@ -1151,6 +1224,8 @@ class FF7Hook:
                 "gil": 0,
                 "playtime_seconds": 0,
                 "playtime_text": "--:--:--",
+                "avg_party_level": 0,
+                "equipped_materia_count": 0,
                 "debug": dbg_fail,
             }
 
@@ -1221,6 +1296,8 @@ class FF7Hook:
                 int(savemap[SAVE_OFF_PARTY_SLOTS + i]) for i in range(3)
             ]
 
+        avg_lv, mat_total = _records_party_aggregates(party, savemap)
+
         out: Dict[str, Any] = {
             "hook": "ff7",
             "attached": True,
@@ -1234,6 +1311,8 @@ class FF7Hook:
             "gil": int(gil),
             "playtime_seconds": int(play_sec),
             "playtime_text": play_text,
+            "avg_party_level": int(avg_lv),
+            "equipped_materia_count": int(mat_total),
             "debug": dbg,
         }
         if menu_theme:

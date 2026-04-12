@@ -467,6 +467,8 @@
             overflow: hidden;
         }
         .enemy-rotor {
+            /* Fixed height so inner rotor-viewport can measure (min-height alone breaks height:100%) */
+            height: calc(var(--limit-bar-h, 8px) + var(--time-bar-h, 8px) + 6px);
             min-height: calc(var(--limit-bar-h, 8px) + var(--time-bar-h, 8px) + 6px);
             display: flex;
             align-items: center;
@@ -613,16 +615,107 @@
             word-break: break-word;
         }
 
-        .stats-columns {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px 14px;
-            align-items: start;
+        /*
+         * Parent defines four shared columns; each .stats-sync-row uses subgrid so all rows
+         * share the same label/value column widths. Inter-block: 8px margin on L values + 12px gap = 20px.
+         */
+        #panelStats .stats-pair--contents {
+            display: contents;
         }
-        .stats-col1, .stats-col2 { min-width: 0; }
-        .stat-line .sval.module-val { font-size: 13px; }
+        #panelStats .stats-columns {
+            display: grid;
+            grid-template-columns: max-content max-content max-content minmax(0, 1fr);
+            column-gap: 12px;
+            row-gap: 3px;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+        #panelStats .stats-sync-row {
+            display: grid;
+            grid-template-columns: subgrid;
+            grid-column: 1 / -1;
+            align-items: baseline;
+        }
+        #panelStats .stats-l-label,
+        #panelStats .stats-r-label {
+            color: var(--ff7-label);
+            font-size: var(--stats-label-font, 11px);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            text-align: left;
+            justify-self: start;
+            margin: 0;
+            white-space: nowrap;
+        }
+        #panelStats .stats-l-label {
+            grid-column: 1;
+        }
+        #panelStats .stats-l-val {
+            grid-column: 2;
+            color: var(--ff7-text);
+            font-size: var(--stats-value-font, 15px);
+            margin: 0;
+            min-width: 0;
+            white-space: nowrap;
+            text-align: right;
+            justify-self: end;
+            margin-right: 8px;
+        }
+        #panelStats .stats-r-label {
+            grid-column: 3;
+        }
+        #panelStats .stats-r-val {
+            grid-column: 4;
+            color: var(--ff7-text);
+            font-size: var(--stats-value-font, 15px);
+            margin: 0;
+            min-width: 0;
+            white-space: nowrap;
+            text-align: right;
+            justify-self: end;
+        }
+        #panelStats.panel {
+            max-width: 100%;
+            overflow-x: auto;
+            /* ~⅓ less horizontal inset than .panel (14px → 9px); keep vertical 10px */
+            padding: 10px 9px;
+        }
 
         .hidden { display: none !important; }
+
+        /* Rotor horizontal scroll: viewport clips; track is a row of one or two panes */
+        .party-rotor .rotor-viewport,
+        .enemy-rotor .rotor-viewport {
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            min-width: 0;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: stretch;
+            justify-content: flex-start;
+        }
+        .party-rotor .rotor-track,
+        .enemy-rotor .rotor-track {
+            display: flex;
+            flex-direction: row;
+            height: 100%;
+            flex-shrink: 0;
+            align-items: stretch;
+        }
+        .party-rotor .rotor-pane,
+        .enemy-rotor .rotor-pane {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            min-width: 0;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
     </style>
 </head>
 <body>
@@ -641,19 +734,35 @@
                     <span class="col-h col-name">Name</span>
                     <span class="col-h col-hp">HP</span>
                     <span class="col-h col-mp">MP</span>
-                    <span class="col-h col-status">ATB / Status</span>
+                    <span id="enemyStatusHeader" class="col-h col-status">ATB</span>
                 </div>
                 <div id="enemyBody"></div>
             </div>
             <div id="panelStats" class="panel hidden">
                 <div class="stats-columns">
-                    <div class="stats-col1">
-                        <div class="stat-line" id="rowGil"><span class="slabel">Gil</span><span class="sval" id="gilVal">0</span></div>
-                        <div class="stat-line" id="rowTime"><span class="slabel">Time</span><span class="sval" id="timeVal">--:--:--</span></div>
+                    <div class="stats-sync-row">
+                        <div id="rowGil" class="stats-pair stats-pair--contents">
+                            <span class="slabel stats-l-label">Gil</span><span class="sval stats-l-val" id="gilVal">0</span>
+                        </div>
+                        <div id="rowField" class="stats-pair stats-pair--contents">
+                            <span class="slabel stats-r-label">Location</span><span class="sval stats-r-val" id="fieldVal">—</span>
+                        </div>
                     </div>
-                    <div class="stats-col2">
-                        <div class="stat-line" id="rowField"><span class="slabel">Location</span><span class="sval" id="fieldVal">—</span></div>
-                        <div class="stat-line" id="rowModule"><span class="slabel">Module</span><span class="sval module-val" id="moduleVal">—</span></div>
+                    <div class="stats-sync-row">
+                        <div id="rowTime" class="stats-pair stats-pair--contents">
+                            <span class="slabel stats-l-label">Time</span><span class="sval stats-l-val" id="timeVal">--:--:--</span>
+                        </div>
+                        <div id="rowModule" class="stats-pair stats-pair--contents">
+                            <span class="slabel stats-r-label">Module</span><span class="sval stats-r-val module-val" id="moduleVal">—</span>
+                        </div>
+                    </div>
+                    <div class="stats-sync-row">
+                        <div id="rowAvgLevel" class="stats-pair stats-pair--contents">
+                            <span class="slabel stats-l-label">Avg Lv</span><span class="sval stats-l-val" id="avgLevelVal">0</span>
+                        </div>
+                        <div id="rowMateriaCount" class="stats-pair stats-pair--contents">
+                            <span class="slabel stats-r-label">Materia Count</span><span class="sval stats-r-val" id="materiaCountVal">0</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -912,6 +1021,218 @@
             );
         }
 
+        var FF7_ROTOR_ANIM_MS = 560;
+        var FF7_ROTOR_ANIM_FALLBACK_MS = FF7_ROTOR_ANIM_MS + 280;
+
+        function ff7RotorClear(rotorEl) {
+            if (rotorEl._ff7RotorTe && rotorEl._ff7RotorTeFn) {
+                try {
+                    rotorEl._ff7RotorTe.removeEventListener('transitionend', rotorEl._ff7RotorTeFn);
+                } catch (e0) {}
+                rotorEl._ff7RotorTe = null;
+                rotorEl._ff7RotorTeFn = null;
+            }
+            if (rotorEl._ff7RotorFinishTimer) {
+                clearTimeout(rotorEl._ff7RotorFinishTimer);
+                rotorEl._ff7RotorFinishTimer = null;
+            }
+            rotorEl._ff7RotorAnimating = false;
+            rotorEl._ff7RotorPendingMode = undefined;
+            rotorEl.innerHTML = '';
+            rotorEl._ff7RotorMode = undefined;
+            rotorEl._ff7RotorAnimToken = (rotorEl._ff7RotorAnimToken || 0) + 1;
+        }
+
+        function ff7RotorSyncPaneSize(rotorEl) {
+            var vp = rotorEl.querySelector(':scope > .rotor-viewport');
+            var track = vp && vp.querySelector(':scope > .rotor-track');
+            if (!vp || !track || track.children.length !== 1) return;
+            var W = vp.clientWidth;
+            if (W <= 0) W = vp.offsetWidth;
+            var H = vp.clientHeight;
+            if (H <= 0) H = vp.offsetHeight;
+            if (W <= 0 || H <= 0) return;
+            var pane = track.children[0];
+            pane.style.flexBasis = W + 'px';
+            pane.style.width = W + 'px';
+            pane.style.minWidth = W + 'px';
+            pane.style.maxWidth = W + 'px';
+            pane.style.height = '100%';
+            pane.style.minHeight = H + 'px';
+        }
+
+        function ff7RotorSetContent(rotorEl, html, modeKey) {
+            if (!html) {
+                ff7RotorClear(rotorEl);
+                return;
+            }
+            var vp = rotorEl.querySelector(':scope > .rotor-viewport');
+            var track = vp ? vp.querySelector(':scope > .rotor-track') : null;
+            var sameMode = (rotorEl._ff7RotorMode === modeKey);
+
+            /* Avoid clobbering a running transition: interval (280ms) is faster than anim (~320ms). */
+            if (rotorEl._ff7RotorAnimating && rotorEl._ff7RotorPendingMode === modeKey) {
+                return;
+            }
+
+            if (sameMode && vp && track && track.children.length === 1) {
+                var onlyPane = track.querySelector(':scope > .rotor-pane');
+                if (onlyPane) onlyPane.innerHTML = html;
+                return;
+            }
+
+            if (rotorEl._ff7RotorTe && rotorEl._ff7RotorTeFn) {
+                try {
+                    rotorEl._ff7RotorTe.removeEventListener('transitionend', rotorEl._ff7RotorTeFn);
+                } catch (e1) {}
+                rotorEl._ff7RotorTe = null;
+                rotorEl._ff7RotorTeFn = null;
+            }
+            if (rotorEl._ff7RotorFinishTimer) {
+                clearTimeout(rotorEl._ff7RotorFinishTimer);
+                rotorEl._ff7RotorFinishTimer = null;
+            }
+            rotorEl._ff7RotorAnimating = false;
+            rotorEl._ff7RotorPendingMode = undefined;
+
+            rotorEl._ff7RotorAnimToken = (rotorEl._ff7RotorAnimToken || 0) + 1;
+            var animTok = rotorEl._ff7RotorAnimToken;
+
+            var prevMode = rotorEl._ff7RotorMode;
+            var canAnim = prevMode !== undefined && prevMode !== modeKey && vp && track && track.children.length === 1;
+
+            if (!canAnim) {
+                rotorEl.innerHTML =
+                    '<div class="rotor-viewport">' +
+                        '<div class="rotor-track">' +
+                            '<div class="rotor-pane">' + html + '</div>' +
+                        '</div>' +
+                    '</div>';
+                rotorEl._ff7RotorMode = modeKey;
+                requestAnimationFrame(function () {
+                    ff7RotorSyncPaneSize(rotorEl);
+                });
+                return;
+            }
+
+            var myTok = animTok;
+            var pane0 = track.children[0];
+            var pane1 = document.createElement('div');
+            pane1.className = 'rotor-pane';
+            pane1.innerHTML = html;
+            track.appendChild(pane1);
+
+            var W = vp.clientWidth;
+            if (W <= 0) W = vp.offsetWidth;
+            var H = vp.clientHeight;
+            if (H <= 0) H = vp.offsetHeight;
+            if (W <= 0 || H <= 0) {
+                track.removeChild(pane1);
+                rotorEl.innerHTML =
+                    '<div class="rotor-viewport">' +
+                        '<div class="rotor-track">' +
+                            '<div class="rotor-pane">' + html + '</div>' +
+                        '</div>' +
+                    '</div>';
+                rotorEl._ff7RotorMode = modeKey;
+                return;
+            }
+
+            rotorEl._ff7RotorAnimating = true;
+            rotorEl._ff7RotorPendingMode = modeKey;
+
+            pane0.style.flexBasis = W + 'px';
+            pane0.style.width = W + 'px';
+            pane0.style.minWidth = W + 'px';
+            pane0.style.maxWidth = W + 'px';
+            pane0.style.height = '100%';
+            pane1.style.flexBasis = W + 'px';
+            pane1.style.width = W + 'px';
+            pane1.style.minWidth = W + 'px';
+            pane1.style.maxWidth = W + 'px';
+            pane1.style.height = '100%';
+            track.style.width = (W * 2) + 'px';
+            track.style.height = '100%';
+            track.style.transition = 'none';
+            track.style.transform = 'translateX(0)';
+            track.offsetHeight;
+
+            var collapsedOnce = false;
+            function finishCollapse() {
+                if (collapsedOnce) return;
+                if (rotorEl._ff7RotorAnimToken !== myTok) return;
+                collapsedOnce = true;
+                try {
+                    track.removeEventListener('transitionend', onEnd);
+                } catch (e2) {}
+                rotorEl._ff7RotorTe = null;
+                rotorEl._ff7RotorTeFn = null;
+                rotorEl._ff7RotorAnimating = false;
+                rotorEl._ff7RotorPendingMode = undefined;
+                if (rotorEl._ff7RotorFinishTimer) {
+                    clearTimeout(rotorEl._ff7RotorFinishTimer);
+                    rotorEl._ff7RotorFinishTimer = null;
+                }
+                track.innerHTML = '';
+                var collapsed = document.createElement('div');
+                collapsed.className = 'rotor-pane';
+                collapsed.innerHTML = html;
+                track.appendChild(collapsed);
+                track.style.transition = '';
+                track.style.transform = '';
+                track.style.width = '';
+                track.style.height = '';
+                collapsed.style.flexBasis = '';
+                collapsed.style.width = '';
+                collapsed.style.minWidth = '';
+                collapsed.style.maxWidth = '';
+                collapsed.style.height = '';
+                pane0.style.flexBasis = '';
+                pane0.style.width = '';
+                pane0.style.minWidth = '';
+                pane0.style.maxWidth = '';
+                pane0.style.height = '';
+                rotorEl._ff7RotorMode = modeKey;
+                requestAnimationFrame(function () {
+                    ff7RotorSyncPaneSize(rotorEl);
+                });
+            }
+
+            function onEnd(ev) {
+                if (ev.target !== track || ev.propertyName !== 'transform') return;
+                if (rotorEl._ff7RotorAnimToken !== myTok) return;
+                if (rotorEl._ff7RotorFinishTimer) {
+                    clearTimeout(rotorEl._ff7RotorFinishTimer);
+                    rotorEl._ff7RotorFinishTimer = null;
+                }
+                finishCollapse();
+            }
+
+            track.addEventListener('transitionend', onEnd);
+            rotorEl._ff7RotorTe = track;
+            rotorEl._ff7RotorTeFn = onEnd;
+
+            rotorEl._ff7RotorFinishTimer = setTimeout(function () {
+                rotorEl._ff7RotorFinishTimer = null;
+                finishCollapse();
+            }, FF7_ROTOR_ANIM_FALLBACK_MS);
+
+            /* Double rAF + short delay so layout commits before transition (embedded WebViews). */
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    setTimeout(function () {
+                        if (rotorEl._ff7RotorAnimToken !== myTok) return;
+                        track.style.transition = 'transform ' + (FF7_ROTOR_ANIM_MS / 1000) + 's ease-out';
+                        track.style.transform = 'translateX(' + (-W) + 'px)';
+                    }, 32);
+                });
+            });
+        }
+
+        function enemyBattleStatusHeaderLabel(emode) {
+            return emode === 'ailments' ? 'Status' : 'ATB';
+        }
+
         function updateFf7Rotors() {
             var st = window._ff7RenderState;
             if (!st || !st.d || !st.d.attached) return;
@@ -934,6 +1255,14 @@
             var hdr = document.getElementById('partyStatusHeader');
             if (hdr) hdr.textContent = partyFieldStatusHeaderLabel(partyMode, battle);
 
+            var ems = ['atb', 'ailments'];
+            var emsMs = num(cfg.EnemyBattleRotateMs, 3500);
+            var en = ems.length;
+            var eph = Math.floor(Date.now() / emsMs) % en;
+            var emode = ems[eph];
+            var ehdr = document.getElementById('enemyStatusHeader');
+            if (ehdr) ehdr.textContent = battle ? enemyBattleStatusHeaderLabel(emode) : 'ATB';
+
             document.querySelectorAll('[data-party-rotor]').forEach(function (el) {
                 var slot = parseInt(el.getAttribute('data-party-rotor'), 10);
                 var actor = null;
@@ -946,10 +1275,10 @@
                     }
                 }
                 if (!actor) {
-                    el.innerHTML = '';
+                    ff7RotorClear(el);
                     return;
                 }
-                el.innerHTML = buildPartyRotorInnerHtml(actor, partyMode, battle);
+                ff7RotorSetContent(el, buildPartyRotorInnerHtml(actor, partyMode, battle), partyMode);
             });
 
             document.querySelectorAll('[data-enemy-rotor]').forEach(function (el) {
@@ -962,15 +1291,10 @@
                     }
                 }
                 if (!actor) {
-                    el.innerHTML = '';
+                    ff7RotorClear(el);
                     return;
                 }
-                var ems = ['atb', 'ailments'];
-                var emsMs = num(cfg.EnemyBattleRotateMs, 3500);
-                var en = ems.length;
-                var eph = Math.floor(Date.now() / emsMs) % en;
-                var emode = ems[eph];
-                el.innerHTML = buildEnemyRotorInnerHtml(actor, emode);
+                ff7RotorSetContent(el, buildEnemyRotorInnerHtml(actor, emode), emode);
             });
         }
 
@@ -1003,13 +1327,16 @@
             var tm = cfg.ShowPlaytime !== undefined ? asBool(cfg.ShowPlaytime, true) : asBool(cfg.ShowStats, true);
             var fd = asBool(cfg.ShowFieldName, true);
             var md = asBool(cfg.ShowModuleName, true);
-            return gil || tm || fd || md;
+            var av = asBool(cfg.ShowAvgPartyLevel, true);
+            var mc = asBool(cfg.ShowMateriaCount, true);
+            return gil || tm || fd || md || av || mc;
         }
 
         function applyTemplateConfig(c) {
             cfg = Object.assign({
                 ShowParty: true, ShowEnemies: true, ShowStats: true, ShowBosses: true,
                 ShowGil: true, ShowPlaytime: true, ShowFieldName: true, ShowModuleName: true,
+                ShowAvgPartyLevel: true, ShowMateriaCount: true,
                 BossDisplayMode: 'list',
                 GridColumns: 2, GridRows: 2, GridGap: 8,
                 PartyGridRow: 1, PartyGridCol: 1, PartyRowSpan: 1, PartyColSpan: 1,
@@ -1088,6 +1415,8 @@
             document.getElementById('rowTime').classList.toggle('hidden', !(cfg.ShowPlaytime !== undefined ? asBool(cfg.ShowPlaytime, true) : asBool(cfg.ShowStats, true)));
             document.getElementById('rowField').classList.toggle('hidden', !asBool(cfg.ShowFieldName, true));
             document.getElementById('rowModule').classList.toggle('hidden', !asBool(cfg.ShowModuleName, true));
+            document.getElementById('rowAvgLevel').classList.toggle('hidden', !asBool(cfg.ShowAvgPartyLevel, true));
+            document.getElementById('rowMateriaCount').classList.toggle('hidden', !asBool(cfg.ShowMateriaCount, true));
 
             ff7EnsureRotorTimer();
         }
@@ -1137,6 +1466,74 @@
                 parts.push(String(e.slot != null ? e.slot : '') + ':' + String(e.name || '?'));
             }
             return parts.join('|');
+        }
+
+        function ff7PartyDomKey(party) {
+            if (!Array.isArray(party) || party.length === 0) return '';
+            var parts = [];
+            for (var i = 0; i < party.length; i++) {
+                var p = party[i];
+                if (p.slot_empty) continue;
+                var ps = ff7PartySlot(p);
+                parts.push(String(ps) + ':' + String(p.id != null ? p.id : '') + ':' + String(p.name || '?'));
+            }
+            return parts.join('|');
+        }
+
+        function patchPartyRowStats(container, party) {
+            var members = [];
+            for (var i = 0; i < party.length; i++) {
+                if (!party[i].slot_empty) members.push(party[i]);
+            }
+            var rows = container.querySelectorAll('.char-row');
+            var n = Math.min(members.length, rows.length);
+            for (var j = 0; j < n; j++) {
+                var actor = members[j];
+                var row = rows[j];
+                var maxHp = actor.max_hp || 1;
+                var hp = actor.hp || 0;
+                var maxMp = actor.max_mp || 0;
+                var mp = actor.mp || 0;
+                var hpPctVal = hpPct(hp, maxHp);
+                var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
+                var dead = hp <= 0;
+                var lowHp = !dead && maxHp > 0 && (hp / maxHp) < 0.25;
+                var lowMp = !dead && maxMp > 0 && (mp / maxMp) < 0.25;
+                var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
+
+                var nameEl = row.querySelector('.char-party-main > .char-name');
+                if (nameEl) {
+                    var lv = (actor.level !== undefined && actor.level !== null) ? Number(actor.level) : 0;
+                    var nm = actor.name || '?';
+                    nameEl.textContent = lv > 0 ? ('Lv ' + lv + ' ' + nm) : nm;
+                    nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
+                }
+
+                var hpCell = row.querySelector('.hp-block .stat-cell.hp-cell');
+                if (hpCell) {
+                    hpCell.className = hpCellClass;
+                    var hpVals = hpCell.querySelectorAll('.stat-val');
+                    if (hpVals.length >= 2) {
+                        hpVals[0].textContent = String(hp);
+                        hpVals[1].textContent = String(maxHp);
+                        hpVals[0].className = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
+                        hpVals[1].className = 'stat-val hp-max' + (dead ? ' val-dead' : '');
+                    }
+                    var hpFill = hpCell.querySelector('.ff7-hpbar .fill');
+                    if (hpFill) hpFill.style.width = hpPctVal + '%';
+                }
+
+                var mpCell = row.querySelector('.mp-block .stat-cell.mp-cell');
+                if (mpCell) {
+                    var mpVal = mpCell.querySelector('.stat-val.mp-current') || mpCell.querySelector('.stat-val');
+                    if (mpVal) {
+                        mpVal.textContent = String(mp);
+                        mpVal.className = 'stat-val mp-current' + (lowMp ? ' val-warn' : '');
+                    }
+                    var mpFill = mpCell.querySelector('.ff7-mpbar .fill');
+                    if (mpFill) mpFill.style.width = mpPctVal + '%';
+                }
+            }
         }
 
         function patchEnemyRowStats(container, enemies) {
@@ -1462,12 +1859,32 @@
             }
 
             var partyEl = document.getElementById('partyBody');
-            partyEl.innerHTML = '';
-            if (asBool(cfg.ShowParty, true) && Array.isArray(d.party)) {
-                d.party.forEach(function (p) {
-                    if (p.slot_empty) return;
-                    renderPartyRow(partyEl, p);
-                });
+            if (typeof window._ff7PartyDomKey === 'undefined') {
+                window._ff7PartyDomKey = '';
+            }
+            if (!asBool(cfg.ShowParty, true) || !Array.isArray(d.party)) {
+                window._ff7PartyDomKey = '';
+                partyEl.innerHTML = '';
+            } else {
+                var partyFiltered = [];
+                for (var pi = 0; pi < d.party.length; pi++) {
+                    if (!d.party[pi].slot_empty) partyFiltered.push(d.party[pi]);
+                }
+                var partyDomKey = ff7PartyDomKey(d.party);
+                var partyRowCount = partyEl.querySelectorAll('.char-row').length;
+                var needPartyRebuild =
+                    partyDomKey !== window._ff7PartyDomKey ||
+                    partyRowCount !== partyFiltered.length;
+                if (needPartyRebuild) {
+                    window._ff7PartyDomKey = partyDomKey;
+                    partyEl.innerHTML = '';
+                    d.party.forEach(function (p) {
+                        if (p.slot_empty) return;
+                        renderPartyRow(partyEl, p);
+                    });
+                } else {
+                    patchPartyRowStats(partyEl, d.party);
+                }
             }
 
             var enemyEl = document.getElementById('enemyBody');
@@ -1531,9 +1948,26 @@
                 if (asBool(cfg.ShowModuleName, true)) {
                     var mn = d.current_module_name || '';
                     var mc = d.current_module;
-                    document.getElementById('moduleVal').textContent = mn
-                        ? (mn + (mc !== undefined && mc !== null ? ' (' + mc + ')' : ''))
-                        : (mc !== undefined && mc !== null ? String(mc) : '—');
+                    var mcNum = mc !== undefined && mc !== null ? Number(mc) : NaN;
+                    var modDisp = '—';
+                    if (!isNaN(mcNum) && mcNum === 17) {
+                        modDisp = 'Victory';
+                    } else if (mn) {
+                        modDisp = mn + (!isNaN(mcNum) ? ' (' + mcNum + ')' : '');
+                    } else if (!isNaN(mcNum)) {
+                        modDisp = String(mcNum);
+                    }
+                    document.getElementById('moduleVal').textContent = modDisp;
+                }
+                if (asBool(cfg.ShowAvgPartyLevel, true)) {
+                    var al = d.avg_party_level;
+                    document.getElementById('avgLevelVal').textContent =
+                        al !== undefined && al !== null && !isNaN(Number(al)) ? String(Math.round(Number(al))) : '0';
+                }
+                if (asBool(cfg.ShowMateriaCount, true)) {
+                    var mt = d.equipped_materia_count;
+                    document.getElementById('materiaCountVal').textContent =
+                        mt !== undefined && mt !== null && !isNaN(Number(mt)) ? String(Math.max(0, Math.floor(Number(mt)))) : '0';
                 }
             }
 

@@ -318,7 +318,7 @@
             "id": "ShowStats",
             "label": "Show records panel",
             "value": true,
-            "description": "Master toggle for the Records panel (gil, time, location, module)"
+            "description": "Master toggle for the Records panel (gil, time, location, module, avg level, materia count)"
         },
         {
             "type": "checkbox",
@@ -338,15 +338,29 @@
             "type": "checkbox",
             "id": "ShowFieldName",
             "label": "Show location name",
-            "value": false,
+            "value": true,
             "description": "Current field / location string (second column)"
         },
         {
             "type": "checkbox",
             "id": "ShowModuleName",
             "label": "Show module name",
-            "value": false,
+            "value": true,
             "description": "Human-readable game module (second column)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowAvgPartyLevel",
+            "label": "Show Avg Lv",
+            "value": true,
+            "description": "Average level of the three party slots (first column)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowMateriaCount",
+            "label": "Show Materia Count",
+            "value": true,
+            "description": "Total equipped materia on weapon and armor for all three party slots (second column)"
         },
         {
             "type": "number",
