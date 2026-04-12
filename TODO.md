@@ -36,8 +36,6 @@ Database selection issues
     [x] - Fix issue with Firebase url not being recognized
     [x] - Implement database migration between different database types
 
-[x] - Fix auto-update not notifying user of update upon startup.
-
 FF7 HTML Template
     [x] - Create HTML template that will hook onto the FF7 exe process to get data from the game.
         [x] - The template must be able to reliably hook onto the game process, rehook if the game has been closed and reopened, and fetch game data every .5 seconds.
@@ -79,39 +77,10 @@ FF7 Hook
     [x] - Find the memory values that handle inputs, such as movement confirm/cancel, menu button, etc etc, and expose them as functions for the Connectors system to use.
     [x] - Add functions to kill all enemies, add gil, remove gil, kill a specific party member, add hp to a specific party member, remove hp from a specific party member, etc etc.
     [x] - Move the ff7_reader.py file to the game_hooks directory. Then rename the ff7_reader.py file to ff7_hook.py
-    [] - Finish listing out all of the bosses so they can be tracked and displayed in the template. Full list can be found here: https://finalfantasy.neoseeker.com/wiki/Bosses_(FFVII)
+    [x] - Finish listing out all of the bosses so they can be tracked and displayed in the template. Full list can be found here: https://finalfantasy.neoseeker.com/wiki/Bosses_(FFVII)
     [x] - Add memory addresses for materia, and gear, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
     [x] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
 
-
-Guard Scorpion
-Air Buster
-Aps
-Reno
-Sample:H0512
-Hundred Gunner
-Heli Gunner
-Rufus
-Motor Ball
-Bottomswell
-Jenova BIRTH
-Dyne
-Gi Nattak
-Materia Keeper
-Palmer
-Red Dragon
-Demons Gate
-Jenova LIFE
-Schizo
-Jenova DEATH
-Ultimate WEAPON
-Carry Armor
-Diamond WEAPON
-Reno
-Rude
-Elena
-Proud Clod
-Lifeform-Hojo N
-Jenova SYNTHESIS
-Bizarro Sephiroth
-Safer Sephiroth
+General Items:
+    [] - Auto-update is not notifying the user of updates upon startup.
+    [] - Interval update timer is not notifying when an update is available after the app has been already opened and running.
