@@ -3057,7 +3057,7 @@ When attached, the hook sends roughly four times per second:
 - **Party**: names, levels, HP, max HP, MP, max MP, limit gauge, ATB (in battle the values are live battle memory; on the field they come from the in-RAM savemap).
 - **Enemies** (battle only): name, level, HP, MP, ATB.
 - **Gil** and **play time** from the savemap.
-- **Boss session log**: names of defeated bosses this session (in memory until you clear them from the template or restart Mycelian).
+- **Boss log**: defeated boss names (newest first), persisted until you reset from the template.
 - **Menu colors**: window gradient RGB from the savemap is mapped to overlay panel colors so the browser source can match your configured window style.
 
 ## Crowd control (writing memory)

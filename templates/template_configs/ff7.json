@@ -433,7 +433,7 @@
             "type": "checkbox",
             "id": "ShowBosses",
             "label": "Show boss tracker",
-            "value": false,
+            "value": true,
             "description": "Tracks likely boss kills during battle (heuristic)"
         },
         {
@@ -441,7 +441,7 @@
             "id": "BossDisplayMode",
             "label": "Boss display mode",
             "value": "list",
-            "description": "How to show defeated bosses from the current session",
+            "description": "How to show defeated bosses (persisted until reset)",
             "options": [
                 "list",
                 "last",
@@ -449,10 +449,24 @@
             ]
         },
         {
+            "type": "text",
+            "id": "BossCountLabel",
+            "label": "Count mode label",
+            "value": "Bosses Defeated: ",
+            "description": "Label shown left of the count when display mode is count"
+        },
+        {
+            "type": "text",
+            "id": "BossLastLabel",
+            "label": "Last boss mode label",
+            "value": "Last Defeated Boss: ",
+            "description": "Label shown left of the name when display mode is last (most recent)"
+        },
+        {
             "type": "number",
             "id": "BossesGridRow",
             "label": "Grid row",
-            "value": 2,
+            "value": 4.0,
             "min": 1,
             "max": 6,
             "description": "Starting row for boss tracker panel"
@@ -461,7 +475,7 @@
             "type": "number",
             "id": "BossesGridCol",
             "label": "Grid column",
-            "value": 2,
+            "value": 1.0,
             "min": 1,
             "max": 6,
             "description": "Starting column for boss tracker panel"
@@ -488,7 +502,7 @@
             "type": "number",
             "id": "BossesTitleFontSize",
             "label": "Title font size (px)",
-            "value": 11,
+            "value": 16.0,
             "min": 6,
             "max": 32,
             "description": "Font size for the panel title"
@@ -497,7 +511,7 @@
             "type": "number",
             "id": "BossesTextFontSize",
             "label": "Text font size (px)",
-            "value": 13,
+            "value": 16.0,
             "min": 8,
             "max": 32,
             "description": "Font size for boss names and text"
@@ -520,7 +534,7 @@
                 "type": "button",
                 "id": "clear_bosses",
                 "label": "Reset Boss List",
-                "description": "Clear the list of defeated bosses for this session",
+                "description": "Clear the persisted list of defeated bosses",
                 "action": "clear_bosses",
                 "button_text": "Reset"
             }

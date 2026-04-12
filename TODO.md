@@ -64,8 +64,8 @@ FF7 HTML Template
     [x] - Add commas to the Gil value so its formatted like 1,000,000
     [x] - Fix MP coloring so it is not yellow when HP is below 25% of max HP, but when its below 25% of max MP instead
     [x] - Finish setting up the boss tracker segment. It should either be a list of bosses, the most recently killed boss, or a total count of bosses killed.
-    [] - Slow down timer for the rotators
-    [] - Fix equipment not displaying the correct name of the equipment.
+    [x] - Slow down timer for the rotators
+    [x] - Fix equipment not displaying the correct name of the equipment.
 
 Game Hooks
     [x] - Create a system to write to game memory values for "Crowd Control" style of streams.
@@ -80,5 +80,5 @@ FF7 Hook
     [x] - Add functions to kill all enemies, add gil, remove gil, kill a specific party member, add hp to a specific party member, remove hp from a specific party member, etc etc.
     [x] - Move the ff7_reader.py file to the game_hooks directory. Then rename the ff7_reader.py file to ff7_hook.py
     [] - Finish listing out all of the bosses so they can be tracked and displayed in the template. Full list can be found here: https://finalfantasy.neoseeker.com/wiki/Bosses_(FFVII)
-    [] - Add memory addresses for materia, and gear, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
-    [] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
+    [x] - Add memory addresses for materia, and gear, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
+    [x] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.

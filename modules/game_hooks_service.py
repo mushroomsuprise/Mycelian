@@ -9,7 +9,8 @@ Commands from templates (see web_engine ``game_hook_command``)::
 
     { "hook": "ff7", "action": "clear_bosses" }
 
-Boss defeat log for FF7 is kept **in memory only** (cleared on Mycelian restart).
+Boss defeat log for FF7 is persisted under ``GameHooks/ff7_boss_log`` (SQLite via
+``database_manager``). Reset only via template ``clear_bosses`` command.
 
 Connector and template writes are serialized on the hook polling thread via a queue.
 """
@@ -30,6 +31,7 @@ from .game_hooks.ff7_hook import FF7Hook
 logger = logging.getLogger(__name__)
 
 _FF7_DB_PATH = "GameHooks/ff7_enabled"
+_FF7_BOSS_LOG_PATH = "GameHooks/ff7_boss_log"
 _INTERVAL = 0.25
 
 
@@ -55,9 +57,32 @@ class GameHooksServiceImpl:
         self._write_queue: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, str, Dict[str, Any]]]" = (
             queue.Queue()
         )
+        self._load_ff7_boss_log()
+
+    def _load_ff7_boss_log(self) -> None:
+        try:
+            raw = database_manager.get_data(_FF7_BOSS_LOG_PATH)
+            if not isinstance(raw, dict):
+                return
+            names = raw.get("names")
+            if not isinstance(names, list):
+                return
+            last = raw.get("last") if isinstance(raw.get("last"), str) else ""
+            self._ff7_boss_tracker.restore(names, last)
+        except Exception as e:
+            logger.warning("FF7 boss log load failed: %s", e, exc_info=True)
+
+    def _persist_ff7_boss_log(self) -> None:
+        try:
+            database_manager.set_data(
+                _FF7_BOSS_LOG_PATH, self._ff7_boss_tracker.bosses_dict()
+            )
+        except Exception as e:
+            logger.warning("FF7 boss log persist failed: %s", e, exc_info=True)
 
     def clear_ff7_bosses(self) -> None:
         self._ff7_boss_tracker.clear()
+        self._persist_ff7_boss_log()
 
     def enqueue_game_hook_write(
         self, game_id: str, operation: str, arguments: Optional[Dict[str, Any]] = None
@@ -115,7 +140,8 @@ class GameHooksServiceImpl:
                     self._ff7_hook = inst
                 try:
                     snap = self._ff7_hook.snapshot()
-                    self._ff7_boss_tracker.update_from_snapshot(snap)
+                    if self._ff7_boss_tracker.update_from_snapshot(snap):
+                        self._persist_ff7_boss_log()
                     snap["bosses"] = self._ff7_boss_tracker.bosses_dict()
                     hooks["ff7"] = snap
                 except Exception as e:
@@ -131,7 +157,7 @@ class GameHooksServiceImpl:
                         "gil": 0,
                         "playtime_seconds": 0,
                         "playtime_text": "--:--:--",
-                        "bosses": {"names": [], "last": "", "count": 0},
+                        "bosses": self._ff7_boss_tracker.bosses_dict(),
                         "debug": {"stage": "snapshot_exception", "message": str(e)},
                     }
             else:
@@ -153,7 +179,7 @@ class GameHooksServiceImpl:
                     "gil": 0,
                     "playtime_seconds": 0,
                     "playtime_text": "--:--:--",
-                    "bosses": {"names": [], "last": "", "count": 0},
+                    "bosses": self._ff7_boss_tracker.bosses_dict(),
                     "debug": {"stage": "ff7_disabled_in_settings"},
                 }
 

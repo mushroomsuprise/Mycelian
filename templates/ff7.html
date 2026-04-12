@@ -432,17 +432,13 @@
         }
 
         /* --- Bosses panel --- */
-        .boss-list {
-            list-style: none;
-            max-height: 120px;
-            overflow-y: auto;
+        .boss-name-list {
             font-size: var(--boss-text-font, 13px);
-        }
-
-        .boss-list li {
-            padding: 2px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
             color: var(--ff7-text);
+            line-height: 1.35;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            min-width: 0;
         }
 
         .boss-empty {
@@ -453,6 +449,31 @@
         .boss-text {
             font-size: var(--boss-text-font, 13px);
             color: var(--ff7-text);
+        }
+
+        #panelBosses .boss-kv-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+            width: 100%;
+            min-width: 0;
+        }
+
+        #panelBosses .boss-kv-label {
+            color: var(--ff7-label);
+            font-size: var(--title-font, 11px);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            flex-shrink: 0;
+        }
+
+        #panelBosses .boss-kv-val {
+            color: var(--ff7-text);
+            font-size: var(--boss-text-font, 13px);
+            text-align: right;
+            min-width: 0;
+            word-break: break-word;
         }
 
         .party-rotor {
@@ -1338,6 +1359,8 @@
                 ShowGil: true, ShowPlaytime: true, ShowFieldName: true, ShowModuleName: true,
                 ShowAvgPartyLevel: true, ShowMateriaCount: true,
                 BossDisplayMode: 'list',
+                BossCountLabel: 'Defeated',
+                BossLastLabel: 'Last',
                 GridColumns: 2, GridRows: 2, GridGap: 8,
                 PartyGridRow: 1, PartyGridCol: 1, PartyRowSpan: 1, PartyColSpan: 1,
                 EnemiesGridRow: 1, EnemiesGridCol: 2, EnemiesRowSpan: 1, EnemiesColSpan: 1,
@@ -1977,30 +2000,41 @@
             var mode = cfg.BossDisplayMode || 'list';
             if (asBool(cfg.ShowBosses, true)) {
                 if (mode === 'count') {
-                    var countSpan = document.createElement('span');
-                    countSpan.className = 'boss-text';
-                    countSpan.textContent = 'Defeated: ' + (bosses.count || 0);
-                    bossBody.appendChild(countSpan);
+                    var countRow = document.createElement('div');
+                    countRow.className = 'boss-kv-row';
+                    var countLab = document.createElement('span');
+                    countLab.className = 'boss-kv-label';
+                    countLab.textContent = String(cfg.BossCountLabel != null ? cfg.BossCountLabel : 'Defeated');
+                    var countVal = document.createElement('span');
+                    countVal.className = 'boss-kv-val';
+                    countVal.textContent = String(bosses.count || 0);
+                    countRow.appendChild(countLab);
+                    countRow.appendChild(countVal);
+                    bossBody.appendChild(countRow);
                 } else if (mode === 'last') {
-                    var lastSpan = document.createElement('span');
-                    lastSpan.className = 'boss-text';
-                    lastSpan.textContent = bosses.last ? ('Last: ' + bosses.last) : 'No boss kills yet.';
-                    bossBody.appendChild(lastSpan);
+                    var lastRow = document.createElement('div');
+                    lastRow.className = 'boss-kv-row';
+                    var lastLab = document.createElement('span');
+                    lastLab.className = 'boss-kv-label';
+                    lastLab.textContent = String(cfg.BossLastLabel != null ? cfg.BossLastLabel : 'Last');
+                    var lastVal = document.createElement('span');
+                    lastVal.className = 'boss-kv-val';
+                    lastVal.textContent = bosses.last ? String(bosses.last) : '—';
+                    lastRow.appendChild(lastLab);
+                    lastRow.appendChild(lastVal);
+                    bossBody.appendChild(lastRow);
                 } else {
-                    var ul = document.createElement('ul');
-                    ul.className = 'boss-list';
-                    (bosses.names || []).forEach(function (n) {
-                        var li = document.createElement('li');
-                        li.textContent = n;
-                        ul.appendChild(li);
-                    });
-                    if (!ul.children.length) {
-                        var empty = document.createElement('span');
-                        empty.className = 'boss-empty';
-                        empty.textContent = 'No bosses recorded this session.';
-                        bossBody.appendChild(empty);
+                    var names = bosses.names || [];
+                    if (!names.length) {
+                        var emptyList = document.createElement('span');
+                        emptyList.className = 'boss-empty';
+                        emptyList.textContent = 'No bosses recorded yet.';
+                        bossBody.appendChild(emptyList);
                     } else {
-                        bossBody.appendChild(ul);
+                        var nameBlock = document.createElement('div');
+                        nameBlock.className = 'boss-name-list';
+                        nameBlock.textContent = names.join(', ');
+                        bossBody.appendChild(nameBlock);
                     }
                 }
             }

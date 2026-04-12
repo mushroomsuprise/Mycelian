@@ -1,4 +1,4 @@
-"""In-memory FF7 boss defeat tracking for game hook payloads (session-only)."""
+"""FF7 boss defeat tracking for game hook payloads (newest-first name list)."""
 
 from __future__ import annotations
 
@@ -179,12 +179,29 @@ class Ff7BossTracker:
                 "count": len(self._boss_names),
             }
 
-    def update_from_snapshot(self, snap: Dict[str, Any]) -> None:
+    def restore(self, names: List[str], last: str = "") -> None:
+        """Replace log from persisted storage (names newest-first)."""
+        clean: List[str] = []
+        for n in names:
+            if isinstance(n, str) and n.strip():
+                clean.append(n.strip())
+        with self._lock:
+            self._boss_names = clean
+            if last and isinstance(last, str) and last.strip():
+                self._boss_last = last.strip()
+            elif clean:
+                self._boss_last = clean[0]
+            else:
+                self._boss_last = ""
+
+    def update_from_snapshot(self, snap: Dict[str, Any]) -> bool:
+        """Update from battle snapshot. Returns True if a new boss defeat was recorded."""
         if not snap.get("battle"):
             with self._lock:
                 self._prev_battle_enemies.clear()
-            return
+            return False
         enemies = snap.get("enemies") or []
+        added = False
         with self._lock:
             current: Dict[int, int] = {}
             for e in enemies:
@@ -194,10 +211,12 @@ class Ff7BossTracker:
                 prev = self._prev_battle_enemies.get(slot)
                 if prev is not None and prev > 0 and hp <= 0 and is_boss_actor(e):
                     name = (e.get("name") or "Unknown").strip()
-                    if name and (not self._boss_names or self._boss_names[-1] != name):
-                        self._boss_names.append(name)
+                    if name and (not self._boss_names or self._boss_names[0] != name):
+                        self._boss_names.insert(0, name)
                         self._boss_last = name
+                        added = True
                 self._prev_battle_enemies[slot] = hp
             for slot in list(self._prev_battle_enemies.keys()):
                 if slot not in current:
                     del self._prev_battle_enemies[slot]
+        return added
