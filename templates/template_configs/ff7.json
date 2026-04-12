@@ -437,6 +437,20 @@
             "description": "Tracks likely boss kills during battle (heuristic)"
         },
         {
+            "type": "text",
+            "id": "BossesTitleText",
+            "label": "Boss tracker title",
+            "value": "Defeated Bosses",
+            "description": "Title text when the title row is shown (blank hides the row)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowBossesTitle",
+            "label": "Show boss tracker title",
+            "value": true,
+            "description": "Toggle the title row above the boss tracker on or off"
+        },
+        {
             "type": "select",
             "id": "BossDisplayMode",
             "label": "Boss display mode",

@@ -788,6 +788,7 @@
                 </div>
             </div>
             <div id="panelBosses" class="panel hidden">
+                <div id="bossPanelTitle" class="panel-title">Bosses</div>
                 <div id="bossBody"></div>
             </div>
         </div>
@@ -1378,6 +1379,8 @@
                 EnemiesTimeBarHeight: 8,
                 EnemyBattleRotateMs: 3500,
                 StatsTitleFontSize: 11, StatsLabelFontSize: 11, StatsValueFontSize: 15,
+                BossesTitleText: 'Bosses',
+                ShowBossesTitle: true,
                 BossesTitleFontSize: 11, BossesTextFontSize: 13
             }, c || {});
 
@@ -1433,6 +1436,16 @@
             var bp = document.getElementById('panelBosses');
             bp.style.setProperty('--title-font', num(cfg.BossesTitleFontSize, 11) + 'px');
             bp.style.setProperty('--boss-text-font', num(cfg.BossesTextFontSize, 13) + 'px');
+
+            var bossTitleEl = document.getElementById('bossPanelTitle');
+            if (bossTitleEl) {
+                var bossTitleStr = cfg.BossesTitleText !== undefined && cfg.BossesTitleText !== null
+                    ? String(cfg.BossesTitleText)
+                    : 'Bosses';
+                bossTitleEl.textContent = bossTitleStr;
+                var showBossTitle = asBool(cfg.ShowBossesTitle, true);
+                bossTitleEl.classList.toggle('hidden', !showBossTitle || !bossTitleStr.trim());
+            }
 
             document.getElementById('rowGil').classList.toggle('hidden', !(cfg.ShowGil !== undefined ? asBool(cfg.ShowGil, true) : asBool(cfg.ShowStats, true)));
             document.getElementById('rowTime').classList.toggle('hidden', !(cfg.ShowPlaytime !== undefined ? asBool(cfg.ShowPlaytime, true) : asBool(cfg.ShowStats, true)));

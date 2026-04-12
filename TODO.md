@@ -82,3 +82,36 @@ FF7 Hook
     [] - Finish listing out all of the bosses so they can be tracked and displayed in the template. Full list can be found here: https://finalfantasy.neoseeker.com/wiki/Bosses_(FFVII)
     [x] - Add memory addresses for materia, and gear, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
     [x] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
+
+
+Guard Scorpion
+Air Buster
+Aps
+Reno
+Sample:H0512
+Hundred Gunner
+Heli Gunner
+Rufus
+Motor Ball
+Bottomswell
+Jenova BIRTH
+Dyne
+Gi Nattak
+Materia Keeper
+Palmer
+Red Dragon
+Demons Gate
+Jenova LIFE
+Schizo
+Jenova DEATH
+Ultimate WEAPON
+Carry Armor
+Diamond WEAPON
+Reno
+Rude
+Elena
+Proud Clod
+Lifeform-Hojo N
+Jenova SYNTHESIS
+Bizarro Sephiroth
+Safer Sephiroth
