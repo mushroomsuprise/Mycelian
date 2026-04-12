@@ -5,16 +5,19 @@ Canonical virtual addresses match ff7-ultima / ff7-lib.rs; rebase with:
     phys = module_base + (canon_addr - 0x00400000)
 
 Window gradient RGB is read from the in-RAM savemap (Data Crystal offsets 0x48–0x53).
+Character record gear/materia offsets match Data Crystal / ff7-flat-wiki savemap layouts for PC English.
 """
 
 from __future__ import annotations
 
 import ctypes
+import json
 import logging
 import struct
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +62,90 @@ _CHAR_BLOCK = [
 SAVE_OFF_PARTY_SLOTS = 0x04F8
 SAVE_OFF_GIL = 0x0B7C
 SAVE_OFF_PLAYTIME_SEC = 0x0B80
+# Data Crystal: "Name of location" (FF text), 24 bytes
+SAVE_OFF_LOCATION_NAME = 0x0F15
+SAVE_OFF_LOCATION_NAME_LEN = 24
 
 # Character record (field) — offsets within 132-byte block
 REC_OFF_HP = 0x2C
 REC_OFF_MP = 0x30
 REC_OFF_MAX_HP = 0x38
 REC_OFF_MAX_MP = 0x3A
+REC_OFF_WEAPON = 0x1C
+REC_OFF_ARMOR = 0x1D
+REC_OFF_ACCESSORY = 0x1E
+REC_OFF_MATERIA_WEAPON = 0x40
+REC_OFF_MATERIA_ARMOR = 0x60
+
+# Built-in gear slot layouts (KERNEL-style slot-type bytes; see ff7-flat-wiki Weapon_data / Armor_data).
+_GEAR_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "ff7"
+_DEFAULT_MATERIA_SLOT_TYPES: List[int] = [0x05] * 8
+_WEAPON_MATERIA_SLOT_TYPES: Dict[str, List[int]] = {}
+_ARMOR_MATERIA_SLOT_TYPES: Dict[str, List[int]] = {}
+_MATERIA_NAMES_EN: Dict[str, str] = {}
+_MATERIA_ORB_BY_ID: Dict[str, str] = {}
+_WEAPON_NAMES_EN: Dict[str, str] = {}
+_ARMOR_NAMES_EN: Dict[str, str] = {}
+_ACCESSORY_NAMES_EN: Dict[str, str] = {}
+_GEAR_LAYOUT_ASSETS_LOADED = False
+
+
+def _load_ff7_gear_layout_assets() -> None:
+    """Load weapon/armor slot-type maps, materia names, orb colors, and English gear names from JSON."""
+    global _GEAR_LAYOUT_ASSETS_LOADED
+    if _GEAR_LAYOUT_ASSETS_LOADED:
+        return
+    _GEAR_LAYOUT_ASSETS_LOADED = True
+    try:
+        wpath = _GEAR_ASSET_DIR / "weapon_materia_slot_types.json"
+        apath = _GEAR_ASSET_DIR / "armor_materia_slot_types.json"
+        mpath = _GEAR_ASSET_DIR / "materia_names_en.json"
+        opath = _GEAR_ASSET_DIR / "materia_orb_by_id.json"
+        wnpath = _GEAR_ASSET_DIR / "weapon_names_en.json"
+        anpath = _GEAR_ASSET_DIR / "armor_names_en.json"
+        acpath = _GEAR_ASSET_DIR / "accessory_names_en.json"
+        if wpath.is_file():
+            _WEAPON_MATERIA_SLOT_TYPES.clear()
+            _WEAPON_MATERIA_SLOT_TYPES.update(json.loads(wpath.read_text(encoding="utf-8")))
+        if apath.is_file():
+            _ARMOR_MATERIA_SLOT_TYPES.clear()
+            _ARMOR_MATERIA_SLOT_TYPES.update(json.loads(apath.read_text(encoding="utf-8")))
+        if mpath.is_file():
+            _MATERIA_NAMES_EN.clear()
+            _MATERIA_NAMES_EN.update(json.loads(mpath.read_text(encoding="utf-8")))
+        if opath.is_file():
+            _MATERIA_ORB_BY_ID.clear()
+            _MATERIA_ORB_BY_ID.update(json.loads(opath.read_text(encoding="utf-8")))
+        if wnpath.is_file():
+            _WEAPON_NAMES_EN.clear()
+            _WEAPON_NAMES_EN.update(json.loads(wnpath.read_text(encoding="utf-8")))
+        if anpath.is_file():
+            _ARMOR_NAMES_EN.clear()
+            _ARMOR_NAMES_EN.update(json.loads(anpath.read_text(encoding="utf-8")))
+        if acpath.is_file():
+            _ACCESSORY_NAMES_EN.clear()
+            _ACCESSORY_NAMES_EN.update(json.loads(acpath.read_text(encoding="utf-8")))
+    except OSError as e:
+        logger.warning("FF7 layout/materia name assets unreadable: %s", e)
+
+
+def _weapon_materia_slot_types(weapon_id: int) -> List[int]:
+    _load_ff7_gear_layout_assets()
+    if weapon_id < 0 or weapon_id > 127:
+        return list(_DEFAULT_MATERIA_SLOT_TYPES)
+    return list(
+        _WEAPON_MATERIA_SLOT_TYPES.get(str(weapon_id), _DEFAULT_MATERIA_SLOT_TYPES)
+    )
+
+
+def _armor_materia_slot_types(armor_id: int) -> List[int]:
+    _load_ff7_gear_layout_assets()
+    if armor_id < 0 or armor_id > 31:
+        return list(_DEFAULT_MATERIA_SLOT_TYPES)
+    return list(
+        _ARMOR_MATERIA_SLOT_TYPES.get(str(armor_id), _DEFAULT_MATERIA_SLOT_TYPES)
+    )
+
 
 # Battle actor status dword at offset 0 (matches ff7-ultima statuses.Dead)
 BATTLE_OFF_STATUS = 0x00
@@ -76,6 +157,199 @@ BATTLE_OFF_MP = 0x28
 BATTLE_OFF_MAX_MP = 0x2A
 
 _MAX_GIL = 999_999_999
+
+# Battle status bits (ff7-flat-wiki / Battle Mechanics FAQ); dword at actor+0x00
+_STATUS_AILMENT_BITS: List[Tuple[int, str]] = [
+    (0x00000001, "Death"),
+    (0x00000002, "NearDeath"),
+    (0x00000004, "Sleep"),
+    (0x00000008, "Poison"),
+    (0x00000010, "Sadness"),
+    (0x00000020, "Fury"),
+    (0x00000040, "Confusion"),
+    (0x00000080, "Silence"),
+    (0x00000100, "Haste"),
+    (0x00000200, "Slow"),
+    (0x00000400, "Stop"),
+    (0x00000800, "Frog"),
+    (0x00001000, "Small"),
+    (0x00002000, "SlowNumb"),
+    (0x00004000, "Petrify"),
+    (0x00008000, "Regen"),
+    (0x00010000, "Barrier"),
+    (0x00020000, "MBarrier"),
+    (0x00040000, "Reflect"),
+    (0x00080000, "Dual"),
+    (0x00100000, "Shield"),
+    (0x00200000, "DeathSentence"),
+    (0x00400000, "Manipulate"),
+    (0x00800000, "Berserk"),
+    (0x01000000, "Peerless"),
+    (0x02000000, "Paralysis"),
+    (0x04000000, "Darkness"),
+    (0x08000000, "DualDrain"),
+    (0x10000000, "DeathForce"),
+    (0x20000000, "Resist"),
+    (0x40000000, "LuckyGirl"),
+    (0x80000000, "Imprisoned"),
+]
+
+# Valid orb image stems (assets/ff7/*_materia.png); materia_orb_by_id.json uses these strings.
+_VALID_MATERIA_ORB_STEMS = frozenset(
+    {
+        "materia_green",
+        "materia_yellow",
+        "materia_red",
+        "materia_blue",
+        "materia_purple",
+    }
+)
+
+_CURRENT_MODULE_NAMES: Dict[int, str] = {
+    0: "None",
+    1: "Field",
+    2: "Battle",
+    3: "World Map",
+    4: "Menu",
+    5: "FMV",
+    6: "Game Over",
+    7: "Battle swirl",
+    8: "Shop",
+    9: "Naming",
+    10: "Snowboard",
+    11: "Highway",
+    12: "Chocobo race",
+    13: "Submarine",
+    14: "Coaster",
+    15: "Gold saucer",
+}
+
+
+def _ailments_from_status(status: int) -> List[str]:
+    st = status & 0xFFFFFFFF
+    out: List[str] = []
+    for mask, label in _STATUS_AILMENT_BITS:
+        if st & mask:
+            out.append(label)
+    return out
+
+
+def _materia_orb_stem(materia_id: int) -> str:
+    if materia_id < 0 or materia_id == 0xFF:
+        return ""
+    _load_ff7_gear_layout_assets()
+    stem = _MATERIA_ORB_BY_ID.get(str(materia_id), "materia_green")
+    if stem not in _VALID_MATERIA_ORB_STEMS:
+        return "materia_green"
+    return stem
+
+
+def _gear_display_name(table: Dict[str, str], idx: int, hi: int) -> str:
+    if idx < 0 or idx > hi or idx == 0xFF:
+        return ""
+    return (table.get(str(idx), "") or "").strip()
+
+
+def _parse_materia_block(rec: bytes, base: int, n_slots: int = 8) -> List[Dict[str, Any]]:
+    _load_ff7_gear_layout_assets()
+    slots: List[Dict[str, Any]] = []
+    for i in range(n_slots):
+        o = base + i * 4
+        if o + 4 > len(rec):
+            break
+        mid = int(rec[o])
+        ap = int(rec[o + 1] | (rec[o + 2] << 8) | (rec[o + 3] << 16))
+        slots.append(
+            {
+                "id": mid,
+                "ap": ap,
+                "empty": mid == 0xFF,
+                "orb": _materia_orb_stem(mid) if mid != 0xFF else "",
+                "name": (
+                    ""
+                    if mid == 0xFF
+                    else _MATERIA_NAMES_EN.get(str(mid), "")
+                ),
+            }
+        )
+    return slots
+
+
+def _char_gear_materia(rec: bytes) -> Dict[str, Any]:
+    """Equipment + materia from one 132-byte character record (Data Crystal layout)."""
+    if len(rec) < 0x84:
+        return {
+            "weapon_id": -1,
+            "armor_id": -1,
+            "accessory_id": -1,
+            "weapon_name": "",
+            "armor_name": "",
+            "accessory_name": "",
+            "materia_weapon": [],
+            "materia_armor": [],
+            "materia_weapon_slot_types": list(_DEFAULT_MATERIA_SLOT_TYPES),
+            "materia_armor_slot_types": list(_DEFAULT_MATERIA_SLOT_TYPES),
+        }
+    w, a, acc_raw = int(rec[REC_OFF_WEAPON]), int(rec[REC_OFF_ARMOR]), int(rec[REC_OFF_ACCESSORY])
+    acc = -1 if acc_raw == 0xFF else acc_raw
+    mw = _parse_materia_block(rec, REC_OFF_MATERIA_WEAPON, 8)
+    ma = _parse_materia_block(rec, REC_OFF_MATERIA_ARMOR, 8)
+    _load_ff7_gear_layout_assets()
+    return {
+        "weapon_id": w,
+        "armor_id": a,
+        "accessory_id": acc,
+        "weapon_name": _gear_display_name(_WEAPON_NAMES_EN, w, 127),
+        "armor_name": _gear_display_name(_ARMOR_NAMES_EN, a, 31),
+        "accessory_name": _gear_display_name(_ACCESSORY_NAMES_EN, acc, 31),
+        "materia_weapon": mw,
+        "materia_armor": ma,
+        "materia_weapon_slot_types": _weapon_materia_slot_types(w),
+        "materia_armor_slot_types": _armor_materia_slot_types(a),
+    }
+
+
+def _field_name_from_savemap(savemap: bytes) -> str:
+    if len(savemap) < SAVE_OFF_LOCATION_NAME + SAVE_OFF_LOCATION_NAME_LEN:
+        return ""
+    raw = savemap[SAVE_OFF_LOCATION_NAME : SAVE_OFF_LOCATION_NAME + SAVE_OFF_LOCATION_NAME_LEN]
+    return _decode_ff7_name(raw)
+
+
+def _current_module_label(module_byte: int) -> str:
+    return _CURRENT_MODULE_NAMES.get(int(module_byte), f"Module {int(module_byte)}")
+
+
+def _party_gear_from_savemap(savemap: bytes, party_slot: int) -> Dict[str, Any]:
+    """Party slot 0–2 → character record gear/materia, or empty dict if slot empty."""
+    if party_slot < 0 or party_slot > 2:
+        return {}
+    if len(savemap) <= SAVE_OFF_PARTY_SLOTS + party_slot:
+        return {}
+    cid = savemap[SAVE_OFF_PARTY_SLOTS + party_slot]
+    if cid >= len(_CHAR_BLOCK) or cid == 0xFF:
+        return {}
+    off = _CHAR_BLOCK[cid]
+    if off + 0x84 > len(savemap):
+        return {}
+    rec = savemap[off : off + 0x84]
+    return _char_gear_materia(rec)
+
+
+def _empty_gear_materia() -> Dict[str, Any]:
+    return {
+        "weapon_id": -1,
+        "armor_id": -1,
+        "accessory_id": -1,
+        "weapon_name": "",
+        "armor_name": "",
+        "accessory_name": "",
+        "materia_weapon": [],
+        "materia_armor": [],
+        "materia_weapon_slot_types": list(_DEFAULT_MATERIA_SLOT_TYPES),
+        "materia_armor_slot_types": list(_DEFAULT_MATERIA_SLOT_TYPES),
+    }
+
 
 if sys.platform == "win32":
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -404,22 +678,23 @@ class FF7Hook:
                 cid = savemap[SAVE_OFF_PARTY_SLOTS + i]
                 party_ids.append(cid if cid < 0xFF else -1)
         members: List[Dict[str, Any]] = []
-        for cid in party_ids:
+        for party_slot, cid in enumerate(party_ids):
             if cid < 0 or cid >= len(_CHAR_BLOCK):
-                members.append(
-                    {
-                        "id": cid,
-                        "name": "",
-                        "level": 0,
-                        "hp": 0,
-                        "max_hp": 0,
-                        "mp": 0,
-                        "max_mp": 0,
-                        "limit": 0,
-                        "atb": 0.0,
-                        "slot_empty": True,
-                    }
-                )
+                row = {
+                    "party_slot": party_slot,
+                    "id": cid,
+                    "name": "",
+                    "level": 0,
+                    "hp": 0,
+                    "max_hp": 0,
+                    "mp": 0,
+                    "max_mp": 0,
+                    "limit": 0,
+                    "atb": 0.0,
+                    "slot_empty": True,
+                }
+                row.update(_empty_gear_materia())
+                members.append(row)
                 continue
             off = _CHAR_BLOCK[cid]
             if off + 0x84 > len(savemap):
@@ -432,20 +707,21 @@ class FF7Hook:
             max_hp = struct.unpack_from("<H", rec, REC_OFF_MAX_HP)[0]
             mp = struct.unpack_from("<H", rec, REC_OFF_MP)[0]
             max_mp = struct.unpack_from("<H", rec, REC_OFF_MAX_MP)[0]
-            members.append(
-                {
-                    "id": cid,
-                    "name": name,
-                    "level": int(level),
-                    "hp": int(hp),
-                    "max_hp": int(max_hp) if max_hp else int(hp),
-                    "mp": int(mp),
-                    "max_mp": int(max_mp) if max_mp else int(mp),
-                    "limit": int(limit_bar),
-                    "atb": 0.0,
-                    "slot_empty": False,
-                }
-            )
+            row = {
+                "party_slot": party_slot,
+                "id": cid,
+                "name": name,
+                "level": int(level),
+                "hp": int(hp),
+                "max_hp": int(max_hp) if max_hp else int(hp),
+                "mp": int(mp),
+                "max_mp": int(max_mp) if max_mp else int(mp),
+                "limit": int(limit_bar),
+                "atb": 0.0,
+                "slot_empty": False,
+            }
+            row.update(_char_gear_materia(rec))
+            members.append(row)
         return members, party_ids
 
     def _read_battle_common(
@@ -511,9 +787,13 @@ class FF7Hook:
         limit = int(limit_raw) if limit_raw is not None else 0
 
         level_off = raw[0x24] if len(raw) > 0x24 else 0
+        ailments = _ailments_from_status(status)
         return {
+            "party_slot": slot,
             "slot": slot,
             "status": status,
+            "status_raw": status,
+            "ailments": ailments,
             "flags": flags,
             "hp": max(hp, 0),
             "max_hp": max(max_hp, 0),
@@ -554,10 +834,13 @@ class FF7Hook:
 
         level_addr = name_addr + 0x20
         level = self._read_u8(level_addr) or 0
+        ailments = _ailments_from_status(status)
 
         return {
             "slot": slot,
             "status": status,
+            "status_raw": status,
+            "ailments": ailments,
             "flags": flags,
             "hp": max(hp, 0),
             "max_hp": max(max_hp, 0),
@@ -864,6 +1147,7 @@ class FF7Hook:
         enemies: List[Dict[str, Any]] = []
         menu_theme: Optional[Dict[str, str]] = None
 
+        field_name = ""
         if savemap:
             try:
                 gil = struct.unpack_from("<I", savemap, SAVE_OFF_GIL)[0]
@@ -872,6 +1156,7 @@ class FF7Hook:
                 pass
             party, _ = self._parse_field_party(savemap)
             menu_theme = menu_theme_from_savemap(savemap)
+            field_name = _field_name_from_savemap(savemap)
 
         if battle:
             allies: List[Dict[str, Any]] = []
@@ -881,6 +1166,11 @@ class FF7Hook:
                     allies.append(a)
             if allies:
                 party = allies
+                if savemap:
+                    for row in party:
+                        ps = int(row.get("party_slot", row.get("slot", -1)))
+                        if ps in (0, 1, 2):
+                            row.update(_party_gear_from_savemap(savemap, ps))
             for slot in range(4, 10):
                 e = self._read_battle_enemy(slot)
                 if not e:
@@ -922,6 +1212,8 @@ class FF7Hook:
             "error": None,
             "battle": battle,
             "current_module": int(cur_mod),
+            "current_module_name": _current_module_label(int(cur_mod)),
+            "field_name": field_name,
             "party": party,
             "enemies": enemies,
             "gil": int(gil),

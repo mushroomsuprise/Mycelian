@@ -130,9 +130,16 @@
 
         .col-name  { flex: 2; text-align: left; }
         .col-hp    { flex: 2; }
-        .col-mp    { flex: 1; }
+        .col-mp    { flex: 0.9; }
+        /* Party: HP+MP values stacked in one column — wider materia column */
+        #panelParty .col-stat-stack {
+            flex: 1.55;
+            min-width: 0;
+        }
         .col-limit { flex: 1.2; }
         .col-time  { flex: 1.2; }
+        #panelParty .col-status { flex: 3.35; min-width: 0; text-align: center; }
+        .col-status { flex: 2.4; min-width: 0; text-align: center; }
 
         /* --- Character row (shared by party + enemy) --- */
         .char-row {
@@ -164,7 +171,29 @@
             gap: 2px;
         }
         .stat-cell.hp-cell { flex: 2; }
-        .stat-cell.mp-cell { flex: 1; }
+        .stat-cell.mp-cell { flex: 0.9; }
+
+        #panelParty .stat-stack {
+            flex: 1.55;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: center;
+            gap: 4px;
+        }
+        #panelParty .stat-stack .stat-cell {
+            flex: 0 0 auto;
+            width: 100%;
+        }
+        #panelParty .stat-stack .stat-cell.hp-cell,
+        #panelParty .stat-stack .stat-cell.mp-cell {
+            flex: 0 0 auto;
+        }
+        #panelParty .stat-stack .ff7-mpbar {
+            width: 100%;
+            margin-left: 0;
+        }
 
         .stat-values {
             display: flex;
@@ -237,7 +266,8 @@
 
         /* --- MP bar (thin green gradient under value) --- */
         .ff7-mpbar {
-            width: 100%;
+            width: 90%;
+            margin-left: auto;
             height: var(--mp-bar-h, 4px);
             background: var(--ff7-bar-track-red);
             border-radius: 1px;
@@ -364,6 +394,176 @@
             color: var(--ff7-text);
         }
 
+        .party-rotor {
+            /* Match HP+MP column height so materia/gear never stretch the row */
+            height: var(--party-rotor-max-h, 48px);
+            min-height: var(--party-rotor-max-h, 48px);
+            max-height: var(--party-rotor-max-h, 48px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            overflow: hidden;
+        }
+        .enemy-rotor {
+            min-height: calc(var(--limit-bar-h, 8px) + var(--time-bar-h, 8px) + 6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+        #panelParty .char-row .party-rotor {
+            flex: 3.35;
+            min-width: 0;
+        }
+        .char-row .enemy-rotor {
+            flex: 2.4;
+            min-width: 0;
+        }
+        .party-rotor-inner-bars {
+            display: flex;
+            width: 100%;
+            gap: 6px;
+            align-items: center;
+        }
+        .party-rotor-inner-bars .bar-cell { flex: 1; min-width: 0; }
+        .gear-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            width: 100%;
+            max-height: 100%;
+            overflow: hidden;
+            font-size: 15px;
+            line-height: 1.1;
+            color: var(--ff7-label);
+            letter-spacing: 0.03em;
+        }
+        .gear-stack .gear-line {
+            font-size: inherit;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+            text-align: center;
+        }
+        /* Materia: FF7-style frames (assets/ff7.png) over segment background */
+        .mat-rows-equipped {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            width: 100%;
+            height: 100%;
+            max-height: 100%;
+            min-height: 0;
+            box-sizing: border-box;
+            background: transparent;
+            align-items: center;
+            justify-content: center;
+        }
+        .mat-divider {
+            width: 92%;
+            height: 0;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
+        .mat-row {
+            display: flex;
+            flex-wrap: nowrap;
+            justify-content: center;
+            align-items: center;
+            gap: 2px;
+            width: 100%;
+            background: transparent;
+            flex: 0 0 auto;
+            max-height: 50%;
+            min-height: 0;
+        }
+        .mat-row.mat-row-dynamic {
+            flex-wrap: nowrap;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: visible;
+            scrollbar-width: none;
+        }
+        .mat-row.mat-row-dynamic::-webkit-scrollbar {
+            display: none;
+        }
+        .mat-cell {
+            position: relative;
+            flex-shrink: 0;
+            background: transparent;
+            overflow: visible;
+        }
+        .mat-cell-single {
+            width: 22px;
+            height: 22px;
+        }
+        .mat-cell-linked {
+            width: 46px;
+            height: 22px;
+        }
+        .mat-cell .mat-frame,
+        .mat-cell .mat-frame-linked {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            object-position: center;
+            image-rendering: pixelated;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .mat-cell .mat-orb,
+        .mat-cell .mat-orb-left,
+        .mat-cell .mat-orb-right {
+            position: absolute;
+            object-fit: contain;
+            image-rendering: pixelated;
+            pointer-events: none;
+            z-index: 1;
+            top: 50%;
+            /* Explicit px so orbs scale visibly in the WebView (tiny % deltas on 18px cells looked unchanged). */
+            width: 17px;
+            height: 17px;
+            box-sizing: border-box;
+        }
+        .mat-cell-single .mat-orb {
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .mat-cell-linked .mat-orb-left {
+            left: 25%;
+            transform: translate(-50%, -50%);
+        }
+        .mat-cell-linked .mat-orb-right {
+            left: 75%;
+            transform: translate(-50%, -50%);
+        }
+        .ailment-strip {
+            font-size: 10px;
+            color: var(--ff7-label);
+            line-height: 1.25;
+            text-align: center;
+            max-width: 100%;
+            word-break: break-word;
+        }
+
+        .stats-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 14px;
+            align-items: start;
+        }
+        .stats-col1, .stats-col2 { min-width: 0; }
+        .stat-line .sval.module-val { font-size: 13px; }
+
         .hidden { display: none !important; }
     </style>
 </head>
@@ -374,10 +574,8 @@
             <div id="panelParty" class="panel hidden">
                 <div class="col-headers">
                     <span class="col-h col-name">Name</span>
-                    <span class="col-h col-hp">HP</span>
-                    <span class="col-h col-mp">MP</span>
-                    <span class="col-h col-limit">Limit</span>
-                    <span class="col-h col-time">Time</span>
+                    <span class="col-h col-stat-stack">HP/MP</span>
+                    <span id="partyStatusHeader" class="col-h col-status">Limit / ATB</span>
                 </div>
                 <div id="partyBody"></div>
             </div>
@@ -386,13 +584,21 @@
                     <span class="col-h col-name">Name</span>
                     <span class="col-h col-hp">HP</span>
                     <span class="col-h col-mp">MP</span>
-                    <span class="col-h col-time">Time</span>
+                    <span class="col-h col-status">ATB / Status</span>
                 </div>
                 <div id="enemyBody"></div>
             </div>
             <div id="panelStats" class="panel hidden">
-                <div class="stat-line"><span class="slabel">Gil</span><span class="sval" id="gilVal">0</span></div>
-                <div class="stat-line"><span class="slabel">Time</span><span class="sval" id="timeVal">--:--:--</span></div>
+                <div class="stats-columns">
+                    <div class="stats-col1">
+                        <div class="stat-line" id="rowGil"><span class="slabel">Gil</span><span class="sval" id="gilVal">0</span></div>
+                        <div class="stat-line" id="rowTime"><span class="slabel">Time</span><span class="sval" id="timeVal">--:--:--</span></div>
+                    </div>
+                    <div class="stats-col2">
+                        <div class="stat-line" id="rowField"><span class="slabel">Location</span><span class="sval" id="fieldVal">—</span></div>
+                        <div class="stat-line" id="rowModule"><span class="slabel">Module</span><span class="sval module-val" id="moduleVal">—</span></div>
+                    </div>
+                </div>
             </div>
             <div id="panelBosses" class="panel hidden">
                 <div id="bossBody"></div>
@@ -444,6 +650,281 @@
             return Boolean(v);
         }
 
+        function ff7PartySlot(actor) {
+            if (actor.party_slot !== undefined && actor.party_slot !== null) return Number(actor.party_slot);
+            if (actor.slot !== undefined && actor.slot !== null) return Number(actor.slot);
+            return 0;
+        }
+
+        function formatGil(n) {
+            var x = Math.floor(Number(n) || 0);
+            if (x < 0) x = 0;
+            return x.toLocaleString('en-US');
+        }
+
+        function partyFieldModesList() {
+            var m = [];
+            if (asBool(cfg.PartyRotateGear, true)) m.push('gear');
+            if (asBool(cfg.PartyRotateMateria, true)) m.push('materia');
+            if (asBool(cfg.PartyRotateBars, true)) m.push('bars');
+            if (!m.length) m.push('bars');
+            return m;
+        }
+
+        function partyFieldStatusHeaderLabel(mode, battle) {
+            if (battle) {
+                if (mode === 'ailments') return 'Status';
+                return 'Limit / ATB';
+            }
+            if (mode === 'gear') return 'Equipment';
+            if (mode === 'materia') return 'Materia';
+            return 'Limit / ATB';
+        }
+
+        function ff7GearSlotLabel(actor, stem) {
+            var nm = actor[stem + '_name'];
+            if (nm !== undefined && nm !== null && String(nm).trim() !== '') return String(nm).trim();
+            var id = actor[stem + '_id'];
+            if (id === undefined || id === null || id < 0 || id === 255) return '—';
+            return '?';
+        }
+
+        function materiaOrbJpg(orbStem) {
+            var m = {
+                materia_green: 'green_materia',
+                materia_red: 'red_materia',
+                materia_blue: 'blue_materia',
+                materia_yellow: 'yellow_materia',
+                materia_purple: 'purple_materia'
+            };
+            var base = m[String(orbStem || '')] || 'green_materia';
+            return '/assets/ff7/' + base + '.png';
+        }
+
+        function matEscapeAttr(s) {
+            if (!s) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function matSlotData(slots, idx) {
+            var s = slots || [];
+            var sl = s[idx];
+            if (!sl || sl.empty) return { empty: true, src: '', title: '' };
+            var t = (sl.name !== undefined && sl.name !== null) ? String(sl.name) : '';
+            return { empty: false, src: materiaOrbJpg(sl.orb), title: t };
+        }
+
+        function matOrbImgTag(d, cls) {
+            if (d.empty) return '';
+            var ta = d.title ? (' title="' + matEscapeAttr(d.title) + '"') : '';
+            return '<img class="' + cls + '" src="' + d.src + '"' + ta + ' alt="" loading="lazy">';
+        }
+
+        function matSingleCell(slots, idx) {
+            var d = matSlotData(slots, idx);
+            var orb = matOrbImgTag(d, 'mat-orb');
+            return (
+                '<div class="mat-cell mat-cell-single">' +
+                    '<img class="mat-frame" src="/assets/ff7/single_slot.png" alt="" loading="lazy">' +
+                    orb +
+                '</div>'
+            );
+        }
+
+        function matLinkedCell(slots, leftIdx, rightIdx) {
+            var L = matSlotData(slots, leftIdx);
+            var R = matSlotData(slots, rightIdx);
+            var lo = matOrbImgTag(L, 'mat-orb mat-orb-left');
+            var ro = matOrbImgTag(R, 'mat-orb mat-orb-right');
+            return (
+                '<div class="mat-cell mat-cell-linked">' +
+                    '<img class="mat-frame-linked" src="/assets/ff7/linked_slots.png" alt="" loading="lazy">' +
+                    lo + ro +
+                '</div>'
+            );
+        }
+
+        /* KERNEL-style slot-type bytes: 0 none; 1/5 single; 2/6 left link; 3/7 right link (ff7-flat-wiki). */
+        function buildMateriaStripHtml(slots, slotTypes) {
+            var s = (slots && slots.length) ? slots.slice(0, 8) : [];
+            var t = (slotTypes && slotTypes.length) ? slotTypes.slice(0, 8) : [];
+            while (s.length < 8) s.push({ empty: true });
+            while (t.length < 8) t.push(5);
+            var html = '';
+            var i = 0;
+            while (i < 8) {
+                var st = Number(t[i]) | 0;
+                if (st === 0) {
+                    i += 1;
+                    continue;
+                }
+                if (st === 6 || st === 2) {
+                    if (i + 1 < 8) {
+                        html += matLinkedCell(s, i, i + 1);
+                        i += 2;
+                    } else {
+                        html += matSingleCell(s, i);
+                        i += 1;
+                    }
+                    continue;
+                }
+                if (st === 7 || st === 3) {
+                    html += matSingleCell(s, i);
+                    i += 1;
+                    continue;
+                }
+                if (st === 5 || st === 1) {
+                    html += matSingleCell(s, i);
+                    i += 1;
+                    continue;
+                }
+                i += 1;
+            }
+            return '<div class="mat-row mat-row-dynamic">' + html + '</div>';
+        }
+
+        function buildPartyRotorInnerHtml(actor, mode, inBattle) {
+            var maxHp = actor.max_hp || 1;
+            var hp = actor.hp || 0;
+            var maxMp = actor.max_mp || 0;
+            var mp = actor.mp || 0;
+            var limRaw = actor.limit || 0;
+            var limPctVal = limitPct(limRaw);
+            var limFull = limRaw >= 255;
+            var atbPct = Math.max(0, Math.min(100, (actor.atb || 0) * 100));
+            var atbReady = atbPct >= 99;
+            if (mode === 'gear') {
+                var w = ff7GearSlotLabel(actor, 'weapon');
+                var a = ff7GearSlotLabel(actor, 'armor');
+                var z = ff7GearSlotLabel(actor, 'accessory');
+                return (
+                    '<div class="gear-stack">' +
+                        '<div class="gear-line">' + w + '</div>' +
+                        '<div class="gear-line">' + a + '</div>' +
+                        '<div class="gear-line">' + z + '</div>' +
+                    '</div>'
+                );
+            }
+            if (mode === 'materia') {
+                return (
+                    '<div class="mat-rows mat-rows-equipped">' +
+                        buildMateriaStripHtml(actor.materia_weapon, actor.materia_weapon_slot_types) +
+                        '<div class="mat-divider" role="presentation"></div>' +
+                        buildMateriaStripHtml(actor.materia_armor, actor.materia_armor_slot_types) +
+                    '</div>'
+                );
+            }
+            if (mode === 'ailments') {
+                var al = actor.ailments || [];
+                var t = al.length ? al.join(', ') : (inBattle ? '—' : '');
+                return '<div class="ailment-strip">' + t + '</div>';
+            }
+            /* bars */
+            return (
+                '<div class="party-rotor-inner-bars">' +
+                    '<div class="bar-cell limit-cell">' +
+                        '<div class="ff7-limitbar' + (limFull ? ' full' : '') + '">' +
+                            '<div class="fill" style="width:' + limPctVal + '%"></div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="bar-cell time-cell">' +
+                        '<div class="ff7-timebar' + (atbReady ? ' ready' : '') + '">' +
+                            '<div class="fill" style="width:' + atbPct + '%"></div>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>'
+            );
+        }
+
+        function buildEnemyRotorInnerHtml(actor, mode) {
+            var atbPct = Math.max(0, Math.min(100, (actor.atb || 0) * 100));
+            var atbReady = atbPct >= 99;
+            if (mode === 'ailments') {
+                var al = actor.ailments || [];
+                var t = al.length ? al.join(', ') : '—';
+                return '<div class="ailment-strip">' + t + '</div>';
+            }
+            return (
+                '<div class="ff7-timebar' + (atbReady ? ' ready' : '') + '">' +
+                    '<div class="fill" style="width:' + atbPct + '%"></div>' +
+                '</div>'
+            );
+        }
+
+        function updateFf7Rotors() {
+            var st = window._ff7RenderState;
+            if (!st || !st.d || !st.d.attached) return;
+            var battle = st.d.battle;
+            var party = st.d.party || [];
+            var enemies = st.d.enemies || [];
+
+            var partyModes;
+            var partyMs;
+            if (battle) {
+                partyModes = ['bars', 'ailments'];
+                partyMs = num(cfg.PartyBattleRotateMs, 3500);
+            } else {
+                partyModes = partyFieldModesList();
+                partyMs = num(cfg.PartyFieldRotateMs, 4000);
+            }
+            var partyN = partyModes.length || 1;
+            var partyPhase = Math.floor(Date.now() / partyMs) % partyN;
+            var partyMode = partyModes[partyPhase] || partyModes[0];
+            var hdr = document.getElementById('partyStatusHeader');
+            if (hdr) hdr.textContent = partyFieldStatusHeaderLabel(partyMode, battle);
+
+            document.querySelectorAll('[data-party-rotor]').forEach(function (el) {
+                var slot = parseInt(el.getAttribute('data-party-rotor'), 10);
+                var actor = null;
+                for (var i = 0; i < party.length; i++) {
+                    var p = party[i];
+                    if (p.slot_empty) continue;
+                    if (ff7PartySlot(p) === slot) {
+                        actor = p;
+                        break;
+                    }
+                }
+                if (!actor) {
+                    el.innerHTML = '';
+                    return;
+                }
+                el.innerHTML = buildPartyRotorInnerHtml(actor, partyMode, battle);
+            });
+
+            document.querySelectorAll('[data-enemy-rotor]').forEach(function (el) {
+                var slot = parseInt(el.getAttribute('data-enemy-rotor'), 10);
+                var actor = null;
+                for (var j = 0; j < enemies.length; j++) {
+                    if (Number(enemies[j].slot) === slot) {
+                        actor = enemies[j];
+                        break;
+                    }
+                }
+                if (!actor) {
+                    el.innerHTML = '';
+                    return;
+                }
+                var ems = ['atb', 'ailments'];
+                var emsMs = num(cfg.EnemyBattleRotateMs, 3500);
+                var en = ems.length;
+                var eph = Math.floor(Date.now() / emsMs) % en;
+                var emode = ems[eph];
+                el.innerHTML = buildEnemyRotorInnerHtml(actor, emode);
+            });
+        }
+
+        function ff7EnsureRotorTimer() {
+            if (window._ff7RotorTimer) {
+                clearInterval(window._ff7RotorTimer);
+                window._ff7RotorTimer = null;
+            }
+            window._ff7RotorTimer = setInterval(updateFf7Rotors, 280);
+        }
+
         var FF7_MENU_THEME_KEYS = [
             'bg_top', 'bg_bot', 'bg_ul', 'bg_ur', 'bg_ll', 'bg_lr', 'bg_center',
             'border_outer', 'border_mid', 'border_inner'
@@ -459,9 +940,19 @@
             return true;
         }
 
+        function recordsPanelVisible() {
+            if (!asBool(cfg.ShowStats, true)) return false;
+            var gil = cfg.ShowGil !== undefined ? asBool(cfg.ShowGil, true) : asBool(cfg.ShowStats, true);
+            var tm = cfg.ShowPlaytime !== undefined ? asBool(cfg.ShowPlaytime, true) : asBool(cfg.ShowStats, true);
+            var fd = asBool(cfg.ShowFieldName, true);
+            var md = asBool(cfg.ShowModuleName, true);
+            return gil || tm || fd || md;
+        }
+
         function applyTemplateConfig(c) {
             cfg = Object.assign({
                 ShowParty: true, ShowEnemies: true, ShowStats: true, ShowBosses: true,
+                ShowGil: true, ShowPlaytime: true, ShowFieldName: true, ShowModuleName: true,
                 BossDisplayMode: 'list',
                 GridColumns: 2, GridRows: 2, GridGap: 8,
                 PartyGridRow: 1, PartyGridCol: 1, PartyRowSpan: 1, PartyColSpan: 1,
@@ -472,10 +963,13 @@
                 PartyHPFontSize: 14, PartyMPFontSize: 14,
                 PartyHPBarHeight: 4, PartyMPBarHeight: 4,
                 PartyLimitBarHeight: 8, PartyTimeBarHeight: 8,
+                PartyFieldRotateMs: 4000, PartyBattleRotateMs: 3500,
+                PartyRotateGear: true, PartyRotateMateria: true, PartyRotateBars: true,
                 EnemiesTitleFontSize: 11, EnemiesNameFontSize: 15,
                 EnemiesHPFontSize: 14, EnemiesMPFontSize: 14,
                 EnemiesHPBarHeight: 4, EnemiesMPBarHeight: 4,
                 EnemiesTimeBarHeight: 8,
+                EnemyBattleRotateMs: 3500,
                 StatsTitleFontSize: 11, StatsLabelFontSize: 11, StatsValueFontSize: 15,
                 BossesTitleFontSize: 11, BossesTextFontSize: 13
             }, c || {});
@@ -486,7 +980,7 @@
             grid.style.gap = num(cfg.GridGap, 8) + 'px';
 
             document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
-            document.getElementById('panelStats').classList.toggle('hidden', !asBool(cfg.ShowStats, true));
+            document.getElementById('panelStats').classList.toggle('hidden', !recordsPanelVisible());
             document.getElementById('panelBosses').classList.toggle('hidden', !asBool(cfg.ShowBosses, true));
             if (!asBool(cfg.ShowEnemies, true)) {
                 document.getElementById('panelEnemies').classList.add('hidden');
@@ -506,6 +1000,15 @@
             pp.style.setProperty('--mp-bar-h', num(cfg.PartyMPBarHeight, 4) + 'px');
             pp.style.setProperty('--limit-bar-h', num(cfg.PartyLimitBarHeight, 8) + 'px');
             pp.style.setProperty('--time-bar-h', num(cfg.PartyTimeBarHeight, 8) + 'px');
+            /* Stacked HP block + MP block (values + bars), matches party .stat-stack height */
+            pp.style.setProperty(
+                '--party-rotor-max-h',
+                'calc(' +
+                    num(cfg.PartyHPFontSize, 14) + 'px + ' +
+                    num(cfg.PartyHPBarHeight, 4) + 'px + ' +
+                    num(cfg.PartyMPFontSize, 14) + 'px + ' +
+                    num(cfg.PartyMPBarHeight, 4) + 'px + 14px)'
+            );
 
             var ep = document.getElementById('panelEnemies');
             ep.style.setProperty('--title-font', num(cfg.EnemiesTitleFontSize, 11) + 'px');
@@ -524,6 +1027,13 @@
             var bp = document.getElementById('panelBosses');
             bp.style.setProperty('--title-font', num(cfg.BossesTitleFontSize, 11) + 'px');
             bp.style.setProperty('--boss-text-font', num(cfg.BossesTextFontSize, 13) + 'px');
+
+            document.getElementById('rowGil').classList.toggle('hidden', !(cfg.ShowGil !== undefined ? asBool(cfg.ShowGil, true) : asBool(cfg.ShowStats, true)));
+            document.getElementById('rowTime').classList.toggle('hidden', !(cfg.ShowPlaytime !== undefined ? asBool(cfg.ShowPlaytime, true) : asBool(cfg.ShowStats, true)));
+            document.getElementById('rowField').classList.toggle('hidden', !asBool(cfg.ShowFieldName, true));
+            document.getElementById('rowModule').classList.toggle('hidden', !asBool(cfg.ShowModuleName, true));
+
+            ff7EnsureRotorTimer();
         }
 
         async function loadTemplateConfig() {
@@ -563,13 +1073,6 @@
             return 'hp-ok';
         }
 
-        function partyLowResource(hp, maxHp, mp, maxMp) {
-            if (hp <= 0) return false;
-            var lowHp = maxHp > 0 && (hp / maxHp) < 0.25;
-            var lowMp = maxMp > 0 && (mp / maxMp) < 0.25;
-            return lowHp || lowMp;
-        }
-
         function renderPartyRow(container, actor) {
             var maxHp = actor.max_hp || 1;
             var hp = actor.hp || 0;
@@ -577,25 +1080,23 @@
             var mp = actor.mp || 0;
             var hpPctVal = hpPct(hp, maxHp);
             var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
-            var limRaw = actor.limit || 0;
-            var limPctVal = limitPct(limRaw);
-            var limFull = limRaw >= 255;
-            var atbPct = Math.max(0, Math.min(100, (actor.atb || 0) * 100));
-            var atbReady = atbPct >= 99;
             var dead = hp <= 0;
-            var warn = !dead && partyLowResource(hp, maxHp, mp, maxMp);
+            var lowHp = !dead && maxHp > 0 && (hp / maxHp) < 0.25;
+            var lowMp = !dead && maxMp > 0 && (mp / maxMp) < 0.25;
             var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
 
-            var hpCurrClass = 'stat-val hp-current' + (dead ? ' val-dead' : (warn ? ' val-warn' : ''));
+            var hpCurrClass = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
             var hpMaxClass = 'stat-val hp-max' + (dead ? ' val-dead' : '');
-            var mpValClass = 'stat-val mp-current' + (!dead && warn ? ' val-warn' : '');
+            var mpValClass = 'stat-val mp-current' + (lowMp ? ' val-warn' : '');
 
             var row = document.createElement('div');
             row.className = 'char-row';
 
             var nameEl = document.createElement('div');
             nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
-            nameEl.textContent = actor.name || '?';
+            var lv = (actor.level !== undefined && actor.level !== null) ? Number(actor.level) : 0;
+            var nm = actor.name || '?';
+            nameEl.textContent = lv > 0 ? ('Lv ' + lv + ' ' + nm) : nm;
             row.appendChild(nameEl);
 
             var hpCell = document.createElement('div');
@@ -607,7 +1108,6 @@
                     '<span class="' + hpMaxClass + '">' + maxHp + '</span>' +
                 '</div>' +
                 '<div class="ff7-hpbar"><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
-            row.appendChild(hpCell);
 
             var mpCell = document.createElement('div');
             mpCell.className = 'stat-cell mp-cell';
@@ -616,23 +1116,17 @@
                     '<span class="' + mpValClass + '">' + mp + '</span>' +
                 '</div>' +
                 '<div class="ff7-mpbar"><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
-            row.appendChild(mpCell);
 
-            var limCell = document.createElement('div');
-            limCell.className = 'bar-cell limit-cell';
-            limCell.innerHTML =
-                '<div class="ff7-limitbar' + (limFull ? ' full' : '') + '">' +
-                    '<div class="fill" style="width:' + limPctVal + '%"></div>' +
-                '</div>';
-            row.appendChild(limCell);
+            var statStack = document.createElement('div');
+            statStack.className = 'stat-stack';
+            statStack.appendChild(hpCell);
+            statStack.appendChild(mpCell);
+            row.appendChild(statStack);
 
-            var timeCell = document.createElement('div');
-            timeCell.className = 'bar-cell time-cell';
-            timeCell.innerHTML =
-                '<div class="ff7-timebar' + (atbReady ? ' ready' : '') + '">' +
-                    '<div class="fill" style="width:' + atbPct + '%"></div>' +
-                '</div>';
-            row.appendChild(timeCell);
+            var rotor = document.createElement('div');
+            rotor.className = 'bar-cell party-rotor';
+            rotor.setAttribute('data-party-rotor', String(ff7PartySlot(actor)));
+            row.appendChild(rotor);
 
             container.appendChild(row);
         }
@@ -644,8 +1138,6 @@
             var mp = actor.mp || 0;
             var hpPctVal = hpPct(hp, maxHp);
             var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
-            var atbPct = Math.max(0, Math.min(100, (actor.atb || 0) * 100));
-            var atbReady = atbPct >= 99;
             var state = hpState(hp, maxHp);
 
             var row = document.createElement('div');
@@ -676,13 +1168,10 @@
                 '<div class="ff7-mpbar"><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
             row.appendChild(mpCell);
 
-            var timeCell = document.createElement('div');
-            timeCell.className = 'bar-cell time-cell';
-            timeCell.innerHTML =
-                '<div class="ff7-timebar' + (atbReady ? ' ready' : '') + '">' +
-                    '<div class="fill" style="width:' + atbPct + '%"></div>' +
-                '</div>';
-            row.appendChild(timeCell);
+            var rotor = document.createElement('div');
+            rotor.className = 'bar-cell enemy-rotor';
+            rotor.setAttribute('data-enemy-rotor', String(actor.slot != null ? actor.slot : ''));
+            row.appendChild(rotor);
 
             container.appendChild(row);
         }
@@ -783,12 +1272,30 @@
                     renderEnemyRow(enemyEl, e);
                 });
             }
+            window._ff7RenderState = { d: d };
+            updateFf7Rotors();
+
             document.getElementById('panelEnemies').classList.toggle('hidden',
                 !showEnemies || battleOffTicks >= BATTLE_HIDE_THRESHOLD);
 
-            if (asBool(cfg.ShowStats, true)) {
-                document.getElementById('gilVal').textContent = String(d.gil != null ? d.gil : 0);
-                document.getElementById('timeVal').textContent = d.playtime_text || '--:--:--';
+            document.getElementById('panelStats').classList.toggle('hidden', !recordsPanelVisible());
+            if (recordsPanelVisible()) {
+                if (cfg.ShowGil !== undefined ? asBool(cfg.ShowGil, true) : asBool(cfg.ShowStats, true)) {
+                    document.getElementById('gilVal').textContent = formatGil(d.gil != null ? d.gil : 0);
+                }
+                if (cfg.ShowPlaytime !== undefined ? asBool(cfg.ShowPlaytime, true) : asBool(cfg.ShowStats, true)) {
+                    document.getElementById('timeVal').textContent = d.playtime_text || '--:--:--';
+                }
+                if (asBool(cfg.ShowFieldName, true)) {
+                    document.getElementById('fieldVal').textContent = (d.field_name && String(d.field_name).trim()) ? d.field_name : '—';
+                }
+                if (asBool(cfg.ShowModuleName, true)) {
+                    var mn = d.current_module_name || '';
+                    var mc = d.current_module;
+                    document.getElementById('moduleVal').textContent = mn
+                        ? (mn + (mc !== undefined && mc !== null ? ' (' + mc + ')' : ''))
+                        : (mc !== undefined && mc !== null ? String(mc) : '—');
+                }
             }
 
             var bossBody = document.getElementById('bossBody');

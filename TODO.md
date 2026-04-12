@@ -52,6 +52,18 @@ FF7 HTML Template
     [x] - Decrease time between data fetches to 0.25 seconds
     [x] - Find memory values for game menu colors and configure the template to use them so the template segment backgrounds match the game menu colors.
     [x] - When a party member is killed, their name, current hp, and max hp, should be red. If their hp or mp is below 25% of their max, their current HP and MP should be yellow.
+    [] - Make party member limit and atb bars only appear during battle. When outside of battle, it should instead cycle through the following: showing the party member's equipped gear, a materia display showing the color orbs exactly as it appears in the game (no names), and the limit/atb bars. The cycle time should be definable in the template's JSON file under the Party segment.
+    [] - The materia display should uses assets located in the assets/ff7 folder. These will be named like "materia_purple", "materia_green", "linked_slot", "single_slot", etc etc.
+    [] - Make the party member limit and atb bars cycle through the bars and status effects similar to how it works outside of battle, just different data.
+    [] - Make the enemy ATB bar cycle through the status effects similar to the party member limit and atb bars.
+    [] - Add toggles to the template's JSON config file to control what is shown in the rotating section outside of battle. if only one toggle is enabled, it should statically display the one option. if two are enabled, it should cycle through the two options. if three are enabled, it should cycle through the three options.
+    [] - Add party member levels just before their name in the template.
+    [] - Shrink MP bar in width by about 10%
+    [] - Add field names and current module name to the Records segment. Display this segment as 2 columns. Gil and time (and their values) in the first column, and field name and module name in the second column.
+    [] - Update Records segment to include toggles to toggle each item (gil has its own toggle, time has its own toggle, etc etc)
+    [] - Add commas to the Gil value so its formatted like 1,000,000
+    [] - Fix MP coloring so it is not yellow when HP is below 25% of max HP, but when its below 25% of max MP instead
+    [] - Finish setting up the boss tracker segment. It should either be a list of bosses, the most recently killed boss, or a total count of bosses killed.
 
 Game Hooks
     [x] - Create a system to write to game memory values for "Crowd Control" style of streams.
@@ -65,3 +77,6 @@ FF7 Hook
     [x] - Find the memory values that handle inputs, such as movement confirm/cancel, menu button, etc etc, and expose them as functions for the Connectors system to use.
     [x] - Add functions to kill all enemies, add gil, remove gil, kill a specific party member, add hp to a specific party member, remove hp from a specific party member, etc etc.
     [x] - Move the ff7_reader.py file to the game_hooks directory. Then rename the ff7_reader.py file to ff7_hook.py
+    [] - Finish listing out all of the bosses so they can be tracked and displayed in the template. Full list can be found here: https://finalfantasy.neoseeker.com/wiki/Bosses_(FFVII)
+    [] - Add memory addresses for materia, and gear, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
+    [] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.

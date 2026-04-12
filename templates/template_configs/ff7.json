@@ -152,6 +152,45 @@
             "description": "Height of the ATB/Time progress bar"
         },
         {
+            "type": "number",
+            "id": "PartyFieldRotateMs",
+            "label": "Field: rotate gear/materia/bars (ms)",
+            "value": 4000.0,
+            "min": 1000,
+            "max": 60000,
+            "description": "Cycle time when not in battle (gear, materia orbs, limit/ATB)"
+        },
+        {
+            "type": "number",
+            "id": "PartyBattleRotateMs",
+            "label": "Battle: rotate bars/ailments (ms)",
+            "value": 3500.0,
+            "min": 500,
+            "max": 30000,
+            "description": "Cycle time in battle between limit+ATB and status ailments"
+        },
+        {
+            "type": "checkbox",
+            "id": "PartyRotateGear",
+            "label": "Field: include equipped gear",
+            "value": true,
+            "description": "When off, field rotation skips gear (weapon/armor/accessory indices)"
+        },
+        {
+            "type": "checkbox",
+            "id": "PartyRotateMateria",
+            "label": "Field: include materia orbs",
+            "value": true,
+            "description": "When off, field rotation skips materia strip"
+        },
+        {
+            "type": "checkbox",
+            "id": "PartyRotateBars",
+            "label": "Field: include limit / ATB bars",
+            "value": true,
+            "description": "When off, field rotation skips limit and ATB bars"
+        },
+        {
             "type": "separator",
             "label": "Enemies"
         },
@@ -262,15 +301,52 @@
             "description": "Height of the ATB/Time progress bar"
         },
         {
+            "type": "number",
+            "id": "EnemyBattleRotateMs",
+            "label": "Battle: enemy ATB / ailments (ms)",
+            "value": 3500.0,
+            "min": 500,
+            "max": 30000,
+            "description": "Cycle time between enemy ATB bar and status ailments"
+        },
+        {
             "type": "separator",
             "label": "Records"
         },
         {
             "type": "checkbox",
             "id": "ShowStats",
-            "label": "Show gil and play time",
+            "label": "Show records panel",
             "value": true,
-            "description": "Current gil and total play time"
+            "description": "Master toggle for the Records panel (gil, time, location, module)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowGil",
+            "label": "Show Gil",
+            "value": true,
+            "description": "Party gil in the first column"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowPlaytime",
+            "label": "Show play time",
+            "value": true,
+            "description": "Total play time in the first column"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowFieldName",
+            "label": "Show location name",
+            "value": false,
+            "description": "Current field / location string (second column)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowModuleName",
+            "label": "Show module name",
+            "value": false,
+            "description": "Human-readable game module (second column)"
         },
         {
             "type": "number",
