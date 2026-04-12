@@ -52,18 +52,20 @@ FF7 HTML Template
     [x] - Decrease time between data fetches to 0.25 seconds
     [x] - Find memory values for game menu colors and configure the template to use them so the template segment backgrounds match the game menu colors.
     [x] - When a party member is killed, their name, current hp, and max hp, should be red. If their hp or mp is below 25% of their max, their current HP and MP should be yellow.
-    [] - Make party member limit and atb bars only appear during battle. When outside of battle, it should instead cycle through the following: showing the party member's equipped gear, a materia display showing the color orbs exactly as it appears in the game (no names), and the limit/atb bars. The cycle time should be definable in the template's JSON file under the Party segment.
-    [] - The materia display should uses assets located in the assets/ff7 folder. These will be named like "materia_purple", "materia_green", "linked_slot", "single_slot", etc etc.
-    [] - Make the party member limit and atb bars cycle through the bars and status effects similar to how it works outside of battle, just different data.
-    [] - Make the enemy ATB bar cycle through the status effects similar to the party member limit and atb bars.
-    [] - Add toggles to the template's JSON config file to control what is shown in the rotating section outside of battle. if only one toggle is enabled, it should statically display the one option. if two are enabled, it should cycle through the two options. if three are enabled, it should cycle through the three options.
-    [] - Add party member levels just before their name in the template.
-    [] - Shrink MP bar in width by about 10%
-    [] - Add field names and current module name to the Records segment. Display this segment as 2 columns. Gil and time (and their values) in the first column, and field name and module name in the second column.
-    [] - Update Records segment to include toggles to toggle each item (gil has its own toggle, time has its own toggle, etc etc)
-    [] - Add commas to the Gil value so its formatted like 1,000,000
-    [] - Fix MP coloring so it is not yellow when HP is below 25% of max HP, but when its below 25% of max MP instead
-    [] - Finish setting up the boss tracker segment. It should either be a list of bosses, the most recently killed boss, or a total count of bosses killed.
+    [x] - Make party member limit and atb bars only appear during battle. When outside of battle, it should instead cycle through the following: showing the party member's equipped gear, a materia display showing the color orbs exactly as it appears in the game (no names), and the limit/atb bars. The cycle time should be definable in the template's JSON file under the Party segment.
+    [x] - The materia display should uses assets located in the assets/ff7 folder. These will be named like "materia_purple", "materia_green", "linked_slot", "single_slot", etc etc.
+    [x] - Make the party member limit and atb bars cycle through the bars and status effects similar to how it works outside of battle, just different data.
+    [x] - Make the enemy ATB bar cycle through the status effects similar to the party member limit and atb bars.
+    [x] - Add toggles to the template's JSON config file to control what is shown in the rotating section outside of battle. if only one toggle is enabled, it should statically display the one option. if two are enabled, it should cycle through the two options. if three are enabled, it should cycle through the three options.
+    [x] - Add party member levels just before their name in the template.
+    [x] - Shrink MP bar in width by about 10%
+    [x] - Add field names and current module name to the Records segment. Display this segment as 2 columns. Gil and time (and their values) in the first column, and field name and module name in the second column.
+    [x] - Update Records segment to include toggles to toggle each item (gil has its own toggle, time has its own toggle, etc etc)
+    [x] - Add commas to the Gil value so its formatted like 1,000,000
+    [x] - Fix MP coloring so it is not yellow when HP is below 25% of max HP, but when its below 25% of max MP instead
+    [x] - Finish setting up the boss tracker segment. It should either be a list of bosses, the most recently killed boss, or a total count of bosses killed.
+    [] - Slow down timer for the rotators
+    [] - Fix equipment not displaying the correct name of the equipment.
 
 Game Hooks
     [x] - Create a system to write to game memory values for "Crowd Control" style of streams.

@@ -155,7 +155,7 @@
             "type": "number",
             "id": "PartyFieldRotateMs",
             "label": "Field: rotate gear/materia/bars (ms)",
-            "value": 4000.0,
+            "value": 3000.0,
             "min": 1000,
             "max": 60000,
             "description": "Cycle time when not in battle (gear, materia orbs, limit/ATB)"
@@ -164,7 +164,7 @@
             "type": "number",
             "id": "PartyBattleRotateMs",
             "label": "Battle: rotate bars/ailments (ms)",
-            "value": 3500.0,
+            "value": 3000.0,
             "min": 500,
             "max": 30000,
             "description": "Cycle time in battle between limit+ATB and status ailments"

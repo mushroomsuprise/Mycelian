@@ -13,6 +13,7 @@ from __future__ import annotations
 import ctypes
 import json
 import logging
+import os
 import struct
 import sys
 from dataclasses import dataclass
@@ -78,7 +79,21 @@ REC_OFF_MATERIA_WEAPON = 0x40
 REC_OFF_MATERIA_ARMOR = 0x60
 
 # Built-in gear slot layouts (KERNEL-style slot-type bytes; see ff7-flat-wiki Weapon_data / Armor_data).
-_GEAR_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "ff7"
+
+
+def _ff7_gear_asset_dir() -> Path:
+    """assets/ff7: repo root in dev; PyInstaller extract dir when frozen; else next to the exe."""
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            bundled = Path(meipass) / "assets" / "ff7"
+            if bundled.is_dir():
+                return bundled
+        return Path(os.path.dirname(sys.executable)) / "assets" / "ff7"
+    return Path(__file__).resolve().parents[2] / "assets" / "ff7"
+
+
+_GEAR_ASSET_DIR = _ff7_gear_asset_dir()
 _DEFAULT_MATERIA_SLOT_TYPES: List[int] = [0x05] * 8
 _WEAPON_MATERIA_SLOT_TYPES: Dict[str, List[int]] = {}
 _ARMOR_MATERIA_SLOT_TYPES: Dict[str, List[int]] = {}

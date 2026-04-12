@@ -96,6 +96,17 @@ def get_assets_path(relative_path=""):
     Returns:
         str: Absolute path to the assets file/directory
     """
+    if getattr(sys, "frozen", False):
+        exe_assets = os.path.join(os.path.dirname(sys.executable), "assets")
+        meipass = getattr(sys, "_MEIPASS", None)
+        bundle_assets = os.path.join(meipass, "assets") if meipass else None
+        # Prefer assets next to the exe (overrides); else PyInstaller bundle under _MEIPASS
+        for base in (exe_assets, bundle_assets):
+            if not base or not os.path.isdir(base):
+                continue
+            full = os.path.join(base, relative_path) if relative_path else base
+            if os.path.exists(full):
+                return full
     if relative_path:
         return get_data_path(os.path.join("assets", relative_path))
     else:

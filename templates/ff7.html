@@ -27,7 +27,8 @@
             --ff7-border-mid: #4868a0;
             --ff7-border-inner: #182048;
             --ff7-text: #ffffff;
-            --ff7-label: #9898c8;
+            /* Match body text; HP/MP low + dead still use --ff7-hp-yellow / --ff7-hp-red on .stat-val and .name-dead */
+            --ff7-label: #ffffff;
             --ff7-hp-yellow: #ffff00;
             --ff7-hp-red: #ff2020;
             --ff7-bar-bg: #181828;
@@ -71,6 +72,11 @@
 
         #ff7Grid {
             display: grid;
+            width: 100%;
+            min-width: 0;
+        }
+        #ff7Grid > .panel {
+            min-width: 0;
             width: 100%;
         }
 
@@ -131,10 +137,11 @@
         .col-name  { flex: 2; text-align: left; }
         .col-hp    { flex: 2; }
         .col-mp    { flex: 0.9; }
-        /* Party: HP+MP values stacked in one column — wider materia column */
-        #panelParty .col-stat-stack {
-            flex: 1.55;
+        /* Party: name + HP/MP row share one column (matches .char-party-main) */
+        #panelParty .col-party-main {
+            flex: 2.7;
             min-width: 0;
+            text-align: left;
         }
         .col-limit { flex: 1.2; }
         .col-time  { flex: 1.2; }
@@ -157,10 +164,89 @@
             flex: 2;
             font-size: var(--name-font, 15px);
             color: var(--ff7-text);
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        #enemyBody {
+            min-width: 0;
+            width: 100%;
+        }
+        #panelEnemies .char-row {
+            min-width: 0;
+        }
+        /* Enemy names: clip + inner span scrolls when overflow (party keeps ellipsis on .char-name).
+           width:0 + flex forces the column to take only its flex share; otherwise min-content grows the row. */
+        #panelEnemies .char-name {
+            flex: 2 1 0%;
+            min-width: 0;
+            width: 0;
+            overflow: hidden;
+            text-overflow: clip;
+        }
+        #panelEnemies .char-name .enemy-name-text {
+            display: inline-block;
+            white-space: nowrap;
+            vertical-align: top;
+            max-width: none;
+        }
+        /* Fallback when element.animate (WAAPI) is missing: var() in @keyframes is flaky in some WebViews */
+        #panelEnemies .char-name .enemy-name-text.enemy-name-scroll {
+            animation: enemyNamePingPong 10s ease-in-out infinite;
+        }
+        @keyframes enemyNamePingPong {
+            0%, 10% { transform: translateX(0); }
+            45%, 55% { transform: translateX(calc(-1 * var(--enemy-marquee-dist, 0px))); }
+            90%, 100% { transform: translateX(0); }
+        }
+
+        /* Party: name on first line; HP values+bar and MP value+bar on second (MP ~1/3 HP width) */
+        #panelParty .char-row {
+            padding: 1px 0;
+        }
+        #panelParty .char-party-main {
+            flex: 2.7;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: center;
+            gap: 0;
+        }
+        #panelParty .char-party-main .char-name {
+            flex: 0 0 auto;
+            width: 100%;
+            margin-top: -3px;
+            line-height: 1.15;
+        }
+        #panelParty .char-hpmp-row {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-end;
+            gap: 6px;
+            width: 100%;
+            min-width: 0;
+            margin-top: 4px;
+        }
+        #panelParty .hp-block {
+            flex: 2.06;
+            min-width: 0;
+        }
+        #panelParty .mp-block {
+            flex: 0.71;
+            min-width: 0;
+        }
+        #panelParty .hp-block .stat-cell.hp-cell,
+        #panelParty .mp-block .stat-cell.mp-cell {
+            flex: 0 0 auto;
+            width: 100%;
+            gap: 1px;
+        }
+        #panelParty .hp-block .ff7-hpbar,
+        #panelParty .mp-block .ff7-mpbar {
+            width: 100%;
+            margin-left: 0;
         }
 
         /* --- Stat cell (values above a thin bar) --- */
@@ -172,28 +258,6 @@
         }
         .stat-cell.hp-cell { flex: 2; }
         .stat-cell.mp-cell { flex: 0.9; }
-
-        #panelParty .stat-stack {
-            flex: 1.55;
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: stretch;
-            justify-content: center;
-            gap: 4px;
-        }
-        #panelParty .stat-stack .stat-cell {
-            flex: 0 0 auto;
-            width: 100%;
-        }
-        #panelParty .stat-stack .stat-cell.hp-cell,
-        #panelParty .stat-stack .stat-cell.mp-cell {
-            flex: 0 0 auto;
-        }
-        #panelParty .stat-stack .ff7-mpbar {
-            width: 100%;
-            margin-left: 0;
-        }
 
         .stat-values {
             display: flex;
@@ -210,7 +274,6 @@
 
         .stat-val {
             color: var(--ff7-text);
-            text-shadow: 0 0 4px rgba(255,255,255,0.15);
             text-align: right;
         }
 
@@ -229,7 +292,6 @@
         /* Party row: per-stat colors (dead = name + both HP numbers red; warn = current HP + MP yellow only) */
         .char-name.name-dead {
             color: var(--ff7-hp-red);
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
         }
         .stat-val.val-dead { color: var(--ff7-hp-red); }
         /* Beat .hp-ok .stat-val when party is in low-resource state */
@@ -367,7 +429,6 @@
         .stat-line .sval {
             color: var(--ff7-text);
             font-size: var(--stats-value-font, 15px);
-            text-shadow: 0 0 3px rgba(255,255,255,0.1);
         }
 
         /* --- Bosses panel --- */
@@ -436,7 +497,7 @@
             width: 100%;
             max-height: 100%;
             overflow: hidden;
-            font-size: 15px;
+            font-size: 17px;
             line-height: 1.1;
             color: var(--ff7-label);
             letter-spacing: 0.03em;
@@ -460,7 +521,7 @@
             min-height: 0;
             box-sizing: border-box;
             background: transparent;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
         }
         .mat-divider {
@@ -475,7 +536,7 @@
         .mat-row {
             display: flex;
             flex-wrap: nowrap;
-            justify-content: center;
+            justify-content: flex-start;
             align-items: center;
             gap: 2px;
             width: 100%;
@@ -487,12 +548,9 @@
         .mat-row.mat-row-dynamic {
             flex-wrap: nowrap;
             max-width: 100%;
-            overflow-x: auto;
+            overflow-x: hidden;
             overflow-y: visible;
-            scrollbar-width: none;
-        }
-        .mat-row.mat-row-dynamic::-webkit-scrollbar {
-            display: none;
+            justify-content: flex-start;
         }
         .mat-cell {
             position: relative;
@@ -547,7 +605,7 @@
             transform: translate(-50%, -50%);
         }
         .ailment-strip {
-            font-size: 10px;
+            font-size: 17px;
             color: var(--ff7-label);
             line-height: 1.25;
             text-align: center;
@@ -573,8 +631,7 @@
         <div id="ff7Grid">
             <div id="panelParty" class="panel hidden">
                 <div class="col-headers">
-                    <span class="col-h col-name">Name</span>
-                    <span class="col-h col-stat-stack">HP/MP</span>
+                    <span class="col-h col-party-main">Party</span>
                     <span id="partyStatusHeader" class="col-h col-status">Limit / ATB</span>
                 </div>
                 <div id="partyBody"></div>
@@ -1000,14 +1057,13 @@
             pp.style.setProperty('--mp-bar-h', num(cfg.PartyMPBarHeight, 4) + 'px');
             pp.style.setProperty('--limit-bar-h', num(cfg.PartyLimitBarHeight, 8) + 'px');
             pp.style.setProperty('--time-bar-h', num(cfg.PartyTimeBarHeight, 8) + 'px');
-            /* Stacked HP block + MP block (values + bars), matches party .stat-stack height */
+            /* Name line + one HP/MP bar row — matches .char-party-main height (tighter party rows; +4px = .char-hpmp-row margin-top) */
             pp.style.setProperty(
                 '--party-rotor-max-h',
                 'calc(' +
-                    num(cfg.PartyHPFontSize, 14) + 'px + ' +
-                    num(cfg.PartyHPBarHeight, 4) + 'px + ' +
-                    num(cfg.PartyMPFontSize, 14) + 'px + ' +
-                    num(cfg.PartyMPBarHeight, 4) + 'px + 14px)'
+                    num(cfg.PartyNameFontSize, 15) + 'px + 4px + ' +
+                    'max(' + num(cfg.PartyHPFontSize, 14) + 'px, ' + num(cfg.PartyMPFontSize, 14) + 'px) + ' +
+                    '2px + max(' + num(cfg.PartyHPBarHeight, 4) + 'px, ' + num(cfg.PartyMPBarHeight, 4) + 'px) + 4px)'
             );
 
             var ep = document.getElementById('panelEnemies');
@@ -1073,6 +1129,150 @@
             return 'hp-ok';
         }
 
+        function ff7EnemiesDomKey(enemies) {
+            if (!Array.isArray(enemies) || enemies.length === 0) return '';
+            var parts = [];
+            for (var i = 0; i < enemies.length; i++) {
+                var e = enemies[i];
+                parts.push(String(e.slot != null ? e.slot : '') + ':' + String(e.name || '?'));
+            }
+            return parts.join('|');
+        }
+
+        function patchEnemyRowStats(container, enemies) {
+            var rows = container.children;
+            for (var i = 0; i < enemies.length; i++) {
+                var actor = enemies[i];
+                var row = rows[i];
+                if (!row || row.className.indexOf('char-row') === -1) continue;
+                var maxHp = actor.max_hp || 1;
+                var hp = actor.hp || 0;
+                var maxMp = actor.max_mp || 0;
+                var mp = actor.mp || 0;
+                var hpPctVal = hpPct(hp, maxHp);
+                var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
+                var state = hpState(hp, maxHp);
+
+                var hpCell = row.querySelector('.stat-cell.hp-cell');
+                if (hpCell) {
+                    hpCell.className = 'stat-cell hp-cell ' + state;
+                    var hpVals = hpCell.querySelectorAll('.stat-val');
+                    if (hpVals.length >= 2) {
+                        hpVals[0].textContent = String(hp);
+                        hpVals[1].textContent = String(maxHp);
+                    }
+                    var hpFill = hpCell.querySelector('.ff7-hpbar .fill');
+                    if (hpFill) hpFill.style.width = hpPctVal + '%';
+                }
+                var mpCell = row.querySelector('.stat-cell.mp-cell');
+                if (mpCell) {
+                    var mpVal = mpCell.querySelector('.stat-val');
+                    if (mpVal) mpVal.textContent = String(mp);
+                    var mpFill = mpCell.querySelector('.ff7-mpbar .fill');
+                    if (mpFill) mpFill.style.width = mpPctVal + '%';
+                }
+            }
+        }
+
+        function refreshEnemyNameMarquees() {
+            var root = document.getElementById('enemyBody');
+            if (!root) return;
+            root.querySelectorAll('.char-name').forEach(function (wrap) {
+                var inner = wrap.querySelector('.enemy-name-text');
+                if (!inner) return;
+
+                var cw = wrap.getBoundingClientRect().width;
+                var extraRaw = inner.scrollWidth - cw;
+                if (FF7_DEBUG && inner.textContent) {
+                    console.log('[ff7] enemy name marquee measure', {
+                        text: inner.textContent.slice(0, 48),
+                        cw: cw,
+                        scrollW: inner.scrollWidth,
+                        extra: extraRaw
+                    });
+                }
+
+                if (extraRaw <= 0.5 || cw <= 0) {
+                    if (inner._ff7MarqueeAnim) {
+                        try {
+                            inner._ff7MarqueeAnim.cancel();
+                        } catch (e) {}
+                        inner._ff7MarqueeAnim = null;
+                    }
+                    inner.style.removeProperty('will-change');
+                    inner.classList.remove('enemy-name-scroll');
+                    inner.style.removeProperty('--enemy-marquee-dist');
+                    inner._ff7MarqueeSnapKey = '';
+                    return;
+                }
+
+                var extra = Math.ceil(extraRaw);
+                var cwR = Math.round(cw * 100) / 100;
+                var snapKey = cwR + ':' + extra;
+                if (inner._ff7MarqueeAnim && inner._ff7MarqueeSnapKey === snapKey) {
+                    try {
+                        if (inner._ff7MarqueeAnim.playState === 'paused') {
+                            inner._ff7MarqueeAnim.play();
+                        }
+                    } catch (e2) {}
+                    return;
+                }
+
+                if (inner._ff7MarqueeAnim) {
+                    try {
+                        inner._ff7MarqueeAnim.cancel();
+                    } catch (e) {}
+                    inner._ff7MarqueeAnim = null;
+                }
+                inner.style.removeProperty('will-change');
+                inner.classList.remove('enemy-name-scroll');
+                inner.style.removeProperty('--enemy-marquee-dist');
+
+                inner._ff7MarqueeSnapKey = snapKey;
+                inner.style.willChange = 'transform';
+                if (typeof inner.animate === 'function') {
+                    inner._ff7MarqueeAnim = inner.animate(
+                        [
+                            { transform: 'translateX(0px)', offset: 0 },
+                            { transform: 'translateX(0px)', offset: 0.1 },
+                            { transform: 'translateX(' + -extra + 'px)', offset: 0.45 },
+                            { transform: 'translateX(' + -extra + 'px)', offset: 0.55 },
+                            { transform: 'translateX(0px)', offset: 0.9 },
+                            { transform: 'translateX(0px)', offset: 1 }
+                        ],
+                        { duration: 10000, iterations: Infinity, easing: 'ease-in-out' }
+                    );
+                } else {
+                    inner.style.setProperty('--enemy-marquee-dist', extra + 'px');
+                    inner.classList.add('enemy-name-scroll');
+                }
+            });
+        }
+
+        function scheduleRefreshEnemyNameMarqueesDelayed() {
+            setTimeout(function () {
+                refreshEnemyNameMarquees();
+            }, 50);
+        }
+
+        function scheduleRefreshEnemyNameMarquees() {
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    refreshEnemyNameMarquees();
+                });
+            });
+        }
+
+        (function initEnemyNameMarqueeResizeObserver() {
+            var el = document.getElementById('enemyBody');
+            if (!el || typeof ResizeObserver === 'undefined') return;
+            if (window._ff7EnemyNameMarqueeRoInit) return;
+            window._ff7EnemyNameMarqueeRoInit = true;
+            new ResizeObserver(function () {
+                refreshEnemyNameMarquees();
+            }).observe(el);
+        })();
+
         function renderPartyRow(container, actor) {
             var maxHp = actor.max_hp || 1;
             var hp = actor.hp || 0;
@@ -1092,13 +1292,21 @@
             var row = document.createElement('div');
             row.className = 'char-row';
 
+            var partyMain = document.createElement('div');
+            partyMain.className = 'char-party-main';
+
             var nameEl = document.createElement('div');
             nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
             var lv = (actor.level !== undefined && actor.level !== null) ? Number(actor.level) : 0;
             var nm = actor.name || '?';
             nameEl.textContent = lv > 0 ? ('Lv ' + lv + ' ' + nm) : nm;
-            row.appendChild(nameEl);
+            partyMain.appendChild(nameEl);
 
+            var hpMpRow = document.createElement('div');
+            hpMpRow.className = 'char-hpmp-row';
+
+            var hpBlock = document.createElement('div');
+            hpBlock.className = 'hp-block';
             var hpCell = document.createElement('div');
             hpCell.className = hpCellClass;
             hpCell.innerHTML =
@@ -1108,7 +1316,10 @@
                     '<span class="' + hpMaxClass + '">' + maxHp + '</span>' +
                 '</div>' +
                 '<div class="ff7-hpbar"><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
+            hpBlock.appendChild(hpCell);
 
+            var mpBlock = document.createElement('div');
+            mpBlock.className = 'mp-block';
             var mpCell = document.createElement('div');
             mpCell.className = 'stat-cell mp-cell';
             mpCell.innerHTML =
@@ -1116,12 +1327,12 @@
                     '<span class="' + mpValClass + '">' + mp + '</span>' +
                 '</div>' +
                 '<div class="ff7-mpbar"><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
+            mpBlock.appendChild(mpCell);
 
-            var statStack = document.createElement('div');
-            statStack.className = 'stat-stack';
-            statStack.appendChild(hpCell);
-            statStack.appendChild(mpCell);
-            row.appendChild(statStack);
+            hpMpRow.appendChild(hpBlock);
+            hpMpRow.appendChild(mpBlock);
+            partyMain.appendChild(hpMpRow);
+            row.appendChild(partyMain);
 
             var rotor = document.createElement('div');
             rotor.className = 'bar-cell party-rotor';
@@ -1145,7 +1356,10 @@
 
             var nameEl = document.createElement('div');
             nameEl.className = 'char-name';
-            nameEl.textContent = actor.name || '?';
+            var nameInner = document.createElement('span');
+            nameInner.className = 'enemy-name-text';
+            nameInner.textContent = actor.name || '?';
+            nameEl.appendChild(nameInner);
             row.appendChild(nameEl);
 
             var hpCell = document.createElement('div');
@@ -1266,17 +1480,42 @@
                 battleOffTicks++;
             }
 
-            enemyEl.innerHTML = '';
-            if (showEnemies && hasEnemies) {
-                d.enemies.forEach(function (e) {
-                    renderEnemyRow(enemyEl, e);
-                });
+            var enemyListRebuilt = false;
+            if (!showEnemies || !hasEnemies) {
+                window._ff7EnemyDomKey = '';
+                enemyEl.innerHTML = '';
+            } else {
+                var domKey = ff7EnemiesDomKey(d.enemies);
+                var needRebuild =
+                    domKey !== window._ff7EnemyDomKey ||
+                    enemyEl.children.length !== d.enemies.length;
+                if (needRebuild) {
+                    window._ff7EnemyDomKey = domKey;
+                    enemyEl.innerHTML = '';
+                    d.enemies.forEach(function (e) {
+                        renderEnemyRow(enemyEl, e);
+                    });
+                    enemyListRebuilt = true;
+                } else {
+                    patchEnemyRowStats(enemyEl, d.enemies);
+                }
             }
             window._ff7RenderState = { d: d };
             updateFf7Rotors();
 
             document.getElementById('panelEnemies').classList.toggle('hidden',
                 !showEnemies || battleOffTicks >= BATTLE_HIDE_THRESHOLD);
+
+            if (enemyListRebuilt) {
+                scheduleRefreshEnemyNameMarquees();
+                scheduleRefreshEnemyNameMarqueesDelayed();
+                if (document.fonts && document.fonts.ready) {
+                    document.fonts.ready.then(function () {
+                        scheduleRefreshEnemyNameMarquees();
+                        scheduleRefreshEnemyNameMarqueesDelayed();
+                    });
+                }
+            }
 
             document.getElementById('panelStats').classList.toggle('hidden', !recordsPanelVisible());
             if (recordsPanelVisible()) {
