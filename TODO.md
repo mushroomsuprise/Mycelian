@@ -82,5 +82,5 @@ FF7 Hook
     [x] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
 
 General Items:
-    [] - Auto-update is not notifying the user of updates upon startup.
-    [] - Interval update timer is not notifying when an update is available after the app has been already opened and running.
+    [x] - Auto-update is not notifying the user of updates upon startup.
+    [x] - Interval update timer is not notifying when an update is available after the app has been already opened and running.

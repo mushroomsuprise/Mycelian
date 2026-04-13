@@ -53,6 +53,8 @@ class GameHooksServiceImpl:
     def __init__(self) -> None:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._ui_state_lock = threading.Lock()
+        self._last_ff7_ui: Optional[Dict[str, Any]] = None
         self._ff7_hook: Optional[FF7Hook] = None
         self._template_config_parser = TemplateConfigParser()
         sub, excl = ff7_boss_match_sets_from_config(
@@ -198,6 +200,14 @@ class GameHooksServiceImpl:
                     "debug": {"stage": "ff7_disabled_in_settings"},
                 }
 
+            ff7_ui = hooks.get("ff7")
+            if isinstance(ff7_ui, dict):
+                with self._ui_state_lock:
+                    self._last_ff7_ui = dict(ff7_ui)
+            else:
+                with self._ui_state_lock:
+                    self._last_ff7_ui = None
+
             payload = {
                 "v": 1,
                 "ts": int(time.time() * 1000),
@@ -243,6 +253,13 @@ class GameHooksServiceImpl:
         )
         self._thread.start()
         logger.info("Game hooks service started")
+
+    def get_ff7_ui_snapshot(self) -> Dict[str, Any]:
+        """Thread-safe last FF7 hook payload for settings UI (shallow copy)."""
+        running = self._thread is not None and self._thread.is_alive()
+        with self._ui_state_lock:
+            snap = dict(self._last_ff7_ui) if self._last_ff7_ui is not None else None
+        return {"service_running": running, "ff7": snap}
 
     def stop(self) -> None:
         self._stop.set()
