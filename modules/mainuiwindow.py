@@ -741,6 +741,30 @@ ui.add_head_html(
 """
 )
 
+_update_manager_ui_scheduled = False
+
+
+def _schedule_update_manager_init() -> None:
+    """Schedule UpdateManager checks after the NiceGUI UI exists (same process as ui.run)."""
+    global _update_manager_ui_scheduled
+    if _update_manager_ui_scheduled:
+        return
+    _update_manager_ui_scheduled = True
+
+    def init_update_manager():
+        try:
+            updater.update_manager.on_ui_ready()
+            logger.info("Updater: UpdateManager scheduling initialized")
+        except Exception as e:
+            logger.error(
+                f"Updater: failed to initialize UpdateManager scheduling: {e}",
+                exc_info=True,
+            )
+
+    # Short delay until client/UI is ready; first automatic update check is then
+    # STARTUP_SETTLE_SECONDS + PRE_CHECK_DELAY_SECONDS after on_ui_ready (see updater.py).
+    ui.timer(2.0, init_update_manager, once=True)
+
 
 def initialize_ui() -> None:
     """Initialize all UI related components and apply initial settings."""
@@ -795,20 +819,7 @@ def initialize_ui() -> None:
         # Alert processor is already initialized in main.py, no need to initialize again
         logger.info("Alert processor already initialized in main.py startup sequence")
 
-        # Schedule update manager initialization to happen after the server starts
-        # and the first client connects, ensuring UI is fully rendered
-        def init_update_manager():
-            try:
-                updater.update_manager.on_ui_ready()
-                logger.info("Updater: UpdateManager scheduling initialized")
-            except Exception as e:
-                logger.error(
-                    f"Updater: failed to initialize UpdateManager scheduling: {e}",
-                    exc_info=True,
-                )
-
-        # Use a timer to delay initialization until after UI is fully loaded
-        ui.timer(2.0, init_update_manager, once=True)
+        _schedule_update_manager_init()
 
         logger.info("UI initialization completed, ready to start NiceGUI server.")
 
@@ -905,6 +916,9 @@ def start_ui():
 
             # Register cleanup handler
             app.on_shutdown(cleanup_resources)
+
+            # main.py calls start_ui(), not initialize_ui(); updater must be scheduled here too.
+            _schedule_update_manager_init()
 
         # Configure WebView2 data directory for administrator privileges
         _configure_webview2_for_admin()

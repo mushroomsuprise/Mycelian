@@ -196,7 +196,7 @@ async def check_for_updates(current_app_version: str):
     """
     logger.info(f"Checking for updates on GitHub. Current application version: {current_app_version}")
     update_info = await fetch_latest_update_info_from_github()
-    
+
     if update_info:
         latest_version = update_info.get("latest_version")
         # Ensure latest_version is not None or empty before comparison
@@ -206,7 +206,7 @@ async def check_for_updates(current_app_version: str):
         else:
             if latest_version:
                 logger.info(f"Current version '{current_app_version}' is up to date. Latest available: '{latest_version}'.")
-            
+
     return None
 
 async def download_update(download_url: str, progress_callback=None):
@@ -747,6 +747,13 @@ async def download_update_with_metrics(
 # Update Manager (central coordinator)
 # -----------------------------
 
+# First automatic check: settle after UI is up, then a short pause before hitting GitHub.
+STARTUP_SETTLE_SECONDS = 10.0
+PRE_CHECK_DELAY_SECONDS = 3.0
+# Start periodic timer scheduling shortly after on_ui_ready (reads settings from state).
+PERIODIC_SCHEDULE_DELAY_SECONDS = 3.0
+
+
 class UpdateManager:
     """
     Centralized manager for update checks, UI prompts, and installation flow.
@@ -757,7 +764,7 @@ class UpdateManager:
         self._periodic_timer = None
         self._check_running = False
         self._dialog_open = False
-        self._session_suppressed = False  # set when user declines an update
+        self._session_suppressed = False  # set when user declines an automatic update (session only)
 
     # ---------------- Scheduling ----------------
     def on_ui_ready(self) -> None:
@@ -765,11 +772,20 @@ class UpdateManager:
         try:
             from nicegui import ui
 
-            # Schedule initial check a bit after UI render
+            def _after_settle_schedule_pre_check() -> None:
+                ui.timer(PRE_CHECK_DELAY_SECONDS, self._run_initial_check, once=True)
+
             if self._initial_timer is None:
-                self._initial_timer = ui.timer(5.0, self._run_initial_check, once=True)
-            # Kick periodic scheduling shortly after
-            ui.timer(3.0, self.reschedule_periodic_timer, once=True)
+                self._initial_timer = ui.timer(
+                    STARTUP_SETTLE_SECONDS,
+                    _after_settle_schedule_pre_check,
+                    once=True,
+                )
+            ui.timer(
+                PERIODIC_SCHEDULE_DELAY_SECONDS,
+                self.reschedule_periodic_timer,
+                once=True,
+            )
         except Exception as e:
             logger.error(f"UpdateManager.on_ui_ready error: {e}", exc_info=True)
 
@@ -897,8 +913,8 @@ class UpdateManager:
                         return False
 
                     update_info = result_holder["update_info"]
-                    if update_info and not self._session_suppressed:
-                        self._show_update_modal(update_info)
+                    if update_info and (manual or not self._session_suppressed):
+                        self._show_update_modal(update_info, manual=manual)
                     else:
                         if manual:
                             ui.notify("You are running the latest version!", type="positive", timeout=3000)
@@ -930,7 +946,7 @@ class UpdateManager:
             self._check_running = False
 
     # ---------------- Modal and download flow ----------------
-    def _show_update_modal(self, update_info: Dict[str, Any]) -> None:
+    def _show_update_modal(self, update_info: Dict[str, Any], *, manual: bool = False) -> None:
         try:
             from nicegui import ui
 
@@ -974,8 +990,9 @@ class UpdateManager:
 
                     def on_decline():
                         try:
-                            self._session_suppressed = True
-                            self._cancel_periodic()
+                            if not manual:
+                                self._session_suppressed = True
+                                self._cancel_periodic()
                         finally:
                             self._dialog_open = False
                             update_dialog.close()

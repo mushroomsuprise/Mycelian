@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import threading
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
-# Lowercase substrings matched against battle enemy names (FFVII PC / common ports).
-# Curated from story bosses; extras removed. Variants cover punctuation/spacing in RAM.
-_BOSS_NAME_SUBSTR: frozenset[str] = frozenset(
+logger = logging.getLogger(__name__)
+
+# Template config element ids (templates/template_configs/ff7.json).
+FF7_BOSS_SUBSTRINGS_ELEMENT_ID = "BossMatchSubstrings"
+FF7_BOSS_EXCLUDES_ELEMENT_ID = "BossMatchExcludes"
+
+# Defaults when config is missing or include list parses empty (do not silently disable detection).
+_DEFAULT_BOSS_SUBSTR: frozenset[str] = frozenset(
     {
-        # --- Guard Scorpion through Gi Nattak ---
         "guard scorpion",
         "air buster",
         "airbuster",
@@ -46,7 +51,6 @@ _BOSS_NAME_SUBSTR: frozenset[str] = frozenset(
         "rude",
         "elena",
         "proud clod",
-        # Lifeform-Hojo N: hyphen, space, or ASCII lookalikes in dumps
         "lifeform-hojo n",
         "lifeform-hojo",
         "lifeform hojo n",
@@ -55,7 +59,6 @@ _BOSS_NAME_SUBSTR: frozenset[str] = frozenset(
         "sephiroth",
         "jenova synthesis",
         "jenova syn",
-        # Katakana middle dot (some builds / fonts between Jenova and SYNTHESIS)
         "jenova\u30fbsynthesis",
         "bizarro sephiroth",
         "bizarro",
@@ -64,8 +67,7 @@ _BOSS_NAME_SUBSTR: frozenset[str] = frozenset(
     }
 )
 
-# Names that contain a boss substring but are adds/minions, not the boss kill credit.
-_BOSS_NAME_EXCLUDE: frozenset[str] = frozenset(
+_DEFAULT_BOSS_EXCLUDE: frozenset[str] = frozenset(
     {
         "sample:h0512-opt",
         "sample h0512-opt",
@@ -74,19 +76,71 @@ _BOSS_NAME_EXCLUDE: frozenset[str] = frozenset(
 )
 
 
-def is_boss_actor(actor: Dict[str, Any]) -> bool:
-    name = (actor.get("name") or "").lower()
-    if any(ex in name for ex in _BOSS_NAME_EXCLUDE):
-        return False
-    return any(s in name for s in _BOSS_NAME_SUBSTR)
+def parse_line_patterns(text: Any) -> frozenset[str]:
+    """Split multiline template text into lowercase stripped non-empty lines."""
+    if not isinstance(text, str):
+        return frozenset()
+    out: set[str] = set()
+    for line in text.splitlines():
+        s = line.strip().lower()
+        if s:
+            out.add(s)
+    return frozenset(out)
+
+
+def _element_string_value(config: Dict[str, Any], element_id: str) -> str:
+    for el in config.get("elements") or []:
+        if not isinstance(el, dict) or el.get("id") != element_id:
+            continue
+        v = el.get("value")
+        if isinstance(v, str):
+            return v
+        if v is None:
+            return ""
+        return str(v)
+    return ""
+
+
+def ff7_boss_match_sets_from_config(config: Dict[str, Any]) -> Tuple[frozenset[str], frozenset[str]]:
+    """
+    Read match substrings and excludes from template config elements.
+    If the include set is empty after parsing, use built-in defaults and log a warning.
+    """
+    substr = parse_line_patterns(
+        _element_string_value(config, FF7_BOSS_SUBSTRINGS_ELEMENT_ID)
+    )
+    exclude = parse_line_patterns(
+        _element_string_value(config, FF7_BOSS_EXCLUDES_ELEMENT_ID)
+    )
+    if not substr:
+        logger.warning(
+            "FF7 boss match substrings empty or missing in template config; using built-in defaults"
+        )
+        substr = _DEFAULT_BOSS_SUBSTR
+    return substr, exclude
 
 
 class Ff7BossTracker:
-    def __init__(self) -> None:
+    def __init__(self, name_substrings: frozenset[str], name_excludes: frozenset[str]) -> None:
         self._lock = threading.Lock()
+        self._substr = name_substrings
+        self._exclude = name_excludes
         self._boss_names: List[str] = []
         self._boss_last: str = ""
         self._prev_battle_enemies: Dict[int, int] = {}
+
+    def set_match_sets(
+        self, name_substrings: frozenset[str], name_excludes: frozenset[str]
+    ) -> None:
+        with self._lock:
+            self._substr = name_substrings
+            self._exclude = name_excludes
+
+    def _is_boss_actor(self, actor: Dict[str, Any]) -> bool:
+        name = (actor.get("name") or "").lower()
+        if any(ex in name for ex in self._exclude):
+            return False
+        return any(s in name for s in self._substr)
 
     def clear(self) -> None:
         with self._lock:
@@ -132,7 +186,7 @@ class Ff7BossTracker:
                 hp = int(e.get("hp", 0))
                 current[slot] = hp
                 prev = self._prev_battle_enemies.get(slot)
-                if prev is not None and prev > 0 and hp <= 0 and is_boss_actor(e):
+                if prev is not None and prev > 0 and hp <= 0 and self._is_boss_actor(e):
                     name = (e.get("name") or "Unknown").strip()
                     if name and (not self._boss_names or self._boss_names[0] != name):
                         self._boss_names.insert(0, name)

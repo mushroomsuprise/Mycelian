@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .ff7_boss_tracker import Ff7BossTracker, is_boss_actor
+from .ff7_boss_tracker import Ff7BossTracker
 from .ff7_hook import FF7_CONNECTOR_CATALOG, FF7Hook, FF7Reader
 
 __all__ = [
@@ -13,7 +13,6 @@ __all__ = [
     "FF7_CONNECTOR_CATALOG",
     "Ff7BossTracker",
     "create_hook_instance",
-    "is_boss_actor",
 ]
 
 

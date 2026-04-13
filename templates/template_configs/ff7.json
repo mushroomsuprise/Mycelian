@@ -531,6 +531,20 @@
             "description": "Font size for boss names and text"
         },
         {
+            "type": "textarea",
+            "id": "BossMatchSubstrings",
+            "label": "Boss name match substrings",
+            "value": "guard scorpion\nair buster\nairbuster\naps\nreno\nsample:h0512\nsample h0512\nhundred gunner\nheli gunner\nheligunner\nrufus\nmotor ball\nmotorball\nbottomswell\njenova\njenova birth\njenova\u30fbbirth\ndyne\ngi nattak\nmateria keeper\npalmer\nred dragon\ndemons gate\ndemon's gate\ndemons' gate\njenova life\njenova\u30fblife\nschizo\njenova death\njenova\u30fbdeath\nultimate weapon\ncarry armor\ndiamond weapon\nrude\nelena\nproud clod\nlifeform-hojo n\nlifeform-hojo\nlifeform hojo n\nlifeform hojo\nlifeformhojo\nsephiroth\njenova synthesis\njenova syn\njenova\u30fbsynthesis\nbizarro sephiroth\nbizarro\nsafer sephiroth\nsafer",
+            "description": "One substring per line, case-insensitive. If a battle enemy name contains a line (after lowercasing), it may count as a boss. Excludes below are applied first."
+        },
+        {
+            "type": "textarea",
+            "id": "BossMatchExcludes",
+            "label": "Boss name exclude substrings",
+            "value": "sample:h0512-opt\nsample h0512-opt\nh0512-opt",
+            "description": "One substring per line, case-insensitive. Names containing any of these lines are never counted as bosses, even if they match an include line (e.g. adds/minions)."
+        },
+        {
             "type": "separator",
             "label": "Typography"
         },

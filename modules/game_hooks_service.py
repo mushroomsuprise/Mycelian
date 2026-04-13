@@ -26,7 +26,9 @@ from typing import Any, Dict, Optional, Tuple
 
 from .database_manager import database_manager
 from .game_hooks import Ff7BossTracker, create_hook_instance
+from .game_hooks.ff7_boss_tracker import ff7_boss_match_sets_from_config
 from .game_hooks.ff7_hook import FF7Hook
+from .template_config_parser import TemplateConfigParser
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,11 @@ class GameHooksServiceImpl:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._ff7_hook: Optional[FF7Hook] = None
-        self._ff7_boss_tracker = Ff7BossTracker()
+        self._template_config_parser = TemplateConfigParser()
+        sub, excl = ff7_boss_match_sets_from_config(
+            self._template_config_parser.load_config("ff7")
+        )
+        self._ff7_boss_tracker = Ff7BossTracker(sub, excl)
         self._emit_count = 0
         self._write_queue: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, str, Dict[str, Any]]]" = (
             queue.Queue()
@@ -83,6 +89,15 @@ class GameHooksServiceImpl:
     def clear_ff7_bosses(self) -> None:
         self._ff7_boss_tracker.clear()
         self._persist_ff7_boss_log()
+
+    def reload_ff7_boss_match_sets(self) -> None:
+        """Reload boss substring/exclude sets from the ff7 template config on disk."""
+        try:
+            cfg = self._template_config_parser.load_config("ff7")
+            sub, excl = ff7_boss_match_sets_from_config(cfg)
+            self._ff7_boss_tracker.set_match_sets(sub, excl)
+        except Exception as e:
+            logger.warning("FF7 boss match set reload failed: %s", e, exc_info=True)
 
     def enqueue_game_hook_write(
         self, game_id: str, operation: str, arguments: Optional[Dict[str, Any]] = None

@@ -1219,6 +1219,15 @@ def save_config(config_parser, config_select, config_container):
         # Save the config
         if config_parser.save_config(config_name, original_config):
             ui.notify(f"Configuration saved for {config_name}.", type="positive")
+            if config_name == "ff7":
+                try:
+                    from ..game_hooks_service import game_hooks_service
+
+                    game_hooks_service.reload_ff7_boss_match_sets()
+                except Exception as e:
+                    logger.warning(
+                        "FF7 boss match sets refresh after save failed: %s", e, exc_info=True
+                    )
             # Reset original values to current values
             reset_original_values(config_name)
         else:
