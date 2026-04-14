@@ -80,7 +80,12 @@ FF7 Hook
     [x] - Finish listing out all of the bosses so they can be tracked and displayed in the template. Full list can be found here: https://finalfantasy.neoseeker.com/wiki/Bosses_(FFVII)
     [x] - Add memory addresses for materia, and gear, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
     [x] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
+    [] - Add ability to rename characters, expose to Connectors system.
+    [] - Add ability to inflict status effect on character(s) (positive and negative, including fury and sadness), use status ailment name as an arg, and character/characters as an arg, expose to Connectors system.
+    [] - Add ability to change equipment for a character, take character name and equipment name as an arg, must safeguard it for character specific gear, expose to Connectors system.
+    [] - Disable/enable menus (see ultima for this), expose to Connectors system.
 
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
     [x] - Interval update timer is not notifying when an update is available after the app has been already opened and running.
+    [] - Convert some heavy modules to Rust for performance boosts. MUST maintain compatibility and exact functionality. MUST be able to be compiled to a single exe file still.
