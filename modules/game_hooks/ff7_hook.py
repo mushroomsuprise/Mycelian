@@ -18,6 +18,7 @@ import random
 import re
 import struct
 import sys
+import unicodedata
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,16 +37,25 @@ ADDR_ENEMY_DATA_BASE = 0x009A8E9C
 ADDR_PARTY_MEMBER_IDS = 0x00DC0230
 ADDR_PARTY_MEMBER_NAMES = 0x00DBFD9C
 ADDR_SAVEMAP_BASE = 0x00DBFD38
-# Menu bitmask (u16): ff7-ultima General.tsx order; patched in useFF7 enableMenuAlwaysEnabled
-ADDR_MENU_VISIBILITY = 0x00DC111C
-# Cleared alongside visibility in Ultima menu-always patch (u16 bitmask, same bit order)
-ADDR_MENU_LOCKS = 0x00DC1130
-# FFNx: first opcode at process entry is often 0xE9 when hooked — see FFNx common_externals.start
-ADDR_FFNX_TRAMPOLINE_CHECK = 0x0040B6E0
-# World map movement speed byte — ff7-ultima get_ff7_addresses (numeric from ff7-lib); Steam EN typical VA
-ADDR_WORLD_SPEED_MULTIPLIER = 0x0098D7E4
-# Field: allow opening menu from field (byte 0/1) — approximate VA from ff7-lib / Ultima builds
-ADDR_FIELD_MENU_ACCESS_ENABLED = 0x00DC0ED8
+# Menu bitmask (u16): ff7-lib FF7Addresses — General.tsx row order
+ADDR_MENU_VISIBILITY = 0x00DC08F8
+ADDR_MENU_LOCKS = 0x00DC08FA
+# FFNx: jmp at ffnx_check when hooked (0xE9) — ff7-lib
+ADDR_FFNX_TRAMPOLINE_CHECK = 0x0041B965
+# World map movement speed byte — ff7-lib
+ADDR_WORLD_SPEED_MULTIPLIER = 0x00DFC480
+# Field: allow opening menu from field (byte 0/1) — ff7-lib
+ADDR_FIELD_MENU_ACCESS_ENABLED = 0x00CC0DBC
+# Party stat refresh after equipment edits — ff7-ultima updatePartyMember → callGameFn(0x61f739, [])
+ADDR_PARTY_STAT_RECALC_FN = 0x0061F739
+# Vanilla game speed (Ultima useFF7 setSpeed fallback) — ff7-lib
+ADDR_FIELD_FPS = 0x00CFF890
+ADDR_BATTLE_FPS = 0x009AB090
+ADDR_WORLD_FPS = 0x00DE6938
+# NOP six bytes at each site so module init does not reset FPS (Ultima setSpeed vanilla branch)
+ADDR_FPS_NOP_INIT_1 = 0x0060E434
+ADDR_FPS_NOP_INIT_2 = 0x0074BD02
+ADDR_FPS_NOP_INIT_3 = 0x0041B6D8
 
 REC_OFF_CHAR_ID = 0x00
 REC_OFF_FIELD_STATUS = 0x1F
@@ -524,11 +534,13 @@ if sys.platform == "win32":
     PROCESS_VM_WRITE = 0x0020
     PROCESS_VM_OPERATION = 0x0008
     PROCESS_QUERY_INFORMATION = 0x0400
+    PROCESS_CREATE_THREAD = 0x0002
     _PROCESS_ACCESS = (
         PROCESS_VM_READ
         | PROCESS_VM_WRITE
         | PROCESS_VM_OPERATION
         | PROCESS_QUERY_INFORMATION
+        | PROCESS_CREATE_THREAD
     )
 else:
     _kernel32 = None
@@ -538,6 +550,10 @@ _KERNEL32_EXTRA = None
 _VirtualProtect = None
 _FlushInstructionCache = None
 _GetCurrentProcess = None
+_VirtualAllocEx = None
+_VirtualFreeEx = None
+_CreateRemoteThread = None
+_WaitForSingleObject = None
 if sys.platform == "win32" and _kernel32 is not None:
     _KERNEL32_EXTRA = _kernel32
     _VirtualProtect = _kernel32.VirtualProtect
@@ -558,6 +574,41 @@ if sys.platform == "win32" and _kernel32 is not None:
     _GetCurrentProcess = _kernel32.GetCurrentProcess
     _GetCurrentProcess.argtypes = []
     _GetCurrentProcess.restype = wintypes.HANDLE
+
+    _VirtualAllocEx = _kernel32.VirtualAllocEx
+    _VirtualAllocEx.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        ctypes.c_size_t,
+        wintypes.DWORD,
+        wintypes.DWORD,
+    ]
+    _VirtualAllocEx.restype = wintypes.LPVOID
+
+    _VirtualFreeEx = _kernel32.VirtualFreeEx
+    _VirtualFreeEx.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        ctypes.c_size_t,
+        wintypes.DWORD,
+    ]
+    _VirtualFreeEx.restype = wintypes.BOOL
+
+    _CreateRemoteThread = _kernel32.CreateRemoteThread
+    _CreateRemoteThread.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        ctypes.c_size_t,
+        wintypes.LPVOID,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    _CreateRemoteThread.restype = wintypes.HANDLE
+
+    _WaitForSingleObject = _kernel32.WaitForSingleObject
+    _WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    _WaitForSingleObject.restype = wintypes.DWORD
 
 
 def _rebase(module_base: int, canon_addr: int) -> int:
@@ -599,6 +650,18 @@ def _encode_ff7_name(text: str, out_len: int = NAME_BYTES) -> bytes:
 
 def _norm_party_name(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+def _sanitize_enemy_token(s: str) -> str:
+    """Strip chat/invisible junk (e.g. U+034F) and normalize spaces for enemy lookup."""
+    if not s:
+        return ""
+    out: List[str] = []
+    for ch in s.strip():
+        if unicodedata.category(ch) in ("Cf", "Mn", "Me"):
+            continue
+        out.append(ch)
+    return re.sub(r"\s+", " ", "".join(out)).strip()
 
 
 def _rgb_tuple(savemap: bytes, off: int) -> Optional[Tuple[int, int, int]]:
@@ -672,7 +735,7 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         "args": [
             {
                 "name": "amount",
-                "type": "positive_int",
+                "type": "ff7_text",
                 "label": "Amount",
                 "hint_tags": ("numeric", "random_range", "hooks_gil"),
             }
@@ -685,7 +748,7 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         "args": [
             {
                 "name": "amount",
-                "type": "positive_int",
+                "type": "ff7_text",
                 "label": "Amount",
                 "hint_tags": ("numeric", "random_range", "hooks_gil"),
             }
@@ -751,7 +814,7 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "kill_enemy",
         "label": "Kill enemy",
-        "description": "Battle only: one enemy by name (substring), slot index 0–5, or {random_enemy}.",
+        "description": "Battle only: enemy by substring name, slot index 0–5, or {random_enemy}. When several foes share a name (overlay shows Name A, Name B), use that form — same order as ff7-ultima (by scene id).",
         "args": [
             {
                 "name": "enemy",
@@ -764,7 +827,7 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "damage_enemy",
         "label": "Damage enemy",
-        "description": "Battle only: enemy by name, index 0–5, or {random_enemy}. Damage 1–9999 or random:min-max (clamped).",
+        "description": "Battle only: enemy by substring name, index 0–5, or {random_enemy}. Duplicates: use Name A / Name B as on the overlay (ff7-ultima order). Damage 1–9999 or random:min-max (clamped).",
         "args": [
             {
                 "name": "enemy",
@@ -842,13 +905,8 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
             {
                 "name": "gear_kind",
                 "type": "ff7_text",
-                "label": "Slot",
-                "control": "select",
-                "options": {
-                    "weapon": "Weapon",
-                    "armor": "Armor",
-                    "accessory": "Accessory",
-                },
+                "label": "Slot (weapon / armor / accessory)",
+                "hint_tags": ("message", "gear"),
             },
             {
                 "name": "gear",
@@ -1045,6 +1103,84 @@ class FF7Hook:
             ctypes.byref(written),
         )
         return bool(ok) and written.value == len(data)
+
+    def _call_ff7_party_stat_recalc(self) -> None:
+        """Best-effort: Ultima's post-equip refresh (callGameFn 0x61f739) via remote thread stub."""
+        if (
+            sys.platform != "win32"
+            or _kernel32 is None
+            or not self._proc
+            or _VirtualAllocEx is None
+            or _VirtualFreeEx is None
+            or _CreateRemoteThread is None
+            or _WaitForSingleObject is None
+        ):
+            return
+        target = _rebase(self._proc.module_base, ADDR_PARTY_STAT_RECALC_FN)
+        sc = (
+            bytes([0xB8])
+            + struct.pack("<I", target & 0xFFFFFFFF)
+            + bytes([0xFF, 0xD0, 0x33, 0xC0, 0xC3])
+        )
+        MEM_COMMIT = 0x1000
+        MEM_RESERVE = 0x2000
+        MEM_RELEASE = 0x8000
+        remote = None
+        try:
+            remote = _VirtualAllocEx(
+                self._proc.handle,
+                None,
+                len(sc),
+                MEM_COMMIT | MEM_RESERVE,
+                _PAGE_EXECUTE_READWRITE,
+            )
+            if not remote:
+                logger.debug("party stat recalc: VirtualAllocEx failed")
+                return
+            ra = int(ctypes.cast(remote, ctypes.c_void_p).value or 0)
+            if not ra or not self._write(ra, sc):
+                logger.debug("party stat recalc: shellcode write failed")
+                try:
+                    _VirtualFreeEx(self._proc.handle, remote, 0, MEM_RELEASE)
+                except Exception:
+                    pass
+                return
+            tid = wintypes.DWORD(0)
+            h_thread = _CreateRemoteThread(
+                self._proc.handle,
+                None,
+                0,
+                ctypes.c_void_p(ra),
+                None,
+                0,
+                ctypes.byref(tid),
+            )
+            if not h_thread:
+                logger.debug("party stat recalc: CreateRemoteThread failed")
+                try:
+                    _VirtualFreeEx(self._proc.handle, remote, 0, MEM_RELEASE)
+                except Exception:
+                    pass
+                return
+            try:
+                w = _WaitForSingleObject(h_thread, 5000)
+                if w != 0:
+                    logger.debug("party stat recalc: WaitForSingleObject=%s", w)
+            finally:
+                _CloseHandle(h_thread)
+        except Exception as e:
+            logger.debug("party stat recalc: %s", e)
+        finally:
+            if remote:
+                try:
+                    _VirtualFreeEx(
+                        self._proc.handle,
+                        remote,
+                        0,
+                        MEM_RELEASE,
+                    )
+                except Exception:
+                    pass
 
     def _read_u8(self, addr: int) -> Optional[int]:
         d = self._read(addr, 1)
@@ -1419,6 +1555,23 @@ class FF7Hook:
                 return ps, None
         return None, f"{t} is not in the active party (field)"
 
+    def _char_id_from_gear_character_token(
+        self, savemap: bytes, token: str
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """Roster index 0–8 (Ultima-style) or English name; does not require party membership."""
+        t = (token or "").strip()
+        if not t:
+            return None, "empty character token"
+        if t.isdigit():
+            n = int(t)
+            if 0 <= n <= 8:
+                return n, None
+            return None, "character index must be 0–8"
+        cid = self._char_id_from_savemap_name(savemap, t)
+        if cid is None:
+            return None, f"unknown character name: {t}"
+        return cid, None
+
     def _parse_int_or_random(
         self,
         raw: Any,
@@ -1456,6 +1609,43 @@ class FF7Hook:
         except ValueError:
             return None, f"not an int: {s}"
 
+    def _parse_gil_amount(self, raw: Any) -> Tuple[Optional[int], Optional[str]]:
+        """Parse gil add/remove amount after connector placeholder substitution."""
+        if raw is None:
+            return None, "missing amount"
+        if isinstance(raw, bool):
+            return None, "invalid amount"
+        if isinstance(raw, int):
+            v = int(raw)
+            if v <= 0:
+                return None, "amount must be positive"
+            return min(v, _MAX_GIL), None
+        if isinstance(raw, float):
+            v = int(raw)
+            if v <= 0:
+                return None, "amount must be positive"
+            return min(v, _MAX_GIL), None
+        s = str(raw).strip()
+        m = re.match(r"^random\s*:\s*(\d+)\s*-\s*(\d+)\s*$", s, re.I)
+        if m:
+            lo, hi = int(m.group(1)), int(m.group(2))
+            if lo > hi:
+                lo, hi = hi, lo
+            lo = max(1, min(_MAX_GIL, lo))
+            hi = max(1, min(_MAX_GIL, hi))
+            if lo > hi:
+                lo, hi = hi, lo
+            return random.randint(lo, hi), None
+        if s.lower() == "random":
+            return random.randint(1, min(999_999, _MAX_GIL)), None
+        try:
+            v = int(s)
+        except ValueError:
+            return None, f"not an integer: {s}"
+        if v <= 0:
+            return None, "amount must be positive"
+        return min(v, _MAX_GIL), None
+
     def _parse_float_or_random(self, raw: Any) -> Tuple[Optional[float], Optional[str]]:
         if raw is None:
             return None, "missing speed"
@@ -1482,24 +1672,25 @@ class FF7Hook:
 
     def _gear_name_to_id(self, kind: str, gear_name: str) -> Tuple[Optional[int], Optional[str]]:
         _load_ff7_gear_layout_assets()
-        want = (gear_name or "").strip().lower()
+        clean = _sanitize_enemy_token(str(gear_name or ""))
+        want = clean.strip().lower()
         if not want:
             return None, "empty gear name"
         if kind == "weapon":
             for sid, nm in _WEAPON_NAMES_EN.items():
                 if nm and nm.strip().lower() == want:
                     return int(sid), None
-            return None, f"unknown weapon: {gear_name}"
+            return None, f"unknown weapon: {clean}"
         if kind == "armor":
             for sid, nm in _ARMOR_NAMES_EN.items():
                 if nm and nm.strip().lower() == want:
                     return int(sid), None
-            return None, f"unknown armor: {gear_name}"
+            return None, f"unknown armor: {clean}"
         if kind == "accessory":
             for sid, nm in _ACCESSORY_NAMES_EN.items():
                 if nm and nm.strip().lower() == want:
                     return int(sid), None
-            return None, f"unknown accessory: {gear_name}"
+            return None, f"unknown accessory: {clean}"
         return None, "gear_kind must be weapon|armor|accessory"
 
     def _resolve_gear_token(self, kind: str, token: str) -> Tuple[Optional[int], Optional[str]]:
@@ -1519,7 +1710,7 @@ class FF7Hook:
         return self._gear_name_to_id(kind, token)
 
     def _enemy_slot_from_token(self, token: str) -> Tuple[Optional[int], Optional[str]]:
-        t = (token or "").strip()
+        t = _sanitize_enemy_token(token or "")
         if not t:
             return None, "empty enemy token"
         tl = t.lower()
@@ -1530,6 +1721,33 @@ class FF7Hook:
                 return None, "no enemies for random"
             row = random.choice(en)
             sl = int(row.get("slot", -1))
+            if sl < 4 or sl > 9:
+                return None, "bad enemy slot"
+            return sl, None
+        parts = t.rsplit(None, 1)
+        if (
+            len(parts) == 2
+            and len(parts[1]) == 1
+            and parts[1].isalpha()
+            and parts[0].strip()
+        ):
+            base_raw, letter = parts[0], parts[1]
+            idx = ord(letter.upper()) - ord("A")
+            want_base = _norm_party_name(base_raw)
+            snap = self._last_snapshot or {}
+            pool = [
+                row
+                for row in (snap.get("enemies") or [])
+                if _norm_party_name(str(row.get("name", ""))) == want_base
+            ]
+            pool.sort(
+                key=lambda r: (int(r.get("scene_id", 0)), int(r.get("slot", 0)))
+            )
+            if not pool:
+                return None, f"enemy not found: {t}"
+            if idx < 0 or idx >= len(pool):
+                return None, f"enemy suffix out of range: {t}"
+            sl = int(pool[idx].get("slot", -1))
             if sl < 4 or sl > 9:
                 return None, "bad enemy slot"
             return sl, None
@@ -1566,12 +1784,11 @@ class FF7Hook:
         data, _ = self._read_savemap()
         if not data:
             return False, "Savemap not readable"
-        ps, err = self._party_slot_from_token(data, character, battle=False)
-        if err or ps is None:
-            return False, err or "party slot"
-        cid = data[SAVE_OFF_PARTY_SLOTS + ps]
-        if cid >= len(_CHAR_BLOCK) or cid == 0xFF:
-            return False, "empty party slot"
+        cid, err = self._char_id_from_gear_character_token(data, character)
+        if err or cid is None:
+            return False, err or "character"
+        if cid >= len(_CHAR_BLOCK):
+            return False, "bad character id"
         gk = gear_kind.strip().lower()
         allow = _allowed_ids_for_char_gear(int(cid), gk)
         if allow is not None and int(gear_id) not in allow:
@@ -1592,12 +1809,16 @@ class FF7Hook:
                 return False, "accessory id out of range"
             b = gear_id if gear_id >= 0 else 0xFF
             addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + off + o
-            return (True, None) if self._write(addr, bytes([b])) else (False, "write failed")
+            if not self._write(addr, bytes([b])):
+                return False, "write failed"
+            self._call_ff7_party_stat_recalc()
+            return True, None
         else:
             return False, "gear_kind must be weapon|armor|accessory"
         addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + off + o
         if not self._write(addr, bytes([int(gear_id) & 0xFF])):
             return False, "write failed"
+        self._call_ff7_party_stat_recalc()
         return True, None
 
     def _op_set_battle_status(
@@ -1679,22 +1900,53 @@ class FF7Hook:
     def _op_set_game_speed(self, speed: float, duration_sec: int) -> Tuple[bool, Optional[str]]:
         assert self._proc
         sp = max(0.25, min(8.0, float(speed)))
-        backup: Dict[str, Any] = {"speed": sp, "duration_sec": int(duration_sec)}
+        backup: Dict[str, Any] = {
+            "speed": sp,
+            "duration_sec": int(duration_sec),
+        }
         pair = self._ffnx_find_fps_float_addrs()
         if pair:
             a30, a15 = pair
             f30 = self._read_float(a30)
             f15 = self._read_float(a15)
             backup["ffnx"] = {"a30": a30, "a15": a15, "f30": f30, "f15": f15}
+            backup["mode"] = "ffnx"
             if not self._write_float(a30, 30.0 * sp):
                 return False, "write FFNx field fps float failed"
             if not self._write_float(a15, 15.0 * sp):
                 return False, "write FFNx battle fps float failed"
         else:
-            return False, (
-                "FFNx speed hook not detected (first opcode must be 0xE9 at "
-                f"0x{ADDR_FFNX_TRAMPOLINE_CHECK:08X}). Install FFNx for game speed."
+            # Ultima useFF7.ts setSpeed vanilla branch (no FFNx)
+            fps_specs = [
+                (ADDR_FIELD_FPS, 30.0),
+                (ADDR_BATTLE_FPS, 15.0),
+                (ADDR_WORLD_FPS, 30.0),
+            ]
+            fps_backup: List[Tuple[int, Optional[float]]] = []
+            for canon, default_fps in fps_specs:
+                addr = _rebase(self._proc.module_base, canon)
+                prev = self._read_float(addr)
+                fps_backup.append((addr, prev))
+                new_f = 10000000.0 / (default_fps * sp)
+                if not self._write_float(addr, new_f):
+                    return False, f"write vanilla FPS failed (0x{canon:08X})"
+            nop_canons = (
+                ADDR_FPS_NOP_INIT_1,
+                ADDR_FPS_NOP_INIT_2,
+                ADDR_FPS_NOP_INIT_3,
             )
+            nop_backup: List[Tuple[int, bytes]] = []
+            nop_patch = b"\x90" * 6
+            for canon in nop_canons:
+                addr = _rebase(self._proc.module_base, canon)
+                orig = self._read(addr, 6)
+                if orig is None or len(orig) != 6:
+                    return False, f"read FPS NOP site failed (0x{canon:08X})"
+                nop_backup.append((addr, orig))
+                if not self._win_protect_write(addr, nop_patch):
+                    return False, f"write FPS NOP failed (0x{canon:08X})"
+            backup["vanilla"] = {"fps": fps_backup, "nops": nop_backup}
+            backup["mode"] = "vanilla"
         wm_ok, wm_err = self._op_world_speed_multiplier(
             max(1, min(255, int(round(sp))))
         )
@@ -1707,12 +1959,21 @@ class FF7Hook:
         b = self._speed_backup
         if not b or not self._proc:
             return False, "no speed backup"
-        if "ffnx" in b:
-            e = b["ffnx"]
-            if e.get("f30") is not None:
+        mode = b.get("mode")
+        if mode == "ffnx" or "ffnx" in b:
+            e = b.get("ffnx") or {}
+            if e.get("f30") is not None and e.get("a30") is not None:
                 self._write_float(int(e["a30"]), float(e["f30"]))
-            if e.get("f15") is not None:
+            if e.get("f15") is not None and e.get("a15") is not None:
                 self._write_float(int(e["a15"]), float(e["f15"]))
+        elif mode == "vanilla" or "vanilla" in b:
+            van = b.get("vanilla") or {}
+            for addr, prev in van.get("fps") or []:
+                if prev is not None:
+                    self._write_float(int(addr), float(prev))
+            for addr, orig in van.get("nops") or []:
+                if orig is not None:
+                    self._win_protect_write(int(addr), bytes(orig))
         self._speed_backup = None
         return True, None
 
@@ -1904,9 +2165,15 @@ class FF7Hook:
             return ""
 
         if op == "add_gil":
-            return self._op_add_gil(int(kwargs.get("amount", 0)))
+            amt, e = self._parse_gil_amount(kwargs.get("amount"))
+            if e or amt is None:
+                return False, e or "amount"
+            return self._op_add_gil(int(amt))
         if op == "remove_gil":
-            return self._op_remove_gil(int(kwargs.get("amount", 0)))
+            amt, e = self._parse_gil_amount(kwargs.get("amount"))
+            if e or amt is None:
+                return False, e or "amount"
+            return self._op_remove_gil(int(amt))
         if op == "add_party_hp":
             amt, e = self._parse_int_or_random(kwargs.get("amount"), 9999)
             if e or amt is None or amt <= 0:
@@ -1979,15 +2246,18 @@ class FF7Hook:
                 return False, err or "character"
             return self._op_set_field_status_byte(int(ps), int(kwargs.get("value", 0)))
         if op == "set_character_gear":
+            raw_kind = str(kwargs.get("gear_kind", "")).strip().lower()
+            if not raw_kind:
+                raw_kind = "weapon"
             gid, ge = self._resolve_gear_token(
-                str(kwargs.get("gear_kind", "")).strip().lower(),
+                raw_kind,
                 str(kwargs.get("gear", "")),
             )
             if ge or gid is None:
                 return False, ge or "gear"
             return self._op_set_character_gear(
                 _tok_char(),
-                str(kwargs.get("gear_kind", "")),
+                raw_kind,
                 int(gid),
             )
         if op == "set_menu_row_access":
@@ -2218,7 +2488,17 @@ def ff7_connector_config_to_hook_kwargs(cfg: Dict[str, Any]) -> Dict[str, Any]:
         return "{" in s
 
     if op in ("add_gil", "remove_gil"):
-        return {"amount": max(0, int(cfg.get("arg_amount") or 0))}
+        raw_amt = _txt("arg_amount", "0")
+        if (
+            not _has_placeholder(raw_amt)
+            and not re.match(r"^random\s*:", raw_amt, re.I)
+            and raw_amt.lower() != "random"
+        ):
+            try:
+                raw_amt = str(max(0, int(raw_amt or 0)))
+            except ValueError:
+                pass
+        return {"amount": raw_amt}
     if op in ("add_party_hp", "remove_party_hp"):
         raw_amt = _txt("arg_amount", "0")
         if (
@@ -2266,9 +2546,12 @@ def ff7_connector_config_to_hook_kwargs(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "value": max(0, int(cfg.get("arg_value") or 0)),
         }
     if op == "set_character_gear":
+        gk = _txt("arg_gear_kind")
+        if not (gk or "").strip():
+            gk = "weapon"
         return {
             "character": _txt("arg_character"),
-            "gear_kind": _txt("arg_gear_kind"),
+            "gear_kind": gk,
             "gear": _txt("arg_gear"),
         }
     if op == "set_menu_row_access":

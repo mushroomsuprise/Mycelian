@@ -1306,6 +1306,8 @@ def game_hook_placeholder_lines(
     if tags and ("enemy" in tags or "hooks_enemy" in tags):
         for i in range(6):
             lines.append(f"{{hooks.ff7.enemies.{i}.name}}")
+    if tags and ("enemy" in tags or "hooks_enemy" in tags):
+        lines.append("{message_after_conditions}")
     if tags and "enemy" in tags:
         lines.append("{random_enemy}")
 
@@ -1333,6 +1335,9 @@ def game_hook_placeholder_lines(
     if "message" in trigger_fields or "message" in tags:
         lines.append("{message.word.1}")
         lines.append("{message.word.2}")
+        lines.append("{message_after_word.1}")
+        lines.append("{message_after_word.2}")
+        lines.append("{message_after_from_word.3}")
 
     seen: set[str] = set()
     uniq: List[str] = []

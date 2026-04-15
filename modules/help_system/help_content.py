@@ -3066,7 +3066,7 @@ Connectors can run a **Game Hook (memory write)** action. Each action targets on
 
 Typical FF7 operations include **Add gil** / **Remove gil**, **Add or remove HP**, **KO party member**, **Kill enemy** / **Kill all enemies**, **Damage enemy**, **Rename character**, **Set battle status**, **Change character gear**, **Menu row access** (show+unlock or hide+lock one menu row), and **Game speed** (FFNx FPS scaling plus best-effort world-map byte; 0.25×–8×).
 
-In action arguments, use single-brace placeholders with **no spaces** inside the braces, for example `{username}`, `{message}`, `{message.word.1}`, `{hooks.ff7.party.0.name}`, `{random_character}`, `{random_enemy}`, `{random_damage.1.9999}`. Legacy `{{key}}` forms are still accepted and normalized.
+In action arguments, use single-brace placeholders with **no spaces** inside the braces, for example `{username}`, `{message}`, `{message.word.1}`, `{message_after_conditions}` (chat text after stripping `message` trigger-condition literals), `{message_after_word.1}` or `{message_after_conditions.word.2}` (single word *N* of that stripped text), `{message_after_from_word.3}` or `{message_after_conditions.from_word.3}` (from word *N* through the end—use for multi-word values such as item names), `{hooks.ff7.party.0.name}`, `{random_character}`, `{random_enemy}`, `{random_damage.1.9999}`. Legacy `{{key}}` forms are still accepted and normalized.
 
 **Battle-only** actions return failure with a short message if you are not in combat. Running as Administrator may be required if Windows denies process memory access.
 

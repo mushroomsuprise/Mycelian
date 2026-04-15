@@ -211,6 +211,55 @@ class TriggerCondition:
         return False
 
 
+def message_after_trigger_conditions(
+    raw_message: str, conditions: List[TriggerCondition]
+) -> str:
+    """Remove matched condition literals from ``message`` for use in action placeholders.
+
+    Mirrors case-sensitivity rules in :meth:`TriggerCondition._compare_values` for
+    ``contains`` / ``starts_with`` / ``ends_with`` on field ``message`` only.
+    """
+    msg = "" if raw_message is None else str(raw_message)
+    for cond in conditions:
+        if cond.field != "message":
+            continue
+        op = cond.operator
+        if op not in (
+            ComparisonOperator.CONTAINS,
+            ComparisonOperator.STARTS_WITH,
+            ComparisonOperator.ENDS_WITH,
+        ):
+            continue
+        expected = cond.value
+        if expected is None:
+            continue
+        exp = str(expected)
+        if not exp:
+            continue
+        case_sensitive = cond.case_sensitive
+        if op == ComparisonOperator.CONTAINS:
+            if case_sensitive:
+                if exp in msg:
+                    msg = msg.replace(exp, "", 1)
+            else:
+                low, sub = msg.lower(), exp.lower()
+                i = low.find(sub)
+                if i >= 0:
+                    msg = (msg[:i] + msg[i + len(exp) :]).strip()
+        elif op == ComparisonOperator.STARTS_WITH:
+            check_m = msg if case_sensitive else msg.lower()
+            check_e = exp if case_sensitive else exp.lower()
+            if check_m.startswith(check_e):
+                msg = msg[len(exp) :]
+        elif op == ComparisonOperator.ENDS_WITH:
+            check_m = msg if case_sensitive else msg.lower()
+            check_e = exp if case_sensitive else exp.lower()
+            if check_m.endswith(check_e):
+                msg = msg[: len(msg) - len(exp)]
+        msg = msg.strip()
+    return msg
+
+
 @dataclass
 class BaseTrigger(ABC):
     """Base class for all trigger types"""
@@ -318,6 +367,9 @@ class Connector:
 
         # Execute all actions
         success_count = 0
+        msg_after = message_after_trigger_conditions(
+            str(event_data.get("message", "")), self.trigger.conditions
+        )
         for action in self.actions:
             if action.enabled:
                 try:
@@ -327,6 +379,7 @@ class Connector:
                             "trigger_type": self.trigger.trigger_type.value,
                             "connector_id": self.connector_id,
                             "triggered_at": self.last_triggered,
+                            "message_after_conditions": msg_after,
                         },
                         event_data=event_data,
                     )

@@ -83,14 +83,20 @@ FF7 Hook
     [] - Add ability to rename characters, args should be <current_character_name> and <new_character_name>
     [] - Add ability to inflict status effect on character(s) (positive and negative, including fury and sadness), args should be: <character> and <status_effect>
     [] - Add ability to change equipment for a character. equipment can be weapons, armor, and accessories. We must safeguard weapons/armor so that we don't force equip gear a character cannot use (do this by making a table map of gear for each character). args should be: <character> and <gear>
-    [] - Disable/enable menus (see ultima for this), args should be: <menu_name>
-    [] - Change game speed (permanently until next change, or time based. see Ultima for this), args should be: <duration> and <speed>
-    [] - Update the kill character to use character names as an arg, instead of having to force a specific slot.
-    [] - Update the add and remove HP actions to use character names as an arg, instead of a specific slot.
-    [] - Remove the "set party slot hp" action.
-    [] - Change "damage enemy" action to take enemy names instead of slots.
-    [] - Include options for random characters/enemies and random values (damage, status effect, gear, etc) on every FF7 connector action.
-    [] - Ensure connector actions can take arguments from a chat message, or point alert user input message. Include an example in the text line where it says "Requires Game Hooks enabled and game...." so users know how to pull the data from the message
+    [x] - Disable/enable menus (see ultima for this), args should be: <menu_name>
+    [x] - Change game speed (permanently until next change, or time based. see Ultima for this), args should be: <duration> and <speed>
+    [x] - Update the kill character to use character names as an arg, instead of having to force a specific slot.
+    [x] - Update the add and remove HP actions to use character names as an arg, instead of a specific slot.
+    [x] - Remove the "set party slot hp" action.
+    [x] - Change "damage enemy" action to take enemy names instead of slots.
+    [x] - Include options for random characters/enemies and random values (damage, status effect, gear, etc) on every FF7 connector action.
+    [x] - Ensure connector actions can take arguments from a chat message, or point alert user input message. Include an example in the text line where it says "Requires Game Hooks enabled and game...." so users know how to pull the data from the message
+    [] - Add/Remove gil does not work.
+    [] - Kill enemy does not find the enemy names (must add a varible setup to give the message with the matched text from the condition removed)
+    [] - Gamespeed command fails to work without FFNx installed, consult Ultima for the correct memory addresses and how to use them.
+    [] - Disabling/enabling menus does not work. Consult Ultima for the correct memory addresses and how to use them.
+    
+
 
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.

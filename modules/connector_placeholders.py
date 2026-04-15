@@ -55,11 +55,53 @@ def _message_word(ctx: Dict[str, Any], index_one_based: int) -> str:
     return words[index_one_based - 1]
 
 
+def _message_after_conditions_word(ctx: Dict[str, Any], index_one_based: int) -> str:
+    """Nth word (1-based) of ``message_after_conditions`` (post-trigger-strip text)."""
+    if index_one_based < 1:
+        return ""
+    msg = ctx.get("message_after_conditions")
+    words = str(msg or "").split()
+    if index_one_based > len(words):
+        return ""
+    return words[index_one_based - 1]
+
+
+def _message_after_conditions_from_word(
+    ctx: Dict[str, Any], index_one_based: int
+) -> str:
+    """Words from *N* through end of ``message_after_conditions``, joined with spaces (1-based *N*)."""
+    if index_one_based < 1:
+        return ""
+    msg = ctx.get("message_after_conditions")
+    words = str(msg or "").split()
+    if index_one_based > len(words):
+        return ""
+    return " ".join(words[index_one_based - 1 :])
+
+
 def _try_message_word_token(token: str, ctx: Dict[str, Any]) -> Optional[str]:
     m = re.fullmatch(r"message\.word\.(\d+)", token)
     if not m:
         return None
     return _message_word(ctx, int(m.group(1)))
+
+
+def _try_message_after_word_token(token: str, ctx: Dict[str, Any]) -> Optional[str]:
+    m = re.fullmatch(r"message_after_word\.(\d+)", token)
+    if not m:
+        m = re.fullmatch(r"message_after_conditions\.word\.(\d+)", token)
+    if not m:
+        return None
+    return _message_after_conditions_word(ctx, int(m.group(1)))
+
+
+def _try_message_after_from_word_token(token: str, ctx: Dict[str, Any]) -> Optional[str]:
+    m = re.fullmatch(r"message_after_from_word\.(\d+)", token)
+    if not m:
+        m = re.fullmatch(r"message_after_conditions\.from_word\.(\d+)", token)
+    if not m:
+        return None
+    return _message_after_conditions_from_word(ctx, int(m.group(1)))
 
 
 def _party_names_from_ctx(ctx: Dict[str, Any]) -> list[str]:
@@ -97,6 +139,14 @@ def _resolve_special_token(token: str, ctx: Dict[str, Any]) -> Optional[str]:
     mw = _try_message_word_token(token, ctx)
     if mw is not None:
         return mw
+
+    maw = _try_message_after_word_token(token, ctx)
+    if maw is not None:
+        return maw
+
+    ma_tail = _try_message_after_from_word_token(token, ctx)
+    if ma_tail is not None:
+        return ma_tail
 
     if token == "random_character":
         names = _party_names_from_ctx(ctx)

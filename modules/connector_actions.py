@@ -40,6 +40,13 @@ from .connector_placeholders import (
 logger = logging.getLogger(__name__)
 
 
+def _safe_console_str(value: Any) -> str:
+    """Avoid UnicodeEncodeError on Windows consoles (cp1252) when logging user/chat text."""
+    if value is None:
+        return ""
+    return str(value).encode("ascii", "replace").decode("ascii")
+
+
 @dataclass
 class TemplateControlAction(BaseAction):
     """Action to control template elements via WebSocket"""
@@ -2610,7 +2617,7 @@ class GameHookAction(BaseAction):
                     "Game hook write failed game_id=%s op=%s err=%s",
                     self.game_id,
                     self.operation,
-                    err_msg,
+                    _safe_console_str(err_msg),
                 )
             return bool(ok)
         except asyncio.TimeoutError:
