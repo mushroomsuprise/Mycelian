@@ -27,7 +27,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Sequence
 
 from nicegui import ui
 
@@ -899,16 +899,8 @@ def create_connector_form(connector_id: str = None):
                         action, "operation", ""
                     )
                     ha = getattr(action, "hook_arguments", None) or {}
-                    if "amount" in ha:
-                        action_data["config"]["arg_amount"] = str(ha["amount"])
-                    if "slot" in ha:
-                        action_data["config"]["arg_slot"] = str(ha["slot"])
-                    if "value" in ha:
-                        action_data["config"]["arg_value"] = str(ha["value"])
-                    if "enemy_index" in ha:
-                        action_data["config"]["arg_enemy_index"] = str(
-                            ha["enemy_index"]
-                        )
+                    for hk, hv in ha.items():
+                        action_data["config"][f"arg_{hk}"] = str(hv)
 
                 form_data["actions"].append(action_data)
             except Exception as e:
@@ -1101,6 +1093,8 @@ def handle_trigger_type_change(
         # Conditions list
         conditions_list = ui.element("div").classes("w-full space-y-2")
 
+    _call_game_hook_hint_refresh(form_data)
+
 
 def add_condition_to_trigger(trigger_type: str, form_data: dict, conditions_list):
     """Add a condition input to the trigger"""
@@ -1198,6 +1192,8 @@ def add_condition_to_trigger_with_data_and_index(
                 ),
             ).props("flat round").classes("text-red-400")
 
+    _call_game_hook_hint_refresh(form_data)
+
 
 def get_available_fields_for_trigger(trigger_type: str) -> Dict[str, str]:
     """Get available fields for a trigger type"""
@@ -1245,6 +1241,106 @@ def get_available_fields_for_trigger(trigger_type: str) -> Dict[str, str]:
     }
 
     return field_mappings.get(trigger_type, {"username": "Username"})
+
+
+def _call_game_hook_hint_refresh(form_data: dict) -> None:
+    cb = form_data.get("_game_hook_hint_refresh")
+    if callable(cb):
+        try:
+            cb()
+        except Exception as e:
+            logger.debug("game hook hint refresh: %s", e)
+
+
+def game_hook_placeholder_lines(
+    form_data: dict, hint_tags: Optional[Sequence[str]] = None
+) -> List[str]:
+    """Placeholder tokens for Game Hook arg hints (single-brace, no spaces).
+
+    ``hint_tags`` on catalog args are scoped so one field does not advertise
+    unrelated hook paths (e.g. gil under enemy-only inputs). Use:
+
+    - ``character`` — party slot names + ``{random_character}``
+    - ``enemy`` — enemy slot names + ``{random_enemy}``
+    - ``hooks_gil``, ``hooks_battle``, ``hooks_field`` — single hook paths
+    - ``hooks_party`` / ``hooks_enemy`` — slot names only (no random_*)
+    - ``gear`` — ``{random_weapon}`` / armor / accessory
+    - ``damage`` — ``{random_damage.min.max}`` example (battle damage amounts)
+    - ``random_range`` — same random-range token (non-damage amounts: gil, HP)
+    - ``numeric`` — no extra hook lines (duration, etc.)
+    """
+    tags = frozenset(hint_tags or ())
+    lines: List[str] = []
+
+    tt = form_data.get("trigger_type")
+    trigger_fields = get_available_fields_for_trigger(tt) if tt else {}
+    for fid in trigger_fields.keys():
+        lines.append(f"{{{fid}}}")
+
+    for cond in form_data.get("trigger_conditions") or []:
+        f = cond.get("field")
+        if isinstance(f, str) and f.strip():
+            tok = f"{{{f.strip()}}}"
+            if tok not in lines:
+                lines.append(tok)
+
+    for core in (
+        "message",
+        "username",
+        "event_type",
+        "timestamp",
+        "source",
+        "trigger_id",
+        "trigger_type",
+        "connector_id",
+    ):
+        lines.append(f"{{{core}}}")
+
+    # Scoped FF7 hook readouts (avoid one mega-block for every tag).
+    if tags and ("character" in tags or "hooks_party" in tags):
+        for i in range(3):
+            lines.append(f"{{hooks.ff7.party.{i}.name}}")
+    if tags and "character" in tags:
+        lines.append("{random_character}")
+
+    if tags and ("enemy" in tags or "hooks_enemy" in tags):
+        for i in range(6):
+            lines.append(f"{{hooks.ff7.enemies.{i}.name}}")
+    if tags and "enemy" in tags:
+        lines.append("{random_enemy}")
+
+    if tags and "hooks_gil" in tags:
+        lines.append("{hooks.ff7.gil}")
+
+    if tags and "hooks_battle" in tags:
+        lines.append("{hooks.ff7.battle}")
+
+    if tags and "hooks_field" in tags:
+        lines.append("{hooks.ff7.field_name}")
+
+    if tags and ("damage" in tags or "random_range" in tags):
+        lines.append("{random_damage.1.9999}")
+
+    if tags and "gear" in tags:
+        lines.extend(
+            [
+                "{random_weapon}",
+                "{random_armor}",
+                "{random_accessory}",
+            ]
+        )
+
+    if "message" in trigger_fields or "message" in tags:
+        lines.append("{message.word.1}")
+        lines.append("{message.word.2}")
+
+    seen: set[str] = set()
+    uniq: List[str] = []
+    for x in lines:
+        if x not in seen:
+            seen.add(x)
+            uniq.append(x)
+    return uniq
 
 
 def add_action_to_form(form_data: dict, actions_container):
@@ -1413,7 +1509,11 @@ def create_game_hook_config(
     if initial_config is None:
         initial_config = {}
 
-    from ..game_hooks.ff7_hook import FF7_CONNECTOR_CATALOG
+    from ..game_hooks.ff7_hook import (
+        FF7_CONNECTOR_CATALOG,
+        catalog_entry_is_public,
+        ff7_game_speed_select_options,
+    )
 
     ui.select(
         options={"ff7": "Final Fantasy VII (PC)"},
@@ -1424,45 +1524,114 @@ def create_game_hook_config(
         ),
     ).classes("w-full mb-2 action-select")
 
-    op_options = {c["id"]: c["label"] for c in FF7_CONNECTOR_CATALOG}
+    speed_select_options = ff7_game_speed_select_options()
+    op_options: Dict[str, str] = {}
+    for c in FF7_CONNECTOR_CATALOG:
+        if catalog_entry_is_public(c):
+            op_options[c["id"]] = c["label"]
+    cur_op = initial_config.get("operation", "add_gil")
+    if cur_op not in op_options:
+        spec_legacy = next(
+            (c for c in FF7_CONNECTOR_CATALOG if c["id"] == cur_op), None
+        )
+        op_options[cur_op] = (
+            (spec_legacy or {}).get("label", cur_op) + " (legacy)"
+            if spec_legacy
+            else cur_op + " (legacy)"
+        )
+
     op_container = ui.element("div").classes("w-full")
+
+    def _live_action_config() -> dict:
+        try:
+            return form_data["actions"][action_index].get("config") or {}
+        except Exception:
+            return initial_config
 
     def refresh_args(op_id: str) -> None:
         op_container.clear()
         spec = next((c for c in FF7_CONNECTOR_CATALOG if c["id"] == op_id), None)
         with op_container:
+            cfg_now = _live_action_config()
             if not spec:
+                ui.label(
+                    f"Legacy or unknown operation \"{op_id}\" — edit raw arg_* keys below."
+                ).classes("text-sm text-amber-400 mb-2")
+                for k in sorted(cfg_now.keys()):
+                    if not k.startswith("arg_"):
+                        continue
+                    ui.input(
+                        label=k,
+                        value=str(cfg_now.get(k, "")),
+                        on_change=lambda e, kk=k: update_action_config(
+                            action_index, kk, e.value, form_data
+                        ),
+                    ).classes("w-full mb-2 action-input")
                 return
             ui.label(spec.get("description", "")).classes("text-sm muted-text mb-2")
             for arg in spec.get("args", []):
                 aname = arg["name"]
                 key = f"arg_{aname}"
-                val = str(initial_config.get(key, ""))
-                ui.input(
-                    label=arg.get("label", aname),
-                    value=val,
-                    on_change=lambda e, k=key: update_action_config(
-                        action_index, k, e.value, form_data
-                    ),
-                ).classes("w-full mb-2 action-input")
+                val = str(cfg_now.get(key, initial_config.get(key, "")))
+
+                if arg.get("control") == "select":
+                    sel_opts = arg.get("options") or {}
+                    if aname == "speed" and not sel_opts:
+                        sel_opts = speed_select_options
+                    if val and val not in sel_opts:
+                        sel_opts = dict(sel_opts)
+                        sel_opts[val] = val
+                    ui.select(
+                        options=sel_opts,
+                        label=arg.get("label", aname),
+                        value=val if val in sel_opts else next(iter(sel_opts.keys()), val),
+                        on_change=lambda e, k=key: update_action_config(
+                            action_index, k, e.value, form_data
+                        ),
+                    ).classes("w-full mb-1 action-select")
+                else:
+                    hint_lines = game_hook_placeholder_lines(
+                        form_data, arg.get("hint_tags")
+                    )
+                    hint_text = "  ".join(hint_lines) if hint_lines else ""
+                    ui.input(
+                        label=arg.get("label", aname),
+                        value=val,
+                        on_change=lambda e, k=key: update_action_config(
+                            action_index, k, e.value, form_data
+                        ),
+                    ).classes("w-full mb-1 action-input")
+                    if hint_text:
+                        ui.label(hint_text).classes(
+                            "text-xs muted-text mb-2 wrap-break-word"
+                        )
+
+    def refresh_args_from_form() -> None:
+        try:
+            op = form_data["actions"][action_index]["config"].get(
+                "operation", "add_gil"
+            )
+        except Exception:
+            op = "add_gil"
+        refresh_args(str(op))
+
+    form_data["_game_hook_hint_refresh"] = refresh_args_from_form
 
     ui.select(
         options=op_options,
         label="Operation",
-        value=initial_config.get("operation", next(iter(op_options.keys()), "add_gil")),
+        value=cur_op if cur_op in op_options else next(iter(op_options.keys()), cur_op),
         on_change=lambda e: [
             update_action_config(action_index, "operation", e.value, form_data),
             refresh_args(e.value),
         ],
     ).classes("w-full mb-2 action-select")
 
-    cur_op = initial_config.get("operation", "add_gil")
-    if cur_op not in op_options:
-        cur_op = next(iter(op_options.keys()), "add_gil")
     refresh_args(cur_op)
 
     ui.label(
-        "Requires Game Hooks enabled and the game running. Battle-only actions fail safely when not in combat."
+        "Requires Game Hooks enabled and the game running on Windows. "
+        "Battle-only actions fail safely when not in combat."
     ).classes("text-xs muted-text mt-2")
 
 
@@ -3537,7 +3706,7 @@ def create_execute_command_config(
     ).classes("w-full mb-2 action-input")
 
     ui.label(
-        "Use {{field}} placeholders to insert event data. Be careful with command execution!"
+        "Use {field} placeholders to insert event data. Be careful with command execution!"
     ).classes("text-xs muted-text")
 
 
@@ -3559,6 +3728,7 @@ def update_condition_field(index: int, field: str, form_data: dict):
         form_data["trigger_conditions"]
     ):
         form_data["trigger_conditions"][index]["field"] = field
+    _call_game_hook_hint_refresh(form_data)
 
 
 def update_condition_operator(index: int, operator: str, form_data: dict):
@@ -3567,6 +3737,7 @@ def update_condition_operator(index: int, operator: str, form_data: dict):
         form_data["trigger_conditions"]
     ):
         form_data["trigger_conditions"][index]["operator"] = operator
+    _call_game_hook_hint_refresh(form_data)
 
 
 def update_condition_value(index: int, value: str, form_data: dict):
@@ -3575,6 +3746,7 @@ def update_condition_value(index: int, value: str, form_data: dict):
         form_data["trigger_conditions"]
     ):
         form_data["trigger_conditions"][index]["value"] = value
+    _call_game_hook_hint_refresh(form_data)
 
 
 def remove_condition(index: int, form_data: dict, conditions_list):
@@ -3586,6 +3758,7 @@ def remove_condition(index: int, form_data: dict, conditions_list):
         # Rebuild the conditions list
         conditions_list.clear()
         # This would need to be implemented to refresh the display
+    _call_game_hook_hint_refresh(form_data)
 
 
 def remove_action(index: int, form_data: dict, actions_container):

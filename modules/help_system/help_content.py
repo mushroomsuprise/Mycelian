@@ -3062,16 +3062,11 @@ When attached, the hook sends roughly four times per second:
 
 ## Crowd control (writing memory)
 
-Connectors can run a **Game Hook (memory write)** action. Each action targets one game (FF7 today) and one **operation** with numeric arguments where needed.
+Connectors can run a **Game Hook (memory write)** action. Each action targets one game (FF7 today) and one **operation** with arguments as shown in the connector UI.
 
-Implemented FF7 operations:
+Typical FF7 operations include **Add gil** / **Remove gil**, **Add or remove HP**, **KO party member**, **Kill enemy** / **Kill all enemies**, **Damage enemy**, **Rename character**, **Set battle status**, **Change character gear**, **Menu row access** (show+unlock or hide+lock one menu row), and **Game speed** (FFNx FPS scaling plus best-effort world-map byte; 0.25×–8×).
 
-- **Add gil** / **Remove gil**: changes gil in the active savemap (amount must be a positive integer; gil is clamped).
-- **Add HP to party slot** / **Remove HP from party slot**: in **battle**, edits live actor HP for party slots 0–2; on the **field**, edits the savemap character record for whoever occupies that party slot.
-- **Set party slot HP**: same battle/field rules; sets HP clamped to max.
-- **KO party slot**: sets HP to **zero in battle only** (field KO is not supported here).
-- **Kill all enemies**: sets every active enemy’s battle HP to zero (battle only).
-- **Damage enemy**: `enemy_index` 0–5 maps to internal battle slots 4–9; subtracts damage from that enemy’s HP (battle only).
+In action arguments, use single-brace placeholders with **no spaces** inside the braces, for example `{username}`, `{message}`, `{message.word.1}`, `{hooks.ff7.party.0.name}`, `{random_character}`, `{random_enemy}`, `{random_damage.1.9999}`. Legacy `{{key}}` forms are still accepted and normalized.
 
 **Battle-only** actions return failure with a short message if you are not in combat. Running as Administrator may be required if Windows denies process memory access.
 

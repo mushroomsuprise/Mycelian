@@ -22,6 +22,7 @@ import logging
 import queue
 import threading
 import time
+import weakref
 from typing import Any, Dict, Optional, Tuple
 
 from .database_manager import database_manager
@@ -65,6 +66,7 @@ class GameHooksServiceImpl:
         self._write_queue: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, str, Dict[str, Any]]]" = (
             queue.Queue()
         )
+        self._weak_self = weakref.ref(self)
         self._load_ff7_boss_log()
 
     def _load_ff7_boss_log(self) -> None:
@@ -121,6 +123,29 @@ class GameHooksServiceImpl:
                     continue
                 result = self._ff7_hook.execute_operation(op, kwargs)
                 fut.set_result(result)
+                ok, _err = result
+                if (
+                    ok
+                    and op == "set_game_speed"
+                    and int(kwargs.get("duration_sec") or 0) > 0
+                ):
+                    delay = float(kwargs["duration_sec"])
+                    svc = self._weak_self()
+
+                    def _revert() -> None:
+                        s = svc
+                        if s is None or s._ff7_hook is None:
+                            return
+                        s._write_queue.put(
+                            (
+                                concurrent.futures.Future(),
+                                "ff7",
+                                "restore_game_speed",
+                                {},
+                            )
+                        )
+
+                    threading.Timer(delay, _revert).start()
             except Exception as e:
                 logger.warning("game hook write failed: %s", e, exc_info=True)
                 fut.set_result((False, str(e)))

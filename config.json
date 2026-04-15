@@ -1,0 +1,12 @@
+{
+  "config_version": "1.0",
+  "connection_timeout": 30,
+  "database_type": "sql",
+  "firebase_database_url": "https://your-project-default-rtdb.firebaseio.com/",
+  "firebase_service_account_path": "ServiceAccountKey.json",
+  "last_updated": "2026-04-14T17:30:29.456982",
+  "mongodb_connection_string": "mongodb://localhost:27017/",
+  "mongodb_database_name": "mycelian",
+  "retry_attempts": 3,
+  "sql_database_path": "mycelian.db"
+}

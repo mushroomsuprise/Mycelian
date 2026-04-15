@@ -14,11 +14,14 @@ import ctypes
 import json
 import logging
 import os
+import random
+import re
 import struct
 import sys
+from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,35 @@ ADDR_ENEMY_DATA_BASE = 0x009A8E9C
 ADDR_PARTY_MEMBER_IDS = 0x00DC0230
 ADDR_PARTY_MEMBER_NAMES = 0x00DBFD9C
 ADDR_SAVEMAP_BASE = 0x00DBFD38
+# Menu bitmask (u16): ff7-ultima General.tsx order; patched in useFF7 enableMenuAlwaysEnabled
+ADDR_MENU_VISIBILITY = 0x00DC111C
+# Cleared alongside visibility in Ultima menu-always patch (u16 bitmask, same bit order)
+ADDR_MENU_LOCKS = 0x00DC1130
+# FFNx: first opcode at process entry is often 0xE9 when hooked — see FFNx common_externals.start
+ADDR_FFNX_TRAMPOLINE_CHECK = 0x0040B6E0
+# World map movement speed byte — ff7-ultima get_ff7_addresses (numeric from ff7-lib); Steam EN typical VA
+ADDR_WORLD_SPEED_MULTIPLIER = 0x0098D7E4
+# Field: allow opening menu from field (byte 0/1) — approximate VA from ff7-lib / Ultima builds
+ADDR_FIELD_MENU_ACCESS_ENABLED = 0x00DC0ED8
+
+REC_OFF_CHAR_ID = 0x00
+REC_OFF_FIELD_STATUS = 0x1F
+REC_OFF_NAME = 0x10
+NAME_BYTES = 12
+
+# ff7-ultima src/modules/General.tsx — toggleMenuVisibility / toggleMenuLock bit index
+FF7_MENU_NAMES: List[str] = [
+    "Item",
+    "Magic",
+    "Materia",
+    "Equip",
+    "Status",
+    "Order",
+    "Limit",
+    "Config",
+    "PHS",
+    "Save",
+]
 
 # Savemap window gradient (Data Crystal savemap)
 SAVE_OFF_WIN_UL = 0x0048
@@ -103,6 +135,48 @@ _WEAPON_NAMES_EN: Dict[str, str] = {}
 _ARMOR_NAMES_EN: Dict[str, str] = {}
 _ACCESSORY_NAMES_EN: Dict[str, str] = {}
 _GEAR_LAYOUT_ASSETS_LOADED = False
+
+_EQUIP_ALLOW: Dict[str, Any] = {}
+_EQUIP_ALLOW_LOADED = False
+
+
+def _load_equip_allowlists() -> None:
+    """Optional per-character weapon/armor/accessory id allowlists (null = any)."""
+    global _EQUIP_ALLOW_LOADED, _EQUIP_ALLOW
+    if _EQUIP_ALLOW_LOADED:
+        return
+    _EQUIP_ALLOW_LOADED = True
+    path = _GEAR_ASSET_DIR / "equip_allowlists.json"
+    if not path.is_file():
+        _EQUIP_ALLOW = {}
+        return
+    try:
+        _EQUIP_ALLOW = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("equip_allowlists.json unreadable: %s", e)
+        _EQUIP_ALLOW = {}
+
+
+def _allowed_ids_for_char_gear(char_id: int, kind: str) -> Optional[Set[int]]:
+    """None = no restriction (any id in valid range)."""
+    _load_equip_allowlists()
+    entry = _EQUIP_ALLOW.get(str(char_id))
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get(kind)
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        return None
+    if len(raw) == 0:
+        return set()
+    out: Set[int] = set()
+    for x in raw:
+        try:
+            out.add(int(x))
+        except (TypeError, ValueError):
+            continue
+    return out if out else set()
 
 
 def _load_ff7_gear_layout_assets() -> None:
@@ -208,6 +282,11 @@ _STATUS_AILMENT_BITS: List[Tuple[int, str]] = [
     (0x40000000, "LuckyGirl"),
     (0x80000000, "Imprisoned"),
 ]
+
+_STATUS_NAME_TO_MASK: Dict[str, int] = {}
+for mask, name in _STATUS_AILMENT_BITS:
+    _STATUS_NAME_TO_MASK[name.lower()] = mask
+    _STATUS_NAME_TO_MASK[name.lower().replace(" ", "")] = mask
 
 # Valid orb image stems (assets/ff7/*_materia.png); materia_orb_by_id.json uses these strings.
 _VALID_MATERIA_ORB_STEMS = frozenset(
@@ -454,6 +533,32 @@ if sys.platform == "win32":
 else:
     _kernel32 = None
 
+_PAGE_EXECUTE_READWRITE = 0x40
+_KERNEL32_EXTRA = None
+_VirtualProtect = None
+_FlushInstructionCache = None
+_GetCurrentProcess = None
+if sys.platform == "win32" and _kernel32 is not None:
+    _KERNEL32_EXTRA = _kernel32
+    _VirtualProtect = _kernel32.VirtualProtect
+    _VirtualProtect.argtypes = [
+        wintypes.LPVOID,
+        ctypes.c_size_t,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    _VirtualProtect.restype = wintypes.BOOL
+    _FlushInstructionCache = _kernel32.FlushInstructionCache
+    _FlushInstructionCache.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        ctypes.c_size_t,
+    ]
+    _FlushInstructionCache.restype = wintypes.BOOL
+    _GetCurrentProcess = _kernel32.GetCurrentProcess
+    _GetCurrentProcess.argtypes = []
+    _GetCurrentProcess.restype = wintypes.HANDLE
+
 
 def _rebase(module_base: int, canon_addr: int) -> int:
     return module_base + (canon_addr - CANON_IMAGE_BASE)
@@ -471,6 +576,29 @@ def _decode_ff7_name(raw: bytes) -> str:
         if 0x20 <= ch < 0x7F:
             out.append(chr(ch))
     return "".join(out).strip() or "?"
+
+
+def _encode_ff7_name(text: str, out_len: int = NAME_BYTES) -> bytes:
+    """FF7 menu font bytes (inverse of _decode_ff7_name), padded with 0xFF."""
+    raw = bytearray([0xFF] * out_len)
+    i = 0
+    for ch in (text or "").strip():
+        if i >= out_len:
+            break
+        if ch == " ":
+            raw[i] = 0x00
+        else:
+            o = ord(ch)
+            if 0x20 <= o < 0x7F:
+                raw[i] = o - 0x20
+            else:
+                raw[i] = min(0xFE, max(0, o - 0x20))
+        i += 1
+    return bytes(raw)
+
+
+def _norm_party_name(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 
 def _rgb_tuple(savemap: bytes, off: int) -> Optional[Tuple[int, int, int]]:
@@ -533,52 +661,86 @@ def menu_theme_from_savemap(savemap: bytes) -> Optional[Dict[str, str]]:
     }
 
 
-# Human-readable catalog for Help + Connectors UI
+# Human-readable catalog for Help + Connectors UI (filter internal via catalog_entry_is_public).
+# Optional per-arg ``hint_tags`` scopes inline placeholder hints in the Connectors UI; see
+# ``game_hook_placeholder_lines`` in ``modules/uiwindows/connectors.py``.
 FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "add_gil",
         "label": "Add gil",
         "description": "Increases party gil in the active save (clamped).",
-        "args": [{"name": "amount", "type": "positive_int", "label": "Amount"}],
+        "args": [
+            {
+                "name": "amount",
+                "type": "positive_int",
+                "label": "Amount",
+                "hint_tags": ("numeric", "random_range", "hooks_gil"),
+            }
+        ],
     },
     {
         "id": "remove_gil",
         "label": "Remove gil",
         "description": "Decreases party gil (not below zero).",
-        "args": [{"name": "amount", "type": "positive_int", "label": "Amount"}],
+        "args": [
+            {
+                "name": "amount",
+                "type": "positive_int",
+                "label": "Amount",
+                "hint_tags": ("numeric", "random_range", "hooks_gil"),
+            }
+        ],
     },
     {
         "id": "add_party_hp",
-        "label": "Add HP to party slot",
-        "description": "In battle: live actor HP. On field: savemap character for that party slot.",
+        "label": "Add HP to character",
+        "description": "Battle or field: party member by name, slot 0–2, or {random_character} (set in connector args). Amount: number or random:min-max.",
         "args": [
-            {"name": "slot", "type": "slot_0_2", "label": "Party slot (0–2)"},
-            {"name": "amount", "type": "positive_int", "label": "HP to add"},
+            {
+                "name": "character",
+                "type": "ff7_text",
+                "label": "Character",
+                "hint_tags": ("character",),
+            },
+            {
+                "name": "amount",
+                "type": "ff7_text",
+                "label": "HP to add",
+                "hint_tags": ("numeric", "random_range"),
+            },
         ],
     },
     {
         "id": "remove_party_hp",
-        "label": "Remove HP from party slot",
-        "description": "Same scope as Add HP; HP will not go below zero.",
+        "label": "Remove HP from character",
+        "description": "Same as Add HP; HP not below zero.",
         "args": [
-            {"name": "slot", "type": "slot_0_2", "label": "Party slot (0–2)"},
-            {"name": "amount", "type": "positive_int", "label": "HP to remove"},
-        ],
-    },
-    {
-        "id": "set_party_hp",
-        "label": "Set party slot HP",
-        "description": "Sets HP to a value (clamped to max HP when known).",
-        "args": [
-            {"name": "slot", "type": "slot_0_2", "label": "Party slot (0–2)"},
-            {"name": "value", "type": "non_negative_int", "label": "Target HP"},
+            {
+                "name": "character",
+                "type": "ff7_text",
+                "label": "Character",
+                "hint_tags": ("character",),
+            },
+            {
+                "name": "amount",
+                "type": "ff7_text",
+                "label": "HP to remove",
+                "hint_tags": ("numeric", "random_range"),
+            },
         ],
     },
     {
         "id": "kill_party_member",
-        "label": "KO party slot",
-        "description": "Battle only: sets Death status and HP to 0 (matches ff7-ultima). Field KO not supported.",
-        "args": [{"name": "slot", "type": "slot_0_2", "label": "Party slot (0–2)"}],
+        "label": "KO party member",
+        "description": "Battle only: Death + 0 HP. Target by name, slot 0–2, or {random_character}.",
+        "args": [
+            {
+                "name": "character",
+                "type": "ff7_text",
+                "label": "Character",
+                "hint_tags": ("character",),
+            }
+        ],
     },
     {
         "id": "kill_all_enemies",
@@ -587,15 +749,179 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         "args": [],
     },
     {
-        "id": "damage_enemy",
-        "label": "Damage enemy",
-        "description": "Enemy index 0–5 maps to battle slots 4–9 (battle only).",
+        "id": "kill_enemy",
+        "label": "Kill enemy",
+        "description": "Battle only: one enemy by name (substring), slot index 0–5, or {random_enemy}.",
         "args": [
-            {"name": "enemy_index", "type": "enemy_0_5", "label": "Enemy index (0–5)"},
-            {"name": "amount", "type": "positive_int", "label": "Damage"},
+            {
+                "name": "enemy",
+                "type": "ff7_text",
+                "label": "Enemy",
+                "hint_tags": ("enemy",),
+            }
         ],
     },
+    {
+        "id": "damage_enemy",
+        "label": "Damage enemy",
+        "description": "Battle only: enemy by name, index 0–5, or {random_enemy}. Damage 1–9999 or random:min-max (clamped).",
+        "args": [
+            {
+                "name": "enemy",
+                "type": "ff7_text",
+                "label": "Enemy",
+                "hint_tags": ("enemy",),
+            },
+            {
+                "name": "amount",
+                "type": "ff7_text",
+                "label": "Damage",
+                "hint_tags": ("damage",),
+            },
+        ],
+    },
+    {
+        "id": "rename_character",
+        "label": "Rename character",
+        "description": "Field savemap: find record by current display name, write new FF7 name (12 chars).",
+        "args": [
+            {
+                "name": "current_name",
+                "type": "ff7_text",
+                "label": "Current name",
+                "hint_tags": ("character",),
+            },
+            {
+                "name": "new_name",
+                "type": "ff7_text",
+                "label": "New name",
+                "hint_tags": ("character",),
+            },
+        ],
+    },
+    {
+        "id": "set_battle_status",
+        "label": "Inflict status effects",
+        "description": "Battle only: status flags (Fury, Sadness, Haste, …).",
+        "args": [
+            {
+                "name": "character",
+                "type": "ff7_text",
+                "label": "Character",
+                "hint_tags": ("character",),
+            },
+            {
+                "name": "status_effect",
+                "type": "ff7_text",
+                "label": "Status (e.g. Fury)",
+            },
+            {
+                "name": "mode",
+                "type": "ff7_text",
+                "label": "Mode",
+                "control": "select",
+                "options": {
+                    "on": "On",
+                    "off": "Off",
+                    "toggle": "Toggle",
+                },
+            },
+        ],
+    },
+    {
+        "id": "set_character_gear",
+        "label": "Change character gear",
+        "description": "Field: equip slot + item. Use {random_weapon}, {random_armor}, or {random_accessory} in connector args when needed.",
+        "args": [
+            {
+                "name": "character",
+                "type": "ff7_text",
+                "label": "Character",
+                "hint_tags": ("character",),
+            },
+            {
+                "name": "gear_kind",
+                "type": "ff7_text",
+                "label": "Slot",
+                "control": "select",
+                "options": {
+                    "weapon": "Weapon",
+                    "armor": "Armor",
+                    "accessory": "Accessory",
+                },
+            },
+            {
+                "name": "gear",
+                "type": "ff7_text",
+                "label": "Item",
+                "hint_tags": ("gear",),
+            },
+        ],
+    },
+    {
+        "id": "set_menu_row_access",
+        "label": "Toggle Menu Access",
+        "description": "Show and unlock a main-menu row, or hide and lock it (Ultima menu row names: Item, Magic, …).",
+        "args": [
+            {
+                "name": "menu_name",
+                "type": "ff7_text",
+                "label": "Menu row",
+            },
+            {
+                "name": "access",
+                "type": "ff7_text",
+                "label": "Access",
+                "control": "select",
+                "options": {
+                    "allow": "Allow (visible + unlocked)",
+                    "block": "Block (hidden + locked)",
+                },
+            },
+        ],
+    },
+    {
+        "id": "set_game_speed",
+        "label": "Game speed",
+        "description": "FFNx scales field/battle FPS (0.25×–8×). World-map movement byte is updated best-effort on the same machine. duration_sec 0 keeps speed until Restore (internal) or game exit.",
+        "args": [
+            {
+                "name": "speed",
+                "type": "ff7_text",
+                "label": "Speed multiplier",
+                "control": "select",
+                "options": {},  # filled at runtime in UI from ff7_game_speed_select_options()
+            },
+            {
+                "name": "duration_sec",
+                "type": "non_negative_int",
+                "label": "Auto-restore after (seconds, 0 = keep)",
+                "hint_tags": ("numeric",),
+            },
+        ],
+    },
+    {
+        "id": "restore_game_speed",
+        "label": "Restore game speed (internal)",
+        "description": "Restores FPS saved by Game speed. Used by timers; not shown in the operation list.",
+        "args": [],
+        "internal": True,
+    },
 ]
+
+
+def catalog_entry_is_public(entry: Dict[str, Any]) -> bool:
+    return not entry.get("internal")
+
+
+def ff7_game_speed_select_options() -> Dict[str, str]:
+    """0.25 to 8.0 step 0.25 for Game speed select UI."""
+    out: Dict[str, str] = {}
+    for i in range(1, 33):
+        n = round(i * 0.25, 2)
+        label = str(n).rstrip("0").rstrip(".") if n % 1 else str(int(n))
+        out[str(n)] = f"{label}×"
+    return out
 
 
 @dataclass
@@ -612,6 +938,8 @@ class FF7Hook:
 
     def __init__(self) -> None:
         self._proc: Optional[_ProcessHandle] = None
+        self._last_snapshot: Optional[Dict[str, Any]] = None
+        self._speed_backup: Optional[Dict[str, Any]] = None
 
     def close(self) -> None:
         if sys.platform != "win32" or _kernel32 is None:
@@ -972,6 +1300,422 @@ class FF7Hook:
             return None
         return self._read_u16(addr)
 
+    def _read_float(self, addr: int) -> Optional[float]:
+        d = self._read(addr, 4)
+        if not d:
+            return None
+        return struct.unpack("<f", d)[0]
+
+    def _write_float(self, addr: int, val: float) -> bool:
+        return self._write(addr, struct.pack("<f", float(val)))
+
+    def _win_protect_write(self, addr: int, data: bytes) -> bool:
+        if not self._proc or _VirtualProtect is None or not data:
+            return False
+        page = addr & ~0xFFF
+        end = addr + len(data)
+        page_end = (end + 0xFFF) & ~0xFFF
+        size = page_end - page
+        old = wintypes.DWORD(0)
+        if not _VirtualProtect(page, size, _PAGE_EXECUTE_READWRITE, ctypes.byref(old)):
+            return False
+        ok = self._write(addr, data)
+        _junk = wintypes.DWORD(0)
+        _VirtualProtect(page, size, old.value, ctypes.byref(_junk))
+        if _FlushInstructionCache and _GetCurrentProcess:
+            _FlushInstructionCache(_GetCurrentProcess(), page, size)
+        return ok
+
+    def _ffnx_find_fps_float_addrs(self) -> Optional[Tuple[int, int]]:
+        """Return (addr_fps30, addr_fps15) for FFNx hook (Ultima useFF7 setSpeed)."""
+        if not self._proc:
+            return None
+        chk = _rebase(self._proc.module_base, ADDR_FFNX_TRAMPOLINE_CHECK)
+        b0 = self._read_u8(chk)
+        if b0 != 0xE9:
+            return None
+        rel = self._read_i32(chk + 1)
+        if rel is None:
+            return None
+        base = chk + 5 + rel
+        code = self._read(base, 256)
+        if not code or len(code) < 64:
+            return None
+        pat = bytes([0xF2, 0x0F, 0x10, 0x05])
+        fps30 = -1
+        for i in range(len(code) - 8):
+            if code[i : i + 4] == pat:
+                fps30 = i
+                break
+        if fps30 < 0:
+            return None
+        rest = code[fps30 + 1 :]
+        fps15rel = -1
+        for i in range(len(rest) - 8):
+            if rest[i : i + 4] == pat:
+                fps15rel = i
+                break
+        if fps15rel < 0:
+            return None
+        fps15 = fps30 + 1 + fps15rel
+
+        def rip(off: int) -> Optional[int]:
+            if off + 8 > len(code):
+                return None
+            disp = struct.unpack_from("<i", code, off + 4)[0]
+            return base + off + 8 + disp
+
+        a30 = rip(fps30)
+        a15 = rip(fps15)
+        if a30 is None or a15 is None:
+            return None
+        return a30, a15
+
+    def _char_id_from_savemap_name(self, savemap: bytes, name: str) -> Optional[int]:
+        want = _norm_party_name(name)
+        if not want:
+            return None
+        for cid in range(9):
+            off = _CHAR_BLOCK[cid]
+            if off + REC_OFF_NAME + NAME_BYTES > len(savemap):
+                continue
+            raw = savemap[off + REC_OFF_NAME : off + REC_OFF_NAME + NAME_BYTES]
+            if _norm_party_name(_decode_ff7_name(raw)) == want:
+                return cid
+        return None
+
+    def _party_slot_from_token(
+        self, savemap: Optional[bytes], token: str, battle: bool
+    ) -> Tuple[Optional[int], Optional[str]]:
+        t = (token or "").strip()
+        if not t:
+            return None, "empty character token"
+        tl = t.lower()
+        if tl in ("__random_party__", "random_character"):
+            snap = self._last_snapshot or {}
+            party = snap.get("party") or []
+            names = [
+                str(r.get("name", ""))
+                for r in party
+                if isinstance(r, dict) and not r.get("slot_empty")
+            ]
+            names = [n for n in names if n and n != "?"]
+            if not names:
+                return None, "no party members for random"
+            pick = random.choice(names)
+            return self._party_slot_from_token(savemap, pick, battle)
+        if t.isdigit() and int(t) in (0, 1, 2):
+            return int(t), None
+        if savemap is None:
+            data, _ = self._read_savemap()
+            savemap = data
+        if not savemap:
+            return None, "savemap not readable"
+        cid = self._char_id_from_savemap_name(savemap, t)
+        if cid is None:
+            return None, f"unknown character name: {t}"
+        for ps in range(3):
+            if savemap[SAVE_OFF_PARTY_SLOTS + ps] == cid:
+                return ps, None
+        return None, f"{t} is not in the active party (field)"
+
+    def _parse_int_or_random(
+        self,
+        raw: Any,
+        default_max: int = 9999,
+        *,
+        clamp_1_9999: bool = False,
+    ) -> Tuple[Optional[int], Optional[str]]:
+        if raw is None:
+            return None, "missing numeric value"
+        if isinstance(raw, int):
+            v = int(raw)
+            if clamp_1_9999:
+                v = max(1, min(9999, v))
+            return v, None
+        s = str(raw).strip()
+        m = re.match(r"^random\s*:\s*(\d+)\s*-\s*(\d+)\s*$", s, re.I)
+        if m:
+            lo, hi = int(m.group(1)), int(m.group(2))
+            if lo > hi:
+                lo, hi = hi, lo
+            if clamp_1_9999:
+                lo = max(1, min(9999, lo))
+                hi = max(1, min(9999, hi))
+                if lo > hi:
+                    lo, hi = hi, lo
+            return random.randint(lo, hi), None
+        if s.lower() == "random":
+            lo, hi = 1, min(9999, default_max) if clamp_1_9999 else (1, default_max)
+            return random.randint(lo, hi), None
+        try:
+            v = int(s)
+            if clamp_1_9999:
+                v = max(1, min(9999, v))
+            return v, None
+        except ValueError:
+            return None, f"not an int: {s}"
+
+    def _parse_float_or_random(self, raw: Any) -> Tuple[Optional[float], Optional[str]]:
+        if raw is None:
+            return None, "missing speed"
+        if isinstance(raw, (int, float)):
+            return float(raw), None
+        s = str(raw).strip()
+        m = re.match(r"^random\s*:\s*([0-9.]+)\s*-\s*([0-9.]+)\s*$", s, re.I)
+        if m:
+            lo, hi = float(m.group(1)), float(m.group(2))
+            if lo > hi:
+                lo, hi = hi, lo
+            return random.uniform(lo, hi), None
+        try:
+            return float(s), None
+        except ValueError:
+            return None, f"not a float: {s}"
+
+    def _menu_bit_index(self, menu_name: str) -> Tuple[Optional[int], Optional[str]]:
+        want = (menu_name or "").strip().lower()
+        for i, m in enumerate(FF7_MENU_NAMES):
+            if m.lower() == want:
+                return i, None
+        return None, f"unknown menu: {menu_name}"
+
+    def _gear_name_to_id(self, kind: str, gear_name: str) -> Tuple[Optional[int], Optional[str]]:
+        _load_ff7_gear_layout_assets()
+        want = (gear_name or "").strip().lower()
+        if not want:
+            return None, "empty gear name"
+        if kind == "weapon":
+            for sid, nm in _WEAPON_NAMES_EN.items():
+                if nm and nm.strip().lower() == want:
+                    return int(sid), None
+            return None, f"unknown weapon: {gear_name}"
+        if kind == "armor":
+            for sid, nm in _ARMOR_NAMES_EN.items():
+                if nm and nm.strip().lower() == want:
+                    return int(sid), None
+            return None, f"unknown armor: {gear_name}"
+        if kind == "accessory":
+            for sid, nm in _ACCESSORY_NAMES_EN.items():
+                if nm and nm.strip().lower() == want:
+                    return int(sid), None
+            return None, f"unknown accessory: {gear_name}"
+        return None, "gear_kind must be weapon|armor|accessory"
+
+    def _resolve_gear_token(self, kind: str, token: str) -> Tuple[Optional[int], Optional[str]]:
+        tl = (token or "").strip().lower()
+        if tl in (f"random:{kind}", "random") or tl == f"random_{kind}":
+            pool: List[int] = []
+            _load_ff7_gear_layout_assets()
+            if kind == "weapon":
+                pool = [int(k) for k in _WEAPON_NAMES_EN if _WEAPON_NAMES_EN[k]]
+            elif kind == "armor":
+                pool = [int(k) for k in _ARMOR_NAMES_EN if _ARMOR_NAMES_EN[k]]
+            else:
+                pool = [int(k) for k in _ACCESSORY_NAMES_EN if _ACCESSORY_NAMES_EN[k]]
+            if not pool:
+                return None, "no gear pool"
+            return random.choice(pool), None
+        return self._gear_name_to_id(kind, token)
+
+    def _enemy_slot_from_token(self, token: str) -> Tuple[Optional[int], Optional[str]]:
+        t = (token or "").strip()
+        if not t:
+            return None, "empty enemy token"
+        tl = t.lower()
+        if tl in ("__random_enemy__", "random_enemy"):
+            snap = self._last_snapshot or {}
+            en = snap.get("enemies") or []
+            if not en:
+                return None, "no enemies for random"
+            row = random.choice(en)
+            sl = int(row.get("slot", -1))
+            if sl < 4 or sl > 9:
+                return None, "bad enemy slot"
+            return sl, None
+        if t.isdigit():
+            ei = int(t)
+            if 0 <= ei <= 5:
+                return 4 + ei, None
+            return None, "enemy index must be 0–5"
+        want = _norm_party_name(t)
+        snap = self._last_snapshot or {}
+        for row in snap.get("enemies") or []:
+            nm = _norm_party_name(str(row.get("name", "")))
+            if want and want in nm:
+                return int(row["slot"]), None
+        return None, f"enemy not found: {t}"
+
+    def _op_rename_character(self, current_name: str, new_name: str) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data:
+            return False, "Savemap not readable"
+        cid = self._char_id_from_savemap_name(data, current_name)
+        if cid is None:
+            return False, "Character not found"
+        off = _CHAR_BLOCK[cid]
+        addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + off + REC_OFF_NAME
+        enc = _encode_ff7_name(new_name)
+        if not self._write(addr, enc):
+            return False, "Write name failed"
+        return True, None
+
+    def _op_set_character_gear(
+        self, character: str, gear_kind: str, gear_id: int
+    ) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data:
+            return False, "Savemap not readable"
+        ps, err = self._party_slot_from_token(data, character, battle=False)
+        if err or ps is None:
+            return False, err or "party slot"
+        cid = data[SAVE_OFF_PARTY_SLOTS + ps]
+        if cid >= len(_CHAR_BLOCK) or cid == 0xFF:
+            return False, "empty party slot"
+        gk = gear_kind.strip().lower()
+        allow = _allowed_ids_for_char_gear(int(cid), gk)
+        if allow is not None and int(gear_id) not in allow:
+            return False, "gear not allowed for this character (equip_allowlists.json)"
+        off = _CHAR_BLOCK[cid]
+        kind = gk
+        if kind == "weapon":
+            o = REC_OFF_WEAPON
+            if gear_id < 0 or gear_id > 127:
+                return False, "weapon id out of range"
+        elif kind == "armor":
+            o = REC_OFF_ARMOR
+            if gear_id < 0 or gear_id > 31:
+                return False, "armor id out of range"
+        elif kind == "accessory":
+            o = REC_OFF_ACCESSORY
+            if gear_id < 0 or gear_id > 31:
+                return False, "accessory id out of range"
+            b = gear_id if gear_id >= 0 else 0xFF
+            addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + off + o
+            return (True, None) if self._write(addr, bytes([b])) else (False, "write failed")
+        else:
+            return False, "gear_kind must be weapon|armor|accessory"
+        addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + off + o
+        if not self._write(addr, bytes([int(gear_id) & 0xFF])):
+            return False, "write failed"
+        return True, None
+
+    def _op_set_battle_status(
+        self, party_slot: int, mask: int, mode: str
+    ) -> Tuple[bool, Optional[str]]:
+        if self._current_module_byte() != 2:
+            return False, "Not in battle"
+        if party_slot < 0 or party_slot > 2:
+            return False, "bad party slot"
+        actor = self._battle_actor_addr(party_slot)
+        cur = self._read_u32(actor + BATTLE_OFF_STATUS)
+        if cur is None:
+            return False, "read status failed"
+        m = int(mask) & 0xFFFFFFFF
+        md = (mode or "on").strip().lower()
+        if md == "toggle":
+            new_st = cur ^ m
+        elif md in ("off", "clear"):
+            new_st = cur & (~m & 0xFFFFFFFF)
+        else:
+            new_st = cur | m
+        if not self._write(actor + BATTLE_OFF_STATUS, struct.pack("<I", new_st)):
+            return False, "write status failed"
+        return True, None
+
+    def _op_set_field_status_byte(
+        self, party_slot: int, value: int
+    ) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data:
+            return False, "Savemap not readable"
+        if party_slot < 0 or party_slot > 2:
+            return False, "bad party slot"
+        cid = data[SAVE_OFF_PARTY_SLOTS + party_slot]
+        if cid >= len(_CHAR_BLOCK) or cid == 0xFF:
+            return False, "empty slot"
+        off = _CHAR_BLOCK[cid]
+        addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + off + REC_OFF_FIELD_STATUS
+        b = max(0, min(255, int(value)))
+        if not self._write(addr, bytes([b])):
+            return False, "write failed"
+        return True, None
+
+    def _op_set_menu_u16(
+        self, canon_addr: int, menu_name: str, bit_on: bool, xor_mode: bool
+    ) -> Tuple[bool, Optional[str]]:
+        bi, err = self._menu_bit_index(menu_name)
+        if err or bi is None:
+            return False, err or "menu"
+        addr = _rebase(self._proc.module_base, canon_addr)
+        cur = self._read_u16(addr)
+        if cur is None:
+            return False, "read menu word failed"
+        bit = 1 << bi
+        if xor_mode:
+            new_v = cur ^ bit
+        elif bit_on:
+            new_v = cur | bit
+        else:
+            new_v = cur & (~bit & 0xFFFF)
+        if not self._write(addr, struct.pack("<H", new_v & 0xFFFF)):
+            return False, "write menu word failed"
+        return True, None
+
+    def _op_field_menu_access(self, enabled: bool) -> Tuple[bool, Optional[str]]:
+        addr = _rebase(self._proc.module_base, ADDR_FIELD_MENU_ACCESS_ENABLED)
+        b = 0 if enabled else 1
+        if not self._write(addr, bytes([b & 0xFF])):
+            return False, "write field menu access failed"
+        return True, None
+
+    def _op_world_speed_multiplier(self, mult: int) -> Tuple[bool, Optional[str]]:
+        addr = _rebase(self._proc.module_base, ADDR_WORLD_SPEED_MULTIPLIER)
+        m = max(1, min(255, int(mult)))
+        if not self._write(addr, bytes([m])):
+            return False, "write world speed failed"
+        return True, None
+
+    def _op_set_game_speed(self, speed: float, duration_sec: int) -> Tuple[bool, Optional[str]]:
+        assert self._proc
+        sp = max(0.25, min(8.0, float(speed)))
+        backup: Dict[str, Any] = {"speed": sp, "duration_sec": int(duration_sec)}
+        pair = self._ffnx_find_fps_float_addrs()
+        if pair:
+            a30, a15 = pair
+            f30 = self._read_float(a30)
+            f15 = self._read_float(a15)
+            backup["ffnx"] = {"a30": a30, "a15": a15, "f30": f30, "f15": f15}
+            if not self._write_float(a30, 30.0 * sp):
+                return False, "write FFNx field fps float failed"
+            if not self._write_float(a15, 15.0 * sp):
+                return False, "write FFNx battle fps float failed"
+        else:
+            return False, (
+                "FFNx speed hook not detected (first opcode must be 0xE9 at "
+                f"0x{ADDR_FFNX_TRAMPOLINE_CHECK:08X}). Install FFNx for game speed."
+            )
+        wm_ok, wm_err = self._op_world_speed_multiplier(
+            max(1, min(255, int(round(sp))))
+        )
+        if not wm_ok:
+            logger.debug("World map speed multiplier (best-effort): %s", wm_err)
+        self._speed_backup = backup
+        return True, None
+
+    def _op_restore_game_speed(self) -> Tuple[bool, Optional[str]]:
+        b = self._speed_backup
+        if not b or not self._proc:
+            return False, "no speed backup"
+        if "ffnx" in b:
+            e = b["ffnx"]
+            if e.get("f30") is not None:
+                self._write_float(int(e["a30"]), float(e["f30"]))
+            if e.get("f15") is not None:
+                self._write_float(int(e["a15"]), float(e["f15"]))
+        self._speed_backup = None
+        return True, None
+
     def _op_add_gil(self, amount: int) -> Tuple[bool, Optional[str]]:
         if amount <= 0:
             return False, "amount must be positive"
@@ -1100,14 +1844,14 @@ class FF7Hook:
                 return False, f"Write failed enemy HP slot {slot}"
         return True, None
 
-    def _op_damage_enemy(self, enemy_index: int, amount: int) -> Tuple[bool, Optional[str]]:
+    def _op_damage_enemy(self, battle_slot: int, amount: int) -> Tuple[bool, Optional[str]]:
         if amount <= 0:
             return False, "amount must be positive"
         if self._current_module_byte() != 2:
             return False, "Not in battle"
-        if enemy_index < 0 or enemy_index > 5:
-            return False, "enemy_index must be 0–5"
-        slot = 4 + enemy_index
+        slot = int(battle_slot)
+        if slot < 4 or slot > 9:
+            return False, "enemy battle slot must be 4–9"
         e = self._read_battle_enemy(slot)
         if not e:
             return False, "No enemy in that slot"
@@ -1124,6 +1868,22 @@ class FF7Hook:
             return False, "Write enemy HP failed"
         return True, None
 
+    def _op_kill_enemy(self, battle_slot: int) -> Tuple[bool, Optional[str]]:
+        if self._current_module_byte() != 2:
+            return False, "Not in battle"
+        slot = int(battle_slot)
+        if slot < 4 or slot > 9:
+            return False, "enemy battle slot must be 4–9"
+        e = self._read_battle_enemy(slot)
+        if not e:
+            return False, "No enemy in that slot"
+        actor = self._battle_actor_addr(slot)
+        if not self._write(actor + BATTLE_OFF_STATUS, struct.pack("<I", STATUS_DEAD)):
+            return False, "Write enemy Death status failed"
+        if not self._write(actor + BATTLE_OFF_HP, struct.pack("<i", 0)):
+            return False, "Write enemy HP failed"
+        return True, None
+
     def execute_operation(
         self, op: str, kwargs: Dict[str, Any]
     ) -> Tuple[bool, Optional[str]]:
@@ -1134,34 +1894,157 @@ class FF7Hook:
         if not ok or not self._proc:
             return False, err or "Not attached"
 
+        def _tok_char() -> str:
+            c = kwargs.get("character")
+            if c is not None and str(c).strip() != "":
+                return str(c).strip()
+            s = kwargs.get("slot")
+            if s is not None and str(s).strip() != "":
+                return str(s).strip()
+            return ""
+
         if op == "add_gil":
             return self._op_add_gil(int(kwargs.get("amount", 0)))
         if op == "remove_gil":
             return self._op_remove_gil(int(kwargs.get("amount", 0)))
         if op == "add_party_hp":
-            amt = int(kwargs.get("amount", 0))
-            if amt <= 0:
-                return False, "amount must be positive"
-            return self._party_hp_rw(int(kwargs.get("slot", -1)), "add", amt)
+            amt, e = self._parse_int_or_random(kwargs.get("amount"), 9999)
+            if e or amt is None or amt <= 0:
+                return False, e or "amount must be positive"
+            ps, err = self._party_slot_from_token(None, _tok_char(), False)
+            if err or ps is None:
+                return False, err or "character"
+            return self._party_hp_rw(int(ps), "add", int(amt))
         if op == "remove_party_hp":
-            amt = int(kwargs.get("amount", 0))
-            if amt <= 0:
-                return False, "amount must be positive"
-            return self._party_hp_rw(
-                int(kwargs.get("slot", -1)), "remove", amt
-            )
-        if op == "set_party_hp":
-            return self._party_hp_rw(
-                int(kwargs.get("slot", -1)), "set", int(kwargs.get("value", 0))
-            )
+            amt, e = self._parse_int_or_random(kwargs.get("amount"), 9999)
+            if e or amt is None or amt <= 0:
+                return False, e or "amount must be positive"
+            ps, err = self._party_slot_from_token(None, _tok_char(), False)
+            if err or ps is None:
+                return False, err or "character"
+            return self._party_hp_rw(int(ps), "remove", int(amt))
         if op == "kill_party_member":
-            return self._op_kill_party_member(int(kwargs.get("slot", -1)))
+            ps, err = self._party_slot_from_token(None, _tok_char(), False)
+            if err or ps is None:
+                return False, err or "character"
+            return self._op_kill_party_member(int(ps))
         if op == "kill_all_enemies":
             return self._op_kill_all_enemies()
         if op == "damage_enemy":
-            return self._op_damage_enemy(
-                int(kwargs.get("enemy_index", -1)), int(kwargs.get("amount", 0))
+            amt, e = self._parse_int_or_random(
+                kwargs.get("amount"), 9999, clamp_1_9999=True
             )
+            if e or amt is None or amt <= 0:
+                return False, e or "amount must be positive"
+            if kwargs.get("enemy") is not None and str(kwargs.get("enemy")).strip() != "":
+                en = str(kwargs.get("enemy")).strip()
+            elif "enemy_index" in kwargs:
+                en = str(int(kwargs["enemy_index"]))
+            else:
+                en = ""
+            sl, err = self._enemy_slot_from_token(en)
+            if err or sl is None:
+                return False, err or "enemy"
+            return self._op_damage_enemy(int(sl), int(amt))
+        if op == "kill_enemy":
+            en = str(kwargs.get("enemy", "")).strip()
+            if not en:
+                return False, "empty enemy"
+            sl, err = self._enemy_slot_from_token(en)
+            if err or sl is None:
+                return False, err or "enemy"
+            return self._op_kill_enemy(int(sl))
+        if op == "rename_character":
+            return self._op_rename_character(
+                str(kwargs.get("current_name", "")),
+                str(kwargs.get("new_name", "")),
+            )
+        if op == "set_battle_status":
+            ps, err = self._party_slot_from_token(None, _tok_char(), True)
+            if err or ps is None:
+                return False, err or "character"
+            st = str(kwargs.get("status_effect", "")).strip()
+            key = re.sub(r"[^a-z0-9]", "", st.lower())
+            mask = _STATUS_NAME_TO_MASK.get(key) or _STATUS_NAME_TO_MASK.get(st.lower())
+            if mask is None:
+                return False, f"unknown status: {st}"
+            if st.lower() == "dual":
+                mask |= 0x08000000
+            return self._op_set_battle_status(
+                int(ps), int(mask), str(kwargs.get("mode", "on"))
+            )
+        if op == "set_field_status_byte":
+            ps, err = self._party_slot_from_token(None, _tok_char(), False)
+            if err or ps is None:
+                return False, err or "character"
+            return self._op_set_field_status_byte(int(ps), int(kwargs.get("value", 0)))
+        if op == "set_character_gear":
+            gid, ge = self._resolve_gear_token(
+                str(kwargs.get("gear_kind", "")).strip().lower(),
+                str(kwargs.get("gear", "")),
+            )
+            if ge or gid is None:
+                return False, ge or "gear"
+            return self._op_set_character_gear(
+                _tok_char(),
+                str(kwargs.get("gear_kind", "")),
+                int(gid),
+            )
+        if op == "set_menu_row_access":
+            acc = str(kwargs.get("access", "allow")).strip().lower()
+            allow = acc in ("allow", "on", "true", "yes", "1")
+            name = str(kwargs.get("menu_name", ""))
+            ok_vis, err_vis = self._op_set_menu_u16(
+                ADDR_MENU_VISIBILITY, name, allow, False
+            )
+            if not ok_vis:
+                return False, err_vis or "menu visibility"
+            ok_lk, err_lk = self._op_set_menu_u16(
+                ADDR_MENU_LOCKS, name, not allow, False
+            )
+            if not ok_lk:
+                return False, err_lk or "menu lock"
+            return True, None
+        if op == "set_menu_visibility":
+            en = str(kwargs.get("enabled", "1")).strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "on",
+            )
+            return self._op_set_menu_u16(
+                ADDR_MENU_VISIBILITY, str(kwargs.get("menu_name", "")), en, False
+            )
+        if op == "set_menu_lock":
+            lk = str(kwargs.get("locked", "1")).strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "on",
+            )
+            return self._op_set_menu_u16(
+                ADDR_MENU_LOCKS, str(kwargs.get("menu_name", "")), lk, False
+            )
+        if op == "set_field_menu_access":
+            en = str(kwargs.get("enabled", "1")).strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "on",
+            )
+            return self._op_field_menu_access(en)
+        if op == "set_world_speed_multiplier":
+            return self._op_world_speed_multiplier(int(kwargs.get("multiplier", 1)))
+        if op == "set_game_speed":
+            sp, e = self._parse_float_or_random(kwargs.get("speed"))
+            if e or sp is None:
+                return False, e or "speed"
+            sp = max(0.25, min(8.0, float(sp)))
+            return self._op_set_game_speed(
+                float(sp), int(kwargs.get("duration_sec", 0))
+            )
+        if op == "restore_game_speed":
+            return self._op_restore_game_speed()
         if op in ("press_confirm", "press_cancel", "press_menu"):
             return False, "Input simulation is not implemented (addresses not wired)"
 
@@ -1317,32 +2200,105 @@ class FF7Hook:
         }
         if menu_theme:
             out["menu_theme"] = menu_theme
+        self._last_snapshot = out
         return out
 
 
 def ff7_connector_config_to_hook_kwargs(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Map connector UI config (arg_* keys) to execute_operation kwargs."""
     op = str(cfg.get("operation", ""))
+
+    def _txt(key: str, default: str = "") -> str:
+        v = cfg.get(key)
+        if v is None:
+            return default
+        return str(v).strip()
+
+    def _has_placeholder(s: str) -> bool:
+        return "{" in s
+
     if op in ("add_gil", "remove_gil"):
         return {"amount": max(0, int(cfg.get("arg_amount") or 0))}
     if op in ("add_party_hp", "remove_party_hp"):
+        raw_amt = _txt("arg_amount", "0")
+        if (
+            not _has_placeholder(raw_amt)
+            and not re.match(r"^random\s*:", raw_amt, re.I)
+            and raw_amt.lower() != "random"
+        ):
+            try:
+                raw_amt = str(max(0, int(raw_amt or 0)))
+            except ValueError:
+                pass
+        return {"character": _txt("arg_character"), "amount": raw_amt}
+    if op == "kill_party_member":
+        return {"character": _txt("arg_character")}
+    if op == "damage_enemy":
+        raw_amt = _txt("arg_amount", "0")
+        if (
+            not _has_placeholder(raw_amt)
+            and not re.match(r"^random\s*:", raw_amt, re.I)
+            and raw_amt.lower() != "random"
+        ):
+            try:
+                raw_amt = str(max(1, min(9999, int(raw_amt or 0))))
+            except ValueError:
+                pass
+        return {"enemy": _txt("arg_enemy"), "amount": raw_amt}
+    if op == "kill_enemy":
+        return {"enemy": _txt("arg_enemy")}
+    if op == "kill_all_enemies":
+        return {}
+    if op == "rename_character":
         return {
-            "slot": int(cfg.get("arg_slot") or 0),
-            "amount": max(0, int(cfg.get("arg_amount") or 0)),
+            "current_name": _txt("arg_current_name"),
+            "new_name": _txt("arg_new_name"),
         }
-    if op == "set_party_hp":
+    if op == "set_battle_status":
         return {
-            "slot": int(cfg.get("arg_slot") or 0),
+            "character": _txt("arg_character"),
+            "status_effect": _txt("arg_status_effect"),
+            "mode": _txt("arg_mode", "on"),
+        }
+    if op == "set_field_status_byte":
+        return {
+            "character": _txt("arg_character"),
             "value": max(0, int(cfg.get("arg_value") or 0)),
         }
-    if op == "kill_party_member":
-        return {"slot": int(cfg.get("arg_slot") or 0)}
-    if op == "damage_enemy":
+    if op == "set_character_gear":
         return {
-            "enemy_index": int(cfg.get("arg_enemy_index") or 0),
-            "amount": max(0, int(cfg.get("arg_amount") or 0)),
+            "character": _txt("arg_character"),
+            "gear_kind": _txt("arg_gear_kind"),
+            "gear": _txt("arg_gear"),
         }
-    if op == "kill_all_enemies":
+    if op == "set_menu_row_access":
+        return {
+            "menu_name": _txt("arg_menu_name"),
+            "access": _txt("arg_access", "allow"),
+        }
+    if op == "set_menu_visibility":
+        return {"menu_name": _txt("arg_menu_name"), "enabled": _txt("arg_enabled", "1")}
+    if op == "set_menu_lock":
+        return {"menu_name": _txt("arg_menu_name"), "locked": _txt("arg_locked", "1")}
+    if op == "set_field_menu_access":
+        return {"enabled": _txt("arg_enabled", "1")}
+    if op == "set_world_speed_multiplier":
+        return {"multiplier": max(1, int(cfg.get("arg_multiplier") or 1))}
+    if op == "set_game_speed":
+        raw_sp = _txt("arg_speed", "1.0")
+        if (
+            not _has_placeholder(raw_sp)
+            and not re.match(r"^random\s*:", raw_sp, re.I)
+        ):
+            try:
+                raw_sp = str(max(0.25, min(8.0, float(raw_sp))))
+            except ValueError:
+                pass
+        return {
+            "speed": raw_sp,
+            "duration_sec": max(0, int(cfg.get("arg_duration_sec") or 0)),
+        }
+    if op == "restore_game_speed":
         return {}
     return {}
 

@@ -26,11 +26,16 @@ SOFTWARE.
 import asyncio
 import logging
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field, fields
 from typing import Any, Dict, Optional
 
 from .connector_core import ActionType, BaseAction
+from .connector_placeholders import (
+    substitute_connector_placeholders,
+    substitute_connector_placeholders_mapping,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +79,9 @@ class TemplateControlAction(BaseAction):
             )
 
             # Replace placeholders in control data with event data
-            control_data = self._replace_placeholders(control_data, event_data)
+            control_data = substitute_connector_placeholders_mapping(
+                control_data, event_data
+            )
 
             # Emit WebSocket event
             event_name = f"{self.template_name}_{self.control_action}"
@@ -88,40 +95,6 @@ class TemplateControlAction(BaseAction):
         except Exception as e:
             logger.error(f"Error executing template control action: {e}", exc_info=True)
             return False
-
-    def _replace_placeholders(
-        self, data: Dict[str, Any], event_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Replace placeholders in data with values from event_data"""
-        result = {}
-        for key, value in data.items():
-            if (
-                isinstance(value, str)
-                and value.startswith("{{")
-                and value.endswith("}}")
-            ):
-                # Extract placeholder name
-                placeholder = value[2:-2].strip()
-                # Get value from event data
-                result[key] = self._get_nested_value(event_data, placeholder, value)
-            elif isinstance(value, dict):
-                result[key] = self._replace_placeholders(value, event_data)
-            else:
-                result[key] = value
-        return result
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate template control action parameters"""
@@ -170,7 +143,9 @@ class WebSocketEmitAction(BaseAction):
             )
 
             # Replace placeholders
-            websocket_data = self._replace_placeholders(websocket_data, event_data)
+            websocket_data = substitute_connector_placeholders_mapping(
+                websocket_data, event_data
+            )
 
             # Emit event
             web_engine.web_engine_instance.socketio.emit(
@@ -185,38 +160,6 @@ class WebSocketEmitAction(BaseAction):
         except Exception as e:
             logger.error(f"Error executing WebSocket emit action: {e}", exc_info=True)
             return False
-
-    def _replace_placeholders(
-        self, data: Dict[str, Any], event_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Replace placeholders in data with values from event_data"""
-        result = {}
-        for key, value in data.items():
-            if (
-                isinstance(value, str)
-                and value.startswith("{{")
-                and value.endswith("}}")
-            ):
-                placeholder = value[2:-2].strip()
-                result[key] = self._get_nested_value(event_data, placeholder, value)
-            elif isinstance(value, dict):
-                result[key] = self._replace_placeholders(value, event_data)
-            else:
-                result[key] = value
-        return result
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate WebSocket emit action parameters"""
@@ -258,7 +201,9 @@ class TriggerAlertAction(BaseAction):
 
             # Fill alert data from event and action parameters
             alert_data = self.alert_data.copy()
-            alert_data = self._replace_placeholders(alert_data, event_data)
+            alert_data = substitute_connector_placeholders_mapping(
+                alert_data, event_data
+            )
 
             # Set alert properties from data
             for key, value in alert_data.items():
@@ -274,38 +219,6 @@ class TriggerAlertAction(BaseAction):
         except Exception as e:
             logger.error(f"Error executing trigger alert action: {e}", exc_info=True)
             return False
-
-    def _replace_placeholders(
-        self, data: Dict[str, Any], event_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Replace placeholders in data with values from event_data"""
-        result = {}
-        for key, value in data.items():
-            if (
-                isinstance(value, str)
-                and value.startswith("{{")
-                and value.endswith("}}")
-            ):
-                placeholder = value[2:-2].strip()
-                result[key] = self._get_nested_value(event_data, placeholder, value)
-            elif isinstance(value, dict):
-                result[key] = self._replace_placeholders(value, event_data)
-            else:
-                result[key] = value
-        return result
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate trigger alert action parameters"""
@@ -347,7 +260,9 @@ class SendChatMessageAction(BaseAction):
                     return False
 
                 # Replace placeholders in message
-                message = self._replace_placeholders(self.message, event_data)
+                message = substitute_connector_placeholders(
+                    self.message, event_data
+                )
 
                 # Send via main Twitch API (this would need implementation in twitch.py)
                 logger.info(f"Would send chat message via main API: {message}")
@@ -355,7 +270,7 @@ class SendChatMessageAction(BaseAction):
                 return True
 
             # Replace placeholders in message
-            message = self._replace_placeholders(self.message, event_data)
+            message = substitute_connector_placeholders(self.message, event_data)
 
             # Send chat message using chatbot system
             success = chatbot.send_chatbot_message(message)
@@ -371,29 +286,6 @@ class SendChatMessageAction(BaseAction):
                 f"Error executing send chat message action: {e}", exc_info=True
             )
             return False
-
-    def _replace_placeholders(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text with values from event_data"""
-        import re
-
-        def replace_func(match):
-            placeholder = match.group(1).strip()
-            return str(self._get_nested_value(event_data, placeholder, match.group(0)))
-
-        return re.sub(r"\{\{\s*([^}]+)\s*\}\}", replace_func, text)
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate send chat message action parameters"""
@@ -427,9 +319,11 @@ class ApiCallAction(BaseAction):
             import aiohttp
 
             # Replace placeholders in URL, headers, and body
-            url = self._replace_placeholders_text(self.url, event_data)
-            headers = self._replace_placeholders_dict(self.headers, event_data)
-            body = self._replace_placeholders_dict(self.body, event_data)
+            url = substitute_connector_placeholders(self.url, event_data)
+            headers = substitute_connector_placeholders_mapping(
+                self.headers, event_data
+            )
+            body = substitute_connector_placeholders_mapping(self.body, event_data)
 
             async with aiohttp.ClientSession() as session:
                 async with session.request(
@@ -452,43 +346,6 @@ class ApiCallAction(BaseAction):
         except Exception as e:
             logger.error(f"Error executing API call action: {e}", exc_info=True)
             return False
-
-    def _replace_placeholders_text(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text"""
-        import re
-
-        def replace_func(match):
-            placeholder = match.group(1).strip()
-            return str(self._get_nested_value(event_data, placeholder, match.group(0)))
-
-        return re.sub(r"\{\{\s*([^}]+)\s*\}\}", replace_func, text)
-
-    def _replace_placeholders_dict(
-        self, data: Dict[str, Any], event_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Replace placeholders in dictionary"""
-        result = {}
-        for key, value in data.items():
-            if isinstance(value, str):
-                result[key] = self._replace_placeholders_text(value, event_data)
-            elif isinstance(value, dict):
-                result[key] = self._replace_placeholders_dict(value, event_data)
-            else:
-                result[key] = value
-        return result
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate API call action parameters"""
@@ -518,8 +375,10 @@ class WriteFileAction(BaseAction):
         """Execute write file action"""
         try:
             # Replace placeholders
-            file_path = self._replace_placeholders_text(self.file_path, event_data)
-            content = self._replace_placeholders_text(self.content, event_data)
+            file_path = substitute_connector_placeholders(
+                self.file_path, event_data
+            )
+            content = substitute_connector_placeholders(self.content, event_data)
 
             # Ensure directory exists
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -535,29 +394,6 @@ class WriteFileAction(BaseAction):
         except Exception as e:
             logger.error(f"Error executing write file action: {e}", exc_info=True)
             return False
-
-    def _replace_placeholders_text(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text"""
-        import re
-
-        def replace_func(match):
-            placeholder = match.group(1).strip()
-            return str(self._get_nested_value(event_data, placeholder, match.group(0)))
-
-        return re.sub(r"\{\{\s*([^}]+)\s*\}\}", replace_func, text)
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate write file action parameters"""
@@ -584,9 +420,11 @@ class ExecuteCommandAction(BaseAction):
         """Execute command action"""
         try:
             # Replace placeholders
-            command = self._replace_placeholders_text(self.command, event_data)
+            command = substitute_connector_placeholders(self.command, event_data)
             working_dir = (
-                self._replace_placeholders_text(self.working_directory, event_data)
+                substitute_connector_placeholders(
+                    self.working_directory, event_data
+                )
                 if self.working_directory
                 else None
             )
@@ -615,29 +453,6 @@ class ExecuteCommandAction(BaseAction):
         except Exception as e:
             logger.error(f"Error executing command action: {e}", exc_info=True)
             return False
-
-    def _replace_placeholders_text(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text"""
-        import re
-
-        def replace_func(match):
-            placeholder = match.group(1).strip()
-            return str(self._get_nested_value(event_data, placeholder, match.group(0)))
-
-        return re.sub(r"\{\{\s*([^}]+)\s*\}\}", replace_func, text)
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate execute command action parameters"""
@@ -909,26 +724,7 @@ class KeyPressAction(BaseAction):
         return keys
 
     def _replace_placeholders(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text with values from event_data"""
-        if not text:
-            return text
-
-        import re
-
-        def replace_placeholder(match):
-            placeholder = match.group(1)
-            # Get value from event data using dot notation
-            keys = placeholder.split(".")
-            value = event_data
-            for key in keys:
-                if isinstance(value, dict) and key in value:
-                    value = value[key]
-                else:
-                    return match.group(0)  # Return original if not found
-            return str(value)
-
-        # Replace {{placeholder}} patterns
-        return re.sub(r"\{\{([^}]+)\}\}", replace_placeholder, text)
+        return substitute_connector_placeholders(text or "", event_data)
 
 
 @dataclass
@@ -1967,28 +1763,6 @@ class AudioControlAction(BaseAction):
             logger.error(f"Error applying Windows app values: {e}")
             return False
 
-    def _replace_placeholders(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text with values from event_data"""
-        if not text:
-            return text
-
-        import re
-
-        def replace_placeholder(match):
-            placeholder = match.group(1)
-            # Get value from event data using dot notation
-            keys = placeholder.split(".")
-            value = event_data
-            for key in keys:
-                if isinstance(value, dict) and key in value:
-                    value = value[key]
-                else:
-                    return match.group(0)  # Return original if not found
-            return str(value)
-
-        # Replace {{placeholder}} patterns
-        return re.sub(r"\{\{([^}]+)\}\}", replace_placeholder, text)
-
     async def _control_device(self, device_identifier: str) -> bool:
         """Control a specific audio device"""
         try:
@@ -2568,26 +2342,7 @@ class AudioControlAction(BaseAction):
             return False
 
     def _replace_placeholders(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text with values from event_data"""
-        if not text:
-            return text
-
-        import re
-
-        def replace_placeholder(match):
-            placeholder = match.group(1)
-            # Get value from event data using dot notation
-            keys = placeholder.split(".")
-            value = event_data
-            for key in keys:
-                if isinstance(value, dict) and key in value:
-                    value = value[key]
-                else:
-                    return match.group(0)  # Return original if not found
-            return str(value)
-
-        # Replace {{placeholder}} patterns
-        return re.sub(r"\{\{([^}]+)\}\}", replace_placeholder, text)
+        return substitute_connector_placeholders(text or "", event_data)
 
 
 @dataclass
@@ -2610,9 +2365,9 @@ class AddGreetingAction(BaseAction):
             from . import chatbot_manager
 
             # Replace placeholders in parameters
-            user_id = self._replace_placeholders_text(self.user_id, event_data)
-            username = self._replace_placeholders_text(self.username, event_data)
-            greeting_text = self._replace_placeholders_text(
+            user_id = substitute_connector_placeholders(self.user_id, event_data)
+            username = substitute_connector_placeholders(self.username, event_data)
+            greeting_text = substitute_connector_placeholders(
                 self.greeting_text, event_data
             )
 
@@ -2637,29 +2392,6 @@ class AddGreetingAction(BaseAction):
         except Exception as e:
             logger.error(f"Error executing add greeting action: {e}", exc_info=True)
             return False
-
-    def _replace_placeholders_text(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text with values from event_data"""
-        import re
-
-        def replace_func(match):
-            placeholder = match.group(1).strip()
-            return str(self._get_nested_value(event_data, placeholder, match.group(0)))
-
-        return re.sub(r"\{\{\s*([^}]+)\s*\}\}", replace_func, text)
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate add greeting action parameters"""
@@ -2694,9 +2426,11 @@ class UpdateGreetingAction(BaseAction):
             from . import chatbot_manager
 
             # Replace placeholders in parameters
-            greeting_id = self._replace_placeholders_text(self.greeting_id, event_data)
+            greeting_id = substitute_connector_placeholders(
+                self.greeting_id, event_data
+            )
             greeting_text = (
-                self._replace_placeholders_text(self.greeting_text, event_data)
+                substitute_connector_placeholders(self.greeting_text, event_data)
                 if self.greeting_text
                 else None
             )
@@ -2721,29 +2455,6 @@ class UpdateGreetingAction(BaseAction):
         except Exception as e:
             logger.error(f"Error executing update greeting action: {e}", exc_info=True)
             return False
-
-    def _replace_placeholders_text(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text with values from event_data"""
-        import re
-
-        def replace_func(match):
-            placeholder = match.group(1).strip()
-            return str(self._get_nested_value(event_data, placeholder, match.group(0)))
-
-        return re.sub(r"\{\{\s*([^}]+)\s*\}\}", replace_func, text)
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
 
     def validate_parameters(self) -> bool:
         """Validate update greeting action parameters"""
@@ -2778,8 +2489,8 @@ class SendGreetingAction(BaseAction):
             from . import chatbot_manager, twitch
 
             # Replace placeholders in parameters
-            user_id = self._replace_placeholders_text(self.user_id, event_data)
-            username = self._replace_placeholders_text(self.username, event_data)
+            user_id = substitute_connector_placeholders(self.user_id, event_data)
+            username = substitute_connector_placeholders(self.username, event_data)
 
             # Get chatbot manager
             manager = chatbot_manager.get_manager()
@@ -2831,29 +2542,6 @@ class SendGreetingAction(BaseAction):
             logger.error(f"Error executing send greeting action: {e}", exc_info=True)
             return False
 
-    def _replace_placeholders_text(self, text: str, event_data: Dict[str, Any]) -> str:
-        """Replace placeholders in text with values from event_data"""
-        import re
-
-        def replace_func(match):
-            placeholder = match.group(1).strip()
-            return str(self._get_nested_value(event_data, placeholder, match.group(0)))
-
-        return re.sub(r"\{\{\s*([^}]+)\s*\}\}", replace_func, text)
-
-    def _get_nested_value(
-        self, data: Dict[str, Any], path: str, default: Any = None
-    ) -> Any:
-        """Get value from nested dictionary using dot notation"""
-        keys = path.split(".")
-        current = data
-        for key in keys:
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        return current
-
     def validate_parameters(self) -> bool:
         """Validate send greeting action parameters"""
         if not self.user_id:
@@ -2876,14 +2564,43 @@ class GameHookAction(BaseAction):
     def __post_init__(self) -> None:
         self.action_type = ActionType.GAME_HOOK
 
+    @classmethod
+    def _substitute_hook_arguments(
+        cls,
+        hook_arguments: Dict[str, Any],
+        trigger_data: Dict[str, Any],
+        event_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        ctx: Dict[str, Any] = {**event_data, **trigger_data}
+        try:
+            from .game_hooks_service import game_hooks_service
+
+            snap = game_hooks_service.get_ff7_ui_snapshot()
+            ff7 = snap.get("ff7")
+            if isinstance(ff7, dict):
+                ctx["hooks"] = {"ff7": ff7}
+        except Exception:
+            pass
+
+        out: Dict[str, Any] = {}
+        for k, v in hook_arguments.items():
+            if isinstance(v, str):
+                out[k] = substitute_connector_placeholders(v, ctx)
+            else:
+                out[k] = v
+        return out
+
     async def execute(
         self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
     ) -> bool:
         try:
             from .game_hooks_service import game_hooks_service
 
+            resolved = self._substitute_hook_arguments(
+                dict(self.hook_arguments), trigger_data, event_data
+            )
             cfut = game_hooks_service.enqueue_game_hook_write(
-                self.game_id, self.operation, self.hook_arguments
+                self.game_id, self.operation, resolved
             )
             ok, err_msg = await asyncio.wait_for(
                 asyncio.wrap_future(cfut), timeout=10.0

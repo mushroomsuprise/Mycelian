@@ -80,10 +80,17 @@ FF7 Hook
     [x] - Finish listing out all of the bosses so they can be tracked and displayed in the template. Full list can be found here: https://finalfantasy.neoseeker.com/wiki/Bosses_(FFVII)
     [x] - Add memory addresses for materia, and gear, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
     [x] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
-    [] - Add ability to rename characters, expose to Connectors system.
-    [] - Add ability to inflict status effect on character(s) (positive and negative, including fury and sadness), use status ailment name as an arg, and character/characters as an arg, expose to Connectors system.
-    [] - Add ability to change equipment for a character, take character name and equipment name as an arg, must safeguard it for character specific gear, expose to Connectors system.
-    [] - Disable/enable menus (see ultima for this), expose to Connectors system.
+    [] - Add ability to rename characters, args should be <current_character_name> and <new_character_name>
+    [] - Add ability to inflict status effect on character(s) (positive and negative, including fury and sadness), args should be: <character> and <status_effect>
+    [] - Add ability to change equipment for a character. equipment can be weapons, armor, and accessories. We must safeguard weapons/armor so that we don't force equip gear a character cannot use (do this by making a table map of gear for each character). args should be: <character> and <gear>
+    [] - Disable/enable menus (see ultima for this), args should be: <menu_name>
+    [] - Change game speed (permanently until next change, or time based. see Ultima for this), args should be: <duration> and <speed>
+    [] - Update the kill character to use character names as an arg, instead of having to force a specific slot.
+    [] - Update the add and remove HP actions to use character names as an arg, instead of a specific slot.
+    [] - Remove the "set party slot hp" action.
+    [] - Change "damage enemy" action to take enemy names instead of slots.
+    [] - Include options for random characters/enemies and random values (damage, status effect, gear, etc) on every FF7 connector action.
+    [] - Ensure connector actions can take arguments from a chat message, or point alert user input message. Include an example in the text line where it says "Requires Game Hooks enabled and game...." so users know how to pull the data from the message
 
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
