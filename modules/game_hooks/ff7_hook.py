@@ -940,14 +940,13 @@ def _darken(t: Tuple[int, int, int], factor: float) -> Tuple[int, int, int]:
     )
 
 
-def menu_theme_from_savemap(savemap: bytes) -> Optional[Dict[str, str]]:
-    """Build CSS-friendly colors from savemap window RGB corners."""
-    ul = _rgb_tuple(savemap, SAVE_OFF_WIN_UL)
-    ur = _rgb_tuple(savemap, SAVE_OFF_WIN_UR)
-    ll = _rgb_tuple(savemap, SAVE_OFF_WIN_LL)
-    lr = _rgb_tuple(savemap, SAVE_OFF_WIN_LR)
-    if not all((ul, ur, ll, lr)):
-        return None
+def _menu_theme_dict_from_rgbs(
+    ul: Tuple[int, int, int],
+    ur: Tuple[int, int, int],
+    ll: Tuple[int, int, int],
+    lr: Tuple[int, int, int],
+) -> Dict[str, str]:
+    """Build the ``menu_theme`` JSON/CSS dict from four corner RGB tuples."""
     top = _blend_rgb(ul, ur)
     bot = _blend_rgb(ll, lr)
     avg = (
@@ -970,6 +969,37 @@ def menu_theme_from_savemap(savemap: bytes) -> Optional[Dict[str, str]]:
         "border_mid": _hex_rgb(border_mid),
         "border_inner": _hex_rgb(border_inner),
     }
+
+
+def menu_theme_from_savemap(savemap: bytes) -> Optional[Dict[str, str]]:
+    """Build CSS-friendly colors from savemap window RGB corners."""
+    ul = _rgb_tuple(savemap, SAVE_OFF_WIN_UL)
+    ur = _rgb_tuple(savemap, SAVE_OFF_WIN_UR)
+    ll = _rgb_tuple(savemap, SAVE_OFF_WIN_LL)
+    lr = _rgb_tuple(savemap, SAVE_OFF_WIN_LR)
+    if not all((ul, ur, ll, lr)):
+        return None
+    return _menu_theme_dict_from_rgbs(ul, ur, ll, lr)
+
+
+def menu_theme_from_live_display(raw: bytes) -> Optional[Dict[str, str]]:
+    """Build ``menu_theme`` from the 16-byte live palette (``ADDR_MENU_COLOR_DISPLAY_BASE``).
+
+    Layout matches InteractiveSeven ``MenuColors.GetDisplayBytes``: four corners ×
+    (B, G, R, 0x80); corner order upper-left, lower-left, upper-right, lower-right.
+    """
+    if raw is None or len(raw) < 16:
+        return None
+
+    def bgr_quad(i: int) -> Tuple[int, int, int]:
+        b, g, r = int(raw[i]), int(raw[i + 1]), int(raw[i + 2])
+        return (r, g, b)
+
+    ul = bgr_quad(0)
+    ll = bgr_quad(4)
+    ur = bgr_quad(8)
+    lr = bgr_quad(12)
+    return _menu_theme_dict_from_rgbs(ul, ur, ll, lr)
 
 
 # Human-readable catalog for Help + Connectors UI (filter internal via catalog_entry_is_public).
@@ -3778,6 +3808,10 @@ class FF7Hook:
         menu_theme: Optional[Dict[str, str]] = None
 
         field_name = ""
+        disp_addr = _rebase(self._proc.module_base, ADDR_MENU_COLOR_DISPLAY_BASE)
+        disp_raw = self._read(disp_addr, 16)
+        if disp_raw and len(disp_raw) == 16:
+            menu_theme = menu_theme_from_live_display(disp_raw)
         if savemap:
             try:
                 gil = struct.unpack_from("<I", savemap, SAVE_OFF_GIL)[0]
@@ -3785,7 +3819,8 @@ class FF7Hook:
             except struct.error:
                 pass
             party, _ = self._parse_field_party(savemap)
-            menu_theme = menu_theme_from_savemap(savemap)
+            if menu_theme is None:
+                menu_theme = menu_theme_from_savemap(savemap)
             field_name = _field_name_from_savemap(savemap)
 
         if battle:
@@ -3820,6 +3855,12 @@ class FF7Hook:
             "module_base_hex": hex(self._proc.module_base),
             "savemap_addr_hex": hex(savemap_addr) if savemap_addr else None,
             "savemap_read_bytes": len(savemap) if savemap else 0,
+            "menu_theme_source": (
+                "live"
+                if disp_raw and len(disp_raw) == 16 and menu_theme
+                else ("savemap" if menu_theme and savemap else "none")
+            ),
+            "menu_color_display_addr_hex": hex(disp_addr),
             "current_module_addr_hex": hex(mod),
             "current_module_byte": int(cur_mod),
             "battle_char_base_hex": hex(

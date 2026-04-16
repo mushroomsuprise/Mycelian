@@ -23,9 +23,12 @@
             --ff7-bg-ll: #0a0a2e;
             --ff7-bg-lr: #0a0a2e;
             --ff7-bg-center: #182159;
-            --ff7-border-outer: #aac4e8;
-            --ff7-border-mid: #4868a0;
-            --ff7-border-inner: #182048;
+            /* Menu window chrome: fixed PS1-style silver bevel (does not follow window tint). */
+            --ff7-chrome-outer: #060608;
+            --ff7-chrome-highlight: #e8e8f0;
+            --ff7-chrome-face: #6e6e7c;
+            --ff7-chrome-shadow: #24242c;
+            --ff7-chrome-deep: #14141a;
             --ff7-text: #ffffff;
             /* Match body text; HP/MP low + dead still use --ff7-hp-yellow / --ff7-hp-red on .stat-val and .name-dead */
             --ff7-label: #ffffff;
@@ -80,7 +83,7 @@
             width: 100%;
         }
 
-        /* --- FF7 authentic panel (savemap four-corner window RGB) --- */
+        /* --- FF7 panel: interior follows hook palette; frame is static metallic chrome like in-game menus --- */
         .panel {
             position: relative;
             background-color: var(--ff7-bg-center);
@@ -89,12 +92,21 @@
                 radial-gradient(ellipse 115% 115% at 100% 0%, var(--ff7-bg-ur) 0%, transparent 72%),
                 radial-gradient(ellipse 115% 115% at 0% 100%, var(--ff7-bg-ll) 0%, transparent 72%),
                 radial-gradient(ellipse 115% 115% at 100% 100%, var(--ff7-bg-lr) 0%, transparent 72%);
-            border: 2px solid var(--ff7-border-outer);
-            border-radius: 8px;
+            border: 1px solid var(--ff7-chrome-outer);
+            border-radius: 5px;
             padding: 10px 14px;
             box-shadow:
-                inset 0 0 0 2px var(--ff7-border-inner),
-                0 2px 8px rgba(0,0,0,0.6);
+                /* raised metallic rim: light top/left, dark bottom/right */
+                inset 1px 1px 0 var(--ff7-chrome-highlight),
+                inset -1px -1px 0 var(--ff7-chrome-shadow),
+                inset 2px 2px 0 rgba(255, 255, 255, 0.22),
+                inset -2px -2px 0 rgba(0, 0, 0, 0.55),
+                /* mid grey body of the frame */
+                inset 0 0 0 3px var(--ff7-chrome-face),
+                /* inner dark line before window fill */
+                inset 0 0 0 4px var(--ff7-chrome-deep),
+                /* slight lift off the page */
+                0 2px 8px rgba(0, 0, 0, 0.65);
         }
 
         .panel-title {
@@ -103,6 +115,11 @@
             color: var(--ff7-label);
             margin-bottom: 6px;
             text-transform: uppercase;
+            text-shadow:
+                0 0 1px #000,
+                1px 1px 0 #000,
+                -1px -1px 0 #000,
+                0 1px 0 #000;
         }
 
         /* --- Debug status bar --- */
@@ -132,6 +149,7 @@
             text-transform: uppercase;
             letter-spacing: 0.08em;
             text-align: center;
+            text-shadow: 0 0 1px #000, 1px 1px 0 #000, -1px -1px 0 #000;
         }
 
         .col-name  { flex: 2; text-align: left; }
@@ -1328,9 +1346,9 @@
             window._ff7RotorTimer = setInterval(updateFf7Rotors, 280);
         }
 
+        /* Interior only; window chrome is fixed in CSS (--ff7-chrome-*). */
         var FF7_MENU_THEME_KEYS = [
-            'bg_top', 'bg_bot', 'bg_ul', 'bg_ur', 'bg_ll', 'bg_lr', 'bg_center',
-            'border_outer', 'border_mid', 'border_inner'
+            'bg_top', 'bg_bot', 'bg_ul', 'bg_ur', 'bg_ll', 'bg_lr', 'bg_center'
         ];
 
         function ff7MenuThemeIsComplete(mt) {
@@ -1867,6 +1885,7 @@
 
             if (d.disabled || d.error || !d.attached) return;
 
+            /* menu_theme: server prefers live display RAM (same layout as in-game menu); savemap fallback if read fails. */
             var mt = d.menu_theme;
             if (typeof window._ff7LastMenuThemeKey === 'undefined') {
                 window._ff7LastMenuThemeKey = null;
@@ -1884,11 +1903,8 @@
                     root.style.setProperty('--ff7-bg-ll', mt.bg_ll);
                     root.style.setProperty('--ff7-bg-lr', mt.bg_lr);
                     root.style.setProperty('--ff7-bg-center', mt.bg_center);
-                    root.style.setProperty('--ff7-border-outer', mt.border_outer);
-                    root.style.setProperty('--ff7-border-mid', mt.border_mid);
-                    root.style.setProperty('--ff7-border-inner', mt.border_inner);
                 } else {
-                    ['--ff7-bg-top', '--ff7-bg-bot', '--ff7-bg-ul', '--ff7-bg-ur', '--ff7-bg-ll', '--ff7-bg-lr', '--ff7-bg-center', '--ff7-border-outer', '--ff7-border-mid', '--ff7-border-inner'].forEach(function (p) {
+                    ['--ff7-bg-top', '--ff7-bg-bot', '--ff7-bg-ul', '--ff7-bg-ur', '--ff7-bg-ll', '--ff7-bg-lr', '--ff7-bg-center'].forEach(function (p) {
                         root.style.removeProperty(p);
                     });
                 }
