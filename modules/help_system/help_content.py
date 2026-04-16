@@ -5,8 +5,8 @@ Contains all help topics, categories, and content for the Mycelian help system.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 from enum import Enum
+from typing import Dict, List, Optional
 
 
 class HelpCategory(Enum):
@@ -3064,7 +3064,7 @@ When attached, the hook sends roughly four times per second:
 
 Connectors can run a **Game Hook (memory write)** action. Each action targets one game (FF7 today) and one **operation** with arguments as shown in the connector UI.
 
-Typical FF7 operations include **Add gil** / **Remove gil**, **Add or remove HP**, **KO party member**, **Kill enemy** / **Kill all enemies**, **Damage enemy**, **Rename character**, **Set battle status**, **Change character gear**, **Menu row access** (show+unlock or hide+lock one menu row), and **Game speed** (FFNx FPS scaling plus best-effort world-map byte; 0.25×–8×).
+Typical FF7 operations include **Add gil** / **Remove gil**, **Add or remove HP**, **KO party member**, **Kill enemy** / **Kill all enemies**, **Damage enemy**, **Rename character**, **Set battle status**, **Change character gear**, **Menu row access** (show+unlock or hide+lock one menu row), and **Game speed** (0.25×–8× in 0.25 steps; vanilla tick f64 / FFNx literal f64 — see **Community credit (m4v3k)** below).
 
 In action arguments, use single-brace placeholders with **no spaces** inside the braces, for example `{username}`, `{message}`, `{message.word.1}`, `{message_after_conditions}` (chat text after stripping `message` trigger-condition literals), `{message_after_word.1}` or `{message_after_conditions.word.2}` (single word *N* of that stripped text), `{message_after_from_word.3}` or `{message_after_conditions.from_word.3}` (from word *N* through the end—use for multi-word values such as item names), `{hooks.ff7.party.0.name}`, `{random_character}`, `{random_enemy}`, `{random_damage.1.9999}`. Legacy `{{key}}` forms are still accepted and normalized.
 
@@ -3073,6 +3073,15 @@ In action arguments, use single-brace placeholders with **no spaces** inside the
 ## Security and fair play
 
 Memory reads and writes are powerful. Use writes responsibly on your own game session; anti-cheat or online services are not a target for this feature.
+
+## Community credit (m4v3k)
+
+Huge shoutouts to **m4v3k** for all of their work and contributions to the FF7 community. I was able to use his tools and research to create this game hook, so please check out his other projects:
+
+- [FF7 Ultima](https://github.com/maciej-trebacz/ff7-ultima) — real-time game editor
+- [Landscaper](https://github.com/maciej-trebacz/ff7-landscaper) — world map editor
+- [LGP Explorer](https://github.com/maciej-trebacz/ff7-lgp-explorer) — LGP archive browser and asset tools
+- [FF7lib](https://github.com/maciej-trebacz/ff7-lib.rs) — Rust library for FF7 memory and data structures
 
 ## Related
 

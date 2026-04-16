@@ -78,23 +78,23 @@ FF7 Hook
     [x] - Add functions to kill all enemies, add gil, remove gil, kill a specific party member, add hp to a specific party member, remove hp from a specific party member, etc etc.
     [x] - Move the ff7_reader.py file to the game_hooks directory. Then rename the ff7_reader.py file to ff7_hook.py
     [x] - Finish listing out all of the bosses so they can be tracked and displayed in the template. Full list can be found here: https://finalfantasy.neoseeker.com/wiki/Bosses_(FFVII)
-    [x] - Add memory addresses for materia, and gear, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
-    [x] - Add memory addresses for statuses and conditions, so they can be displayed in the template. Check the ff7-ultima repo for the memory addresses.
-    [] - Add ability to rename characters, args should be <current_character_name> and <new_character_name>
-    [] - Add ability to inflict status effect on character(s) (positive and negative, including fury and sadness), args should be: <character> and <status_effect>
-    [] - Add ability to change equipment for a character. equipment can be weapons, armor, and accessories. We must safeguard weapons/armor so that we don't force equip gear a character cannot use (do this by making a table map of gear for each character). args should be: <character> and <gear>
-    [x] - Disable/enable menus (see ultima for this), args should be: <menu_name>
-    [x] - Change game speed (permanently until next change, or time based. see Ultima for this), args should be: <duration> and <speed>
+    [x] - Add memory addresses for materia, and gear, so they can be displayed in the template. (Community FF7 memory tooling / reference notes.)
+    [x] - Add memory addresses for statuses and conditions, so they can be displayed in the template. (Community FF7 memory tooling / reference notes.)
+    [x] - Add ability to rename characters, args should be <current_character_name> and <new_character_name>
+    [x] - Add ability to inflict status effect on character(s) (positive and negative, including fury and sadness), args should be: <character> and <status_effect>
+    [x] - Add ability to change equipment for a character. equipment can be weapons, armor, and accessories. We must safeguard weapons/armor so that we don't force equip gear a character cannot use (do this by making a table map of gear for each character). args should be: <character> and <gear>
+    [x] - Disable/enable menus (reference community FF7 tooling), args should be: <menu_name>
+    [x] - Change game speed (permanently until next change, or time based; reference community FF7 tooling), args should be: <duration> and <speed>
     [x] - Update the kill character to use character names as an arg, instead of having to force a specific slot.
     [x] - Update the add and remove HP actions to use character names as an arg, instead of a specific slot.
     [x] - Remove the "set party slot hp" action.
     [x] - Change "damage enemy" action to take enemy names instead of slots.
     [x] - Include options for random characters/enemies and random values (damage, status effect, gear, etc) on every FF7 connector action.
     [x] - Ensure connector actions can take arguments from a chat message, or point alert user input message. Include an example in the text line where it says "Requires Game Hooks enabled and game...." so users know how to pull the data from the message
-    [] - Add/Remove gil does not work.
-    [] - Kill enemy does not find the enemy names (must add a varible setup to give the message with the matched text from the condition removed)
-    [] - Gamespeed command fails to work without FFNx installed, consult Ultima for the correct memory addresses and how to use them.
-    [] - Disabling/enabling menus does not work. Consult Ultima for the correct memory addresses and how to use them.
+    [x] - Add/Remove gil does not work.
+    [x] - Kill enemy does not find the enemy names (must add a varible setup to give the message with the matched text from the condition removed)
+    [x] - Gamespeed command fails to work without FFNx installed; verify memory addresses and FFNx vs vanilla paths against community FF7 reference tooling.
+    [x] - Disabling/enabling menus does not work; verify memory addresses against community FF7 reference tooling.
     
 
 

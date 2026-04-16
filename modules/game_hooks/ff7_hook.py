@@ -1,9 +1,6 @@
 """
 FF7 PC (English Steam, ff7_en.exe) live memory hook: reads, optional writes, menu colors.
 
-Canonical virtual addresses match ff7-ultima / ff7-lib.rs; rebase with:
-    phys = module_base + (canon_addr - 0x00400000)
-
 Window gradient RGB is read from the in-RAM savemap (Data Crystal offsets 0x48–0x53).
 Character record gear/materia offsets match Data Crystal / ff7-flat-wiki savemap layouts for PC English.
 """
@@ -13,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -37,22 +35,17 @@ ADDR_ENEMY_DATA_BASE = 0x009A8E9C
 ADDR_PARTY_MEMBER_IDS = 0x00DC0230
 ADDR_PARTY_MEMBER_NAMES = 0x00DBFD9C
 ADDR_SAVEMAP_BASE = 0x00DBFD38
-# Menu bitmask (u16): ff7-lib FF7Addresses — General.tsx row order
 ADDR_MENU_VISIBILITY = 0x00DC08F8
 ADDR_MENU_LOCKS = 0x00DC08FA
-# FFNx: jmp at ffnx_check when hooked (0xE9) — ff7-lib
 ADDR_FFNX_TRAMPOLINE_CHECK = 0x0041B965
 # World map movement speed byte — ff7-lib
 ADDR_WORLD_SPEED_MULTIPLIER = 0x00DFC480
-# Field: allow opening menu from field (byte 0/1) — ff7-lib
 ADDR_FIELD_MENU_ACCESS_ENABLED = 0x00CC0DBC
-# Party stat refresh after equipment edits — ff7-ultima updatePartyMember → callGameFn(0x61f739, [])
 ADDR_PARTY_STAT_RECALC_FN = 0x0061F739
-# Vanilla game speed (Ultima useFF7 setSpeed fallback) — ff7-lib
+# Vanilla tick interval storage: ff7-lib `read_memory_float` reads **f64** at these RVAs (not f32).
 ADDR_FIELD_FPS = 0x00CFF890
 ADDR_BATTLE_FPS = 0x009AB090
 ADDR_WORLD_FPS = 0x00DE6938
-# NOP six bytes at each site so module init does not reset FPS (Ultima setSpeed vanilla branch)
 ADDR_FPS_NOP_INIT_1 = 0x0060E434
 ADDR_FPS_NOP_INIT_2 = 0x0074BD02
 ADDR_FPS_NOP_INIT_3 = 0x0041B6D8
@@ -62,7 +55,6 @@ REC_OFF_FIELD_STATUS = 0x1F
 REC_OFF_NAME = 0x10
 NAME_BYTES = 12
 
-# ff7-ultima src/modules/General.tsx — toggleMenuVisibility / toggleMenuLock bit index
 FF7_MENU_NAMES: List[str] = [
     "Item",
     "Magic",
@@ -246,7 +238,6 @@ def _armor_materia_slot_types(armor_id: int) -> List[int]:
     )
 
 
-# Battle actor status dword at offset 0 (matches ff7-ultima statuses.Dead)
 BATTLE_OFF_STATUS = 0x00
 STATUS_DEAD = 1
 
@@ -309,7 +300,6 @@ _VALID_MATERIA_ORB_STEMS = frozenset(
     }
 )
 
-# Matches ff7-ultima GameModule (src/types.ts); unlisted bytes fall through to _current_module_label.
 _CURRENT_MODULE_NAMES: Dict[int, str] = {
     0: "None",
     1: "Field",
@@ -324,7 +314,7 @@ _CURRENT_MODULE_NAMES: Dict[int, str] = {
     11: "Jet",
     12: "Change disc",
     14: "Snowboard 2",
-    17: "Victory",  # post-battle / fanfare (not in ff7-ultima GameModule enum gap 15–18)
+    17: "Victory", 
     19: "Quit",
     20: "Start",
     23: "Battle swirl",
@@ -545,9 +535,11 @@ if sys.platform == "win32":
 else:
     _kernel32 = None
 
+_PAGE_READWRITE = 0x04
 _PAGE_EXECUTE_READWRITE = 0x40
 _KERNEL32_EXTRA = None
 _VirtualProtect = None
+_VirtualProtectEx = None
 _FlushInstructionCache = None
 _GetCurrentProcess = None
 _VirtualAllocEx = None
@@ -564,6 +556,15 @@ if sys.platform == "win32" and _kernel32 is not None:
         ctypes.POINTER(wintypes.DWORD),
     ]
     _VirtualProtect.restype = wintypes.BOOL
+    _VirtualProtectEx = _kernel32.VirtualProtectEx
+    _VirtualProtectEx.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        ctypes.c_size_t,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    _VirtualProtectEx.restype = wintypes.BOOL
     _FlushInstructionCache = _kernel32.FlushInstructionCache
     _FlushInstructionCache.argtypes = [
         wintypes.HANDLE,
@@ -808,13 +809,12 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "kill_all_enemies",
         "label": "Kill all enemies",
-        "description": "Battle only: sets Death status and HP to 0 for each active enemy (matches ff7-ultima).",
-        "args": [],
+        "description": "Battle only: sets Death status and HP to 0 for each active enemy."
     },
     {
         "id": "kill_enemy",
         "label": "Kill enemy",
-        "description": "Battle only: enemy by substring name, slot index 0–5, or {random_enemy}. When several foes share a name (overlay shows Name A, Name B), use that form — same order as ff7-ultima (by scene id).",
+        "description": "Battle only: enemy by substring name, slot index 0–5, or {random_enemy}. When several foes share a name (overlay shows Name A, Name B), use that form.",
         "args": [
             {
                 "name": "enemy",
@@ -827,7 +827,7 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "damage_enemy",
         "label": "Damage enemy",
-        "description": "Battle only: enemy by substring name, index 0–5, or {random_enemy}. Duplicates: use Name A / Name B as on the overlay (ff7-ultima order). Damage 1–9999 or random:min-max (clamped).",
+        "description": "Battle only: enemy by substring name, index 0–5, or {random_enemy}. Duplicates: use Name A / Name B as on the overlay. Damage 1–9999 or random:min-max (clamped).",
         "args": [
             {
                 "name": "enemy",
@@ -919,7 +919,7 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "set_menu_row_access",
         "label": "Toggle Menu Access",
-        "description": "Show and unlock a main-menu row, or hide and lock it (Ultima menu row names: Item, Magic, …).",
+        "description": "Show and unlock a main-menu row, or hide and lock it.",
         "args": [
             {
                 "name": "menu_name",
@@ -941,7 +941,7 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "set_game_speed",
         "label": "Game speed",
-        "description": "FFNx scales field/battle FPS (0.25×–8×). World-map movement byte is updated best-effort on the same machine. duration_sec 0 keeps speed until Restore (internal) or game exit.",
+        "description": "0.25×–8× (0.25 steps). Vanilla tick f64; FFNx literal f64. duration_sec 0 keeps until restore or exit.",
         "args": [
             {
                 "name": "speed",
@@ -972,13 +972,30 @@ def catalog_entry_is_public(entry: Dict[str, Any]) -> bool:
     return not entry.get("internal")
 
 
+FF7_PRESET_SPEED_MULTIPLIERS = frozenset({0.25, 0.5, 1.0, 2.0, 5.0})
+
+FF7_SETSPEED_TICK_NUMERATOR: float = 10000000.0
+
+
+def ffnx_fps_literal_f64(speed: float) -> Tuple[float, float]:
+    """FFNx branch: f64 literals at movsd targets (field/world = 30×, battle = 15×)."""
+    s = float(speed)
+    return 30.0 * s, 15.0 * s
+
+
+def vanilla_tick_interval_f64(default_fps: float, speed: float) -> float:
+    """Vanilla branch: tick interval f64 at field_fps / battle_fps / world_fps sites."""
+    return FF7_SETSPEED_TICK_NUMERATOR / (float(default_fps) * float(speed))
+
+
 def ff7_game_speed_select_options() -> Dict[str, str]:
-    """0.25 to 8.0 step 0.25 for Game speed select UI."""
+    """Granular 0.25×–8× (0.25 step). """
     out: Dict[str, str] = {}
     for i in range(1, 33):
         n = round(i * 0.25, 2)
         label = str(n).rstrip("0").rstrip(".") if n % 1 else str(int(n))
-        out[str(n)] = f"{label}×"
+        tag = "" if n in FF7_PRESET_SPEED_MULTIPLIERS else ""
+        out[str(n)] = f"{label}×{tag}"
     return out
 
 
@@ -1105,7 +1122,7 @@ class FF7Hook:
         return bool(ok) and written.value == len(data)
 
     def _call_ff7_party_stat_recalc(self) -> None:
-        """Best-effort: Ultima's post-equip refresh (callGameFn 0x61f739) via remote thread stub."""
+        """Best-effort: post-equip refresh via remote thread stub."""
         if (
             sys.platform != "win32"
             or _kernel32 is None
@@ -1442,33 +1459,92 @@ class FF7Hook:
             return None
         return struct.unpack("<f", d)[0]
 
+    def _read_f64(self, addr: int) -> Optional[float]:
+        d = self._read(addr, 8)
+        if not d or len(d) != 8:
+            return None
+        return struct.unpack("<d", d)[0]
+
     def _write_float(self, addr: int, val: float) -> bool:
         return self._write(addr, struct.pack("<f", float(val)))
 
-    def _win_protect_write(self, addr: int, data: bytes) -> bool:
-        if not self._proc or _VirtualProtect is None or not data:
+    def _write_double_robust(self, addr: int, val: float) -> bool:
+        fv = float(val)
+        payload = struct.pack("<d", fv)
+        if self._write(addr, payload):
+            got = self._read_f64(addr)
+            if got is not None and abs(got - fv) <= max(1e-4, abs(fv) * 1e-9):
+                return True
+        for prot in (_PAGE_READWRITE, _PAGE_EXECUTE_READWRITE):
+            if self._win_protect_write(
+                addr, payload, flush_icache=False, page_protect=prot
+            ):
+                return True
+        return False
+
+    def _write_float_robust(self, addr: int, val: float) -> bool:
+        """Write a 32-bit float: prefer a verified fast path, then PAGE_READWRITE, then RXW."""
+        fv = float(val)
+        payload = struct.pack("<f", fv)
+        if self._write(addr, payload):
+            got = self._read_float(addr)
+            if got is not None and abs(got - fv) <= max(1e-4, abs(fv) * 1e-6):
+                return True
+        for prot in (_PAGE_READWRITE, _PAGE_EXECUTE_READWRITE):
+            if self._win_protect_write(
+                addr, payload, flush_icache=False, page_protect=prot
+            ):
+                return True
+        return False
+
+    def _win_protect_write(
+        self,
+        addr: int,
+        data: bytes,
+        *,
+        flush_icache: bool = True,
+        page_protect: int = _PAGE_EXECUTE_READWRITE,
+    ) -> bool:
+        """Write to memory in the **FF7** process via VirtualProtectEx (not the local process)."""
+        if not self._proc or not data:
             return False
+        h = self._proc.handle
         page = addr & ~0xFFF
         end = addr + len(data)
         page_end = (end + 0xFFF) & ~0xFFF
         size = page_end - page
+        if _VirtualProtectEx is None:
+            return self._write(addr, data)
         old = wintypes.DWORD(0)
-        if not _VirtualProtect(page, size, _PAGE_EXECUTE_READWRITE, ctypes.byref(old)):
+        if not _VirtualProtectEx(
+            h,
+            ctypes.c_void_p(page),
+            ctypes.c_size_t(size),
+            page_protect,
+            ctypes.byref(old),
+        ):
             return False
-        ok = self._write(addr, data)
-        _junk = wintypes.DWORD(0)
-        _VirtualProtect(page, size, old.value, ctypes.byref(_junk))
-        if _FlushInstructionCache and _GetCurrentProcess:
-            _FlushInstructionCache(_GetCurrentProcess(), page, size)
+        try:
+            ok = self._write(addr, data)
+        finally:
+            _junk = wintypes.DWORD(0)
+            _VirtualProtectEx(
+                h,
+                ctypes.c_void_p(page),
+                ctypes.c_size_t(size),
+                old.value,
+                ctypes.byref(_junk),
+            )
+        if ok and flush_icache and _FlushInstructionCache:
+            _FlushInstructionCache(h, ctypes.c_void_p(page), ctypes.c_size_t(size))
         return ok
 
-    def _ffnx_find_fps_float_addrs(self) -> Optional[Tuple[int, int]]:
-        """Return (addr_fps30, addr_fps15) for FFNx hook (Ultima useFF7 setSpeed)."""
+    def _ffnx_trampoline_targets_fps_addrs(self, chk: int) -> Optional[Tuple[int, int]]:
+        """Resolve (addr_fps30, addr_fps15) from FFNx hook stub at ``chk``.
+
+        Caller must verify the byte at ``chk`` is ``0xE9`` (near jmp) before calling.
+        """
         if not self._proc:
-            return None
-        chk = _rebase(self._proc.module_base, ADDR_FFNX_TRAMPOLINE_CHECK)
-        b0 = self._read_u8(chk)
-        if b0 != 0xE9:
             return None
         rel = self._read_i32(chk + 1)
         if rel is None:
@@ -1506,6 +1582,25 @@ class FF7Hook:
         if a30 is None or a15 is None:
             return None
         return a30, a15
+
+    def _ffnx_fps_pair_plausible(self, a30: int, a15: int) -> bool:
+        """Diagnostic only: True if floats at resolved addresses look like literal FPS, not tick ticks.
+
+        Do not use to choose vanilla vs FFNx branch — under FFNx, operands may still read as
+        large tick-style values before writes"""
+        if a30 == a15:
+            return False
+        v30 = self._read_f64(a30)
+        v15 = self._read_f64(a15)
+        if v30 is None or v15 is None:
+            return False
+        if not math.isfinite(v30) or not math.isfinite(v15):
+            return False
+        if v30 > 5000.0 or v15 > 5000.0:
+            return False
+        if v30 < 0.125 or v15 < 0.125:
+            return False
+        return True
 
     def _char_id_from_savemap_name(self, savemap: bytes, name: str) -> Optional[int]:
         want = _norm_party_name(name)
@@ -1558,7 +1653,7 @@ class FF7Hook:
     def _char_id_from_gear_character_token(
         self, savemap: bytes, token: str
     ) -> Tuple[Optional[int], Optional[str]]:
-        """Roster index 0–8 (Ultima-style) or English name; does not require party membership."""
+        """Roster index 0–8 English name; does not require party membership."""
         t = (token or "").strip()
         if not t:
             return None, "empty character token"
@@ -1900,23 +1995,51 @@ class FF7Hook:
     def _op_set_game_speed(self, speed: float, duration_sec: int) -> Tuple[bool, Optional[str]]:
         assert self._proc
         sp = max(0.25, min(8.0, float(speed)))
+        mb = self._proc.module_base
+        chk = _rebase(mb, ADDR_FFNX_TRAMPOLINE_CHECK)
+        b0 = self._read_u8(chk)
         backup: Dict[str, Any] = {
             "speed": sp,
             "duration_sec": int(duration_sec),
         }
-        pair = self._ffnx_find_fps_float_addrs()
-        if pair:
+
+        if b0 == 0xE9:
+            pair = self._ffnx_trampoline_targets_fps_addrs(chk)
+            if not pair:
+                return (
+                    False,
+                    "FFNx hook present (0xE9 at ffnx_check) but movsd FPS pattern not found",
+                )
             a30, a15 = pair
-            f30 = self._read_float(a30)
-            f15 = self._read_float(a15)
+            looks_literal = self._ffnx_fps_pair_plausible(a30, a15)
+            if not looks_literal:
+                w = (
+                    "resolved floats look like vanilla tick storage — "
+                    "writing FFNx-style anyway"
+                )
+                logger.warning("set_game_speed: %s", w)
+            f30 = self._read_f64(a30)
+            f15 = self._read_f64(a15)
+            t30, t15 = ffnx_fps_literal_f64(sp)
+            p30 = struct.pack("<d", float(t30)).hex()
+            p15 = struct.pack("<d", float(t15)).hex()
             backup["ffnx"] = {"a30": a30, "a15": a15, "f30": f30, "f15": f15}
             backup["mode"] = "ffnx"
-            if not self._write_float(a30, 30.0 * sp):
-                return False, "write FFNx field fps float failed"
-            if not self._write_float(a15, 15.0 * sp):
+            ok30 = self._write_double_robust(a30, t30)
+            af30 = self._read_f64(a30) if ok30 else None
+            if not ok30:
+                return False, "write FFNx field/world fps float failed"
+            ok15 = self._write_double_robust(a15, t15)
+            af15 = self._read_f64(a15) if ok15 else None
+            if not ok15:
                 return False, "write FFNx battle fps float failed"
+            logger.debug(
+                "set_game_speed: FFNx path a30=%s a15=%s sp=%s",
+                hex(a30),
+                hex(a15),
+                sp,
+            )
         else:
-            # Ultima useFF7.ts setSpeed vanilla branch (no FFNx)
             fps_specs = [
                 (ADDR_FIELD_FPS, 30.0),
                 (ADDR_BATTLE_FPS, 15.0),
@@ -1925,10 +2048,11 @@ class FF7Hook:
             fps_backup: List[Tuple[int, Optional[float]]] = []
             for canon, default_fps in fps_specs:
                 addr = _rebase(self._proc.module_base, canon)
-                prev = self._read_float(addr)
+                prev = self._read_f64(addr)
                 fps_backup.append((addr, prev))
-                new_f = 10000000.0 / (default_fps * sp)
-                if not self._write_float(addr, new_f):
+                new_f = vanilla_tick_interval_f64(default_fps, sp)
+                ph = struct.pack("<d", float(new_f)).hex()
+                if not self._write_double_robust(addr, new_f):
                     return False, f"write vanilla FPS failed (0x{canon:08X})"
             nop_canons = (
                 ADDR_FPS_NOP_INIT_1,
@@ -1943,15 +2067,16 @@ class FF7Hook:
                 if orig is None or len(orig) != 6:
                     return False, f"read FPS NOP site failed (0x{canon:08X})"
                 nop_backup.append((addr, orig))
-                if not self._win_protect_write(addr, nop_patch):
+                ok_nop = self._win_protect_write(addr, nop_patch, flush_icache=True)
+                if not ok_nop:
                     return False, f"write FPS NOP failed (0x{canon:08X})"
             backup["vanilla"] = {"fps": fps_backup, "nops": nop_backup}
             backup["mode"] = "vanilla"
-        wm_ok, wm_err = self._op_world_speed_multiplier(
-            max(1, min(255, int(round(sp))))
-        )
-        if not wm_ok:
-            logger.debug("World map speed multiplier (best-effort): %s", wm_err)
+            logger.debug(
+                "set_game_speed: vanilla path field/battle/world FPS + NOPs sp=%s",
+                sp,
+            )
+        # set_game_speed: field/battle/world FPS + NOPs only (no world_speed_multiplier).
         self._speed_backup = backup
         return True, None
 
@@ -1963,17 +2088,17 @@ class FF7Hook:
         if mode == "ffnx" or "ffnx" in b:
             e = b.get("ffnx") or {}
             if e.get("f30") is not None and e.get("a30") is not None:
-                self._write_float(int(e["a30"]), float(e["f30"]))
+                self._write_double_robust(int(e["a30"]), float(e["f30"]))
             if e.get("f15") is not None and e.get("a15") is not None:
-                self._write_float(int(e["a15"]), float(e["f15"]))
+                self._write_double_robust(int(e["a15"]), float(e["f15"]))
         elif mode == "vanilla" or "vanilla" in b:
             van = b.get("vanilla") or {}
             for addr, prev in van.get("fps") or []:
                 if prev is not None:
-                    self._write_float(int(addr), float(prev))
+                    self._write_double_robust(int(addr), float(prev))
             for addr, orig in van.get("nops") or []:
                 if orig is not None:
-                    self._win_protect_write(int(addr), bytes(orig))
+                    self._win_protect_write(int(addr), bytes(orig), flush_icache=True)
         self._speed_backup = None
         return True, None
 

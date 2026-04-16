@@ -22,7 +22,6 @@ import logging
 import queue
 import threading
 import time
-import weakref
 from typing import Any, Dict, Optional, Tuple
 
 from .database_manager import database_manager
@@ -50,6 +49,17 @@ def _ff7_enabled() -> bool:
     return False
 
 
+def _parse_game_speed_duration_sec(kwargs: Dict[str, Any]) -> int:
+    """Seconds until auto-restore; 0 means keep until manual restore or new set."""
+    raw = kwargs.get("duration_sec")
+    if raw is None or raw == "":
+        return 0
+    try:
+        return max(0, int(float(raw)))
+    except (TypeError, ValueError):
+        return 0
+
+
 class GameHooksServiceImpl:
     def __init__(self) -> None:
         self._stop = threading.Event()
@@ -66,7 +76,7 @@ class GameHooksServiceImpl:
         self._write_queue: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, str, Dict[str, Any]]]" = (
             queue.Queue()
         )
-        self._weak_self = weakref.ref(self)
+        self._game_speed_restore_deadline: Optional[float] = None
         self._load_ff7_boss_log()
 
     def _load_ff7_boss_log(self) -> None:
@@ -111,6 +121,22 @@ class GameHooksServiceImpl:
         self._write_queue.put((fut, game_id, operation, dict(arguments or {})))
         return fut
 
+    def _maybe_enqueue_game_speed_restore(self) -> None:
+        if self._game_speed_restore_deadline is None:
+            return
+        if time.monotonic() < self._game_speed_restore_deadline:
+            return
+        self._game_speed_restore_deadline = None
+        self._write_queue.put(
+            (
+                concurrent.futures.Future(),
+                "ff7",
+                "restore_game_speed",
+                {},
+            )
+        )
+        logger.debug("game speed: auto-restore deadline reached, enqueued restore")
+
     def _drain_write_queue(self) -> None:
         while True:
             try:
@@ -124,28 +150,17 @@ class GameHooksServiceImpl:
                 result = self._ff7_hook.execute_operation(op, kwargs)
                 fut.set_result(result)
                 ok, _err = result
-                if (
-                    ok
-                    and op == "set_game_speed"
-                    and int(kwargs.get("duration_sec") or 0) > 0
-                ):
-                    delay = float(kwargs["duration_sec"])
-                    svc = self._weak_self()
-
-                    def _revert() -> None:
-                        s = svc
-                        if s is None or s._ff7_hook is None:
-                            return
-                        s._write_queue.put(
-                            (
-                                concurrent.futures.Future(),
-                                "ff7",
-                                "restore_game_speed",
-                                {},
-                            )
+                if ok and op == "set_game_speed":
+                    dur = _parse_game_speed_duration_sec(kwargs)
+                    if dur > 0:
+                        self._game_speed_restore_deadline = time.monotonic() + float(
+                            dur
                         )
-
-                    threading.Timer(delay, _revert).start()
+                        logger.debug(
+                            "game speed: auto-restore scheduled in %s s", dur
+                        )
+                    else:
+                        self._game_speed_restore_deadline = None
             except Exception as e:
                 logger.warning("game hook write failed: %s", e, exc_info=True)
                 fut.set_result((False, str(e)))
@@ -172,6 +187,7 @@ class GameHooksServiceImpl:
     def _loop(self) -> None:
         while not self._stop.is_set():
             t0 = time.time()
+            self._maybe_enqueue_game_speed_restore()
             self._drain_write_queue()
 
             hooks: Dict[str, Any] = {}
@@ -203,6 +219,7 @@ class GameHooksServiceImpl:
                         "debug": {"stage": "snapshot_exception", "message": str(e)},
                     }
             else:
+                self._game_speed_restore_deadline = None
                 if self._ff7_hook is not None:
                     try:
                         self._ff7_hook.close()
@@ -261,6 +278,7 @@ class GameHooksServiceImpl:
             if self._stop.wait(wait):
                 break
 
+        self._game_speed_restore_deadline = None
         if self._ff7_hook is not None:
             try:
                 self._ff7_hook.close()
