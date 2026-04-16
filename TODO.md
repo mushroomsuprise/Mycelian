@@ -101,4 +101,3 @@ FF7 Hook
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
     [x] - Interval update timer is not notifying when an update is available after the app has been already opened and running.
-    [] - Convert some heavy modules to Rust for performance boosts. MUST maintain compatibility and exact functionality. MUST be able to be compiled to a single exe file still.
