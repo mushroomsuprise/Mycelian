@@ -202,6 +202,21 @@ class GameHooksServiceImpl:
                         self._persist_ff7_boss_log()
                     snap["bosses"] = self._ff7_boss_tracker.bosses_dict()
                     hooks["ff7"] = snap
+                    try:
+                        pending = self._ff7_hook.consume_pending_battle()
+                        if pending is not None:
+                            cm = int(snap.get("current_module") or 0)
+                            if cm in (1, 3):
+                                ok, err = self._ff7_hook._start_battle_now(int(pending))
+                                if not ok:
+                                    self._ff7_hook._pending_battle_id = int(pending)
+                                    logger.debug(
+                                        "queued start_battle deferred: %s", err
+                                    )
+                            else:
+                                self._ff7_hook._pending_battle_id = int(pending)
+                    except Exception as e:
+                        logger.debug("queued start_battle watcher: %s", e)
                 except Exception as e:
                     logger.warning("FF7 snapshot error: %s", e, exc_info=True)
                     hooks["ff7"] = {

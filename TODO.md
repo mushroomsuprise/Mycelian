@@ -95,17 +95,22 @@ FF7 Hook
     [x] - Kill enemy does not find the enemy names (must add a varible setup to give the message with the matched text from the condition removed)
     [x] - Gamespeed command fails to work without FFNx installed; verify memory addresses and FFNx vs vanilla paths against community FF7 reference tooling.
     [x] - Disabling/enabling menus does not work; verify memory addresses against community FF7 reference tooling.
-    [] - Increase and decrease enemy level <enemy> and <level> as args
-    [] - Increase party member level <character> and <level> as args
-    [] - Increase enemy stat <enemy>, <stat>, and <amount> as args
-    [] - Increase party member stat <character>, <stat>, and <amount> as args
-    [] - Change menu colors, either a single corner (upper left, upper right, lower left, lower right), or all 4. Need to set this up so its easy to type in either a color name (blue, red, green), or RGB/Hex values, then adapt to the FF7 menu color system.
-    [] - Equip/unequip materia. <character>, <gear>, <slot>, <materia> as args. If a materia is present in the slot, it must unequip the existing material before equipping the new one. Must validate that the user has the materia to equip. This should remove the materia from the inventory list when equipping, and place it back when unequipping. Just like it would when if it were done in the game's menu.
-    [] - Add check if equipment is available to the equip gear hook. This should remove the gear from the inventory list when equipping, and place it back when unequipping. Just like it would when if it were done in the game's menu.
-    [] - Start a battle. take <battle_id> as an arg. if the game is in the menu or victory modules, it must queue the fight until outside of those modules.
-    [] - Add items, take <item_name> and <quantity> as args
-    [] - Add materia, must take <materia_name> and <materia_level> as args, adds to the inventory, does not equip
-    [] - Add gear, must take <gear_name> as args, adds to the inventory, does not equip
+    [x] - Increase and decrease enemy level <enemy> and <level> as args
+    [x] - Increase party member level <character> and <level> as args
+    [x] - Increase enemy stat <enemy>, <stat>, and <amount> as args
+    [x] - Increase party member stat <character>, <stat>, and <amount> as args
+    [x] - Change menu colors, either a single corner (upper left, upper right, lower left, lower right), or all 4. Need to set this up so its easy to type in either a color name (blue, red, green), or RGB/Hex values, then adapt to the FF7 menu color system.
+    [x] - Equip/unequip materia. <character>, <gear>, <slot>, <materia> as args. If a materia is present in the slot, it must unequip the existing material before equipping the new one. Must validate that the user has the materia to equip. This should remove the materia from the inventory list when equipping, and place it back when unequipping. Just like it would when if it were done in the game's menu.
+    [x] - Add check if equipment is available to the equip gear hook. This should remove the gear from the inventory list when equipping, and place it back when unequipping. Just like it would when if it were done in the game's menu.
+    [x] - Start a battle. take <battle_id> as an arg. if the game is in the menu or victory modules, it must queue the fight until outside of those modules.
+    [x] - Add items, take <item_name> and <quantity> as args
+    [x] - Add materia, must take <materia_name> and <materia_level> as args, adds to the inventory, does not equip
+    [x] - Add gear, must take <gear_name> as args, adds to the inventory, does not equip
+    [x] - Replace combobox options with text inputs so variables can be used in the args. (Only on the recent added hook options, starting from Increase and decrease enemy level on down)
+    [x] - Starting battles does not work.
+    [x] - changing menu colors does not work.
+
+
     
 
 

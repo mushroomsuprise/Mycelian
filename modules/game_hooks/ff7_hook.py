@@ -2,6 +2,7 @@
 FF7 PC (English Steam, ff7_en.exe) live memory hook: reads, optional writes, menu colors.
 
 Window gradient RGB is read from the in-RAM savemap (Data Crystal offsets 0x48–0x53).
+Live menu rendering uses a separate BGR block (see DevChatter InteractiveSeven ``Addresses.MenuColorAll``).
 Character record gear/materia offsets match Data Crystal / ff7-flat-wiki savemap layouts for PC English.
 """
 
@@ -16,6 +17,7 @@ import random
 import re
 import struct
 import sys
+import time
 import unicodedata
 from ctypes import wintypes
 from dataclasses import dataclass
@@ -50,10 +52,70 @@ ADDR_FPS_NOP_INIT_1 = 0x0060E434
 ADDR_FPS_NOP_INIT_2 = 0x0074BD02
 ADDR_FPS_NOP_INIT_3 = 0x0041B6D8
 
+# start_battle support (ff7-lib addresses.rs + ff7-ultima startBattle flow)
+ADDR_FIELD_OBJ_PTR = 0x00CBF9D8
+ADDR_BATTLE_MODULE_FIELD = 0x00CBF6B8
+ADDR_BATTLE_ID_WORLD = 0x00E3A88C
+ADDR_WORLD_BATTLE_FLAG1 = 0x00E2BBC8
+ADDR_WORLD_BATTLE_FLAG2 = 0x00969950
+ADDR_WORLD_BATTLE_FLAG3 = 0x00E3A884
+ADDR_WORLD_MODE = 0x00E045E4
+ADDR_WORLD_BATTLE_FLAG4 = 0x00E045E4  # ff7-lib addresses.rs world_battle_flag4
+
+# Live window palette + RAM mirror (InteractiveSeven Core/FinalFantasy/Addresses.cs).
+# Display: 16 bytes, four corners × (B, G, R, 0x80). Order: upper-left, lower-left, upper-right, lower-right.
+ADDR_MENU_COLOR_DISPLAY_BASE = 0x0091EFC8
+# 12 bytes RGB: TL, BL, TR, BR (same corner order as GetDisplayBytes / GetSaveBytes in MenuColors.cs).
+ADDR_MENU_COLOR_SAVE_MIRROR_BASE = 0x0091EFD8
+
 REC_OFF_CHAR_ID = 0x00
+REC_OFF_LEVEL = 0x01
+REC_OFF_STR = 0x02
+REC_OFF_VIT = 0x03
+REC_OFF_MAG = 0x04
+REC_OFF_SPR = 0x05
+REC_OFF_DEX = 0x06
+REC_OFF_LUK = 0x07
+REC_OFF_STR_BONUS = 0x08
+REC_OFF_VIT_BONUS = 0x09
+REC_OFF_MAG_BONUS = 0x0A
+REC_OFF_SPR_BONUS = 0x0B
+REC_OFF_DEX_BONUS = 0x0C
+REC_OFF_LUK_BONUS = 0x0D
 REC_OFF_FIELD_STATUS = 0x1F
 REC_OFF_NAME = 0x10
 NAME_BYTES = 12
+
+# FF7 party_add_item_fn / party_add_materia_fn — call via CreateRemoteThread.
+# Addresses from ff7-lib/src/ff7/addresses.rs (canonical RVAs).
+ADDR_PARTY_ADD_ITEM_FN = 0x006CBFFA
+ADDR_PARTY_ADD_MATERIA_FN = 0x006CC0EA
+
+# Inventory layout (Data Crystal savemap).
+SAVE_OFF_INV_ITEMS = 0x04FC
+SAVE_OFF_INV_MATERIA = 0x077C
+INV_ITEM_SLOTS = 0x140
+INV_MATERIA_SLOTS = 0xC8
+INV_ITEM_MAX_ID = 0x13F
+MAX_ITEM_QUANTITY = 99
+
+# Unified item-ID space used by party_add_item_fn (single flat table 0..0x13F).
+ITEM_ID_WEAPON_BASE = 0x80
+ITEM_ID_ARMOR_BASE = 0x100
+ITEM_ID_ACCESSORY_BASE = 0x120
+
+# Enemy data record (184 bytes @ enemy_data_base + scene_id*184)
+ENEMY_OFF_LEVEL = 0x20
+ENEMY_OFF_SPEED = 0x21
+ENEMY_OFF_LUCK = 0x22
+ENEMY_OFF_EVADE = 0x23
+ENEMY_OFF_STR = 0x24
+ENEMY_OFF_DEF = 0x25
+ENEMY_OFF_MAG = 0x26
+ENEMY_OFF_MDEF = 0x27
+
+# Battle-actor ally-only fields
+BATTLE_OFF_LEVEL = 0x24
 
 FF7_MENU_NAMES: List[str] = [
     "Item",
@@ -109,6 +171,8 @@ REC_OFF_MAX_MP = 0x3A
 REC_OFF_WEAPON = 0x1C
 REC_OFF_ARMOR = 0x1D
 REC_OFF_ACCESSORY = 0x1E
+REC_OFF_WEAPON_MATERIA = 0x40
+REC_OFF_ARMOR_MATERIA = 0x60
 REC_OFF_MATERIA_WEAPON = 0x40
 REC_OFF_MATERIA_ARMOR = 0x60
 
@@ -136,6 +200,7 @@ _MATERIA_ORB_BY_ID: Dict[str, str] = {}
 _WEAPON_NAMES_EN: Dict[str, str] = {}
 _ARMOR_NAMES_EN: Dict[str, str] = {}
 _ACCESSORY_NAMES_EN: Dict[str, str] = {}
+_ITEM_NAMES_EN: Dict[str, str] = {}
 _GEAR_LAYOUT_ASSETS_LOADED = False
 
 _EQUIP_ALLOW: Dict[str, Any] = {}
@@ -195,6 +260,7 @@ def _load_ff7_gear_layout_assets() -> None:
         wnpath = _GEAR_ASSET_DIR / "weapon_names_en.json"
         anpath = _GEAR_ASSET_DIR / "armor_names_en.json"
         acpath = _GEAR_ASSET_DIR / "accessory_names_en.json"
+        ipath = _GEAR_ASSET_DIR / "item_names_en.json"
         if wpath.is_file():
             _WEAPON_MATERIA_SLOT_TYPES.clear()
             _WEAPON_MATERIA_SLOT_TYPES.update(json.loads(wpath.read_text(encoding="utf-8")))
@@ -216,6 +282,9 @@ def _load_ff7_gear_layout_assets() -> None:
         if acpath.is_file():
             _ACCESSORY_NAMES_EN.clear()
             _ACCESSORY_NAMES_EN.update(json.loads(acpath.read_text(encoding="utf-8")))
+        if ipath.is_file():
+            _ITEM_NAMES_EN.clear()
+            _ITEM_NAMES_EN.update(json.loads(ipath.read_text(encoding="utf-8")))
     except OSError as e:
         logger.warning("FF7 layout/materia name assets unreadable: %s", e)
 
@@ -665,6 +734,184 @@ def _sanitize_enemy_token(s: str) -> str:
     return re.sub(r"\s+", " ", "".join(out)).strip()
 
 
+# Party stat name -> (savemap record offset, byte width, is_signed).
+# HP/MP/maxHP/maxMP are u16, stats are u8. Bonuses are aliased with "_bonus" suffix.
+_PARTY_STAT_OFFSETS: Dict[str, Tuple[int, int]] = {
+    "str": (REC_OFF_STR, 1),
+    "strength": (REC_OFF_STR, 1),
+    "vit": (REC_OFF_VIT, 1),
+    "vitality": (REC_OFF_VIT, 1),
+    "mag": (REC_OFF_MAG, 1),
+    "magic": (REC_OFF_MAG, 1),
+    "spr": (REC_OFF_SPR, 1),
+    "spirit": (REC_OFF_SPR, 1),
+    "dex": (REC_OFF_DEX, 1),
+    "dexterity": (REC_OFF_DEX, 1),
+    "luk": (REC_OFF_LUK, 1),
+    "luck": (REC_OFF_LUK, 1),
+    "str_bonus": (REC_OFF_STR_BONUS, 1),
+    "vit_bonus": (REC_OFF_VIT_BONUS, 1),
+    "mag_bonus": (REC_OFF_MAG_BONUS, 1),
+    "spr_bonus": (REC_OFF_SPR_BONUS, 1),
+    "dex_bonus": (REC_OFF_DEX_BONUS, 1),
+    "luk_bonus": (REC_OFF_LUK_BONUS, 1),
+    "hp": (0x2C, 2),
+    "mp": (0x30, 2),
+    "max_hp": (0x38, 2),
+    "max_mp": (0x3A, 2),
+    "maxhp": (0x38, 2),
+    "maxmp": (0x3A, 2),
+}
+
+# Enemy stat name -> (offset in enemy_data_base record, width). Defense/MDef
+# are stored as raw byte but the game reads value*2, so the caller halves the
+# requested amount before writing (see _op_set_enemy_stat).
+_ENEMY_STAT_OFFSETS: Dict[str, Tuple[int, int]] = {
+    "level": (ENEMY_OFF_LEVEL, 1),
+    "speed": (ENEMY_OFF_SPEED, 1),
+    "luck": (ENEMY_OFF_LUCK, 1),
+    "evade": (ENEMY_OFF_EVADE, 1),
+    "str": (ENEMY_OFF_STR, 1),
+    "strength": (ENEMY_OFF_STR, 1),
+    "def": (ENEMY_OFF_DEF, 1),
+    "defense": (ENEMY_OFF_DEF, 1),
+    "mag": (ENEMY_OFF_MAG, 1),
+    "magic": (ENEMY_OFF_MAG, 1),
+    "mdef": (ENEMY_OFF_MDEF, 1),
+    "magic_defense": (ENEMY_OFF_MDEF, 1),
+    "magicdefense": (ENEMY_OFF_MDEF, 1),
+}
+
+
+# Materia AP thresholds for levels 1-5 (and Master) from FF7 kernel data.
+_MATERIA_LEVEL_AP: Dict[int, int] = {
+    1: 0,
+    2: 2000,
+    3: 18000,
+    4: 35000,
+    5: 81000,
+    6: 0xFFFFFF,
+}
+
+
+# Named colors → RGB, accepted by _op_set_menu_colors.
+_NAMED_COLORS: Dict[str, Tuple[int, int, int]] = {
+    "black": (0, 0, 0),
+    "white": (255, 255, 255),
+    "red": (255, 0, 0),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
+    "yellow": (255, 255, 0),
+    "cyan": (0, 255, 255),
+    "magenta": (255, 0, 255),
+    "orange": (255, 128, 0),
+    "purple": (128, 0, 255),
+    "pink": (255, 128, 192),
+    "brown": (128, 64, 0),
+    "gray": (128, 128, 128),
+    "grey": (128, 128, 128),
+    "navy": (0, 0, 128),
+    "teal": (0, 128, 128),
+    "lime": (128, 255, 0),
+    "crimson": (192, 0, 64),
+    "gold": (255, 192, 0),
+    "silver": (192, 192, 192),
+    # FF7 menu defaults (roughly the blue gradient)
+    "ff7blue": (16, 48, 160),
+    "default": (16, 48, 160),
+}
+
+
+# Menu corner token → list of (savemap_offset, corner_label) affected.
+_MENU_CORNERS: Dict[str, List[str]] = {
+    "upper_left": ["ul"],
+    "upper right": ["ur"],
+    "upper_right": ["ur"],
+    "ul": ["ul"],
+    "ur": ["ur"],
+    "ll": ["ll"],
+    "lr": ["lr"],
+    "top_left": ["ul"],
+    "top_right": ["ur"],
+    "top-left": ["ul"],
+    "top-right": ["ur"],
+    "bottom_left": ["ll"],
+    "bottom_right": ["lr"],
+    "lower_left": ["ll"],
+    "lower_right": ["lr"],
+    "top": ["ul", "ur"],
+    "bottom": ["ll", "lr"],
+    "left": ["ul", "ll"],
+    "right": ["ur", "lr"],
+    "all": ["ul", "ur", "ll", "lr"],
+    "corners": ["ul", "ur", "ll", "lr"],
+}
+
+_MENU_CORNER_OFFSETS: Dict[str, int] = {
+    "ul": SAVE_OFF_WIN_UL,
+    "ur": SAVE_OFF_WIN_UR,
+    "ll": SAVE_OFF_WIN_LL,
+    "lr": SAVE_OFF_WIN_LR,
+}
+
+# Byte offset within ADDR_MENU_COLOR_DISPLAY_BASE (16-byte BGR+0x80 layout).
+_MENU_CORNER_DISPLAY_OFF: Dict[str, int] = {
+    "ul": 0,
+    "ll": 4,
+    "ur": 8,
+    "lr": 12,
+}
+
+# Byte offset within ADDR_MENU_COLOR_SAVE_MIRROR_BASE (12-byte RGB sequential layout).
+_MENU_CORNER_I7_MIRROR_OFF: Dict[str, int] = {
+    "ul": 0,
+    "ll": 3,
+    "ur": 6,
+    "lr": 9,
+}
+
+
+def _menu_display_quad(rgb: Tuple[int, int, int]) -> bytes:
+    """BGR + 0x80 padding per InteractiveSeven ``MenuColors.GetDisplayBytes``."""
+    r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
+    return bytes([b & 0xFF, g & 0xFF, r & 0xFF, 0x80])
+
+
+def _parse_menu_color(token: str) -> Optional[Tuple[int, int, int]]:
+    """Parse a color string: named color, ``#RRGGBB``, ``rgb(r,g,b)`` or ``r,g,b``."""
+    if token is None:
+        return None
+    s = str(token).strip().lower()
+    if not s:
+        return None
+    if s in _NAMED_COLORS:
+        return _NAMED_COLORS[s]
+    m = re.match(r"^#?([0-9a-f]{6})$", s)
+    if m:
+        h = m.group(1)
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    m = re.match(r"^#?([0-9a-f]{3})$", s)
+    if m:
+        h = m.group(1)
+        return (int(h[0] * 2, 16), int(h[1] * 2, 16), int(h[2] * 2, 16))
+    m = re.match(
+        r"^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$", s
+    )
+    if m:
+        return tuple(max(0, min(255, int(v))) for v in m.groups())  # type: ignore[return-value]
+    m = re.match(r"^(\d+)\s*,\s*(\d+)\s*,\s*(\d+)$", s)
+    if m:
+        return tuple(max(0, min(255, int(v))) for v in m.groups())  # type: ignore[return-value]
+    return None
+
+
+def _parse_menu_corners(token: str) -> Optional[List[str]]:
+    if token is None:
+        return None
+    s = re.sub(r"\s+", "_", str(token).strip().lower())
+    return list(_MENU_CORNERS.get(s, []))
+
+
 def _rgb_tuple(savemap: bytes, off: int) -> Optional[Tuple[int, int, int]]:
     if len(savemap) < off + 3:
         return None
@@ -959,6 +1206,204 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         ],
     },
     {
+        "id": "set_party_level",
+        "label": "Set party member level",
+        "description": "Savemap level (1-99); mirrored into the battle actor and followed by a stat recalc.",
+        "args": [
+            {
+                "name": "character",
+                "type": "ff7_text",
+                "label": "Character",
+                "hint_tags": ("character",),
+            },
+            {
+                "name": "level",
+                "type": "ff7_text",
+                "label": "Level (1-99)",
+                "hint_tags": ("numeric", "random_range"),
+            },
+        ],
+    },
+    {
+        "id": "set_enemy_level",
+        "label": "Set enemy level",
+        "description": "Battle only: writes the enemy data record level byte (affects derived stats on next action).",
+        "args": [
+            {
+                "name": "enemy",
+                "type": "ff7_text",
+                "label": "Enemy",
+                "hint_tags": ("enemy",),
+            },
+            {
+                "name": "level",
+                "type": "ff7_text",
+                "label": "Level (1-99)",
+                "hint_tags": ("numeric", "random_range"),
+            },
+        ],
+    },
+    {
+        "id": "set_party_stat",
+        "label": "Set party member stat",
+        "description": "Savemap stat write + battle-actor mirror for hp/mp/max_hp/max_mp.",
+        "args": [
+            {
+                "name": "character",
+                "type": "ff7_text",
+                "label": "Character",
+                "hint_tags": ("character",),
+            },
+            {
+                "name": "stat",
+                "type": "ff7_text",
+                "label": "Stat (str / vit / mag / spr / dex / luk / hp / mp / max_hp / max_mp)",
+                "hint_tags": ("message",),
+            },
+            {
+                "name": "amount",
+                "type": "ff7_text",
+                "label": "Amount",
+                "hint_tags": ("numeric", "random_range"),
+            },
+        ],
+    },
+    {
+        "id": "set_enemy_stat",
+        "label": "Set enemy stat",
+        "description": "Writes enemy_data_base (level/speed/luck/evade/str/def/mag/mdef) or battle-actor (hp/mp/max_hp/max_mp).",
+        "args": [
+            {
+                "name": "enemy",
+                "type": "ff7_text",
+                "label": "Enemy",
+                "hint_tags": ("enemy",),
+            },
+            {
+                "name": "stat",
+                "type": "ff7_text",
+                "label": "Stat (level / speed / luck / evade / str / def / mag / mdef / hp / max_hp / mp / max_mp)",
+                "hint_tags": ("message",),
+            },
+            {
+                "name": "amount",
+                "type": "ff7_text",
+                "label": "Amount",
+                "hint_tags": ("numeric", "random_range"),
+            },
+        ],
+    },
+    {
+        "id": "set_menu_colors",
+        "label": "Change menu colors",
+        "description": "Writes RGB to menu corner(s). Accepts named colors (red/blue/…), #RRGGBB, rgb(r,g,b) or r,g,b.",
+        "args": [
+            {
+                "name": "target",
+                "type": "ff7_text",
+                "label": "Target (all, upper_left, upper_right, lower_left, lower_right, top, bottom, left, right)",
+                "hint_tags": ("message",),
+            },
+            {
+                "name": "color",
+                "type": "ff7_text",
+                "label": "Color (name / #RRGGBB / r,g,b)",
+            },
+        ],
+    },
+    {
+        "id": "equip_materia",
+        "label": "Equip / unequip materia",
+        "description": "Swaps inventory materia into a weapon/armor slot. Use 'none' to unequip; any displaced materia returns to inventory.",
+        "args": [
+            {
+                "name": "character",
+                "type": "ff7_text",
+                "label": "Character",
+                "hint_tags": ("character",),
+            },
+            {
+                "name": "gear_kind",
+                "type": "ff7_text",
+                "label": "Gear (weapon or armor)",
+                "hint_tags": ("message",),
+            },
+            {
+                "name": "slot",
+                "type": "ff7_text",
+                "label": "Slot (0-7)",
+                "hint_tags": ("message", "numeric", "random_range"),
+            },
+            {
+                "name": "materia",
+                "type": "ff7_text",
+                "label": "Materia ('none' to unequip)",
+            },
+        ],
+    },
+    {
+        "id": "start_battle",
+        "label": "Start battle",
+        "description": "Starts the given battle_id. Queued until Field/World if currently in Menu or Victory.",
+        "args": [
+            {
+                "name": "battle_id",
+                "type": "ff7_text",
+                "label": "Battle ID",
+                "hint_tags": ("numeric", "random_range"),
+            },
+        ],
+    },
+    {
+        "id": "add_item",
+        "label": "Add item",
+        "description": "Calls party_add_item_fn to add quantity copies of an item by name.",
+        "args": [
+            {
+                "name": "item",
+                "type": "ff7_text",
+                "label": "Item name",
+            },
+            {
+                "name": "quantity",
+                "type": "ff7_text",
+                "label": "Quantity (1-99)",
+                "hint_tags": ("numeric", "random_range"),
+            },
+        ],
+    },
+    {
+        "id": "add_materia",
+        "label": "Add materia",
+        "description": "Calls party_add_materia_fn to place a materia (at the chosen level) into inventory.",
+        "args": [
+            {
+                "name": "materia",
+                "type": "ff7_text",
+                "label": "Materia name",
+            },
+            {
+                "name": "materia_level",
+                "type": "ff7_text",
+                "label": "Level 1-5, 6 for Master, or raw AP (e.g. 2000)",
+                "hint_tags": ("message", "numeric", "random_range"),
+            },
+        ],
+    },
+    {
+        "id": "add_gear",
+        "label": "Add gear",
+        "description": "Adds a weapon, armor, or accessory to inventory by name (single copy).",
+        "args": [
+            {
+                "name": "gear",
+                "type": "ff7_text",
+                "label": "Gear name (weapon / armor / accessory)",
+                "hint_tags": ("gear",),
+            },
+        ],
+    },
+    {
         "id": "restore_game_speed",
         "label": "Restore game speed (internal)",
         "description": "Restores FPS saved by Game speed. Used by timers; not shown in the operation list.",
@@ -1015,6 +1460,7 @@ class FF7Hook:
         self._proc: Optional[_ProcessHandle] = None
         self._last_snapshot: Optional[Dict[str, Any]] = None
         self._speed_backup: Optional[Dict[str, Any]] = None
+        self._pending_battle_id: Optional[int] = None
 
     def close(self) -> None:
         if sys.platform != "win32" or _kernel32 is None:
@@ -1121,8 +1567,12 @@ class FF7Hook:
         )
         return bool(ok) and written.value == len(data)
 
-    def _call_ff7_party_stat_recalc(self) -> None:
-        """Best-effort: post-equip refresh via remote thread stub."""
+    def _run_remote_shellcode(self, sc: bytes, label: str) -> bool:
+        """Allocate, write, and run ``sc`` as a remote thread in the FF7 process.
+
+        Shared plumbing for :meth:`_call_ff7_party_stat_recalc` and
+        :meth:`_call_ff7_game_fn_one_arg`.
+        """
         if (
             sys.platform != "win32"
             or _kernel32 is None
@@ -1132,13 +1582,7 @@ class FF7Hook:
             or _CreateRemoteThread is None
             or _WaitForSingleObject is None
         ):
-            return
-        target = _rebase(self._proc.module_base, ADDR_PARTY_STAT_RECALC_FN)
-        sc = (
-            bytes([0xB8])
-            + struct.pack("<I", target & 0xFFFFFFFF)
-            + bytes([0xFF, 0xD0, 0x33, 0xC0, 0xC3])
-        )
+            return False
         MEM_COMMIT = 0x1000
         MEM_RESERVE = 0x2000
         MEM_RELEASE = 0x8000
@@ -1152,16 +1596,12 @@ class FF7Hook:
                 _PAGE_EXECUTE_READWRITE,
             )
             if not remote:
-                logger.debug("party stat recalc: VirtualAllocEx failed")
-                return
+                logger.debug("%s: VirtualAllocEx failed", label)
+                return False
             ra = int(ctypes.cast(remote, ctypes.c_void_p).value or 0)
             if not ra or not self._write(ra, sc):
-                logger.debug("party stat recalc: shellcode write failed")
-                try:
-                    _VirtualFreeEx(self._proc.handle, remote, 0, MEM_RELEASE)
-                except Exception:
-                    pass
-                return
+                logger.debug("%s: shellcode write failed", label)
+                return False
             tid = wintypes.DWORD(0)
             h_thread = _CreateRemoteThread(
                 self._proc.handle,
@@ -1173,31 +1613,57 @@ class FF7Hook:
                 ctypes.byref(tid),
             )
             if not h_thread:
-                logger.debug("party stat recalc: CreateRemoteThread failed")
+                logger.debug("%s: CreateRemoteThread failed", label)
+                return False
+            try:
+                w = _WaitForSingleObject(h_thread, 5000)
+                if w != 0:
+                    logger.debug("%s: WaitForSingleObject=%s", label, w)
+                    return False
+            finally:
+                _CloseHandle(h_thread)
+            return True
+        except Exception as e:
+            logger.debug("%s: %s", label, e)
+            return False
+        finally:
+            if remote:
                 try:
                     _VirtualFreeEx(self._proc.handle, remote, 0, MEM_RELEASE)
                 except Exception:
                     pass
-                return
-            try:
-                w = _WaitForSingleObject(h_thread, 5000)
-                if w != 0:
-                    logger.debug("party stat recalc: WaitForSingleObject=%s", w)
-            finally:
-                _CloseHandle(h_thread)
-        except Exception as e:
-            logger.debug("party stat recalc: %s", e)
-        finally:
-            if remote:
-                try:
-                    _VirtualFreeEx(
-                        self._proc.handle,
-                        remote,
-                        0,
-                        MEM_RELEASE,
-                    )
-                except Exception:
-                    pass
+
+    def _call_ff7_party_stat_recalc(self) -> None:
+        """Best-effort: post-equip refresh via remote thread stub."""
+        if not self._proc:
+            return
+        target = _rebase(self._proc.module_base, ADDR_PARTY_STAT_RECALC_FN)
+        sc = (
+            bytes([0xB8])
+            + struct.pack("<I", target & 0xFFFFFFFF)
+            + bytes([0xFF, 0xD0, 0x33, 0xC0, 0xC3])
+        )
+        self._run_remote_shellcode(sc, "party stat recalc")
+
+    def _call_ff7_game_fn_one_arg(self, fn_rva: int, arg_u32: int) -> bool:
+        """Call a ``stdcall/cdecl`` FF7 function that takes a single u32 arg.
+
+        Used for ``party_add_item_fn`` and ``party_add_materia_fn``. The caller
+        cleans the stack with ``add esp, 4`` so this is cdecl-safe.
+        """
+        if not self._proc:
+            return False
+        target = _rebase(self._proc.module_base, fn_rva) & 0xFFFFFFFF
+        arg = int(arg_u32) & 0xFFFFFFFF
+        # push imm32 ; mov eax, target ; call eax ; add esp, 4 ; xor eax,eax ; ret
+        sc = (
+            bytes([0x68])
+            + struct.pack("<I", arg)
+            + bytes([0xB8])
+            + struct.pack("<I", target)
+            + bytes([0xFF, 0xD0, 0x83, 0xC4, 0x04, 0x33, 0xC0, 0xC3])
+        )
+        return self._run_remote_shellcode(sc, f"call fn {fn_rva:#x}")
 
     def _read_u8(self, addr: int) -> Optional[int]:
         d = self._read(addr, 1)
@@ -1788,6 +2254,56 @@ class FF7Hook:
             return None, f"unknown accessory: {clean}"
         return None, "gear_kind must be weapon|armor|accessory"
 
+    def _gear_name_to_item_id(
+        self, gear_name: str
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """Resolve a weapon/armor/accessory name to the unified inventory item ID.
+
+        Weapons occupy 0x80..0xFF, armor 0x100..0x11F, accessories 0x120..0x13F.
+        Matches are case/whitespace insensitive.
+        """
+        _load_ff7_gear_layout_assets()
+        clean = _sanitize_enemy_token(str(gear_name or "")).strip().lower()
+        if not clean:
+            return None, "empty gear name"
+        for sid, nm in _WEAPON_NAMES_EN.items():
+            if nm and nm.strip().lower() == clean:
+                return ITEM_ID_WEAPON_BASE + int(sid), None
+        for sid, nm in _ARMOR_NAMES_EN.items():
+            if nm and nm.strip().lower() == clean:
+                return ITEM_ID_ARMOR_BASE + int(sid), None
+        for sid, nm in _ACCESSORY_NAMES_EN.items():
+            if nm and nm.strip().lower() == clean:
+                return ITEM_ID_ACCESSORY_BASE + int(sid), None
+        return None, f"unknown gear: {gear_name}"
+
+    def _item_name_to_id(
+        self, item_name: str
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """Resolve a name across items, weapons, armor, accessories."""
+        _load_ff7_gear_layout_assets()
+        clean = _sanitize_enemy_token(str(item_name or "")).strip().lower()
+        if not clean:
+            return None, "empty item name"
+        for sid, nm in _ITEM_NAMES_EN.items():
+            if nm and nm.strip().lower() == clean:
+                iid = int(sid)
+                if 0 <= iid < ITEM_ID_WEAPON_BASE:
+                    return iid, None
+        return self._gear_name_to_item_id(item_name)
+
+    def _materia_name_to_id(
+        self, materia_name: str
+    ) -> Tuple[Optional[int], Optional[str]]:
+        _load_ff7_gear_layout_assets()
+        clean = _sanitize_enemy_token(str(materia_name or "")).strip().lower()
+        if not clean:
+            return None, "empty materia name"
+        for sid, nm in _MATERIA_NAMES_EN.items():
+            if nm and nm.strip().lower() == clean:
+                return int(sid), None
+        return None, f"unknown materia: {materia_name}"
+
     def _resolve_gear_token(self, kind: str, token: str) -> Tuple[Optional[int], Optional[str]]:
         tl = (token or "").strip().lower()
         if tl in (f"random:{kind}", "random") or tl == f"random_{kind}":
@@ -1915,6 +2431,163 @@ class FF7Hook:
             return False, "write failed"
         self._call_ff7_party_stat_recalc()
         return True, None
+
+    # ------------------------------------------------------------------
+    # Inventory helpers
+    # ------------------------------------------------------------------
+    def _battle_ally_slot_for_cid(self, cid: int) -> Optional[int]:
+        """Return the 0..2 battle-ally slot currently holding character ``cid``."""
+        if not self._proc:
+            return None
+        base = _rebase(self._proc.module_base, ADDR_PARTY_MEMBER_IDS)
+        for s in range(3):
+            b = self._read_u8(base + s)
+            if b is not None and int(b) == int(cid):
+                return s
+        return None
+
+    def _inv_items_addr(self) -> int:
+        assert self._proc
+        return _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + SAVE_OFF_INV_ITEMS
+
+    def _inv_materia_addr(self) -> int:
+        assert self._proc
+        return _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + SAVE_OFF_INV_MATERIA
+
+    def _inv_read_item_slot(self, idx: int) -> Optional[Tuple[int, int]]:
+        """Return (item_id, quantity) at slot ``idx``; None if empty.
+
+        Record is 2 bytes: ``item_id = bits 0..8``, ``quantity = bits 9..15``.
+        Empty slot is ``0xFFFF``.
+        """
+        if idx < 0 or idx >= INV_ITEM_SLOTS:
+            return None
+        raw = self._read(self._inv_items_addr() + idx * 2, 2)
+        if not raw or len(raw) < 2:
+            return None
+        val = struct.unpack("<H", raw)[0]
+        if val == 0xFFFF:
+            return None
+        return (val & 0x1FF, (val >> 9) & 0x7F)
+
+    def _inv_write_item_slot(self, idx: int, item_id: Optional[int], qty: int) -> bool:
+        if idx < 0 or idx >= INV_ITEM_SLOTS:
+            return False
+        if item_id is None or qty <= 0:
+            val = 0xFFFF
+        else:
+            val = (int(item_id) & 0x1FF) | ((int(qty) & 0x7F) << 9)
+        return self._write(
+            self._inv_items_addr() + idx * 2, struct.pack("<H", val)
+        )
+
+    def _inv_find_item_slot(self, item_id: int) -> Optional[int]:
+        for i in range(INV_ITEM_SLOTS):
+            rec = self._inv_read_item_slot(i)
+            if rec and rec[0] == item_id:
+                return i
+        return None
+
+    def _inv_first_empty_item_slot(self) -> Optional[int]:
+        for i in range(INV_ITEM_SLOTS):
+            if self._inv_read_item_slot(i) is None:
+                return i
+        return None
+
+    def _inv_add_item(self, item_id: int, qty: int = 1) -> bool:
+        qty = max(1, min(MAX_ITEM_QUANTITY, int(qty)))
+        existing = self._inv_find_item_slot(int(item_id))
+        if existing is not None:
+            rec = self._inv_read_item_slot(existing)
+            if rec is None:
+                return False
+            new_qty = min(MAX_ITEM_QUANTITY, rec[1] + qty)
+            return self._inv_write_item_slot(existing, item_id, new_qty)
+        empty = self._inv_first_empty_item_slot()
+        if empty is None:
+            return False
+        return self._inv_write_item_slot(empty, item_id, qty)
+
+    def _inv_remove_item(self, item_id: int, qty: int = 1) -> bool:
+        slot = self._inv_find_item_slot(int(item_id))
+        if slot is None:
+            return False
+        rec = self._inv_read_item_slot(slot)
+        if rec is None:
+            return False
+        remaining = rec[1] - int(qty)
+        if remaining <= 0:
+            return self._inv_write_item_slot(slot, None, 0)
+        return self._inv_write_item_slot(slot, item_id, remaining)
+
+    def _inv_read_materia_slot(
+        self, idx: int
+    ) -> Optional[Tuple[int, int]]:
+        """Return (materia_id, ap) for inventory slot ``idx``; None if empty."""
+        if idx < 0 or idx >= INV_MATERIA_SLOTS:
+            return None
+        raw = self._read(self._inv_materia_addr() + idx * 4, 4)
+        if not raw or len(raw) < 4:
+            return None
+        mid = raw[0]
+        if mid == 0xFF:
+            return None
+        ap = raw[1] | (raw[2] << 8) | (raw[3] << 16)
+        return (int(mid), int(ap))
+
+    def _inv_write_materia_slot(
+        self, idx: int, mid: Optional[int], ap: int
+    ) -> bool:
+        if idx < 0 or idx >= INV_MATERIA_SLOTS:
+            return False
+        if mid is None:
+            data = bytes([0xFF, 0xFF, 0xFF, 0xFF])
+        else:
+            a = int(ap) & 0xFFFFFF
+            data = bytes(
+                [int(mid) & 0xFF, a & 0xFF, (a >> 8) & 0xFF, (a >> 16) & 0xFF]
+            )
+        return self._write(self._inv_materia_addr() + idx * 4, data)
+
+    def _inv_first_empty_materia_slot(self) -> Optional[int]:
+        for i in range(INV_MATERIA_SLOTS):
+            if self._inv_read_materia_slot(i) is None:
+                return i
+        return None
+
+    def _inv_add_materia(self, mid: int, ap: int = 0) -> bool:
+        empty = self._inv_first_empty_materia_slot()
+        if empty is None:
+            return False
+        return self._inv_write_materia_slot(empty, int(mid), int(ap))
+
+    def _inv_find_materia_slot(
+        self, mid: int, ap: Optional[int] = None
+    ) -> Optional[int]:
+        """Find the first inventory slot with matching materia id (and optional exact AP)."""
+        for i in range(INV_MATERIA_SLOTS):
+            rec = self._inv_read_materia_slot(i)
+            if rec is None:
+                continue
+            if rec[0] == int(mid) and (ap is None or rec[1] == int(ap)):
+                return i
+        return None
+
+    def _inv_remove_materia(
+        self, mid: int, ap: Optional[int] = None
+    ) -> Tuple[bool, int]:
+        """Remove one materia of ``mid`` (optionally matching ``ap``).
+
+        Returns ``(ok, ap_removed)`` — ``ap_removed`` is the AP of the slot
+        that was consumed (useful when the caller wants to preserve it).
+        """
+        slot = self._inv_find_materia_slot(mid, ap)
+        if slot is None:
+            return False, 0
+        rec = self._inv_read_materia_slot(slot) or (0, 0)
+        if not self._inv_write_materia_slot(slot, None, 0):
+            return False, 0
+        return True, rec[1]
 
     def _op_set_battle_status(
         self, party_slot: int, mask: int, mode: str
@@ -2270,6 +2943,527 @@ class FF7Hook:
             return False, "Write enemy HP failed"
         return True, None
 
+    # ------------------------------------------------------------------
+    # Level / stat edits (party + enemy)
+    # ------------------------------------------------------------------
+    def _current_module_byte(self) -> Optional[int]:
+        if not self._proc:
+            return None
+        return self._read_u8(_rebase(self._proc.module_base, ADDR_CURRENT_MODULE))
+
+    def _op_set_party_level(
+        self, character: str, level: int
+    ) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data:
+            return False, "Savemap not readable"
+        cid, err = self._char_id_from_gear_character_token(data, character)
+        if err or cid is None:
+            return False, err or "character"
+        if cid >= len(_CHAR_BLOCK):
+            return False, "bad character id"
+        lvl = max(1, min(99, int(level)))
+        base = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + _CHAR_BLOCK[cid]
+        if not self._write(base + REC_OFF_LEVEL, bytes([lvl])):
+            return False, "write level failed"
+        if self._current_module_byte() == 2:
+            slot = self._battle_ally_slot_for_cid(int(cid))
+            if slot is not None:
+                self._write(
+                    self._battle_actor_addr(slot) + BATTLE_OFF_LEVEL,
+                    bytes([lvl]),
+                )
+        self._call_ff7_party_stat_recalc()
+        return True, None
+
+    def _op_set_enemy_level(
+        self, enemy: str, level: int
+    ) -> Tuple[bool, Optional[str]]:
+        sl, err = self._enemy_slot_from_token(enemy)
+        if err or sl is None:
+            return False, err or "enemy"
+        snap = self._last_snapshot or {}
+        scene_id: Optional[int] = None
+        for row in snap.get("enemies") or []:
+            if int(row.get("slot", -1)) == int(sl):
+                scene_id = int(row.get("scene_id", -1))
+                break
+        if scene_id is None or scene_id < 0:
+            return False, "no scene_id for enemy"
+        lvl = max(1, min(99, int(level)))
+        base = (
+            _rebase(self._proc.module_base, ADDR_ENEMY_DATA_BASE)
+            + scene_id * ENEMY_DATA_STRIDE
+        )
+        if not self._write(base + ENEMY_OFF_LEVEL, bytes([lvl])):
+            return False, "write enemy level failed"
+        return True, None
+
+    def _op_set_party_stat(
+        self, character: str, stat: str, amount: int
+    ) -> Tuple[bool, Optional[str]]:
+        key = re.sub(r"[\s\-]+", "_", str(stat or "").strip().lower())
+        info = _PARTY_STAT_OFFSETS.get(key)
+        if info is None:
+            return False, f"unknown party stat: {stat}"
+        off, width = info
+        data, _ = self._read_savemap()
+        if not data:
+            return False, "Savemap not readable"
+        cid, err = self._char_id_from_gear_character_token(data, character)
+        if err or cid is None:
+            return False, err or "character"
+        if cid >= len(_CHAR_BLOCK):
+            return False, "bad character id"
+        base = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + _CHAR_BLOCK[cid]
+        if width == 1:
+            v = max(0, min(255, int(amount)))
+            payload = bytes([v])
+        else:
+            v = max(0, min(9999, int(amount)))
+            payload = struct.pack("<H", v)
+        if not self._write(base + off, payload):
+            return False, "write stat failed"
+        if self._current_module_byte() == 2 and key in (
+            "hp",
+            "mp",
+            "max_hp",
+            "max_mp",
+            "maxhp",
+            "maxmp",
+        ):
+            slot = self._battle_ally_slot_for_cid(int(cid))
+            if slot is not None:
+                actor = self._battle_actor_addr(slot)
+                mirror = {
+                    "hp": BATTLE_OFF_HP,
+                    "mp": BATTLE_OFF_MP,
+                    "max_hp": BATTLE_OFF_MAX_HP,
+                    "maxhp": BATTLE_OFF_MAX_HP,
+                    "max_mp": BATTLE_OFF_MAX_MP,
+                    "maxmp": BATTLE_OFF_MAX_MP,
+                }
+                moff = mirror[key]
+                self._write(
+                    actor + moff,
+                    struct.pack("<I" if moff == BATTLE_OFF_HP or moff == BATTLE_OFF_MAX_HP else "<H", v),
+                )
+        self._call_ff7_party_stat_recalc()
+        return True, None
+
+    def _op_set_enemy_stat(
+        self, enemy: str, stat: str, amount: int
+    ) -> Tuple[bool, Optional[str]]:
+        key = re.sub(r"[\s\-]+", "_", str(stat or "").strip().lower())
+        sl, err = self._enemy_slot_from_token(enemy)
+        if err or sl is None:
+            return False, err or "enemy"
+        snap = self._last_snapshot or {}
+        scene_id: Optional[int] = None
+        for row in snap.get("enemies") or []:
+            if int(row.get("slot", -1)) == int(sl):
+                scene_id = int(row.get("scene_id", -1))
+                break
+        # Live battle-actor stats (hp/mp/max_hp/max_mp) go to the actor directly
+        if key in ("hp", "mp", "max_hp", "maxhp", "max_mp", "maxmp"):
+            actor = self._battle_actor_addr(int(sl))
+            v = max(0, min(65535, int(amount)))
+            if key == "hp":
+                ok = self._write(actor + BATTLE_OFF_HP, struct.pack("<I", v))
+            elif key in ("max_hp", "maxhp"):
+                ok = self._write(actor + BATTLE_OFF_MAX_HP, struct.pack("<I", v))
+            elif key == "mp":
+                ok = self._write(actor + BATTLE_OFF_MP, struct.pack("<H", v))
+            else:
+                ok = self._write(actor + BATTLE_OFF_MAX_MP, struct.pack("<H", v))
+            return (True, None) if ok else (False, "write failed")
+        info = _ENEMY_STAT_OFFSETS.get(key)
+        if info is None:
+            return False, f"unknown enemy stat: {stat}"
+        off, _width = info
+        if scene_id is None or scene_id < 0:
+            return False, "no scene_id for enemy"
+        base = (
+            _rebase(self._proc.module_base, ADDR_ENEMY_DATA_BASE)
+            + scene_id * ENEMY_DATA_STRIDE
+        )
+        raw_amount = int(amount)
+        # Def/MDef are stored as value*2 in the record; scale down to keep UX natural.
+        if key in ("def", "defense", "mdef", "magic_defense", "magicdefense"):
+            raw_amount = max(0, raw_amount // 2)
+        v = max(0, min(255, raw_amount))
+        if not self._write(base + off, bytes([v])):
+            return False, "write enemy stat failed"
+        return True, None
+
+    # ------------------------------------------------------------------
+    # Menu colors
+    # ------------------------------------------------------------------
+    def _op_set_menu_colors(
+        self, target: str, color: str
+    ) -> Tuple[bool, Optional[str]]:
+        corners = _parse_menu_corners(target)
+        if not corners:
+            return False, f"unknown menu target: {target}"
+        rgb = _parse_menu_color(color)
+        if rgb is None:
+            return False, f"unknown color: {color}"
+        if not self._proc:
+            return False, "Not attached"
+        sm_base = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE)
+        probe = self._read(sm_base + SAVE_OFF_GIL, 1)
+        if probe is None or len(probe) < 1:
+            logger.warning(
+                "set_menu_colors: savemap unreachable (module_base=0x%x, sm_base=0x%x)",
+                self._proc.module_base,
+                sm_base,
+            )
+            return False, "savemap unreachable (process attach or rebase is wrong)"
+        mb = self._proc.module_base
+        disp_base = _rebase(mb, ADDR_MENU_COLOR_DISPLAY_BASE)
+        mir_base = _rebase(mb, ADDR_MENU_COLOR_SAVE_MIRROR_BASE)
+        payload_rgb = bytes(rgb)
+        disp_payload = _menu_display_quad(rgb)
+        written_addrs: List[str] = []
+        for c in corners:
+            sm_off = _MENU_CORNER_OFFSETS.get(c)
+            d_off = _MENU_CORNER_DISPLAY_OFF.get(c)
+            m_off = _MENU_CORNER_I7_MIRROR_OFF.get(c)
+            if sm_off is None or d_off is None or m_off is None:
+                continue
+            # 1) Savemap (Data Crystal layout) — persists for saves / our HTML reader.
+            sm_addr = sm_base + sm_off
+            ok = self._win_protect_write(
+                sm_addr,
+                payload_rgb,
+                flush_icache=False,
+                page_protect=_PAGE_READWRITE,
+            )
+            if not ok:
+                logger.warning(
+                    "set_menu_colors: savemap write failed corner=%s addr=0x%x",
+                    c,
+                    sm_addr,
+                )
+                return False, f"savemap write failed for corner {c}"
+            back_sm = self._read(sm_addr, 3)
+            if back_sm != payload_rgb:
+                logger.warning(
+                    "set_menu_colors: savemap read-back mismatch corner=%s expected=%r got=%r",
+                    c,
+                    payload_rgb,
+                    back_sm,
+                )
+                return False, f"menu color savemap read-back failed for corner {c}"
+            written_addrs.append(f"savemap:{c}=0x{sm_addr:x}")
+
+            # 2) Live display palette (InteractiveSeven MenuColorAll) — what the game draws.
+            d_addr = disp_base + d_off
+            ok = self._win_protect_write(
+                d_addr,
+                disp_payload,
+                flush_icache=False,
+                page_protect=_PAGE_READWRITE,
+            )
+            if not ok:
+                logger.warning(
+                    "set_menu_colors: display write failed corner=%s addr=0x%x",
+                    c,
+                    d_addr,
+                )
+                return False, f"display palette write failed for corner {c}"
+            back_d = self._read(d_addr, 4)
+            if back_d != disp_payload:
+                logger.warning(
+                    "set_menu_colors: display read-back mismatch corner=%s expected=%r got=%r",
+                    c,
+                    disp_payload,
+                    back_d,
+                )
+                return False, f"menu display read-back failed for corner {c}"
+            written_addrs.append(f"display:{c}=0x{d_addr:x}")
+
+            # 3) RAM mirror (InteractiveSeven MenuColorAllSave) — I7 writes after display.
+            m_addr = mir_base + m_off
+            ok = self._win_protect_write(
+                m_addr,
+                payload_rgb,
+                flush_icache=False,
+                page_protect=_PAGE_READWRITE,
+            )
+            if not ok:
+                logger.warning(
+                    "set_menu_colors: mirror write failed corner=%s addr=0x%x",
+                    c,
+                    m_addr,
+                )
+                return False, f"palette mirror write failed for corner {c}"
+            back_m = self._read(m_addr, 3)
+            if back_m != payload_rgb:
+                logger.warning(
+                    "set_menu_colors: mirror read-back mismatch corner=%s expected=%r got=%r",
+                    c,
+                    payload_rgb,
+                    back_m,
+                )
+                return False, f"menu mirror read-back failed for corner {c}"
+            written_addrs.append(f"mirror:{c}=0x{m_addr:x}")
+
+        logger.info(
+            "set_menu_colors: module_base=0x%x target=%r corners=%s rgb=%s sites=%s",
+            self._proc.module_base,
+            target,
+            corners,
+            rgb,
+            written_addrs,
+        )
+        return True, None
+
+    # ------------------------------------------------------------------
+    # Materia equip / unequip
+    # ------------------------------------------------------------------
+    def _op_equip_materia(
+        self, character: str, gear_kind: str, slot: int, materia_name: str
+    ) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data:
+            return False, "Savemap not readable"
+        cid, err = self._char_id_from_gear_character_token(data, character)
+        if err or cid is None:
+            return False, err or "character"
+        if cid >= len(_CHAR_BLOCK):
+            return False, "bad character id"
+        gk = str(gear_kind or "").strip().lower()
+        if gk == "weapon":
+            slot_base = REC_OFF_WEAPON_MATERIA
+        elif gk == "armor":
+            slot_base = REC_OFF_ARMOR_MATERIA
+        else:
+            return False, "gear_kind must be weapon|armor"
+        s = int(slot)
+        if s < 0 or s >= 8:
+            return False, "materia slot must be 0-7"
+        slot_addr = (
+            _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE)
+            + _CHAR_BLOCK[cid]
+            + slot_base
+            + s * 4
+        )
+        cur_raw = self._read(slot_addr, 4)
+        if cur_raw is None or len(cur_raw) < 4:
+            return False, "read current materia failed"
+        cur_id = cur_raw[0]
+        cur_ap = cur_raw[1] | (cur_raw[2] << 8) | (cur_raw[3] << 16)
+
+        token = str(materia_name or "").strip().lower()
+        unequip_only = token in ("", "none", "empty", "unequip", "-", "null")
+
+        # Return previously-equipped materia (if any) to inventory first.
+        if cur_id != 0xFF:
+            if not self._inv_add_materia(int(cur_id), int(cur_ap)):
+                return False, "inventory full (materia)"
+
+        if unequip_only:
+            if not self._write(
+                slot_addr, bytes([0xFF, 0xFF, 0xFF, 0xFF])
+            ):
+                return False, "write materia slot failed"
+            self._call_ff7_party_stat_recalc()
+            return True, None
+
+        mid, merr = self._materia_name_to_id(materia_name)
+        if merr or mid is None:
+            return False, merr or "materia name"
+        inv_slot = self._inv_find_materia_slot(int(mid))
+        if inv_slot is None:
+            return False, f"materia not in inventory: {materia_name}"
+        rec = self._inv_read_materia_slot(inv_slot) or (0, 0)
+        new_ap = int(rec[1])
+        if not self._inv_write_materia_slot(inv_slot, None, 0):
+            return False, "remove from inventory failed"
+        payload = bytes(
+            [
+                int(mid) & 0xFF,
+                new_ap & 0xFF,
+                (new_ap >> 8) & 0xFF,
+                (new_ap >> 16) & 0xFF,
+            ]
+        )
+        if not self._write(slot_addr, payload):
+            return False, "write materia slot failed"
+        self._call_ff7_party_stat_recalc()
+        return True, None
+
+    # ------------------------------------------------------------------
+    # Inventory-aware gear swap
+    # ------------------------------------------------------------------
+    def _op_set_character_gear_with_inventory(
+        self, character: str, gear_kind: str, gear_id: int
+    ) -> Tuple[bool, Optional[str]]:
+        """Equip by swapping with the inventory item list.
+
+        - Validates the requested gear exists in the inventory.
+        - Removes one copy from inventory.
+        - Reads current equipped id and adds it back to inventory.
+        - Writes the new gear id into the character record.
+        """
+        data, _ = self._read_savemap()
+        if not data:
+            return False, "Savemap not readable"
+        cid, err = self._char_id_from_gear_character_token(data, character)
+        if err or cid is None:
+            return False, err or "character"
+        if cid >= len(_CHAR_BLOCK):
+            return False, "bad character id"
+        gk = str(gear_kind or "").strip().lower()
+        if gk == "weapon":
+            rec_off = REC_OFF_WEAPON
+            base_id = ITEM_ID_WEAPON_BASE
+            id_max = 127
+        elif gk == "armor":
+            rec_off = REC_OFF_ARMOR
+            base_id = ITEM_ID_ARMOR_BASE
+            id_max = 31
+        elif gk == "accessory":
+            rec_off = REC_OFF_ACCESSORY
+            base_id = ITEM_ID_ACCESSORY_BASE
+            id_max = 31
+        else:
+            return False, "gear_kind must be weapon|armor|accessory"
+        if gear_id < 0 or gear_id > id_max:
+            return False, f"{gk} id out of range"
+        allow = _allowed_ids_for_char_gear(int(cid), gk)
+        if allow is not None and int(gear_id) not in allow:
+            return False, "gear not allowed for this character (equip_allowlists.json)"
+        new_item_id = base_id + int(gear_id)
+        if self._inv_find_item_slot(new_item_id) is None:
+            return False, "gear not in inventory"
+        # Remove requested gear from inventory first, then read+return old gear.
+        if not self._inv_remove_item(new_item_id, 1):
+            return False, "remove from inventory failed"
+        rec_addr = (
+            _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE)
+            + _CHAR_BLOCK[cid]
+            + rec_off
+        )
+        cur = self._read_u8(rec_addr)
+        if cur is not None and cur != 0xFF:
+            self._inv_add_item(base_id + int(cur), 1)
+        if not self._write(rec_addr, bytes([int(gear_id) & 0xFF])):
+            return False, "write gear failed"
+        self._call_ff7_party_stat_recalc()
+        return True, None
+
+    # ------------------------------------------------------------------
+    # Start battle (with queued behaviour)
+    # ------------------------------------------------------------------
+    def consume_pending_battle(self) -> Optional[int]:
+        """Service-loop helper: pops the pending battle id and returns it."""
+        pid = self._pending_battle_id
+        self._pending_battle_id = None
+        return pid
+
+    def _start_battle_now(self, battle_id: int) -> Tuple[bool, Optional[str]]:
+        """Trigger a battle assuming current module is Field (1) or World (3).
+
+        Field/world write sequence matches ff7-ultima ``startBattle`` (useFF7.ts).
+        """
+        if not self._proc:
+            return False, "Not attached"
+        mod = self._current_module_byte()
+        bid = int(battle_id) & 0xFFFF
+        base = self._proc.module_base
+        if mod == 1:
+            field_obj = self._read_u32(_rebase(base, ADDR_FIELD_OBJ_PTR))
+            if not field_obj:
+                return False, "field object pointer missing"
+            if not self._write(field_obj + 1, bytes([2])):
+                return False, "write field game module (battle) failed"
+            if not self._write(field_obj + 2, struct.pack("<H", bid)):
+                return False, "write field battle id failed"
+            if not self._write(field_obj + 38, struct.pack("<H", 0)):
+                return False, "write field battle result reset failed"
+            if not self._write(
+                _rebase(base, ADDR_BATTLE_MODULE_FIELD),
+                bytes([1]),
+            ):
+                return False, "write battle_module_field failed"
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
+                if self._current_module_byte() == 2:
+                    self._write(field_obj + 1, bytes([0]))
+                    break
+                time.sleep(0.05)
+            return True, None
+        if mod == 3:
+            if not self._write(
+                _rebase(base, ADDR_BATTLE_ID_WORLD), struct.pack("<I", bid)
+            ):
+                return False, "write world battle id failed"
+            if not self._write(
+                _rebase(base, ADDR_WORLD_BATTLE_FLAG1), struct.pack("<I", 0)
+            ):
+                return False, "write world_battle_flag1 failed"
+            if not self._write(
+                _rebase(base, ADDR_WORLD_BATTLE_FLAG2), struct.pack("<I", 0)
+            ):
+                return False, "write world_battle_flag2 failed"
+            if not self._write(
+                _rebase(base, ADDR_WORLD_BATTLE_FLAG3), struct.pack("<I", 1)
+            ):
+                return False, "write world_battle_flag3 failed"
+            if not self._write(
+                _rebase(base, ADDR_WORLD_BATTLE_FLAG4), struct.pack("<I", 3)
+            ):
+                return False, "write world_battle_flag4 failed"
+            return True, None
+        return False, f"cannot start battle in module {mod}"
+
+    def _op_start_battle(self, battle_id: int) -> Tuple[bool, Optional[str]]:
+        mod = self._current_module_byte()
+        bid = int(battle_id) & 0xFFFF
+        if mod in (1, 3):
+            return self._start_battle_now(bid)
+        self._pending_battle_id = bid
+        return True, None
+
+    # ------------------------------------------------------------------
+    # Add item / materia / gear (via FF7's own functions)
+    # ------------------------------------------------------------------
+    def _op_add_item(
+        self, item_name: str, quantity: int
+    ) -> Tuple[bool, Optional[str]]:
+        iid, err = self._item_name_to_id(item_name)
+        if err or iid is None:
+            return False, err or "item"
+        qty = max(1, min(MAX_ITEM_QUANTITY, int(quantity)))
+        encoded = (int(iid) & 0x1FF) | ((qty & 0x7F) << 9)
+        ok = self._call_ff7_game_fn_one_arg(ADDR_PARTY_ADD_ITEM_FN, encoded)
+        return (True, None) if ok else (False, "party_add_item_fn failed")
+
+    def _op_add_materia(
+        self, materia_name: str, materia_level: int
+    ) -> Tuple[bool, Optional[str]]:
+        mid, err = self._materia_name_to_id(materia_name)
+        if err or mid is None:
+            return False, err or "materia"
+        raw_level = int(materia_level or 0)
+        if raw_level in _MATERIA_LEVEL_AP:
+            ap = _MATERIA_LEVEL_AP[raw_level]
+        else:
+            ap = max(0, min(0xFFFFFF, raw_level))
+        encoded = (int(mid) & 0xFF) | ((ap & 0xFFFFFF) << 8)
+        ok = self._call_ff7_game_fn_one_arg(ADDR_PARTY_ADD_MATERIA_FN, encoded)
+        return (True, None) if ok else (False, "party_add_materia_fn failed")
+
+    def _op_add_gear(self, gear_name: str) -> Tuple[bool, Optional[str]]:
+        iid, err = self._gear_name_to_item_id(gear_name)
+        if err or iid is None:
+            return False, err or "gear"
+        encoded = (int(iid) & 0x1FF) | (1 << 9)
+        ok = self._call_ff7_game_fn_one_arg(ADDR_PARTY_ADD_ITEM_FN, encoded)
+        return (True, None) if ok else (False, "party_add_item_fn failed")
+
     def execute_operation(
         self, op: str, kwargs: Dict[str, Any]
     ) -> Tuple[bool, Optional[str]]:
@@ -2380,11 +3574,79 @@ class FF7Hook:
             )
             if ge or gid is None:
                 return False, ge or "gear"
-            return self._op_set_character_gear(
+            return self._op_set_character_gear_with_inventory(
                 _tok_char(),
                 raw_kind,
                 int(gid),
             )
+        if op == "set_party_level":
+            lvl, e = self._parse_int_or_random(kwargs.get("level"), 99)
+            if e or lvl is None:
+                return False, e or "level"
+            return self._op_set_party_level(_tok_char(), int(lvl))
+        if op == "set_enemy_level":
+            lvl, e = self._parse_int_or_random(kwargs.get("level"), 99)
+            if e or lvl is None:
+                return False, e or "level"
+            en = str(kwargs.get("enemy", "")).strip()
+            return self._op_set_enemy_level(en, int(lvl))
+        if op == "set_party_stat":
+            amt, e = self._parse_int_or_random(kwargs.get("amount"), 9999)
+            if e or amt is None:
+                return False, e or "amount"
+            return self._op_set_party_stat(
+                _tok_char(),
+                str(kwargs.get("stat", "")),
+                int(amt),
+            )
+        if op == "set_enemy_stat":
+            amt, e = self._parse_int_or_random(kwargs.get("amount"), 9999)
+            if e or amt is None:
+                return False, e or "amount"
+            en = str(kwargs.get("enemy", "")).strip()
+            return self._op_set_enemy_stat(
+                en, str(kwargs.get("stat", "")), int(amt)
+            )
+        if op == "set_menu_colors":
+            return self._op_set_menu_colors(
+                str(kwargs.get("target", "all")),
+                str(kwargs.get("color", "")),
+            )
+        if op == "equip_materia":
+            slv, se = self._parse_int_or_random(kwargs.get("slot", 0), 7)
+            if se or slv is None:
+                return False, se or "slot"
+            slot = max(0, min(7, int(slv)))
+            return self._op_equip_materia(
+                _tok_char(),
+                str(kwargs.get("gear_kind", "weapon")),
+                slot,
+                str(kwargs.get("materia", "")),
+            )
+        if op == "start_battle":
+            bid, e = self._parse_int_or_random(kwargs.get("battle_id"), 1024)
+            if e or bid is None:
+                return False, e or "battle_id"
+            return self._op_start_battle(int(bid))
+        if op == "add_item":
+            qty, e = self._parse_int_or_random(kwargs.get("quantity"), 99)
+            if e or qty is None:
+                return False, e or "quantity"
+            return self._op_add_item(
+                str(kwargs.get("item", "")), int(qty)
+            )
+        if op == "add_materia":
+            raw_ml = kwargs.get("materia_level")
+            if raw_ml is None or str(raw_ml).strip() == "":
+                lvl = 1
+            else:
+                lv, le = self._parse_int_or_random(raw_ml, 6)
+                if le or lv is None:
+                    return False, le or "materia_level"
+                lvl = max(0, min(0xFFFFFF, int(lv)))
+            return self._op_add_materia(str(kwargs.get("materia", "")), int(lvl))
+        if op == "add_gear":
+            return self._op_add_gear(str(kwargs.get("gear", "")))
         if op == "set_menu_row_access":
             acc = str(kwargs.get("access", "allow")).strip().lower()
             allow = acc in ("allow", "on", "true", "yes", "1")
@@ -2708,6 +3970,92 @@ def ff7_connector_config_to_hook_kwargs(cfg: Dict[str, Any]) -> Dict[str, Any]:
         }
     if op == "restore_game_speed":
         return {}
+    if op in ("set_party_level", "set_enemy_level"):
+        raw_lv = _txt("arg_level", "1")
+        if (
+            not _has_placeholder(raw_lv)
+            and not re.match(r"^random\s*:", raw_lv, re.I)
+            and raw_lv.lower() != "random"
+        ):
+            try:
+                raw_lv = str(max(1, min(99, int(raw_lv or 1))))
+            except ValueError:
+                pass
+        if op == "set_party_level":
+            return {"character": _txt("arg_character"), "level": raw_lv}
+        return {"enemy": _txt("arg_enemy"), "level": raw_lv}
+    if op in ("set_party_stat", "set_enemy_stat"):
+        raw_amt = _txt("arg_amount", "0")
+        if (
+            not _has_placeholder(raw_amt)
+            and not re.match(r"^random\s*:", raw_amt, re.I)
+            and raw_amt.lower() != "random"
+        ):
+            try:
+                raw_amt = str(max(0, int(raw_amt or 0)))
+            except ValueError:
+                pass
+        if op == "set_party_stat":
+            return {
+                "character": _txt("arg_character"),
+                "stat": _txt("arg_stat"),
+                "amount": raw_amt,
+            }
+        return {
+            "enemy": _txt("arg_enemy"),
+            "stat": _txt("arg_stat"),
+            "amount": raw_amt,
+        }
+    if op == "set_menu_colors":
+        return {
+            "target": _txt("arg_target", "all"),
+            "color": _txt("arg_color"),
+        }
+    if op == "equip_materia":
+        return {
+            "character": _txt("arg_character"),
+            "gear_kind": _txt("arg_gear_kind", "weapon"),
+            "slot": _txt("arg_slot", "0"),
+            "materia": _txt("arg_materia"),
+        }
+    if op == "start_battle":
+        raw_bid = _txt("arg_battle_id", "0")
+        if (
+            not _has_placeholder(raw_bid)
+            and not re.match(r"^random\s*:", raw_bid, re.I)
+            and raw_bid.lower() != "random"
+        ):
+            try:
+                raw_bid = str(max(0, min(0xFFFF, int(raw_bid or 0))))
+            except ValueError:
+                pass
+        return {"battle_id": raw_bid}
+    if op == "add_item":
+        raw_qty = _txt("arg_quantity", "1")
+        if (
+            not _has_placeholder(raw_qty)
+            and not re.match(r"^random\s*:", raw_qty, re.I)
+            and raw_qty.lower() != "random"
+        ):
+            try:
+                raw_qty = str(max(1, min(99, int(raw_qty or 1))))
+            except ValueError:
+                pass
+        return {"item": _txt("arg_item"), "quantity": raw_qty}
+    if op == "add_materia":
+        raw_lvl = _txt("arg_materia_level", "1")
+        if (
+            not _has_placeholder(raw_lvl)
+            and not re.match(r"^random\s*:", raw_lvl, re.I)
+            and raw_lvl.lower() != "random"
+        ):
+            try:
+                raw_lvl = str(max(0, min(0xFFFFFF, int(raw_lvl or 1))))
+            except ValueError:
+                pass
+        return {"materia": _txt("arg_materia"), "materia_level": raw_lvl}
+    if op == "add_gear":
+        return {"gear": _txt("arg_gear")}
     return {}
 
 
