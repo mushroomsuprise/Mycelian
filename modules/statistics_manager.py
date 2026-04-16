@@ -32,7 +32,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .database_manager import get_data, set_data, update_data
 from .path_utils import get_data_path
@@ -311,6 +311,8 @@ class StatisticsData:
 class StatisticsManager:
     """Comprehensive statistics manager for Mycelian"""
 
+    _STATS_SYSTEM_USERNAME = "__system__"
+
     def __init__(self):
         self.data = StatisticsData()
         self.save_interval = 300  # Save every 5 minutes by default
@@ -354,7 +356,9 @@ class StatisticsManager:
             # Create initial connection and tables
             conn = sqlite3.connect(db_path, check_same_thread=False)
             conn.row_factory = sqlite3.Row
+            self._configure_stats_sqlite_connection(conn)
             self._create_stats_tables(conn)
+            self._migrate_legacy_root_statistics_db_if_needed(conn)
             conn.close()
 
             self._stats_db_initialized = True
@@ -394,6 +398,10 @@ class StatisticsManager:
             "CREATE INDEX IF NOT EXISTS idx_ue_user_type_ts "
             "ON user_events(username, event_type, timestamp)"
         )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ue_type_ts "
+            "ON user_events(event_type, timestamp)"
+        )
 
         # Lifetime totals table (replaces database_manager storage)
         cursor.execute("""
@@ -416,6 +424,98 @@ class StatisticsManager:
 
         conn.commit()
 
+    def _migrate_legacy_root_statistics_db_if_needed(self, conn: sqlite3.Connection) -> None:
+        """Copy ``user_events`` from legacy ``<project>/statistics.db`` if ``data/statistics.db`` is empty.
+
+        Some setups only have ``statistics.db`` next to the project root while the app
+        reads ``data/statistics.db``. This runs once (recorded in ``migrations``).
+        """
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT 1 FROM migrations WHERE migration_name = ?",
+                ("legacy_root_statistics_user_events",),
+            )
+            if cursor.fetchone():
+                return
+            cursor.execute("SELECT COUNT(*) FROM user_events")
+            if int(cursor.fetchone()[0] or 0) > 0:
+                return
+        except Exception as e:
+            logger.debug("Legacy statistics migration pre-check skipped: %s", e)
+            return
+
+        legacy_path = get_data_path("statistics.db")
+        if not legacy_path or not os.path.isfile(legacy_path):
+            return
+        if os.path.abspath(legacy_path) == os.path.abspath(self._stats_db_path or ""):
+            return
+
+        n_legacy = 0
+        try:
+            leg = sqlite3.connect(legacy_path, check_same_thread=False)
+            try:
+                lc = leg.cursor()
+                lc.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='user_events'"
+                )
+                if not lc.fetchone():
+                    return
+                lc.execute("SELECT COUNT(*) FROM user_events")
+                n_legacy = int(lc.fetchone()[0] or 0)
+            finally:
+                leg.close()
+        except Exception as e:
+            logger.warning("Could not read legacy statistics DB %s: %s", legacy_path, e)
+            return
+        if n_legacy == 0:
+            return
+
+        try:
+            conn.execute("ATTACH DATABASE ? AS legacy", (legacy_path,))
+            cursor.execute(
+                """
+                INSERT INTO main.user_events (username, event_type, amount, alert_name, timestamp)
+                SELECT username, event_type, amount, alert_name, timestamp
+                FROM legacy.user_events
+                """
+            )
+            conn.execute("DETACH DATABASE legacy")
+            cursor.execute(
+                "INSERT INTO migrations (migration_name) VALUES (?)",
+                ("legacy_root_statistics_user_events",),
+            )
+            conn.commit()
+            logger.info(
+                "Imported %s user_events rows from legacy statistics DB %s",
+                n_legacy,
+                legacy_path,
+            )
+        except Exception as e:
+            logger.warning(
+                "Legacy user_events import from %s failed: %s",
+                legacy_path,
+                e,
+                exc_info=True,
+            )
+            try:
+                conn.execute("DETACH DATABASE legacy")
+            except sqlite3.Error:
+                pass
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _configure_stats_sqlite_connection(conn: sqlite3.Connection) -> None:
+        """Apply pragmas for concurrent writes (e.g. per-message chat events)."""
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+        except Exception as e:
+            logger.debug("Could not apply statistics DB pragmas: %s", e)
+
     def _get_stats_db_connection(self) -> Optional[sqlite3.Connection]:
         """Get a connection from the statistics DB pool or create a new one."""
         if not self._stats_db_initialized or not self._stats_db_path:
@@ -425,6 +525,7 @@ class StatisticsManager:
                 return self._stats_db_pool.pop()
         conn = sqlite3.connect(self._stats_db_path, check_same_thread=False, timeout=30.0)
         conn.row_factory = sqlite3.Row
+        self._configure_stats_sqlite_connection(conn)
         return conn
 
     def _return_stats_db_connection(self, conn: Optional[sqlite3.Connection]):
@@ -459,7 +560,9 @@ class StatisticsManager:
 
         Args:
             username: The username associated with the event.
-            event_type: Type of event (bit, sub, giftsub, donation, point_redeem, follow, raid).
+            event_type: Type of event (bit, sub, resub, giftsub, donation, point_redeem, follow,
+                raid, connector, chatbot_command, chatbot_event, quote_redeem, chat_message,
+                giveaway_entry, giveaway_win, giveaway_draw_complete).
             amount: Numeric amount (bits, gift quantity, points, etc.).
             alert_name: Name of the alert that was triggered.
         """
@@ -619,7 +722,7 @@ class StatisticsManager:
             conn = self._get_stats_db_connection()
             if conn is None:
                 return []
-            query = "SELECT * FROM user_events WHERE username = ?"
+            query = "SELECT * FROM user_events WHERE lower(username) = lower(?)"
             params: list = [username]
             if start_time is not None:
                 query += " AND timestamp >= ?"
@@ -750,6 +853,710 @@ class StatisticsManager:
         finally:
             self._return_stats_db_connection(conn)
 
+    def _compute_highlights_from_user_events(
+        self, cursor: sqlite3.Cursor, start_time: float, end_time: float
+    ) -> Dict[str, Any]:
+        """Aggregate highlight metrics from ``user_events`` for ``[start_time, end_time]``."""
+        print("[highlights] _compute_highlights_from_user_events start")
+        highlights: Dict[str, Any] = {}
+        ts_params = (start_time, end_time)
+        not_system = "lower(username) != ?"
+        sys_name = (self._STATS_SYSTEM_USERNAME.lower(),)
+
+        def top_by_sum(event_type: str, limit: int = 5) -> List[Dict[str, Any]]:
+            cursor.execute(
+                "SELECT username, COALESCE(SUM(amount), 0) AS v FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = ? "
+                "GROUP BY username ORDER BY v DESC LIMIT ?",
+                (*ts_params, event_type, limit),
+            )
+            return [
+                {
+                    "username": (r[0] if r[0] is not None else "?"),
+                    "total": int(float(r[1] or 0)),
+                }
+                for r in cursor.fetchall()
+            ]
+
+        def top_by_count(
+            event_type: str, limit: int = 5, exclude_system: bool = False
+        ) -> List[Dict[str, Any]]:
+            q = (
+                "SELECT username, COUNT(*) AS c FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = ? "
+            )
+            params: List[Any] = [start_time, end_time, event_type]
+            if exclude_system:
+                q += f"AND {not_system} "
+                params.append(sys_name[0])
+            q += " GROUP BY username ORDER BY c DESC LIMIT ?"
+            params.append(limit)
+            cursor.execute(q, tuple(params))
+            return [
+                {
+                    "username": (r[0] if r[0] is not None else "?"),
+                    "count": int(r[1] or 0),
+                }
+                for r in cursor.fetchall()
+            ]
+
+        highlights["top_bits"] = top_by_sum("bit", 5)
+        highlights["top_bit_donor"] = (
+            {
+                "username": highlights["top_bits"][0].get("username") or "?",
+                "total": int(highlights["top_bits"][0].get("total") or 0),
+            }
+            if highlights["top_bits"]
+            else None
+        )
+
+        cursor.execute(
+            "SELECT SUM(amount) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'bit'",
+            ts_params,
+        )
+        row = cursor.fetchone()
+        highlights["total_bits"] = int(row[0] or 0) if row else 0
+
+        cursor.execute(
+            "SELECT username, amount FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'bit' "
+            "ORDER BY amount DESC LIMIT 1",
+            ts_params,
+        )
+        row = cursor.fetchone()
+        highlights["biggest_bit_donation"] = (
+            {
+                "username": row[0] if row[0] is not None else "?",
+                "amount": int(row[1] or 0),
+            }
+            if row
+            else None
+        )
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'sub'",
+            ts_params,
+        )
+        highlights["total_new_subs"] = int(cursor.fetchone()[0] or 0)
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'resub'",
+            ts_params,
+        )
+        highlights["total_resubs"] = int(cursor.fetchone()[0] or 0)
+        highlights["total_subs"] = highlights["total_new_subs"] + highlights["total_resubs"]
+
+        highlights["top_new_subs"] = top_by_count("sub", 5, exclude_system=False)
+        highlights["top_resubs"] = top_by_count("resub", 5, exclude_system=False)
+
+        cursor.execute(
+            "SELECT SUM(amount) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giftsub'",
+            ts_params,
+        )
+        row = cursor.fetchone()
+        highlights["total_gift_subs"] = int(row[0] or 0) if row else 0
+        highlights["top_gift_subs"] = top_by_sum("giftsub", 5)
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'donation'",
+            ts_params,
+        )
+        highlights["total_donations"] = int(cursor.fetchone()[0] or 0)
+        highlights["top_donations"] = top_by_count("donation", 5, exclude_system=False)
+
+        cursor.execute(
+            "SELECT SUM(amount) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'point_redeem'",
+            ts_params,
+        )
+        row = cursor.fetchone()
+        highlights["total_channel_points"] = int(row[0] or 0) if row else 0
+        highlights["top_channel_points"] = top_by_sum("point_redeem", 5)
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'follow'",
+            ts_params,
+        )
+        highlights["total_follows"] = int(cursor.fetchone()[0] or 0)
+        highlights["top_follows"] = top_by_count("follow", 5, exclude_system=False)
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'raid'",
+            ts_params,
+        )
+        highlights["total_raids"] = int(cursor.fetchone()[0] or 0)
+        highlights["top_raids"] = top_by_count("raid", 5, exclude_system=False)
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'chat_message'",
+            ts_params,
+        )
+        highlights["total_chat_messages"] = int(cursor.fetchone()[0] or 0)
+        highlights["top_chat_messages"] = top_by_count(
+            "chat_message", 5, exclude_system=True
+        )
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giveaway_entry'",
+            ts_params,
+        )
+        highlights["total_giveaway_entries"] = int(cursor.fetchone()[0] or 0)
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giveaway_win'",
+            ts_params,
+        )
+        highlights["total_giveaway_wins"] = int(cursor.fetchone()[0] or 0)
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giveaway_draw_complete'",
+            ts_params,
+        )
+        highlights["total_giveaway_rounds"] = int(cursor.fetchone()[0] or 0)
+        highlights["top_giveaway_entries"] = top_by_count(
+            "giveaway_entry", 5, exclude_system=True
+        )
+        highlights["top_giveaway_wins"] = top_by_count(
+            "giveaway_win", 5, exclude_system=True
+        )
+
+        cursor.execute(
+            "SELECT username, COUNT(*) as event_count FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'chat_message' "
+            f"AND {not_system} "
+            "GROUP BY username ORDER BY event_count DESC LIMIT 1",
+            ts_params + sys_name,
+        )
+        row = cursor.fetchone()
+        highlights["top_chatter"] = (
+            {
+                "username": row[0] if row[0] is not None else "?",
+                "event_count": int(row[1] or 0),
+            }
+            if row
+            else None
+        )
+
+        cursor.execute(
+            "SELECT username, COUNT(*) as event_count FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? "
+            f"AND {not_system} "
+            "GROUP BY username ORDER BY event_count DESC LIMIT 1",
+            ts_params + sys_name,
+        )
+        row = cursor.fetchone()
+        highlights["most_active_user"] = (
+            {
+                "username": row[0] if row[0] is not None else "?",
+                "event_count": int(row[1] or 0),
+            }
+            if row
+            else None
+        )
+
+        cursor.execute(
+            "SELECT COUNT(DISTINCT username) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? "
+            f"AND {not_system}",
+            ts_params + sys_name,
+        )
+        highlights["unique_users"] = int(cursor.fetchone()[0] or 0)
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ?",
+            ts_params,
+        )
+        highlights["total_events"] = int(cursor.fetchone()[0] or 0)
+
+        print(
+            "[highlights] _compute_highlights_from_user_events done total_events=",
+            highlights["total_events"],
+        )
+        return highlights
+
+    @staticmethod
+    def _empty_highlights_template(total_events: int = 0) -> Dict[str, Any]:
+        """Default highlight keys for PNG export when full aggregation cannot run."""
+        return {
+            "top_bits": [],
+            "top_bit_donor": None,
+            "total_bits": 0,
+            "biggest_bit_donation": None,
+            "total_new_subs": 0,
+            "total_resubs": 0,
+            "total_subs": 0,
+            "top_new_subs": [],
+            "top_resubs": [],
+            "total_gift_subs": 0,
+            "top_gift_subs": [],
+            "total_donations": 0,
+            "top_donations": [],
+            "total_channel_points": 0,
+            "top_channel_points": [],
+            "total_follows": 0,
+            "top_follows": [],
+            "total_raids": 0,
+            "top_raids": [],
+            "total_chat_messages": 0,
+            "top_chat_messages": [],
+            "total_giveaway_entries": 0,
+            "total_giveaway_wins": 0,
+            "total_giveaway_rounds": 0,
+            "top_giveaway_entries": [],
+            "top_giveaway_wins": [],
+            "top_chatter": None,
+            "most_active_user": None,
+            "unique_users": 0,
+            "total_events": int(total_events or 0),
+            "_fallback_partial": True,
+        }
+
+    @staticmethod
+    def _highlights_top_by_total(
+        pairs: List[Tuple[str, int]], limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        pairs = [(str(u or "?"), int(v or 0)) for u, v in pairs if int(v or 0) > 0]
+        pairs.sort(key=lambda x: -x[1])
+        return [{"username": u, "total": v} for u, v in pairs[:limit]]
+
+    @staticmethod
+    def _highlights_top_by_count(
+        pairs: List[Tuple[str, int]], limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        pairs = [(str(u or "?"), int(v or 0)) for u, v in pairs if int(v or 0) > 0]
+        pairs.sort(key=lambda x: -x[1])
+        return [{"username": u, "count": v} for u, v in pairs[:limit]]
+
+    def _compute_highlights_from_lifetime(self) -> Dict[str, Any]:
+        """Build export-shaped highlights from in-memory lifetime aggregates (no date filter).
+
+        Used when ``user_events`` has no rows for the export window but JSON-backed
+        lifetime totals are available from ``self.data``.
+        """
+        sys_lower = self._STATS_SYSTEM_USERNAME.lower()
+        alerts = self.data.alerts
+        chat = self.data.chat
+        connectors = self.data.connectors
+        gb = self.data.giveaways
+        cbot = self.data.chatbot
+
+        ab_pairs: List[Tuple[str, int]] = []
+        cp_pairs: List[Tuple[str, int]] = []
+        ns_pairs: List[Tuple[str, int]] = []
+        rs_pairs: List[Tuple[str, int]] = []
+        gs_pairs: List[Tuple[str, int]] = []
+        dn_pairs: List[Tuple[str, int]] = []
+        fl_pairs: List[Tuple[str, int]] = []
+        rd_pairs: List[Tuple[str, int]] = []
+        for un, st in (alerts.user_stats or {}).items():
+            if str(un).strip().lower() == sys_lower:
+                continue
+            ab_pairs.append((un, int(getattr(st, "bit_alerts_played", 0) or 0)))
+            cp_pairs.append((un, int(getattr(st, "channel_points_redeemed", 0) or 0)))
+            ns_pairs.append((un, int(getattr(st, "new_subs_played", 0) or 0)))
+            rs_pairs.append((un, int(getattr(st, "resubs_played", 0) or 0)))
+            gs_pairs.append((un, int(getattr(st, "gift_subs_played", 0) or 0)))
+            dn_pairs.append((un, int(getattr(st, "donations", 0) or 0)))
+            fl_pairs.append((un, int(getattr(st, "follow_alerts_played", 0) or 0)))
+            rd_pairs.append((un, int(getattr(st, "raids", 0) or 0)))
+
+        chat_pairs: List[Tuple[str, int]] = []
+        for un, st in (chat.user_stats or {}).items():
+            if str(un).strip().lower() == sys_lower:
+                continue
+            n = int(getattr(st, "total_messages", 0) or 0) or int(
+                getattr(st, "twitch_messages_received", 0) or 0
+            )
+            chat_pairs.append((un, n))
+
+        gw_win_pairs: List[Tuple[str, int]] = [
+            (str(u), int(n or 0))
+            for u, n in (gb.user_wins or {}).items()
+            if str(u).strip().lower() != sys_lower and int(n or 0) > 0
+        ]
+
+        activity_by_user: Dict[str, int] = {}
+
+        def _acc(name: str, delta: int) -> None:
+            if not name or str(name).strip().lower() == sys_lower:
+                return
+            activity_by_user[name] = activity_by_user.get(name, 0) + int(delta or 0)
+
+        for un, st in (alerts.user_stats or {}).items():
+            _acc(un, int(getattr(st, "total_alerts", 0) or 0))
+        for un, st in (chat.user_stats or {}).items():
+            _acc(
+                un,
+                int(getattr(st, "total_messages", 0) or 0)
+                or int(getattr(st, "twitch_messages_received", 0) or 0),
+            )
+        for un, st in (connectors.user_stats or {}).items():
+            _acc(un, int(getattr(st, "total_triggers", 0) or 0))
+        for un, st in (connectors.user_connector_stats or {}).items():
+            _acc(un, int(getattr(st, "total_triggers", 0) or 0))
+        for un, st in (cbot.user_stats or {}).items():
+            _acc(un, int(getattr(st, "total_interactions", 0) or 0))
+
+        most_active: Optional[Tuple[str, int]] = None
+        for un, score in activity_by_user.items():
+            if most_active is None or score > most_active[1]:
+                most_active = (un, score)
+
+        top_chatter_row: Optional[Tuple[str, int]] = None
+        for un, n in chat_pairs:
+            if n <= 0:
+                continue
+            if top_chatter_row is None or n > top_chatter_row[1]:
+                top_chatter_row = (un, n)
+
+        top_bits = self._highlights_top_by_total(ab_pairs, 5)
+        top_channel_points = self._highlights_top_by_total(cp_pairs, 5)
+        top_new_subs = self._highlights_top_by_count(ns_pairs, 5)
+        top_resubs = self._highlights_top_by_count(rs_pairs, 5)
+        top_gift_subs = self._highlights_top_by_total(gs_pairs, 5)
+        top_donations = self._highlights_top_by_count(dn_pairs, 5)
+        top_follows = self._highlights_top_by_count(fl_pairs, 5)
+        top_raids = self._highlights_top_by_count(rd_pairs, 5)
+        top_chat_messages = self._highlights_top_by_count(chat_pairs, 5)
+        top_giveaway_wins = self._highlights_top_by_count(gw_win_pairs, 5)
+
+        total_giveaway_wins = sum(int(v or 0) for v in (gb.user_wins or {}).values())
+
+        uniq_names = self._in_memory_tracked_usernames()
+        unique_users = len(
+            {u for u in uniq_names if str(u).strip().lower() != sys_lower}
+        )
+
+        score = (
+            int(chat.total_messages or 0)
+            + int(alerts.bit_alerts_played or 0)
+            + int(alerts.total_bits or 0)
+            + int(alerts.total_channel_points_redeemed or 0)
+            + int(alerts.new_subs_played or 0)
+            + int(alerts.resubs_played or 0)
+            + int(alerts.total_gift_subs or 0)
+            + int(alerts.donations or 0)
+            + int(alerts.follow_alerts_played or 0)
+            + int(alerts.raids or 0)
+            + int(connectors.total_triggers or 0)
+            + int(gb.total_entry_events or 0)
+            + int(cbot.total_interactions or 0)
+            + int(gb.giveaways_completed or 0)
+        )
+        if score <= 0 and unique_users <= 0:
+            return {}
+
+        out: Dict[str, Any] = {
+            "top_bits": top_bits,
+            "top_bit_donor": (
+                {
+                    "username": top_bits[0].get("username") or "?",
+                    "total": int(top_bits[0].get("total") or 0),
+                }
+                if top_bits
+                else None
+            ),
+            "total_bits": int(alerts.total_bits or 0),
+            "biggest_bit_donation": None,
+            "total_new_subs": int(alerts.new_subs_played or 0),
+            "total_resubs": int(alerts.resubs_played or 0),
+            "total_subs": int(alerts.new_subs_played or 0) + int(alerts.resubs_played or 0),
+            "top_new_subs": top_new_subs,
+            "top_resubs": top_resubs,
+            "total_gift_subs": int(alerts.total_gift_subs or 0),
+            "top_gift_subs": top_gift_subs,
+            "total_donations": int(alerts.donations or 0),
+            "top_donations": top_donations,
+            "total_channel_points": int(alerts.total_channel_points_redeemed or 0),
+            "top_channel_points": top_channel_points,
+            "total_follows": int(alerts.follow_alerts_played or 0),
+            "top_follows": top_follows,
+            "total_raids": int(alerts.raids or 0),
+            "top_raids": top_raids,
+            "total_chat_messages": int(chat.total_messages or 0),
+            "top_chat_messages": top_chat_messages,
+            "total_giveaway_entries": int(gb.total_entry_events or 0),
+            "total_giveaway_wins": int(total_giveaway_wins),
+            "total_giveaway_rounds": int(gb.giveaways_completed or 0),
+            "top_giveaway_entries": [],
+            "top_giveaway_wins": top_giveaway_wins,
+            "top_chatter": (
+                {
+                    "username": top_chatter_row[0],
+                    "event_count": int(top_chatter_row[1]),
+                }
+                if top_chatter_row
+                else None
+            ),
+            "most_active_user": (
+                {
+                    "username": most_active[0],
+                    "event_count": int(most_active[1]),
+                }
+                if most_active and most_active[1] > 0
+                else None
+            ),
+            "unique_users": int(unique_users),
+            "total_events": max(1, int(score)),
+            "_fallback_partial": True,
+            "_lifetime_fallback": True,
+        }
+        return out
+
+    def _compute_highlights_fallback(
+        self, cursor: sqlite3.Cursor, start_time: float, end_time: float
+    ) -> Dict[str, Any]:
+        """Best-effort aggregates when ``_compute_highlights_from_user_events`` fails.
+
+        Fills ``total_events`` first, then runs simple SUM/COUNT queries in isolation
+        so legacy or partially inconsistent rows do not drop the whole export.
+        """
+        ts = (start_time, end_time)
+        out = self._empty_highlights_template(0)
+
+        def _one_int(query: str, params: Tuple[Any, ...]) -> Optional[int]:
+            try:
+                cursor.execute(query, params)
+                row = cursor.fetchone()
+                if not row:
+                    return 0
+                return int(row[0] or 0)
+            except Exception as ex:
+                print(f"[highlights] fallback query failed: {query[:60]}... err={ex!r}")
+                return None
+
+        te = _one_int(
+            "SELECT COUNT(*) FROM user_events WHERE timestamp >= ? AND timestamp <= ?",
+            ts,
+        )
+        if te is None:
+            print("[highlights] fallback could not read total_events; returning empty template")
+            return out
+        out["total_events"] = te
+        if te == 0:
+            return out
+
+        mapping = [
+            (
+                "total_bits",
+                "SELECT COALESCE(SUM(amount), 0) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'bit'",
+            ),
+            (
+                "total_new_subs",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'sub'",
+            ),
+            (
+                "total_resubs",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'resub'",
+            ),
+            (
+                "total_gift_subs",
+                "SELECT COALESCE(SUM(amount), 0) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giftsub'",
+            ),
+            (
+                "total_donations",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'donation'",
+            ),
+            (
+                "total_channel_points",
+                "SELECT COALESCE(SUM(amount), 0) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'point_redeem'",
+            ),
+            (
+                "total_follows",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'follow'",
+            ),
+            (
+                "total_raids",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'raid'",
+            ),
+            (
+                "total_chat_messages",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'chat_message'",
+            ),
+            (
+                "total_giveaway_entries",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giveaway_entry'",
+            ),
+            (
+                "total_giveaway_wins",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giveaway_win'",
+            ),
+            (
+                "total_giveaway_rounds",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giveaway_draw_complete'",
+            ),
+        ]
+        for key, q in mapping:
+            v = _one_int(q, ts)
+            if v is not None:
+                out[key] = v
+        out["total_subs"] = int(out["total_new_subs"] or 0) + int(out["total_resubs"] or 0)
+        print(
+            "[highlights] fallback totals: events=",
+            out["total_events"],
+            "bits=",
+            out["total_bits"],
+            "subs(new/resub)=",
+            out["total_new_subs"],
+            "/",
+            out["total_resubs"],
+        )
+        return out
+
+    def _debug_print_user_events_db_layout(
+        self, cursor: sqlite3.Cursor, start_time: float, end_time: float
+    ) -> None:
+        """Console diagnostics for SQLite layout vs export range (best-effort, non-fatal)."""
+        print("[highlights debug] ---- user_events DB layout ----")
+        print("[highlights debug] active_db=", self._stats_db_path)
+        legacy_path = get_data_path("statistics.db")
+        print("[highlights debug] legacy_root_db=", legacy_path)
+        for label, path in (
+            ("active", self._stats_db_path),
+            ("legacy_root", legacy_path),
+        ):
+            if not path:
+                print(f"[highlights debug] {label}: (no path)")
+                continue
+            try:
+                exists = os.path.isfile(path)
+                sz = os.path.getsize(path) if exists else None
+                print(f"[highlights debug] {label} exists={exists} size_bytes={sz}")
+            except OSError as e:
+                print(f"[highlights debug] {label} path stat error:", repr(e))
+
+        def _safe_ts_label(name: str, ts: Any) -> str:
+            if ts is None:
+                return f"{name}=None"
+            try:
+                f = float(ts)
+                return f"{name}={f} iso={datetime.fromtimestamp(f).isoformat()}"
+            except (TypeError, ValueError, OSError) as e:
+                return f"{name}={ts!r} (no iso: {e!r})"
+
+        try:
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='user_events'"
+            )
+            if not cursor.fetchone():
+                print("[highlights debug] no table user_events in this database file")
+                print("[highlights debug] ---- end layout ----")
+                return
+        except sqlite3.Error as e:
+            print("[highlights debug] sqlite_master check failed:", repr(e))
+            print("[highlights debug] ---- end layout ----")
+            return
+
+        try:
+            cursor.execute("PRAGMA table_info(user_events)")
+            cols = cursor.fetchall()
+            print("[highlights debug] PRAGMA table_info(user_events):", cols)
+        except sqlite3.Error as e:
+            print("[highlights debug] PRAGMA table_info failed:", repr(e))
+
+        try:
+            cursor.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='user_events'"
+            )
+            row = cursor.fetchone()
+            print("[highlights debug] CREATE sql:", row[0] if row else None)
+        except sqlite3.Error as e:
+            print("[highlights debug] sqlite_master sql fetch failed:", repr(e))
+
+        total_rows = 0
+        mn_ts: Any = None
+        mx_ts: Any = None
+        try:
+            cursor.execute("SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM user_events")
+            r = cursor.fetchone()
+            if r:
+                total_rows = int(r[0] or 0)
+                mn_ts, mx_ts = r[1], r[2]
+            print(
+                "[highlights debug] total_rows=",
+                total_rows,
+                _safe_ts_label("min_timestamp", mn_ts),
+                _safe_ts_label("max_timestamp", mx_ts),
+            )
+            if mx_ts is not None:
+                try:
+                    if float(mx_ts) > 1e12:
+                        print(
+                            "[highlights debug] hint: max_timestamp > 1e12 — "
+                            "values may be milliseconds; export range uses Unix seconds."
+                        )
+                except (TypeError, ValueError):
+                    pass
+        except sqlite3.Error as e:
+            print("[highlights debug] COUNT/MIN/MAX timestamp failed:", repr(e))
+
+        print(
+            "[highlights debug] export_range ",
+            _safe_ts_label("start_time", start_time),
+            _safe_ts_label("end_time", end_time),
+        )
+
+        try:
+            cursor.execute(
+                "SELECT COUNT(*) FROM user_events WHERE timestamp >= ? AND timestamp <= ?",
+                (start_time, end_time),
+            )
+            in_range = int(cursor.fetchone()[0] or 0)
+            print("[highlights debug] rows_in_export_range=", in_range)
+        except sqlite3.Error as e:
+            print("[highlights debug] rows_in_range query failed:", repr(e))
+
+        try:
+            cursor.execute(
+                "SELECT event_type, COUNT(*) AS c FROM user_events "
+                "GROUP BY event_type ORDER BY c DESC LIMIT 40"
+            )
+            et = cursor.fetchall()
+            print("[highlights debug] event_type counts (top 40):", et)
+        except sqlite3.Error as e:
+            print("[highlights debug] event_type breakdown failed:", repr(e))
+
+        try:
+            cursor.execute(
+                "SELECT * FROM user_events ORDER BY timestamp DESC LIMIT 5"
+            )
+            samples = cursor.fetchall()
+            if not samples:
+                cursor.execute(
+                    "SELECT * FROM user_events ORDER BY timestamp ASC LIMIT 5"
+                )
+                samples = cursor.fetchall()
+            print(
+                "[highlights debug] sample rows (up to 5):",
+                [tuple(r) for r in samples],
+            )
+        except sqlite3.Error as e:
+            print("[highlights debug] sample rows failed:", repr(e))
+
+        print("[highlights debug] ---- end layout ----")
+
     def get_date_range_highlights(
         self, start_time: float, end_time: float
     ) -> Dict[str, Any]:
@@ -762,173 +1569,177 @@ class StatisticsManager:
         Returns:
             Dictionary of highlight metrics (top donors, totals, etc.).
         """
+        print(
+            "[highlights] get_date_range_highlights range:",
+            start_time,
+            end_time,
+            "db_path=",
+            self._stats_db_path,
+            "initialized=",
+            self._stats_db_initialized,
+        )
         if not self._stats_db_initialized:
+            print("[highlights] stats DB not initialized — returning {}")
             return {}
         conn = None
         try:
             conn = self._get_stats_db_connection()
             if conn is None:
+                print("[highlights] no DB connection — returning {}")
                 return {}
             cursor = conn.cursor()
-            highlights: Dict[str, Any] = {}
-            ts_params = (start_time, end_time)
-
-            # Total bits and top bit donor
-            cursor.execute(
-                "SELECT username, SUM(amount) as total_bits FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'bit' "
-                "GROUP BY username ORDER BY total_bits DESC LIMIT 1",
-                ts_params,
-            )
-            row = cursor.fetchone()
-            highlights["top_bit_donor"] = (
-                {"username": row[0], "total": row[1]} if row else None
-            )
-
-            cursor.execute(
-                "SELECT SUM(amount) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'bit'",
-                ts_params,
-            )
-            row = cursor.fetchone()
-            highlights["total_bits"] = int(row[0] or 0) if row else 0
-
-            # Biggest single bit donation
-            cursor.execute(
-                "SELECT username, amount FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'bit' "
-                "ORDER BY amount DESC LIMIT 1",
-                ts_params,
-            )
-            row = cursor.fetchone()
-            highlights["biggest_bit_donation"] = (
-                {"username": row[0], "amount": int(row[1])} if row else None
-            )
-
-            # Total subs (new + resub)
-            cursor.execute(
-                "SELECT COUNT(*) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'sub'",
-                ts_params,
-            )
-            highlights["total_subs"] = cursor.fetchone()[0]
-
-            # Total gift subs and top gifter
-            cursor.execute(
-                "SELECT SUM(amount) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giftsub'",
-                ts_params,
-            )
-            row = cursor.fetchone()
-            highlights["total_gift_subs"] = int(row[0] or 0) if row else 0
-
-            cursor.execute(
-                "SELECT username, SUM(amount) as total_gifts FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giftsub' "
-                "GROUP BY username ORDER BY total_gifts DESC LIMIT 1",
-                ts_params,
-            )
-            row = cursor.fetchone()
-            highlights["top_gifter"] = (
-                {"username": row[0], "total": int(row[1])} if row else None
-            )
-
-            # Total donations
-            cursor.execute(
-                "SELECT COUNT(*) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'donation'",
-                ts_params,
-            )
-            highlights["total_donations"] = cursor.fetchone()[0]
-
-            # Total channel points
-            cursor.execute(
-                "SELECT SUM(amount) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'point_redeem'",
-                ts_params,
-            )
-            row = cursor.fetchone()
-            highlights["total_channel_points"] = int(row[0] or 0) if row else 0
-
-            # Total follows
-            cursor.execute(
-                "SELECT COUNT(*) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'follow'",
-                ts_params,
-            )
-            highlights["total_follows"] = cursor.fetchone()[0]
-
-            # Total raids
-            cursor.execute(
-                "SELECT COUNT(*) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'raid'",
-                ts_params,
-            )
-            highlights["total_raids"] = cursor.fetchone()[0]
-
-            # Most active user overall
-            cursor.execute(
-                "SELECT username, COUNT(*) as event_count FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ? "
-                "GROUP BY username ORDER BY event_count DESC LIMIT 1",
-                ts_params,
-            )
-            row = cursor.fetchone()
-            highlights["most_active_user"] = (
-                {"username": row[0], "event_count": row[1]} if row else None
-            )
-
-            # Unique users
-            cursor.execute(
-                "SELECT COUNT(DISTINCT username) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ?",
-                ts_params,
-            )
-            highlights["unique_users"] = cursor.fetchone()[0]
-
-            # Total events
-            cursor.execute(
-                "SELECT COUNT(*) FROM user_events "
-                "WHERE timestamp >= ? AND timestamp <= ?",
-                ts_params,
-            )
-            highlights["total_events"] = cursor.fetchone()[0]
-
-            return highlights
+            self._debug_print_user_events_db_layout(cursor, start_time, end_time)
+            try:
+                data = self._compute_highlights_from_user_events(
+                    cursor, start_time, end_time
+                )
+                print(
+                    "[highlights] full compute OK total_events=",
+                    data.get("total_events"),
+                )
+                return data
+            except Exception as e:
+                print("[highlights] full compute FAILED:", repr(e))
+                logger.error(
+                    "Full highlights compute failed, using fallback: %s",
+                    e,
+                    exc_info=True,
+                )
+                fb = self._compute_highlights_fallback(cursor, start_time, end_time)
+                print(
+                    "[highlights] fallback result total_events=",
+                    fb.get("total_events"),
+                    "partial=",
+                    fb.get("_fallback_partial"),
+                )
+                return fb
         except Exception as e:
-            logger.error(f"Error getting date range highlights: {e}")
+            logger.error(
+                "Error getting date range highlights: %s", e, exc_info=True
+            )
+            print("[highlights] get_date_range_highlights outer error:", repr(e))
             return {}
         finally:
             self._return_stats_db_connection(conn)
 
+    def get_highlights_for_export(
+        self, start_time: float, end_time: float
+    ) -> Tuple[Dict[str, Any], str]:
+        """Return ``(highlights, source)`` for the PNG export.
+
+        ``source`` is ``\"event_log\"`` when SQLite has rows in the date range,
+        ``\"lifetime\"`` when the event log window is empty but lifetime JSON-backed
+        aggregates in ``self.data`` can populate the image, otherwise ``\"empty\"``.
+        """
+        sql = self.get_date_range_highlights(start_time, end_time)
+        te = int(sql.get("total_events", 0) or 0)
+        if te:
+            src = "event_log_fallback" if sql.get("_fallback_partial") else "event_log"
+            print(
+                "[highlights] get_highlights_for_export: source=",
+                src,
+                "total_events=",
+                te,
+                "keys_sample=",
+                list(sql.keys())[:8],
+            )
+            return sql, src
+        life = self._compute_highlights_from_lifetime()
+        lte = int(life.get("total_events", 0) or 0)
+        if lte:
+            print(
+                "[highlights] get_highlights_for_export: source=lifetime total_events=",
+                lte,
+                "lifetime_partial=",
+                life.get("_fallback_partial"),
+                "keys_sample=",
+                list(life.keys())[:10],
+            )
+            return life, "lifetime"
+        print("[highlights] get_highlights_for_export: empty (no event log or lifetime data)")
+        return {}, "empty"
+
+    def get_event_log_summary(self) -> Dict[str, Any]:
+        """Diagnostics for the SQLite event log: row count and timestamp span.
+
+        Returns:
+            Keys: ``total_rows``, ``min_timestamp``, ``max_timestamp`` (or None if empty).
+        """
+        out: Dict[str, Any] = {
+            "total_rows": 0,
+            "min_timestamp": None,
+            "max_timestamp": None,
+        }
+        if not self._stats_db_initialized:
+            return out
+        conn = None
+        try:
+            conn = self._get_stats_db_connection()
+            if conn is None:
+                return out
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM user_events")
+            out["total_rows"] = int(cursor.fetchone()[0] or 0)
+            if out["total_rows"] == 0:
+                return out
+            cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM user_events")
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                out["min_timestamp"] = float(row[0])
+            if row and row[1] is not None:
+                out["max_timestamp"] = float(row[1])
+            return out
+        except Exception as e:
+            logger.error(f"Error reading event log summary: {e}")
+            return out
+        finally:
+            self._return_stats_db_connection(conn)
+
+    def _in_memory_tracked_usernames(self) -> set:
+        """Usernames present in any per-user lifetime stats structure."""
+        names: set = set()
+        names.update(self.data.alerts.user_stats.keys())
+        names.update(self.data.connectors.user_stats.keys())
+        names.update(self.data.connectors.user_connector_stats.keys())
+        names.update(self.data.chatbot.user_stats.keys())
+        names.update(self.data.quotes.user_stats.keys())
+        names.update(self.data.chat.user_stats.keys())
+        names.update(self.data.giveaways.user_wins.keys())
+        return names
+
+    @staticmethod
+    def _dict_key_case_insensitive(d: Dict[str, Any], username: str) -> Optional[str]:
+        """Return the dict's actual key matching username case-insensitively, or None."""
+        if not username or not str(username).strip():
+            return None
+        low = str(username).strip().lower()
+        for k in d:
+            if str(k).lower() == low:
+                return k
+        return None
+
     def get_all_tracked_usernames(self) -> List[str]:
-        """Get all usernames that have been tracked in the events database.
+        """Get all usernames with any tracked statistics (SQLite events and/or lifetime JSON).
 
         Returns:
             Sorted list of unique usernames.
         """
-        if not self._stats_db_initialized:
-            # Fall back to in-memory per-user stats
-            usernames: set = set()
-            usernames.update(self.data.alerts.user_stats.keys())
-            usernames.update(self.data.connectors.user_stats.keys())
-            usernames.update(self.data.chatbot.user_stats.keys())
-            usernames.update(self.data.quotes.user_stats.keys())
-            usernames.update(self.data.chat.user_stats.keys())
-            return sorted(usernames)
-        conn = None
-        try:
-            conn = self._get_stats_db_connection()
-            if conn is None:
-                return []
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT username FROM user_events ORDER BY username")
-            return [row[0] for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Error getting tracked usernames: {e}")
-            return []
-        finally:
-            self._return_stats_db_connection(conn)
+        usernames: set = self._in_memory_tracked_usernames()
+        if self._stats_db_initialized:
+            conn = None
+            try:
+                conn = self._get_stats_db_connection()
+                if conn is not None:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT DISTINCT username FROM user_events ORDER BY username"
+                    )
+                    usernames.update(row[0] for row in cursor.fetchall())
+            except Exception as e:
+                logger.error(f"Error getting tracked usernames from SQL: {e}")
+            finally:
+                self._return_stats_db_connection(conn)
+        return sorted(usernames)
 
     # ---- End Separate Statistics Database Methods ----
 
@@ -1552,7 +2363,7 @@ class StatisticsManager:
         # Track per-user statistics if username provided
         if username:
             self._track_user_alert(username, "resubs_played")
-            self._record_event(username, "sub", 0, alert_name)
+            self._record_event(username, "resub", 0, alert_name)
 
         # Track individual alert type
         self._track_alert_type("resub", alert_name)
@@ -1628,7 +2439,10 @@ class StatisticsManager:
         logger.info(f"Raids incremented to: {self.data.alerts.raids}")
 
     def increment_point_alerts(
-        self, username: Optional[str] = None, alert_name: str = ""
+        self,
+        username: Optional[str] = None,
+        alert_name: str = "",
+        points_amount: int = 0,
     ):
         """Increment point alerts redeemed count"""
         self.data.alerts.point_alerts_redeemed += 1
@@ -1636,7 +2450,11 @@ class StatisticsManager:
         # Track per-user statistics if username provided
         if username:
             self._track_user_alert(username, "point_alerts_redeemed")
-            self._record_event(username, "point_redeem", 0, alert_name)
+            try:
+                pts = int(points_amount or 0)
+            except (TypeError, ValueError):
+                pts = 0
+            self._record_event(username, "point_redeem", float(pts), alert_name)
 
         # Track individual alert type
         self._track_alert_type("point", alert_name)
@@ -1740,6 +2558,11 @@ class StatisticsManager:
         if connector_name:
             self._track_individual_connector(connector_name)
 
+        if username:
+            self._record_event(
+                username, "connector", 1.0, connector_name or ""
+            )
+
         logger.debug(
             f"Connectors triggered incremented to: {self.data.connectors.connectors_triggered}"
         )
@@ -1762,6 +2585,9 @@ class StatisticsManager:
         if connector_name:
             for _ in range(count):
                 self._track_individual_connector(connector_name)
+
+        if username and connector_name:
+            self._record_event(username, "connector", float(count), connector_name)
 
         logger.debug(
             f"Total connector triggers incremented to: {self.data.connectors.total_triggers}"
@@ -1925,6 +2751,11 @@ class StatisticsManager:
         if command_name:
             self._track_command(command_name)
 
+        if username:
+            self._record_event(
+                username, "chatbot_command", 1.0, command_name or ""
+            )
+
         logger.debug(
             f"Commands triggered incremented to: {self.data.chatbot.commands_triggered}"
         )
@@ -1946,6 +2777,9 @@ class StatisticsManager:
         # Track individual event if name provided
         if event_name:
             self._track_event(event_name)
+
+        if username:
+            self._record_event(username, "chatbot_event", 1.0, event_name or "")
 
         logger.debug(
             f"Events triggered incremented to: {self.data.chatbot.events_triggered}"
@@ -1984,6 +2818,7 @@ class StatisticsManager:
         # Track per-user statistics if username provided
         if username:
             self._track_user_quote(username, quote_id)
+            self._record_event(username, "quote_redeem", 1.0, str(quote_id))
 
         logger.debug(
             f"Quote {quote_id} redeemed. Total: {self.data.quotes.total_quotes_redeemed}"
@@ -1994,6 +2829,8 @@ class StatisticsManager:
     def record_giveaway_entry(self, username: Optional[str] = None):
         """Count a successful giveaway pool entry (chat keyword match)."""
         self.data.giveaways.total_entry_events += 1
+        if username:
+            self._record_event(username, "giveaway_entry", 1.0, "")
         logger.debug(
             "Giveaway entry recorded. Total entries: %s",
             self.data.giveaways.total_entry_events,
@@ -2005,11 +2842,18 @@ class StatisticsManager:
             return
         d = self.data.giveaways.user_wins
         d[username] = d.get(username, 0) + 1
+        self._record_event(username, "giveaway_win", 1.0, "")
         logger.debug("Giveaway win recorded for %s", username)
 
     def record_giveaway_round_complete(self):
         """Count one completed draw (Draw winners click)."""
         self.data.giveaways.giveaways_completed += 1
+        self._record_event(
+            self._STATS_SYSTEM_USERNAME,
+            "giveaway_draw_complete",
+            1.0,
+            "",
+        )
         logger.debug(
             "Giveaway round complete. Total: %s",
             self.data.giveaways.giveaways_completed,
@@ -2041,6 +2885,7 @@ class StatisticsManager:
         # Track per-user statistics if username provided
         if username:
             self._track_user_chat(username)
+            self._record_event(username, "chat_message", 1.0, "")
 
         logger.info(
             f"Twitch messages incremented to: {self.data.chat.twitch_messages_received} (total: {self.data.chat.total_messages})"
@@ -2485,8 +3330,9 @@ class StatisticsManager:
 
     def get_user_statistics(self, username: str) -> Dict[str, Any]:
         """Get all statistics for a specific user"""
+        display_name = str(username).strip() if username else ""
         user_stats = {
-            "username": username,
+            "username": display_name,
             "alerts": {},
             "connectors": {},
             "chatbot": {},
@@ -2496,8 +3342,10 @@ class StatisticsManager:
         }
 
         # Get user alert statistics
-        if username in self.data.alerts.user_stats:
-            alert_stats = self.data.alerts.user_stats[username]
+        k_alerts = self._dict_key_case_insensitive(self.data.alerts.user_stats, display_name)
+        if k_alerts:
+            user_stats["username"] = k_alerts
+            alert_stats = self.data.alerts.user_stats[k_alerts]
             user_stats["alerts"] = {
                 "bit_alerts_played": alert_stats.bit_alerts_played,
                 "resubs_played": alert_stats.resubs_played,
@@ -2512,19 +3360,35 @@ class StatisticsManager:
                 "last_seen": alert_stats.last_seen,
             }
 
-        # Get user connector statistics
-        if username in self.data.connectors.user_stats:
-            conn_stats = self.data.connectors.user_stats[username]
+        # Get user connector statistics (aggregate table or per-connector usage table)
+        k_conn = self._dict_key_case_insensitive(self.data.connectors.user_stats, display_name)
+        k_ucc = self._dict_key_case_insensitive(
+            self.data.connectors.user_connector_stats, display_name
+        )
+        if k_conn:
+            user_stats["username"] = k_conn
+            conn_stats = self.data.connectors.user_stats[k_conn]
             user_stats["connectors"] = {
                 "connectors_triggered": conn_stats.connectors_triggered,
                 "total_triggers": conn_stats.total_triggers,
                 "first_seen": conn_stats.first_seen,
                 "last_seen": conn_stats.last_seen,
             }
+        elif k_ucc:
+            user_stats["username"] = k_ucc
+            ucc = self.data.connectors.user_connector_stats[k_ucc]
+            user_stats["connectors"] = {
+                "connectors_triggered": ucc.connectors_triggered,
+                "total_triggers": ucc.total_triggers,
+                "first_seen": ucc.first_seen,
+                "last_seen": ucc.last_seen,
+            }
 
         # Get user chatbot statistics
-        if username in self.data.chatbot.user_stats:
-            bot_stats = self.data.chatbot.user_stats[username]
+        k_bot = self._dict_key_case_insensitive(self.data.chatbot.user_stats, display_name)
+        if k_bot:
+            user_stats["username"] = k_bot
+            bot_stats = self.data.chatbot.user_stats[k_bot]
             user_stats["chatbot"] = {
                 "commands_triggered": bot_stats.commands_triggered,
                 "events_triggered": bot_stats.events_triggered,
@@ -2534,8 +3398,10 @@ class StatisticsManager:
             }
 
         # Get user quote statistics
-        if username in self.data.quotes.user_stats:
-            quote_stats = self.data.quotes.user_stats[username]
+        k_quote = self._dict_key_case_insensitive(self.data.quotes.user_stats, display_name)
+        if k_quote:
+            user_stats["username"] = k_quote
+            quote_stats = self.data.quotes.user_stats[k_quote]
             user_stats["quotes"] = {
                 "total_quotes_redeemed": quote_stats.total_quotes_redeemed,
                 "individual_quote_usage": quote_stats.individual_quote_usage.copy(),
@@ -2543,14 +3409,18 @@ class StatisticsManager:
                 "last_seen": quote_stats.last_seen,
             }
 
-        if username in self.data.giveaways.user_wins:
+        k_gw = self._dict_key_case_insensitive(self.data.giveaways.user_wins, display_name)
+        if k_gw:
+            user_stats["username"] = k_gw
             user_stats["giveaways"] = {
-                "giveaway_wins": self.data.giveaways.user_wins[username],
+                "giveaway_wins": self.data.giveaways.user_wins[k_gw],
             }
 
         # Get user chat statistics
-        if username in self.data.chat.user_stats:
-            chat_stats = self.data.chat.user_stats[username]
+        k_chat = self._dict_key_case_insensitive(self.data.chat.user_stats, display_name)
+        if k_chat:
+            user_stats["username"] = k_chat
+            chat_stats = self.data.chat.user_stats[k_chat]
             user_stats["chat"] = {
                 "twitch_messages_received": chat_stats.twitch_messages_received,
                 "total_messages": chat_stats.total_messages,

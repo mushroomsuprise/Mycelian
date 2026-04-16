@@ -28,6 +28,8 @@ class StatisticsTab:
         self.live_updates_enabled = False
         self.live_update_interval = 5  # seconds
         self._update_counter = 0
+        # Full UI rebuild (for dynamic “top user” cards) clears inputs; keep this modest.
+        self._live_full_refresh_every_n = 36  # e.g. 36 * 5s ≈ 3 minutes
 
         # UI element references for live updates
         self._session_duration_label = None
@@ -269,6 +271,61 @@ class StatisticsTab:
         self._export_end_date = None
         self._export_status_label = None
 
+    @staticmethod
+    def _normalize_date_str(s: str) -> str:
+        """Reduce date inputs to YYYY-MM-DD (NiceGUI may return longer ISO strings)."""
+        s = (s or "").strip()
+        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+            return s[:10]
+        return s
+
+    def _input_value_str(self, element) -> str:
+        """Best-effort read of a NiceGUI input value as string."""
+        if element is None:
+            return ""
+        v = getattr(element, "value", None)
+        if v is None:
+            return ""
+        raw = str(v).strip()
+        if self._looks_like_date_value(raw):
+            return self._normalize_date_str(raw)
+        return raw
+
+    @staticmethod
+    def _looks_like_date_value(s: str) -> bool:
+        s = (s or "").strip()
+        return len(s) >= 10 and s[4] == "-" and s[7] == "-"
+
+    def _snapshot_statistics_inputs(self) -> Dict[str, str]:
+        """Capture per-user and export date fields before a full dashboard rebuild."""
+        return {
+            "user_search": self._input_value_str(self._user_search_input),
+            "user_start": self._input_value_str(self._user_start_date),
+            "user_end": self._input_value_str(self._user_end_date),
+            "export_start": self._input_value_str(self._export_start_date),
+            "export_end": self._input_value_str(self._export_end_date),
+        }
+
+    def _restore_statistics_inputs(self, snap: Dict[str, str]) -> None:
+        """Re-apply inputs after rebuild; re-run per-user search if a username was set."""
+        if not snap:
+            return
+        try:
+            if self._user_search_input and snap.get("user_search"):
+                self._user_search_input.value = snap["user_search"]
+            if self._user_start_date and snap.get("user_start"):
+                self._user_start_date.value = snap["user_start"]
+            if self._user_end_date and snap.get("user_end"):
+                self._user_end_date.value = snap["user_end"]
+            if self._export_start_date and snap.get("export_start"):
+                self._export_start_date.value = snap["export_start"]
+            if self._export_end_date and snap.get("export_end"):
+                self._export_end_date.value = snap["export_end"]
+            if snap.get("user_search"):
+                self._on_user_search(notify=False)
+        except Exception as e:
+            print(f"Could not restore statistics tab inputs: {e}")
+
     def _refresh_statistics(self):
         """Refresh the statistics dashboard"""
         try:
@@ -413,7 +470,8 @@ class StatisticsTab:
                 self._update_counter = 0
             self._update_counter += 1
 
-            if self._update_counter % 10 == 0:
+            interval = max(1, getattr(self, "_live_full_refresh_every_n", 36))
+            if self._update_counter % interval == 0:
                 print("Performing full statistics refresh for dynamic content")
                 # Clear the container and rebuild within proper context
                 if (
@@ -422,6 +480,7 @@ class StatisticsTab:
                     and hasattr(self.statistics_container, "clear")
                 ):
                     try:
+                        snap = self._snapshot_statistics_inputs()
                         # Clean up existing references before rebuilding
                         self._cleanup_live_updates()
                         # Ensure container is properly cleared
@@ -431,6 +490,7 @@ class StatisticsTab:
                         # Rebuild content within the container context
                         with self.statistics_container:
                             self._rebuild_statistics_content()
+                        self._restore_statistics_inputs(snap)
                         print("Full statistics refresh completed successfully")
                     except Exception as e:
                         print(f"Error during full statistics refresh: {e}")
@@ -1296,7 +1356,8 @@ class StatisticsTab:
         with ui.card().classes("content-section w-full"):
             ui.label("👤 Per-User Statistics").classes("text-xl font-bold mb-4")
             ui.label(
-                "Look up timestamped statistics for individual users within a date range."
+                "Date range shows the timestamped event log (alerts, chat messages, connectors, "
+                "chatbot, quotes, giveaways, etc.). Lifetime totals below are all-time saved aggregates."
             ).classes("secondary-text mb-4")
 
             with ui.row().classes("w-full gap-4 items-end mb-4"):
@@ -1343,7 +1404,7 @@ class StatisticsTab:
                         "secondary-text italic"
                     )
 
-    def _on_user_search(self):
+    def _on_user_search(self, notify: bool = True):
         """Handle user search: fetch and display per-user stats for the selected date range."""
         try:
             username = (
@@ -1352,20 +1413,27 @@ class StatisticsTab:
                 else ""
             )
             if not username:
-                ui.notify("Please enter a username.", type="warning")
+                if notify:
+                    ui.notify("Please enter a username.", type="warning")
                 return
 
             self._selected_username = username
 
             # Parse date range
-            start_str = self._user_start_date.value if self._user_start_date else ""
-            end_str = self._user_end_date.value if self._user_end_date else ""
+            start_str = self._normalize_date_str(
+                str(self._user_start_date.value or "") if self._user_start_date else ""
+            )
+            end_str = self._normalize_date_str(
+                str(self._user_end_date.value or "") if self._user_end_date else ""
+            )
 
             try:
                 start_dt = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime.now() - timedelta(days=30)
                 end_dt = datetime.strptime(end_str, "%Y-%m-%d") if end_str else datetime.now()
-                # End of day
-                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                # End of day (inclusive of last moment, matches export / SQLite range)
+                end_dt = end_dt.replace(
+                    hour=23, minute=59, second=59, microsecond=999999
+                )
             except ValueError:
                 ui.notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
                 return
@@ -1399,11 +1467,13 @@ class StatisticsTab:
                         username, start_dt, end_dt, events, range_counts, range_totals, user_stats
                     )
 
-            ui.notify(f"Found {len(events)} events for {username}.", type="positive")
+            if notify:
+                ui.notify(f"Found {len(events)} events for {username}.", type="positive")
 
         except Exception as e:
             print(f"Error in user search: {e}")
-            ui.notify("Error searching user statistics.", type="negative")
+            if notify:
+                ui.notify("Error searching user statistics.", type="negative")
 
     def _render_per_user_results(
         self,
@@ -1416,21 +1486,36 @@ class StatisticsTab:
         user_stats: Dict[str, Any],
     ):
         """Render per-user results cards inside the results container."""
+        display_name = user_stats.get("username") or username
+        has_lifetime = any(
+            bool(user_stats.get(k))
+            for k in ("alerts", "connectors", "chatbot", "quotes", "giveaways", "chat")
+        )
+
         # Header
         with ui.card().classes("settings-card w-full p-4"):
             with ui.row().classes("w-full justify-between items-center"):
-                ui.label(f"📊 Stats for {username}").classes("text-lg font-bold text-theme-primary-light")
+                ui.label(f"📊 Stats for {display_name}").classes("text-lg font-bold text-theme-primary-light")
                 date_range_str = f"{start_dt.strftime('%b %d, %Y')} - {end_dt.strftime('%b %d, %Y')}"
                 ui.label(date_range_str).classes("text-sm secondary-text")
 
-        # Date range event counts
+        # Date range event counts (SQLite event log)
         with ui.card().classes("settings-card w-full p-4"):
-            ui.label("Date Range Activity").classes("font-semibold mb-3")
+            ui.label("Date range (event log)").classes("font-semibold mb-1")
+            ui.label(
+                "Each row is a timestamped event: alerts, chat messages, connectors, chatbot, "
+                "quotes, giveaways, and more."
+            ).classes("text-xs secondary-text mb-3")
 
             if not events:
                 ui.label("No events recorded in this date range.").classes(
                     "secondary-text italic"
                 )
+                if user_stats.get("chat") and has_lifetime:
+                    ui.label(
+                        "Lifetime chat totals below may include messages from before per-message "
+                        "logging or from periods outside this range."
+                    ).classes("text-xs secondary-text mt-2")
             else:
                 event_config = [
                     ("bit", "⚡ Bits", "text-theme-primary", "total bits"),
@@ -1440,13 +1525,22 @@ class StatisticsTab:
                     ("point_redeem", "🎯 Point Redeems", "text-orange-400", "total points"),
                     ("follow", "👤 Follows", "text-cyan-400", "events"),
                     ("raid", "🛡️ Raids", "text-yellow-400", "events"),
+                    ("connector", "🔗 Connectors", "text-emerald-400", "trigger weight"),
+                    ("chatbot_command", "🤖 Commands", "text-theme-primary", "uses"),
+                    ("chatbot_event", "🎪 Chatbot events", "text-blue-300", "uses"),
+                    ("quote_redeem", "💬 Quote redeems", "text-pink-300", "uses"),
+                    ("chat_message", "📨 Chat messages", "text-indigo-400", "messages"),
+                    ("giveaway_entry", "🎁 Giveaway entries", "text-rose-400", "entries"),
+                    ("giveaway_win", "🏆 Giveaway wins", "text-fuchsia-400", "wins"),
                 ]
+                # Show zero-count placeholders only for core alert types (legacy UI behavior).
+                show_if_zero = ("bit", "sub", "giftsub", "donation", "point_redeem")
 
                 with ui.grid(columns=4).classes("w-full gap-4"):
                     for etype, label, color_cls, amount_label in event_config:
                         count = range_counts.get(etype, 0)
                         total = range_totals.get(etype, 0)
-                        if count > 0 or etype in ("bit", "sub", "giftsub", "donation", "point_redeem"):
+                        if count > 0 or etype in show_if_zero:
                             with ui.card().classes("settings-card text-center p-3"):
                                 ui.label(label).classes("font-semibold mb-1 text-sm")
                                 ui.label(f"{count:,}").classes(
@@ -1459,40 +1553,126 @@ class StatisticsTab:
                                     )
                                     ui.label(amount_label).classes("text-xs secondary-text")
 
-        # Lifetime totals context
-        alert_stats = user_stats.get("alerts", {})
-        if alert_stats:
+        # Lifetime totals (JSON-backed categories)
+        if has_lifetime:
             with ui.card().classes("settings-card w-full p-4"):
-                ui.label("Lifetime Totals (All Time)").classes("font-semibold mb-3")
-                with ui.grid(columns=5).classes("w-full gap-3"):
-                    lifetime_items = [
-                        ("Bit Alerts", alert_stats.get("bit_alerts_played", 0), "text-theme-primary"),
-                        ("Resubs", alert_stats.get("resubs_played", 0), "text-blue-400"),
-                        ("New Subs", alert_stats.get("new_subs_played", 0), "text-green-400"),
-                        ("Gift Subs", alert_stats.get("gift_subs_played", 0), "text-pink-400"),
-                        ("Donations", alert_stats.get("donations", 0), "text-emerald-400"),
-                        ("Follow Alerts", alert_stats.get("follow_alerts_played", 0), "text-cyan-400"),
-                        ("Raids", alert_stats.get("raids", 0), "text-yellow-400"),
-                        ("Point Alerts", alert_stats.get("point_alerts_redeemed", 0), "text-orange-400"),
-                        ("Total Alerts", alert_stats.get("total_alerts", 0), "text-theme-primary"),
-                    ]
-                    for label, value, color in lifetime_items:
-                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
-                            ui.label(label).classes("text-xs secondary-text mb-1")
-                            ui.label(f"{value:,}").classes(f"text-lg font-bold {color}")
+                ui.label("Lifetime totals (all time)").classes("font-semibold mb-3")
 
-                # First/last seen
-                first_seen = alert_stats.get("first_seen")
-                last_seen = alert_stats.get("last_seen")
-                if first_seen:
-                    with ui.row().classes("gap-4 mt-2"):
-                        ui.label(
-                            f"First seen: {datetime.fromtimestamp(first_seen).strftime('%b %d, %Y %H:%M')}"
-                        ).classes("text-xs secondary-text")
-                        if last_seen:
+                alert_stats = user_stats.get("alerts") or {}
+                if alert_stats:
+                    ui.label("Alerts").classes("text-sm font-semibold mb-2 text-theme-primary-light")
+                    with ui.grid(columns=5).classes("w-full gap-3"):
+                        lifetime_items = [
+                            ("Bit Alerts", alert_stats.get("bit_alerts_played", 0), "text-theme-primary"),
+                            ("Resubs", alert_stats.get("resubs_played", 0), "text-blue-400"),
+                            ("New Subs", alert_stats.get("new_subs_played", 0), "text-green-400"),
+                            ("Gift Subs", alert_stats.get("gift_subs_played", 0), "text-pink-400"),
+                            ("Donations", alert_stats.get("donations", 0), "text-emerald-400"),
+                            ("Follow Alerts", alert_stats.get("follow_alerts_played", 0), "text-cyan-400"),
+                            ("Raids", alert_stats.get("raids", 0), "text-yellow-400"),
+                            ("Point Alerts", alert_stats.get("point_alerts_redeemed", 0), "text-orange-400"),
+                            ("Total Alerts", alert_stats.get("total_alerts", 0), "text-theme-primary"),
+                        ]
+                        for label, value, color in lifetime_items:
+                            with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                                ui.label(label).classes("text-xs secondary-text mb-1")
+                                ui.label(f"{value:,}").classes(f"text-lg font-bold {color}")
+
+                    first_seen = alert_stats.get("first_seen")
+                    last_seen = alert_stats.get("last_seen")
+                    if first_seen:
+                        with ui.row().classes("gap-4 mt-2"):
                             ui.label(
-                                f"Last seen: {datetime.fromtimestamp(last_seen).strftime('%b %d, %Y %H:%M')}"
+                                f"First seen: {datetime.fromtimestamp(first_seen).strftime('%b %d, %Y %H:%M')}"
                             ).classes("text-xs secondary-text")
+                            if last_seen:
+                                ui.label(
+                                    f"Last seen: {datetime.fromtimestamp(last_seen).strftime('%b %d, %Y %H:%M')}"
+                                ).classes("text-xs secondary-text")
+
+                chat_stats = user_stats.get("chat") or {}
+                if chat_stats:
+                    ui.label("Chat").classes("text-sm font-semibold mb-2 mt-4 text-indigo-300")
+                    with ui.grid(columns=4).classes("w-full gap-3"):
+                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            ui.label("Twitch messages").classes("text-xs secondary-text mb-1")
+                            ui.label(f"{int(chat_stats.get('twitch_messages_received', 0) or 0):,}").classes(
+                                "text-lg font-bold text-indigo-400"
+                            )
+                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            ui.label("Total messages").classes("text-xs secondary-text mb-1")
+                            ui.label(f"{int(chat_stats.get('total_messages', 0) or 0):,}").classes(
+                                "text-lg font-bold text-indigo-300"
+                            )
+                        fs = chat_stats.get("first_seen")
+                        ls = chat_stats.get("last_seen")
+                        if fs:
+                            with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                                ui.label("Activity window").classes("text-xs secondary-text mb-1")
+                                fs_s = datetime.fromtimestamp(fs).strftime("%b %d, %Y %H:%M")
+                                ls_s = (
+                                    datetime.fromtimestamp(ls).strftime("%b %d, %Y %H:%M")
+                                    if ls
+                                    else "—"
+                                )
+                                ui.label(f"{fs_s} → {ls_s}").classes("text-xs secondary-text")
+
+                conn_stats = user_stats.get("connectors") or {}
+                if conn_stats:
+                    ui.label("Connectors").classes("text-sm font-semibold mb-2 mt-4 text-emerald-300")
+                    with ui.grid(columns=3).classes("w-full gap-3"):
+                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            ui.label("Unique triggered").classes("text-xs secondary-text mb-1")
+                            ui.label(f"{int(conn_stats.get('connectors_triggered', 0) or 0):,}").classes(
+                                "text-lg font-bold text-emerald-400"
+                            )
+                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            ui.label("Total triggers").classes("text-xs secondary-text mb-1")
+                            ui.label(f"{int(conn_stats.get('total_triggers', 0) or 0):,}").classes(
+                                "text-lg font-bold text-green-400"
+                            )
+                        fs, ls = conn_stats.get("first_seen"), conn_stats.get("last_seen")
+                        if fs:
+                            with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                                ui.label("First / last").classes("text-xs secondary-text mb-1")
+                                ui.label(
+                                    datetime.fromtimestamp(fs).strftime("%b %d, %Y")
+                                    + (" / " + datetime.fromtimestamp(ls).strftime("%b %d, %Y") if ls else "")
+                                ).classes("text-xs secondary-text")
+
+                bot_stats = user_stats.get("chatbot") or {}
+                if bot_stats:
+                    ui.label("Chatbot").classes("text-sm font-semibold mb-2 mt-4 text-blue-300")
+                    with ui.grid(columns=4).classes("w-full gap-3"):
+                        for lbl, key in (
+                            ("Commands used", "commands_triggered"),
+                            ("Events used", "events_triggered"),
+                            ("Total interactions", "total_interactions"),
+                        ):
+                            with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                                ui.label(lbl).classes("text-xs secondary-text mb-1")
+                                ui.label(f"{int(bot_stats.get(key, 0) or 0):,}").classes(
+                                    "text-lg font-bold text-theme-primary"
+                                )
+
+                quote_stats = user_stats.get("quotes") or {}
+                if quote_stats:
+                    ui.label("Quotes").classes("text-sm font-semibold mb-2 mt-4 text-pink-300")
+                    with ui.grid(columns=2).classes("w-full gap-3"):
+                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            ui.label("Total redeemed").classes("text-xs secondary-text mb-1")
+                            ui.label(f"{int(quote_stats.get('total_quotes_redeemed', 0) or 0):,}").classes(
+                                "text-lg font-bold text-pink-400"
+                            )
+
+                gw_stats = user_stats.get("giveaways") or {}
+                if gw_stats:
+                    ui.label("Giveaways").classes("text-sm font-semibold mb-2 mt-4 text-rose-300")
+                    with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                        ui.label("Giveaway wins").classes("text-xs secondary-text mb-1")
+                        ui.label(f"{int(gw_stats.get('giveaway_wins', 0) or 0):,}").classes(
+                            "text-lg font-bold text-rose-400"
+                        )
 
         # Recent event timeline
         if events:
@@ -1516,6 +1696,14 @@ class StatisticsTab:
                             "point_redeem": "🎯",
                             "follow": "👤",
                             "raid": "🛡️",
+                            "connector": "🔗",
+                            "chatbot_command": "🤖",
+                            "chatbot_event": "🎪",
+                            "quote_redeem": "💬",
+                            "chat_message": "📨",
+                            "giveaway_entry": "🎁",
+                            "giveaway_win": "🏆",
+                            "giveaway_draw_complete": "✅",
                         }
                         icon = type_icons.get(ev_type, "📌")
                         ts_str = datetime.fromtimestamp(ev_ts).strftime(
@@ -1539,8 +1727,9 @@ class StatisticsTab:
         with ui.card().classes("content-section w-full"):
             ui.label("📸 Export Highlights").classes("text-xl font-bold mb-4")
             ui.label(
-                "Generate a vibrant highlights image for a date range. "
-                "Perfect for sharing on social media!"
+                "Generate a vibrant highlights image for the selected dates. "
+                "Totals and leaders (top bit donor, top chatter, etc.) are computed from the "
+                "timestamped event log for that range only—not from stored highlight records."
             ).classes("secondary-text mb-4")
 
             with ui.row().classes("w-full gap-4 items-end"):
@@ -1572,40 +1761,122 @@ class StatisticsTab:
     def _export_highlights(self):
         """Handle the export highlights button click."""
         try:
+            from ...path_utils import get_data_path
+
+            _p_data = get_data_path(os.path.join("data", "statistics.db"))
+            _p_root = get_data_path("statistics.db")
+
+            def _exists_size(p: str) -> tuple:
+                try:
+                    return (os.path.isfile(p), os.path.getsize(p) if os.path.isfile(p) else None)
+                except OSError:
+                    return (False, None)
+
+            _ed, _es = _exists_size(_p_data)
+            _er, _ers = _exists_size(_p_root)
+            print(
+                "[highlights export] db paths data=",
+                _p_data,
+                "exists=",
+                _ed,
+                "size=",
+                _es,
+                "| root statistics.db=",
+                _p_root,
+                "exists=",
+                _er,
+                "size=",
+                _ers,
+            )
+
             # Parse date range
-            start_str = self._export_start_date.value if self._export_start_date else ""
-            end_str = self._export_end_date.value if self._export_end_date else ""
+            raw_start = (
+                str(self._export_start_date.value or "")
+                if self._export_start_date
+                else ""
+            )
+            raw_end = (
+                str(self._export_end_date.value or "")
+                if self._export_end_date
+                else ""
+            )
+            start_str = self._normalize_date_str(raw_start)
+            end_str = self._normalize_date_str(raw_end)
 
             try:
                 start_dt = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime.now() - timedelta(days=30)
                 end_dt = datetime.strptime(end_str, "%Y-%m-%d") if end_str else datetime.now()
-                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
             except ValueError:
                 ui.notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
                 return
 
             start_ts = start_dt.timestamp()
             end_ts = end_dt.timestamp()
+            print(
+                "[highlights export] dates raw_start/end=",
+                repr(raw_start),
+                repr(raw_end),
+                "parsed=",
+                start_str,
+                end_str,
+                "start_dt=",
+                start_dt.isoformat(),
+                "end_dt=",
+                end_dt.isoformat(),
+                "start_ts/end_ts=",
+                start_ts,
+                end_ts,
+            )
 
             if self._export_status_label:
                 self._export_status_label.set_text("Generating image...")
 
-            # Get highlight data
             stats_manager = get_statistics_manager()
-            highlights = stats_manager.get_date_range_highlights(start_ts, end_ts)
+            highlights, _hl_source = stats_manager.get_highlights_for_export(
+                start_ts, end_ts
+            )
+            print(
+                "[highlights export] after get_highlights_for_export: source=",
+                _hl_source,
+                "total_events=",
+                highlights.get("total_events"),
+                "n_keys=",
+                len(highlights),
+                "fallback_partial=",
+                highlights.get("_fallback_partial"),
+            )
 
-            if not highlights or highlights.get("total_events", 0) == 0:
+            if not highlights.get("total_events", 0):
+                log = stats_manager.get_event_log_summary()
+                print("[highlights export] no rows in range; event_log_summary=", log)
+                total_rows = int(log.get("total_rows") or 0)
+                if total_rows == 0:
+                    extra = (
+                        " The event log is empty. Run Mycelian while viewers chat, redeem alerts, "
+                        "use commands, etc., to record timestamped events."
+                    )
+                else:
+                    mn = log.get("min_timestamp")
+                    mx = log.get("max_timestamp")
+                    if mn is not None and mx is not None:
+                        d0 = datetime.fromtimestamp(float(mn)).strftime("%Y-%m-%d")
+                        d1 = datetime.fromtimestamp(float(mx)).strftime("%Y-%m-%d")
+                        extra = (
+                            f" Event log spans {d0} to {d1} ({total_rows:,} rows). "
+                            "Adjust the export range to overlap that span."
+                        )
+                    else:
+                        extra = f" ({total_rows:,} rows in log; could not read date span.)"
                 ui.notify(
-                    "No events found in the selected date range. Nothing to export.",
+                    "Nothing to export: no events in the event log for this date range." + extra,
                     type="warning",
                 )
                 if self._export_status_label:
-                    self._export_status_label.set_text("No data to export.")
+                    self._export_status_label.set_text("No data — see notification.")
                 return
 
             # Generate output path
-            from ...path_utils import get_data_path
-
             export_dir = get_data_path("exports")
             os.makedirs(export_dir, exist_ok=True)
             filename = f"highlights_{start_dt.strftime('%Y%m%d')}_{end_dt.strftime('%Y%m%d')}.png"
@@ -1613,19 +1884,38 @@ class StatisticsTab:
 
             # Generate the image
             from ...statistics_export import generate_highlights_image
+            from ...theme_manager import get_theme_manager
 
+            settings = state_manager.get_app_settings()
+            streamer = (settings.streamer_name or "Mycelian").strip() or "Mycelian"
+            theme_manager = get_theme_manager()
+            theme_manager.load_themes_from_directory()
+            theme = theme_manager.get_theme()
+
+            print(
+                "[highlights export] calling generate_highlights_image path=",
+                output_path,
+            )
             success = generate_highlights_image(
                 highlights=highlights,
                 start_date=start_dt,
                 end_date=end_dt,
                 output_path=output_path,
+                streamer_name=streamer,
+                theme=theme,
             )
+            print("[highlights export] generate_highlights_image success=", success)
 
             if success:
                 if self._export_status_label:
                     self._export_status_label.set_text(f"Saved to: {output_path}")
+                lifetime_note = (
+                    "\n\nNumbers are lifetime totals from stored statistics, not limited to the selected dates."
+                    if _hl_source == "lifetime"
+                    else ""
+                )
                 ui.notify(
-                    f"Highlights image exported successfully!\n{output_path}",
+                    f"Highlights image exported successfully!{lifetime_note}\n{output_path}",
                     type="positive",
                     close_button=True,
                 )

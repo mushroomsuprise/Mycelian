@@ -1856,7 +1856,9 @@ class Twitch_API:
         try:
             stats_manager = statistics_manager.get_statistics_manager()
             stats_manager.increment_point_alerts(
-                username=alert.username, alert_name=alert.alert_name
+                username=alert.username,
+                alert_name=alert.alert_name,
+                points_amount=int(alert.point_cost or 0),
             )
             # Track total channel points redeemed
             stats_manager.increment_channel_points_redeemed(

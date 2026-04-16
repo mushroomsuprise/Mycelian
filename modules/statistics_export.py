@@ -4,43 +4,76 @@ MIT License
 
 Copyright (c) 2024 Mycelian
 
-Statistics export module for generating vibrant highlight images.
-Uses Pillow to render a flashy stats recap card that can be shared on social media.
+Statistics export module for generating highlights images from event-log data.
+Uses Pillow; colors follow ThemeManager when available.
 """
+
+from __future__ import annotations
 
 import logging
 import os
+import re
+from colorsys import hls_to_rgb, rgb_to_hls
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
 from .path_utils import get_data_path
+from .theme_manager import ThemeColors, get_theme_manager
 
 logger = logging.getLogger(__name__)
 
-# --- Colour palette (neon / cyberpunk inspired) ---
-BG_TOP = (18, 10, 40)  # Deep purple
-BG_BOTTOM = (8, 15, 50)  # Dark blue
-CARD_BG = (30, 20, 60, 200)  # Semi-transparent purple
-CARD_BORDER_GLOW = [
-    (0, 255, 255),  # Cyan
-    (255, 0, 200),  # Magenta / Hot pink
-    (0, 255, 100),  # Lime green
-    (255, 215, 0),  # Gold
-    (255, 80, 180),  # Pink
-    (100, 200, 255),  # Light blue
-]
-TEXT_PRIMARY = (255, 255, 255)
-TEXT_SECONDARY = (180, 180, 220)
-TEXT_ACCENT = (0, 255, 255)  # Cyan
-TITLE_COLOR = (255, 255, 255)
-SUBTITLE_COLOR = (200, 180, 255)
-BRANDING_COLOR = (120, 100, 180)
+_RGB_RE = re.compile(
+    r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([0-9.]+)\s*)?\)",
+    re.IGNORECASE,
+)
+
+
+def parse_css_color(s: str) -> Tuple[int, int, int, int]:
+    """Parse ``rgb()`` / ``rgba()`` string to RGBA bytes for Pillow."""
+    if not s or not isinstance(s, str):
+        return (128, 128, 128, 255)
+    m = _RGB_RE.search(s.strip())
+    if not m:
+        return (128, 128, 128, 255)
+    r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    a = 255
+    if m.group(4) is not None:
+        a = int(round(float(m.group(4)) * 255))
+    return (r, g, b, a)
+
+
+def _rgb_tuple(c: Tuple[int, int, int, int]) -> Tuple[int, int, int]:
+    return (c[0], c[1], c[2])
+
+
+def _accent_colors(theme: ThemeColors, n: int) -> List[Tuple[int, int, int]]:
+    """Distinct accent hues derived from theme status / primary colors."""
+    candidates = [
+        parse_css_color(theme.primary),
+        parse_css_color(theme.success),
+        parse_css_color(theme.info),
+        parse_css_color(theme.warning),
+        parse_css_color(theme.error),
+        parse_css_color(theme.border_accent),
+    ]
+    out: List[Tuple[int, int, int]] = []
+    for i in range(n):
+        if i < len(candidates):
+            out.append(_rgb_tuple(candidates[i]))
+            continue
+        base = _rgb_tuple(parse_css_color(theme.primary))
+        h, l, s = rgb_to_hls(base[0] / 255.0, base[1] / 255.0, base[2] / 255.0)
+        h = (h + (i - len(candidates) + 1) * 0.12) % 1.0
+        rr, gg, bb = hls_to_rgb(h, min(0.85, max(0.25, l)), min(0.9, max(0.35, s)))
+        out.append(
+            (int(rr * 255), int(gg * 255), int(bb * 255)),
+        )
+    return out
 
 
 def _load_font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    """Attempt to load a font from the assets directory, falling back to default."""
     fonts_dir = get_data_path(os.path.join("assets", "default_assets", "fonts"))
     try:
         path = os.path.join(fonts_dir, name)
@@ -48,19 +81,19 @@ def _load_font(name: str, size: int) -> ImageFont.FreeTypeFont:
             return ImageFont.truetype(path, size)
     except Exception:
         pass
-    # Fallback
     try:
         return ImageFont.truetype("arial.ttf", size)
     except Exception:
         return ImageFont.load_default()
 
 
-def _draw_gradient(img: Image.Image, top: Tuple[int, ...], bottom: Tuple[int, ...]):
-    """Draw a vertical linear gradient on *img* (in-place)."""
+def _draw_gradient(
+    img: Image.Image, top: Tuple[int, int, int], bottom: Tuple[int, int, int]
+) -> None:
     draw = ImageDraw.Draw(img)
     w, h = img.size
     for y in range(h):
-        ratio = y / h
+        ratio = y / max(h - 1, 1)
         r = int(top[0] + (bottom[0] - top[0]) * ratio)
         g = int(top[1] + (bottom[1] - top[1]) * ratio)
         b = int(top[2] + (bottom[2] - top[2]) * ratio)
@@ -68,13 +101,12 @@ def _draw_gradient(img: Image.Image, top: Tuple[int, ...], bottom: Tuple[int, ..
 
 
 def _draw_glow_circle(
-    img: Image.Image, centre: Tuple[int, int], radius: int, color: Tuple[int, ...]
-):
-    """Draw a soft radial glow on *img* (additive blend)."""
+    img: Image.Image, centre: Tuple[int, int], radius: int, color: Tuple[int, int, int]
+) -> None:
     glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(glow)
-    for i in range(radius, 0, -2):
-        alpha = int(40 * (i / radius))
+    for i in range(radius, 0, -3):
+        alpha = int(28 * (i / radius))
         draw.ellipse(
             [centre[0] - i, centre[1] - i, centre[0] + i, centre[1] + i],
             fill=(*color, alpha),
@@ -89,14 +121,32 @@ def _draw_rounded_rect(
     fill: Optional[Tuple[int, ...]] = None,
     outline: Optional[Tuple[int, ...]] = None,
     outline_width: int = 2,
-):
-    """Draw a rounded rectangle with optional outline."""
+) -> None:
     draw.rounded_rectangle(bbox, radius=radius, fill=fill, outline=outline, width=outline_width)
 
 
 def _format_number(n: int) -> str:
-    """Format a number with commas."""
     return f"{n:,}"
+
+
+def _truncate_username(s: str, max_len: int = 14) -> str:
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 2] + ".."
+
+
+def _leaderboard_lines(
+    entries: List[Dict[str, Any]], value_key: str
+) -> List[Tuple[int, str, int]]:
+    """Return (rank, display_line, rank) for up to 5 rows; value_key is ``total`` or ``count``."""
+    lines: List[Tuple[int, str, int]] = []
+    for i, e in enumerate(entries[:5], start=1):
+        un = str(e.get("username") or "-")
+        v = int(e.get(value_key, 0) or 0)
+        lines.append(
+            (i, f"#{i}  {_truncate_username(un)}  {_format_number(v)}", i),
+        )
+    return lines
 
 
 def generate_highlights_image(
@@ -105,305 +155,354 @@ def generate_highlights_image(
     end_date: datetime,
     output_path: str,
     streamer_name: str = "Mycelian",
+    theme: Optional[ThemeColors] = None,
 ) -> bool:
-    """Generate a vibrant statistics highlights image.
+    """Generate a statistics highlights PNG from event-log aggregates.
 
     Args:
-        highlights: Dictionary returned by ``StatisticsManager.get_date_range_highlights``.
+        highlights: Dictionary from ``StatisticsManager.get_date_range_highlights``.
         start_date: Start of the date range.
         end_date: End of the date range.
         output_path: File path to save the PNG image to.
-        streamer_name: Name to display in the branding footer.
+        streamer_name: Name in the footer (``Powered by …``).
+        theme: Optional ``ThemeColors``; defaults to ``ThemeManager`` current theme.
 
     Returns:
         True if the image was successfully generated.
     """
+    print(
+        "[highlights render] enter output_path=",
+        output_path,
+        "total_events=",
+        highlights.get("total_events"),
+        "fallback_partial=",
+        highlights.get("_fallback_partial"),
+    )
     try:
-        WIDTH, HEIGHT = 1920, 1080
+        if theme is None:
+            tm = get_theme_manager()
+            tm.load_themes_from_directory()
+            theme = tm.get_theme()
+
+        bg_top = _rgb_tuple(parse_css_color(theme.bg_base))
+        bg_bottom = _rgb_tuple(parse_css_color(theme.bg_surface))
+        text_primary = _rgb_tuple(parse_css_color(theme.text_primary))
+        text_secondary = _rgb_tuple(parse_css_color(theme.text_secondary))
+        text_muted = _rgb_tuple(parse_css_color(theme.text_muted))
+        card_fill = _rgb_tuple(parse_css_color(theme.bg_elevated))
+        primary_soft = _rgb_tuple(parse_css_color(theme.primary))
+
+        WIDTH, HEIGHT = 1920, 1280
         img = Image.new("RGBA", (WIDTH, HEIGHT))
+        _draw_gradient(img, bg_top, bg_bottom)
 
-        # --- Background gradient ---
-        _draw_gradient(img, BG_TOP, BG_BOTTOM)
-
-        # --- Glow accents (decorative background lights) ---
-        _draw_glow_circle(img, (200, 200), 350, (120, 0, 255))
-        _draw_glow_circle(img, (1700, 150), 300, (0, 200, 255))
-        _draw_glow_circle(img, (960, 900), 400, (255, 0, 180))
-        _draw_glow_circle(img, (400, 800), 250, (0, 255, 150))
+        _draw_glow_circle(img, (220, 220), 320, primary_soft)
+        _draw_glow_circle(img, (1700, 200), 260, primary_soft)
+        _draw_glow_circle(img, (960, 980), 360, primary_soft)
 
         draw = ImageDraw.Draw(img)
 
-        # --- Fonts ---
-        font_title = _load_font("Anton-Regular.ttf", 72)
-        font_subtitle = _load_font("Roboto-Bold.ttf", 32)
-        font_date = _load_font("Roboto-Regular.ttf", 28)
-        font_card_title = _load_font("Roboto-Bold.ttf", 22)
-        font_card_value = _load_font("Anton-Regular.ttf", 52)
-        font_card_label = _load_font("Roboto-Regular.ttf", 18)
-        font_card_detail = _load_font("Roboto-Regular.ttf", 16)
-        font_branding = _load_font("Roboto-Regular.ttf", 20)
+        font_title = _load_font("Anton-Regular.ttf", 52)
+        font_date = _load_font("Roboto-Bold.ttf", 26)
+        font_card_title = _load_font("Roboto-Bold.ttf", 18)
+        font_card_value = _load_font("Anton-Regular.ttf", 42)
+        font_card_label = _load_font("Roboto-Regular.ttf", 15)
+        font_detail = _load_font("Roboto-Regular.ttf", 14)
+        font_lb1 = _load_font("Roboto-Bold.ttf", 19)
+        font_lb = _load_font("Roboto-Regular.ttf", 15)
+        font_brand = _load_font("Roboto-Regular.ttf", 18)
 
-        # --- Title ---
+        margin = 40
         title_text = "STREAM HIGHLIGHTS"
         title_bbox = draw.textbbox((0, 0), title_text, font=font_title)
-        title_w = title_bbox[2] - title_bbox[0]
-        title_x = (WIDTH - title_w) // 2
-        title_y = 40
+        title_h = title_bbox[3] - title_bbox[1]
+        title_y = margin
+        draw.text((margin, title_y), title_text, fill=text_primary, font=font_title)
 
-        # Title glow effect (draw text multiple times with blur)
-        for offset in [3, 2, 1]:
-            draw.text(
-                (title_x, title_y),
-                title_text,
-                fill=(0, 255, 255, 80),
-                font=font_title,
-            )
-        draw.text((title_x, title_y), title_text, fill=TITLE_COLOR, font=font_title)
-
-        # --- Date range subtitle ---
         date_fmt = "%b %d, %Y"
-        date_text = f"{start_date.strftime(date_fmt)}  -  {end_date.strftime(date_fmt)}"
+        date_text = f"{start_date.strftime(date_fmt)}  –  {end_date.strftime(date_fmt)}"
         date_bbox = draw.textbbox((0, 0), date_text, font=font_date)
         date_w = date_bbox[2] - date_bbox[0]
-        draw.text(
-            ((WIDTH - date_w) // 2, title_y + 90),
-            date_text,
-            fill=SUBTITLE_COLOR,
-            font=font_date,
+        date_h = date_bbox[3] - date_bbox[1]
+        date_x = WIDTH - margin - date_w
+        date_y = title_y + (title_h - date_h) // 2
+        draw.text((date_x, date_y), date_text, fill=text_secondary, font=font_date)
+
+        accents = _accent_colors(theme, 12)
+        lifetime_fb = bool(highlights.get("_lifetime_fallback"))
+        community_users_label = (
+            "Unique users (lifetime aggregates)"
+            if lifetime_fb
+            else "Unique users (event log)"
         )
 
-        # --- Stat cards grid ---
-        # Build card data from highlights
-        cards = []
-
-        total_bits = highlights.get("total_bits", 0)
-        top_bit_donor = highlights.get("top_bit_donor")
-        cards.append(
-            {
-                "icon": "BITS",
-                "value": _format_number(total_bits),
-                "label": "Total Bits",
-                "detail": f"Top Donor: {top_bit_donor['username']} ({_format_number(int(top_bit_donor['total']))})"
-                if top_bit_donor
-                else "No bit events",
-                "color_idx": 0,
+        def card_spec(
+            key: str,
+            title: str,
+            value: str,
+            label: str,
+            detail_lines: List[str],
+            entries: List[Dict[str, Any]],
+            value_key: str,
+            accent_idx: int,
+        ) -> Dict[str, Any]:
+            return {
+                "key": key,
+                "title": title,
+                "value": value,
+                "label": label,
+                "detail_lines": detail_lines,
+                "entries": entries or [],
+                "value_key": value_key,
+                "accent_idx": accent_idx,
             }
-        )
 
-        total_subs = highlights.get("total_subs", 0)
-        total_gift = highlights.get("total_gift_subs", 0)
-        cards.append(
-            {
-                "icon": "SUBS",
-                "value": _format_number(total_subs + total_gift),
-                "label": "Total Subs",
-                "detail": f"New/Resub: {_format_number(total_subs)}  |  Gifted: {_format_number(total_gift)}",
-                "color_idx": 1,
-            }
-        )
+        cards: List[Dict[str, Any]] = [
+            card_spec(
+                "bits",
+                "BITS",
+                _format_number(int(highlights.get("total_bits", 0) or 0)),
+                "Total bits",
+                [],
+                highlights.get("top_bits") or [],
+                "total",
+                0,
+            ),
+            card_spec(
+                "points",
+                "POINTS",
+                _format_number(int(highlights.get("total_channel_points", 0) or 0)),
+                "Channel points redeemed",
+                [],
+                highlights.get("top_channel_points") or [],
+                "total",
+                1,
+            ),
+            card_spec(
+                "new_subs",
+                "NEW SUBS",
+                _format_number(int(highlights.get("total_new_subs", 0) or 0)),
+                "New subscriptions",
+                [],
+                highlights.get("top_new_subs") or [],
+                "count",
+                2,
+            ),
+            card_spec(
+                "resubs",
+                "RESUBS",
+                _format_number(int(highlights.get("total_resubs", 0) or 0)),
+                "Resubscriptions",
+                [],
+                highlights.get("top_resubs") or [],
+                "count",
+                3,
+            ),
+            card_spec(
+                "gift_subs",
+                "GIFT SUBS",
+                _format_number(int(highlights.get("total_gift_subs", 0) or 0)),
+                "Gifted subs (total)",
+                [],
+                highlights.get("top_gift_subs") or [],
+                "total",
+                4,
+            ),
+            card_spec(
+                "donations",
+                "DONATIONS",
+                _format_number(int(highlights.get("total_donations", 0) or 0)),
+                "Donation alerts",
+                [],
+                highlights.get("top_donations") or [],
+                "count",
+                5,
+            ),
+            card_spec(
+                "chat",
+                "CHAT",
+                _format_number(int(highlights.get("total_chat_messages", 0) or 0)),
+                "Chat messages",
+                [],
+                highlights.get("top_chat_messages") or [],
+                "count",
+                6,
+            ),
+            card_spec(
+                "giveaways",
+                "GIVEAWAYS",
+                _format_number(int(highlights.get("total_giveaway_entries", 0) or 0)),
+                "Giveaway pool entries",
+                [
+                    f"Wins: {_format_number(int(highlights.get('total_giveaway_wins', 0) or 0))}",
+                    f"Rounds completed: {_format_number(int(highlights.get('total_giveaway_rounds', 0) or 0))}",
+                ],
+                highlights.get("top_giveaway_entries") or [],
+                "count",
+                7,
+            ),
+            card_spec(
+                "community",
+                "COMMUNITY",
+                _format_number(int(highlights.get("unique_users", 0) or 0)),
+                community_users_label,
+                [
+                    f"Follows: {_format_number(int(highlights.get('total_follows', 0) or 0))}",
+                    f"Raids: {_format_number(int(highlights.get('total_raids', 0) or 0))}",
+                ],
+                [],
+                "count",
+                8,
+            ),
+        ]
 
-        total_donations = highlights.get("total_donations", 0)
-        cards.append(
-            {
-                "icon": "DONATIONS",
-                "value": _format_number(total_donations),
-                "label": "Donations",
-                "detail": "",
-                "color_idx": 2,
-            }
-        )
-
-        top_gifter = highlights.get("top_gifter")
-        most_active = highlights.get("most_active_user")
-        cards.append(
-            {
-                "icon": "MVP",
-                "value": most_active["username"] if most_active else "-",
-                "label": "Most Active User",
-                "detail": f"{_format_number(most_active['event_count'])} events"
-                if most_active
-                else "No events",
-                "color_idx": 3,
-            }
-        )
-
-        total_points = highlights.get("total_channel_points", 0)
-        cards.append(
-            {
-                "icon": "POINTS",
-                "value": _format_number(total_points),
-                "label": "Channel Points",
-                "detail": "",
-                "color_idx": 4,
-            }
-        )
-
-        total_follows = highlights.get("total_follows", 0)
-        total_raids = highlights.get("total_raids", 0)
-        unique_users = highlights.get("unique_users", 0)
-        cards.append(
-            {
-                "icon": "COMMUNITY",
-                "value": _format_number(unique_users),
-                "label": "Unique Users",
-                "detail": f"Follows: {_format_number(total_follows)}  |  Raids: {_format_number(total_raids)}",
-                "color_idx": 5,
-            }
-        )
-
-        # --- Draw cards in a 3x2 grid ---
         grid_cols = 3
-        grid_rows = 2
-        card_w = 520
-        card_h = 280
-        grid_x_start = (WIDTH - (grid_cols * card_w + (grid_cols - 1) * 30)) // 2
-        grid_y_start = 190
-        h_gap = 30
-        v_gap = 30
+        grid_rows = 3
+        header_bottom = title_y + title_h + 36
+        footer_h = 44
+        usable_h = HEIGHT - header_bottom - footer_h - margin
+        h_gap = 22
+        v_gap = 22
+        card_w = (WIDTH - 2 * margin - (grid_cols - 1) * h_gap) // grid_cols
+        card_h = (usable_h - (grid_rows - 1) * v_gap) // grid_rows
+        grid_y_start = header_bottom
 
         for idx, card in enumerate(cards):
             col = idx % grid_cols
             row = idx // grid_cols
-            cx = grid_x_start + col * (card_w + h_gap)
+            cx = margin + col * (card_w + h_gap)
             cy = grid_y_start + row * (card_h + v_gap)
+            accent = accents[card["accent_idx"] % len(accents)]
 
-            accent_color = CARD_BORDER_GLOW[card["color_idx"] % len(CARD_BORDER_GLOW)]
-
-            # Card background with glow border
             _draw_rounded_rect(
                 draw,
                 (cx, cy, cx + card_w, cy + card_h),
-                radius=20,
-                fill=(25, 18, 55, 220),
-                outline=accent_color,
-                outline_width=3,
+                radius=16,
+                fill=(*card_fill, 245),
+                outline=accent,
+                outline_width=2,
             )
 
-            # Inner glow line at top
-            _draw_rounded_rect(
-                draw,
-                (cx + 4, cy + 4, cx + card_w - 4, cy + 6),
-                radius=2,
-                fill=(*accent_color, 120),
-            )
+            pad = 14
+            draw.text((cx + pad, cy + pad), card["title"], fill=accent, font=font_card_title)
 
-            # Card icon/header text
-            draw.text(
-                (cx + 30, cy + 20),
-                card["icon"],
-                fill=accent_color,
-                font=font_card_title,
-            )
-
-            # Card value (large number or text)
             value_text = card["value"]
-            # Truncate long usernames
-            if len(value_text) > 16:
-                value_text = value_text[:14] + ".."
+            if len(value_text) > 18:
+                value_text = value_text[:16] + ".."
             draw.text(
-                (cx + 30, cy + 65),
+                (cx + pad, cy + pad + 28),
                 value_text,
-                fill=TEXT_PRIMARY,
+                fill=text_primary,
                 font=font_card_value,
             )
 
-            # Card label
-            draw.text(
-                (cx + 30, cy + 140),
-                card["label"],
-                fill=TEXT_SECONDARY,
-                font=font_card_label,
-            )
+            ly = cy + pad + 82
+            draw.text((cx + pad, ly), card["label"], fill=text_secondary, font=font_card_label)
+            ly += 22
+            for dl in card["detail_lines"]:
+                draw.text((cx + pad, ly), dl, fill=text_muted, font=font_detail)
+                ly += 18
 
-            # Card detail line
-            if card["detail"]:
-                draw.text(
-                    (cx + 30, cy + 170),
-                    card["detail"],
-                    fill=(*accent_color, 200),
-                    font=font_card_detail,
+            ly += 6
+            vk = card["value_key"]
+            lb = _leaderboard_lines(card["entries"], vk)
+
+            if card["key"] == "giveaways":
+                left_x = cx + pad
+                right_x = cx + card_w // 2 + 10
+                draw.text((left_x, ly), "Top entrants", fill=text_muted, font=font_detail)
+                draw.text((right_x, ly), "Top winners", fill=text_muted, font=font_detail)
+                ly += 20
+                ent_lines = _leaderboard_lines(
+                    highlights.get("top_giveaway_entries") or [], "count"
                 )
+                win_lines = _leaderboard_lines(
+                    highlights.get("top_giveaway_wins") or [], "count"
+                )
+                for i in range(5):
+                    row_y = ly + i * 22
+                    if i < len(ent_lines):
+                        rank, line, _ = ent_lines[i]
+                        fnt = font_lb1 if rank == 1 else font_lb
+                        draw.text(
+                            (left_x, row_y),
+                            line,
+                            fill=text_primary if rank == 1 else text_secondary,
+                            font=fnt,
+                        )
+                    if i < len(win_lines):
+                        rank, line, _ = win_lines[i]
+                        fnt = font_lb1 if rank == 1 else font_lb
+                        draw.text(
+                            (right_x, row_y),
+                            line,
+                            fill=text_primary if rank == 1 else text_secondary,
+                            font=fnt,
+                        )
+            elif card["key"] == "community":
+                left_x = cx + pad
+                right_x = cx + card_w // 2 + 10
+                draw.text((left_x, ly), "Top followers", fill=text_muted, font=font_detail)
+                draw.text((right_x, ly), "Top raiders", fill=text_muted, font=font_detail)
+                ly += 20
+                fol_lines = _leaderboard_lines(
+                    highlights.get("top_follows") or [], "count"
+                )
+                raid_lines = _leaderboard_lines(
+                    highlights.get("top_raids") or [], "count"
+                )
+                for i in range(5):
+                    row_y = ly + i * 22
+                    if i < len(fol_lines):
+                        rank, line, _ = fol_lines[i]
+                        fnt = font_lb1 if rank == 1 else font_lb
+                        draw.text(
+                            (left_x, row_y),
+                            line,
+                            fill=text_primary if rank == 1 else text_secondary,
+                            font=fnt,
+                        )
+                    if i < len(raid_lines):
+                        rank, line, _ = raid_lines[i]
+                        fnt = font_lb1 if rank == 1 else font_lb
+                        draw.text(
+                            (right_x, row_y),
+                            line,
+                            fill=text_primary if rank == 1 else text_secondary,
+                            font=fnt,
+                        )
+            else:
+                for rank, line, _ in lb:
+                    fnt = font_lb1 if rank == 1 else font_lb
+                    draw.text(
+                        (cx + pad, ly),
+                        line,
+                        fill=text_primary if rank == 1 else text_secondary,
+                        font=fnt,
+                    )
+                    ly += 24 if rank == 1 else 20
 
-            # Decorative corner dots
-            dot_r = 4
-            draw.ellipse(
-                [cx + card_w - 30, cy + 20, cx + card_w - 30 + dot_r * 2, cy + 20 + dot_r * 2],
-                fill=accent_color,
-            )
-
-        # --- Biggest bit donation callout (if exists) ---
-        biggest_bit = highlights.get("biggest_bit_donation")
-        if biggest_bit and biggest_bit.get("amount", 0) > 0:
-            callout_y = grid_y_start + grid_rows * (card_h + v_gap) + 20
-            callout_text = (
-                f"Biggest Single Bit Cheer: {biggest_bit['username']} "
-                f"with {_format_number(int(biggest_bit['amount']))} bits!"
-            )
-            callout_bbox = draw.textbbox((0, 0), callout_text, font=font_subtitle)
-            callout_w = callout_bbox[2] - callout_bbox[0]
-            _draw_rounded_rect(
-                draw,
-                ((WIDTH - callout_w) // 2 - 30, callout_y - 10,
-                 (WIDTH + callout_w) // 2 + 30, callout_y + 50),
-                radius=15,
-                fill=(40, 20, 80, 180),
-                outline=(255, 215, 0),
-                outline_width=2,
-            )
-            draw.text(
-                ((WIDTH - callout_w) // 2, callout_y),
-                callout_text,
-                fill=(255, 215, 0),
-                font=font_subtitle,
-            )
-
-        # --- Top gifter callout (if exists) ---
-        if top_gifter:
-            gifter_y = grid_y_start + grid_rows * (card_h + v_gap) + 80
-            gifter_text = (
-                f"Top Gift Sub Giver: {top_gifter['username']} "
-                f"with {_format_number(top_gifter['total'])} gift subs!"
-            )
-            gifter_bbox = draw.textbbox((0, 0), gifter_text, font=font_subtitle)
-            gifter_w = gifter_bbox[2] - gifter_bbox[0]
-            _draw_rounded_rect(
-                draw,
-                ((WIDTH - gifter_w) // 2 - 30, gifter_y - 10,
-                 (WIDTH + gifter_w) // 2 + 30, gifter_y + 50),
-                radius=15,
-                fill=(40, 20, 80, 180),
-                outline=(255, 0, 200),
-                outline_width=2,
-            )
-            draw.text(
-                ((WIDTH - gifter_w) // 2, gifter_y),
-                gifter_text,
-                fill=(255, 100, 220),
-                font=font_subtitle,
-            )
-
-        # --- Branding footer ---
-        branding_text = f"Powered by {streamer_name}  |  Mycelian Streaming Toolkit"
-        branding_bbox = draw.textbbox((0, 0), branding_text, font=font_branding)
-        branding_w = branding_bbox[2] - branding_bbox[0]
+        branding = "Powered by Mycelian"
+        bb = draw.textbbox((0, 0), branding, font=font_brand)
+        bw = bb[2] - bb[0]
         draw.text(
-            ((WIDTH - branding_w) // 2, HEIGHT - 50),
-            branding_text,
-            fill=BRANDING_COLOR,
-            font=font_branding,
+            ((WIDTH - bw) // 2, HEIGHT - margin - (bb[3] - bb[1])),
+            branding,
+            fill=text_muted,
+            font=font_brand,
         )
 
-        # --- Decorative scan lines (subtle) ---
-        for y in range(0, HEIGHT, 4):
-            draw.line([(0, y), (WIDTH, y)], fill=(0, 0, 0, 8), width=1)
-
-        # --- Save ---
-        os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
+        os.makedirs(
+            os.path.dirname(output_path) if os.path.dirname(output_path) else ".",
+            exist_ok=True,
+        )
         img = img.convert("RGB")
         img.save(output_path, "PNG", quality=95)
-        logger.info(f"Statistics highlights image saved to {output_path}")
+        logger.info("Statistics highlights image saved to %s", output_path)
+        print("[highlights render] saved OK ->", output_path)
         return True
 
     except Exception as e:
-        logger.error(f"Error generating highlights image: {e}", exc_info=True)
+        logger.error("Error generating highlights image: %s", e, exc_info=True)
+        print("[highlights render] FAILED:", repr(e))
         return False
