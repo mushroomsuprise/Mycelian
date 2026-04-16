@@ -101,3 +101,4 @@ FF7 Hook
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
     [x] - Interval update timer is not notifying when an update is available after the app has been already opened and running.
+    [] - Fix per user stats tracking. Nothing displays in the stats panel when searching for a specific user.
