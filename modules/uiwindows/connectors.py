@@ -24,12 +24,13 @@ SOFTWARE.
 """
 
 import asyncio
+import json
 import logging
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
-from nicegui import ui
+from nicegui import context, ui
 
 from ..help_system.contextual_help import help_button
 
@@ -37,6 +38,7 @@ from .. import (
     connector_actions,
     connector_examples,
     connector_integration,
+    connector_layout_store,
     connector_manager,
     connector_triggers,
 )
@@ -58,6 +60,18 @@ edit_dialog = None
 search_input = None
 current_search = ""
 connector_cards = {}  # Store connector cards by ID for search functionality
+folder_cards = {}  # folder_id -> folder wrapper element for search
+connector_parent_folder: Dict[str, Optional[str]] = (
+    {}
+)  # connector_id -> folder_id if inside a folder, else None
+_client_drag_state: Dict[int, Dict[str, Optional[str]]] = {}
+# Host for folder floating panels (survives connectors_container.clear())
+_folder_dialog_host: Optional[Any] = None
+_folder_floaters: Dict[str, Dict[str, Any]] = {}
+folder_tile_title_labels: Dict[str, Any] = {}
+# Quasar / NiceGUI dialogs use z-index ~6000+; keep floaters below so edit/create dialogs stack on top.
+_FOLDER_FLOAT_Z_HOST = 5500
+_FOLDER_FLOAT_Z_SHELL_BASE = 5510
 
 # Add custom CSS for the connectors UI
 CUSTOM_CSS = """
@@ -387,12 +401,73 @@ CUSTOM_CSS = """
 .search-input .q-field__control:hover {
     background: var(--color-hover-overlay) !important;
 }
+
+.connector-folder {
+    border: 1px solid var(--color-border-accent);
+    background: var(--color-bg-surface);
+}
+
+.connector-root-drop {
+    border-color: var(--color-border-default);
+    background: var(--color-bg-elevated);
+}
+
+.connector-folder-tile {
+    cursor: default;
+}
+
+.connector-folder-floating {
+    box-shadow: 0 12px 40px var(--color-bg-overlay);
+    background: var(--color-bg-surface);
+    box-sizing: border-box;
+}
+
+.folder-float-handle {
+    user-select: none;
+    touch-action: none;
+    -webkit-user-drag: none;
+}
+
+.connector-folder-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
+    gap: 0.45rem;
+    width: 100%;
+}
+
+.connector-folder-preview-tile {
+    aspect-ratio: 1;
+    min-height: 4.25rem;
+    max-height: 5.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border-radius: 0.35rem;
+    border: 1px solid var(--color-border-accent);
+    background: var(--color-bg-elevated);
+    overflow: hidden;
+}
+
+.connector-folder-preview-tile .preview-name {
+    font-size: 0.65rem;
+    line-height: 1.15;
+    text-align: center;
+    color: var(--color-text-primary);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+    width: 100%;
+}
 """
 
 
 def create_connectors_tab():
     """Create the Connectors tab UI"""
-    global connectors_container
+    global connectors_container, _folder_dialog_host
 
     # Add custom CSS to the page
     ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
@@ -460,6 +535,8 @@ def create_connectors_tab():
             with ui.scroll_area().classes("w-full h-full"):
                 connectors_container = ui.element("div").classes("w-full p-4")
 
+            _ensure_folder_dialog_host()
+
         # Load and display connectors
         load_connectors()
 
@@ -467,21 +544,498 @@ def create_connectors_tab():
         update_search_visibility()
 
 
+def _folder_header_drag_js(panel_dom_id: str) -> str:
+    """Client-only drag for folder floaters; panel_dom_id is NiceGUI DOM id (e.g. c42)."""
+    pid = json.dumps(panel_dom_id)
+    return f"""(e) => {{
+      if (e.button !== 0) return;
+      if (e.target && e.target.closest && e.target.closest('button, .q-btn, [role="button"]')) return;
+      const panel = document.getElementById({pid});
+      if (!panel) return;
+      const r = panel.getBoundingClientRect();
+      const ox = e.clientX - r.left;
+      const oy = e.clientY - r.top;
+      panel.style.left = r.left + 'px';
+      panel.style.top = r.top + 'px';
+      panel.style.right = 'auto';
+      panel.style.margin = '0';
+      const move = (ev) => {{
+        let nx = ev.clientX - ox;
+        let ny = ev.clientY - oy;
+        const w = panel.offsetWidth;
+        const h = panel.offsetHeight;
+        nx = Math.max(8, Math.min(nx, window.innerWidth - w - 8));
+        ny = Math.max(8, Math.min(ny, window.innerHeight - h - 8));
+        panel.style.left = nx + 'px';
+        panel.style.top = ny + 'px';
+        ev.preventDefault();
+      }};
+      const up = (ev) => {{
+        window.removeEventListener('mousemove', move, true);
+        window.removeEventListener('mouseup', up, true);
+        if (ev) ev.preventDefault();
+      }};
+      window.addEventListener('mousemove', move, true);
+      window.addEventListener('mouseup', up, true);
+      e.preventDefault();
+      e.stopPropagation();
+    }}"""
+
+
+def _ensure_folder_dialog_host() -> None:
+    global _folder_dialog_host
+    if _folder_dialog_host is not None and not _folder_dialog_host.is_deleted:
+        return
+    _folder_dialog_host = (
+        ui.element("div")
+        .classes("fixed top-0 left-0 w-0 h-0 overflow-visible")
+        .style(f"z-index:{_FOLDER_FLOAT_Z_HOST}")
+    )
+
+
+def _detach_folder_member_cards(folder_id: str) -> None:
+    layout = connector_layout_store.load_layout()
+    spec = (layout.get("folders") or {}).get(folder_id) or {}
+    for cid in spec.get("connector_ids") or []:
+        connector_cards.pop(cid, None)
+        connector_parent_folder.pop(cid, None)
+
+
+def _close_folder_floater(folder_id: str) -> None:
+    st = _folder_floaters.pop(folder_id, None)
+    if not st:
+        return
+    _detach_folder_member_cards(folder_id)
+    shell = st.get("shell")
+    if shell is not None and not shell.is_deleted:
+        try:
+            shell.delete()
+        except Exception:
+            pass
+
+
+def _close_all_folder_floaters() -> None:
+    for fid in list(_folder_floaters.keys()):
+        _close_folder_floater(fid)
+
+
+def _open_folder_floating_window(folder_id: str) -> None:
+    global _folder_floaters
+
+    _ensure_folder_dialog_host()
+    mgr = connector_manager.get_manager()
+    connectors = mgr.get_all_connectors()
+    existing_ids = set(connectors.keys())
+    layout = connector_layout_store.reconcile_layout(
+        connector_layout_store.load_layout(), existing_ids
+    )
+    spec = (layout.get("folders") or {}).get(folder_id)
+    if not spec or not isinstance(spec, dict):
+        ui.notify("Folder not found", type="warning")
+        return
+    title = str(spec.get("name") or "Folder")
+    member_ids = [cid for cid in spec.get("connector_ids") or [] if cid in connectors]
+
+    existing = _folder_floaters.get(folder_id)
+    if existing:
+        sh = existing.get("shell")
+        if sh is not None and not sh.is_deleted:
+            ui.notify("This folder is already open", type="info", timeout=1.5)
+            return
+        _folder_floaters.pop(folder_id, None)
+
+    assert _folder_dialog_host is not None
+    offset = len(_folder_floaters)
+    z = _FOLDER_FLOAT_Z_SHELL_BASE + min(offset, 85)
+
+    with _folder_dialog_host:
+        shell = ui.element("div").classes(
+            "connector-folder-floating pointer-events-auto rounded-lg flex flex-col "
+            "border border-gray-700 min-h-0"
+        )
+        shell.style(
+            "position:fixed;"
+            f"left:{min(40 + offset * 28, 280)}px;"
+            f"top:{min(72 + offset * 24, 200)}px;"
+            "width:min(92vw, 960px);"
+            "min-width:320px;"
+            "min-height:280px;"
+            "max-width:96vw;"
+            "max-height:90vh;"
+            "resize:both;"
+            "overflow:auto;"
+            "box-sizing:border-box;"
+            f"z-index:{z};"
+        )
+        with shell:
+            head = ui.row().classes(
+                "w-full items-center justify-between gap-2 flex-none "
+                "border-b border-gray-600 px-2 py-1 cursor-move"
+            )
+            head.on(
+                "mousedown.capture",
+                js_handler=_folder_header_drag_js(f"c{shell.id}"),
+            )
+            with head:
+                drag_area = ui.element("div").classes(
+                    "folder-float-handle flex flex-row items-center gap-2 flex-grow min-w-0"
+                )
+                with drag_area:
+                    ui.icon("folder", size="sm").classes("text-amber-400 flex-shrink-0")
+                    title_label = ui.label(title).classes(
+                        "text-base font-semibold text-theme-primary truncate"
+                    )
+                with ui.row().classes("items-center gap-1 flex-shrink-0"):
+                    ui.button(icon="close", on_click=lambda f=folder_id: _close_folder_floater(f)).props(
+                        "flat dense round"
+                    ).tooltip("Close")
+
+            body_wrap = ui.element("div").classes("flex-1 min-h-0 p-3 flex flex-col")
+            with body_wrap:
+                with ui.scroll_area().classes("w-full flex-1").style(
+                    "min-height: 0; flex: 1 1 auto;"
+                ):
+                    body_grid = ui.element("div").classes(
+                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-1"
+                    )
+                    body_grid.on("dragover.prevent", lambda _: None)
+                    body_grid.on(
+                        "drop.prevent", lambda _: _handle_drop_on_folder(folder_id)
+                    )
+                    with body_grid:
+                        for cid in member_ids:
+                            create_connector_card(cid, connectors[cid], folder_id)
+
+    _folder_floaters[folder_id] = {
+        "shell": shell,
+        "body_grid": body_grid,
+        "title_label": title_label,
+        "is_open": True,
+    }
+    update_search_visibility()
+
+
+def _update_folder_floater_title(folder_id: str, new_title: str) -> None:
+    st = _folder_floaters.get(folder_id)
+    if not st:
+        return
+    lbl = st.get("title_label")
+    if lbl is not None and not lbl.is_deleted:
+        lbl.text = new_title
+
+
+def _drag_client_id() -> int:
+    return context.client.id
+
+
+def _set_drag_source(connector_id: str, from_folder_id: Optional[str]) -> None:
+    _client_drag_state[_drag_client_id()] = {
+        "connector_id": connector_id,
+        "from_folder_id": from_folder_id,
+    }
+
+
+def _peek_drag_source() -> Optional[Dict[str, Optional[str]]]:
+    return _client_drag_state.get(_drag_client_id())
+
+
+def _pop_drag_source() -> Optional[Dict[str, Optional[str]]]:
+    return _client_drag_state.pop(_drag_client_id(), None)
+
+
+def _clear_drag_source() -> None:
+    _client_drag_state.pop(_drag_client_id(), None)
+
+
+def _connector_search_blob(connector: Connector) -> str:
+    trig = (
+        format_trigger_name(connector.trigger.trigger_type)
+        if connector.trigger
+        else ""
+    )
+    parts = [
+        connector.name or "",
+        connector.description or "",
+        trig,
+    ]
+    parts.extend(
+        get_action_display_name(action) for action in (connector.actions or [])
+    )
+    return " ".join(parts).lower()
+
+
+def _handle_drop_on_card(target_id: str) -> None:
+    st = _peek_drag_source()
+    if not st:
+        return
+    src = st["connector_id"]
+    if src == target_id:
+        _pop_drag_source()
+        return
+    _pop_drag_source()
+    mgr = connector_manager.get_manager()
+    existing_ids = set(mgr.get_all_connectors().keys())
+    layout = connector_layout_store.reconcile_layout(
+        connector_layout_store.load_layout(), existing_ids
+    )
+    new_layout, new_fid = connector_layout_store.merge_into_new_folder(
+        layout, src, target_id
+    )
+    if not new_fid:
+        return
+    connector_layout_store.save_layout(new_layout)
+    load_connectors()
+    update_search_visibility()
+    _prompt_new_folder_name(new_fid)
+
+
+def _handle_drop_on_folder(folder_id: str) -> None:
+    st = _peek_drag_source()
+    if not st:
+        return
+    src = st["connector_id"]
+    if st.get("from_folder_id") == folder_id:
+        _pop_drag_source()
+        return
+    _pop_drag_source()
+    mgr = connector_manager.get_manager()
+    existing_ids = set(mgr.get_all_connectors().keys())
+    layout = connector_layout_store.reconcile_layout(
+        connector_layout_store.load_layout(), existing_ids
+    )
+    new_layout = connector_layout_store.move_connector_to_folder(
+        layout, src, folder_id
+    )
+    connector_layout_store.save_layout(new_layout)
+    load_connectors()
+    update_search_visibility()
+
+
+def _handle_drop_on_root() -> None:
+    st = _peek_drag_source()
+    if not st:
+        return
+    if st.get("from_folder_id") is None:
+        _pop_drag_source()
+        return
+    _pop_drag_source()
+    src = st["connector_id"]
+    mgr = connector_manager.get_manager()
+    existing_ids = set(mgr.get_all_connectors().keys())
+    layout = connector_layout_store.reconcile_layout(
+        connector_layout_store.load_layout(), existing_ids
+    )
+    new_layout = connector_layout_store.move_connector_to_root(layout, src)
+    connector_layout_store.save_layout(new_layout)
+    load_connectors()
+    update_search_visibility()
+
+
+def _prompt_new_folder_name(folder_id: str) -> None:
+    layout = connector_layout_store.load_layout()
+    spec = (layout.get("folders") or {}).get(folder_id) or {}
+    cur = str(spec.get("name") or "New folder")
+
+    def save_name(name: str, dialog: ui.dialog) -> None:
+        mgr = connector_manager.get_manager()
+        existing_ids = set(mgr.get_all_connectors().keys())
+        lay = connector_layout_store.reconcile_layout(
+            connector_layout_store.load_layout(), existing_ids
+        )
+        new_lay = connector_layout_store.rename_folder(lay, folder_id, name)
+        connector_layout_store.save_layout(new_lay)
+        dialog.close()
+        load_connectors()
+        update_search_visibility()
+
+    with ui.dialog() as dialog:
+        with ui.card().classes("p-4 min-w-[20rem]"):
+            ui.label("Name this folder").classes("text-lg font-semibold mb-2")
+            inp = ui.input(value=cur).classes("w-full mb-3")
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button(
+                    "Save",
+                    on_click=lambda: save_name((inp.value or "").strip() or "Folder", dialog),
+                ).classes("btn-primary")
+    dialog.open()
+
+
+def show_rename_folder_dialog(folder_id: str) -> None:
+    layout = connector_layout_store.load_layout()
+    spec = (layout.get("folders") or {}).get(folder_id) or {}
+    cur = str(spec.get("name") or "Folder")
+
+    def save_name(name: str, dialog: ui.dialog) -> None:
+        mgr = connector_manager.get_manager()
+        existing_ids = set(mgr.get_all_connectors().keys())
+        lay = connector_layout_store.reconcile_layout(
+            connector_layout_store.load_layout(), existing_ids
+        )
+        new_lay = connector_layout_store.rename_folder(lay, folder_id, name)
+        connector_layout_store.save_layout(new_lay)
+        dialog.close()
+        _update_folder_floater_title(folder_id, name)
+        tl = folder_tile_title_labels.get(folder_id)
+        if tl is not None and not tl.is_deleted:
+            tl.text = name
+        update_search_visibility()
+
+    with ui.dialog() as dialog:
+        with ui.card().classes("p-4 min-w-[20rem]"):
+            ui.label("Rename folder").classes("text-lg font-semibold mb-2")
+            inp = ui.input(value=cur).classes("w-full mb-3")
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button(
+                    "Save",
+                    on_click=lambda: save_name((inp.value or "").strip() or "Folder", dialog),
+                ).classes("btn-primary")
+    dialog.open()
+
+
+def show_delete_folder_dialog(folder_id: str) -> None:
+    def keep_connectors(dialog: ui.dialog) -> None:
+        _close_folder_floater(folder_id)
+        mgr = connector_manager.get_manager()
+        existing_ids = set(mgr.get_all_connectors().keys())
+        lay = connector_layout_store.reconcile_layout(
+            connector_layout_store.load_layout(), existing_ids
+        )
+        new_lay = connector_layout_store.delete_folder_keep_connectors(lay, folder_id)
+        connector_layout_store.save_layout(new_lay)
+        dialog.close()
+        load_connectors()
+        update_search_visibility()
+
+    def delete_all(dialog: ui.dialog) -> None:
+        _close_folder_floater(folder_id)
+        mgr = connector_manager.get_manager()
+        existing_ids = set(mgr.get_all_connectors().keys())
+        lay = connector_layout_store.reconcile_layout(
+            connector_layout_store.load_layout(), existing_ids
+        )
+        new_lay, members = connector_layout_store.delete_folder_record_only(
+            lay, folder_id
+        )
+        connector_layout_store.save_layout(new_lay)
+        dialog.close()
+        for cid in members:
+            mgr.remove_connector(cid)
+        load_connectors()
+        update_search_visibility()
+
+    with ui.dialog().props("persistent") as dialog:
+        with ui.card().classes("p-4 max-w-lg"):
+            ui.label("Delete folder").classes("text-lg font-semibold mb-2")
+            ui.label(
+                "Remove the folder only (connectors return to the main grid), "
+                "or delete the folder and all connectors inside it."
+            ).classes("text-sm secondary-text mb-4")
+            with ui.column().classes("w-full gap-2"):
+                ui.button(
+                    "Delete folder only — keep connectors",
+                    on_click=lambda: keep_connectors(dialog),
+                ).classes("control-button btn-secondary w-full")
+                ui.button(
+                    "Delete folder and all connectors inside",
+                    on_click=lambda: delete_all(dialog),
+                ).classes("control-button btn-danger w-full")
+            with ui.row().classes("w-full justify-end mt-3"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+    dialog.open()
+
+
 def load_connectors():
     """Load and display connectors"""
-    global connectors_container, connector_cards
+    global connectors_container, connector_cards, folder_cards, connector_parent_folder, folder_tile_title_labels
 
     if connectors_container is None:
         logger.error("Connectors container not initialized")
         return
 
-    # Clear existing content and card references
+    _close_all_folder_floaters()
     connectors_container.clear()
     connector_cards.clear()
+    folder_cards.clear()
+    connector_parent_folder.clear()
+    folder_tile_title_labels.clear()
 
     try:
         manager = connector_manager.get_manager()
         connectors = manager.get_all_connectors()
+        existing_ids = set(connectors.keys())
+
+        raw_layout = connector_layout_store.load_layout()
+        layout = connector_layout_store.reconcile_layout(raw_layout, existing_ids)
+
+        if json.dumps(layout, sort_keys=True, default=str) != json.dumps(
+            raw_layout, sort_keys=True, default=str
+        ):
+            connector_layout_store.save_layout(layout)
+
+        def render_folder(folder_id: str, folder_spec: dict) -> None:
+            name = str(folder_spec.get("name") or "Folder")
+            member_ids = [
+                cid
+                for cid in folder_spec.get("connector_ids") or []
+                if cid in connectors
+            ]
+            count = len(member_ids)
+
+            wrapper = ui.element("div").classes(
+                "connector-folder connector-folder-tile p-4 rounded-lg fade-in "
+                "flex flex-col gap-3 border border-gray-600/60 bg-[var(--color-bg-surface)]"
+            )
+            wrapper.props(f'data-folder-id="{folder_id}"')
+            folder_cards[folder_id] = wrapper
+            wrapper.on("dragover.prevent", lambda _: None)
+            wrapper.on("drop.prevent", lambda _: _handle_drop_on_folder(folder_id))
+
+            with wrapper:
+                with ui.row().classes("w-full items-start justify-between gap-2"):
+                    with ui.column().classes("gap-1 flex-grow min-w-0"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("folder", size="28px").classes(
+                                "text-amber-400 flex-shrink-0"
+                            )
+                            title_lbl = ui.label(name).classes(
+                                "text-base font-semibold text-theme-primary truncate"
+                            )
+                        folder_tile_title_labels[folder_id] = title_lbl
+                        ui.label(f"{count} connector{'s' if count != 1 else ''}").classes(
+                            "text-xs secondary-text"
+                        )
+                    with ui.column().classes("items-end gap-2 flex-shrink-0"):
+                        ui.button(
+                            icon="folder_open",
+                            text="Open",
+                            on_click=lambda f=folder_id: _open_folder_floating_window(f),
+                        ).classes("control-button btn-primary text-xs px-3 py-1")
+                        with ui.row().classes("items-center gap-1"):
+                            ui.button(
+                                icon="edit",
+                                on_click=lambda f=folder_id: show_rename_folder_dialog(f),
+                            ).props("flat dense round").tooltip("Rename folder")
+                            ui.button(
+                                icon="delete",
+                                on_click=lambda f=folder_id: show_delete_folder_dialog(f),
+                            ).props("flat dense round").tooltip("Delete folder")
+
+                if member_ids:
+                    with ui.element("div").classes("connector-folder-preview-grid mt-2"):
+                        for cid in member_ids:
+                            c = connectors.get(cid)
+                            if not c:
+                                continue
+                            with ui.element("div").classes(
+                                "connector-folder-preview-tile"
+                            ):
+                                ui.icon("hub", size="18px").classes(
+                                    "text-amber-300 flex-shrink-0 mb-0.5"
+                                )
+                                nm = (c.name or "").strip() or "Untitled"
+                                ui.label(nm).classes("preview-name")
 
         with connectors_container:
             if not connectors:
@@ -503,12 +1057,34 @@ def load_connectors():
                         "control-button btn-primary px-6 py-3 mt-4"
                     )
             else:
-                # Display connectors in a grid
-                with ui.element("div").classes(
-                    "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-                ):
-                    for connector_id, connector in connectors.items():
-                        create_connector_card(connector_id, connector)
+                with ui.element("div").classes("w-full flex flex-col gap-3"):
+                    root_drop = ui.element("div").classes(
+                        "connector-root-drop w-full min-h-[2.75rem] rounded-lg px-3 py-2 "
+                        "flex items-center justify-center text-xs secondary-text"
+                    )
+                    root_drop.props('data-root-drop="1"')
+                    root_drop.on("dragover.prevent", lambda _: None)
+                    root_drop.on("drop.prevent", lambda _: _handle_drop_on_root())
+                    with root_drop:
+                        ui.label(
+                            "Drop a connector here to move it to the main grid"
+                        ).classes("text-center")
+
+                    with ui.element("div").classes(
+                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                    ):
+                        for item in layout.get("root_items") or []:
+                            kind = item.get("kind")
+                            iid = item.get("id")
+                            if not kind or not iid:
+                                continue
+                            if kind == "connector":
+                                if iid in connectors:
+                                    create_connector_card(iid, connectors[iid], None)
+                            elif kind == "folder":
+                                spec = (layout.get("folders") or {}).get(iid)
+                                if spec and isinstance(spec, dict):
+                                    render_folder(iid, spec)
 
     except Exception as e:
         logger.error(f"Error loading connectors: {e}", exc_info=True)
@@ -516,8 +1092,12 @@ def load_connectors():
             ui.label(f"Error loading connectors: {str(e)}").classes("text-red-400")
 
 
-def create_connector_card(connector_id: str, connector: Connector):
+def create_connector_card(
+    connector_id: str, connector: Connector, folder_id: Optional[str] = None
+):
     """Create a card display for a connector"""
+    global connector_parent_folder
+
     card_classes = "connector-card p-4 rounded-lg"
     if not connector.enabled:
         card_classes += " disabled"
@@ -528,7 +1108,19 @@ def create_connector_card(connector_id: str, connector: Connector):
         .classes(card_classes)
         .props(f'data-connector-id="{connector_id}"')
     )
+    if folder_id:
+        card_element.props(f'data-folder-parent="{folder_id}"')
     connector_cards[connector_id] = card_element
+    connector_parent_folder[connector_id] = folder_id
+
+    card_element.props("draggable")
+    card_element.on(
+        "dragstart",
+        lambda _: _set_drag_source(connector_id, folder_id),
+    )
+    card_element.on("dragend", lambda _: _clear_drag_source())
+    card_element.on("dragover.prevent", lambda _: None)
+    card_element.on("drop.prevent", lambda _: _handle_drop_on_card(connector_id))
 
     with card_element:
         # Header row with name and status
@@ -4690,9 +5282,12 @@ def create_examples():
 
 def refresh_connectors():
     """Refresh the connectors display"""
-    global current_search, connector_cards
+    global current_search, connector_cards, folder_cards, connector_parent_folder, folder_tile_title_labels
     current_search = ""  # Clear search when refreshing
-    connector_cards.clear()  # Clear card references
+    connector_cards.clear()
+    folder_cards.clear()
+    connector_parent_folder.clear()
+    folder_tile_title_labels.clear()
     if search_input:
         search_input.value = ""
     load_connectors()
@@ -4711,31 +5306,71 @@ def update_search_visibility():
 
     visible_count = 0
     total_connectors = len(connector_cards)
+    manager = connector_manager.get_manager()
+    layout = connector_layout_store.load_layout()
 
-    # Iterate through all stored connector cards
-    for connector_id, card_element in connector_cards.items():
+    for folder_id, folder_el in folder_cards.items():
         try:
-            manager = connector_manager.get_manager()
+            spec = (layout.get("folders") or {}).get(folder_id) or {}
+            member_ids = list(spec.get("connector_ids") or [])
+            fname = (spec.get("name") or "").lower()
+
+            st = _folder_floaters.get(folder_id)
+            shell = st.get("shell") if st else None
+            floater_open = shell is not None and not shell.is_deleted
+
+            if not search_term:
+                folder_el.classes(remove="hidden")
+                if floater_open:
+                    for cid in member_ids:
+                        card_el = connector_cards.get(cid)
+                        if card_el:
+                            card_el.classes(remove="hidden")
+                            visible_count += 1
+                continue
+
+            name_hit = search_term in fname
+            matching = []
+            for cid in member_ids:
+                conn = manager.get_connector(cid)
+                if conn and search_term in _connector_search_blob(conn):
+                    matching.append(cid)
+            match_set = set(matching)
+
+            if name_hit or match_set:
+                folder_el.classes(remove="hidden")
+                if floater_open:
+                    for cid in member_ids:
+                        card_el = connector_cards.get(cid)
+                        if not card_el:
+                            continue
+                        if name_hit or cid in match_set:
+                            card_el.classes(remove="hidden")
+                            visible_count += 1
+                        else:
+                            card_el.classes(add="hidden")
+                else:
+                    visible_count += 1
+            else:
+                folder_el.classes(add="hidden")
+                if floater_open:
+                    for cid in member_ids:
+                        card_el = connector_cards.get(cid)
+                        if card_el:
+                            card_el.classes(add="hidden")
+        except Exception as e:
+            logger.error(f"Error updating visibility for folder {folder_id}: {e}")
+            folder_el.classes(add="hidden")
+
+    for connector_id, card_element in connector_cards.items():
+        if connector_parent_folder.get(connector_id):
+            continue
+        try:
             connector = manager.get_connector(connector_id)
 
             if connector:
-                # Search through name, description, trigger type, and action types
-                searchable_text = (
-                    (connector.name or "")
-                    + " "
-                    + (connector.description or "")
-                    + " "
-                    + format_trigger_name(connector.trigger.trigger_type)
-                    + " "
-                    + " ".join(
-                        [
-                            get_action_display_name(action)
-                            for action in connector.actions
-                        ]
-                    )
-                ).lower()
+                searchable_text = _connector_search_blob(connector)
 
-                # Show/hide based on search match
                 if not search_term or search_term in searchable_text:
                     card_element.classes(remove="hidden")
                     visible_count += 1

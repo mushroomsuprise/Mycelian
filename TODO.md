@@ -119,3 +119,4 @@ General Items:
     [x] - Interval update timer is not notifying when an update is available after the app has been already opened and running.
     [x] - Fix per user stats tracking. Nothing displays in the stats panel when searching for a specific user.
     [x] - Fix highlights exporting. I'm getting a "no data found in the selected date range" message.
+    [x] - Allow connectors to be moved into user nameable folders. (drag and drop the cards onto each other to create a folder, then drag other cards onto the folder to add them to it)
