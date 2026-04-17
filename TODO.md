@@ -112,6 +112,7 @@ FF7 Hook
     [] - Add ability to change game between wait and active to game hook, add to connector with <mode> as the arg (text input for variables)
     [] - Add battle mode to the ff7.html template under the Records segment
     [] - Enemy max HP gets colored yellow when below 25% when only the current HP should be colored on the FF7 template
+    [] - Average party level should only be calculated based off the current characters in the party (and count). It also resets to 0 while in battle when it shouldnt
 
 
     
