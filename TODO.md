@@ -109,6 +109,9 @@ FF7 Hook
     [x] - Replace combobox options with text inputs so variables can be used in the args. (Only on the recent added hook options, starting from Increase and decrease enemy level on down)
     [x] - Starting battles does not work.
     [x] - changing menu colors does not work.
+    [] - Add ability to change game between wait and active to game hook, add to connector with <mode> as the arg (text input for variables)
+    [] - Add battle mode to the ff7.html template under the Records segment
+    [] - Enemy max HP gets colored yellow when below 25% when only the current HP should be colored on the FF7 template
 
 
     
