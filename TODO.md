@@ -120,3 +120,4 @@ General Items:
     [x] - Fix per user stats tracking. Nothing displays in the stats panel when searching for a specific user.
     [x] - Fix highlights exporting. I'm getting a "no data found in the selected date range" message.
     [x] - Allow connectors to be moved into user nameable folders. (drag and drop the cards onto each other to create a folder, then drag other cards onto the folder to add them to it)
+    [] - Update the create theme dialog to show a mock-ui similar to the mock ui in the theme tab. It should live update as the user changes the different color boxes. Do a general overhaul of the create theme dialog to make better use of space.
