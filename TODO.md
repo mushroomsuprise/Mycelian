@@ -113,6 +113,7 @@ FF7 Hook
     [] - Add battle mode to the ff7.html template under the Records segment
     [] - Enemy max HP gets colored yellow when below 25% when only the current HP should be colored on the FF7 template
     [] - Average party level should only be calculated based off the current characters in the party (and count). It also resets to 0 while in battle when it shouldnt
+    [] - Add "most recent item" to the Records segment. We should implement this by keeping an in memory "snapshot" of the inventory and gil count, including item counts. If either a new item appears, or a quantity increases, but the gil amount does not DECREASE (Note: gil can increase as you get gil and items from battles), it should display the name of that item, and the newly received quantity. 
 
 
     
