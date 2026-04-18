@@ -110,10 +110,16 @@ FF7 Hook
     [x] - Starting battles does not work.
     [x] - changing menu colors does not work.
     [] - Add ability to change game between wait and active to game hook, add to connector with <mode> as the arg (text input for variables)
+    [] - Add in the ability to make items infinite as a Connector action. We will need to find several memory addresses for when items get used in battle (by the menu and commands like throw/toss), or when items are used through the menu.
+    [] - Add a timeout arg to the disable/enable menu that will revert the change after a user set duration, similar to how the game speed action works. 
     [] - Add battle mode to the ff7.html template under the Records segment
-    [] - Enemy max HP gets colored yellow when below 25% when only the current HP should be colored on the FF7 template
+    [] - Fix enemy max HP getting colored yellow when below 25% when only the current HP should be colored on the FF7 template
     [] - Average party level should only be calculated based off the current characters in the party (and count). It also resets to 0 while in battle when it shouldnt
-    [] - Add "most recent item" to the Records segment. We should implement this by keeping an in memory "snapshot" of the inventory and gil count, including item counts. If either a new item appears, or a quantity increases, but the gil amount does not DECREASE (Note: gil can increase as you get gil and items from battles), it should display the name of that item, and the newly received quantity. 
+    [] - Add "most recent item" to the Records segment. We should implement this by keeping an in memory "snapshot" of the inventory and gil count, including item counts. If either a new item appears, or a quantity increases, but the gil amount does not DECREASE (Note: gil can increase as you get gil and items from battles), it should display the name of that item, and the newly received quantity.
+    [] - Add "Battle Log" segment to the ff7.html template. This should display a text log of the actions done in a battle. It should be user togglable on/off, and also autohide when not in battle, similar to the enemies segment. It should be cleared between battles.
+    [] - Add enable/disable toggles to the Party and Enemy segments to completely hide them or not.
+    [] - Fix issue with enemies segment clearing enemies, then showing the empty box for about a second before hiding once battles are finished.
+    [] - Double check total materia count, may not be correct
 
 
     
@@ -126,3 +132,4 @@ General Items:
     [x] - Fix highlights exporting. I'm getting a "no data found in the selected date range" message.
     [x] - Allow connectors to be moved into user nameable folders. (drag and drop the cards onto each other to create a folder, then drag other cards onto the folder to add them to it)
     [] - Update the create theme dialog to show a mock-ui similar to the mock ui in the theme tab. It should live update as the user changes the different color boxes. Do a general overhaul of the create theme dialog to make better use of space.
+    [] - Add in stream streaks. We will need to use the "Channel Chat Notification Event" Eventsub hook. This will have us many options that we already get from other areas, so we should filter this only for the "watch_streak" key not being null. See this page for more info: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
