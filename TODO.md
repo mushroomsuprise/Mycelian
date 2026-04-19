@@ -109,20 +109,20 @@ FF7 Hook
     [x] - Replace combobox options with text inputs so variables can be used in the args. (Only on the recent added hook options, starting from Increase and decrease enemy level on down)
     [x] - Starting battles does not work.
     [x] - changing menu colors does not work.
-    [] - Make it so changed values get reapplied after the game is restarted. If there was a change, IE to the battle speed, it should be reapplied after the game is restarted, for the remainder of its duration.
+    [] - Make it so changed values get reapplied after the game is restarted. If there was a change, IE to the battle speed, it should be reapplied after the game is restarted, for the remainder of its duration. Changes to things like game speed or menu states, etc etc, should also be reapplied if they had no duration. One time changes like adding items/gear, should not be reapplied.
     [] - If the game hook loses connection while there are active duration based changes, it should pause the timer, then resume it once the connection is regained.
     [] - Add ability to change game between wait and active to game hook, add to connector with <mode> as the arg (text input for variables)
-    [] - Add in the ability to make items infinite as a Connector action. We will need to find several memory addresses for when items get used in battle (by the menu and commands like throw/toss), or when items are used through the menu.
-    [] - Add ability to change battle speed as a Connector action. Must take <speed> and <duration> as args. Duration is optional.
+    [] - Add in the ability to make items infinite as a Connector action. This will need a <duration> arg that can also be "None" for infinite duration. We will need to find several memory addresses for when items get used in battle (by the menu and commands like throw/toss), or when items are used through the menu.
+    [] - Add ability to change battle speed as a Connector action. Must take <speed> and <duration> as args. Duration is optional. This is different from the game speed, and is a setting in the game's config menu that will increase the rate at which ATB is charged globally.
     [] - Add a timeout arg to the disable/enable menu that will revert the change after a user set duration, similar to how the game speed action works. 
-    [] - Add battle mode to the ff7.html template under the Records segment
-    [] - Fix enemy max HP getting colored yellow when below 25% when only the current HP should be colored on the FF7 template
-    [] - Average party level should only be calculated based off the current characters in the party (and count). It also resets to 0 while in battle when it shouldnt
+    [] - Add battle mode to the ff7.html template under the Records segment. This should read if the game is in "Active" or "Wait" mode and display what that is. The memory address will have to get found for where this is set.
+    [] - Fix enemy max HP getting colored yellow when below 25% when only the current HP should be colored on the FF7 template. If the enemy is dead, it should keep the behavior of both HP values and the name turning red.
+    [] - Average party level should only be calculated based off the current characters in the party (and count). It also changes to 0 while in a battle when it shouldnt.
     [] - Add "most recent item" to the Records segment. We should implement this by keeping an in memory "snapshot" of the inventory and gil count, including item counts. If either a new item appears, or a quantity increases, but the gil amount does not DECREASE (Note: gil can increase as you get gil and items from battles), it should display the name of that item, and the newly received quantity.
-    [] - Add "Battle Log" segment to the ff7.html template. This should display a text log of the actions done in a battle. It should be user togglable on/off, and also autohide when not in battle, similar to the enemies segment. It should be cleared between battles.
-    [] - Add enable/disable toggles to the Party and Enemy segments to completely hide them or not.
+    [] - Add "Battle Log" segment to the ff7.html template. This should display a text log of the actions done in a battle. It should be user togglable on/off, and also autohide when not in battle, similar to the enemies segment. It should be cleared between battles. I would like it to be something like "<enemy> used <attack> on <party_member> and did <damage> damage. It should also display status inflictions, healing, party actions, the whole works.
+    [] - Add enable/disable toggles to the Party and Enemy segments to completely hide them if not enabled.
     [] - Fix issue with enemies segment clearing enemies, then showing the empty box for about a second before hiding once battles are finished.
-    [] - Double check total materia count, may not be correct
+    [] - Double check total materia count, may not be correct, it should only be calculated based off the equipped materia for the characters in the party only, it should not include materia counts for the other characters not in the main party.
 
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
@@ -131,4 +131,12 @@ General Items:
     [x] - Fix highlights exporting. I'm getting a "no data found in the selected date range" message.
     [x] - Allow connectors to be moved into user nameable folders. (drag and drop the cards onto each other to create a folder, then drag other cards onto the folder to add them to it)
     [] - Update the create theme dialog to show a mock-ui similar to the mock ui in the theme tab. It should live update as the user changes the different color boxes. Do a general overhaul of the create theme dialog to make better use of space.
-    [] - Add in stream streaks. We will need to use the "Channel Chat Notification Event" Eventsub hook. This will have us many options that we already get from other areas, so we should filter this only for the "watch_streak" key not being null. See this page for more info: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
+    [] - Add in Twitch stream streaks. We will need to use the "Channel Chat Notification Event" Eventsub hook. This will have us many options that we already get from other areas, so we should filter this only for the "watch_streak" key not being null. A new sub-tab will need to be created under the "Alerts" tab. This tab should be called "Streaks" and have all of the same alert settings as the other alerts (bits,subs,raids,etc). Note: stream streaks only have "streak_count" and "channel_points_awarded" as keyss. We should treat the "streak_count" value the same way we treat "months" for subscriptions. The message should come from the "message" key. See this page for more info: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
+    [] - Remove the "Migration" tab from settings and all related code. This will now be a deprecated feature.
+    [] - Remove the "StreamLabs" tab from settings and all related code. This will now be a deprecated feature.
+    [] - The "Database Explorer" window does not seem to load SQLite database setups. It works correctly for Firebase.
+    [] - For "Game Hooks" there should be an OS detection, that will disable any of the toggles that will not work on the OS the app is currently running on.
+    [] - Check over the PSN game cache system the app has. It either does not work, or does not properly display the cached game data in the UI.
+    [] - Setup the game cache as "cells" similar to the YouTube playlist filter, so users can click to delete a game if they need to reload the cached data.
+    [] - Add a label that displays something like "Not connected? click here to get started:" next to the help icon, if the Twitch service is not connected on the "Twitch" tab in Settings.
+    [] - Update the help_content file for connected to Twitch with the following: Setting up an app in the Twitch developer console and getting the client id and client secret (must include correct callback URL for Mycelian), List out all of the correct application scopes and what theyre for in a list format. Remove the "Connection Status" block, and instead give more helpful information on what to do if the app is not connected (missing client id/secret, not authenticated, missing scopes, bad callback URL, etc etc). Remove the Polls/Predictions info. Merge the "Viewer Events' and "Channel Events" into one list.
