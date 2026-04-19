@@ -109,8 +109,11 @@ FF7 Hook
     [x] - Replace combobox options with text inputs so variables can be used in the args. (Only on the recent added hook options, starting from Increase and decrease enemy level on down)
     [x] - Starting battles does not work.
     [x] - changing menu colors does not work.
+    [] - Make it so changed values get reapplied after the game is restarted. If there was a change, IE to the battle speed, it should be reapplied after the game is restarted, for the remainder of its duration.
+    [] - If the game hook loses connection while there are active duration based changes, it should pause the timer, then resume it once the connection is regained.
     [] - Add ability to change game between wait and active to game hook, add to connector with <mode> as the arg (text input for variables)
     [] - Add in the ability to make items infinite as a Connector action. We will need to find several memory addresses for when items get used in battle (by the menu and commands like throw/toss), or when items are used through the menu.
+    [] - Add ability to change battle speed as a Connector action. Must take <speed> and <duration> as args. Duration is optional.
     [] - Add a timeout arg to the disable/enable menu that will revert the change after a user set duration, similar to how the game speed action works. 
     [] - Add battle mode to the ff7.html template under the Records segment
     [] - Fix enemy max HP getting colored yellow when below 25% when only the current HP should be colored on the FF7 template
@@ -120,10 +123,6 @@ FF7 Hook
     [] - Add enable/disable toggles to the Party and Enemy segments to completely hide them or not.
     [] - Fix issue with enemies segment clearing enemies, then showing the empty box for about a second before hiding once battles are finished.
     [] - Double check total materia count, may not be correct
-
-
-    
-
 
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
