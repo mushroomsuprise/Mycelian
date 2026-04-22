@@ -81,6 +81,13 @@
         },
         {
             "type": "checkbox",
+            "id": "PointAlertSilentNoMedia",
+            "label": "Channel points: hold queue with no A/V when reward has no media",
+            "value": true,
+            "description": "For channel point redemptions with no GIF, no resolvable sound, and no TTS: do not show or play anything, but keep the queue for the same duration. If a template config file exists in template_configs/ whose name matches the reward title (alert_name) exactly, use the Duration (milliseconds) from that JSON; otherwise use the per-alert duration."
+        },
+        {
+            "type": "checkbox",
             "id": "EnableDonationAlerts",
             "label": "Enable Donation Alerts",
             "value": true,

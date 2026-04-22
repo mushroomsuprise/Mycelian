@@ -589,6 +589,10 @@
         var exitAnimationStartTime = null;
         var exitAnimationDuration = 1000; // Default 1 second for exit animations
         var isRandomizedAlert = false;
+        var isSilentEmptyPoint = false;
+        var silentPointHoldId = 0; // When incremented, in-flight silent pollers stop; next_alert can sync multi-source
+        var silentPointHoldStale = false; // If true, skip one pending alert_complete delay (preempted by next_alert)
+        var pointAlertSilentNoMedia = {{ PointAlertSilentNoMedia | default(false) | tojson }};
         var videoFreezeTimeout = null;
         var activeSpeechUtterance = null;
         var ttsActive = false;
@@ -687,6 +691,61 @@
                 return false;
             }
             return ttsActive || window.speechSynthesis.speaking;
+        }
+
+        function getConfigElementValue(config, id) {
+            if (!config || !config.elements) {
+                return undefined;
+            }
+            const el = config.elements.find(function (e) { return e && e.id === id; });
+            return el ? el.value : undefined;
+        }
+
+        var _templateConfigsLoadPromise = null;
+        function ensureAllTemplateConfigs() {
+            if (window.allTemplateConfigs !== undefined) {
+                return Promise.resolve();
+            }
+            if (_templateConfigsLoadPromise) {
+                return _templateConfigsLoadPromise;
+            }
+            _templateConfigsLoadPromise = loadTemplateConfig().then(function () {
+                _templateConfigsLoadPromise = null;
+            }).catch(function (e) {
+                _templateConfigsLoadPromise = null;
+            });
+            return _templateConfigsLoadPromise;
+        }
+
+        function pointHasGif(alertData) {
+            const d = (alertData.gif_dir != null ? String(alertData.gif_dir) : '').trim();
+            const n = (alertData.gif_name != null ? String(alertData.gif_name) : '').trim();
+            return d !== '' && n !== '';
+        }
+
+        function getSilentPointDurationMs(alertData) {
+            const name = (alertData.alert_name != null ? String(alertData.alert_name) : '').trim();
+            if (name && window.allTemplateConfigs && window.allTemplateConfigs[name]) {
+                const raw = getConfigElementValue(window.allTemplateConfigs[name], 'Duration');
+                if (raw !== undefined && raw !== null && raw !== '' && !isNaN(Number(raw))) {
+                    return Math.max(0, Number(raw));
+                }
+            }
+            const d = Number(alertData.duration);
+            return (d > 0 ? d : 5) * 1000;
+        }
+
+        async function shouldUseSilentEmptyPoint(alertData) {
+            if (!pointAlertSilentNoMedia || alertData.alert_type !== 'point') {
+                return false;
+            }
+            if (pointHasGif(alertData)) {
+                return false;
+            }
+            if (shouldPlayTts(alertData)) {
+                return false;
+            }
+            return (await resolveAlertAudioSource(alertData)) === null;
         }
 
         function stopAlertSpeech() {
@@ -913,12 +972,19 @@
             console.log(`Alert completion conditions met, waiting ${delayBetweenAlerts}ms before sending alert_complete signal`);
 
             setTimeout(() => {
+                if (silentPointHoldStale) {
+                    console.log('Skipping alert_complete emit (silent hold already finished via next_alert override)');
+                    silentPointHoldStale = false;
+                    isSilentEmptyPoint = false;
+                    return;
+                }
                 console.log('Delay completed, sending alert_complete signal');
                 socket.emit('alert_complete');
                 currentAlert = null;
                 alertStartTime = null;
                 exitAnimationStartTime = null;
                 isRandomizedAlert = false;
+                isSilentEmptyPoint = false;
             }, delayBetweenAlerts);
         }
 
@@ -1015,6 +1081,19 @@
             // Update alertData with determined type
             alertData.alert_type = alertType;
 
+            // If a silent empty point hold is active, a new next_alert overrides the duration (early or
+            // late): sync this client to the server / other browser sources, then process this payload.
+            if (isSilentEmptyPoint) {
+                silentPointHoldId++;
+                isSilentEmptyPoint = false;
+                silentPointHoldStale = true;
+                console.log('Silent point hold: next_alert received — overriding duration, syncing alert_complete');
+                socket.emit('alert_complete');
+                currentAlert = null;
+                alertStartTime = null;
+                exitAnimationStartTime = null;
+            }
+
             // Skip follow alerts entirely (separate template will handle these)
             if (alertType === 'follow') {
                 console.log('Follow alert detected, skipping (handled by separate template):', alertType);
@@ -1030,7 +1109,7 @@
                 return;
             }
 
-            showAlert(alertData);
+            void showAlert(alertData);
         });
 
         // Listen for alert refresh commands
@@ -1049,7 +1128,7 @@
                 timestamp: Date.now() / 1000
             };
             // Process the alert through the normal alert system
-            showAlert(alertData);
+            void showAlert(alertData);
         });
 
         socket.on('alerts_skip_alert', function (data) {
@@ -1057,6 +1136,11 @@
             // Skip current alert if one is playing
             if (currentAlert) {
                 stopAlertMediaPlayback();
+                const wasSilentEmpty = isSilentEmptyPoint;
+                if (wasSilentEmpty) {
+                    silentPointHoldId++;
+                    silentPointHoldStale = true;
+                }
                 // For skipped alerts, immediately hide and complete (ignore timing and delay)
                 hideAlert();
                 isRandomizedAlert = false; // Force immediate completion
@@ -1067,17 +1151,50 @@
                 alertStartTime = null;
                 exitAnimationStartTime = null;
                 isRandomizedAlert = false;
+                isSilentEmptyPoint = false;
                 console.log('Alert skipped via connector action');
             }
         });
 
-        function showAlert(alertData) {
+        async function showAlert(alertData) {
             // Clear any existing alert
             if (currentAlert) {
                 stopAlertMediaPlayback();
                 hideAlert();
             }
 
+            if (pointAlertSilentNoMedia && alertData.alert_type === 'point') {
+                await ensureAllTemplateConfigs();
+                if (await shouldUseSilentEmptyPoint(alertData)) {
+                    const holdToken = silentPointHoldId;
+                    currentAlert = alertData;
+                    isSilentEmptyPoint = true;
+                    isRandomizedAlert = false;
+                    alertStartTime = Date.now();
+                    exitAnimationDuration = 0;
+                    alertDuration = getSilentPointDurationMs(alertData);
+                    console.log('Silent empty point alert — no A/V, holding queue for', alertDuration, 'ms (or until next next_alert overrides)');
+                    const selfAlert = alertData;
+                    const checkSilent = function () {
+                        if (holdToken !== silentPointHoldId) {
+                            return;
+                        }
+                        if (currentAlert !== selfAlert) {
+                            return;
+                        }
+                        const tr = getTimeRemaining();
+                        if (tr > 0) {
+                            setTimeout(checkSilent, Math.min(50, tr));
+                        } else {
+                            checkAndSendAlertComplete();
+                        }
+                    };
+                    setTimeout(checkSilent, 50);
+                    return;
+                }
+            }
+
+            isSilentEmptyPoint = false;
             currentAlert = alertData;
 
             // Initialize alert timing
@@ -1582,6 +1699,7 @@
                 const response = await fetch('/api/all-template-configs');
                 if (response.ok) {
                     const allConfigs = await response.json();
+                    window.allTemplateConfigs = allConfigs;
                     console.log('Loaded all template configs:', Object.keys(allConfigs));
 
                     // Get the alerts config specifically
@@ -1604,9 +1722,15 @@
                     }
                 } else {
                     console.error('Failed to load template configs:', response.status);
+                    if (window.allTemplateConfigs === undefined) {
+                        window.allTemplateConfigs = {};
+                    }
                 }
             } catch (error) {
                 console.error('Error loading template config:', error);
+                if (window.allTemplateConfigs === undefined) {
+                    window.allTemplateConfigs = {};
+                }
             }
         }
 
@@ -1711,6 +1835,10 @@
             if (config.QueueAlerts !== undefined) {
                 window.alertConfig = window.alertConfig || {};
                 window.alertConfig.queueAlerts = config.QueueAlerts;
+            }
+
+            if (config.PointAlertSilentNoMedia !== undefined) {
+                pointAlertSilentNoMedia = config.PointAlertSilentNoMedia;
             }
         }
 
