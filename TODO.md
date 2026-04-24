@@ -134,7 +134,7 @@ General Items:
     [] - Add in Twitch stream streaks. We will need to use the "Channel Chat Notification Event" Eventsub hook. This will have us many options that we already get from other areas, so we should filter this only for the "watch_streak" key not being null. A new sub-tab will need to be created under the "Alerts" tab. This tab should be called "Streaks" and have all of the same alert settings as the other alerts (bits,subs,raids,etc). Note: stream streaks only have "streak_count" and "channel_points_awarded" as keyss. We should treat the "streak_count" value the same way we treat "months" for subscriptions. The message should come from the "message" key. See this page for more info: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
     [x] - Remove the "Migration" tab from settings and all related code. This will now be a deprecated feature.
     [x] - Remove the "StreamLabs" tab from settings and all related code. This will now be a deprecated feature.
-    [] - The "Database Explorer" window does not seem to load SQLite database setups. It works correctly for Firebase.
+    [x] - The "Database Explorer" window does not seem to load SQLite database setups. It works correctly for Firebase.
     [x] - For "Game Hooks" there should be an OS detection, that will disable any of the toggles that will not work on the OS the app is currently running on.
     [x] - Check over the PSN game cache system the app has. It either does not work, or does not properly display the cached game data in the UI.
     [x] - Setup the game cache as "cells" similar to the YouTube playlist filter, so users can click to delete a game if they need to reload the cached data.

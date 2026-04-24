@@ -3570,7 +3570,7 @@ Use these steps when Mycelian should use **your** Spotify application credential
 
 1. Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and sign in with the Spotify account you want to connect.
 2. Click **Create app**. Enter an app name and description when prompted.
-3. Under **Redirect URIs**, add **exactly** `http://localhost:9973` — this is Mycelian's OAuth callback. It must match character-for-character (`http`, `localhost`, port `9973`, no trailing slash).
+3. Under **Redirect URIs**, add **exactly** `http://127.0.0.1:9973` — this is Mycelian's OAuth callback. It must match character-for-character (`http`, `127.0.0.1`, port `9973`, no trailing slash).
 4. In the app's API settings, enable **Web API** and **Web Playback SDK** (use the same labels shown in the developer console).
 5. Save the app settings. On the app page, copy the **Client ID**. Reveal and copy the **Client secret** (Spotify may label it **Client Secret**).
 6. In Mycelian, open **Settings** → **Spotify**. Paste **Client ID** and **Client Secret** into the matching fields, click **Save**, then click **Connect** to finish signing in through your browser.

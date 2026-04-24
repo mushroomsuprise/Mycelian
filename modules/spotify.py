@@ -40,6 +40,9 @@ from .dataobjects import SpotifyData, state_manager
 
 logger = logging.getLogger(__name__)
 
+# Non-HTTPS Spotify redirects must use loopback literal; must match dashboard URI exactly.
+SPOTIFY_OAUTH_REDIRECT_URI = "http://127.0.0.1:9973"
+
 # Global variables
 spotify_client: Optional["SpotifyClient"] = None
 spotify_thread: Optional[threading.Thread] = None
@@ -176,7 +179,7 @@ class OAuthCallbackServer:
         try:
             # Create server
             self.server = CustomTCPServer(
-                ("localhost", self.port), OAuthCallbackHandler
+                ("127.0.0.1", self.port), OAuthCallbackHandler
             )
 
             # Start in background thread
@@ -638,7 +641,7 @@ class SpotifyClient:
                 f"https://accounts.spotify.com/authorize?"
                 f"client_id={self.spotify_data.client_id}&"
                 f"response_type=code&"
-                f"redirect_uri=http://localhost:9973&"
+                f"redirect_uri={SPOTIFY_OAUTH_REDIRECT_URI}&"
                 f"scope=user-read-playback-state user-read-currently-playing&"
                 f"show_dialog=true"
             )
@@ -713,7 +716,7 @@ class SpotifyClient:
             data = {
                 "grant_type": "authorization_code",
                 "code": authorization_code,
-                "redirect_uri": "http://localhost:9973",
+                "redirect_uri": SPOTIFY_OAUTH_REDIRECT_URI,
                 "client_id": self.spotify_data.client_id,
                 "client_secret": self.spotify_data.client_secret,
             }
