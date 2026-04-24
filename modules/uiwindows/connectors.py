@@ -4949,9 +4949,9 @@ without any programming knowledge.
                                     ui.label("💰 Other Events:").classes(
                                         "text-sm font-medium text-green-400"
                                     )
-                                    ui.label(
-                                        "• Donations (StreamLabs/Elements)"
-                                    ).classes("text-xs secondary-text")
+                                    ui.label("• Donations / tips").classes(
+                                        "text-xs secondary-text"
+                                    )
                                     ui.label("• Timer-based triggers").classes(
                                         "text-xs secondary-text"
                                     )

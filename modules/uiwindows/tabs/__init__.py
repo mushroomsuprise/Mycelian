@@ -14,11 +14,9 @@ Tabs are intentionally independent and self-contained to avoid cross-tab state b
 from .app_settings_tab import AppSettingsTab
 from .base import TabBase  # re-export base class for convenience
 from .database_tab import DatabaseTab
-from .migration_tab import MigrationTab
 from .psn_tab import PSNTab
 from .spotify_tab import SpotifyTab
 from .statistics_tab import StatisticsTab
-from .streamlabs_tab import StreamlabsTab
 from .theme_tab import ThemeTab
 from .twitch_tab import TwitchTab
 from .youtube_tab import YouTubeTab
@@ -28,13 +26,11 @@ __all__ = [
     "TabBase",
     "AppSettingsTab",
     "TwitchTab",
-    "StreamlabsTab",
     "PSNTab",
     "SpotifyTab",
     "YouTubeTab",
     "GameHooksTab",
     "DatabaseTab",
-    "MigrationTab",
     "StatisticsTab",
     "ThemeTab",
 ]

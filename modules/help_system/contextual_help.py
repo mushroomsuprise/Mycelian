@@ -118,12 +118,10 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
     if main_tab == "Settings" and sub_tab:
         settings_sub_tab_mapping = {
             "Twitch": "integrations_twitch",      # Specific topic
-            "Streamlabs": "integrations_streamlabs", # Specific topic
             "PSN": "integrations_psn",            # Specific topic
             "Spotify": "integrations_spotify",    # Specific topic
             "YouTube": "integrations_youtube",    # Specific topic
             "Database": "settings",               # Category
-            "Migration": "settings",              # Category
             "Statistics": "settings",             # Category
             "App Settings": "settings",           # Category
             "About": "settings",                   # Category

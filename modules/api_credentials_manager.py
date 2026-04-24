@@ -27,7 +27,7 @@ SOFTWARE.
 API Credentials Manager for Mycelian
 
 This module handles the storage and management of default API credentials
-for various services like Twitch, Spotify, and Streamlabs.
+for various services like Twitch and Spotify.
 
 The credentials are stored encrypted in a separate JSON configuration file.
 """
@@ -64,11 +64,6 @@ class APICredentials:
     # Spotify API credentials
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
-
-    # Streamlabs API credentials
-    streamlabs_client_id: str = ""
-    streamlabs_client_secret: str = ""
-    streamlabs_socket_token: str = ""
 
     # Configuration metadata
     config_version: str = "1.0"
@@ -264,22 +259,6 @@ class APICredentialsManager:
             "client_secret": ensure_decrypted(self._credentials.spotify_client_secret),
         }
 
-    def get_streamlabs_credentials(self) -> Dict[str, str]:
-        """Get Streamlabs API credentials (decrypted)"""
-        if not self._initialized:
-            self.initialize()
-
-        if not self._credentials:
-            return {"client_id": "", "client_secret": "", "socket_token": ""}
-
-        return {
-            "client_id": ensure_decrypted(self._credentials.streamlabs_client_id),
-            "client_secret": ensure_decrypted(
-                self._credentials.streamlabs_client_secret
-            ),
-            "socket_token": ensure_decrypted(self._credentials.streamlabs_socket_token),
-        }
-
     def update_twitch_credentials(
         self, client_id: str = None, client_secret: str = None
     ) -> bool:
@@ -354,36 +333,6 @@ class APICredentialsManager:
 
         if updated:
             logger.info("Updated Spotify credentials")
-            return self._save_credentials()
-
-        return True
-
-    def update_streamlabs_credentials(
-        self, client_id: str = None, client_secret: str = None, socket_token: str = None
-    ) -> bool:
-        """Update Streamlabs API credentials"""
-        if not self._initialized:
-            self.initialize()
-
-        if not self._credentials:
-            logger.error("No credentials available to update")
-            return False
-
-        updated = False
-        if client_id is not None:
-            self._credentials.streamlabs_client_id = ensure_encrypted(client_id)
-            updated = True
-
-        if client_secret is not None:
-            self._credentials.streamlabs_client_secret = ensure_encrypted(client_secret)
-            updated = True
-
-        if socket_token is not None:
-            self._credentials.streamlabs_socket_token = ensure_encrypted(socket_token)
-            updated = True
-
-        if updated:
-            logger.info("Updated Streamlabs credentials")
             return self._save_credentials()
 
         return True
@@ -475,11 +424,6 @@ def get_spotify_credentials() -> Dict[str, str]:
     return api_credentials_manager.get_spotify_credentials()
 
 
-def get_streamlabs_credentials() -> Dict[str, str]:
-    """Get Streamlabs API credentials"""
-    return api_credentials_manager.get_streamlabs_credentials()
-
-
 def initialize_api_credentials() -> bool:
     """Initialize the API credentials manager"""
     return api_credentials_manager.initialize()
@@ -522,28 +466,3 @@ def get_encrypted_spotify_client_secret() -> str:
     return ""
 
 
-def get_encrypted_streamlabs_client_id() -> str:
-    """Get encrypted Streamlabs client ID"""
-    if not api_credentials_manager._initialized:
-        api_credentials_manager.initialize()
-    if api_credentials_manager._credentials:
-        return api_credentials_manager._credentials.streamlabs_client_id
-    return ""
-
-
-def get_encrypted_streamlabs_client_secret() -> str:
-    """Get encrypted Streamlabs client secret"""
-    if not api_credentials_manager._initialized:
-        api_credentials_manager.initialize()
-    if api_credentials_manager._credentials:
-        return api_credentials_manager._credentials.streamlabs_client_secret
-    return ""
-
-
-def get_encrypted_streamlabs_socket_token() -> str:
-    """Get encrypted Streamlabs socket token"""
-    if not api_credentials_manager._initialized:
-        api_credentials_manager.initialize()
-    if api_credentials_manager._credentials:
-        return api_credentials_manager._credentials.streamlabs_socket_token
-    return ""

@@ -49,11 +49,9 @@ from .tabs import (
     AppSettingsTab,
     DatabaseTab,
     GameHooksTab,
-    MigrationTab,
     PSNTab,
     SpotifyTab,
     StatisticsTab,
-    StreamlabsTab,
     ThemeTab,
     TwitchTab,
     YouTubeTab,
@@ -160,7 +158,6 @@ class SettingsUI:
         self.is_initialized = False
         self.twitch_data: Optional[dataobjects.TwitchData] = None
         self.app_settings: Optional[dataobjects.AppSettings] = None
-        self.streamlabs_data: Optional[dataobjects.StreamlabsData] = None
         self.psn_settings_data: Optional[dataobjects.PSNSettingsData] = None
         self.spotify_data: Optional[dataobjects.SpotifyData] = None
         self.database_settings: Optional[dataobjects.DatabaseSettings] = None
@@ -173,7 +170,6 @@ class SettingsUI:
         self.oauth_in_progress = {
             "spotify": False,
             "twitch": False,
-            "streamlabs": False,
         }
 
         # Defer PSN initialization until the PSN tab is actually accessed
@@ -243,7 +239,6 @@ class SettingsUI:
             try:
                 self.twitch_data = state_manager.get_twitch_data()
                 self.app_settings = state_manager.get_app_settings()
-                self.streamlabs_data = state_manager.get_streamlabs_data()
                 self.psn_settings_data = state_manager.get_psn_settings_data()
                 self.spotify_data = state_manager.get_spotify_data()
                 self.youtube_data = state_manager.get_youtube_data()
@@ -263,10 +258,6 @@ class SettingsUI:
                     "app_settings": {
                         field: getattr(self.app_settings, field)
                         for field in self.app_settings.__dataclass_fields__
-                    },
-                    "streamlabs_data": {
-                        field: getattr(self.streamlabs_data, field)
-                        for field in self.streamlabs_data.__dataclass_fields__
                     },
                     "psn_settings_data": {
                         field: getattr(self.psn_settings_data, field)
@@ -304,12 +295,10 @@ class SettingsUI:
                     ui.tab("App Settings", icon="tune")
                     ui.tab("Theme", icon="palette")
                     ui.tab("Twitch", icon="stream")
-                    ui.tab("Streamlabs", icon="insights")
                     ui.tab("PSN", icon="sports_esports")
                     ui.tab("Spotify", icon="music_note")
                     ui.tab("YouTube", icon="video_library")
                     ui.tab("Database", icon="storage")
-                    ui.tab("Migration", icon="sync_alt")
                     ui.tab("Statistics", icon="analytics")
                     ui.tab("About", icon="info")
 
@@ -442,57 +431,6 @@ class SettingsUI:
                                     ui.label("maximum pages to load").classes(
                                         "ml-2 secondary-text"
                                     )
-
-                                ui.separator().classes("divider")
-
-                                ui.label("Alert Migration").classes(
-                                    "text-lg font-semibold"
-                                )
-                                ui.label(
-                                    "Import alerts from external JSON files (like other streaming tools)"
-                                ).classes("settings-description")
-
-                                with ui.row().classes("w-full items-center gap-2"):
-                                    self.ui_elements["migrate_alerts_file_input"] = (
-                                        ui.input(
-                                            label="Alert File Path",
-                                            placeholder="Select or enter path to alerts.json file...",
-                                        ).classes("flex-1")
-                                    )
-
-                                    ui.button(
-                                        "Browse",
-                                        icon="folder_open",
-                                        on_click=self.browse_alerts_file,
-                                    ).props("outline")
-
-                                with ui.row().classes("w-full items-center gap-2"):
-                                    self.ui_elements["overwrite_existing_switch"] = (
-                                        ui.switch(
-                                            "Overwrite Existing Alerts"
-                                        ).classes("q-switch")
-                                    )
-                                    ui.tooltip(
-                                        "If enabled, existing alerts with the same ID will be overwritten"
-                                    ).classes("bg-theme-surface")
-
-                                with ui.row().classes("w-full gap-2"):
-                                    ui.button(
-                                        "Preview Migration",
-                                        icon="preview",
-                                        on_click=self.preview_alert_migration,
-                                    ).props("outline color=info")
-
-                                    ui.button(
-                                        "Migrate Alerts",
-                                        icon="upload",
-                                        on_click=self.start_alert_migration,
-                                    ).props("color=primary")
-
-                                # Migration status display
-                                self.ui_elements["migration_status_label"] = ui.label(
-                                    ""
-                                ).classes("text-sm secondary-text")
 
                     # Theme Tab
                     with ui.tab_panel("Theme").classes("tab-content"):
@@ -668,137 +606,6 @@ class SettingsUI:
                                             "change",
                                             lambda e: self.on_api_credential_change(
                                                 "chatbot", "client_secret", e
-                                            ),
-                                        )
-                                    )
-
-                    # Streamlabs Tab
-                    with ui.tab_panel("Streamlabs").classes("tab-content"):
-                        with ui.card().classes("content-section w-full"):
-                            ui.label("Streamlabs Integration").classes(
-                                "text-xl font-bold mb-4"
-                            )
-
-                            with ui.column().classes("w-full gap-4 settings-group"):
-                                ui.label("Connection Status").classes(
-                                    "text-lg font-semibold"
-                                )
-                                with ui.row().classes("w-full items-center"):
-                                    ui.label("Status:").classes("w-40")
-                                    self.ui_elements["streamlabs_status_label"] = (
-                                        ui.label("Loading...").classes("font-semibold")
-                                    )
-
-                                with ui.row().classes("w-full items-center"):
-                                    ui.label("Last Update:").classes("w-40")
-                                    self.ui_elements["streamlabs_last_update_label"] = (
-                                        ui.label("Never").classes("secondary-text")
-                                    )
-
-                                ui.separator().classes("divider")
-
-                                # Connection controls
-                                ui.label("Connection Controls").classes(
-                                    "text-lg font-semibold"
-                                )
-                                with ui.row().classes("w-full gap-2"):
-                                    self.ui_elements["connect_streamlabs_button"] = (
-                                        ui.button(
-                                            "Connect to Streamlabs",
-                                            on_click=self.handle_streamlabs_oauth_connection,
-                                        ).props("icon=login color=primary")
-                                    )
-
-                                    self.ui_elements[
-                                        "refresh_streamlabs_status_button"
-                                    ] = ui.button(
-                                        "Refresh Status",
-                                        on_click=self.refresh_streamlabs_status,
-                                    ).props("icon=refresh outline")
-
-                                # Initial status update
-                                ui.timer(
-                                    0.1,
-                                    lambda: self.refresh_streamlabs_status(),
-                                    once=True,
-                                )
-
-                                ui.separator().classes("divider")
-
-                                # API Credentials section
-                                ui.label("API Credentials").classes(
-                                    "text-lg font-semibold"
-                                )
-                                ui.label(
-                                    "Default Streamlabs API credentials for the application. Only change if you have your own Streamlabs developer application."
-                                ).classes("settings-description")
-
-                                with ui.row().classes("w-full items-center"):
-                                    ui.label("Client ID:").classes("w-40")
-                                    self.ui_elements["streamlabs_api_client_id"] = (
-                                        ui.input(
-                                            value=(
-                                                api_credentials_manager.get_streamlabs_credentials()[
-                                                    "client_id"
-                                                ]
-                                                if self.api_credentials
-                                                else ""
-                                            ),
-                                            placeholder="Streamlabs API Client ID",
-                                        )
-                                        .classes("w-96")
-                                        .on(
-                                            "change",
-                                            lambda e: self.on_api_credential_change(
-                                                "streamlabs", "client_id", e
-                                            ),
-                                        )
-                                    )
-
-                                with ui.row().classes("w-full items-center"):
-                                    ui.label("Client Secret:").classes("w-40")
-                                    self.ui_elements["streamlabs_api_client_secret"] = (
-                                        ui.input(
-                                            value=(
-                                                api_credentials_manager.get_streamlabs_credentials()[
-                                                    "client_secret"
-                                                ]
-                                                if self.api_credentials
-                                                else ""
-                                            ),
-                                            password=True,
-                                            password_toggle_button=True,
-                                            placeholder="Streamlabs API Client Secret",
-                                        )
-                                        .classes("w-96")
-                                        .on(
-                                            "change",
-                                            lambda e: self.on_api_credential_change(
-                                                "streamlabs", "client_secret", e
-                                            ),
-                                        )
-                                    )
-
-                                with ui.row().classes("w-full items-center"):
-                                    ui.label("Socket Token:").classes("w-40")
-                                    self.ui_elements["streamlabs_api_socket_token"] = (
-                                        ui.input(
-                                            value=(
-                                                api_credentials_manager.get_streamlabs_credentials()[
-                                                    "socket_token"
-                                                ]
-                                                if self.api_credentials
-                                                else ""
-                                            ),
-                                            password=True,
-                                            password_toggle_button=True,
-                                            placeholder="Streamlabs Socket Token",
-                                        )
-                                        .classes("w-96")
-                                        .on(
-                                            "change",
-                                            lambda e: self.on_api_credential_change(
-                                                "streamlabs", "socket_token", e
                                             ),
                                         )
                                     )
@@ -1922,19 +1729,6 @@ class SettingsUI:
                     api_credentials_manager.update_chatbot_credentials(
                         client_secret=new_value
                     )
-            elif service == "streamlabs":
-                if field == "client_id":
-                    api_credentials_manager.update_streamlabs_credentials(
-                        client_id=new_value
-                    )
-                elif field == "client_secret":
-                    api_credentials_manager.update_streamlabs_credentials(
-                        client_secret=new_value
-                    )
-                elif field == "socket_token":
-                    api_credentials_manager.update_streamlabs_credentials(
-                        socket_token=new_value
-                    )
 
             # Track the change for UI styling
             field_key = f"{service}_api_{field}"
@@ -2126,17 +1920,6 @@ class SettingsUI:
                         timeout=3000,
                     )
 
-            # Update Streamlabs data fields
-            if hasattr(self, "streamlabs_data") and self.streamlabs_data:
-                for field in self.streamlabs_data.__dataclass_fields__:
-                    field_key = f"streamlabs_data.{field}"
-                    if field_key in self.ui_elements and hasattr(
-                        self.ui_elements[field_key], "value"
-                    ):
-                        value = self.ui_elements[field_key].value
-                        state_manager.update_streamlabs_field(field, value)
-                        updated_fields.append(field_key)
-
             # Force save of all values
             if state_manager.save_changes():
                 # Update local last_saved_values for future reference
@@ -2149,11 +1932,6 @@ class SettingsUI:
                     self.last_saved_values["app_settings"] = {
                         field: getattr(self.app_settings, field)
                         for field in self.app_settings.__dataclass_fields__
-                    }
-                if hasattr(self, "streamlabs_data") and self.streamlabs_data:
-                    self.last_saved_values["streamlabs_data"] = {
-                        field: getattr(self.streamlabs_data, field)
-                        for field in self.streamlabs_data.__dataclass_fields__
                     }
                 if hasattr(self, "psn_settings_data") and self.psn_settings_data:
                     self.last_saved_values["psn_settings_data"] = {
@@ -2191,38 +1969,6 @@ class SettingsUI:
         except Exception as e:
             ui.notify(f"Error saving settings: {str(e)}", type="negative")
             logger.error(f"Error in SettingsUI.save_changes: {str(e)}", exc_info=True)
-
-    def _save_streamlabs_settings_only(self):
-        """Save only Streamlabs settings without triggering other notifications"""
-        try:
-            updated_fields = []
-
-            # Update only Streamlabs data fields
-            if hasattr(self, "streamlabs_data") and self.streamlabs_data:
-                for field in self.streamlabs_data.__dataclass_fields__:
-                    field_key = f"streamlabs_data.{field}"
-                    if field_key in self.ui_elements and hasattr(
-                        self.ui_elements[field_key], "value"
-                    ):
-                        value = self.ui_elements[field_key].value
-                        old_value = getattr(self.streamlabs_data, field)
-                        if old_value != value:
-                            state_manager.update_streamlabs_field(field, value)
-                            updated_fields.append(field_key)
-
-            # Save only if there are Streamlabs changes
-            if updated_fields:
-                if state_manager.save_changes():
-                    logger.info(
-                        f"Streamlabs settings saved successfully. Updated fields: {updated_fields}"
-                    )
-                else:
-                    logger.error("Failed to save Streamlabs settings")
-            else:
-                logger.debug("No Streamlabs settings changes to save")
-
-        except Exception as e:
-            logger.error(f"Error saving Streamlabs settings: {str(e)}", exc_info=True)
 
     def _save_twitch_settings_only(self):
         """Save only Twitch settings without triggering other notifications"""
@@ -2264,8 +2010,6 @@ class SettingsUI:
             # Reload data
             self.twitch_data = state_manager.get_twitch_data()
             self.app_settings = state_manager.get_app_settings()
-            if hasattr(self, "streamlabs_data"):
-                self.streamlabs_data = state_manager.get_streamlabs_data()
             if hasattr(self, "psn_settings_data"):
                 self.psn_settings_data = state_manager.get_psn_settings_data()
             if hasattr(self, "spotify_data"):
@@ -2287,21 +2031,6 @@ class SettingsUI:
                     if field_key in self.ui_elements:
                         value = getattr(self.app_settings, field_name)
                         self.ui_elements[field_key].value = value
-
-            if hasattr(self, "streamlabs_data") and self.streamlabs_data:
-                for field_name in self.streamlabs_data.__dataclass_fields__:
-                    field_key = f"streamlabs_data.{field_name}"
-                    if field_key in self.ui_elements:
-                        if (
-                            "label"
-                            in self.ui_elements[field_key].__class__.__name__.lower()
-                        ):
-                            self.ui_elements[field_key].set_text(
-                                getattr(self.streamlabs_data, field_name)
-                            )
-                        else:
-                            value = getattr(self.streamlabs_data, field_name)
-                            self.ui_elements[field_key].value = value
 
             if hasattr(self, "psn_settings_data") and self.psn_settings_data:
                 for field_name in self.psn_settings_data.__dataclass_fields__:
@@ -2375,7 +2104,6 @@ class SettingsUI:
 
         self.twitch_data = state_manager.get_twitch_data()
         self.app_settings = state_manager.get_app_settings()
-        self.streamlabs_data = state_manager.get_streamlabs_data()
         self.psn_settings_data = state_manager.get_psn_settings_data()
         self.spotify_data = state_manager.get_spotify_data()
         self.database_settings = self._load_database_settings_from_config()
@@ -2394,21 +2122,6 @@ class SettingsUI:
                 if field_key in self.ui_elements:
                     value = getattr(self.app_settings, field)
                     self.ui_elements[field_key].value = value
-
-        if hasattr(self, "streamlabs_data") and self.streamlabs_data:
-            for field_name in self.streamlabs_data.__dataclass_fields__:
-                field_key = f"streamlabs_data.{field_name}"
-                if field_key in self.ui_elements:
-                    if (
-                        "label"
-                        in self.ui_elements[field_key].__class__.__name__.lower()
-                    ):
-                        self.ui_elements[field_key].set_text(
-                            getattr(self.streamlabs_data, field_name)
-                        )
-                    else:
-                        value = getattr(self.streamlabs_data, field_name)
-                        self.ui_elements[field_key].value = value
 
         if hasattr(self, "psn_settings_data") and self.psn_settings_data:
             for field_name in self.psn_settings_data.__dataclass_fields__:
@@ -2458,8 +2171,6 @@ class SettingsUI:
 
         # Refresh all status displays
         self.refresh_twitch_status()
-        if hasattr(self, "streamlabs_data") and self.streamlabs_data:
-            self.refresh_streamlabs_status()
         if hasattr(self, "psn_settings_data") and self.psn_settings_data:
             self.update_psn_status_display()
         if hasattr(self, "spotify_data") and self.spotify_data:
@@ -4220,765 +3931,6 @@ class SettingsUI:
                 type="negative",
             )
 
-    def handle_streamlabs_oauth_connection(self):
-        """Handle the Connect to Streamlabs button click to trigger OAuth connection"""
-        try:
-            logger.info("User clicked Connect to Streamlabs button")
-
-            # Update button state to show it's working
-            if "connect_streamlabs_button" in self.ui_elements:
-                self.ui_elements["connect_streamlabs_button"].set_text("Connecting...")
-                self.ui_elements["connect_streamlabs_button"].disable()
-
-            # Show a notification that the process is starting
-            ui.notify("Starting Streamlabs OAuth connection...", type="info")
-
-            # Save only Streamlabs settings to avoid triggering database and other notifications
-            self._save_streamlabs_settings_only()
-
-            # Start the OAuth connection in a separate thread
-            import threading
-
-            # Create shared result holder for thread communication
-            streamlabs_oauth_result = {
-                "status": "connecting",
-                "success": None,
-                "error": None,
-                "processed": False,
-            }
-
-            def oauth_thread():
-                try:
-                    from .. import streamlabs
-
-                    # Update Streamlabs settings with current values
-                    streamlabs.update_streamlabs_settings(
-                        client_id=self.streamlabs_data.client_id,
-                        client_secret=self.streamlabs_data.client_secret,
-                    )
-
-                    # Trigger OAuth flow
-                    success = streamlabs.trigger_oauth_connection()
-                    streamlabs_oauth_result["status"] = "complete"
-                    streamlabs_oauth_result["success"] = success
-
-                except Exception as e:
-                    logger.error(
-                        f"Error in Streamlabs OAuth thread: {str(e)}", exc_info=True
-                    )
-                    streamlabs_oauth_result["status"] = "error"
-                    streamlabs_oauth_result["error"] = str(e)
-
-            # Start the thread
-            oauth_worker = threading.Thread(target=oauth_thread)
-            oauth_worker.daemon = True
-            oauth_worker.start()
-
-            # Create a timer to check the result from main thread
-            def check_streamlabs_oauth_result():
-                # Prevent processing multiple times
-                if streamlabs_oauth_result.get("processed", False):
-                    return False  # Stop checking - already processed
-
-                if streamlabs_oauth_result["status"] == "connecting":
-                    return True  # Continue checking
-                elif streamlabs_oauth_result["status"] == "complete":
-                    streamlabs_oauth_result["processed"] = True  # Mark as processed
-                    try:
-                        if streamlabs_oauth_result["success"]:
-                            ui.notify(
-                                "Successfully connected to Streamlabs!",
-                                type="positive",
-                                timeout=3000,
-                            )
-                            logger.info("Streamlabs OAuth connection successful")
-                        else:
-                            ui.notify(
-                                "Failed to connect to Streamlabs. Please check your credentials and try again.",
-                                type="negative",
-                                timeout=5000,
-                            )
-                            logger.error("Streamlabs OAuth connection failed")
-
-                        # Refresh the status display and reset button
-                        self.refresh_streamlabs_status()
-                        if "connect_streamlabs_button" in self.ui_elements:
-                            self.ui_elements["connect_streamlabs_button"].set_text(
-                                "Connect to Streamlabs"
-                            )
-                            self.ui_elements["connect_streamlabs_button"].enable()
-                    except Exception as e:
-                        logger.error(
-                            f"Error updating UI after Streamlabs OAuth: {str(e)}"
-                        )
-                    return False  # Stop checking
-                elif streamlabs_oauth_result["status"] == "error":
-                    streamlabs_oauth_result["processed"] = True  # Mark as processed
-                    try:
-                        ui.notify(
-                            f"Error during Streamlabs connection: {streamlabs_oauth_result['error']}",
-                            type="negative",
-                        )
-                        # Reset button state
-                        if "connect_streamlabs_button" in self.ui_elements:
-                            self.ui_elements["connect_streamlabs_button"].set_text(
-                                "Connect to Streamlabs"
-                            )
-                            self.ui_elements["connect_streamlabs_button"].enable()
-                    except Exception as ui_error:
-                        logger.error(f"Error handling UI error update: {str(ui_error)}")
-                    return False  # Stop checking
-                return False  # Default stop
-
-            # Start timer to check results with timeout protection
-            streamlabs_check_count = {
-                "count": 0
-            }  # Use dict to maintain reference in closure
-            streamlabs_max_checks = 150  # 30 seconds max (150 * 0.2s)
-
-            def check_streamlabs_oauth_result_with_timeout():
-                streamlabs_check_count["count"] += 1
-
-                # Add timeout protection
-                if streamlabs_check_count["count"] >= streamlabs_max_checks:
-                    logger.warning("Streamlabs OAuth check timed out after 30 seconds")
-                    ui.notify(
-                        "Streamlabs OAuth connection timed out. Please try again.",
-                        type="negative",
-                    )
-                    # Reset button state
-                    if "connect_streamlabs_button" in self.ui_elements:
-                        self.ui_elements["connect_streamlabs_button"].set_text(
-                            "Connect to Streamlabs"
-                        )
-                        self.ui_elements["connect_streamlabs_button"].enable()
-                    return False  # Stop timer
-
-                # Call the original check function
-                return check_streamlabs_oauth_result()
-
-            streamlabs_oauth_timer = ui.timer(
-                0.2, check_streamlabs_oauth_result_with_timeout
-            )
-            # Store timer reference for potential cleanup
-            self._active_timers = getattr(self, "_active_timers", [])
-            self._active_timers.append(streamlabs_oauth_timer)
-
-        except Exception as e:
-            logger.error(
-                f"Error handling Streamlabs OAuth connection: {str(e)}", exc_info=True
-            )
-            ui.notify(
-                f"Error starting Streamlabs connection: {str(e)}", type="negative"
-            )
-            # Reset button state
-            if "connect_streamlabs_button" in self.ui_elements:
-                self.ui_elements["connect_streamlabs_button"].set_text(
-                    "Connect to Streamlabs"
-                )
-                self.ui_elements["connect_streamlabs_button"].enable()
-
-    def refresh_streamlabs_status(self):
-        """Refresh the Streamlabs connection status display"""
-        try:
-            # Get current status from the Streamlabs module
-            from .. import streamlabs
-
-            status_info = streamlabs.get_streamlabs_status()
-
-            # Update status label and color
-            if "streamlabs_status_label" in self.ui_elements:
-                status_text = status_info.get("status", "Unknown")
-                is_authenticated = status_info.get("is_authenticated", False)
-                is_connected = status_info.get("is_connected", False)
-
-                self.ui_elements["streamlabs_status_label"].set_text(status_text)
-
-                # Update color based on status
-                if is_connected and is_authenticated:
-                    # Both authenticated and connected - best state
-                    self.ui_elements["streamlabs_status_label"].classes(
-                        replace="font-semibold text-green-500"
-                    )
-                elif is_authenticated:
-                    # Authenticated but may not be connected
-                    if "Disconnected" in status_text or "Connection" in status_text:
-                        self.ui_elements["streamlabs_status_label"].classes(
-                            replace="font-semibold text-yellow-500"
-                        )
-                    else:
-                        self.ui_elements["streamlabs_status_label"].classes(
-                            replace="font-semibold text-green-500"
-                        )
-                elif is_connected:
-                    # Connected but not authenticated (using static token)
-                    self.ui_elements["streamlabs_status_label"].classes(
-                        replace="font-semibold text-blue-500"
-                    )
-                elif "Reconnection Required" in status_text:
-                    # Need to reconnect
-                    self.ui_elements["streamlabs_status_label"].classes(
-                        replace="font-semibold text-orange-500"
-                    )
-                else:
-                    # Not connected or error
-                    self.ui_elements["streamlabs_status_label"].classes(
-                        replace="font-semibold text-red-500"
-                    )
-
-            # Update last update label
-            if "streamlabs_last_update_label" in self.ui_elements:
-                last_update = status_info.get("last_update", "Never")
-                self.ui_elements["streamlabs_last_update_label"].set_text(last_update)
-
-            logger.debug(f"Streamlabs status refreshed: {status_info}")
-
-        except Exception as e:
-            logger.error(f"Error refreshing Streamlabs status: {str(e)}", exc_info=True)
-            # Set error status
-            if "streamlabs_status_label" in self.ui_elements:
-                self.ui_elements["streamlabs_status_label"].set_text("Status Error")
-                self.ui_elements["streamlabs_status_label"].classes(
-                    replace="font-semibold text-red-500"
-                )
-
-    def browse_alerts_file(self):
-        """Handle browsing for alerts file using NiceGUI"""
-        try:
-            # Create a file browser dialog using NiceGUI
-            self._show_file_browser_dialog()
-        except Exception as e:
-            logger.error(f"Error in alerts file browser: {str(e)}", exc_info=True)
-            ui.notify(
-                "Error opening file browser. Please enter the path manually.",
-                type="negative",
-            )
-
-    def _show_file_browser_dialog(self):
-        """Show a NiceGUI-based file browser dialog"""
-        import os
-        from pathlib import Path
-
-        # Create dialog state
-        dialog_state = {
-            "current_path": get_working_directory(),
-            "selected_file": None,
-            "path_input": None,
-            "file_list": None,
-        }
-
-        with ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog, ui.card().classes(
-            _FILE_BROWSER_CARD_CLASSES
-        ):
-            ui.label("Select Alerts JSON File").classes("text-lg font-bold mb-4 shrink-0")
-
-            with ui.column().classes("w-full min-h-0 flex-1 gap-3"):
-                # Current path display and manual entry
-                with ui.row().classes("w-full items-center gap-2"):
-                    ui.label("Path:").classes("text-sm font-medium")
-                    dialog_state["path_input"] = ui.input(
-                        value=dialog_state["current_path"],
-                        placeholder="Enter file path or navigate below...",
-                    ).classes("flex-1")
-                    ui.button(
-                        "Go",
-                        icon="folder",
-                        on_click=lambda: self._navigate_to_path(dialog_state),
-                    ).props("dense")
-
-                # Quick access buttons
-                with ui.row().classes("w-full gap-2 mb-2"):
-                    ui.button(
-                        "Home",
-                        icon="home",
-                        on_click=lambda: self._navigate_to_path(
-                            dialog_state, Path.home()
-                        ),
-                    ).props("dense outline size=sm")
-
-                    ui.button(
-                        "Desktop",
-                        icon="desktop_windows",
-                        on_click=lambda: self._navigate_to_path(
-                            dialog_state, Path.home() / "Desktop"
-                        ),
-                    ).props("dense outline size=sm")
-
-                    ui.button(
-                        "Downloads",
-                        icon="download",
-                        on_click=lambda: self._navigate_to_path(
-                            dialog_state, Path.home() / "Downloads"
-                        ),
-                    ).props("dense outline size=sm")
-
-                    ui.button(
-                        "Documents",
-                        icon="description",
-                        on_click=lambda: self._navigate_to_path(
-                            dialog_state, Path.home() / "Documents"
-                        ),
-                    ).props("dense outline size=sm")
-
-                # File listing area
-                with ui.scroll_area().classes(
-                    "w-full min-h-0 flex-1 border rounded-lg p-2 bg-theme-base"
-                ):
-                    dialog_state["file_list"] = ui.column().classes("w-full gap-1")
-
-                # Selected file display
-                with ui.row().classes("w-full items-center shrink-0"):
-                    ui.label("Selected:").classes("text-sm font-medium")
-                    dialog_state["selected_label"] = ui.label("None").classes(
-                        "text-sm secondary-text"
-                    )
-
-                # Dialog buttons
-                with ui.row().classes("w-full justify-end gap-2 mt-4 shrink-0"):
-                    ui.button("Cancel", on_click=dialog.close).classes(
-                        "btn-cancel"
-                    )
-
-                    select_button = ui.button(
-                        "Select File",
-                        icon="check",
-                        on_click=lambda: self._select_file_from_dialog(
-                            dialog_state, dialog
-                        ),
-                    ).classes("btn-primary")
-                    select_button.enabled = False
-                    dialog_state["select_button"] = select_button
-
-        # Initial file listing
-        self._update_file_listing(dialog_state)
-
-        dialog.open()
-
-    def _navigate_to_path(self, dialog_state, path=None):
-        """Navigate to a specific path in the file browser"""
-        try:
-            from pathlib import Path
-
-            if path is None:
-                path = dialog_state["path_input"].value
-
-            path = Path(path).expanduser().resolve()
-
-            if path.exists():
-                dialog_state["current_path"] = str(path)
-                dialog_state["path_input"].value = str(path)
-                dialog_state["selected_file"] = None
-                dialog_state["selected_label"].set_text("None")
-                dialog_state["select_button"].enabled = False
-
-                self._update_file_listing(dialog_state)
-            else:
-                ui.notify(f"Path does not exist: {path}", type="warning")
-
-        except Exception as e:
-            logger.error(f"Error navigating to path: {str(e)}")
-            ui.notify(f"Error navigating to path: {str(e)}", type="negative")
-
-    def _update_file_listing(self, dialog_state):
-        """Update the file listing in the browser"""
-        try:
-            from pathlib import Path
-
-            current_path = Path(dialog_state["current_path"])
-
-            # Clear existing file list
-            dialog_state["file_list"].clear()
-
-            # Add parent directory option (if not at root)
-            if current_path.parent != current_path:
-                with dialog_state["file_list"]:
-                    with ui.row().classes(
-                        "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
-                    ):
-                        ui.icon("arrow_upward").classes("text-blue-400")
-                        parent_label = ui.label(".. (Parent Directory)").classes(
-                            "text-blue-400"
-                        )
-                        parent_label.on(
-                            "click",
-                            lambda: self._navigate_to_path(
-                                dialog_state, current_path.parent
-                            ),
-                        )
-
-            # List directories and files
-            try:
-                items = sorted(
-                    current_path.iterdir(), key=lambda x: (x.is_file(), x.name.lower())
-                )
-
-                for item in items:
-                    if item.name.startswith("."):
-                        continue  # Skip hidden files
-
-                    with dialog_state["file_list"]:
-                        with ui.row().classes(
-                            "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
-                        ) as row:
-                            if item.is_dir():
-                                ui.icon("folder").classes("text-yellow-400")
-                                dir_label = ui.label(item.name).classes("")
-                                row.on(
-                                    "click",
-                                    lambda path=item: self._navigate_to_path(
-                                        dialog_state, path
-                                    ),
-                                )
-                            else:
-                                # Show different icons for different file types
-                                if item.suffix.lower() == ".json":
-                                    ui.icon("code").classes("text-green-400")
-                                    file_label = ui.label(item.name).classes(
-                                        "text-green-400"
-                                    )
-                                else:
-                                    ui.icon("description").classes("secondary-text")
-                                    file_label = ui.label(item.name).classes(
-                                        "secondary-text"
-                                    )
-
-                                # Make files selectable if they're JSON files
-                                if item.suffix.lower() == ".json":
-                                    row.on(
-                                        "click",
-                                        lambda path=item: self._select_file_in_dialog(
-                                            dialog_state, path
-                                        ),
-                                    )
-
-            except PermissionError:
-                with dialog_state["file_list"]:
-                    ui.label(
-                        "Permission denied - cannot access this directory"
-                    ).classes("text-red-400 p-2")
-
-        except Exception as e:
-            logger.error(f"Error updating file listing: {str(e)}")
-            with dialog_state["file_list"]:
-                ui.label(f"Error loading directory: {str(e)}").classes(
-                    "text-red-400 p-2"
-                )
-
-    def _select_file_in_dialog(self, dialog_state, file_path):
-        """Select a file in the dialog"""
-        try:
-            dialog_state["selected_file"] = str(file_path)
-            dialog_state["selected_label"].set_text(file_path.name)
-            dialog_state["select_button"].enabled = True
-
-            # Update the path input to show the full file path
-            dialog_state["path_input"].value = str(file_path)
-
-        except Exception as e:
-            logger.error(f"Error selecting file: {str(e)}")
-
-    def _select_file_from_dialog(self, dialog_state, dialog):
-        """Handle the final file selection from the dialog"""
-        try:
-            from pathlib import Path
-
-            if dialog_state["selected_file"]:
-                # Check if it's a manually entered path
-                manual_path = dialog_state["path_input"].value
-                if manual_path and Path(manual_path).is_file():
-                    selected_path = manual_path
-                else:
-                    selected_path = dialog_state["selected_file"]
-
-                # Validate it's a JSON file
-                if not selected_path.lower().endswith(".json"):
-                    ui.notify("Please select a JSON file", type="warning")
-                    return
-
-                # Update the main input field
-                self.ui_elements["migrate_alerts_file_input"].value = selected_path
-                self.ui_elements["migration_status_label"].set_text(
-                    f"Selected: {Path(selected_path).name}"
-                )
-
-                logger.info(f"User selected alerts file: {selected_path}")
-                ui.notify(f"Selected file: {Path(selected_path).name}", type="positive")
-
-                dialog.close()
-            else:
-                ui.notify("Please select a file first", type="warning")
-
-        except Exception as e:
-            logger.error(f"Error in file selection: {str(e)}")
-            ui.notify(f"Error selecting file: {str(e)}", type="negative")
-
-    def preview_alert_migration(self):
-        """Preview what would be migrated from the selected file"""
-        try:
-            file_path = self.ui_elements["migrate_alerts_file_input"].value
-            if not file_path:
-                ui.notify(
-                    "Please select or enter an alerts file path first", type="warning"
-                )
-                return
-
-            # Import the migration module
-            from ..alert_database_migration import preview_migration
-
-            # Show loading status
-            self.ui_elements["migration_status_label"].set_text(
-                "Previewing migration..."
-            )
-
-            # Preview the migration
-            total_count, type_counts = preview_migration(file_path)
-
-            if total_count == 0:
-                ui.notify(
-                    "No alerts found in the file or file could not be loaded",
-                    type="warning",
-                )
-                self.ui_elements["migration_status_label"].set_text(
-                    "No alerts found in file"
-                )
-                return
-
-            # Create preview dialog
-            with ui.dialog() as dialog, ui.card().classes("w-96 p-4"):
-                ui.label("Migration Preview").classes("text-lg font-bold mb-4")
-
-                with ui.column().classes("w-full gap-3"):
-                    ui.label(f"Found {total_count} alerts to migrate:").classes(
-                        "text-base font-medium"
-                    )
-
-                    # Show breakdown by type
-                    with ui.card().classes("w-full p-3 bg-theme-surface rounded-lg"):
-                        for alert_type, count in type_counts.items():
-                            ui.label(f"  {alert_type}: {count} alerts").classes(
-                                "text-sm"
-                            )
-
-                    ui.label(
-                        "This is a preview only. No alerts will be migrated yet."
-                    ).classes("text-sm secondary-text")
-
-                    # Buttons
-                    with ui.row().classes("w-full justify-end gap-2 mt-4"):
-                        ui.button("Close", on_click=dialog.close).classes(
-                            "btn-cancel"
-                        )
-                        ui.button(
-                            "Proceed with Migration",
-                            on_click=lambda: [
-                                dialog.close(),
-                                self.start_alert_migration(),
-                            ],
-                        ).classes("btn-primary")
-
-            dialog.open()
-            self.ui_elements["migration_status_label"].set_text(
-                f"Preview: {total_count} alerts found"
-            )
-
-        except Exception as e:
-            logger.error(f"Error previewing migration: {str(e)}", exc_info=True)
-            ui.notify(f"Error previewing migration: {str(e)}", type="negative")
-            self.ui_elements["migration_status_label"].set_text("Preview failed")
-
-    def start_alert_migration(self):
-        """Start the alert migration process"""
-        try:
-            file_path = self.ui_elements["migrate_alerts_file_input"].value
-            if not file_path:
-                ui.notify(
-                    "Please select or enter an alerts file path first", type="warning"
-                )
-                return
-
-            overwrite_existing = self.ui_elements["overwrite_existing_switch"].value
-
-            # Import the migration module
-            from ..alert_database_migration import migrate_alerts_from_file
-
-            # Show loading status
-            self.ui_elements["migration_status_label"].set_text("Starting migration...")
-            ui.notify("Starting alert migration...", type="info")
-
-            # Create a shared result holder for thread communication
-            migration_result = {
-                "status": "running",
-                "result": None,
-                "error": None,
-                "ui_updated": False,
-            }
-
-            # Run migration in a separate thread
-            import threading
-
-            def migration_thread():
-                try:
-                    result = migrate_alerts_from_file(file_path, overwrite_existing)
-                    migration_result["status"] = "complete"
-                    migration_result["result"] = result
-                except Exception as e:
-                    logger.error(f"Error in migration thread: {str(e)}", exc_info=True)
-                    migration_result["status"] = "error"
-                    migration_result["error"] = str(e)
-
-            # Start the thread
-            migration_worker = threading.Thread(target=migration_thread)
-            migration_worker.daemon = True
-            migration_worker.start()
-
-            # Create a timer to check the result
-            def check_migration_result():
-                if migration_result["status"] == "running":
-                    return True  # Continue checking
-                elif migration_result["status"] == "complete":
-                    # Only update UI once
-                    if not migration_result["ui_updated"]:
-                        migration_result["ui_updated"] = True
-                        try:
-                            result = migration_result["result"]
-                            self._show_migration_results(result)
-                            self.ui_elements["migration_status_label"].set_text(
-                                f"Migration complete: {result.successful_migrations} successful, {result.failed_migrations} failed"
-                            )
-                        except Exception as e:
-                            logger.error(f"Error updating UI after migration: {str(e)}")
-                    return False  # Stop checking
-                elif migration_result["status"] == "error":
-                    # Only update UI once
-                    if not migration_result["ui_updated"]:
-                        migration_result["ui_updated"] = True
-                        try:
-                            ui.notify(
-                                f"Migration error: {migration_result['error']}",
-                                type="negative",
-                            )
-                            self.ui_elements["migration_status_label"].set_text(
-                                "Migration failed"
-                            )
-                        except Exception as ui_error:
-                            logger.error(
-                                f"Error handling UI error update: {str(ui_error)}"
-                            )
-                    return False  # Stop checking
-                return False  # Default stop
-
-            # Start timer to check results
-            ui.timer(0.5, check_migration_result)
-
-        except Exception as e:
-            logger.error(f"Error starting migration: {str(e)}", exc_info=True)
-            ui.notify(f"Error starting migration: {str(e)}", type="negative")
-            self.ui_elements["migration_status_label"].set_text(
-                "Migration failed to start"
-            )
-
-    def _show_migration_results(self, result):
-        """Show the results of the migration in a dialog"""
-        try:
-            # Create results dialog
-            with ui.dialog() as dialog, ui.card().classes("w-[600px] p-4"):
-                ui.label("Migration Results").classes("text-lg font-bold mb-4")
-
-                with ui.column().classes("w-full gap-3"):
-                    # Summary
-                    ui.label("Migration Summary").classes("text-base font-medium mb-2")
-                    with ui.card().classes("w-full p-3 bg-theme-surface rounded-lg"):
-                        ui.label(
-                            f"Total alerts processed: {result.total_alerts}"
-                        ).classes("text-sm")
-                        ui.label(
-                            f"Successfully migrated: {result.successful_migrations}"
-                        ).classes("text-sm text-green-400")
-                        ui.label(f"Failed: {result.failed_migrations}").classes(
-                            "text-sm text-red-400"
-                        )
-                        ui.label(f"Skipped: {result.skipped_alerts}").classes(
-                            "text-sm text-yellow-400"
-                        )
-
-                    # Alert type breakdown
-                    if result.alert_type_counts:
-                        ui.label("Migrated by Type").classes(
-                            "text-base font-medium mb-2"
-                        )
-                        with ui.card().classes("w-full p-3 bg-theme-surface rounded-lg"):
-                            for alert_type, count in result.alert_type_counts.items():
-                                ui.label(f"  {alert_type}: {count}").classes("text-sm")
-
-                    # Errors (if any)
-                    if result.errors:
-                        ui.label("Errors/Warnings").classes(
-                            "text-base font-medium mb-2"
-                        )
-                        with ui.scroll_area().classes("w-full h-32"):
-                            with ui.card().classes(
-                                "w-full p-3 bg-theme-surface rounded-lg"
-                            ):
-                                for error in result.errors[:10]:  # Show first 10 errors
-                                    ui.label(
-                                        f"{error['type']} - {error['id']}: {error['error']}"
-                                    ).classes("text-xs secondary-text")
-
-                                if len(result.errors) > 10:
-                                    ui.label(
-                                        f"... and {len(result.errors) - 10} more errors/warnings"
-                                    ).classes("text-xs secondary-text")
-
-                    # Buttons
-                    with ui.row().classes("w-full justify-end gap-2 mt-4"):
-                        ui.button("Close", on_click=dialog.close).classes(
-                            "btn-cancel"
-                        )
-                        if result.successful_migrations > 0:
-                            ui.button(
-                                "View Alert Settings",
-                                on_click=lambda: [
-                                    dialog.close(),
-                                    self._navigate_to_alerts(),
-                                ],
-                            ).classes("btn-secondary")
-
-            dialog.open()
-
-            # Show summary notification
-            if result.successful_migrations > 0:
-                ui.notify(
-                    f"Migration completed! {result.successful_migrations} alerts migrated successfully",
-                    type="positive",
-                    timeout=5000,
-                )
-            else:
-                ui.notify(
-                    "Migration completed, but no alerts were migrated",
-                    type="warning",
-                    timeout=5000,
-                )
-
-        except Exception as e:
-            logger.error(f"Error showing migration results: {str(e)}", exc_info=True)
-            ui.notify(
-                f"Migration completed, but there was an error showing results: {str(e)}",
-                type="warning",
-            )
-
-    def _navigate_to_alerts(self):
-        """Navigate to the alert settings tab (if available)"""
-        try:
-            # This would need to be implemented to switch to the alerts tab
-            # For now, just show a notification
-            ui.notify(
-                "You can now configure your migrated alerts in the Alert Settings tab",
-                type="info",
-                timeout=3000,
-            )
-        except Exception as e:
-            logger.error(f"Error navigating to alerts: {str(e)}")
-
     def _show_database_file_browser_dialog(self, file_type):
         """Show a NiceGUI-based file browser dialog for database files"""
         import os
@@ -5963,8 +4915,6 @@ class SettingsUI:
                 theme_tab = ThemeTab()
             with StartupTimer("settings_tab_objects_twitch"):
                 twitch_tab = TwitchTab()
-            with StartupTimer("settings_tab_objects_streamlabs"):
-                streamlabs_tab = StreamlabsTab()
             with StartupTimer("settings_tab_objects_psn"):
                 psn_tab = PSNTab()
             with StartupTimer("settings_tab_objects_spotify"):
@@ -5975,8 +4925,6 @@ class SettingsUI:
                 game_hooks_tab = GameHooksTab()
             with StartupTimer("settings_tab_objects_database"):
                 database_tab = DatabaseTab()
-            with StartupTimer("settings_tab_objects_migration"):
-                migration_tab = MigrationTab()
             with StartupTimer("settings_tab_objects_statistics"):
                 statistics_tab = StatisticsTab()
 
@@ -5984,13 +4932,11 @@ class SettingsUI:
                 "App Settings": app_settings_tab,
                 "Theme": theme_tab,
                 "Twitch": twitch_tab,
-                "Streamlabs": streamlabs_tab,
                 "PSN": psn_tab,
                 "Spotify": spotify_tab,
                 "YouTube": youtube_tab,
                 "Game Hooks": game_hooks_tab,
                 "Database": database_tab,
-                "Migration": migration_tab,
                 "Statistics": statistics_tab,
             }
 
@@ -6017,13 +4963,11 @@ class SettingsUI:
                             ui.tab("App Settings", icon="tune")
                             ui.tab("Twitch", icon="stream")
                             ui.tab("Theme", icon="palette")
-                            ui.tab("Streamlabs", icon="insights")
                             ui.tab("PSN", icon="sports_esports")
                             ui.tab("Spotify", icon="music_note")
                             ui.tab("YouTube", icon="video_library")
                             ui.tab("Game Hooks", icon="memory")
                             ui.tab("Database", icon="storage")
-                            ui.tab("Migration", icon="sync_alt")
                             ui.tab("Statistics", icon="analytics")
                             ui.tab("About", icon="info")
 
@@ -6077,8 +5021,6 @@ class SettingsUI:
                                     self._tabs_by_name["Theme"].build(container)
                                 elif tab_name == "Twitch":
                                     self._tabs_by_name["Twitch"].build(container)
-                                elif tab_name == "Streamlabs":
-                                    self._tabs_by_name["Streamlabs"].build(container)
                                 elif tab_name == "PSN":
                                     self._tabs_by_name["PSN"].build(container)
                                 elif tab_name == "Spotify":
@@ -6089,8 +5031,6 @@ class SettingsUI:
                                     self._tabs_by_name["Game Hooks"].build(container)
                                 elif tab_name == "Database":
                                     self._tabs_by_name["Database"].build(container)
-                                elif tab_name == "Migration":
-                                    self._tabs_by_name["Migration"].build(container)
                                 elif tab_name == "Statistics":
                                     self._tabs_by_name["Statistics"].build(container)
                                 elif tab_name == "About":
@@ -6112,13 +5052,11 @@ class SettingsUI:
                         tab_definitions = [
                             ("Twitch", "settings_twitch_tab"),
                             ("Theme", "settings_theme_tab"),
-                            ("Streamlabs", "settings_streamlabs_tab"),
                             ("PSN", "settings_psn_tab"),
                             ("Spotify", "settings_spotify_tab"),
                             ("YouTube", "settings_youtube_tab"),
                             ("Game Hooks", "settings_game_hooks_tab"),
                             ("Database", "settings_database_tab"),
-                            ("Migration", "settings_migration_tab"),
                             ("Statistics", "settings_statistics_tab"),
                             ("About", "settings_about_tab"),
                         ]

@@ -1567,7 +1567,6 @@ async def load_all_initial_data() -> Dict[str, Any]:
     startup_paths = [
         "TwitchData",
         "AppSettings",
-        "StreamlabsData",
         "PSNSettings",
         "SpotifyData",
         "YouTubeData",  # Include for tab data loading

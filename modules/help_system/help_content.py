@@ -363,7 +363,7 @@ Make sure you've [connected Twitch](help:twitch_setup) and [set up browser sourc
 | **Bits** | Bit cheers |
 | **Raid** | Incoming raid |
 | **Points** | Channel point redemption |
-| **Donation** | StreamLabs/StreamElements tip |
+| **Donation** | Tips / donations (when connected via supported integrations) |
 
 ## Alert Configuration
 
@@ -2810,142 +2810,6 @@ Mycelian requests these scopes:
         related_topics=["getting_started_intro", "alerts_overview"]
     ),
 
-    "integrations_streamlabs": HelpTopic(
-        id="integrations_streamlabs",
-        title="StreamLabs Integration",
-        category=HelpCategory.INTEGRATIONS,
-        summary="Connect StreamLabs for donation and tip alerts",
-        content="""
-# StreamLabs Integration
-
-Connect StreamLabs to receive donation [alerts](help:alerts_overview) and tip notifications.
-
-## What is StreamLabs?
-
-[StreamLabs](https://streamlabs.com/) is a donation processing service that handles tips, donations, and merchandise sales.
-
-## Setup Process
-
-1. Go to **Settings** → **StreamLabs** tab
-2. Click **"Connect with StreamLabs"**
-3. Authorize Mycelian access via the [StreamLabs Dashboard](https://streamlabs.com/dashboard)
-4. Configure alert settings
-
-## Required Permissions
-
-Mycelian requests:
-- **Donations**: Read donation events
-- **Alerts**: Control alert display
-- **Profile**: Basic account information
-
-## Donation Events
-
-### Supported Types
-- **Donations**: Direct tips
-- **Merch**: Merchandise sales
-- **Super Chats**: YouTube super chats
-- **Sponsorships**: Monthly supporters
-
-### Event Data
-- **Amount**: Donation value
-- **Currency**: Payment currency
-- **Message**: Donor message
-- **Name**: Donor display name
-
-## Alert Configuration
-
-### Automatic Alerts
-Donations automatically trigger alerts based on:
-- **Amount ranges**: Different alerts for different values
-- **Minimum threshold**: Ignore small donations
-- **Currency conversion**: Handle multiple currencies
-
-### Custom Messages
-Personalize thank you messages:
-```
-"Thank you {name} for the ${amount} donation! {message}"
-```
-
-## Testing Donations
-
-### Test Mode
-1. Go to StreamLabs dashboard
-2. Use **"Test Donation"** feature
-3. Verify alerts trigger correctly
-4. Check message formatting
-
-### Live Testing
-- Use small test donations
-- Verify currency handling
-- Test message variables
-
-## Troubleshooting
-
-### Connection Issues
-**"Authentication Failed"**
-- Re-authorize connection
-- Check StreamLabs account status
-- Verify API permissions
-
-**"Missing Donations"**
-- Check webhook configuration
-- Verify alert settings
-- Monitor StreamLabs dashboard
-
-### Alert Issues
-**"Wrong Alert"**
-- Check amount ranges
-- Verify threshold settings
-- Test range boundaries
-
-**"No Sound/Message"**
-- Verify media file paths
-- Check template configuration
-- Test audio permissions
-
-## Advanced Features
-
-### Multi-Currency Support
-- Automatic currency conversion
-- Custom exchange rates
-- Localized formatting
-
-### Custom Variables
-Use in alerts and messages:
-```
-{name} - Donor name
-{amount} - Donation amount
-{currency} - Currency code
-{message} - Donor message
-{formatted_amount} - Formatted amount
-```
-
-### Integration with Other Services
-- Combine with [Twitch alerts](help:alerts_overview)
-- Use in [connector actions](help:connector_actions)
-- Display in activity feeds
-
-## Best Practices
-
-### Alert Design
-- Set reasonable minimum amounts
-- Use tiered alerts for different donation levels
-- Keep thank you messages personal
-
-### Testing
-- Test all donation ranges
-- Verify currency formatting
-- Check message variables
-
-### Privacy
-- Respect donor privacy settings
-- Handle sensitive information carefully
-- Follow StreamLabs terms of service
-        """,
-        keywords=["streamlabs", "donations", "tips", "merchandise", "currency"],
-        related_topics=["alerts_overview", "integrations_twitch"]
-    ),
-
     # =========================================
     # Settings
     # =========================================
@@ -2963,7 +2827,7 @@ Configure Mycelian to match your streaming setup and preferences.
 
 ### Integration Settings
 - **Twitch**: [Connect your channel](help:twitch_setup)
-- **StreamLabs**: [Donation processing](help:integrations_streamlabs)
+- **Donation alerts**: Configure in **Alerts** → donation alert types and [alert overview](help:alerts_overview)
 - **Spotify**: [Music integration](help:integrations_spotify)
 - **OBS**: WebSocket connection
 
@@ -3225,32 +3089,9 @@ Modern browsers block autoplay. Solutions:
 2. Check token expiration settings
 3. Verify app permissions haven't changed
 
-## StreamLabs Issues
+## Donation alerts
 
-See also: [StreamLabs Integration](help:integrations_streamlabs) setup guide.
-
-### Missing Donations
-
-**Symptoms:**
-- Donations not appearing in Mycelian
-- [Alerts](help:alerts_overview) not triggering for tips
-
-**Solutions:**
-1. Check StreamLabs dashboard for donations
-2. Verify webhook configuration
-3. Reconnect StreamLabs account
-4. Check API rate limits
-
-### Wrong Currency/Amount
-
-**Symptoms:**
-- Donation amounts incorrect
-- Currency conversion issues
-
-**Solutions:**
-1. Check StreamLabs currency settings
-2. Verify exchange rate configuration
-3. Test with small donation amounts
+Configure how donation [alerts](help:alerts_overview) look and sound in the **Alerts** tab (donation alert types and thresholds).
 
 ## WebSocket Connection Issues
 
@@ -3308,7 +3149,6 @@ See also: [StreamLabs Integration](help:integrations_streamlabs) setup guide.
 
 ### Checking Service Status
 - **Twitch Status**: [status.twitch.tv](https://status.twitch.tv/)
-- **StreamLabs Status**: [streamlabs.com/status](https://streamlabs.com/status)
 - **OBS WebSocket**: Check OBS logs
 
 ### When Services are Down
@@ -3339,7 +3179,7 @@ Use diagnostic tools:
 - Validate JSON configurations
         """,
         keywords=["connection", "network", "integration", "webhook", "websocket", "api"],
-        related_topics=["integrations_twitch", "integrations_streamlabs"]
+        related_topics=["integrations_twitch", "alerts_overview"]
     ),
 
     "troubleshooting_audio": HelpTopic(

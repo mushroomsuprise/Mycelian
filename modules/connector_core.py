@@ -64,7 +64,7 @@ class TriggerType(Enum):
     TWITCH_HYPE_TRAIN_START = "twitch_hype_train_start"
     TWITCH_HYPE_TRAIN_END = "twitch_hype_train_end"
 
-    # Donation Triggers (StreamLabs)
+    # Donation / tip triggers (e.g. connector webhooks)
     DONATION = "donation"
 
     # Timer/Schedule Triggers

@@ -185,7 +185,7 @@ class TwitchHypeTrainEndTrigger(BaseTrigger):
 
 @dataclass
 class DonationTrigger(BaseTrigger):
-    """Trigger for donation events from StreamLabs"""
+    """Trigger for donation events from the connector system"""
 
     def __post_init__(self):
         self.trigger_type = TriggerType.DONATION

@@ -141,16 +141,6 @@ def signal_handler(sig, frame):
         except Exception as e:
             print(f"Error saving statistics during shutdown: {str(e)}")
 
-        # Clean up Streamlabs token monitor
-        try:
-            from modules.streamlabs import stop_streamlabs_token_monitor
-
-            print("Stopping Streamlabs token monitor...")
-            stop_streamlabs_token_monitor()
-            print("Streamlabs token monitor stopped")
-        except Exception as e:
-            print(f"Error stopping Streamlabs token monitor: {str(e)}")
-
         # Clean up shared memory
         try:
             from multiprocessing import shared_memory  # type: ignore
@@ -328,14 +318,11 @@ if __name__ == "__main__":
         )
 
         # 3rd party services
-        from modules import spotify, streamlabs, psn_service, youtube
+        from modules import spotify, psn_service, youtube
 
         service_manager.register("spotify", spotify.start_spotify_service, priority=5)
-        service_manager.register(
-            "streamlabs", streamlabs.start_streamlabs_service, priority=6
-        )
-        service_manager.register("psn", psn_service.initialize_psn_module, priority=7)
-        service_manager.register("youtube", youtube.start_youtube_service, priority=8)
+        service_manager.register("psn", psn_service.initialize_psn_module, priority=6)
+        service_manager.register("youtube", youtube.start_youtube_service, priority=7)
 
         # Start deferred init after UI is responsive
         service_manager.start_deferred_init(delay_seconds=1.0)

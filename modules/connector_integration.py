@@ -40,7 +40,6 @@ class ConnectorIntegration:
     def __init__(self):
         self.manager = get_manager()
         self._twitch_integration_setup = False
-        self._streamlabs_integration_setup = False
 
     def setup_twitch_integration(self):
         """Set up integration with Twitch events"""
@@ -98,41 +97,6 @@ class ConnectorIntegration:
 
         except Exception as e:
             logger.error(f"Error setting up Twitch integration: {e}", exc_info=True)
-
-    def setup_streamlabs_integration(self):
-        """Set up integration with StreamLabs events"""
-        if self._streamlabs_integration_setup:
-            return
-
-        try:
-            from . import streamlabs
-
-            # Wrap StreamLabs donation handler
-            if hasattr(streamlabs, "streamlabs_integration"):
-                original_handler = getattr(
-                    streamlabs.streamlabs_integration, "handle_donation_event", None
-                )
-                if original_handler:
-
-                    def wrapped_handler(data):
-                        # Call original handler
-                        result = original_handler(data)
-                        # Send to connector system
-                        asyncio.create_task(self._handle_streamlabs_donation(data))
-                        return result
-
-                    streamlabs.streamlabs_integration.handle_donation_event = (
-                        wrapped_handler
-                    )
-                    logger.info("StreamLabs integration set up for connector system")
-                    self._streamlabs_integration_setup = True
-                else:
-                    logger.warning("StreamLabs donation handler not found")
-            else:
-                logger.warning("StreamLabs integration not available")
-
-        except Exception as e:
-            logger.error(f"Error setting up StreamLabs integration: {e}", exc_info=True)
 
     def _wrap_twitch_handler(self, api_instance, handler_name: str, connector_handler):
         """Wrap a Twitch API handler to also send events to connector system"""
@@ -361,26 +325,6 @@ class ConnectorIntegration:
                 exc_info=True,
             )
 
-    async def _handle_streamlabs_donation(self, data):
-        """Handle StreamLabs donation event for connector system"""
-        try:
-            message_data = data.get("message", [])
-            if message_data:
-                donation_info = message_data[0]  # First donation in the batch
-
-                event_data = EventData.from_donation(
-                    amount=float(donation_info.get("amount", 0)),
-                    username=donation_info.get("from", "Anonymous"),
-                    message=donation_info.get("message", ""),
-                    currency=donation_info.get("currency", "USD"),
-                    source="streamlabs",
-                )
-                await self.manager.add_event(event_data)
-        except Exception as e:
-            logger.error(
-                f"Error handling StreamLabs donation for connector: {e}", exc_info=True
-            )
-
     async def send_hotkey_event(
         self, key_code: str, modifiers: List[str] = None, is_global: bool = True
     ):
@@ -504,7 +448,6 @@ def initialize_integration():
 
         # Set up integrations
         connector_integration.setup_twitch_integration()
-        connector_integration.setup_streamlabs_integration()
 
         logger.info("Connector integration initialized successfully")
     except Exception as e:

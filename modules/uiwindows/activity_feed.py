@@ -1732,7 +1732,7 @@ def add_alert_direct(
     """
     Public function for external modules to add alerts directly to the UI using the event system.
 
-    This is the new recommended way for modules (twitch, streamlabs) to add alerts.
+    This is the new recommended way for modules (e.g. twitch) to add alerts.
     Replaces the old queue-based system with immediate event processing.
 
     Args:

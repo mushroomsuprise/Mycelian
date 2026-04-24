@@ -30,8 +30,6 @@ from typing import Optional
 from .api_credentials_manager import (
     get_encrypted_spotify_client_id,
     get_encrypted_spotify_client_secret,
-    get_encrypted_streamlabs_client_id,
-    get_encrypted_streamlabs_client_secret,
     get_encrypted_twitch_client_id,
     get_encrypted_twitch_client_secret,
     initialize_api_credentials,
@@ -84,20 +82,6 @@ def _create_default_data():
             logger.debug("Created default TwitchData with encrypted credentials")
         else:
             logger.debug("TwitchData already exists, preserving existing data")
-
-        # Check and create default Streamlabs data with encrypted credentials
-        if not database_manager.get_data("StreamlabsData"):
-            default_streamlabs_data = {
-                "client_id": get_encrypted_streamlabs_client_id(),
-                "client_secret": get_encrypted_streamlabs_client_secret(),
-                "access_token": "",
-                "refresh_token": "",
-                "token_expiry": None,
-                "connection_status": "Disconnected",
-                "socket_token": "",
-            }
-            database_manager.set_data("StreamlabsData", default_streamlabs_data)
-            logger.debug("Created default StreamlabsData with encrypted credentials")
 
         # Check and create default PSN settings data
         if not database_manager.get_data("PSNSettings"):

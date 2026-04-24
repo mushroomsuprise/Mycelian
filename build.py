@@ -566,7 +566,6 @@ def get_hidden_imports(current_os):
             "modules.psnapi",
             "modules.psn_service",
             "modules.spotify",
-            "modules.streamlabs",
             "modules.template_config_parser",
             "modules.twitch",
             "modules.web_engine",
@@ -580,8 +579,6 @@ def get_hidden_imports(current_os):
             "modules.uiwindows.customsources",
             "modules.uiwindows.settings",
             "modules.uiwindows.sourcecontrols",
-            "modules.alert_database_migration",
-            "modules.alerts_migration",
             "modules.alerts_parser",
         ]
     )

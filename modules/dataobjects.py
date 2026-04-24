@@ -118,28 +118,6 @@ class AppSettings:
 
 
 @dataclass
-class StreamlabsData:
-    """
-    Data class for storing Streamlabs API related data
-    """
-
-    client_id: str = ""
-    client_secret: str = ""
-    access_token: str = ""
-    refresh_token: str = ""
-    token_expiry: Optional[float] = None
-    connection_status: str = "Disconnected"
-
-    # Socket connection data
-    socket_token: str = ""
-
-    def __post_init__(self):
-        """Log when a new StreamlabsData instance is created"""
-        # Removed debug logging to reduce log spam from frequent data access
-        pass
-
-
-@dataclass
 class PSNSettingsData:
     """
     Data class for storing PSN specific settings.
@@ -294,7 +272,6 @@ class StateManager:
         self._state = {
             "twitch_data": {},
             "app_settings": {},
-            "streamlabs_data": {},  # Added for Streamlabs
             "psn_settings_data": {},  # Added for PSN
             "spotify_data": {},  # Added for Spotify
             "database_settings": {},  # Added for DatabaseSettings
@@ -304,7 +281,6 @@ class StateManager:
         self._paths = {
             "twitch_data": "TwitchData",
             "app_settings": "AppSettings",
-            "streamlabs_data": "StreamlabsData",  # Firebase path for Streamlabs data
             "psn_settings_data": "PSNSettings",  # Firebase path for PSN settings
             "spotify_data": "SpotifyData",  # Firebase path for Spotify data
             "database_settings": "DatabaseSettings",  # Firebase path for DatabaseSettings
@@ -318,7 +294,6 @@ class StateManager:
         # Initialize with default data
         self._twitch_data = TwitchData()
         self._app_settings = AppSettings()
-        self._streamlabs_data = StreamlabsData()  # Initialize default Streamlabs data
         self._psn_settings_data = (
             PSNSettingsData()
         )  # Initialize default PSN settings data
@@ -416,9 +391,6 @@ class StateManager:
             # Load all data from the pre-loaded dictionary
             self._state["twitch_data"] = all_data.get(self._paths["twitch_data"], {})
             self._state["app_settings"] = all_data.get(self._paths["app_settings"], {})
-            self._state["streamlabs_data"] = all_data.get(
-                self._paths["streamlabs_data"], {}
-            )
             self._state["psn_settings_data"] = all_data.get(
                 self._paths["psn_settings_data"], {}
             )
@@ -491,12 +463,6 @@ class StateManager:
             # Load app settings
             app_settings = database_manager.get_data(self._paths["app_settings"]) or {}
             self._state["app_settings"] = app_settings
-
-            # Load Streamlabs data
-            streamlabs_data = (
-                database_manager.get_data(self._paths["streamlabs_data"]) or {}
-            )
-            self._state["streamlabs_data"] = streamlabs_data
 
             # Load PSN settings data
             psn_settings_data = (
@@ -649,35 +615,6 @@ class StateManager:
             for field in AppSettings.__dataclass_fields__.values()
             if not field.name.startswith("_")
             and field.name not in ["version", "build_date"]
-        }
-
-        # Update Streamlabs data
-        streamlabs_dict = self._state["streamlabs_data"]
-        if streamlabs_dict:
-            valid_keys = [f.name for f in StreamlabsData.__dataclass_fields__.values()]
-            filtered_dict = {
-                k: v for k, v in streamlabs_dict.items() if k in valid_keys
-            }
-
-            # Decrypt sensitive fields
-            if "client_id" in filtered_dict:
-                filtered_dict["client_id"] = ensure_decrypted(
-                    filtered_dict["client_id"]
-                )
-            if "client_secret" in filtered_dict:
-                filtered_dict["client_secret"] = ensure_decrypted(
-                    filtered_dict["client_secret"]
-                )
-
-            self._streamlabs_data = StreamlabsData(**filtered_dict)
-        else:
-            self._streamlabs_data = StreamlabsData()
-
-        # Update the state dictionary to include all fields from the dataclass
-        self._state["streamlabs_data"] = {
-            field.name: getattr(self._streamlabs_data, field.name)
-            for field in StreamlabsData.__dataclass_fields__.values()
-            if not field.name.startswith("_")
         }
 
         # Update PSN Settings data
@@ -841,17 +778,6 @@ class StateManager:
                 self.initialize()
 
             return copy.deepcopy(self._app_settings)
-
-    def get_streamlabs_data(self) -> StreamlabsData:
-        """Get the current Streamlabs data
-
-        Returns:
-            StreamlabsData: The current Streamlabs data
-        """
-        with self._lock:
-            if not self._initialized:
-                self.initialize()
-            return copy.deepcopy(self._streamlabs_data)
 
     def get_psn_settings_data(self) -> PSNSettingsData:
         """Get the current PSN settings data
@@ -1095,56 +1021,6 @@ class StateManager:
                 logger.error(
                     f"Error setting application settings: {str(e)}", exc_info=True
                 )
-                return False
-
-    def set_streamlabs_data(self, streamlabs_data: dict) -> bool:
-        """Set Streamlabs data and sync with database
-
-        Args:
-            streamlabs_data (dict): The Streamlabs data to set
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        with self._lock:
-            if not self._initialized:
-                self.initialize()
-
-            try:
-                # Update the state
-                for key, value in streamlabs_data.items():
-                    if hasattr(self._streamlabs_data, key):
-                        self._state["streamlabs_data"][key] = value
-                        self._changed_fields.add(f"streamlabs_data.{key}")
-
-                # Sync with database
-                from . import database_manager
-
-                encrypted_streamlabs_data = self._state["streamlabs_data"].copy()
-                if "client_id" in encrypted_streamlabs_data:
-                    encrypted_streamlabs_data["client_id"] = ensure_encrypted(
-                        encrypted_streamlabs_data["client_id"]
-                    )
-                if "client_secret" in encrypted_streamlabs_data:
-                    encrypted_streamlabs_data["client_secret"] = ensure_encrypted(
-                        encrypted_streamlabs_data["client_secret"]
-                    )
-                database_manager.set_data(
-                    self._paths["streamlabs_data"], encrypted_streamlabs_data
-                )
-
-                # Update the local object
-                self._update_local_objects()
-
-                self._changed_fields = {
-                    f
-                    for f in self._changed_fields
-                    if not f.startswith("streamlabs_data")
-                }
-                logger.debug("Updated Streamlabs data")
-                return True
-            except Exception as e:
-                logger.error(f"Error setting Streamlabs data: {str(e)}", exc_info=True)
                 return False
 
     def set_psn_settings_data(self, psn_settings_data: dict) -> bool:
@@ -1400,53 +1276,6 @@ class StateManager:
             except Exception as e:
                 logger.error(
                     f"Error updating application setting {field}: {str(e)}",
-                    exc_info=True,
-                )
-                return False
-
-    def update_streamlabs_field(self, field: str, value: Any) -> bool:
-        """Update a single field in the Streamlabs data
-
-        Args:
-            field (str): The field to update
-            value (Any): The new value
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        with self._lock:
-            if not self._initialized:
-                self.initialize()
-
-            try:
-                if not hasattr(self._streamlabs_data, field):
-                    logger.error(f"Invalid Streamlabs data field: {field}")
-                    return False
-
-                # Get current value for correct type conversion
-                current_value = getattr(self._streamlabs_data, field)
-
-                # Ensure type matching
-                if isinstance(current_value, bool) and not isinstance(value, bool):
-                    value = bool(value)
-                elif isinstance(current_value, int) and not isinstance(value, int):
-                    value = int(value)
-                elif isinstance(current_value, float) and not isinstance(value, float):
-                    value = float(value)
-
-                # Always update and mark as changed
-                self._state["streamlabs_data"][field] = value
-                self._changed_fields.add(f"streamlabs_data.{field}")
-                self._changes_pending = True
-
-                # Update the local object
-                self._update_local_objects()
-
-                # Reduced debug logging to prevent log spam from frequent updates
-                return True
-            except Exception as e:
-                logger.error(
-                    f"Error updating Streamlabs data field {field}: {str(e)}",
                     exc_info=True,
                 )
                 return False
@@ -1718,21 +1547,6 @@ class StateManager:
                 if any(f.startswith("app_settings") for f in self._changed_fields):
                     database_manager.set_data(
                         self._paths["app_settings"], self._state["app_settings"]
-                    )
-
-                # Save Streamlabs data
-                if any(f.startswith("streamlabs_data") for f in self._changed_fields):
-                    encrypted_streamlabs_data = self._state["streamlabs_data"].copy()
-                    if "client_id" in encrypted_streamlabs_data:
-                        encrypted_streamlabs_data["client_id"] = ensure_encrypted(
-                            encrypted_streamlabs_data["client_id"]
-                        )
-                    if "client_secret" in encrypted_streamlabs_data:
-                        encrypted_streamlabs_data["client_secret"] = ensure_encrypted(
-                            encrypted_streamlabs_data["client_secret"]
-                        )
-                    database_manager.set_data(
-                        self._paths["streamlabs_data"], encrypted_streamlabs_data
                     )
 
                 # Save PSN settings data
