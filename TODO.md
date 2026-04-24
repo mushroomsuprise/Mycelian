@@ -139,11 +139,9 @@ General Items:
     [] - Check over the PSN game cache system the app has. It either does not work, or does not properly display the cached game data in the UI.
     [] - Setup the game cache as "cells" similar to the YouTube playlist filter, so users can click to delete a game if they need to reload the cached data.
     [] - Add a label that displays something like "Not connected? click here to get started:" next to the help icon, if the Twitch service is not connected on the "Twitch" tab in Settings.
-    [] - Update the help_content file for connected to Twitch with the following: Setting up an app in the Twitch developer console and getting the client id and client secret (must include correct callback URL for Mycelian), List out all of the correct application scopes and what theyre for in a list format. Remove the "Connection Status" block, and instead give more helpful information on what to do if the app is not connected (missing client id/secret, not authenticated, missing scopes, bad callback URL, etc etc). Remove the Polls/Predictions info. Merge the "Viewer Events' and "Channel Events" into one list.
     [] - Add button for a "Twitch Only" point reward. This should open a separate dialog with just UI elements for creating/editting Twitch point rewards, without having to create a Mycelian reward for it.
-    [] - Add in stream streaks. We will need to use the "Channel Chat Notification Event" Eventsub hook. This will have us many options that we already get from other areas, so we should filter this only for the "watch_streak" key not being null. See this page for more info: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
-    [] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
-    [] - Add toggles for displaying header text and message text in the alerts template
+    [x] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
+    [x] - Add toggles for displaying header text and message text in the alerts template
     [] - Add in OBS websocket support. This will allow us to control OBS scenes, transitions, and other settings from the app. This will need its own tab in the settings for the websocket info. It will then need to be integrated into the Connectors system as actions (these will actually trigger changes in OBS) and as triggers (these will be used to trigger Connector actions, IE if a scene is changed in OBS it will mute the mic).
     [] - Expose Connectors system to the Streamdeck plugin. Make it so created Connectors can be assigned to Streamdeck buttons, and trigger actions when the button is pressed.
     [] - Add font size options for usernames to the chat template
@@ -154,7 +152,7 @@ General Items:
 
 Priority Fixes:
     [?] - Add in setting to main alerts template to silently skip (but hold for the the set duration) if a point alert does not have a image/video and audio. This should check if there is a template file that is named the exact same as the "alert_name" field in the alert_data. If so, it should use the duration from that config file.
-    [?] - Fix browse dialog not inputting the directory and file name into the input fields. (seems to be random, sometimes it works, sometimes it doesn't, maybe its special characters?)
-    [?] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
-    [?] - Add setting to start app not maximized
+    [x] - Fix browse dialog not inputting the directory and file name into the input fields. (seems to be random, sometimes it works, sometimes it doesn't, maybe its special characters?)
+    [x] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
+    [x] - Add setting to start app not maximized
     [] - Setup "generic image/video" template, so the file can just be renamed and all websocket events will point to the file name.

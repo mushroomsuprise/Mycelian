@@ -743,6 +743,31 @@
             return el ? el.value : undefined;
         }
 
+        function normalizeTemplateMatchKey(s) {
+            return String(s == null ? '' : s)
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, '');
+        }
+
+        function findTemplateConfigForAlertName(alertData) {
+            if (!window.allTemplateConfigs) {
+                return null;
+            }
+            const want = normalizeTemplateMatchKey(alertData.alert_name);
+            if (!want) {
+                return null;
+            }
+            const keys = Object.keys(window.allTemplateConfigs);
+            for (let i = 0; i < keys.length; i++) {
+                const k = keys[i];
+                if (normalizeTemplateMatchKey(k) === want) {
+                    return window.allTemplateConfigs[k];
+                }
+            }
+            return null;
+        }
+
         var _templateConfigsLoadPromise = null;
         function ensureAllTemplateConfigs() {
             if (window.allTemplateConfigs !== undefined) {
@@ -766,9 +791,9 @@
         }
 
         function getSilentPointDurationMs(alertData) {
-            const name = (alertData.alert_name != null ? String(alertData.alert_name) : '').trim();
-            if (name && window.allTemplateConfigs && window.allTemplateConfigs[name]) {
-                const raw = getConfigElementValue(window.allTemplateConfigs[name], 'Duration');
+            const matched = findTemplateConfigForAlertName(alertData);
+            if (matched) {
+                const raw = getConfigElementValue(matched, 'Duration');
                 if (raw !== undefined && raw !== null && raw !== '' && !isNaN(Number(raw))) {
                     return Math.max(0, Number(raw));
                 }
