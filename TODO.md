@@ -136,8 +136,8 @@ General Items:
     [x] - Remove the "StreamLabs" tab from settings and all related code. This will now be a deprecated feature.
     [] - The "Database Explorer" window does not seem to load SQLite database setups. It works correctly for Firebase.
     [] - For "Game Hooks" there should be an OS detection, that will disable any of the toggles that will not work on the OS the app is currently running on.
-    [] - Check over the PSN game cache system the app has. It either does not work, or does not properly display the cached game data in the UI.
-    [] - Setup the game cache as "cells" similar to the YouTube playlist filter, so users can click to delete a game if they need to reload the cached data.
+    [x] - Check over the PSN game cache system the app has. It either does not work, or does not properly display the cached game data in the UI.
+    [x] - Setup the game cache as "cells" similar to the YouTube playlist filter, so users can click to delete a game if they need to reload the cached data.
     [] - Add a label that displays something like "Not connected? click here to get started:" next to the help icon, if the Twitch service is not connected on the "Twitch" tab in Settings.
     [x] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
     [x] - Add toggles for displaying header text and message text in the alerts template

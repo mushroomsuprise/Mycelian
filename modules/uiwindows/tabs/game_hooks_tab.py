@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Optional, Tuple
 
@@ -34,6 +35,17 @@ _HOOK_ROWS: Tuple[_HookUiDef, ...] = (
 )
 
 
+def _runtime_os_key() -> str:
+    p = sys.platform
+    if p == "win32":
+        return "windows"
+    if p == "darwin":
+        return "darwin"
+    if p.startswith("linux"):
+        return "linux"
+    return "other"
+
+
 class GameHooksTab:
     name = "Game Hooks"
 
@@ -43,6 +55,14 @@ class GameHooksTab:
         self._buffer_ff7_enabled: bool = False
         self._loaded_ff7_enabled: bool = False
         self._status_timer: Optional[Any] = None
+        self._ff7_hook_supported = next(
+            (
+                _runtime_os_key() in h.supported_os
+                for h in _HOOK_ROWS
+                if h.hook_id == "ff7"
+            ),
+            True,
+        )
 
     def _load_from_db(self) -> None:
         raw = database_manager.get_data(_FF7_ENABLED_KEY)
@@ -161,10 +181,16 @@ class GameHooksTab:
                             ):
                                 self._render_os_strip(hdef.supported_os)
                                 if hdef.hook_id == "ff7":
-                                    self.ui_elements["ff7_toggle"] = (
+                                    hook_supported = _runtime_os_key() in hdef.supported_os
+                                    self._ff7_hook_supported = hook_supported
+                                    ff7_switch = (
                                         ui.switch(
                                             hdef.title,
-                                            value=self._buffer_ff7_enabled,
+                                            value=(
+                                                self._buffer_ff7_enabled
+                                                if hook_supported
+                                                else False
+                                            ),
                                         )
                                         .props("left-label")
                                         .classes("min-w-0 grow")
@@ -175,6 +201,9 @@ class GameHooksTab:
                                             ),
                                         )
                                     )
+                                    if not hook_supported:
+                                        ff7_switch.disable()
+                                    self.ui_elements["ff7_toggle"] = ff7_switch
                                     self.ui_elements["ff7_runtime_status_label"] = (
                                         ui.label("").classes(
                                             "text-sm font-medium secondary-text"
@@ -191,6 +220,8 @@ class GameHooksTab:
                 ui.button("Save", on_click=self.save).props("color=primary")
 
     def _on_ff7_toggle(self, value: bool) -> None:
+        if not self._ff7_hook_supported:
+            return
         if value != self._buffer_ff7_enabled:
             self._buffer_ff7_enabled = value
             self.dirty = True
@@ -206,14 +237,18 @@ class GameHooksTab:
 
     def save(self) -> None:
         try:
+            to_save = (
+                self._buffer_ff7_enabled if self._ff7_hook_supported else False
+            )
             ok = database_manager.set_data(
-                _FF7_ENABLED_KEY, {"enabled": bool(self._buffer_ff7_enabled)}
+                _FF7_ENABLED_KEY, {"enabled": to_save}
             )
             if ok:
-                self._loaded_ff7_enabled = bool(self._buffer_ff7_enabled)
+                self._loaded_ff7_enabled = bool(to_save)
+                self._buffer_ff7_enabled = bool(to_save)
                 self.dirty = False
                 ui.notify("Game Hooks saved", type="positive")
-                logger.info("GameHooks: ff7_enabled=%s", self._loaded_ff7_enabled)
+                logger.info("GameHooks: ff7_enabled=%s", to_save)
             else:
                 ui.notify("Failed to save Game Hooks", type="negative")
         except Exception as e:
@@ -225,7 +260,9 @@ class GameHooksTab:
         self._load_from_db()
         t = self.ui_elements.get("ff7_toggle")
         if t is not None:
-            t.value = self._buffer_ff7_enabled
+            t.value = (
+                self._buffer_ff7_enabled if self._ff7_hook_supported else False
+            )
         self._refresh_ff7_runtime_status()
 
 
