@@ -1,0 +1,5 @@
+{
+  "_meta": "Optional overrides: non-empty string values replace kernel table lookups (ff7-lib section 8 = 32 command names, section 9 = 128 attack names; Ultima: magic 0-55, summon 56-71, E.Skill 72-95). Enemies use battle RAM, not this file. Regenerate from a running English PC build: python tools/dump_battle_log_names.py",
+  "commands": {},
+  "attacks_128": {}
+}

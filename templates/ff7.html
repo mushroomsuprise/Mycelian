@@ -307,6 +307,8 @@
         .hp-warn .stat-val { color: var(--ff7-hp-yellow); }
         .hp-dead .stat-val { color: var(--ff7-hp-red); }
 
+        #panelEnemies .hp-cell.hp-ok .stat-val.hp-max { color: var(--ff7-text); }
+
         /* Party row: per-stat colors (dead = name + both HP numbers red; warn = current HP + MP yellow only) */
         .char-name.name-dead {
             color: var(--ff7-hp-red);
@@ -755,6 +757,33 @@
             overflow: hidden;
             box-sizing: border-box;
         }
+
+        #panelBattleLog.panel {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        #panelBattleLog .battle-log-body {
+            flex: 1;
+            min-height: 48px;
+        }
+        .battle-log-body {
+            margin: 0;
+            font-family: inherit;
+            font-size: 11px;
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-y: auto;
+            min-height: 0;
+            color: var(--ff7-text);
+            /* Hide scrollbar (content still scrolls with wheel / touch) */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        .battle-log-body::-webkit-scrollbar {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -803,7 +832,19 @@
                             <span class="slabel stats-r-label">Materia Count</span><span class="sval stats-r-val" id="materiaCountVal">0</span>
                         </div>
                     </div>
+                    <div class="stats-sync-row" id="rowBattleAtb">
+                        <div class="stats-pair stats-pair--contents">
+                            <span class="slabel stats-l-label">ATB mode</span><span class="sval stats-l-val" id="battleAtbVal">—</span>
+                        </div>
+                        <div class="stats-pair stats-pair--contents">
+                            <span class="slabel stats-r-label">Recent item</span><span class="sval stats-r-val" id="recentItemVal">—</span>
+                        </div>
+                    </div>
                 </div>
+            </div>
+            <div id="panelBattleLog" class="panel hidden">
+                <div id="battleLogPanelTitle" class="panel-title">Battle log</div>
+                <pre id="battleLogBody" class="battle-log-body"></pre>
             </div>
             <div id="panelBosses" class="panel hidden">
                 <div id="bossPanelTitle" class="panel-title">Bosses</div>
@@ -818,8 +859,6 @@
         let ff7PayloadCount = 0;
         let ff7LastThrottleLog = 0;
         let socket = null;
-        let battleOffTicks = 0;
-        const BATTLE_HIDE_THRESHOLD = 4;
 
         if (FF7_DEBUG) {
             document.getElementById('statusLine').classList.add('visible');
@@ -829,7 +868,10 @@
             if (!d) return null;
             return {
                 attached: d.attached, disabled: d.disabled, error: d.error,
-                battle: d.battle, current_module: d.current_module, gil: d.gil,
+                battle: d.battle,
+                battle_ui: d.battle_ui,
+                current_module: d.current_module,
+                gil: d.gil,
                 playtime_text: d.playtime_text,
                 partyLen: (d.party || []).length, enemiesLen: (d.enemies || []).length,
                 debug: d.debug
@@ -854,6 +896,21 @@
             if (v === undefined || v === null) return defaultTrue;
             if (typeof v === 'string') return v !== 'false' && v !== '0';
             return Boolean(v);
+        }
+
+        /** After DOM/text updates, keep scroll at bottom (tail-follow). */
+        function scrollElementToBottom(el) {
+            if (!el) return;
+            var run = function () {
+                el.scrollTop = el.scrollHeight;
+            };
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(run);
+                });
+            } else {
+                setTimeout(run, 0);
+            }
         }
 
         function ff7PartySlot(actor) {
@@ -1276,7 +1333,7 @@
         function updateFf7Rotors() {
             var st = window._ff7RenderState;
             if (!st || !st.d || !st.d.attached) return;
-            var battle = st.d.battle;
+            var battle = typeof st.d.battle_ui === 'boolean' ? st.d.battle_ui : st.d.battle;
             var party = st.d.party || [];
             var enemies = st.d.enemies || [];
 
@@ -1361,6 +1418,15 @@
             return true;
         }
 
+        function ff7BattleAtbLabel(mode, ram) {
+            var m = mode != null ? String(mode).toLowerCase() : '';
+            if (m === 'wait') return 'Wait';
+            if (m === 'recommended') return 'Recommended';
+            if (m === 'active') return 'Active';
+            if (ram !== undefined && ram !== null && !isNaN(Number(ram))) return 'Battle RAM ' + String(ram);
+            return '—';
+        }
+
         function recordsPanelVisible() {
             if (!asBool(cfg.ShowStats, true)) return false;
             var gil = cfg.ShowGil !== undefined ? asBool(cfg.ShowGil, true) : asBool(cfg.ShowStats, true);
@@ -1369,7 +1435,9 @@
             var md = asBool(cfg.ShowModuleName, true);
             var av = asBool(cfg.ShowAvgPartyLevel, true);
             var mc = asBool(cfg.ShowMateriaCount, true);
-            return gil || tm || fd || md || av || mc;
+            var ba = asBool(cfg.ShowBattleAtbMode, true);
+            var ri = asBool(cfg.ShowRecentItem, true);
+            return gil || tm || fd || md || av || mc || ba || ri;
         }
 
         function applyTemplateConfig(c) {
@@ -1377,14 +1445,16 @@
                 ShowParty: true, ShowEnemies: true, ShowStats: true, ShowBosses: true,
                 ShowGil: true, ShowPlaytime: true, ShowFieldName: true, ShowModuleName: true,
                 ShowAvgPartyLevel: true, ShowMateriaCount: true,
+                ShowBattleAtbMode: true, ShowRecentItem: true, ShowBattleLog: false,
                 BossDisplayMode: 'list',
                 BossCountLabel: 'Defeated',
                 BossLastLabel: 'Last',
-                GridColumns: 2, GridRows: 2, GridGap: 8,
+                GridColumns: 2, GridRows: 4, GridGap: 8,
                 PartyGridRow: 1, PartyGridCol: 1, PartyRowSpan: 1, PartyColSpan: 1,
                 EnemiesGridRow: 1, EnemiesGridCol: 2, EnemiesRowSpan: 1, EnemiesColSpan: 1,
                 StatsGridRow: 2, StatsGridCol: 1, StatsRowSpan: 1, StatsColSpan: 1,
-                BossesGridRow: 2, BossesGridCol: 2, BossesRowSpan: 1, BossesColSpan: 1,
+                BattleLogGridRow: 3, BattleLogGridCol: 1, BattleLogRowSpan: 1, BattleLogColSpan: 1,
+                BossesGridRow: 4, BossesGridCol: 1, BossesRowSpan: 1, BossesColSpan: 1,
                 PartyTitleFontSize: 11, PartyNameFontSize: 15,
                 PartyHPFontSize: 14, PartyMPFontSize: 14,
                 PartyHPBarHeight: 4, PartyMPBarHeight: 4,
@@ -1397,6 +1467,7 @@
                 EnemiesTimeBarHeight: 8,
                 EnemyBattleRotateMs: 3500,
                 StatsTitleFontSize: 11, StatsLabelFontSize: 11, StatsValueFontSize: 15,
+                BattleLogFontSize: 11, BattleLogMaxLines: 40, BattleLogVisibleRows: 8,
                 BossesTitleText: 'Bosses',
                 ShowBossesTitle: true,
                 BossesTitleFontSize: 11, BossesTextFontSize: 13
@@ -1410,13 +1481,20 @@
             document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
             document.getElementById('panelStats').classList.toggle('hidden', !recordsPanelVisible());
             document.getElementById('panelBosses').classList.toggle('hidden', !asBool(cfg.ShowBosses, true));
+            var epan = document.getElementById('panelEnemies');
             if (!asBool(cfg.ShowEnemies, true)) {
-                document.getElementById('panelEnemies').classList.add('hidden');
+                epan.classList.add('hidden');
+            }
+            /* When enabled, do not remove .hidden — renderPayload owns battle visibility. */
+            var blpan = document.getElementById('panelBattleLog');
+            if (!asBool(cfg.ShowBattleLog, false)) {
+                blpan.classList.add('hidden');
             }
 
             applyGrid(document.getElementById('panelParty'), cfg.PartyGridRow, cfg.PartyGridCol, cfg.PartyRowSpan, cfg.PartyColSpan);
             applyGrid(document.getElementById('panelEnemies'), cfg.EnemiesGridRow, cfg.EnemiesGridCol, cfg.EnemiesRowSpan, cfg.EnemiesColSpan);
             applyGrid(document.getElementById('panelStats'), cfg.StatsGridRow, cfg.StatsGridCol, cfg.StatsRowSpan, cfg.StatsColSpan);
+            applyGrid(blpan, cfg.BattleLogGridRow, cfg.BattleLogGridCol, cfg.BattleLogRowSpan, cfg.BattleLogColSpan);
             applyGrid(document.getElementById('panelBosses'), cfg.BossesGridRow, cfg.BossesGridCol, cfg.BossesRowSpan, cfg.BossesColSpan);
 
             var pp = document.getElementById('panelParty');
@@ -1450,6 +1528,17 @@
             sp.style.setProperty('--title-font', num(cfg.StatsTitleFontSize, 11) + 'px');
             sp.style.setProperty('--stats-label-font', num(cfg.StatsLabelFontSize, 11) + 'px');
             sp.style.setProperty('--stats-value-font', num(cfg.StatsValueFontSize, 15) + 'px');
+            blpan.style.setProperty('--title-font', num(cfg.StatsTitleFontSize, 11) + 'px');
+            var blb = document.getElementById('battleLogBody');
+            if (blb) {
+                var blFs = num(cfg.BattleLogFontSize, 11);
+                var blVis = num(cfg.BattleLogVisibleRows, 8);
+                if (blVis < 1) blVis = 1;
+                if (blVis > 80) blVis = 80;
+                blb.style.fontSize = blFs + 'px';
+                blb.style.lineHeight = '1.35';
+                blb.style.maxHeight = (blFs * 1.35 * blVis) + 'px';
+            }
 
             var bp = document.getElementById('panelBosses');
             bp.style.setProperty('--title-font', num(cfg.BossesTitleFontSize, 11) + 'px');
@@ -1471,6 +1560,10 @@
             document.getElementById('rowModule').classList.toggle('hidden', !asBool(cfg.ShowModuleName, true));
             document.getElementById('rowAvgLevel').classList.toggle('hidden', !asBool(cfg.ShowAvgPartyLevel, true));
             document.getElementById('rowMateriaCount').classList.toggle('hidden', !asBool(cfg.ShowMateriaCount, true));
+            var rba = document.getElementById('rowBattleAtb');
+            if (rba) rba.classList.toggle('hidden', !asBool(cfg.ShowBattleAtbMode, true));
+            var rri = document.getElementById('rowRecentItem');
+            if (rri) rri.classList.toggle('hidden', !asBool(cfg.ShowRecentItem, true));
 
             ff7EnsureRotorTimer();
         }
@@ -1602,15 +1695,23 @@
                 var mp = actor.mp || 0;
                 var hpPctVal = hpPct(hp, maxHp);
                 var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
-                var state = hpState(hp, maxHp);
+                var dead = hp <= 0;
+                var lowHp = !dead && maxHp > 0 && (hp / maxHp) < 0.25;
+                var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
 
+                var nameWrap = row.querySelector('.char-name');
+                if (nameWrap) {
+                    nameWrap.className = 'char-name' + (dead ? ' name-dead' : '');
+                }
                 var hpCell = row.querySelector('.stat-cell.hp-cell');
                 if (hpCell) {
-                    hpCell.className = 'stat-cell hp-cell ' + state;
+                    hpCell.className = hpCellClass;
                     var hpVals = hpCell.querySelectorAll('.stat-val');
                     if (hpVals.length >= 2) {
                         hpVals[0].textContent = String(hp);
                         hpVals[1].textContent = String(maxHp);
+                        hpVals[0].className = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
+                        hpVals[1].className = 'stat-val hp-max' + (dead ? ' val-dead' : '');
                     }
                     var hpFill = hpCell.querySelector('.ff7-hpbar .fill');
                     if (hpFill) hpFill.style.width = hpPctVal + '%';
@@ -1800,13 +1901,17 @@
             var mp = actor.mp || 0;
             var hpPctVal = hpPct(hp, maxHp);
             var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
-            var state = hpState(hp, maxHp);
+            var dead = hp <= 0;
+            var lowHp = !dead && maxHp > 0 && (hp / maxHp) < 0.25;
+            var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
+            var curCls = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
+            var maxCls = 'stat-val hp-max' + (dead ? ' val-dead' : '');
 
             var row = document.createElement('div');
             row.className = 'char-row';
 
             var nameEl = document.createElement('div');
-            nameEl.className = 'char-name';
+            nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
             var nameInner = document.createElement('span');
             nameInner.className = 'enemy-name-text';
             nameInner.textContent = actor.name || '?';
@@ -1814,12 +1919,12 @@
             row.appendChild(nameEl);
 
             var hpCell = document.createElement('div');
-            hpCell.className = 'stat-cell hp-cell ' + state;
+            hpCell.className = hpCellClass;
             hpCell.innerHTML =
                 '<div class="stat-values">' +
-                    '<span class="stat-val">' + hp + '</span>' +
+                    '<span class="' + curCls + '">' + hp + '</span>' +
                     '<span class="stat-sep">/</span>' +
-                    '<span class="stat-val">' + maxHp + '</span>' +
+                    '<span class="' + maxCls + '">' + maxHp + '</span>' +
                 '</div>' +
                 '<div class="ff7-hpbar"><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
             row.appendChild(hpCell);
@@ -1883,7 +1988,11 @@
                 }
             }
 
-            if (d.disabled || d.error || !d.attached) return;
+            if (d.disabled || d.error || !d.attached) {
+                document.getElementById('panelEnemies').classList.add('hidden');
+                document.getElementById('panelBattleLog').classList.add('hidden');
+                return;
+            }
 
             /* menu_theme: server prefers live display RAM (same layout as in-game menu); savemap fallback if read fails. */
             var mt = d.menu_theme;
@@ -1909,6 +2018,8 @@
                     });
                 }
             }
+
+            document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
 
             var partyEl = document.getElementById('partyBody');
             if (typeof window._ff7PartyDomKey === 'undefined') {
@@ -1941,19 +2052,15 @@
 
             var enemyEl = document.getElementById('enemyBody');
             var showEnemies = asBool(cfg.ShowEnemies, true);
-            var hasEnemies = d.battle && Array.isArray(d.enemies) && d.enemies.length > 0;
 
-            if (hasEnemies) {
-                battleOffTicks = 0;
-            } else {
-                battleOffTicks++;
-            }
+            /* Server ``battle_ui`` latches combat for overlay; raw ``battle`` stays instant for logic. */
+            var showBattleUi = typeof d.battle_ui === 'boolean' ? d.battle_ui : d.battle;
+
+            var hasEnemies = showBattleUi && Array.isArray(d.enemies) && d.enemies.length > 0;
 
             var enemyListRebuilt = false;
-            if (!showEnemies || !hasEnemies) {
-                window._ff7EnemyDomKey = '';
-                enemyEl.innerHTML = '';
-            } else {
+            var hideEnemyPanel = !showEnemies || !showBattleUi;
+            if (showEnemies && hasEnemies) {
                 var domKey = ff7EnemiesDomKey(d.enemies);
                 var needRebuild =
                     domKey !== window._ff7EnemyDomKey ||
@@ -1968,12 +2075,14 @@
                 } else {
                     patchEnemyRowStats(enemyEl, d.enemies);
                 }
+            } else if (hideEnemyPanel) {
+                window._ff7EnemyDomKey = '';
+                enemyEl.innerHTML = '';
             }
             window._ff7RenderState = { d: d };
             updateFf7Rotors();
 
-            document.getElementById('panelEnemies').classList.toggle('hidden',
-                !showEnemies || battleOffTicks >= BATTLE_HIDE_THRESHOLD);
+            document.getElementById('panelEnemies').classList.toggle('hidden', hideEnemyPanel);
 
             if (enemyListRebuilt) {
                 scheduleRefreshEnemyNameMarquees();
@@ -2021,6 +2130,37 @@
                     document.getElementById('materiaCountVal').textContent =
                         mt !== undefined && mt !== null && !isNaN(Number(mt)) ? String(Math.max(0, Math.floor(Number(mt)))) : '0';
                 }
+                if (asBool(cfg.ShowBattleAtbMode, true)) {
+                    var atbEl = document.getElementById('battleAtbVal');
+                    if (atbEl) {
+                        atbEl.textContent = ff7BattleAtbLabel(d.battle_atb_mode, d.battle_mode_ram);
+                    }
+                }
+                if (asBool(cfg.ShowRecentItem, true)) {
+                    var riEl = document.getElementById('recentItemVal');
+                    if (riEl) {
+                        var ri = d.recent_item;
+                        if (ri && ri.name) {
+                            var dlt = ri.delta != null ? Number(ri.delta) : 0;
+                            riEl.textContent = ri.name + (dlt ? ' +' + String(dlt) : '');
+                        } else {
+                            riEl.textContent = '—';
+                        }
+                    }
+                }
+            }
+
+            var blogPan = document.getElementById('panelBattleLog');
+            var blogBody = document.getElementById('battleLogBody');
+            var showBlog = asBool(cfg.ShowBattleLog, false);
+            var hideBlog = !showBlog || !showBattleUi;
+            if (blogPan) blogPan.classList.toggle('hidden', hideBlog);
+            if (blogBody && showBlog && showBattleUi) {
+                var lines = Array.isArray(d.battle_log) ? d.battle_log : [];
+                var maxL = num(cfg.BattleLogMaxLines, 40);
+                var use = lines.length > maxL ? lines.slice(-maxL) : lines;
+                blogBody.textContent = use.length ? use.join('\n') : '—';
+                scrollElementToBottom(blogBody);
             }
 
             var bossBody = document.getElementById('bossBody');

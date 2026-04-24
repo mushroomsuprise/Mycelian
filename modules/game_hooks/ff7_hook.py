@@ -61,6 +61,31 @@ ADDR_WORLD_BATTLE_FLAG2 = 0x00969950
 ADDR_WORLD_BATTLE_FLAG3 = 0x00E3A884
 ADDR_WORLD_MODE = 0x00E045E4
 ADDR_WORLD_BATTLE_FLAG4 = 0x00E045E4  # ff7-lib addresses.rs world_battle_flag4
+# ff7-lib addresses.rs — battle context byte (read-only for overlay; do not write piecemeal)
+ADDR_BATTLE_MODE = 0x009AAD64
+ADDR_BATTLE_PARTY_ITEMS = 0x009AC354
+# ff7-lib — current battle action queue (8 bytes) and battle state object pointer
+ADDR_BATTLE_QUEUE = 0x009A9884
+ADDR_BATTLE_OBJ_PTR = 0x0099CE0C
+# Kernel text tables (ff7-lib addresses.rs) for battle log command names
+ADDR_KERNEL_READ_FN_CALL = 0x00419458
+ADDR_KERNEL_SECTION_OFFSETS = 0x009A7FC8
+ADDR_KERNEL_TEXTS_BASE = 0x009A13C8
+ADDR_ENEMY_ATTACK_NAMES = 0x009A9484
+
+# Battle inventory: 320 slots × 6 bytes (ff7-ultima useFF7 addItem; U16 id, u8 qty @ +2, …)
+BATTLE_PARTY_ITEMS_SLOT_STRIDE = 6
+BATTLE_PARTY_ITEMS_NUM_SLOTS = 0x140  # 320 decimal
+BATTLE_PARTY_ITEMS_BLOB_SIZE = BATTLE_PARTY_ITEMS_NUM_SLOTS * BATTLE_PARTY_ITEMS_SLOT_STRIDE
+
+# Savemap config — ff7-flat-wiki Savemap (PC English RAM save crystal)
+SAVE_OFF_BATTLE_SPEED = 0x10D8
+SAVE_OFF_BATTLE_MSG_SPEED = 0x10D9
+SAVE_OFF_GENERAL_CONFIG = 0x10DA  # packs sound/controller/cursor + ATB high bits
+SAVEMAP_ATB_MASK = 0xC0  # bits 6–7: Active 0x00, Recommended 0x40, Wait 0x80
+
+# ``current_module == 2`` can glitch during combat; latch ``battle_ui`` for overlay autohide.
+_BATTLE_UI_OFF_POLL_TICKS = 2  # game_hooks_service polls ~250ms → ~4s sustained non-battle
 
 # Live window palette + RAM mirror (InteractiveSeven Core/FinalFantasy/Addresses.cs).
 # Display: 16 bytes, four corners × (B, G, R, 0x80). Order: upper-left, lower-left, upper-right, lower-right.
@@ -201,6 +226,10 @@ _WEAPON_NAMES_EN: Dict[str, str] = {}
 _ARMOR_NAMES_EN: Dict[str, str] = {}
 _ACCESSORY_NAMES_EN: Dict[str, str] = {}
 _ITEM_NAMES_EN: Dict[str, str] = {}
+# Optional overrides for battle log: kernel section 8=commands(32), 9=attack names(128) — see ff7-lib.
+_BATTLE_LOG_CMD_EN: Dict[str, str] = {}
+_BATTLE_LOG_ATK128_EN: Dict[str, str] = {}
+_BATTLE_LOG_NAME_ASSETS_LOADED = False
 _GEAR_LAYOUT_ASSETS_LOADED = False
 
 _EQUIP_ALLOW: Dict[str, Any] = {}
@@ -246,6 +275,36 @@ def _allowed_ids_for_char_gear(char_id: int, kind: str) -> Optional[Set[int]]:
     return out if out else set()
 
 
+def _load_battle_log_name_assets() -> None:
+    """Load optional battle_log_names_en.json: {"commands": {"0": "…"}, "attacks_128": {"0": "…"}."""
+    global _BATTLE_LOG_NAME_ASSETS_LOADED, _BATTLE_LOG_CMD_EN, _BATTLE_LOG_ATK128_EN
+    if _BATTLE_LOG_NAME_ASSETS_LOADED:
+        return
+    _BATTLE_LOG_NAME_ASSETS_LOADED = True
+    path = _GEAR_ASSET_DIR / "battle_log_names_en.json"
+    if not path.is_file():
+        return
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("battle_log_names_en.json unreadable: %s", e)
+        return
+    if not isinstance(raw, dict):
+        return
+    c = raw.get("commands")
+    a = raw.get("attacks_128")
+    if isinstance(c, dict):
+        _BATTLE_LOG_CMD_EN.clear()
+        for k, v in c.items():
+            if v is not None and str(v).strip():
+                _BATTLE_LOG_CMD_EN[str(k)] = str(v).strip()
+    if isinstance(a, dict):
+        _BATTLE_LOG_ATK128_EN.clear()
+        for k, v in a.items():
+            if v is not None and str(v).strip():
+                _BATTLE_LOG_ATK128_EN[str(k)] = str(v).strip()
+
+
 def _load_ff7_gear_layout_assets() -> None:
     """Load weapon/armor slot-type maps, materia names, orb colors, and English gear names from JSON."""
     global _GEAR_LAYOUT_ASSETS_LOADED
@@ -285,6 +344,7 @@ def _load_ff7_gear_layout_assets() -> None:
         if ipath.is_file():
             _ITEM_NAMES_EN.clear()
             _ITEM_NAMES_EN.update(json.loads(ipath.read_text(encoding="utf-8")))
+        _load_battle_log_name_assets()
     except OSError as e:
         logger.warning("FF7 layout/materia name assets unreadable: %s", e)
 
@@ -417,6 +477,56 @@ def _gear_display_name(table: Dict[str, str], idx: int, hi: int) -> str:
     if idx < 0 or idx > hi or idx == 0xFF:
         return ""
     return (table.get(str(idx), "") or "").strip()
+
+
+def _battle_log_cmd_display(cmd_id: int, cmds_ram: List[str]) -> str:
+    _load_battle_log_name_assets()
+    i = int(cmd_id) & 0xFF
+    s = _BATTLE_LOG_CMD_EN.get(str(i), "").strip()
+    if s:
+        return s
+    if 0 <= i < len(cmds_ram) and (cmds_ram[i] or "").strip():
+        return (cmds_ram[i] or "").strip()
+    return ""
+
+
+def _battle_log_atk_display(idx: int, atks_ram: List[str]) -> str:
+    _load_battle_log_name_assets()
+    j = int(idx)
+    s = _BATTLE_LOG_ATK128_EN.get(str(j), "").strip()
+    if s:
+        return s
+    if 0 <= j < len(atks_ram) and (atks_ram[j] or "").strip():
+        return (atks_ram[j] or "").strip()
+    return ""
+
+
+def _ff7_unified_item_name(item_id: int) -> str:
+    """
+    English name for the unified 0x000..0x13F item id space: consumables, then
+    weapons, armor, accessories (same as ``party_add_item_fn`` / kernel item table).
+    """
+    _load_ff7_gear_layout_assets()
+    i = int(item_id) & 0xFFFF
+    if i < 0 or i > INV_ITEM_MAX_ID:
+        return f"Item {i}"
+    if i < ITEM_ID_WEAPON_BASE:
+        s = (_ITEM_NAMES_EN.get(str(i), "") or "").strip()
+        return s or f"Item {i}"
+    if i < ITEM_ID_ARMOR_BASE:
+        s = (
+            _WEAPON_NAMES_EN.get(str(i - ITEM_ID_WEAPON_BASE), "") or ""
+        ).strip()
+        return s or f"Item {i}"
+    if i < ITEM_ID_ACCESSORY_BASE:
+        s = (
+            _ARMOR_NAMES_EN.get(str(i - ITEM_ID_ARMOR_BASE), "") or ""
+        ).strip()
+        return s or f"Item {i}"
+    s = (
+        _ACCESSORY_NAMES_EN.get(str(i - ITEM_ID_ACCESSORY_BASE), "") or ""
+    ).strip()
+    return s or f"Item {i}"
 
 
 def _parse_materia_block(rec: bytes, base: int, n_slots: int = 8) -> List[Dict[str, Any]]:
@@ -556,10 +666,36 @@ def _savemap_party_slot_level(savemap: bytes, party_slot: int) -> int:
     return int(savemap[off + 0x01])
 
 
+def _savemap_party_slot_empty(savemap: bytes, party_slot: int) -> bool:
+    if party_slot < 0 or party_slot > 2 or len(savemap) <= SAVE_OFF_PARTY_SLOTS + party_slot:
+        return True
+    cid = savemap[SAVE_OFF_PARTY_SLOTS + party_slot]
+    return cid >= len(_CHAR_BLOCK) or cid == 0xFF
+
+
+def _decode_savemap_atb_mode(byte_val: int) -> str:
+    """ATB setting from savemap 0x10DA (bits 6–7 per ff7-flat-wiki)."""
+    b = int(byte_val) & SAVEMAP_ATB_MASK
+    if b == 0x80:
+        return "wait"
+    if b == 0x40:
+        return "recommended"
+    return "active"
+
+
+def _encode_savemap_atb_mode(mode: str) -> int:
+    m = (mode or "").strip().lower()
+    if m in ("wait", "w"):
+        return 0x80
+    if m in ("recommended", "recommend", "mid", "m"):
+        return 0x40
+    return 0x00  # active
+
+
 def _records_party_aggregates(
     party: List[Dict[str, Any]], savemap: Optional[bytes]
 ) -> Tuple[int, int]:
-    """Avg level (round(sum/3), empty slots 0) and total equipped materia for party slots 0–2."""
+    """Average level over occupied party slots only; materia on active trio savemap slots only."""
     by_slot: Dict[int, Dict[str, Any]] = {}
     for row in party:
         ps = _party_row_party_slot(row)
@@ -568,18 +704,26 @@ def _records_party_aggregates(
     levels: List[int] = []
     materia_total = 0
     for ps in range(3):
+        if savemap and _savemap_party_slot_empty(savemap, ps):
+            continue
         if ps in by_slot:
             row = by_slot[ps]
-            levels.append(int(row.get("level", 0) or 0))
+            lv = int(row.get("level", 0) or 0)
+            if lv > 0:
+                levels.append(lv)
+            elif savemap:
+                slv = _savemap_party_slot_level(savemap, ps)
+                if slv > 0:
+                    levels.append(slv)
             materia_total += _count_equipped_materia_in_row(row)
         elif savemap:
-            levels.append(_savemap_party_slot_level(savemap, ps))
+            slv = _savemap_party_slot_level(savemap, ps)
+            if slv > 0:
+                levels.append(slv)
             gear = _party_gear_from_savemap(savemap, ps)
             if gear:
                 materia_total += _count_equipped_materia_in_row(gear)
-        else:
-            levels.append(0)
-    avg = round(sum(levels) / 3) if levels else 0
+    avg = round(sum(levels) / len(levels)) if levels else 0
     return avg, materia_total
 
 
@@ -1196,7 +1340,7 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "set_menu_row_access",
         "label": "Toggle Menu Access",
-        "description": "Show and unlock a main-menu row, or hide and lock it.",
+        "description": "Show and unlock a main-menu row, or hide and lock it. Optional duration_sec reverts visibility+locks.",
         "args": [
             {
                 "name": "menu_name",
@@ -1212,6 +1356,54 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
                     "allow": "Allow (visible + unlocked)",
                     "block": "Block (hidden + locked)",
                 },
+            },
+            {
+                "name": "duration_sec",
+                "type": "non_negative_int",
+                "label": "Auto-revert after (seconds, 0 = keep)",
+                "hint_tags": ("numeric",),
+            },
+        ],
+    },
+    {
+        "id": "set_menu_visibility",
+        "label": "Set menu row visibility",
+        "description": "Show or hide one main-menu row. Optional duration_sec restores prior visibility+lock words.",
+        "args": [
+            {"name": "menu_name", "type": "ff7_text", "label": "Menu row"},
+            {
+                "name": "enabled",
+                "type": "ff7_text",
+                "label": "Visible",
+                "control": "select",
+                "options": {"1": "Show", "0": "Hide"},
+            },
+            {
+                "name": "duration_sec",
+                "type": "non_negative_int",
+                "label": "Auto-revert after (seconds, 0 = keep)",
+                "hint_tags": ("numeric",),
+            },
+        ],
+    },
+    {
+        "id": "set_menu_lock",
+        "label": "Set menu row lock",
+        "description": "Lock or unlock one main-menu row. Optional duration_sec restores prior visibility+lock words.",
+        "args": [
+            {"name": "menu_name", "type": "ff7_text", "label": "Menu row"},
+            {
+                "name": "locked",
+                "type": "ff7_text",
+                "label": "Locked",
+                "control": "select",
+                "options": {"1": "Lock", "0": "Unlock"},
+            },
+            {
+                "name": "duration_sec",
+                "type": "non_negative_int",
+                "label": "Auto-revert after (seconds, 0 = keep)",
+                "hint_tags": ("numeric",),
             },
         ],
     },
@@ -1231,6 +1423,60 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
                 "name": "duration_sec",
                 "type": "non_negative_int",
                 "label": "Auto-restore after (seconds, 0 = keep)",
+                "hint_tags": ("numeric",),
+            },
+        ],
+    },
+    {
+        "id": "set_battle_speed",
+        "label": "Battle speed (savemap)",
+        "description": "Config-menu battle speed (ATB charge rate), savemap 0x10D8: 0=fastest … 255=slowest. Names: fastest/fast/normal/slow/slowest or 0–255.",
+        "args": [
+            {
+                "name": "speed",
+                "type": "ff7_text",
+                "label": "Speed (byte, name, or 0–255)",
+            },
+            {
+                "name": "duration_sec",
+                "type": "non_negative_int",
+                "label": "Auto-restore after (seconds, 0 = keep)",
+                "hint_tags": ("numeric",),
+            },
+        ],
+    },
+    {
+        "id": "set_battle_atb_mode",
+        "label": "Battle ATB mode (savemap)",
+        "description": "Active, Wait, or Recommended — savemap general byte 0x10DA bits 6–7 (ff7-flat-wiki).",
+        "args": [
+            {
+                "name": "mode",
+                "type": "ff7_text",
+                "label": "Mode (active / wait / recommended)",
+            },
+            {
+                "name": "duration_sec",
+                "type": "non_negative_int",
+                "label": "Auto-restore after (seconds, 0 = keep)",
+                "hint_tags": ("numeric",),
+            },
+        ],
+    },
+    {
+        "id": "set_infinite_items",
+        "label": "Battle infinite items (experimental)",
+        "description": "When enabled, tops up battle item quantities (RAM at ff7-lib battle_party_items). duration_sec 0 or None = until disabled. Text 'none' for duration = permanent timer side.",
+        "args": [
+            {
+                "name": "enabled",
+                "type": "ff7_text",
+                "label": "Enabled (1/0)",
+            },
+            {
+                "name": "duration_sec",
+                "type": "ff7_text",
+                "label": "Seconds until auto-off (0 / none / empty = keep)",
                 "hint_tags": ("numeric",),
             },
         ],
@@ -1434,6 +1680,36 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         ],
     },
     {
+        "id": "restore_menu_words",
+        "label": "Restore menu u16 words (internal)",
+        "description": "Restores menu visibility/lock masks captured before a timed connector change.",
+        "args": [],
+        "internal": True,
+    },
+    {
+        "id": "restore_battle_speed",
+        "label": "Restore battle speed byte (internal)",
+        "description": "Writes previous savemap battle speed byte.",
+        "args": [{"name": "prev_byte", "type": "non_negative_int", "label": "Previous byte"}],
+        "internal": True,
+    },
+    {
+        "id": "restore_battle_atb_mode",
+        "label": "Restore ATB config byte (internal)",
+        "description": "Writes previous savemap 0x10DA byte.",
+        "args": [
+            {"name": "prev_config_byte", "type": "non_negative_int", "label": "Previous byte"}
+        ],
+        "internal": True,
+    },
+    {
+        "id": "restore_infinite_items",
+        "label": "Disable infinite battle items (internal)",
+        "description": "Restores battle_party_items RAM snapshot.",
+        "args": [],
+        "internal": True,
+    },
+    {
         "id": "restore_game_speed",
         "label": "Restore game speed (internal)",
         "description": "Restores FPS saved by Game speed. Used by timers; not shown in the operation list.",
@@ -1491,6 +1767,27 @@ class FF7Hook:
         self._last_snapshot: Optional[Dict[str, Any]] = None
         self._speed_backup: Optional[Dict[str, Any]] = None
         self._pending_battle_id: Optional[int] = None
+        self._post_success_timed: List[Tuple[str, Dict[str, Any], int]] = []
+        self._battle_speed_restore_byte: Optional[int] = None
+        self._infinite_items_active = False
+        self._infinite_items_backup: Optional[bytes] = None
+        self._infinite_items_backup_len = 0
+        self._prev_inventory_sig: Optional[bytes] = None
+        self._prev_gil_for_items: Optional[int] = None
+        self._last_item_gain: Optional[Dict[str, Any]] = None
+        self._battle_log_lines: List[str] = []
+        self._prev_battle_status: Dict[str, int] = {}
+        self._battle_log_seen: Set[Tuple[int, int]] = set()
+        self._bl_name_cache: Optional[Dict[str, Any]] = None
+        self._was_in_battle = False
+        self._battle_ui_latched: bool = False
+        self._battle_ui_off_ticks: int = 0
+
+    def consume_timed_schedules(self) -> List[Tuple[str, Dict[str, Any], int]]:
+        """Pop (restore_op, kwargs, delay_sec) entries queued by the last successful write."""
+        out = list(self._post_success_timed)
+        self._post_success_timed.clear()
+        return out
 
     def close(self) -> None:
         if sys.platform != "win32" or _kernel32 is None:
@@ -1502,6 +1799,9 @@ class FF7Hook:
             except Exception:
                 pass
         self._proc = None
+        self._battle_ui_latched = False
+        self._battle_ui_off_ticks = 0
+        self._bl_name_cache = None
 
     def _find_pid(self) -> Optional[int]:
         try:
@@ -1715,6 +2015,262 @@ class FF7Hook:
         d = self._read(addr, 4)
         return struct.unpack("<i", d)[0] if d else None
 
+    def _read_kernel_name_string(self, addr: int, max_len: int) -> str:
+        """FF7 kernel text: bytes until 0xFF, same encoding as _decode_ff7_name."""
+        if not self._proc or addr <= 0:
+            return ""
+        raw = self._read(addr, max_len)
+        if not raw:
+            return ""
+        for i, b in enumerate(raw):
+            if b == 0xFF:
+                raw = raw[:i]
+                break
+        return _decode_ff7_name(bytes(raw)) if raw else ""
+
+    def _read_kernel_section_strings(self, section_id: int, count: int) -> List[str]:
+        """Port of ff7-lib read_kernel_section (command/attack name tables)."""
+        if not self._proc or count <= 0:
+            return []
+        mb = self._proc.module_base
+        base = _rebase(mb, ADDR_KERNEL_TEXTS_BASE)
+        # FFNx sets this dword to 0; vanilla is non-zero. Do not use "or 1" — 0 is valid (ff7-lib).
+        ffnx_check = self._read_u32(base)
+        if ffnx_check is None:
+            return []
+        if ffnx_check == 0:
+            kc = _rebase(mb, ADDR_KERNEL_READ_FN_CALL)
+            w = self._read_u32(kc) or 0
+            kread = int(w) + kc + 4
+            tbl = self._read_u32(kread + 0x1B) or 0
+            if tbl == 0:
+                return []
+            table_addr = int(self._read_u32(tbl + 4 * int(section_id)) or 0)
+        else:
+            off = int(self._read_u16(_rebase(mb, ADDR_KERNEL_SECTION_OFFSETS) + 2 * int(section_id)) or 0)
+            table_addr = int(base) + off
+        if table_addr == 0:
+            return []
+        out: List[str] = []
+        for i in range(int(count)):
+            rel = int(self._read_u16(table_addr + i * 2) or 0)
+            saddr = int(table_addr) + rel
+            out.append(self._read_kernel_name_string(saddr, 24))
+        return out
+
+    def _read_enemy_display_attack_names_32(self) -> List[str]:
+        """
+        ff7-lib read_enemy_attack_names: 32 display slots at ADDR_ENEMY_ATTACK_NAMES.
+        These are overwritten during battle; do not cache for multi-second periods.
+        """
+        if not self._proc:
+            return []
+        out: List[str] = []
+        try:
+            base = _rebase(self._proc.module_base, ADDR_ENEMY_ATTACK_NAMES)
+            for i in range(32):
+                b0 = self._read_u8(base + i * 32)
+                if b0 is not None and b0 == 0xFF:
+                    out.append("")
+                else:
+                    out.append(self._read_kernel_name_string(base + i * 32, 32))
+        except Exception as e:
+            logger.debug("enemy display names 32: %s", e)
+        return out
+
+    def _ensure_battle_log_names(self) -> None:
+        if self._bl_name_cache is not None:
+            return
+        cache: Dict[str, Any] = {"command": [], "attack": []}
+        if not self._proc:
+            self._bl_name_cache = cache
+            return
+        try:
+            cache["command"] = self._read_kernel_section_strings(8, 32)
+            cache["attack"] = self._read_kernel_section_strings(9, 128)
+        except Exception as e:
+            logger.debug("battle log name cache: %s", e)
+        self._bl_name_cache = cache
+
+    def _format_battle_command_text(self, command_id: int, parameter: int) -> str:
+        _ensure = self._ensure_battle_log_names
+        _ensure()
+        c = self._bl_name_cache or {}
+        cmds: List[str] = list(c.get("command", []))
+        atks: List[str] = list(c.get("attack", []))
+        cid = int(command_id) & 0xFF
+        base_name = _battle_log_cmd_display(cid, cmds) or f"cmd 0x{cid:02X}"
+        if command_id == 0x23:
+            return "Poison"
+        if command_id == 0x02 and 0 <= parameter < 56:
+            t = _battle_log_atk_display(int(parameter), atks)
+            return t or f"Magic {parameter}"
+        if command_id == 0x02:
+            return f"Magic {parameter}"
+        if command_id == 0x03:
+            t = _battle_log_atk_display(int(parameter) + 56, atks)
+            return t or f"Summon {parameter}"
+        if command_id == 0x04:
+            return _ff7_unified_item_name(int(parameter) & 0xFFFF)
+        if command_id == 0x0D and 0 <= (parameter + 72) < 128:
+            sub = _battle_log_atk_display(int(parameter) + 72, atks) or f"E.Skill {parameter}"
+            return f"{base_name}: {sub}"
+        if command_id == 0x0D:
+            return f"{base_name}: E.Skill {parameter}"
+        if command_id == 0x20:
+            # 0-31: rotating display buffer at enemy_attack_names (ff7-lib) — read fresh; never
+            # use a cached copy (stale names from a prior enemy/animation look like wrong attacks).
+            # >=32: many enemies use the global 128 attack-name table (same as kernel section 9), e.g. 0x20+.
+            p = int(parameter) & 0xFFFF
+            e32 = self._read_enemy_display_attack_names_32()
+            if p < 32 and p < len(e32) and (e32[p] or "").strip():
+                return (e32[p] or "").strip()
+            t = _battle_log_atk_display(p & 0x7F, atks)
+            if t:
+                return t
+            return f"Attack 0x{p:X}"
+        return (base_name or f"0x{command_id:02X}").strip() or f"0x{command_id:02X}"
+
+    @staticmethod
+    def _target_label_from_mask(
+        tmask: int, party: List[Dict[str, Any]], enemies: List[Dict[str, Any]]
+    ) -> str:
+        """Match ff7-ultima BattleLogRow: bits 0–3 allies, 4–7 enemies (8 targets)."""
+        names: List[str] = []
+        has_tg = False
+        all_allies = True
+        all_foes = True
+        for i in range(8):
+            if (tmask & (1 << i)) == 0:
+                continue
+            has_tg = True
+            if i < 4:
+                all_foes = False
+                row = next(
+                    (r for r in party if int(r.get("party_slot", r.get("slot", -1))) == i),
+                    None,
+                )
+                if row and (row.get("name") or "").strip():
+                    names.append(str(row.get("name")).strip())
+            else:
+                all_allies = False
+                ei = i - 4
+                row = next(
+                    (e for e in enemies if int(e.get("slot", -1)) == ei + 4),
+                    None,
+                )
+                if not row:
+                    continue
+                base = (str(row.get("name") or "?")).strip() or "?"
+                sames = [e for e in enemies if (e.get("name") or "").strip() == (row.get("name") or "").strip()]
+                if len(sames) > 1:
+                    sames = sorted(sames, key=lambda x: int(x.get("slot", 0)))
+                    try:
+                        pos = sames.index(row)
+                    except ValueError:
+                        pos = 0
+                    names.append(f"{base} {chr(65 + (pos % 26))}")
+                else:
+                    names.append(base)
+        if not has_tg or not names:
+            return ""
+        if len(names) == 1:
+            return names[0]
+        if has_tg and all_allies and not all_foes:
+            return "All Allies"
+        if has_tg and all_foes and not all_allies:
+            return "All Enemies"
+        return " and ".join(names)
+
+    @staticmethod
+    def _command_has_target_mask(command_id: int) -> bool:
+        return int(command_id) not in (0x12, 0x13)
+
+    @staticmethod
+    def _command_verb(command_id: int) -> str:
+        cid = int(command_id) & 0xFF
+        if cid == 0x02:
+            return "cast"
+        if cid == 0x03:
+            return "summoned"
+        if cid == 0x04:
+            return "used"
+        if cid == 0x23:
+            return "took"
+        return "used"
+
+    def _format_battle_log_line(
+        self,
+        party: List[Dict[str, Any]],
+        enemies: List[Dict[str, Any]],
+        attacker: int,
+        command_id: int,
+        parameter: int,
+        target_mask: int,
+        damage: int,
+        miss: bool,
+        crit: bool,
+    ) -> str:
+        aid = int(attacker) & 0xFF
+        if int(command_id) & 0xFF == 0xFF:
+            return ""
+        a_name: Optional[str] = None
+        if aid < 4:
+            pr = next(
+                (r for r in party if int(r.get("party_slot", r.get("slot", -1))) == aid),
+                None,
+            )
+            a_name = (str(pr.get("name")).strip() if pr else None) or None
+        else:
+            ei = aid - 4
+            row = next(
+                (e for e in enemies if int(e.get("slot", -1)) == ei + 4),
+                None,
+            )
+            if row:
+                base = (str(row.get("name") or "?")).strip() or "?"
+                sames = [
+                    e
+                    for e in enemies
+                    if (e.get("name") or "").strip() == (row.get("name") or "").strip()
+                ]
+                if len(sames) > 1:
+                    sames = sorted(sames, key=lambda x: int(x.get("slot", 0)))
+                    try:
+                        pos = sames.index(row)
+                    except ValueError:
+                        pos = 0
+                    a_name = f"{base} {chr(65 + (pos % 26))}"
+                else:
+                    a_name = base
+        cmd_t = self._format_battle_command_text(int(command_id) & 0xFF, int(parameter) & 0xFFFF)
+        has_tg = self._command_has_target_mask(int(command_id) & 0xFF)
+        tg = (
+            self._target_label_from_mask(int(target_mask) & 0xFFFF, party, enemies)
+            if has_tg
+            else ""
+        )
+        vrb = self._command_verb(int(command_id) & 0xFF)
+        pre = f"{a_name} {vrb} {cmd_t}" if a_name else f"Unknown {vrb} {cmd_t}"
+        if has_tg and tg:
+            pre += f" on {tg}"
+        dam = int(damage) if damage is not None else 0
+        if not self._command_deals_damage_battlelog(int(command_id) & 0xFF, int(parameter) & 0xFFFF):
+            return pre
+        if miss:
+            return f"{pre}, missed"
+        suf = f", dealt {abs(dam)} damage"
+        if crit:
+            suf += " [crit]"
+        return pre + suf
+
+    def _command_deals_damage_battlelog(self, command_id: int, parameter: int) -> bool:
+        if int(command_id) in (0x12, 0x13, 0x05, 0x06, 0x0B):
+            return False
+        if int(command_id) == 0x04:
+            return True
+        return True
+
     def _read_savemap(self) -> Tuple[Optional[bytes], int]:
         if not self._proc:
             return None, 0
@@ -1821,7 +2377,9 @@ class FF7Hook:
             float(atb),
         )
 
-    def _read_battle_ally(self, slot: int) -> Optional[Dict[str, Any]]:
+    def _read_battle_ally(
+        self, slot: int, savemap: Optional[bytes] = None
+    ) -> Optional[Dict[str, Any]]:
         common = self._read_battle_common(slot)
         if common is None:
             return None
@@ -1848,6 +2406,15 @@ class FF7Hook:
         limit = int(limit_raw) if limit_raw is not None else 0
 
         level_off = raw[0x24] if len(raw) > 0x24 else 0
+        level = int(level_off) if level_off else 0
+        if level <= 0 and party_id is not None and party_id < len(_CHAR_BLOCK):
+            sm = savemap
+            if sm is None:
+                sm, _ = self._read_savemap()
+            if sm and len(sm) > _CHAR_BLOCK[party_id] + REC_OFF_LEVEL:
+                cid = party_id
+                off = _CHAR_BLOCK[cid]
+                level = int(sm[off + REC_OFF_LEVEL])
         ailments = _ailments_from_status(status)
         return {
             "party_slot": slot,
@@ -1864,7 +2431,7 @@ class FF7Hook:
             "limit": limit,
             "name": name,
             "scene_id": 0,
-            "level": int(level_off) if level_off else 0,
+            "level": int(level),
             "slot_empty": False,
         }
 
@@ -2236,6 +2803,25 @@ class FF7Hook:
         if v <= 0:
             return None, "amount must be positive"
         return min(v, _MAX_GIL), None
+
+    def _parse_battle_speed_token(self, raw: Any) -> Tuple[Optional[int], Optional[str]]:
+        if raw is None or str(raw).strip() == "":
+            return None, "missing speed"
+        s = str(raw).strip().lower()
+        named = {
+            "fastest": 0,
+            "fast": 40,
+            "normal": 128,
+            "slow": 220,
+            "slowest": 255,
+        }
+        if s in named:
+            return named[s], None
+        try:
+            v = int(float(s))
+            return max(0, min(255, v)), None
+        except (TypeError, ValueError):
+            return None, f"bad battle speed: {raw}"
 
     def _parse_float_or_random(self, raw: Any) -> Tuple[Optional[float], Optional[str]]:
         if raw is None:
@@ -2781,6 +3367,10 @@ class FF7Hook:
             )
         # set_game_speed: field/battle/world FPS + NOPs only (no world_speed_multiplier).
         self._speed_backup = backup
+        if int(duration_sec) > 0:
+            self._post_success_timed.append(
+                ("restore_game_speed", {}, int(duration_sec))
+            )
         return True, None
 
     def _op_restore_game_speed(self) -> Tuple[bool, Optional[str]]:
@@ -2804,6 +3394,275 @@ class FF7Hook:
                     self._win_protect_write(int(addr), bytes(orig), flush_icache=True)
         self._speed_backup = None
         return True, None
+
+    def _op_restore_menu_words(self, kwargs: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        if not self._proc:
+            return False, "Not attached"
+        v = kwargs.get("visibility_u16")
+        lk = kwargs.get("locks_u16")
+        if v is not None:
+            addr = _rebase(self._proc.module_base, ADDR_MENU_VISIBILITY)
+            if not self._write(addr, struct.pack("<H", int(v) & 0xFFFF)):
+                return False, "restore menu visibility failed"
+        if lk is not None:
+            addr = _rebase(self._proc.module_base, ADDR_MENU_LOCKS)
+            if not self._write(addr, struct.pack("<H", int(lk) & 0xFFFF)):
+                return False, "restore menu locks failed"
+        return True, None
+
+    def _op_set_battle_speed_byte(
+        self, speed_byte: int, duration_sec: int
+    ) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data or len(data) <= SAVE_OFF_BATTLE_SPEED:
+            return False, "Savemap not readable"
+        prev = int(data[SAVE_OFF_BATTLE_SPEED])
+        b = max(0, min(255, int(speed_byte)))
+        addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + SAVE_OFF_BATTLE_SPEED
+        if not self._write(addr, bytes([b])):
+            return False, "write battle speed failed"
+        self._battle_speed_restore_byte = prev
+        if int(duration_sec) > 0:
+            self._post_success_timed.append(
+                (
+                    "restore_battle_speed",
+                    {"prev_byte": int(prev)},
+                    int(duration_sec),
+                )
+            )
+        return True, None
+
+    def _op_restore_battle_speed(self, prev_byte: int) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data or len(data) <= SAVE_OFF_BATTLE_SPEED:
+            return False, "Savemap not readable"
+        addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + SAVE_OFF_BATTLE_SPEED
+        b = max(0, min(255, int(prev_byte)))
+        if not self._write(addr, bytes([b])):
+            return False, "restore battle speed failed"
+        self._battle_speed_restore_byte = None
+        return True, None
+
+    def _op_set_battle_atb_mode(
+        self, mode: str, duration_sec: int
+    ) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data or len(data) <= SAVE_OFF_GENERAL_CONFIG:
+            return False, "Savemap not readable"
+        prev = int(data[SAVE_OFF_GENERAL_CONFIG])
+        new_bits = _encode_savemap_atb_mode(mode)
+        merged = (prev & ~SAVEMAP_ATB_MASK) | (new_bits & SAVEMAP_ATB_MASK)
+        addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + SAVE_OFF_GENERAL_CONFIG
+        if not self._write(addr, bytes([merged & 0xFF])):
+            return False, "write ATB config failed"
+        # Do not patch ADDR_BATTLE_MODE here: that byte packs more than ATB style;
+        # partial writes have been observed to end battles incorrectly. Savemap 0x10DA
+        # is the supported source for config; the game applies it when appropriate.
+        if int(duration_sec) > 0:
+            self._post_success_timed.append(
+                (
+                    "restore_battle_atb_mode",
+                    {"prev_config_byte": int(prev)},
+                    int(duration_sec),
+                )
+            )
+        return True, None
+
+    def _op_restore_battle_atb_mode(self, prev_config_byte: int) -> Tuple[bool, Optional[str]]:
+        data, _ = self._read_savemap()
+        if not data or len(data) <= SAVE_OFF_GENERAL_CONFIG:
+            return False, "Savemap not readable"
+        addr = _rebase(self._proc.module_base, ADDR_SAVEMAP_BASE) + SAVE_OFF_GENERAL_CONFIG
+        if not self._write(addr, bytes([int(prev_config_byte) & 0xFF])):
+            return False, "restore ATB config failed"
+        return True, None
+
+    def _op_set_infinite_items(self, enable: bool, duration_sec: int) -> Tuple[bool, Optional[str]]:
+        if not self._proc:
+            return False, "Not attached"
+        base = _rebase(self._proc.module_base, ADDR_BATTLE_PARTY_ITEMS)
+        n = BATTLE_PARTY_ITEMS_BLOB_SIZE
+        if enable:
+            raw = self._read(base, n)
+            if raw is None or len(raw) < n:
+                return False, "read battle items failed"
+            self._infinite_items_backup = bytes(raw)
+            self._infinite_items_backup_len = n
+            self._infinite_items_active = True
+            if int(duration_sec) > 0:
+                self._post_success_timed.append(
+                    ("restore_infinite_items", {}, int(duration_sec))
+                )
+            return True, None
+        self._infinite_items_active = False
+        if self._infinite_items_backup and self._infinite_items_backup_len > 0:
+            blob = self._infinite_items_backup[: self._infinite_items_backup_len]
+            if not self._write(base, blob):
+                return False, "restore battle items blob failed"
+        self._infinite_items_backup = None
+        self._infinite_items_backup_len = 0
+        return True, None
+
+    def _op_restore_infinite_items(self) -> Tuple[bool, Optional[str]]:
+        return self._op_set_infinite_items(False, 0)
+
+    def _maybe_top_up_battle_party_items(self) -> None:
+        if not self._infinite_items_active or not self._proc:
+            return
+        if self._current_module_byte() != 2:
+            return
+        base = _rebase(self._proc.module_base, ADDR_BATTLE_PARTY_ITEMS)
+        for i in range(BATTLE_PARTY_ITEMS_NUM_SLOTS):
+            o = i * BATTLE_PARTY_ITEMS_SLOT_STRIDE
+            raw = self._read(base + o, 4)
+            if not raw or len(raw) < 4:
+                break
+            iid = int(struct.unpack_from("<H", raw, 0)[0]) & 0xFFFF
+            qty = int(raw[2]) & 0xFF
+            if iid != 0xFFFF and 0 < iid and 0 < qty < 99:
+                if not self._write(base + o + 2, bytes([99])):
+                    break
+
+    def _tick_recent_item_detection(self, savemap: Optional[bytes], gil: int) -> None:
+        _load_ff7_gear_layout_assets()
+        if not savemap or len(savemap) < SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2:
+            return
+        inv_slice = bytes(
+            savemap[SAVE_OFF_INV_ITEMS : SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2]
+        )
+        prev = self._prev_inventory_sig
+        prev_gil = self._prev_gil_for_items
+        if (
+            prev is not None
+            and len(prev) == len(inv_slice)
+            and prev_gil is not None
+            and gil >= prev_gil
+        ):
+            for idx in range(INV_ITEM_SLOTS):
+                o = idx * 2
+                cur = struct.unpack_from("<H", inv_slice, o)[0]
+                pr = struct.unpack_from("<H", prev, o)[0]
+                if cur == 0xFFFF and pr == 0xFFFF:
+                    continue
+                if cur == 0xFFFF:
+                    continue
+                ci, cq = cur & 0x1FF, (cur >> 9) & 0x7F
+                if pr == 0xFFFF and cq > 0:
+                    self._last_item_gain = {
+                        "name": _ff7_unified_item_name(int(ci)),
+                        "delta": int(cq),
+                        "item_id": int(ci),
+                    }
+                    break
+                if pr != 0xFFFF:
+                    pi, pq = pr & 0x1FF, (pr >> 9) & 0x7F
+                    if ci == pi and cq > pq:
+                        self._last_item_gain = {
+                            "name": _ff7_unified_item_name(int(ci)),
+                            "delta": int(cq - pq),
+                            "item_id": int(ci),
+                        }
+                        break
+        self._prev_inventory_sig = inv_slice
+        self._prev_gil_for_items = int(gil)
+
+    def _tick_battle_status_log(
+        self, party: List[Dict[str, Any]], enemies: List[Dict[str, Any]]
+    ) -> None:
+        for row in party:
+            if row.get("slot_empty"):
+                continue
+            ps = int(row.get("party_slot", row.get("slot", -1)))
+            st = int(row.get("status", 0) or 0)
+            key = f"a{ps}"
+            prev = self._prev_battle_status.get(key)
+            if prev is not None and int(prev) != st:
+                nm = (str(row.get("name") or "?")).strip() or "?"
+                for mask, sname in _STATUS_AILMENT_BITS:
+                    had = (int(prev) & int(mask)) != 0
+                    has = (st & int(mask)) != 0
+                    if had == has:
+                        continue
+                    if has and not had:
+                        if sname == "Death":
+                            self._battle_log_lines.append(f"{nm} died")
+                        else:
+                            self._battle_log_lines.append(f"{nm} — inflicted with {sname}")
+                    elif had and not has:
+                        self._battle_log_lines.append(f"{nm} — cleared of {sname}")
+            self._prev_battle_status[key] = st
+        for row in enemies:
+            sl = int(row.get("slot", -1))
+            st = int(row.get("status", 0) or 0)
+            key = f"e{sl}"
+            prev = self._prev_battle_status.get(key)
+            if prev is not None and int(prev) != st:
+                nm = (str(row.get("name") or "?")).strip() or "?"
+                for mask, sname in _STATUS_AILMENT_BITS:
+                    had = (int(prev) & int(mask)) != 0
+                    has = (st & int(mask)) != 0
+                    if had == has:
+                        continue
+                    if has and not had:
+                        if sname == "Death":
+                            self._battle_log_lines.append(f"{nm} died")
+                        else:
+                            self._battle_log_lines.append(f"{nm} — inflicted with {sname}")
+                    elif had and not has:
+                        self._battle_log_lines.append(f"{nm} — cleared of {sname}")
+            self._prev_battle_status[key] = st
+        if len(self._battle_log_lines) > 200:
+            self._battle_log_lines = self._battle_log_lines[-200:]
+
+    def _tick_battle_log(
+        self,
+        battle: bool,
+        party: List[Dict[str, Any]],
+        enemies: List[Dict[str, Any]],
+        battle_ui: bool,
+    ) -> None:
+        if battle and not self._was_in_battle:
+            self._battle_log_lines.clear()
+            self._battle_log_seen.clear()
+            self._prev_battle_status.clear()
+        if not battle:
+            if not battle_ui:
+                self._prev_battle_status.clear()
+                self._was_in_battle = False
+            return
+        if not self._proc:
+            return
+        self._ensure_battle_log_names()
+        bq = self._read(
+            _rebase(self._proc.module_base, ADDR_BATTLE_QUEUE), 8
+        )
+        if bq and len(bq) == 8 and not all(b == 0 for b in bq):
+            priority = int(bq[0])
+            qpos = int(bq[1])
+            att = int(bq[2])
+            cmd_id = int(bq[3]) & 0xFF
+            param = int(struct.unpack_from("<H", bq, 4)[0]) & 0xFFFF
+            tmask = int(struct.unpack_from("<H", bq, 6)[0]) & 0xFFFF
+            if cmd_id != 0xFF and (priority, qpos) not in self._battle_log_seen:
+                self._battle_log_seen.add((priority, qpos))
+                dam, miss, crit = 0, False, False
+                pptr = _rebase(self._proc.module_base, ADDR_BATTLE_OBJ_PTR)
+                bop = self._read_u32(pptr) or 0
+                if 0x00010000 < bop < 0x7FFF0000:
+                    blob = self._read(bop, 0x264)
+                    if blob and len(blob) > 0x220:
+                        dam = int(struct.unpack_from("<i", blob, 0x214)[0])
+                        miss = bool(blob[0x218] & 1)
+                        crit = bool(blob[0x220] & 2)
+                line = self._format_battle_log_line(
+                    party, enemies, att, cmd_id, param, tmask, dam, miss, crit
+                )
+                if line:
+                    self._battle_log_lines.append(line)
+        self._tick_battle_status_log(party, enemies)
+        if len(self._battle_log_lines) > 200:
+            self._battle_log_lines = self._battle_log_lines[-200:]
+        self._was_in_battle = True
 
     def _op_add_gil(self, amount: int) -> Tuple[bool, Optional[str]]:
         if amount <= 0:
@@ -2976,11 +3835,6 @@ class FF7Hook:
     # ------------------------------------------------------------------
     # Level / stat edits (party + enemy)
     # ------------------------------------------------------------------
-    def _current_module_byte(self) -> Optional[int]:
-        if not self._proc:
-            return None
-        return self._read_u8(_rebase(self._proc.module_base, ADDR_CURRENT_MODULE))
-
     def _op_set_party_level(
         self, character: str, level: int
     ) -> Tuple[bool, Optional[str]]:
@@ -3677,10 +4531,59 @@ class FF7Hook:
             return self._op_add_materia(str(kwargs.get("materia", "")), int(lvl))
         if op == "add_gear":
             return self._op_add_gear(str(kwargs.get("gear", "")))
+        if op == "restore_menu_words":
+            return self._op_restore_menu_words(dict(kwargs))
+        if op == "restore_battle_speed":
+            pb = kwargs.get("prev_byte")
+            if pb is None:
+                return False, "prev_byte"
+            return self._op_restore_battle_speed(int(pb))
+        if op == "restore_battle_atb_mode":
+            pb = kwargs.get("prev_config_byte")
+            if pb is None:
+                return False, "prev_config_byte"
+            return self._op_restore_battle_atb_mode(int(pb))
+        if op == "restore_infinite_items":
+            return self._op_restore_infinite_items()
+        if op == "set_battle_speed":
+            sb, se = self._parse_battle_speed_token(kwargs.get("speed"))
+            if se or sb is None:
+                return False, se or "speed"
+            ds = int(kwargs.get("duration_sec", 0) or 0)
+            return self._op_set_battle_speed_byte(int(sb), ds)
+        if op == "set_battle_atb_mode":
+            ds = int(kwargs.get("duration_sec", 0) or 0)
+            return self._op_set_battle_atb_mode(str(kwargs.get("mode", "")), ds)
+        if op == "set_infinite_items":
+            en = str(kwargs.get("enabled", "1")).strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "on",
+            )
+            ds = int(kwargs.get("duration_sec", 0) or 0)
+            raw_dur = kwargs.get("duration_sec")
+            if raw_dur is not None and str(raw_dur).strip().lower() in (
+                "none",
+                "null",
+                "inf",
+                "infinite",
+            ):
+                ds = 0
+            return self._op_set_infinite_items(en, ds)
         if op == "set_menu_row_access":
             acc = str(kwargs.get("access", "allow")).strip().lower()
             allow = acc in ("allow", "on", "true", "yes", "1")
             name = str(kwargs.get("menu_name", ""))
+            dur = int(kwargs.get("duration_sec", 0) or 0)
+            v0 = l0 = None
+            if dur > 0:
+                va = _rebase(self._proc.module_base, ADDR_MENU_VISIBILITY)
+                la = _rebase(self._proc.module_base, ADDR_MENU_LOCKS)
+                v0 = self._read_u16(va)
+                l0 = self._read_u16(la)
+                if v0 is None or l0 is None:
+                    return False, "read menu words failed"
             ok_vis, err_vis = self._op_set_menu_u16(
                 ADDR_MENU_VISIBILITY, name, allow, False
             )
@@ -3691,6 +4594,14 @@ class FF7Hook:
             )
             if not ok_lk:
                 return False, err_lk or "menu lock"
+            if dur > 0 and v0 is not None and l0 is not None:
+                self._post_success_timed.append(
+                    (
+                        "restore_menu_words",
+                        {"visibility_u16": int(v0), "locks_u16": int(l0)},
+                        dur,
+                    )
+                )
             return True, None
         if op == "set_menu_visibility":
             en = str(kwargs.get("enabled", "1")).strip().lower() in (
@@ -3699,9 +4610,29 @@ class FF7Hook:
                 "yes",
                 "on",
             )
-            return self._op_set_menu_u16(
+            dur = int(kwargs.get("duration_sec", 0) or 0)
+            v0 = l0 = None
+            if dur > 0:
+                va = _rebase(self._proc.module_base, ADDR_MENU_VISIBILITY)
+                la = _rebase(self._proc.module_base, ADDR_MENU_LOCKS)
+                v0 = self._read_u16(va)
+                l0 = self._read_u16(la)
+                if v0 is None or l0 is None:
+                    return False, "read menu words failed"
+            ok, err = self._op_set_menu_u16(
                 ADDR_MENU_VISIBILITY, str(kwargs.get("menu_name", "")), en, False
             )
+            if not ok:
+                return False, err or "menu visibility"
+            if dur > 0 and v0 is not None and l0 is not None:
+                self._post_success_timed.append(
+                    (
+                        "restore_menu_words",
+                        {"visibility_u16": int(v0), "locks_u16": int(l0)},
+                        dur,
+                    )
+                )
+            return True, None
         if op == "set_menu_lock":
             lk = str(kwargs.get("locked", "1")).strip().lower() in (
                 "1",
@@ -3709,9 +4640,29 @@ class FF7Hook:
                 "yes",
                 "on",
             )
-            return self._op_set_menu_u16(
+            dur = int(kwargs.get("duration_sec", 0) or 0)
+            v0 = l0 = None
+            if dur > 0:
+                va = _rebase(self._proc.module_base, ADDR_MENU_VISIBILITY)
+                la = _rebase(self._proc.module_base, ADDR_MENU_LOCKS)
+                v0 = self._read_u16(va)
+                l0 = self._read_u16(la)
+                if v0 is None or l0 is None:
+                    return False, "read menu words failed"
+            ok, err = self._op_set_menu_u16(
                 ADDR_MENU_LOCKS, str(kwargs.get("menu_name", "")), lk, False
             )
+            if not ok:
+                return False, err or "menu lock"
+            if dur > 0 and v0 is not None and l0 is not None:
+                self._post_success_timed.append(
+                    (
+                        "restore_menu_words",
+                        {"visibility_u16": int(v0), "locks_u16": int(l0)},
+                        dur,
+                    )
+                )
+            return True, None
         if op == "set_field_menu_access":
             en = str(kwargs.get("enabled", "1")).strip().lower() in (
                 "1",
@@ -3744,6 +4695,7 @@ class FF7Hook:
                 "attached": False,
                 "error": "FF7 hook requires Windows",
                 "battle": False,
+                "battle_ui": False,
                 "current_module": 0,
                 "party": [],
                 "enemies": [],
@@ -3752,16 +4704,24 @@ class FF7Hook:
                 "playtime_text": "--:--:--",
                 "avg_party_level": 0,
                 "equipped_materia_count": 0,
+                "battle_atb_mode": None,
+                "battle_speed_byte": None,
+                "battle_mode_ram": None,
+                "recent_item": None,
+                "battle_log": [],
                 "debug": {"stage": "unsupported_os", "platform": sys.platform},
             }
 
         ok, err = self.ensure_attached()
         if not ok or not self._proc:
+            self._battle_ui_latched = False
+            self._battle_ui_off_ticks = 0
             return {
                 "hook": "ff7",
                 "attached": False,
                 "error": err or "Not attached",
                 "battle": False,
+                "battle_ui": False,
                 "current_module": 0,
                 "party": [],
                 "enemies": [],
@@ -3770,6 +4730,11 @@ class FF7Hook:
                 "playtime_text": "--:--:--",
                 "avg_party_level": 0,
                 "equipped_materia_count": 0,
+                "battle_atb_mode": None,
+                "battle_speed_byte": None,
+                "battle_mode_ram": None,
+                "recent_item": None,
+                "battle_log": [],
                 "debug": {"stage": "attach_failed", "message": err or "not attached"},
             }
 
@@ -3788,6 +4753,7 @@ class FF7Hook:
                 "attached": False,
                 "error": "Read failed (access denied?)",
                 "battle": False,
+                "battle_ui": False,
                 "current_module": 0,
                 "party": [],
                 "enemies": [],
@@ -3796,10 +4762,23 @@ class FF7Hook:
                 "playtime_text": "--:--:--",
                 "avg_party_level": 0,
                 "equipped_materia_count": 0,
+                "battle_atb_mode": None,
+                "battle_speed_byte": None,
+                "battle_mode_ram": None,
+                "recent_item": None,
+                "battle_log": [],
                 "debug": dbg_fail,
             }
 
         battle = cur_mod == 2
+        if battle:
+            self._battle_ui_off_ticks = 0
+            self._battle_ui_latched = True
+        else:
+            self._battle_ui_off_ticks += 1
+            if self._battle_ui_off_ticks >= _BATTLE_UI_OFF_POLL_TICKS:
+                self._battle_ui_latched = False
+        battle_ui = self._battle_ui_latched
         savemap, savemap_addr = self._read_savemap()
         gil = 0
         play_sec = 0
@@ -3826,7 +4805,7 @@ class FF7Hook:
         if battle:
             allies: List[Dict[str, Any]] = []
             for slot in range(3):
-                a = self._read_battle_ally(slot)
+                a = self._read_battle_ally(slot, savemap)
                 if a and (a["name"] not in ("", "?") or a["hp"] or a["max_hp"]):
                     allies.append(a)
             if allies:
@@ -3843,6 +4822,10 @@ class FF7Hook:
                 if not (e.get("name") or e.get("hp") or e.get("max_hp")):
                     continue
                 enemies.append(e)
+
+        self._maybe_top_up_battle_party_items()
+        self._tick_recent_item_detection(savemap, int(gil))
+        self._tick_battle_log(battle, party, enemies, battle_ui)
 
         h = play_sec // 3600
         m = (play_sec % 3600) // 60
@@ -3879,11 +4862,23 @@ class FF7Hook:
 
         avg_lv, mat_total = _records_party_aggregates(party, savemap)
 
+        battle_atb: Optional[str] = None
+        battle_speed_b: Optional[int] = None
+        battle_mode_ram: Optional[int] = None
+        if savemap and len(savemap) > SAVE_OFF_GENERAL_CONFIG:
+            battle_atb = _decode_savemap_atb_mode(savemap[SAVE_OFF_GENERAL_CONFIG])
+        if savemap and len(savemap) > SAVE_OFF_BATTLE_SPEED:
+            battle_speed_b = int(savemap[SAVE_OFF_BATTLE_SPEED])
+        if battle and self._proc:
+            bm = _rebase(self._proc.module_base, ADDR_BATTLE_MODE)
+            battle_mode_ram = self._read_u8(bm)
+
         out: Dict[str, Any] = {
             "hook": "ff7",
             "attached": True,
             "error": None,
             "battle": battle,
+            "battle_ui": battle_ui,
             "current_module": int(cur_mod),
             "current_module_name": _current_module_label(int(cur_mod)),
             "field_name": field_name,
@@ -3894,6 +4889,11 @@ class FF7Hook:
             "playtime_text": play_text,
             "avg_party_level": int(avg_lv),
             "equipped_materia_count": int(mat_total),
+            "battle_atb_mode": battle_atb,
+            "battle_speed_byte": battle_speed_b,
+            "battle_mode_ram": battle_mode_ram,
+            "recent_item": self._last_item_gain,
+            "battle_log": list(self._battle_log_lines),
             "debug": dbg,
         }
         if menu_theme:
@@ -3986,11 +4986,20 @@ def ff7_connector_config_to_hook_kwargs(cfg: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "menu_name": _txt("arg_menu_name"),
             "access": _txt("arg_access", "allow"),
+            "duration_sec": max(0, int(cfg.get("arg_duration_sec") or 0)),
         }
     if op == "set_menu_visibility":
-        return {"menu_name": _txt("arg_menu_name"), "enabled": _txt("arg_enabled", "1")}
+        return {
+            "menu_name": _txt("arg_menu_name"),
+            "enabled": _txt("arg_enabled", "1"),
+            "duration_sec": max(0, int(cfg.get("arg_duration_sec") or 0)),
+        }
     if op == "set_menu_lock":
-        return {"menu_name": _txt("arg_menu_name"), "locked": _txt("arg_locked", "1")}
+        return {
+            "menu_name": _txt("arg_menu_name"),
+            "locked": _txt("arg_locked", "1"),
+            "duration_sec": max(0, int(cfg.get("arg_duration_sec") or 0)),
+        }
     if op == "set_field_menu_access":
         return {"enabled": _txt("arg_enabled", "1")}
     if op == "set_world_speed_multiplier":
@@ -4011,6 +5020,25 @@ def ff7_connector_config_to_hook_kwargs(cfg: Dict[str, Any]) -> Dict[str, Any]:
         }
     if op == "restore_game_speed":
         return {}
+    if op == "set_battle_speed":
+        raw_sp = _txt("arg_speed", "128")
+        if not _has_placeholder(raw_sp) and not re.match(r"^random\s*:", raw_sp, re.I):
+            try:
+                raw_sp = str(max(0, min(255, int(float(raw_sp)))))
+            except ValueError:
+                pass
+        return {
+            "speed": raw_sp,
+            "duration_sec": max(0, int(cfg.get("arg_duration_sec") or 0)),
+        }
+    if op == "set_battle_atb_mode":
+        return {
+            "mode": _txt("arg_mode", "active"),
+            "duration_sec": max(0, int(cfg.get("arg_duration_sec") or 0)),
+        }
+    if op == "set_infinite_items":
+        raw_d = _txt("arg_duration_sec", "0")
+        return {"enabled": _txt("arg_enabled", "1"), "duration_sec": raw_d}
     if op in ("set_party_level", "set_enemy_level"):
         raw_lv = _txt("arg_level", "1")
         if (
@@ -4098,6 +5126,22 @@ def ff7_connector_config_to_hook_kwargs(cfg: Dict[str, Any]) -> Dict[str, Any]:
     if op == "add_gear":
         return {"gear": _txt("arg_gear")}
     return {}
+
+
+FF7_CONNECTOR_PERSIST_ALLOWLIST = frozenset(
+    {
+        "set_game_speed",
+        "set_battle_speed",
+        "set_battle_atb_mode",
+        "set_menu_row_access",
+        "set_menu_visibility",
+        "set_menu_lock",
+        "set_field_menu_access",
+        "set_world_speed_multiplier",
+        "set_menu_colors",
+        "set_infinite_items",
+    }
+)
 
 
 # Backwards compatibility

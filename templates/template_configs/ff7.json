@@ -18,7 +18,7 @@
             "type": "number",
             "id": "GridRows",
             "label": "Grid rows",
-            "value": 3.0,
+            "value": 5.0,
             "min": 1,
             "max": 6,
             "description": "Number of CSS grid rows"
@@ -363,6 +363,20 @@
             "description": "Total equipped materia on weapon and armor for all three party slots (second column)"
         },
         {
+            "type": "checkbox",
+            "id": "ShowBattleAtbMode",
+            "label": "Show ATB mode",
+            "value": true,
+            "description": "Active / Wait / Recommended from savemap (battle RAM shown when in combat)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowRecentItem",
+            "label": "Show most recent item",
+            "value": true,
+            "description": "Heuristic: new stack or increased quantity when gil did not decrease"
+        },
+        {
             "type": "number",
             "id": "StatsGridRow",
             "label": "Grid row",
@@ -427,6 +441,80 @@
         },
         {
             "type": "separator",
+            "label": "Battle log"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowBattleLog",
+            "label": "Show battle log panel",
+            "value": true,
+            "description": "Separate panel: HP change lines during battle; hidden outside battle; cleared each battle"
+        },
+        {
+            "type": "number",
+            "id": "BattleLogMaxLines",
+            "label": "Max lines",
+            "value": 40,
+            "min": 5,
+            "max": 200,
+            "description": "Oldest lines dropped when over this count"
+        },
+        {
+            "type": "number",
+            "id": "BattleLogVisibleRows",
+            "label": "Visible rows",
+            "value": 4.0,
+            "min": 1,
+            "max": 40,
+            "description": "How many text rows fit in the panel height (scrolling still works; scrollbar is hidden)"
+        },
+        {
+            "type": "number",
+            "id": "BattleLogFontSize",
+            "label": "Font size (px)",
+            "value": 14.0,
+            "min": 6,
+            "max": 20,
+            "description": "Font size for battle log text"
+        },
+        {
+            "type": "number",
+            "id": "BattleLogGridRow",
+            "label": "Grid row",
+            "value": 4.0,
+            "min": 1,
+            "max": 6,
+            "description": "Starting row for battle log panel"
+        },
+        {
+            "type": "number",
+            "id": "BattleLogGridCol",
+            "label": "Grid column",
+            "value": 1.0,
+            "min": 1,
+            "max": 6,
+            "description": "Starting column for battle log panel"
+        },
+        {
+            "type": "number",
+            "id": "BattleLogRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Rows spanned by battle log panel"
+        },
+        {
+            "type": "number",
+            "id": "BattleLogColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "Columns spanned by battle log panel"
+        },
+        {
+            "type": "separator",
             "label": "Boss Tracker"
         },
         {
@@ -480,7 +568,7 @@
             "type": "number",
             "id": "BossesGridRow",
             "label": "Grid row",
-            "value": 4.0,
+            "value": 5.0,
             "min": 1,
             "max": 6,
             "description": "Starting row for boss tracker panel"
