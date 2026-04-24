@@ -144,7 +144,17 @@ General Items:
     [] - Add in stream streaks. We will need to use the "Channel Chat Notification Event" Eventsub hook. This will have us many options that we already get from other areas, so we should filter this only for the "watch_streak" key not being null. See this page for more info: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
     [] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
     [] - Add toggles for displaying header text and message text in the alerts template
+    [] - Add in OBS websocket support. This will allow us to control OBS scenes, transitions, and other settings from the app. This will need its own tab in the settings for the websocket info. It will then need to be integrated into the Connectors system as actions (these will actually trigger changes in OBS) and as triggers (these will be used to trigger Connector actions, IE if a scene is changed in OBS it will mute the mic).
+    [] - Expose Connectors system to the Streamdeck plugin. Make it so created Connectors can be assigned to Streamdeck buttons, and trigger actions when the button is pressed.
+    [] - Add font size options for usernames to the chat template
+    [] - Move badge settings to its own section in the chat template.
+    [] - Add badge size option to the chat template.
+    [] - Add emote size option to the chat template.
+
 
 Priority Fixes:
     [?] - Add in setting to main alerts template to silently skip (but hold for the the set duration) if a point alert does not have a image/video and audio. This should check if there is a template file that is named the exact same as the "alert_name" field in the alert_data. If so, it should use the duration from that config file.
     [] - Fix browse dialog not inputting the directory and file name into the input fields. (seems to be random, sometimes it works, sometimes it doesn't, maybe its special characters?)
+    [] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
+    [] - Add setting to start app not maximized
+    [] - Setup "generic image/video" template, so the file can just be renamed and all websocket events will point to the file name.

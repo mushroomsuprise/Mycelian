@@ -116,6 +116,31 @@
         },
         {
             "type": "separator",
+            "label": "Text visibility"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableUsernameText",
+            "label": "Show username",
+            "value": true,
+            "description": "When off, the username is hidden. Does not affect TTS or the alert queue."
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableHeaderText",
+            "label": "Show header line (event text)",
+            "value": true,
+            "description": "When off, the event line (e.g. cheered, sub) is hidden. The header row hides when both this and Show username are off. Does not affect TTS or the alert queue."
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableMessageText",
+            "label": "Show user message",
+            "value": true,
+            "description": "When off, the user message area is hidden. Does not affect TTS or the alert queue."
+        },
+        {
+            "type": "separator",
             "label": "Text To Speech Settings"
         },
         {

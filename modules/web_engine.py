@@ -110,7 +110,7 @@ class WebEngine:
 
         # Initialize Flask app and SocketIO with template reloading enabled
         self.app = Flask(
-            __name__, template_folder=template_dir
+            __name__, template_folder=self.template_dir
         )  # Don't set static_folder to avoid conflicts
 
         # Enable Flask's built-in template reloading and development features
@@ -1163,7 +1163,11 @@ class WebEngine:
                         logger.debug(
                             f"Template {template} variables: {list(template_vars.keys())}"
                         )
-                        return render_template(f"{template}.html", **template_vars)
+                        return render_template(
+                            f"{template}.html",
+                            **template_vars,
+                            mycelian_html_stem=str(template),
+                        )
                     except Exception as e:
                         logger.error(
                             f"Error rendering template {template}: {str(e)}",

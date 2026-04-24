@@ -526,7 +526,7 @@
         }
 
         .gif-animate-in {
-            animation: {{ GifAnimationIn }} {{ GifAnimationInDuration }}s {{ GifAnimationInEasing }};
+            animation: {{ GifAnimationIn }} {{ GifAnimationInDuration }}s {{ GifAnimationInEasing }} forwards;
         }
 
         .gif-animate-out {
@@ -593,6 +593,48 @@
         var silentPointHoldId = 0; // When incremented, in-flight silent pollers stop; next_alert can sync multi-source
         var silentPointHoldStale = false; // If true, skip one pending alert_complete delay (preempted by next_alert)
         var pointAlertSilentNoMedia = {{ PointAlertSilentNoMedia | default(false) | tojson }};
+        var showUsernameText = {{ EnableUsernameText | default(true) | tojson }};
+        var showHeaderLineText = {{ EnableHeaderText | default(true) | tojson }};
+        var showMessageText = {{ EnableMessageText | default(true) | tojson }};
+
+        function showHeaderRow() {
+            return showUsernameText || showHeaderLineText;
+        }
+
+        function applyTextVisibilityStyles() {
+            const u = document.getElementById('alertUsername');
+            const t = document.getElementById('alertText');
+            const h = document.getElementById('alertHeader');
+            const m = document.getElementById('alertMessage');
+            if (u) {
+                if (showUsernameText) {
+                    u.style.removeProperty('display');
+                } else {
+                    u.style.display = 'none';
+                }
+            }
+            if (t) {
+                if (showHeaderLineText) {
+                    t.style.removeProperty('display');
+                } else {
+                    t.style.display = 'none';
+                }
+            }
+            if (h) {
+                if (showHeaderRow()) {
+                    h.style.removeProperty('display');
+                } else {
+                    h.style.display = 'none';
+                }
+            }
+            if (m) {
+                if (showMessageText) {
+                    m.style.removeProperty('display');
+                } else {
+                    m.style.display = 'none';
+                }
+            }
+        }
         var videoFreezeTimeout = null;
         var activeSpeechUtterance = null;
         var ttsActive = false;
@@ -852,8 +894,8 @@
             const hasExitAnimations = alertDisplay.classList.contains('container-animate-out') ||
                                     document.getElementById('alertBackground').classList.contains('background-animate-out') ||
                                     document.getElementById('alertGif').classList.contains('gif-animate-out') ||
-                                    document.getElementById('alertHeader').classList.contains('header-animate-out') ||
-                                    document.getElementById('alertMessage').classList.contains('message-animate-out');
+                                    (showHeaderRow() && document.getElementById('alertHeader').classList.contains('header-animate-out')) ||
+                                    (showMessageText && document.getElementById('alertMessage').classList.contains('message-animate-out'));
 
             return hasExitAnimations;
         }
@@ -877,26 +919,41 @@
             return currentTime >= exitStartTime && !exitAnimationStartTime;
         }
 
+        function resetAlertLayerAnimationState(alertDisplay, alertBackground, alertBackgroundVideo, alertGif, alertHeader, alertMessage) {
+            alertDisplay.classList.remove('container-animate-in', 'container-animate-out');
+            alertBackground.classList.remove('background-animate-in', 'background-animate-out');
+            alertBackground.style.removeProperty('opacity');
+            if (alertBackgroundVideo) {
+                alertBackgroundVideo.style.removeProperty('opacity');
+            }
+            alertGif.classList.remove('gif-animate-in', 'gif-animate-out');
+            alertGif.style.removeProperty('opacity');
+            alertHeader.classList.remove('header-animate-in', 'header-animate-out');
+            alertHeader.style.removeProperty('opacity');
+            alertMessage.classList.remove('message-animate-in', 'message-animate-out');
+            alertMessage.style.removeProperty('opacity');
+        }
+
         function calculateAnimationTimings() {
             // Calculate maximum animation durations from template config
             const backgroundInDuration = {{ BackgroundAnimationInDuration | default(1.0) }};
             const gifInDuration = {{ GifAnimationInDuration | default(1.5) }};
-            const headerInDuration = {{ HeaderAnimationInDuration | default(1.2) }};
-            const messageInDuration = {{ MessageAnimationInDuration | default(1.0) }};
+            const headerInDuration = showHeaderRow() ? {{ HeaderAnimationInDuration | default(1.2) }} : 0;
+            const messageInDuration = showMessageText ? {{ MessageAnimationInDuration | default(1.0) }} : 0;
             const containerInDuration = {{ ContainerAnimationInDuration | default(1.0) }};
 
             const backgroundOutDuration = {{ BackgroundAnimationOutDuration | default(1.0) }};
             const gifOutDuration = {{ GifAnimationOutDuration | default(1.0) }};
-            const headerOutDuration = {{ HeaderAnimationOutDuration | default(1.0) }};
-            const messageOutDuration = {{ MessageAnimationOutDuration | default(1.0) }};
+            const headerOutDuration = showHeaderRow() ? {{ HeaderAnimationOutDuration | default(1.0) }} : 0;
+            const messageOutDuration = showMessageText ? {{ MessageAnimationOutDuration | default(1.0) }} : 0;
             const containerOutDuration = {{ ContainerAnimationOutDuration | default(1.0) }};
 
             // Entry animation duration is the longest entry animation plus delays
             const maxEntryDelay = Math.max(
                 {{ BackgroundAnimationDelay | default(0.0) }},
                 {{ GifAnimationDelay | default(0.0) }},
-                {{ HeaderAnimationDelay | default(0.0) }},
-                {{ MessageAnimationDelay | default(0.0) }},
+                showHeaderRow() ? {{ HeaderAnimationDelay | default(0.0) }} : 0,
+                showMessageText ? {{ MessageAnimationDelay | default(0.0) }} : 0,
                 {{ ContainerAnimationDelay | default(0.0) }}
             );
 
@@ -907,8 +964,8 @@
             const maxExitDelay = Math.max(
                 {{ BackgroundAnimationOutDelay | default(0.0) }},
                 {{ GifAnimationOutDelay | default(0.0) }},
-                {{ HeaderAnimationOutDelay | default(0.0) }},
-                {{ MessageAnimationOutDelay | default(0.0) }},
+                showHeaderRow() ? {{ HeaderAnimationOutDelay | default(0.0) }} : 0,
+                showMessageText ? {{ MessageAnimationOutDelay | default(0.0) }} : 0,
                 {{ ContainerAnimationOutDelay | default(0.0) }}
             );
 
@@ -1260,6 +1317,10 @@
 
             console.log('Setting up alert display with data:', alertData);
 
+            resetAlertLayerAnimationState(alertDisplay, alertBackground, alertBackgroundVideo, alertGif, alertHeader, alertMessage);
+
+            applyTextVisibilityStyles();
+
             // Set alert content
             alertUsername.innerHTML = formatUsername(alertData);
             alertText.innerHTML = formatAlertText(alertData);
@@ -1306,23 +1367,33 @@
         }, 0);
 
         setTimeout(() => {
-            if (alertGif.style.display !== 'none') {
-                alertGif.style.opacity = '1';
-                if ('{{GifAnimationIn}}' !== 'none' && '{{GifAnimationIn}}' !== '') {
-                    alertGif.classList.add('gif-animate-in');
-                }
+            if (alertGif.style.display === 'none') {
+                return;
             }
+            const gifInAnim = '{{ GifAnimationIn }}';
+            if (gifInAnim === 'none' || gifInAnim === '') {
+                alertGif.style.opacity = '1';
+                return;
+            }
+            // Inline opacity would override the keyframe animation (gif would pop in; delay would still work).
+            // Only force opacity for entrance modes that only animate transform (not opacity).
+            if (gifInAnim === 'pulse' || gifInAnim === 'shake' || gifInAnim === 'rubberBand') {
+                alertGif.style.opacity = '1';
+            }
+            alertGif.classList.add('gif-animate-in');
         }, {{ GifAnimationDelay }} * 1000);
 
         setTimeout(() => {
-            alertHeader.style.opacity = '1';
-            if ('{{HeaderAnimationIn}}' !== 'none' && '{{HeaderAnimationIn}}' !== '') {
-                alertHeader.classList.add('header-animate-in');
+            if (showHeaderRow()) {
+                alertHeader.style.opacity = '1';
+                if ('{{HeaderAnimationIn}}' !== 'none' && '{{HeaderAnimationIn}}' !== '') {
+                    alertHeader.classList.add('header-animate-in');
+                }
             }
         }, {{ HeaderAnimationDelay }} * 1000);
 
         setTimeout(() => {
-            if (alertMessage.innerHTML.trim() !== '') {
+            if (showMessageText && alertMessage.innerHTML.trim() !== '') {
                 alertMessage.style.opacity = '1';
                 if ('{{MessageAnimationIn}}' !== 'none' && '{{MessageAnimationIn}}' !== '') {
                     alertMessage.classList.add('message-animate-in');
@@ -1394,13 +1465,13 @@
             }, {{ GifAnimationOutDelay }} * 1000);
 
         setTimeout(() => {
-            if ('{{HeaderAnimationOut}}' !== 'none' && '{{HeaderAnimationOut}}' !== '') {
+            if (showHeaderRow() && '{{HeaderAnimationOut}}' !== 'none' && '{{HeaderAnimationOut}}' !== '') {
                 alertHeader.classList.add('header-animate-out');
             }
         }, {{ HeaderAnimationOutDelay }} * 1000);
 
         setTimeout(() => {
-            if ('{{MessageAnimationOut}}' !== 'none' && '{{MessageAnimationOut}}' !== '') {
+            if (showMessageText && '{{MessageAnimationOut}}' !== 'none' && '{{MessageAnimationOut}}' !== '') {
                 alertMessage.classList.add('message-animate-out');
             }
         }, {{ MessageAnimationOutDelay }} * 1000);
@@ -1409,8 +1480,8 @@
         const maxDuration = Math.max(
             {{ BackgroundAnimationOutDuration }},
         {{ GifAnimationOutDuration }},
-        {{ HeaderAnimationOutDuration }},
-        {{ MessageAnimationOutDuration }},
+        showHeaderRow() ? {{ HeaderAnimationOutDuration }} : 0,
+        showMessageText ? {{ MessageAnimationOutDuration }} : 0,
         {{ ContainerAnimationOutDuration }}
                 );
 
@@ -1840,6 +1911,17 @@
             if (config.PointAlertSilentNoMedia !== undefined) {
                 pointAlertSilentNoMedia = config.PointAlertSilentNoMedia;
             }
+
+            if (config.EnableUsernameText !== undefined) {
+                showUsernameText = Boolean(config.EnableUsernameText);
+            }
+            if (config.EnableHeaderText !== undefined) {
+                showHeaderLineText = Boolean(config.EnableHeaderText);
+            }
+            if (config.EnableMessageText !== undefined) {
+                showMessageText = Boolean(config.EnableMessageText);
+            }
+            applyTextVisibilityStyles();
         }
 
         // Load config on startup
