@@ -132,14 +132,13 @@ General Items:
     [x] - Allow connectors to be moved into user nameable folders. (drag and drop the cards onto each other to create a folder, then drag other cards onto the folder to add them to it)
     [] - Update the create theme dialog to show a mock-ui similar to the mock ui in the theme tab. It should live update as the user changes the different color boxes. Do a general overhaul of the create theme dialog to make better use of space.
     [] - Add in Twitch stream streaks. We will need to use the "Channel Chat Notification Event" Eventsub hook. This will have us many options that we already get from other areas, so we should filter this only for the "watch_streak" key not being null. A new sub-tab will need to be created under the "Alerts" tab. This tab should be called "Streaks" and have all of the same alert settings as the other alerts (bits,subs,raids,etc). Note: stream streaks only have "streak_count" and "channel_points_awarded" as keyss. We should treat the "streak_count" value the same way we treat "months" for subscriptions. The message should come from the "message" key. See this page for more info: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
-    [] - Remove the "Migration" tab from settings and all related code. This will now be a deprecated feature.
-    [] - Remove the "StreamLabs" tab from settings and all related code. This will now be a deprecated feature.
+    [x] - Remove the "Migration" tab from settings and all related code. This will now be a deprecated feature.
+    [x] - Remove the "StreamLabs" tab from settings and all related code. This will now be a deprecated feature.
     [] - The "Database Explorer" window does not seem to load SQLite database setups. It works correctly for Firebase.
     [] - For "Game Hooks" there should be an OS detection, that will disable any of the toggles that will not work on the OS the app is currently running on.
     [] - Check over the PSN game cache system the app has. It either does not work, or does not properly display the cached game data in the UI.
     [] - Setup the game cache as "cells" similar to the YouTube playlist filter, so users can click to delete a game if they need to reload the cached data.
     [] - Add a label that displays something like "Not connected? click here to get started:" next to the help icon, if the Twitch service is not connected on the "Twitch" tab in Settings.
-    [] - Add button for a "Twitch Only" point reward. This should open a separate dialog with just UI elements for creating/editting Twitch point rewards, without having to create a Mycelian reward for it.
     [x] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
     [x] - Add toggles for displaying header text and message text in the alerts template
     [] - Add in OBS websocket support. This will allow us to control OBS scenes, transitions, and other settings from the app. This will need its own tab in the settings for the websocket info. It will then need to be integrated into the Connectors system as actions (these will actually trigger changes in OBS) and as triggers (these will be used to trigger Connector actions, IE if a scene is changed in OBS it will mute the mic).
@@ -151,7 +150,7 @@ General Items:
 
 
 Priority Fixes:
-    [?] - Add in setting to main alerts template to silently skip (but hold for the the set duration) if a point alert does not have a image/video and audio. This should check if there is a template file that is named the exact same as the "alert_name" field in the alert_data. If so, it should use the duration from that config file.
+    [x] - Add in setting to main alerts template to silently skip (but hold for the the set duration) if a point alert does not have a image/video and audio. This should check if there is a template file that is named the exact same as the "alert_name" field in the alert_data. If so, it should use the duration from that config file.
     [x] - Fix browse dialog not inputting the directory and file name into the input fields. (seems to be random, sometimes it works, sometimes it doesn't, maybe its special characters?)
     [x] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
     [x] - Add setting to start app not maximized

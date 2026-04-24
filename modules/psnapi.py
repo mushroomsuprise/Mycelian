@@ -33,6 +33,8 @@ from psnawp_api.core.psnawp_exceptions import (
     PSNAWPForbiddenError,
     PSNAWPNotFoundError,
 )
+from psnawp_api.models.trophies import PlatformType
+from psnawp_api.models.trophies.trophy_titles import TrophyTitleIterator
 from psnawp_api.psnawp import PSNAWP
 
 from .database_manager import database_manager
@@ -41,6 +43,145 @@ logger = logging.getLogger(__name__)
 
 # Database path for PSN game data cache
 PSN_GAME_DATA_PATH = "PSNGameData/games"
+
+
+def presence_format_to_platform_type(platform: str | None) -> PlatformType:
+    """Convert PSN presence ``format`` (e.g. ``PS5``) to psnawp ``PlatformType`` for trophy APIs."""
+    if platform is None or not str(platform).strip():
+        return PlatformType.UNKNOWN
+    s = str(platform).strip().upper().replace(" ", "")
+    if s in ("PSVITA", "PS_VITA", "VITA"):
+        return PlatformType.PS_VITA
+    if s in ("PSPC", "PC"):
+        return PlatformType.PSPC
+    return PlatformType(s)
+
+
+def load_all_psn_game_cache_docs_from_db() -> list[dict]:
+    """
+    All cached game documents, regardless of database backend.
+
+    Firebase RTDB returns a subtree for ``PSNGameData/games``; SQLite and Mongo
+    store one document per child path. This merges both so enumeration works
+    everywhere without duplicate entries (path-based rows win for the same
+    np_communication_id).
+    """
+    by_id: dict[str, dict] = {}
+    try:
+        parent = database_manager.get_data(PSN_GAME_DATA_PATH)
+        if isinstance(parent, dict) and parent:
+            for _key, val in parent.items():
+                if not isinstance(val, dict):
+                    continue
+                # Prefer field on document; else RTDB often uses np_comm_id as the child key
+                cid = val.get("np_communication_id") or (
+                    str(_key) if isinstance(_key, str) and _key else None
+                )
+                if not cid:
+                    continue
+                if not val.get("np_communication_id"):
+                    val = {**val, "np_communication_id": cid}
+                by_id[str(cid)] = val
+
+        # Firebase: one get_data on PSNGameData/games is the full subtree. Do not call
+        # get_all_paths() — the Firebase implementation downloads the entire database
+        # to list paths, which can freeze the UI and block the settings tab.
+        if database_manager.get_config().database_type == "firebase":
+            games_list = list(by_id.values())
+        else:
+            # SQLite and Mongo: one document per child path; merge in path rows (wins
+            # over parent-shaped duplicates).
+            prefix = f"{PSN_GAME_DATA_PATH}/"
+            for p in database_manager.get_all_paths():
+                if p.startswith("/"):
+                    p = p[1:]
+                if not p.startswith(prefix) or p == PSN_GAME_DATA_PATH.rstrip("/"):
+                    continue
+                rel = p[len(prefix) :]
+                if "/" in rel:
+                    continue
+                data = database_manager.get_data(p)
+                if not isinstance(data, dict):
+                    continue
+                cid = data.get("np_communication_id") or rel
+                if not cid:
+                    continue
+                if not data.get("np_communication_id"):
+                    data = {**data, "np_communication_id": cid}
+                by_id[str(cid)] = data
+
+            games_list = list(by_id.values())
+        games_list.sort(key=lambda x: (x.get("trophy_name") or "").lower())
+        logger.debug(f"Loaded {len(games_list)} PSN game cache document(s) from database")
+        return games_list
+    except Exception as e:
+        logger.error(f"Error loading PSN game cache from database: {e}")
+        return []
+
+
+def get_psn_game_cache_by_comm_id(np_communication_id: str) -> dict | None:
+    """Read one cached game document from the database (any backend)."""
+    if not np_communication_id:
+        return None
+    try:
+        path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
+        data = database_manager.get_data(path)
+        if data and isinstance(data, dict) and data.get("np_communication_id"):
+            logger.debug(f"Found cached game data for {np_communication_id}")
+            return data
+        logger.debug(f"No cached game data found for {np_communication_id}")
+        return None
+    except Exception as e:
+        logger.error(
+            f"Error retrieving cached game data for {np_communication_id}: {e}"
+        )
+        return None
+
+
+def update_psn_game_cache_in_db(np_communication_id: str, updates: dict) -> bool:
+    """Update fields in one cached game document. Does not require a PSNClient instance."""
+    try:
+        if not np_communication_id:
+            logger.error("Cannot update game cache: missing np_communication_id")
+            return False
+        existing_data = get_psn_game_cache_by_comm_id(np_communication_id)
+        if not existing_data:
+            logger.error(
+                f"Cannot update game cache: game {np_communication_id} not found"
+            )
+            return False
+        for key, value in updates.items():
+            existing_data[key] = value
+        existing_data["last_updated"] = datetime.now().isoformat()
+        path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
+        result = database_manager.set_data(path, existing_data)
+        if result:
+            logger.info(
+                f"Updated game cache for {np_communication_id}: {list(updates.keys())}"
+            )
+        else:
+            logger.error(f"Failed to update game cache for {np_communication_id}")
+        return result
+    except Exception as e:
+        logger.error(f"Error updating game cache for {np_communication_id}: {e}")
+        return False
+
+
+def delete_psn_game_cache_in_db(np_communication_id: str) -> bool:
+    """Delete one cached game path. See PSNClient.delete_game_cache_entry."""
+    if not np_communication_id:
+        logger.error("Cannot delete game cache: missing np_communication_id")
+        return False
+    try:
+        path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
+        if database_manager.delete_data(path):
+            logger.info(f"Deleted game cache entry {np_communication_id}")
+            return True
+        logger.error(f"Failed to delete game cache for {np_communication_id}")
+        return False
+    except Exception as e:
+        logger.error(f"Error deleting game cache for {np_communication_id}: {e}")
+        return False
 
 
 @dataclass
@@ -136,19 +277,7 @@ class PSNClient:
         Returns:
             Game data dict if found, None otherwise
         """
-        try:
-            path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
-            data = database_manager.get_data(path)
-            if data and isinstance(data, dict) and data.get("np_communication_id"):
-                logger.debug(f"Found cached game data for {np_communication_id}")
-                return data
-            logger.debug(f"No cached game data found for {np_communication_id}")
-            return None
-        except Exception as e:
-            logger.error(
-                f"Error retrieving cached game data for {np_communication_id}: {e}"
-            )
-            return None
+        return get_psn_game_cache_by_comm_id(np_communication_id)
 
     def store_game_data(self, game_data: dict) -> bool:
         """
@@ -194,25 +323,15 @@ class PSNClient:
             Game data dict if found, None otherwise
         """
         try:
-            # Get all cached game data
-            all_games_data = database_manager.get_data(PSN_GAME_DATA_PATH)
-            if not all_games_data or not isinstance(all_games_data, dict):
-                logger.debug(
-                    f"No cached games found when searching for np_title_id: {np_title_id}"
-                )
+            if not np_title_id:
                 return None
-
-            # Search through all games for matching np_title_id
-            for game_id, game_data in all_games_data.items():
-                if (
-                    isinstance(game_data, dict)
-                    and game_data.get("np_title_id") == np_title_id
-                ):
+            for game_data in load_all_psn_game_cache_docs_from_db():
+                if game_data.get("np_title_id") == np_title_id:
                     logger.debug(
-                        f"Found cached game by np_title_id {np_title_id}: {game_data.get('presence_name', game_id)}"
+                        f"Found cached game by np_title_id {np_title_id}: "
+                        f"{game_data.get('presence_name', 'unknown')}"
                     )
                     return game_data
-
             logger.debug(f"No cached game found with np_title_id: {np_title_id}")
             return None
         except Exception as e:
@@ -233,32 +352,19 @@ class PSNClient:
         try:
             if not game_name:
                 return None
-
-            # Get all cached game data
-            all_games_data = database_manager.get_data(PSN_GAME_DATA_PATH)
-            if not all_games_data or not isinstance(all_games_data, dict):
-                logger.debug(
-                    f"No cached games found when searching for name: {game_name}"
-                )
-                return None
-
             game_name_lower = game_name.lower()
-
-            # Search through all games for matching name
-            for game_id, game_data in all_games_data.items():
-                if isinstance(game_data, dict):
-                    presence_name = (game_data.get("presence_name") or "").lower()
-                    trophy_name = (game_data.get("trophy_name") or "").lower()
-
-                    if (
-                        presence_name == game_name_lower
-                        or trophy_name == game_name_lower
-                    ):
-                        logger.debug(
-                            f"Found cached game by name '{game_name}': {game_id}"
-                        )
-                        return game_data
-
+            for game_data in load_all_psn_game_cache_docs_from_db():
+                presence_name = (game_data.get("presence_name") or "").lower()
+                trophy_name = (game_data.get("trophy_name") or "").lower()
+                if (
+                    presence_name == game_name_lower
+                    or trophy_name == game_name_lower
+                ):
+                    logger.debug(
+                        f"Found cached game by name '{game_name}': "
+                        f"{game_data.get('np_communication_id', '')}"
+                    )
+                    return game_data
             logger.debug(f"No cached game found with name: {game_name}")
             return None
         except Exception as e:
@@ -272,24 +378,7 @@ class PSNClient:
         Returns:
             List of game data dicts, sorted by trophy_name
         """
-        try:
-            all_games_data = database_manager.get_data(PSN_GAME_DATA_PATH)
-            if not all_games_data or not isinstance(all_games_data, dict):
-                logger.debug("No cached games found")
-                return []
-
-            games_list = []
-            for game_id, game_data in all_games_data.items():
-                if isinstance(game_data, dict) and game_data.get("np_communication_id"):
-                    games_list.append(game_data)
-
-            # Sort by trophy_name for easier browsing
-            games_list.sort(key=lambda x: (x.get("trophy_name") or "").lower())
-            logger.debug(f"Retrieved {len(games_list)} cached games")
-            return games_list
-        except Exception as e:
-            logger.error(f"Error retrieving all cached games: {e}")
-            return []
+        return load_all_psn_game_cache_docs_from_db()
 
     def update_game_cache_entry(self, np_communication_id: str, updates: dict) -> bool:
         """
@@ -302,41 +391,11 @@ class PSNClient:
         Returns:
             True if updated successfully, False otherwise
         """
-        try:
-            if not np_communication_id:
-                logger.error("Cannot update game cache: missing np_communication_id")
-                return False
+        return update_psn_game_cache_in_db(np_communication_id, updates)
 
-            # Get existing game data
-            existing_data = self.get_cached_game_data(np_communication_id)
-            if not existing_data:
-                logger.error(
-                    f"Cannot update game cache: game {np_communication_id} not found"
-                )
-                return False
-
-            # Apply updates
-            for key, value in updates.items():
-                existing_data[key] = value
-
-            # Update timestamp
-            existing_data["last_updated"] = datetime.now().isoformat()
-
-            # Store updated data
-            path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
-            result = database_manager.set_data(path, existing_data)
-
-            if result:
-                logger.info(
-                    f"Updated game cache for {np_communication_id}: {list(updates.keys())}"
-                )
-            else:
-                logger.error(f"Failed to update game cache for {np_communication_id}")
-
-            return result
-        except Exception as e:
-            logger.error(f"Error updating game cache for {np_communication_id}: {e}")
-            return False
+    def delete_game_cache_entry(self, np_communication_id: str) -> bool:
+        """Remove one cached game document. Next presence cycle may re-fetch and store it."""
+        return delete_psn_game_cache_in_db(np_communication_id)
 
     def connect(self) -> bool:
         """
@@ -540,21 +599,14 @@ class PSNClient:
             )
         return None
 
-    def get_all_games(self) -> dict | None:
-        """
-        Fetches all game titles and their trophy summaries for the user or specified PSN username.
-        Handles pagination to retrieve more than 800 games if needed.
-        """
+    def get_trophy_target_account_id(self) -> str | None:
+        """Account ID used for trophy APIs (tracked PSN user or authenticating user)."""
         if not self.is_connected() or not self.api:
-            logger.warning("Cannot get all games, not connected.")
-            if not self.connect():  # Try to reconnect
+            logger.warning("Cannot resolve trophy account, not connected.")
+            if not self.connect():
                 return None
-
-        # Use specified PSN username if available, otherwise use authenticated user's account_id
         target_account_id = self.account_id
-
         if self.psn_username:
-            # If we have a specific PSN username, we need to get their account_id
             try:
                 logger.debug(
                     f"Getting account_id for PSN username: {self.psn_username}"
@@ -569,9 +621,54 @@ class PSNClient:
                     f"Failed to get account_id for PSN username {self.psn_username}: {e}"
                 )
                 return None
-
         if not target_account_id:
-            logger.warning("Cannot get all games, no target account_id available.")
+            logger.warning("No trophy target account_id available.")
+            return None
+        return target_account_id
+
+    def resolve_np_communication_id_from_np_title_id(
+        self, np_title_id: str
+    ) -> str | None:
+        """
+        Map presence ``npTitleId`` to ``npCommunicationId`` using the trophy-by-title-id
+        endpoint (works when the bulk trophy title list is empty or names do not match).
+        """
+        if not np_title_id or not self.api:
+            return None
+        if not self.is_connected():
+            if not self.connect():
+                return None
+        account_id = self.get_trophy_target_account_id()
+        if not account_id:
+            return None
+        try:
+            comm_id = TrophyTitleIterator.get_np_communication_id(
+                self.api.authenticator, np_title_id, account_id
+            )
+            if comm_id:
+                logger.info(
+                    f"Resolved np_communication_id from np_title_id {np_title_id!r}: {comm_id}"
+                )
+            return comm_id or None
+        except (PSNAWPNotFoundError, PSNAWPBadRequestError) as e:
+            logger.warning(
+                f"np_title_id lookup failed for {np_title_id!r} (account={account_id}): {e}"
+            )
+            return None
+        except Exception as e:
+            logger.error(
+                f"Unexpected error resolving np_title_id {np_title_id!r}: {e}",
+                exc_info=True,
+            )
+            return None
+
+    def get_all_games(self) -> dict | None:
+        """
+        Fetches all game titles and their trophy summaries for the user or specified PSN username.
+        Handles pagination to retrieve more than 800 games if needed.
+        """
+        target_account_id = self.get_trophy_target_account_id()
+        if not target_account_id:
             return None
 
         logger.debug(f"Fetching all games for account_id: {target_account_id}")
@@ -897,8 +994,10 @@ class PSNClient:
             )
             return None
 
+        platform_type = presence_format_to_platform_type(platform)
         logger.debug(
-            f"Fetching trophy groups for game: {np_communication_id} on {platform}"
+            f"Fetching trophy groups for game: {np_communication_id} on {platform} "
+            f"({platform_type})"
         )
 
         try:
@@ -907,7 +1006,7 @@ class PSNClient:
             # Fetch trophy groups summary for the game
             trophy_groups_summary = user.trophy_groups_summary(  # type: ignore
                 np_communication_id=np_communication_id,
-                platform=platform.upper(),
+                platform=platform_type,
                 include_progress=True,
             )
 
@@ -1166,12 +1265,14 @@ class PSNClient:
                 }
 
             # Fetch specific game's defined and earned trophies using trophy_groups_summary
+            platform_type = presence_format_to_platform_type(platform)
             logger.debug(
-                f"Fetching trophy groups summary for game with ID: {correct_np_comm_id}"
+                f"Fetching trophy groups summary for game with ID: {correct_np_comm_id} "
+                f"on {platform} ({platform_type})"
             )
             trophy_groups_summary = user.trophy_groups_summary(  # type: ignore
                 np_communication_id=correct_np_comm_id,
-                platform=platform.upper(),  # Ensure platform is uppercase as API might expect
+                platform=platform_type,
                 include_progress=True,  # This gets earned trophy data as well
             )
             logger.debug(

@@ -37,6 +37,17 @@ from .psnapi import PSNClient, PSNData, PSNGameMismatch  # PSNData for default o
 
 logger = logging.getLogger(__name__)  # Ensure logger is configured in your app
 
+
+def _normalize_psn_game_title(name: str) -> str:
+    """Casefold, strip common trademark symbols, collapse whitespace for title matching."""
+    if not name:
+        return ""
+    s = name.casefold()
+    for ch in ("\u2122", "\u00ae"):
+        s = s.replace(ch, "")
+    return " ".join(s.split())
+
+
 # --- Global PSN Module Variables ---
 psn_client_instance: Optional[PSNClient] = None
 psn_update_thread: Optional[threading.Thread] = None
@@ -296,16 +307,18 @@ def psn_data_update_loop():
                     f"Cache MISS for game '{presence_game_name}' - fetching from API..."
                 )
 
-                # Fetch all games to find the np_communication_id
-                all_games = psn_client_instance.get_all_games()
+                all_games_result = psn_client_instance.get_all_games()
+                bulk_fetch_failed = all_games_result is None
+                all_games = all_games_result if all_games_result is not None else {}
+                np_communication_id = None
 
+                presence_key = _normalize_psn_game_title(presence_game_name)
                 if all_games:
-                    # Find the current game by matching name
                     for game_id, game_data in all_games.items():
-                        game_name = game_data.get("name", "")
-                        if (
-                            game_name
-                            and game_name.lower() == presence_game_name.lower()
+                        game_name = game_data.get("name") or ""
+                        if game_name and (
+                            game_name.lower() == presence_game_name.lower()
+                            or _normalize_psn_game_title(game_name) == presence_key
                         ):
                             np_communication_id = game_id
                             logger.info(
@@ -313,15 +326,21 @@ def psn_data_update_loop():
                             )
                             break
 
-                    if np_communication_id:
-                        # Fetch trophy groups for this game
-                        trophy_groups = psn_client_instance.get_game_trophy_groups(
-                            np_communication_id, platform
+                if not np_communication_id and np_title_id:
+                    resolved = (
+                        psn_client_instance.resolve_np_communication_id_from_np_title_id(
+                            np_title_id
                         )
+                    )
+                    if resolved:
+                        np_communication_id = resolved
 
-                        # Step 4: Store all game data from the API response
+                if np_communication_id:
+                    trophy_groups = psn_client_instance.get_game_trophy_groups(
+                        np_communication_id, platform
+                    )
+                    if all_games:
                         for game_id, game_data in all_games.items():
-                            # Build the game cache entry
                             game_cache_entry = {
                                 "np_communication_id": game_id,
                                 "np_title_id": np_title_id
@@ -333,45 +352,63 @@ def psn_data_update_loop():
                                 "trophy_name": game_data.get("name"),
                                 "cover_art_url": game_data.get("icon_url"),
                                 "platform": game_data.get("platform"),
-                                "trophy_groups": [],  # Will be populated for current game
+                                "trophy_groups": [],
                                 "last_updated": datetime.now().isoformat(),
                             }
-
-                            # Add trophy groups for the current game
                             if game_id == np_communication_id and trophy_groups:
                                 game_cache_entry["trophy_groups"] = trophy_groups
                                 game_cache_entry["np_title_id"] = np_title_id
                                 game_cache_entry["presence_name"] = presence_game_name
-
-                            # Store in database
                             psn_client_instance.store_game_data(game_cache_entry)
-
-                        logger.info(f"Stored {len(all_games)} games to database cache")
-                        psn_client_instance.psn_data.current_game_np_comm_id = (
-                            np_communication_id
-                        )
-                        # Clear any existing mismatch since we found a match
-                        psn_client_instance.psn_data.current_game_mismatch = None
-                    else:
-                        # Mismatch detected: presence game name doesn't match any trophy titles
-                        logger.exception(
-                            f"Could not find np_communication_id for game '{presence_game_name}' in trophy titles - MISMATCH DETECTED"
-                        )
-
-                        # Create mismatch record
-                        mismatch = PSNGameMismatch(
-                            presence_name=presence_game_name,
-                            np_title_id=np_title_id,
-                            platform=platform,
-                            detected_at=datetime.now().isoformat(),
-                            notified=False,
-                        )
-                        psn_client_instance.psn_data.current_game_mismatch = mismatch
                         logger.info(
-                            f"Created mismatch record for game: {presence_game_name}"
+                            f"Stored {len(all_games)} games to database cache"
                         )
+                    else:
+                        single_entry = {
+                            "np_communication_id": np_communication_id,
+                            "np_title_id": np_title_id,
+                            "presence_name": presence_game_name,
+                            "trophy_name": presence_game_name,
+                            "cover_art_url": None,
+                            "platform": platform,
+                            "trophy_groups": trophy_groups or [],
+                            "last_updated": datetime.now().isoformat(),
+                        }
+                        psn_client_instance.store_game_data(single_entry)
+                        logger.info(
+                            "Stored single game to database cache "
+                            "(np_title_id resolution; bulk trophy list empty)"
+                        )
+                    psn_client_instance.psn_data.current_game_np_comm_id = (
+                        np_communication_id
+                    )
+                    psn_client_instance.psn_data.current_game_mismatch = None
                 else:
-                    logger.exception("Failed to fetch all games from API")
+                    logger.warning(
+                        f"Could not resolve game for cache: presence_name={presence_game_name!r} "
+                        f"np_title_id={np_title_id!r} all_games_empty={not bool(all_games)} "
+                        f"bulk_fetch_failed={bulk_fetch_failed}"
+                    )
+                    if bulk_fetch_failed:
+                        logger.exception(
+                            "Failed to fetch bulk trophy list from API and "
+                            "np_title_id resolution did not succeed"
+                        )
+                    elif not all_games:
+                        logger.warning(
+                            "Bulk trophy list empty; np_title_id resolution did not yield a game"
+                        )
+                    mismatch = PSNGameMismatch(
+                        presence_name=presence_game_name,
+                        np_title_id=np_title_id,
+                        platform=platform,
+                        detected_at=datetime.now().isoformat(),
+                        notified=False,
+                    )
+                    psn_client_instance.psn_data.current_game_mismatch = mismatch
+                    logger.info(
+                        f"Created mismatch record for game: {presence_game_name}"
+                    )
 
                 sleep_time = SLEEP_CACHE_MISS
 
