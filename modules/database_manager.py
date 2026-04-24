@@ -531,9 +531,9 @@ class SQLDatabase(DatabaseInterface):
 
             for path in paths:
                 data = self.get_data(path)
-                if data:
-                    # Convert flat path to nested dict structure
-                    self._set_nested_value(snapshot, path, data)
+                # Include empty dicts so snapshot mirrors all rows (merged shape may
+                # still disagree with per-path documents for the explorer).
+                self._set_nested_value(snapshot, path, data)
 
             return snapshot
 
@@ -1253,9 +1253,10 @@ class MongoDatabase(DatabaseInterface):
             snapshot = {}
             for doc in self._collection.find({}):
                 path = doc.get("data_path", "")
+                if not path:
+                    continue
                 data = doc.get("data", {})
-                if path and data:
-                    self._set_nested_value(snapshot, path, data)
+                self._set_nested_value(snapshot, path, data)
 
             return snapshot
 

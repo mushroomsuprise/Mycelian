@@ -422,7 +422,14 @@ class DatabaseViewer:
         if path in self.pending_changes:
             return self.pending_changes[path]
 
-        # Navigate through snapshot using path
+        # SQLite and MongoDB store one document per path; merged get_snapshot() can
+        # disagree with get_data() when paths are prefix-related. Always read the
+        # canonical document from the backend for those types.
+        db_type = database_manager.get_config().database_type
+        if db_type in ("sql", "mongodb"):
+            return database_manager.get_data(path)
+
+        # Firebase: navigate through snapshot (matches RTDB tree shape)
         parts = path.split("/")
         current = self.snapshot
 
@@ -430,7 +437,6 @@ class DatabaseViewer:
             if isinstance(current, dict) and part in current:
                 current = current[part]
             else:
-                # Path not in snapshot, try direct database access
                 return database_manager.get_data(path)
 
         return current
@@ -481,8 +487,12 @@ class DatabaseViewer:
         # Save to database
         if database_manager.set_data(self.current_path, data):
             ui.notify(f"Saved: {self.current_path}", type="positive")
-            # Update snapshot
-            self._set_data_in_snapshot(self.current_path, data)
+            db_type = database_manager.get_config().database_type
+            if db_type in ("sql", "mongodb"):
+                self._load_snapshot()
+                self._build_tree()
+            else:
+                self._set_data_in_snapshot(self.current_path, data)
 
             if self._save_btn:
                 self._save_btn.disable()

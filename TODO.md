@@ -135,7 +135,7 @@ General Items:
     [x] - Remove the "Migration" tab from settings and all related code. This will now be a deprecated feature.
     [x] - Remove the "StreamLabs" tab from settings and all related code. This will now be a deprecated feature.
     [] - The "Database Explorer" window does not seem to load SQLite database setups. It works correctly for Firebase.
-    [] - For "Game Hooks" there should be an OS detection, that will disable any of the toggles that will not work on the OS the app is currently running on.
+    [x] - For "Game Hooks" there should be an OS detection, that will disable any of the toggles that will not work on the OS the app is currently running on.
     [x] - Check over the PSN game cache system the app has. It either does not work, or does not properly display the cached game data in the UI.
     [x] - Setup the game cache as "cells" similar to the YouTube playlist filter, so users can click to delete a game if they need to reload the cached data.
     [] - Add a label that displays something like "Not connected? click here to get started:" next to the help icon, if the Twitch service is not connected on the "Twitch" tab in Settings.
