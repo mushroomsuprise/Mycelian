@@ -34,6 +34,7 @@ import threading
 import time
 from pathlib import Path
 
+from modules import native_window_bridge  # noqa: F401 — native webview subprocess window_args
 from modules import chatbot, mainuiwindow, twitch
 from modules.startup_profiler import (
     timed,

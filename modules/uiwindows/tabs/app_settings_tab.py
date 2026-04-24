@@ -150,16 +150,10 @@ class AppSettingsTab:
                         self.ui_elements["notifications_enabled"] = (
                             ui.switch(value=self.buffer.notifications_enabled)
                             .classes("q-switch")
-                            .on(
-                                "change",
+                            .on_value_change(
                                 lambda e: self._set(
-                                    "notifications_enabled",
-                                    bool(
-                                        getattr(
-                                            e, "args", [getattr(e, "value", False)]
-                                        )[0]
-                                    ),
-                                ),
+                                    "notifications_enabled", bool(e.value)
+                                )
                             )
                         )
 
@@ -169,17 +163,22 @@ class AppSettingsTab:
                         self.ui_elements["auto_update"] = (
                             ui.switch(value=self.buffer.auto_update)
                             .classes("q-switch")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "auto_update",
-                                    bool(
-                                        getattr(
-                                            e, "args", [getattr(e, "value", False)]
-                                        )[0]
-                                    ),
-                                ),
+                            .on_value_change(
+                                lambda e: self._set("auto_update", bool(e.value))
                             )
+                        )
+
+                    with ui.row().classes("w-full items-center"):
+                        ui.label("Start maximized:").classes("w-40")
+                        self.ui_elements["start_maximized"] = (
+                            ui.switch(value=self.buffer.start_maximized)
+                            .classes("q-switch")
+                            .on_value_change(
+                                lambda e: self._set("start_maximized", bool(e.value))
+                            )
+                        )
+                        ui.label("Applies on next launch").classes(
+                            "ml-2 secondary-text text-sm"
                         )
 
                     # Update interval
@@ -303,8 +302,11 @@ class AppSettingsTab:
     def save(self) -> None:
         if not self.buffer:
             return
-        # persist buffered values to state_manager
+        # persist buffered values to state_manager (skip hardcoded metadata fields)
+        _skip_save = frozenset({"version", "build_date"})
         for field in self.buffer.__dataclass_fields__.keys():
+            if field in _skip_save:
+                continue
             state_manager.update_app_setting(field, getattr(self.buffer, field))
         if state_manager.save_changes():
             from nicegui import ui as _ui

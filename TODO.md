@@ -154,7 +154,7 @@ General Items:
 
 Priority Fixes:
     [?] - Add in setting to main alerts template to silently skip (but hold for the the set duration) if a point alert does not have a image/video and audio. This should check if there is a template file that is named the exact same as the "alert_name" field in the alert_data. If so, it should use the duration from that config file.
-    [] - Fix browse dialog not inputting the directory and file name into the input fields. (seems to be random, sometimes it works, sometimes it doesn't, maybe its special characters?)
-    [] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
-    [] - Add setting to start app not maximized
+    [?] - Fix browse dialog not inputting the directory and file name into the input fields. (seems to be random, sometimes it works, sometimes it doesn't, maybe its special characters?)
+    [?] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
+    [?] - Add setting to start app not maximized
     [] - Setup "generic image/video" template, so the file can just be renamed and all websocket events will point to the file name.

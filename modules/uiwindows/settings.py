@@ -63,6 +63,14 @@ from .tabs import (
 
 logger = logging.getLogger(__name__)
 
+# Native-path file browser dialogs (resizable; OS separators on Windows).
+# self-start + mx-auto: keeps intrinsic width so horizontal resize works (not only height).
+_FILE_BROWSER_CARD_CLASSES = (
+    "mx-auto self-start min-w-[480px] min-h-[400px] w-[min(88vw,1100px)] h-[500px] "
+    "!max-w-[min(96vw,1920px)] max-h-[90vh] resize overflow-auto p-4 flex flex-col"
+)
+_FILE_BROWSER_DIALOG_PROPS = "content-class=mycelian-wide-file-dialog"
+
 # CSS for basic styling - uses theme CSS variables
 CSS = """
 .content-section {
@@ -4459,10 +4467,12 @@ class SettingsUI:
             "file_list": None,
         }
 
-        with ui.dialog() as dialog, ui.card().classes("w-[600px] h-[500px] p-4"):
-            ui.label("Select Alerts JSON File").classes("text-lg font-bold mb-4")
+        with ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog, ui.card().classes(
+            _FILE_BROWSER_CARD_CLASSES
+        ):
+            ui.label("Select Alerts JSON File").classes("text-lg font-bold mb-4 shrink-0")
 
-            with ui.column().classes("w-full h-full gap-3"):
+            with ui.column().classes("w-full min-h-0 flex-1 gap-3"):
                 # Current path display and manual entry
                 with ui.row().classes("w-full items-center gap-2"):
                     ui.label("Path:").classes("text-sm font-medium")
@@ -4512,19 +4522,19 @@ class SettingsUI:
 
                 # File listing area
                 with ui.scroll_area().classes(
-                    "w-full flex-1 border rounded-lg p-2 bg-theme-base"
+                    "w-full min-h-0 flex-1 border rounded-lg p-2 bg-theme-base"
                 ):
                     dialog_state["file_list"] = ui.column().classes("w-full gap-1")
 
                 # Selected file display
-                with ui.row().classes("w-full items-center"):
+                with ui.row().classes("w-full items-center shrink-0"):
                     ui.label("Selected:").classes("text-sm font-medium")
                     dialog_state["selected_label"] = ui.label("None").classes(
                         "text-sm secondary-text"
                     )
 
                 # Dialog buttons
-                with ui.row().classes("w-full justify-end gap-2 mt-4"):
+                with ui.row().classes("w-full justify-end gap-2 mt-4 shrink-0"):
                     ui.button("Cancel", on_click=dialog.close).classes(
                         "btn-cancel"
                     )
@@ -5000,10 +5010,12 @@ class SettingsUI:
             "field_key": field_key,
         }
 
-        with ui.dialog() as dialog, ui.card().classes("w-[600px] h-[500px] p-4"):
-            ui.label(title).classes("text-lg font-bold mb-4")
+        with ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog, ui.card().classes(
+            _FILE_BROWSER_CARD_CLASSES
+        ):
+            ui.label(title).classes("text-lg font-bold mb-4 shrink-0")
 
-            with ui.column().classes("w-full h-full gap-3"):
+            with ui.column().classes("w-full min-h-0 flex-1 gap-3"):
                 # Current path display and manual entry
                 with ui.row().classes("w-full items-center gap-2"):
                     ui.label("Path:").classes("text-sm font-medium")
@@ -5018,7 +5030,7 @@ class SettingsUI:
                     ).props("dense")
 
                 # Quick access buttons
-                with ui.row().classes("w-full gap-2 mb-2"):
+                with ui.row().classes("w-full gap-2 mb-2 shrink-0"):
                     ui.button(
                         "Home",
                         icon="home",
@@ -5053,12 +5065,12 @@ class SettingsUI:
 
                 # File listing area
                 with ui.scroll_area().classes(
-                    "w-full flex-1 border rounded-lg p-2 bg-theme-base"
+                    "w-full min-h-0 flex-1 border rounded-lg p-2 bg-theme-base"
                 ):
                     dialog_state["file_list"] = ui.column().classes("w-full gap-1")
 
                 # Selected file display
-                with ui.row().classes("w-full items-center"):
+                with ui.row().classes("w-full items-center shrink-0"):
                     ui.label("Selected:").classes("text-sm font-medium")
                     dialog_state["selected_label"] = ui.label("None").classes(
                         "text-sm secondary-text"
@@ -5066,7 +5078,7 @@ class SettingsUI:
 
                 # New file name input (for SQL databases)
                 if file_type == "sql":
-                    with ui.row().classes("w-full items-center"):
+                    with ui.row().classes("w-full items-center shrink-0"):
                         ui.label("Or create new:").classes("text-sm font-medium")
                         dialog_state["new_filename_input"] = ui.input(
                             value=default_filename,
@@ -5074,7 +5086,7 @@ class SettingsUI:
                         ).classes("flex-1")
 
                 # Dialog buttons
-                with ui.row().classes("w-full justify-end gap-2 mt-4"):
+                with ui.row().classes("w-full justify-end gap-2 mt-4 shrink-0"):
                     ui.button("Cancel", on_click=dialog.close).classes(
                         "btn-cancel"
                     )

@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -82,10 +83,9 @@ logger = logging.getLogger(__name__)
 # Properly initialize firebase and state managers
 # Legacy function removed - replaced by init_app_state_background for non-blocking initialization
 
-# Setup app window properties
+# Setup app window properties (maximized is applied in start_ui() from saved settings + env bridge)
 app.native.window_args["title"] = "Mycelian"
 app.native.window_args["min_size"] = (1400, 850)
-app.native.window_args["maximized"] = True
 ui.colors(
     primary="var(--color-primary)",
 )
@@ -93,6 +93,7 @@ ui.colors(
 
 # Theme CSS will be injected dynamically when theme is applied
 _base_css_injected = False
+_file_browser_qdialog_css_injected = False
 
 
 def _get_quasar_brand_css(theme) -> str:
@@ -251,6 +252,19 @@ def apply_theme(theme_name: str):
 
     logger.info(f"Applied theme: {theme_name} ({theme_type})")
 
+
+# Quasar caps dialog content at 560px on .q-dialog__inner--minimized > div (not on __inner itself).
+# See https://github.com/zauberzeug/nicegui/discussions/3313 — override both inner and direct child.
+FILE_BROWSER_QDIALOG_CSS = """
+.q-dialog__inner.mycelian-wide-file-dialog {
+  max-width: min(96vw, 1920px) !important;
+  width: auto !important;
+}
+.q-dialog__inner.mycelian-wide-file-dialog > div {
+  max-width: min(96vw, 1920px) !important;
+  width: auto !important;
+}
+"""
 
 # Activity feed specific CSS that includes animations
 ACTIVITY_FEED_CSS = """
@@ -887,6 +901,7 @@ def _configure_webview2_for_admin():
 
 def start_ui():
     """Start the NiceGUI server (blocking call)"""
+    global _file_browser_qdialog_css_injected
     try:
         # Create UI elements if not already created (for phased initialization)
         if not _ui_elements_created:
@@ -924,6 +939,33 @@ def start_ui():
         _configure_webview2_for_admin()
 
         logger.info("Starting NiceGUI server...")
+        try:
+            from .dataobjects import state_manager
+
+            maximized = bool(state_manager.get_app_settings().start_maximized)
+        except Exception as e:
+            logger.warning(
+                "Could not read start_maximized from app settings; using default maximized window: %s",
+                e,
+            )
+            maximized = True
+
+        app.native.window_args["maximized"] = maximized
+        # Spawned native webview process reads this (see modules/native_window_bridge.py).
+        os.environ["MYCELIAN_NATIVE_WINDOW_ARGS"] = json.dumps(
+            {
+                "maximized": maximized,
+                "min_size": [1400, 850],
+            }
+        )
+
+        if not _file_browser_qdialog_css_injected:
+            ui.add_head_html(
+                f"<style id='mycelian-file-browser-qdialog'>{FILE_BROWSER_QDIALOG_CSS}</style>",
+                shared=True,
+            )
+            _file_browser_qdialog_css_injected = True
+
         ui.run(native=True, dark=True, reload=False)
         logger.info("NiceGUI app started.")
     except Exception as e:

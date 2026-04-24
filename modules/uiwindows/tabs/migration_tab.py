@@ -22,6 +22,12 @@ from ...uiwindows.alertsettings import refresh_alert_dropdowns
 
 logger = logging.getLogger(__name__)
 
+_FILE_BROWSER_CARD_CLASSES = (
+    "mx-auto self-start min-w-[480px] min-h-[400px] w-[min(88vw,1100px)] h-[500px] "
+    "!max-w-[min(96vw,1920px)] max-h-[90vh] resize overflow-auto p-4 flex flex-col"
+)
+_FILE_BROWSER_DIALOG_PROPS = "content-class=mycelian-wide-file-dialog"
+
 
 class MigrationTab:
     """Migration tab for transferring data from old Firebase database."""
@@ -465,9 +471,16 @@ class MigrationTab:
         """Show a simplified file picker dialog."""
         from pathlib import Path
 
-        # Create dialog state
+        start = initial_path or str(Path.home())
+        try:
+            p0 = Path(start).expanduser()
+            start_native = str(p0.resolve()) if p0.exists() else str(Path.home())
+        except OSError:
+            start_native = str(Path.home())
+
+        # Create dialog state (native OS path strings in UI)
         dialog_state = {
-            "current_path": initial_path or str(Path.home()),
+            "current_path": start_native,
             "selected_file": None,
             "path_input": None,
             "file_list": None,
@@ -476,10 +489,12 @@ class MigrationTab:
             "browse_mode": browse_mode,
         }
 
-        with ui.dialog() as dialog, ui.card().classes("w-[500px] h-[400px] p-4"):
-            ui.label(title).classes("text-lg font-bold mb-4")
+        with ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog, ui.card().classes(
+            _FILE_BROWSER_CARD_CLASSES
+        ):
+            ui.label(title).classes("text-lg font-bold mb-4 shrink-0")
 
-            with ui.column().classes("w-full h-full gap-3"):
+            with ui.column().classes("w-full min-h-0 flex-1 gap-3"):
                 # Current path input
                 with ui.row().classes("w-full items-center gap-2"):
                     ui.label("Path:").classes("text-sm font-medium")
@@ -495,12 +510,12 @@ class MigrationTab:
 
                 # File listing area
                 with ui.scroll_area().classes(
-                    "w-full flex-1 border rounded-lg p-2 bg-theme-base"
+                    "w-full min-h-0 flex-1 border rounded-lg p-2 bg-theme-base"
                 ):
                     dialog_state["file_list"] = ui.column().classes("w-full gap-1")
 
                 # Selected item display
-                with ui.row().classes("w-full items-center"):
+                with ui.row().classes("w-full items-center shrink-0"):
                     ui.label("Selected:").classes("text-sm font-medium")
                     dialog_state["selected_label"] = ui.label("None").classes(
                         "text-sm secondary-text"
@@ -522,7 +537,7 @@ class MigrationTab:
                         ).classes("btn-secondary text-sm")
 
                 # Dialog buttons
-                with ui.row().classes("w-full justify-end gap-2 mt-4"):
+                with ui.row().classes("w-full justify-end gap-2 mt-4 shrink-0"):
                     ui.button("Cancel", on_click=dialog.close).classes(
                         "btn-secondary"
                     )
@@ -557,12 +572,25 @@ class MigrationTab:
 
     def _navigate_to_path(self, dialog_state):
         """Navigate to the path entered in the input field."""
-        path = dialog_state["path_input"].value
-        if os.path.exists(path):
-            dialog_state["current_path"] = path
+        from pathlib import Path
+
+        raw = (dialog_state["path_input"].value or "").strip()
+        if not raw:
+            return
+        path = Path(raw).expanduser()
+        try:
+            path = path.resolve()
+        except OSError:
+            pass
+        if path.exists() and path.is_dir():
+            native = str(path)
+            dialog_state["current_path"] = native
+            dialog_state["path_input"].value = native
+            if hasattr(dialog_state["path_input"], "update"):
+                dialog_state["path_input"].update()
             self._update_file_listing(dialog_state)
         else:
-            ui.notify(f"Path does not exist: {path}", type="warning")
+            ui.notify(f"Path does not exist: {raw}", type="warning")
 
     def _update_file_listing(self, dialog_state):
         """Update the file listing for the current path."""
