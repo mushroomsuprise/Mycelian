@@ -529,6 +529,109 @@ def _ff7_unified_item_name(item_id: int) -> str:
     return s or f"Item {i}"
 
 
+def _equipped_weapon_byte_to_local(w_raw: int) -> int:
+    """Map savemap weapon byte to 0..127 local index, or -1 if invalid."""
+    w = int(w_raw) & 0xFF
+    if w == 0xFF:
+        return -1
+    if ITEM_ID_WEAPON_BASE <= w <= 0xFF:
+        loc = w - ITEM_ID_WEAPON_BASE
+        return loc if 0 <= loc <= 127 else -1
+    if 0 <= w <= 127:
+        return w
+    return -1
+
+
+def _equipped_armor_byte_to_local(a_raw: int) -> int:
+    """Map savemap armor byte to 0..31 local index, or -1 if invalid."""
+    a = int(a_raw) & 0xFF
+    if a == 0xFF:
+        return -1
+    if ITEM_ID_ARMOR_BASE <= a < ITEM_ID_ACCESSORY_BASE:
+        loc = a - ITEM_ID_ARMOR_BASE
+        return loc if 0 <= loc <= 31 else -1
+    if 0 <= a <= 31:
+        return a
+    return -1
+
+
+def _equipped_accessory_byte_to_local(acc_raw: int) -> int:
+    """Map savemap accessory byte to 0..31 local index, or -1 if empty."""
+    b = int(acc_raw) & 0xFF
+    if b == 0xFF:
+        return -1
+    if ITEM_ID_ACCESSORY_BASE <= b <= INV_ITEM_MAX_ID:
+        loc = b - ITEM_ID_ACCESSORY_BASE
+        return loc if 0 <= loc <= 31 else -1
+    if 0 <= b <= 31:
+        return b
+    return -1
+
+
+def _equipped_weapon_byte_to_unified(w_raw: int) -> Optional[int]:
+    loc = _equipped_weapon_byte_to_local(w_raw)
+    if loc < 0:
+        return None
+    return ITEM_ID_WEAPON_BASE + loc
+
+
+def _equipped_armor_byte_to_unified(a_raw: int) -> Optional[int]:
+    loc = _equipped_armor_byte_to_local(a_raw)
+    if loc < 0:
+        return None
+    return ITEM_ID_ARMOR_BASE + loc
+
+
+def _equipped_accessory_byte_to_unified(acc_raw: int) -> Optional[int]:
+    loc = _equipped_accessory_byte_to_local(acc_raw)
+    if loc < 0:
+        return None
+    return ITEM_ID_ACCESSORY_BASE + loc
+
+
+def _party_equipped_unified_counts(savemap: bytes) -> Dict[int, int]:
+    """Multiset of unified item IDs currently equipped on the three party slots."""
+    counts: Dict[int, int] = {}
+    for ps in range(3):
+        if len(savemap) <= SAVE_OFF_PARTY_SLOTS + ps:
+            continue
+        cid = savemap[SAVE_OFF_PARTY_SLOTS + ps]
+        if cid >= len(_CHAR_BLOCK) or cid == 0xFF:
+            continue
+        off = _CHAR_BLOCK[cid]
+        if off + REC_OFF_ACCESSORY >= len(savemap):
+            continue
+        w = int(savemap[off + REC_OFF_WEAPON])
+        a = int(savemap[off + REC_OFF_ARMOR])
+        acc = int(savemap[off + REC_OFF_ACCESSORY])
+        uw = _equipped_weapon_byte_to_unified(w)
+        if uw is not None:
+            counts[uw] = counts.get(uw, 0) + 1
+        ua = _equipped_armor_byte_to_unified(a)
+        if ua is not None:
+            counts[ua] = counts.get(ua, 0) + 1
+        uz = _equipped_accessory_byte_to_unified(acc)
+        if uz is not None:
+            counts[uz] = counts.get(uz, 0) + 1
+    return counts
+
+
+def _gain_explained_by_party_unequip(
+    item_u: int,
+    delta: int,
+    prev_body: Optional[Dict[int, int]],
+    cur_body: Dict[int, int],
+) -> bool:
+    """True if inventory qty increased only because this gear left a party slot."""
+    if prev_body is None or delta <= 0:
+        return False
+    prev_n = int(prev_body.get(item_u, 0))
+    cur_n = int(cur_body.get(item_u, 0))
+    if prev_n <= cur_n:
+        return False
+    return (prev_n - cur_n) >= delta
+
+
 def _parse_materia_block(rec: bytes, base: int, n_slots: int = 8) -> List[Dict[str, Any]]:
     _load_ff7_gear_layout_assets()
     slots: List[Dict[str, Any]] = []
@@ -569,22 +672,28 @@ def _char_gear_materia(rec: bytes) -> Dict[str, Any]:
             "materia_weapon_slot_types": list(_DEFAULT_MATERIA_SLOT_TYPES),
             "materia_armor_slot_types": list(_DEFAULT_MATERIA_SLOT_TYPES),
         }
-    w, a, acc_raw = int(rec[REC_OFF_WEAPON]), int(rec[REC_OFF_ARMOR]), int(rec[REC_OFF_ACCESSORY])
-    acc = -1 if acc_raw == 0xFF else acc_raw
+    w_raw, a_raw, acc_raw = (
+        int(rec[REC_OFF_WEAPON]),
+        int(rec[REC_OFF_ARMOR]),
+        int(rec[REC_OFF_ACCESSORY]),
+    )
+    w_loc = _equipped_weapon_byte_to_local(w_raw)
+    a_loc = _equipped_armor_byte_to_local(a_raw)
+    acc_loc = _equipped_accessory_byte_to_local(acc_raw)
     mw = _parse_materia_block(rec, REC_OFF_MATERIA_WEAPON, 8)
     ma = _parse_materia_block(rec, REC_OFF_MATERIA_ARMOR, 8)
     _load_ff7_gear_layout_assets()
     return {
-        "weapon_id": w,
-        "armor_id": a,
-        "accessory_id": acc,
-        "weapon_name": _gear_display_name(_WEAPON_NAMES_EN, w, 127),
-        "armor_name": _gear_display_name(_ARMOR_NAMES_EN, a, 31),
-        "accessory_name": _gear_display_name(_ACCESSORY_NAMES_EN, acc, 31),
+        "weapon_id": w_loc,
+        "armor_id": a_loc,
+        "accessory_id": acc_loc,
+        "weapon_name": _gear_display_name(_WEAPON_NAMES_EN, w_loc, 127),
+        "armor_name": _gear_display_name(_ARMOR_NAMES_EN, a_loc, 31),
+        "accessory_name": _gear_display_name(_ACCESSORY_NAMES_EN, acc_loc, 31),
         "materia_weapon": mw,
         "materia_armor": ma,
-        "materia_weapon_slot_types": _weapon_materia_slot_types(w),
-        "materia_armor_slot_types": _armor_materia_slot_types(a),
+        "materia_weapon_slot_types": _weapon_materia_slot_types(w_loc),
+        "materia_armor_slot_types": _armor_materia_slot_types(a_loc),
     }
 
 
@@ -1774,6 +1883,7 @@ class FF7Hook:
         self._infinite_items_backup_len = 0
         self._prev_inventory_sig: Optional[bytes] = None
         self._prev_gil_for_items: Optional[int] = None
+        self._prev_equipped_unified_counts: Optional[Dict[int, int]] = None
         self._last_item_gain: Optional[Dict[str, Any]] = None
         self._battle_log_lines: List[str] = []
         self._prev_battle_status: Dict[str, int] = {}
@@ -3530,6 +3640,8 @@ class FF7Hook:
         inv_slice = bytes(
             savemap[SAVE_OFF_INV_ITEMS : SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2]
         )
+        cur_body = _party_equipped_unified_counts(savemap)
+        prev_body = self._prev_equipped_unified_counts
         prev = self._prev_inventory_sig
         prev_gil = self._prev_gil_for_items
         if (
@@ -3538,6 +3650,8 @@ class FF7Hook:
             and prev_gil is not None
             and gil >= prev_gil
         ):
+            # Prefer the largest qty gain; tie-break later inventory slot (higher idx).
+            best: Optional[Tuple[int, int, int]] = None
             for idx in range(INV_ITEM_SLOTS):
                 o = idx * 2
                 cur = struct.unpack_from("<H", inv_slice, o)[0]
@@ -3547,24 +3661,30 @@ class FF7Hook:
                 if cur == 0xFFFF:
                     continue
                 ci, cq = cur & 0x1FF, (cur >> 9) & 0x7F
+                dlt: Optional[int] = None
                 if pr == 0xFFFF and cq > 0:
-                    self._last_item_gain = {
-                        "name": _ff7_unified_item_name(int(ci)),
-                        "delta": int(cq),
-                        "item_id": int(ci),
-                    }
-                    break
-                if pr != 0xFFFF:
+                    dlt = int(cq)
+                elif pr != 0xFFFF:
                     pi, pq = pr & 0x1FF, (pr >> 9) & 0x7F
                     if ci == pi and cq > pq:
-                        self._last_item_gain = {
-                            "name": _ff7_unified_item_name(int(ci)),
-                            "delta": int(cq - pq),
-                            "item_id": int(ci),
-                        }
-                        break
+                        dlt = int(cq - pq)
+                if dlt is None or dlt <= 0:
+                    continue
+                if best is None or dlt > best[0] or (dlt == best[0] and idx > best[1]):
+                    best = (dlt, idx, int(ci))
+            if best is not None:
+                dlt, _idx, ci = best
+                if not _gain_explained_by_party_unequip(
+                    ci, dlt, prev_body, cur_body
+                ):
+                    self._last_item_gain = {
+                        "name": _ff7_unified_item_name(int(ci)),
+                        "delta": int(dlt),
+                        "item_id": int(ci),
+                    }
         self._prev_inventory_sig = inv_slice
         self._prev_gil_for_items = int(gil)
+        self._prev_equipped_unified_counts = cur_body
 
     def _tick_battle_status_log(
         self, party: List[Dict[str, Any]], enemies: List[Dict[str, Any]]
@@ -4232,7 +4352,14 @@ class FF7Hook:
         )
         cur = self._read_u8(rec_addr)
         if cur is not None and cur != 0xFF:
-            self._inv_add_item(base_id + int(cur), 1)
+            if gk == "weapon":
+                old_u = _equipped_weapon_byte_to_unified(int(cur))
+            elif gk == "armor":
+                old_u = _equipped_armor_byte_to_unified(int(cur))
+            else:
+                old_u = _equipped_accessory_byte_to_unified(int(cur))
+            if old_u is not None:
+                self._inv_add_item(old_u, 1)
         if not self._write(rec_addr, bytes([int(gear_id) & 0xFF])):
             return False, "write gear failed"
         self._call_ff7_party_stat_recalc()
