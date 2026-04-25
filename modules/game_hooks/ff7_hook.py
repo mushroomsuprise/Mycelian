@@ -505,9 +505,12 @@ def _ff7_unified_item_name(item_id: int) -> str:
     """
     English name for the unified 0x000..0x13F item id space: consumables, then
     weapons, armor, accessories (same as ``party_add_item_fn`` / kernel item table).
+
+    ``item_id`` is masked to 9 bits to match in-save inventory word encoding
+    (same as :meth:`FF7Hook._inv_read_item_slot`).
     """
     _load_ff7_gear_layout_assets()
-    i = int(item_id) & 0xFFFF
+    i = int(item_id) & 0x1FF
     if i < 0 or i > INV_ITEM_MAX_ID:
         return f"Item {i}"
     if i < ITEM_ID_WEAPON_BASE:
@@ -627,6 +630,70 @@ def _gain_explained_by_party_unequip(
         return False
     prev_n = int(prev_body.get(item_u, 0))
     cur_n = int(cur_body.get(item_u, 0))
+    if prev_n <= cur_n:
+        return False
+    return (prev_n - cur_n) >= delta
+
+
+def _materia_id_display_name(materia_id: int) -> str:
+    """Display name for a 0x00..0xFE kernel materia id; empty/0xFF are not valid picks."""
+    mid = int(materia_id) & 0xFF
+    if mid == 0xFF or mid < 0:
+        return ""
+    _load_ff7_gear_layout_assets()
+    s = (_MATERIA_NAMES_EN.get(str(mid), "") or "").strip()
+    return s or f"Materia {mid}"
+
+
+def _parse_inv_materia_multiset(inv_mat_slice: bytes) -> Dict[int, int]:
+    """Count each materia id in the inventory materia table (4 bytes per slot)."""
+    counts: Dict[int, int] = {}
+    n = min(INV_MATERIA_SLOTS, max(0, len(inv_mat_slice) // 4))
+    for i in range(n):
+        o = i * 4
+        b0 = int(inv_mat_slice[o]) & 0xFF
+        if b0 == 0xFF:
+            continue
+        counts[b0] = counts.get(b0, 0) + 1
+    return counts
+
+
+def _party_materia_equipped_id_counts(savemap: bytes) -> Dict[int, int]:
+    """Count each non-empty materia id in weapon+armor linked slots for the three party members."""
+    counts: Dict[int, int] = {}
+    for ps in range(3):
+        if len(savemap) <= SAVE_OFF_PARTY_SLOTS + ps:
+            continue
+        cid = savemap[SAVE_OFF_PARTY_SLOTS + ps]
+        if cid >= len(_CHAR_BLOCK) or cid == 0xFF:
+            continue
+        off = _CHAR_BLOCK[cid]
+        if off + REC_OFF_MATERIA_ARMOR + 8 * 4 > len(savemap):
+            continue
+        rec = savemap[off : off + 0x84]
+        for base in (REC_OFF_MATERIA_WEAPON, REC_OFF_MATERIA_ARMOR):
+            for i in range(8):
+                o = base + i * 4
+                if o + 1 > len(rec):
+                    break
+                mid = int(rec[o]) & 0xFF
+                if mid == 0xFF:
+                    continue
+                counts[mid] = counts.get(mid, 0) + 1
+    return counts
+
+
+def _gain_explained_by_materia_unequip(
+    mid: int,
+    delta: int,
+    prev_gear: Optional[Dict[int, int]],
+    cur_gear: Dict[int, int],
+) -> bool:
+    """True if inventory count increased only because this materia was moved off weapon/armor."""
+    if prev_gear is None or delta <= 0:
+        return False
+    prev_n = int(prev_gear.get(int(mid) & 0xFF, 0))
+    cur_n = int(cur_gear.get(int(mid) & 0xFF, 0))
     if prev_n <= cur_n:
         return False
     return (prev_n - cur_n) >= delta
@@ -1882,8 +1949,10 @@ class FF7Hook:
         self._infinite_items_backup: Optional[bytes] = None
         self._infinite_items_backup_len = 0
         self._prev_inventory_sig: Optional[bytes] = None
+        self._prev_materia_inv_sig: Optional[bytes] = None
         self._prev_gil_for_items: Optional[int] = None
         self._prev_equipped_unified_counts: Optional[Dict[int, int]] = None
+        self._prev_party_materia_equipped_counts: Optional[Dict[int, int]] = None
         self._last_item_gain: Optional[Dict[str, Any]] = None
         self._battle_log_lines: List[str] = []
         self._prev_battle_status: Dict[str, int] = {}
@@ -3635,23 +3704,37 @@ class FF7Hook:
 
     def _tick_recent_item_detection(self, savemap: Optional[bytes], gil: int) -> None:
         _load_ff7_gear_layout_assets()
-        if not savemap or len(savemap) < SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2:
+        need_inv = SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2
+        need_mat = SAVE_OFF_INV_MATERIA + INV_MATERIA_SLOTS * 4
+        min_len = max(need_inv, need_mat)
+        if not savemap or len(savemap) < min_len:
             return
         inv_slice = bytes(
             savemap[SAVE_OFF_INV_ITEMS : SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2]
         )
-        cur_body = _party_equipped_unified_counts(savemap)
-        prev_body = self._prev_equipped_unified_counts
+        mat_slice = bytes(
+            savemap[
+                SAVE_OFF_INV_MATERIA : SAVE_OFF_INV_MATERIA
+                + INV_MATERIA_SLOTS
+                * 4
+            ]
+        )
+        cur_eq_items = _party_equipped_unified_counts(savemap)
+        cur_eq_materia = _party_materia_equipped_id_counts(savemap)
+        prev_eq_items = self._prev_equipped_unified_counts
+        prev_eq_materia = self._prev_party_materia_equipped_counts
         prev = self._prev_inventory_sig
+        prev_mat = self._prev_materia_inv_sig
         prev_gil = self._prev_gil_for_items
+
+        # Unified items (consumables, weapons, armor, accessories) — 9-bit ids.
+        best_item: Optional[Tuple[int, int, int]] = None
         if (
             prev is not None
             and len(prev) == len(inv_slice)
             and prev_gil is not None
-            and gil >= prev_gil
+            and int(gil) >= int(prev_gil)
         ):
-            # Prefer the largest qty gain; tie-break later inventory slot (higher idx).
-            best: Optional[Tuple[int, int, int]] = None
             for idx in range(INV_ITEM_SLOTS):
                 o = idx * 2
                 cur = struct.unpack_from("<H", inv_slice, o)[0]
@@ -3660,31 +3743,121 @@ class FF7Hook:
                     continue
                 if cur == 0xFFFF:
                     continue
-                ci, cq = cur & 0x1FF, (cur >> 9) & 0x7F
+                ci, cq = int(cur) & 0x1FF, (int(cur) >> 9) & 0x7F
                 dlt: Optional[int] = None
                 if pr == 0xFFFF and cq > 0:
                     dlt = int(cq)
-                elif pr != 0xFFFF:
-                    pi, pq = pr & 0x1FF, (pr >> 9) & 0x7F
+                elif int(pr) != 0xFFFF:
+                    pi, pq = int(pr) & 0x1FF, (int(pr) >> 9) & 0x7F
                     if ci == pi and cq > pq:
                         dlt = int(cq - pq)
                 if dlt is None or dlt <= 0:
                     continue
-                if best is None or dlt > best[0] or (dlt == best[0] and idx > best[1]):
-                    best = (dlt, idx, int(ci))
-            if best is not None:
-                dlt, _idx, ci = best
-                if not _gain_explained_by_party_unequip(
-                    ci, dlt, prev_body, cur_body
+                if best_item is None or dlt > best_item[0] or (
+                    dlt == best_item[0] and idx > best_item[1]
                 ):
-                    self._last_item_gain = {
+                    best_item = (dlt, idx, int(ci))
+
+        # Materia inventory — kernel materia id (per-slot orbs; multiset diffs are stable
+        # if the player reorders the grid).
+        best_materia: Optional[Tuple[int, int]] = None
+        if (
+            prev_mat is not None
+            and len(prev_mat) == len(mat_slice)
+            and prev_gil is not None
+            and int(gil) >= int(prev_gil)
+        ):
+            pmc = _parse_inv_materia_multiset(prev_mat)
+            cmc = _parse_inv_materia_multiset(mat_slice)
+            for mid, cur_c in cmc.items():
+                prev_c = pmc.get(mid, 0)
+                d_g = int(cur_c) - int(prev_c)
+                if d_g <= 0:
+                    continue
+                if best_materia is None or d_g > best_materia[0] or (
+                    d_g == best_materia[0] and mid > best_materia[1]
+                ):
+                    best_materia = (d_g, int(mid))
+
+        chosen: Optional[Dict[str, Any]] = None
+        if best_item is not None and best_materia is not None:
+            idlt, _idx, ci = best_item
+            mdlt, mid = best_materia
+            # Same tick: show the single largest gain; tie — prefer item over materia.
+            if idlt >= mdlt:
+                if not _gain_explained_by_party_unequip(
+                    int(ci) & 0x1FF, int(idlt), prev_eq_items, cur_eq_items
+                ):
+                    chosen = {
+                        "kind": "item",
                         "name": _ff7_unified_item_name(int(ci)),
-                        "delta": int(dlt),
-                        "item_id": int(ci),
+                        "delta": int(idlt),
+                        "item_id": int(ci) & 0x1FF,
+                        "materia_id": None,
                     }
+                elif not _gain_explained_by_materia_unequip(
+                    int(mid) & 0xFF, int(mdlt), prev_eq_materia, cur_eq_materia
+                ):
+                    chosen = {
+                        "kind": "materia",
+                        "name": _materia_id_display_name(int(mid)),
+                        "delta": int(mdlt),
+                        "item_id": None,
+                        "materia_id": int(mid) & 0xFF,
+                    }
+            else:
+                if not _gain_explained_by_materia_unequip(
+                    int(mid) & 0xFF, int(mdlt), prev_eq_materia, cur_eq_materia
+                ):
+                    chosen = {
+                        "kind": "materia",
+                        "name": _materia_id_display_name(int(mid)),
+                        "delta": int(mdlt),
+                        "item_id": None,
+                        "materia_id": int(mid) & 0xFF,
+                    }
+                elif not _gain_explained_by_party_unequip(
+                    int(ci) & 0x1FF, int(idlt), prev_eq_items, cur_eq_items
+                ):
+                    chosen = {
+                        "kind": "item",
+                        "name": _ff7_unified_item_name(int(ci)),
+                        "delta": int(idlt),
+                        "item_id": int(ci) & 0x1FF,
+                        "materia_id": None,
+                    }
+        elif best_item is not None:
+            idlt, _idx, ci = best_item
+            if not _gain_explained_by_party_unequip(
+                int(ci) & 0x1FF, int(idlt), prev_eq_items, cur_eq_items
+            ):
+                chosen = {
+                    "kind": "item",
+                    "name": _ff7_unified_item_name(int(ci)),
+                    "delta": int(idlt),
+                    "item_id": int(ci) & 0x1FF,
+                    "materia_id": None,
+                }
+        elif best_materia is not None:
+            mdlt, mid = best_materia
+            if not _gain_explained_by_materia_unequip(
+                int(mid) & 0xFF, int(mdlt), prev_eq_materia, cur_eq_materia
+            ):
+                chosen = {
+                    "kind": "materia",
+                    "name": _materia_id_display_name(int(mid)),
+                    "delta": int(mdlt),
+                    "item_id": None,
+                    "materia_id": int(mid) & 0xFF,
+                }
+
+        if chosen is not None:
+            self._last_item_gain = chosen
         self._prev_inventory_sig = inv_slice
+        self._prev_materia_inv_sig = mat_slice
         self._prev_gil_for_items = int(gil)
-        self._prev_equipped_unified_counts = cur_body
+        self._prev_equipped_unified_counts = cur_eq_items
+        self._prev_party_materia_equipped_counts = cur_eq_materia
 
     def _tick_battle_status_log(
         self, party: List[Dict[str, Any]], enemies: List[Dict[str, Any]]
