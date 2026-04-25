@@ -144,10 +144,10 @@ General Items:
     [x] - Add toggles for displaying header text and message text in the alerts template
     [] - Add in OBS websocket support. This will allow us to control OBS scenes, transitions, and other settings from the app. This will need its own tab in the settings for the websocket info. It will then need to be integrated into the Connectors system as actions (these will actually trigger changes in OBS) and as triggers (these will be used to trigger Connector actions, IE if a scene is changed in OBS it will mute the mic).
     [] - Expose Connectors system to the Streamdeck plugin. Make it so created Connectors can be assigned to Streamdeck buttons, and trigger actions when the button is pressed. We should create a trigger called "Streamdeck" that can be set inside Connectors. This trigger should add the Connector to the Streamdeck plugin dynamically. The Streamdeck plugin will need a new option called "Connector" that will have a dropdown list of all Connectors using the "Streamdeck" trigger. The streamdeck button should have a label that displays the Connector name. We will need to recompile the Streamdeck plugin to add this functionality, and place the compiled plugin in the same directory as the Mycelian desktop application for it to be installable via the app.
-    [] - Add font size options for usernames to the chat template
-    [] - Move badge settings to its own section in the chat template.
-    [] - Add badge size option to the chat template.
-    [] - Add emote size option to the chat template.
+    [x] - Add font size options for usernames to the chat template
+    [x] - Move badge settings to its own section in the chat template.
+    [x] - Add badge size option to the chat template.
+    [x] - Add emote size option to the chat template.
     [x] - Fix Spotify client id and secret saving only the first characters of the input field.
 
 
