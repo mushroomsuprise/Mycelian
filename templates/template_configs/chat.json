@@ -27,13 +27,6 @@
             "description": "Randomly select fonts for each message from the font list below"
         },
         {
-            "type": "checkbox",
-            "id": "EnableUsernameFontRandomization",
-            "label": "Enable Username Font Randomization",
-            "value": false,
-            "description": "Randomly select fonts for each username from the font list below"
-        },
-        {
             "type": "textarea",
             "id": "RandomFontList",
             "label": "Random Font List",
@@ -182,33 +175,6 @@
             "transparent": true
         },
         {
-            "type": "number",
-            "id": "MessagePadding",
-            "label": "Message Padding",
-            "value": 3.0,
-            "min": 0,
-            "max": 20,
-            "description": "Padding inside each message in pixels"
-        },
-        {
-            "type": "number",
-            "id": "MessageMargin",
-            "label": "Message Margin",
-            "value": 2,
-            "min": 0,
-            "max": 10,
-            "description": "Margin between messages in pixels"
-        },
-        {
-            "type": "number",
-            "id": "FontSize",
-            "label": "Font Size",
-            "value": 18,
-            "min": 8,
-            "max": 48,
-            "description": "Font size for chat messages in pixels"
-        },
-        {
             "type": "select",
             "id": "FontColor",
             "label": "Font Color",
@@ -264,24 +230,6 @@
                 "transparent"
             ],
             "transparent": false
-        },
-        {
-            "type": "number",
-            "id": "MessageRadius",
-            "label": "Message Border Radius",
-            "value": 5,
-            "min": 0,
-            "max": 20,
-            "description": "Border radius for message containers in pixels"
-        },
-        {
-            "type": "number",
-            "id": "MessageBorder",
-            "label": "Message Border Width",
-            "value": 0,
-            "min": 0,
-            "max": 5,
-            "description": "Border width for message containers in pixels"
         },
         {
             "type": "select",
@@ -342,6 +290,51 @@
         },
         {
             "type": "number",
+            "id": "MessagePadding",
+            "label": "Message Padding",
+            "value": 3.0,
+            "min": 0,
+            "max": 20,
+            "description": "Padding inside each message in pixels"
+        },
+        {
+            "type": "number",
+            "id": "MessageMargin",
+            "label": "Message Margin",
+            "value": 2,
+            "min": 0,
+            "max": 10,
+            "description": "Margin between messages in pixels"
+        },
+        {
+            "type": "number",
+            "id": "FontSize",
+            "label": "Font Size",
+            "value": 18,
+            "min": 8,
+            "max": 48,
+            "description": "Font size for chat messages in pixels"
+        },
+        {
+            "type": "number",
+            "id": "MessageRadius",
+            "label": "Message Border Radius",
+            "value": 5,
+            "min": 0,
+            "max": 20,
+            "description": "Border radius for message containers in pixels"
+        },
+        {
+            "type": "number",
+            "id": "MessageBorder",
+            "label": "Message Border Width",
+            "value": 0,
+            "min": 0,
+            "max": 5,
+            "description": "Border width for message containers in pixels"
+        },
+        {
+            "type": "number",
             "id": "MessageGap",
             "label": "Message Element Gap",
             "value": 6.0,
@@ -357,6 +350,25 @@
             "min": 16,
             "max": 60,
             "description": "Minimum height for message containers in pixels"
+        },
+        {
+            "type": "number",
+            "id": "LineHeight",
+            "label": "Line Height",
+            "value": 1.4,
+            "min": 1,
+            "max": 2,
+            "step": 0.1,
+            "description": "Line height for message content"
+        },
+        {
+            "type": "number",
+            "id": "MaxMessages",
+            "label": "Max Messages",
+            "value": 100,
+            "min": 10,
+            "max": 500,
+            "description": "Maximum number of messages to display before removing old ones"
         },
         {
             "type": "separator",
@@ -518,15 +530,6 @@
             "transparent": false
         },
         {
-            "type": "number",
-            "id": "EventBorderWidth",
-            "label": "Event Border Width",
-            "value": 3,
-            "min": 0,
-            "max": 10,
-            "description": "Left border width for event messages in pixels"
-        },
-        {
             "type": "select",
             "id": "EventBorderColor",
             "label": "Event Border Color",
@@ -585,6 +588,96 @@
         },
         {
             "type": "number",
+            "id": "EventBorderWidth",
+            "label": "Event Border Width",
+            "value": 3,
+            "min": 0,
+            "max": 10,
+            "description": "Left border width for event messages in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Badge Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableBadges",
+            "label": "Enable Badges",
+            "value": true,
+            "description": "Whether to display user badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableModerator",
+            "label": "Disable Moderator Badge",
+            "value": false,
+            "description": "Hide moderator badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableVIP",
+            "label": "Disable VIP Badge",
+            "value": false,
+            "description": "Hide VIP badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableSubscriber",
+            "label": "Disable Subscriber Badge",
+            "value": false,
+            "description": "Hide subscriber badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableFounder",
+            "label": "Disable Founder Badge",
+            "value": false,
+            "description": "Hide founder badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableBroadcaster",
+            "label": "Disable Broadcaster Badge",
+            "value": false,
+            "description": "Hide broadcaster badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableTurbo",
+            "label": "Disable Turbo Badge",
+            "value": false,
+            "description": "Hide Twitch Turbo badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableStaff",
+            "label": "Disable Staff Badge",
+            "value": false,
+            "description": "Hide Twitch staff badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableBits",
+            "label": "Disable Bits Badge",
+            "value": false,
+            "description": "Hide bits badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisableAdmin",
+            "label": "Disable Admin Badge",
+            "value": false,
+            "description": "Hide admin badges"
+        },
+        {
+            "type": "checkbox",
+            "id": "DisablePartner",
+            "label": "Disable Partner Badge",
+            "value": false,
+            "description": "Hide verified/partner badges"
+        },
+        {
+            "type": "number",
             "id": "BadgeGap",
             "label": "Badge Gap",
             "value": 3,
@@ -611,26 +704,8 @@
             "description": "Border radius for badges in pixels"
         },
         {
-            "type": "select",
-            "id": "UsernameFontWeight",
-            "label": "Username Font Weight",
-            "value": "normal",
-            "options": [
-                "normal",
-                "bold",
-                "bolder",
-                "lighter",
-                "100",
-                "200",
-                "300",
-                "400",
-                "500",
-                "600",
-                "700",
-                "800",
-                "900"
-            ],
-            "description": "Font weight for usernames"
+            "type": "separator",
+            "label": "Username Settings"
         },
         {
             "type": "select",
@@ -747,6 +822,44 @@
             "transparent": false
         },
         {
+            "type": "checkbox",
+            "id": "EnableUsernameFontRandomization",
+            "label": "Enable Username Font Randomization",
+            "value": false,
+            "description": "Randomly select fonts for each username from the font list below"
+        },
+        {
+            "type": "number",
+            "id": "UsernameFontSize",
+            "label": "Username Font Size",
+            "value": 18,
+            "min": 8,
+            "max": 48,
+            "description": "Font size for usernames in pixels (independent of message font size)"
+        },
+        {
+            "type": "select",
+            "id": "UsernameFontWeight",
+            "label": "Username Font Weight",
+            "value": "normal",
+            "options": [
+                "normal",
+                "bold",
+                "bolder",
+                "lighter",
+                "100",
+                "200",
+                "300",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800",
+                "900"
+            ],
+            "description": "Font weight for usernames"
+        },
+        {
             "type": "number",
             "id": "UsernameMargin",
             "label": "Username Margin",
@@ -763,14 +876,15 @@
             "description": "CSS text shadow for usernames"
         },
         {
-            "type": "number",
-            "id": "LineHeight",
-            "label": "Line Height",
-            "value": 1.4,
-            "min": 1,
-            "max": 2,
-            "step": 0.1,
-            "description": "Line height for message content"
+            "type": "separator",
+            "label": "Emote Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableEmotes",
+            "label": "Enable Emotes",
+            "value": true,
+            "description": "Whether to parse and display emotes (BTTV, FFZ, 7TV, Twitch)"
         },
         {
             "type": "number",
@@ -780,7 +894,7 @@
             "min": 0.3,
             "max": 3.0,
             "step": 0.1,
-            "description": "Scale factor for emotes (maintains aspect ratio)"
+            "description": "Uniform scale for all emote images (works across different source pixel sizes)"
         },
         {
             "type": "number",
@@ -799,6 +913,20 @@
             "min": 0,
             "max": 10,
             "description": "Border radius for emotes in pixels"
+        },
+        {
+            "type": "number",
+            "id": "GigantifiedTwitchDisplayScale",
+            "label": "Gigantified Twitch Emote Display Scale",
+            "value": 0.75,
+            "min": 0.3,
+            "max": 2.0,
+            "step": 0.05,
+            "description": "CSS scale for gigantified Twitch emotes when using the 112px CDN asset (Twitch power-up only)"
+        },
+        {
+            "type": "separator",
+            "label": "Timestamp Settings"
         },
         {
             "type": "checkbox",
@@ -826,6 +954,25 @@
             "min": 8,
             "max": 20,
             "description": "Font size for timestamps in pixels"
+        },
+        {
+            "type": "number",
+            "id": "TimestampMargin",
+            "label": "Timestamp Margin",
+            "value": 8,
+            "min": 0,
+            "max": 20,
+            "description": "Right margin after timestamp in pixels"
+        },
+        {
+            "type": "number",
+            "id": "TimestampOpacity",
+            "label": "Timestamp Opacity",
+            "value": 0.7,
+            "min": 0.1,
+            "max": 1,
+            "step": 0.1,
+            "description": "Opacity of timestamps"
         },
         {
             "type": "select",
@@ -883,118 +1030,6 @@
                 "transparent"
             ],
             "transparent": true
-        },
-        {
-            "type": "number",
-            "id": "TimestampMargin",
-            "label": "Timestamp Margin",
-            "value": 8,
-            "min": 0,
-            "max": 20,
-            "description": "Right margin after timestamp in pixels"
-        },
-        {
-            "type": "number",
-            "id": "TimestampOpacity",
-            "label": "Timestamp Opacity",
-            "value": 0.7,
-            "min": 0.1,
-            "max": 1,
-            "step": 0.1,
-            "description": "Opacity of timestamps"
-        },
-        {
-            "type": "number",
-            "id": "MaxMessages",
-            "label": "Max Messages",
-            "value": 100,
-            "min": 10,
-            "max": 500,
-            "description": "Maximum number of messages to display before removing old ones"
-        },
-        {
-            "type": "checkbox",
-            "id": "EnableEmotes",
-            "label": "Enable Emotes",
-            "value": true,
-            "description": "Whether to parse and display emotes (BTTV, FFZ, 7TV, Twitch)"
-        },
-        {
-            "type": "checkbox",
-            "id": "EnableBadges",
-            "label": "Enable Badges",
-            "value": true,
-            "description": "Whether to display user badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableModerator",
-            "label": "Disable Moderator Badge",
-            "value": false,
-            "description": "Hide moderator badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableVIP",
-            "label": "Disable VIP Badge",
-            "value": false,
-            "description": "Hide VIP badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableSubscriber",
-            "label": "Disable Subscriber Badge",
-            "value": false,
-            "description": "Hide subscriber badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableFounder",
-            "label": "Disable Founder Badge",
-            "value": false,
-            "description": "Hide founder badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableBroadcaster",
-            "label": "Disable Broadcaster Badge",
-            "value": false,
-            "description": "Hide broadcaster badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableTurbo",
-            "label": "Disable Turbo Badge",
-            "value": false,
-            "description": "Hide Twitch Turbo badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableStaff",
-            "label": "Disable Staff Badge",
-            "value": false,
-            "description": "Hide Twitch staff badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableBits",
-            "label": "Disable Bits Badge",
-            "value": false,
-            "description": "Hide bits badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisableAdmin",
-            "label": "Disable Admin Badge",
-            "value": false,
-            "description": "Hide admin badges"
-        },
-        {
-            "type": "checkbox",
-            "id": "DisablePartner",
-            "label": "Disable Partner Badge",
-            "value": false,
-            "description": "Hide verified/partner badges"
         },
         {
             "type": "separator",

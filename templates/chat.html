@@ -93,7 +93,7 @@
             display: inline-block;
             white-space: nowrap;
             margin-right: 5px;
-            vertical-align: top;
+            vertical-align: baseline;
         }
 
         .chat-message.event-message {
@@ -160,6 +160,7 @@
         }
 
         .message-username {
+            font-size: {{ UsernameFontSize }}px;
             font-weight: {{ UsernameFontWeight }};
             color: {{ UsernameColor }};
             margin-right: {{ UsernameMargin }}px;
@@ -169,6 +170,7 @@
 
         .message-content {
             display: inline;
+            vertical-align: baseline;
             word-wrap: break-word;
             overflow-wrap: break-word;
         }
@@ -219,9 +221,9 @@
             border: 1px dashed rgba(255, 255, 255, 0.3);
         }
 
-        /* Gigantified emote styling */
+        /* Gigantified emote styling (Twitch CDN only; uses 112px asset + display scale) */
         .gigantified-emote {
-            transform: scale(3) !important;
+            transform: scale({{ GigantifiedTwitchDisplayScale }}) !important;
             vertical-align: middle;
             margin: 0 8px;
         }
@@ -234,8 +236,8 @@
 
         /* Messages containing gigantified emotes need extra line height to prevent overlap */
         .chat-message.gigantified-message {
-            line-height: calc({{ LineHeight }} * 3);
-            padding: calc({{ MessagePadding }}px * 1.5) {{ MessagePadding }}px;
+            line-height: calc({{ LineHeight }} * (3 * {{ GigantifiedTwitchDisplayScale }} / 0.75));
+            padding: calc({{ MessagePadding }}px * (1.5 * {{ GigantifiedTwitchDisplayScale }} / 0.75)) {{ MessagePadding }}px;
         }
 
         .cheermote-container {
@@ -327,12 +329,19 @@
             margin-top: 0; /* Explicitly set to avoid empty ruleset warning */
         }
 
-        .emote-img,
+        .emote-img:not(.gigantified-emote),
         .badge-img,
-        .emote-base,
-        .emote-overlay,
-        .emote-zw {
+        .emote-base:not(.gigantified-emote),
+        .emote-overlay:not(.gigantified-emote),
+        .emote-zw:not(.gigantified-emote) {
             transform: scale(calc({{ EmoteScale }} * 0.8));
+        }
+
+        .emote-img.gigantified-emote,
+        .emote-base.gigantified-emote,
+        .emote-overlay.gigantified-emote,
+        .emote-zw.gigantified-emote {
+            transform: scale(calc({{ GigantifiedTwitchDisplayScale }} * 0.8)) !important;
         }
 
         .emote-container {
@@ -828,6 +837,17 @@
             return username;
         }
 
+        // Use Twitch 112px CDN assets for gigantified power-up messages (Twitch native emotes only)
+        function upgradeTwitchEmoteUrlsForGigantified(html) {
+            if (!html || typeof html !== 'string') {
+                return html;
+            }
+            return html.replace(
+                /(https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/\d+\/default\/(?:light|dark)\/)1\.0/g,
+                '$13.0'
+            );
+        }
+
         // Add a new message to chat
         function addMessage(messageData) {
             console.log('Adding message:', messageData);
@@ -933,6 +953,10 @@
                 }
             }
 
+            if (messageData.message_type === 'power_ups_gigantified_emote' && enableEmotes) {
+                messageContent = upgradeTwitchEmoteUrlsForGigantified(messageContent);
+            }
+
             messageHTML += '<div class="message-content">' + messageContent + '</div>';
 
             console.log('Final message HTML:', messageHTML);
@@ -955,15 +979,17 @@
                 }
             }
 
-            // Apply gigantified styling to emotes if this is a gigantified emote message
+            // Apply gigantified styling to Twitch CDN emotes only (power-up uses native emotes)
             if (messageData.message_type === 'power_ups_gigantified_emote') {
                 console.log('Applying gigantified styling to message:', messageData.id);
-                // Add gigantified class to the message container for proper spacing
                 messageElement.classList.add('gigantified-message');
                 var emoteElements = messageElement.querySelectorAll('.emote-img, .emote-base, .emote-overlay, .emote-zw');
                 emoteElements.forEach(function(emoteElement) {
-                    emoteElement.classList.add('gigantified-emote');
-                    console.log('Applied gigantified class to emote:', emoteElement);
+                    var src = emoteElement.getAttribute('src') || '';
+                    if (src.indexOf('static-cdn.jtvnw.net/emoticons/') !== -1) {
+                        emoteElement.classList.add('gigantified-emote');
+                        console.log('Applied gigantified class to Twitch emote:', emoteElement);
+                    }
                 });
             }
 
