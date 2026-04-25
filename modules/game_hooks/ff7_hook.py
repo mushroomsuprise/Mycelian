@@ -1957,7 +1957,6 @@ class FF7Hook:
         self._infinite_items_backup_len = 0
         self._prev_inventory_sig: Optional[bytes] = None
         self._prev_materia_inv_sig: Optional[bytes] = None
-        self._prev_gil_for_items: Optional[int] = None
         self._prev_equipped_unified_counts: Optional[Dict[int, int]] = None
         self._prev_party_materia_equipped_counts: Optional[Dict[int, int]] = None
         self._last_item_gain: Optional[Dict[str, Any]] = None
@@ -3709,17 +3708,10 @@ class FF7Hook:
                 if not self._write(base + o + 2, bytes([99])):
                     break
 
-    def _tick_recent_item_detection(self, savemap: Optional[bytes], gil: int) -> None:
+    def _tick_recent_item_detection(self, savemap: Optional[bytes]) -> None:
         _load_ff7_gear_layout_assets()
         if not savemap or len(savemap) < _RECENT_MIN_SAVE_LEN:
             return
-
-        def _ok_gil(prev_g: Optional[int]) -> bool:
-            # Gil fell since last frame — usually a purchase; skip to avoid
-            # mis-associating a shop buy with a coincident inventory nudge.
-            if prev_g is None:
-                return True
-            return int(gil) >= int(prev_g)
 
         inv_slice = bytes(
             savemap[SAVE_OFF_INV_ITEMS : SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2]
@@ -3737,15 +3729,10 @@ class FF7Hook:
         prev_eq_materia = self._prev_party_materia_equipped_counts
         prev = self._prev_inventory_sig
         prev_mat = self._prev_materia_inv_sig
-        prev_gil = self._prev_gil_for_items
 
         # Unified items (consumables, weapons, armor, accessories) — 9-bit ids.
         best_item: Optional[Tuple[int, int, int]] = None
-        if (
-            prev is not None
-            and len(prev) == len(inv_slice)
-            and _ok_gil(prev_gil)
-        ):
+        if prev is not None and len(prev) == len(inv_slice):
             for idx in range(INV_ITEM_SLOTS):
                 o = idx * 2
                 cur = struct.unpack_from("<H", inv_slice, o)[0]
@@ -3772,11 +3759,7 @@ class FF7Hook:
         # Materia inventory — kernel materia id (per-slot orbs; multiset diffs are stable
         # if the player reorders the grid).
         best_materia: Optional[Tuple[int, int]] = None
-        if (
-            prev_mat is not None
-            and len(prev_mat) == len(mat_slice)
-            and _ok_gil(prev_gil)
-        ):
+        if prev_mat is not None and len(prev_mat) == len(mat_slice):
             pmc = _parse_inv_materia_multiset(prev_mat)
             cmc = _parse_inv_materia_multiset(mat_slice)
             for mid, cur_c in cmc.items():
@@ -3865,7 +3848,6 @@ class FF7Hook:
             self._last_item_gain = chosen
         self._prev_inventory_sig = inv_slice
         self._prev_materia_inv_sig = mat_slice
-        self._prev_gil_for_items = int(gil)
         self._prev_equipped_unified_counts = cur_eq_items
         self._prev_party_materia_equipped_counts = cur_eq_materia
 
@@ -5134,7 +5116,7 @@ class FF7Hook:
                 enemies.append(e)
 
         self._maybe_top_up_battle_party_items()
-        self._tick_recent_item_detection(savemap, int(gil))
+        self._tick_recent_item_detection(savemap)
         self._tick_battle_log(battle, party, enemies, battle_ui)
 
         h = play_sec // 3600
