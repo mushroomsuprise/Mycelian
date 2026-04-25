@@ -123,6 +123,7 @@ FF7 Hook
     [x] - Add enable/disable toggles to the Party and Enemy segments to completely hide them if not enabled.
     [x] - Fix issue with enemies segment clearing enemies, then showing the empty box for about a second before hiding once battles are finished.
     [x] - Double check total materia count, may not be correct, it should only be calculated based off the equipped materia for the characters in the party only, it should not include materia counts for the other characters not in the main party.
+    [] - Add option to query inventory (including weapons, armor, accessories, and materia. both equipped and unequipped) via a Connector action. This should take <item_name> as an arg, and return the quantity of that item in the inventory.
 
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
