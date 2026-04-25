@@ -147,6 +147,7 @@ General Items:
     [] - Move badge settings to its own section in the chat template.
     [] - Add badge size option to the chat template.
     [] - Add emote size option to the chat template.
+    [] - Fix Spotify client id and secret saving only the first characters of the input field.
 
 
 Priority Fixes:
