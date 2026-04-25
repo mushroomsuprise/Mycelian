@@ -59,6 +59,23 @@ def _persist_override_key(op: str, kwargs: Dict[str, Any]) -> str:
     return op
 
 
+def _query_inventory_outputs(
+    iq: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, str]]:
+    """Map FF7 last inventory query snapshot to string keys for connector {actionN.*} placeholders."""
+    if not isinstance(iq, dict):
+        return None
+    return {
+        "item_name": str(iq.get("item_name", "") or ""),
+        "quantity": "" if iq.get("quantity") is None else str(iq["quantity"]),
+        "resolved_name": ""
+        if iq.get("resolved_name") is None
+        else str(iq["resolved_name"]),
+        "kind": "" if iq.get("kind") is None else str(iq["kind"]),
+        "error": "" if iq.get("error") is None else str(iq["error"]),
+    }
+
+
 def _json_safe_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     for k, v in kwargs.items():
@@ -274,11 +291,23 @@ class GameHooksServiceImpl:
                 break
             try:
                 if game_id != "ff7" or self._ff7_hook is None:
-                    fut.set_result((False, f"No active hook for '{game_id}'"))
+                    fut.set_result((False, f"No active hook for '{game_id}'", None))
                     continue
                 result = self._ff7_hook.execute_operation(op, kwargs)
-                fut.set_result(result)
-                ok, _err = result
+                out: Optional[Dict[str, str]] = None
+                if op == "query_inventory":
+                    iq = self._ff7_hook._last_inventory_query
+                    if iq is not None:
+                        with self._ui_state_lock:
+                            if isinstance(self._last_ff7_ui, dict):
+                                merged = dict(self._last_ff7_ui)
+                            else:
+                                merged = {}
+                            merged["inventory_query"] = dict(iq)
+                            self._last_ff7_ui = merged
+                    out = _query_inventory_outputs(iq)
+                ok, err = result[0], result[1] if len(result) > 1 else None
+                fut.set_result((ok, err, out))
                 if ok:
                     for t_op, t_kw, t_dur in self._ff7_hook.consume_timed_schedules():
                         self._schedule_timed_job(int(t_dur), t_op, t_kw)
@@ -287,7 +316,7 @@ class GameHooksServiceImpl:
                     self._ff7_hook.consume_timed_schedules()
             except Exception as e:
                 logger.warning("game hook write failed: %s", e, exc_info=True)
-                fut.set_result((False, str(e)))
+                fut.set_result((False, str(e), None))
 
     def _emit(self, payload: Dict[str, Any]) -> None:
         try:

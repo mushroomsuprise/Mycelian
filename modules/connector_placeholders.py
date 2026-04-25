@@ -14,6 +14,34 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+
+def build_connector_placeholder_context(
+    event_data: Dict[str, Any],
+    trigger_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Merge event + trigger data, attach live ``hooks.ff7``, and map ``action_results`` to
+    ``{action1.field}`` … (slot key ``\"1\"`` -> ``action1`` in the context). Internal keys
+    ``action_results`` and ``action_index`` are not exposed as placeholders."""
+    td = dict(trigger_data or {})
+    ar = td.pop("action_results", None)
+    td.pop("action_index", None)
+    ctx: Dict[str, Any] = {**(event_data or {}), **td}
+    if isinstance(ar, dict):
+        for k, v in ar.items():
+            if isinstance(v, dict):
+                ctx[f"action{k}"] = v
+    try:
+        from .game_hooks_service import game_hooks_service
+
+        snap = game_hooks_service.get_ff7_ui_snapshot()
+        ff7 = snap.get("ff7")
+        if isinstance(ff7, dict):
+            ctx["hooks"] = {"ff7": ff7}
+    except Exception:
+        pass
+    return ctx
+
+
 _LEGACY_DOUBLE_BRACE = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
 _SINGLE_BRACE = re.compile(r"\{([^\s{}]+)\}")
 

@@ -1863,6 +1863,19 @@ FF7_CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         ],
     },
     {
+        "id": "query_inventory",
+        "label": "Query inventory quantity",
+        "description": "Read-only: total count of an item, weapon, armor, accessory, or materia in RAM savemap (unequipped slots plus equipped on the active party). Exposes item_name, quantity, resolved_name, kind, and error to later connector actions as {actionN.*} (N = this action's number, e.g. {action1.quantity} if this is Action #1).",
+        "args": [
+            {
+                "name": "item_name",
+                "type": "ff7_text",
+                "label": "Item name",
+                "hint_tags": ("gear", "message"),
+            },
+        ],
+    },
+    {
         "id": "restore_menu_words",
         "label": "Restore menu u16 words (internal)",
         "description": "Restores menu visibility/lock masks captured before a timed connector change.",
@@ -1967,6 +1980,7 @@ class FF7Hook:
         self._was_in_battle = False
         self._battle_ui_latched: bool = False
         self._battle_ui_off_ticks: int = 0
+        self._last_inventory_query: Optional[Dict[str, Any]] = None
 
     def consume_timed_schedules(self) -> List[Tuple[str, Dict[str, Any], int]]:
         """Pop (restore_op, kwargs, delay_sec) entries queued by the last successful write."""
@@ -4640,6 +4654,76 @@ class FF7Hook:
         ok = self._call_ff7_game_fn_one_arg(ADDR_PARTY_ADD_ITEM_FN, encoded)
         return (True, None) if ok else (False, "party_add_item_fn failed")
 
+    def _op_query_inventory(self, item_name: str) -> Tuple[bool, Optional[str]]:
+        """Count item or materia in inventory + equipped party; set ``_last_inventory_query``."""
+        raw = str(item_name or "").strip()
+        base_payload: Dict[str, Any] = {
+            "item_name": raw,
+            "resolved_name": None,
+            "kind": None,
+            "item_id": None,
+            "materia_id": None,
+            "quantity": None,
+            "error": None,
+        }
+        if not raw:
+            base_payload["error"] = "empty item name"
+            self._last_inventory_query = dict(base_payload)
+            return False, "empty item name"
+
+        data, _ = self._read_savemap()
+        if not data or len(data) < _RECENT_MIN_SAVE_LEN:
+            base_payload["error"] = "Savemap not readable"
+            self._last_inventory_query = dict(base_payload)
+            return False, "Savemap not readable"
+
+        iid, ierr = self._item_name_to_id(raw)
+        if iid is not None and not ierr:
+            inv_qty = 0
+            for i in range(INV_ITEM_SLOTS):
+                rec = self._inv_read_item_slot(i)
+                if rec and rec[0] == int(iid):
+                    inv_qty += int(rec[1])
+            eq = _party_equipped_unified_counts(data).get(int(iid), 0)
+            total = inv_qty + eq
+            self._last_inventory_query = {
+                "item_name": raw,
+                "resolved_name": _ff7_unified_item_name(int(iid)),
+                "kind": "unified_item",
+                "item_id": int(iid),
+                "materia_id": None,
+                "quantity": int(total),
+                "error": None,
+            }
+            return True, None
+
+        mid, merr = self._materia_name_to_id(raw)
+        if mid is not None and not merr:
+            mat_slice = data[
+                SAVE_OFF_INV_MATERIA : SAVE_OFF_INV_MATERIA
+                + INV_MATERIA_SLOTS * 4
+            ]
+            inv_c = _parse_inv_materia_multiset(mat_slice).get(int(mid), 0)
+            eq_c = _party_materia_equipped_id_counts(data).get(int(mid), 0)
+            total = inv_c + eq_c
+            self._last_inventory_query = {
+                "item_name": raw,
+                "resolved_name": _materia_id_display_name(int(mid)),
+                "kind": "materia",
+                "item_id": None,
+                "materia_id": int(mid),
+                "quantity": int(total),
+                "error": None,
+            }
+            return True, None
+
+        err_msg = (ierr or merr or f"unknown item: {raw}").strip()
+        if not err_msg:
+            err_msg = f"unknown item: {raw}"
+        base_payload["error"] = err_msg
+        self._last_inventory_query = dict(base_payload)
+        return False, err_msg
+
     def execute_operation(
         self, op: str, kwargs: Dict[str, Any]
     ) -> Tuple[bool, Optional[str]]:
@@ -4823,6 +4907,8 @@ class FF7Hook:
             return self._op_add_materia(str(kwargs.get("materia", "")), int(lvl))
         if op == "add_gear":
             return self._op_add_gear(str(kwargs.get("gear", "")))
+        if op == "query_inventory":
+            return self._op_query_inventory(str(kwargs.get("item_name", "")))
         if op == "restore_menu_words":
             return self._op_restore_menu_words(dict(kwargs))
         if op == "restore_battle_speed":
@@ -5001,6 +5087,7 @@ class FF7Hook:
                 "battle_mode_ram": None,
                 "recent_item": None,
                 "battle_log": [],
+                "inventory_query": None,
                 "debug": {"stage": "unsupported_os", "platform": sys.platform},
             }
 
@@ -5027,6 +5114,7 @@ class FF7Hook:
                 "battle_mode_ram": None,
                 "recent_item": None,
                 "battle_log": [],
+                "inventory_query": None,
                 "debug": {"stage": "attach_failed", "message": err or "not attached"},
             }
 
@@ -5059,6 +5147,7 @@ class FF7Hook:
                 "battle_mode_ram": None,
                 "recent_item": None,
                 "battle_log": [],
+                "inventory_query": None,
                 "debug": dbg_fail,
             }
 
@@ -5186,6 +5275,11 @@ class FF7Hook:
             "battle_mode_ram": battle_mode_ram,
             "recent_item": self._last_item_gain,
             "battle_log": list(self._battle_log_lines),
+            "inventory_query": (
+                dict(self._last_inventory_query)
+                if self._last_inventory_query is not None
+                else None
+            ),
             "debug": dbg,
         }
         if menu_theme:
@@ -5417,6 +5511,8 @@ def ff7_connector_config_to_hook_kwargs(cfg: Dict[str, Any]) -> Dict[str, Any]:
         return {"materia": _txt("arg_materia"), "materia_level": raw_lvl}
     if op == "add_gear":
         return {"gear": _txt("arg_gear")}
+    if op == "query_inventory":
+        return {"item_name": _txt("arg_item_name")}
     return {}
 
 

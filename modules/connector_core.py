@@ -365,31 +365,36 @@ class Connector:
         self.last_triggered = time.time()
         self.trigger_count += 1
 
-        # Execute all actions
+        # Execute all actions; action_results (1-based slot keys) is filled by actions
+        # that produce outputs, e.g. game hook query_inventory, for {actionN.field} placeholders.
         success_count = 0
         msg_after = message_after_trigger_conditions(
             str(event_data.get("message", "")), self.trigger.conditions
         )
-        for action in self.actions:
-            if action.enabled:
-                try:
-                    success = await action.execute(
-                        trigger_data={
-                            "trigger_id": self.trigger.trigger_id,
-                            "trigger_type": self.trigger.trigger_type.value,
-                            "connector_id": self.connector_id,
-                            "triggered_at": self.last_triggered,
-                            "message_after_conditions": msg_after,
-                        },
-                        event_data=event_data,
-                    )
-                    if success:
-                        success_count += 1
-                except Exception as e:
-                    logger.error(
-                        f"Error executing action '{action.name}' in connector '{self.name}': {e}",
-                        exc_info=True,
-                    )
+        action_results: Dict[str, Dict[str, Any]] = {}
+        for action_index, action in enumerate(self.actions, start=1):
+            if not action.enabled:
+                continue
+            try:
+                success = await action.execute(
+                    trigger_data={
+                        "trigger_id": self.trigger.trigger_id,
+                        "trigger_type": self.trigger.trigger_type.value,
+                        "connector_id": self.connector_id,
+                        "triggered_at": self.last_triggered,
+                        "message_after_conditions": msg_after,
+                        "action_index": action_index,
+                        "action_results": action_results,
+                    },
+                    event_data=event_data,
+                )
+                if success:
+                    success_count += 1
+            except Exception as e:
+                logger.error(
+                    f"Error executing action '{action.name}' in connector '{self.name}': {e}",
+                    exc_info=True,
+                )
 
         logger.info(
             f"Connector '{self.name}' executed {success_count}/{len(self.actions)} actions"

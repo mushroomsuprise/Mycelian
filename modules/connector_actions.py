@@ -33,6 +33,7 @@ from typing import Any, Dict, Optional
 
 from .connector_core import ActionType, BaseAction
 from .connector_placeholders import (
+    build_connector_placeholder_context,
     substitute_connector_placeholders,
     substitute_connector_placeholders_mapping,
 )
@@ -266,18 +267,18 @@ class SendChatMessageAction(BaseAction):
                     )
                     return False
 
-                # Replace placeholders in message
-                message = substitute_connector_placeholders(
-                    self.message, event_data
-                )
+                # Replace placeholders (include hooks.ff7 e.g. after Query inventory)
+                ctx = build_connector_placeholder_context(event_data, trigger_data)
+                message = substitute_connector_placeholders(self.message, ctx)
 
                 # Send via main Twitch API (this would need implementation in twitch.py)
                 logger.info(f"Would send chat message via main API: {message}")
                 # TODO: Implement direct chat message sending in twitch.py if needed
                 return True
 
-            # Replace placeholders in message
-            message = substitute_connector_placeholders(self.message, event_data)
+            # Replace placeholders (include hooks.ff7 e.g. after Query inventory)
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            message = substitute_connector_placeholders(self.message, ctx)
 
             # Send chat message using chatbot system
             success = chatbot.send_chatbot_message(message)
@@ -2578,16 +2579,7 @@ class GameHookAction(BaseAction):
         trigger_data: Dict[str, Any],
         event_data: Dict[str, Any],
     ) -> Dict[str, Any]:
-        ctx: Dict[str, Any] = {**event_data, **trigger_data}
-        try:
-            from .game_hooks_service import game_hooks_service
-
-            snap = game_hooks_service.get_ff7_ui_snapshot()
-            ff7 = snap.get("ff7")
-            if isinstance(ff7, dict):
-                ctx["hooks"] = {"ff7": ff7}
-        except Exception:
-            pass
+        ctx = build_connector_placeholder_context(event_data, trigger_data)
 
         out: Dict[str, Any] = {}
         for k, v in hook_arguments.items():
@@ -2609,9 +2601,22 @@ class GameHookAction(BaseAction):
             cfut = game_hooks_service.enqueue_game_hook_write(
                 self.game_id, self.operation, resolved
             )
-            ok, err_msg = await asyncio.wait_for(
-                asyncio.wrap_future(cfut), timeout=10.0
-            )
+            raw = await asyncio.wait_for(asyncio.wrap_future(cfut), timeout=10.0)
+            if isinstance(raw, tuple) and len(raw) >= 3:
+                ok, err_msg, hook_outputs = raw[0], raw[1], raw[2]
+            elif isinstance(raw, tuple) and len(raw) == 2:
+                ok, err_msg = raw[0], raw[1]
+                hook_outputs = None
+            else:
+                ok, err_msg, hook_outputs = False, "invalid game hook result", None
+            ar = trigger_data.get("action_results")
+            ai = trigger_data.get("action_index")
+            if (
+                isinstance(ar, dict)
+                and ai is not None
+                and hook_outputs is not None
+            ):
+                ar[str(int(ai))] = dict(hook_outputs)
             if not ok:
                 logger.warning(
                     "Game hook write failed game_id=%s op=%s err=%s",

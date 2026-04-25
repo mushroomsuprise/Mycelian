@@ -1845,7 +1845,9 @@ def _call_game_hook_hint_refresh(form_data: dict) -> None:
 
 
 def game_hook_placeholder_lines(
-    form_data: dict, hint_tags: Optional[Sequence[str]] = None
+    form_data: dict,
+    hint_tags: Optional[Sequence[str]] = None,
+    action_index: Optional[int] = None,
 ) -> List[str]:
     """Placeholder tokens for Game Hook arg hints (single-brace, no spaces).
 
@@ -1860,6 +1862,7 @@ def game_hook_placeholder_lines(
     - ``damage`` — ``{random_damage.min.max}`` example (battle damage amounts)
     - ``random_range`` — same random-range token (non-damage amounts: gil, HP)
     - ``numeric`` — no extra hook lines (duration, etc.)
+    - ``action_index`` (0-based) — for later slots, prior-step ``{actionN.*}`` tokens.
     """
     tags = frozenset(hint_tags or ())
     lines: List[str] = []
@@ -1905,6 +1908,14 @@ def game_hook_placeholder_lines(
 
     if tags and "hooks_gil" in tags:
         lines.append("{hooks.ff7.gil}")
+
+    if action_index is not None and action_index > 0:
+        for j in range(1, action_index + 1):
+            lines.append(f"{{action{j}.item_name}}")
+            lines.append(f"{{action{j}.quantity}}")
+            lines.append(f"{{action{j}.resolved_name}}")
+            lines.append(f"{{action{j}.kind}}")
+            lines.append(f"{{action{j}.error}}")
 
     if tags and "hooks_battle" in tags:
         lines.append("{hooks.ff7.battle}")
@@ -2188,7 +2199,7 @@ def create_game_hook_config(
                     ).classes("w-full mb-1 action-select")
                 else:
                     hint_lines = game_hook_placeholder_lines(
-                        form_data, arg.get("hint_tags")
+                        form_data, arg.get("hint_tags"), action_index
                     )
                     hint_text = "  ".join(hint_lines) if hint_lines else ""
                     ui.input(
@@ -3985,7 +3996,17 @@ def create_chat_message_config(
         ),
     ).classes("w-full action-input")
 
-    ui.label("Use {{field}} placeholders to insert event data").classes(
+    if action_index > 0:
+        aparts: List[str] = []
+        for j in range(1, action_index + 1):
+            aparts.append(
+                f"{{action{j}.item_name}}  {{action{j}.quantity}}  "
+                f"{{action{j}.resolved_name}}  {{action{j}.error}}"
+            )
+        ui.label("Prior action outputs: " + "  ".join(aparts)).classes(
+            "text-xs muted-text"
+        )
+    ui.label("Use single-brace placeholders for event and connector data").classes(
         "text-xs muted-text"
     )
 
