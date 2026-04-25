@@ -18,6 +18,22 @@ class SpotifyTab:
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
 
+    @staticmethod
+    def _str_from_value_event(e: Any) -> str:
+        """
+        Read full string from input/slider value events. Do not use e.args[0] when
+        args is already a str — that would keep only the first character.
+        """
+        v = getattr(e, "value", None)
+        if v is not None and not isinstance(v, (list, tuple)):
+            return str(v)
+        args = getattr(e, "args", None)
+        if isinstance(args, str):
+            return args
+        if isinstance(args, (list, tuple)) and len(args) > 0:
+            return str(args[0])
+        return ""
+
     def on_enter(self) -> None:
         # Refresh status when tab becomes active (delayed to avoid spam)
         from nicegui import ui
@@ -129,13 +145,10 @@ class SpotifyTab:
                                     placeholder="Spotify API Client ID",
                                 )
                                 .classes("w-full")
-                                .on(
-                                    "change",
+                                .on_value_change(
                                     lambda e: self._set_cred(
-                                        "client_id",
-                                        getattr(e, "args", [getattr(e, "value", "")])[0]
-                                        or "",
-                                    ),
+                                        "client_id", self._str_from_value_event(e)
+                                    )
                                 )
                             )
 
@@ -148,13 +161,10 @@ class SpotifyTab:
                                     placeholder="Spotify API Client Secret",
                                 )
                                 .classes("w-full")
-                                .on(
-                                    "change",
+                                .on_value_change(
                                     lambda e: self._set_cred(
-                                        "client_secret",
-                                        getattr(e, "args", [getattr(e, "value", "")])[0]
-                                        or "",
-                                    ),
+                                        "client_secret", self._str_from_value_event(e)
+                                    )
                                 )
                             )
 
@@ -171,13 +181,10 @@ class SpotifyTab:
                                     value=getattr(self.buffer, "market_country", ""),
                                 )
                                 .classes("w-full")
-                                .on(
-                                    "change",
+                                .on_value_change(
                                     lambda e: self._set(
-                                        "market_country",
-                                        getattr(e, "args", [getattr(e, "value", "")])[0]
-                                        or "",
-                                    ),
+                                        "market_country", self._str_from_value_event(e)
+                                    )
                                 )
                             )
 

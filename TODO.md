@@ -123,7 +123,7 @@ FF7 Hook
     [x] - Add enable/disable toggles to the Party and Enemy segments to completely hide them if not enabled.
     [x] - Fix issue with enemies segment clearing enemies, then showing the empty box for about a second before hiding once battles are finished.
     [x] - Double check total materia count, may not be correct, it should only be calculated based off the equipped materia for the characters in the party only, it should not include materia counts for the other characters not in the main party.
-    [] - Add option to query inventory (including weapons, armor, accessories, and materia. both equipped and unequipped) via a Connector action. This should take <item_name> as an arg, and return the quantity of that item in the inventory.
+    [x] - Add option to query inventory (including weapons, armor, accessories, and materia. both equipped and unequipped) via a Connector action. This should take <item_name> as an arg, and return the quantity of that item in the inventory.
 
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
@@ -143,12 +143,12 @@ General Items:
     [x] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
     [x] - Add toggles for displaying header text and message text in the alerts template
     [] - Add in OBS websocket support. This will allow us to control OBS scenes, transitions, and other settings from the app. This will need its own tab in the settings for the websocket info. It will then need to be integrated into the Connectors system as actions (these will actually trigger changes in OBS) and as triggers (these will be used to trigger Connector actions, IE if a scene is changed in OBS it will mute the mic).
-    [] - Expose Connectors system to the Streamdeck plugin. Make it so created Connectors can be assigned to Streamdeck buttons, and trigger actions when the button is pressed.
+    [] - Expose Connectors system to the Streamdeck plugin. Make it so created Connectors can be assigned to Streamdeck buttons, and trigger actions when the button is pressed. We should create a trigger called "Streamdeck" that can be set inside Connectors. This trigger should add the Connector to the Streamdeck plugin dynamically. The Streamdeck plugin will need a new option called "Connector" that will have a dropdown list of all Connectors using the "Streamdeck" trigger. The streamdeck button should have a label that displays the Connector name. We will need to recompile the Streamdeck plugin to add this functionality, and place the compiled plugin in the same directory as the Mycelian desktop application for it to be installable via the app.
     [] - Add font size options for usernames to the chat template
     [] - Move badge settings to its own section in the chat template.
     [] - Add badge size option to the chat template.
     [] - Add emote size option to the chat template.
-    [] - Fix Spotify client id and secret saving only the first characters of the input field.
+    [x] - Fix Spotify client id and secret saving only the first characters of the input field.
 
 
 Priority Fixes:
