@@ -181,6 +181,13 @@ _CHAR_BLOCK = [
     0x0474,
 ]
 
+# Recent-gain: item table, materia table, and character block tail for unequip detection.
+_RECENT_MIN_SAVE_LEN = max(
+    SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2,
+    SAVE_OFF_INV_MATERIA + INV_MATERIA_SLOTS * 4,
+    max(_CHAR_BLOCK) + 0x84,
+)
+
 SAVE_OFF_PARTY_SLOTS = 0x04F8
 SAVE_OFF_GIL = 0x0B7C
 SAVE_OFF_PLAYTIME_SEC = 0x0B80
@@ -3704,11 +3711,16 @@ class FF7Hook:
 
     def _tick_recent_item_detection(self, savemap: Optional[bytes], gil: int) -> None:
         _load_ff7_gear_layout_assets()
-        need_inv = SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2
-        need_mat = SAVE_OFF_INV_MATERIA + INV_MATERIA_SLOTS * 4
-        min_len = max(need_inv, need_mat)
-        if not savemap or len(savemap) < min_len:
+        if not savemap or len(savemap) < _RECENT_MIN_SAVE_LEN:
             return
+
+        def _ok_gil(prev_g: Optional[int]) -> bool:
+            # Gil fell since last frame — usually a purchase; skip to avoid
+            # mis-associating a shop buy with a coincident inventory nudge.
+            if prev_g is None:
+                return True
+            return int(gil) >= int(prev_g)
+
         inv_slice = bytes(
             savemap[SAVE_OFF_INV_ITEMS : SAVE_OFF_INV_ITEMS + INV_ITEM_SLOTS * 2]
         )
@@ -3732,8 +3744,7 @@ class FF7Hook:
         if (
             prev is not None
             and len(prev) == len(inv_slice)
-            and prev_gil is not None
-            and int(gil) >= int(prev_gil)
+            and _ok_gil(prev_gil)
         ):
             for idx in range(INV_ITEM_SLOTS):
                 o = idx * 2
@@ -3764,8 +3775,7 @@ class FF7Hook:
         if (
             prev_mat is not None
             and len(prev_mat) == len(mat_slice)
-            and prev_gil is not None
-            and int(gil) >= int(prev_gil)
+            and _ok_gil(prev_gil)
         ):
             pmc = _parse_inv_materia_multiset(prev_mat)
             cmc = _parse_inv_materia_multiset(mat_slice)
