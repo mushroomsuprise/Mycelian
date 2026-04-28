@@ -236,6 +236,17 @@ def generate_highlights_image(
             else "Unique users (event log)"
         )
 
+        community_detail_lines: List[str] = [
+            f"Follows: {_format_number(int(highlights.get('total_follows', 0) or 0))}",
+            f"Raids: {_format_number(int(highlights.get('total_raids', 0) or 0))}",
+            f"Watch streak alerts: {_format_number(int(highlights.get('total_watch_streak_alerts', 0) or 0))}",
+        ]
+        _bw = highlights.get("biggest_watch_streak")
+        if _bw and int(_bw.get("amount", 0) or 0) > 0:
+            community_detail_lines.append(
+                f"Top streak (period): {int(_bw.get('amount', 0) or 0)} — {_bw.get('username') or '?'}"
+            )
+
         def card_spec(
             key: str,
             title: str,
@@ -346,10 +357,7 @@ def generate_highlights_image(
                 "COMMUNITY",
                 _format_number(int(highlights.get("unique_users", 0) or 0)),
                 community_users_label,
-                [
-                    f"Follows: {_format_number(int(highlights.get('total_follows', 0) or 0))}",
-                    f"Raids: {_format_number(int(highlights.get('total_raids', 0) or 0))}",
-                ],
+                community_detail_lines,
                 [],
                 "count",
                 8,

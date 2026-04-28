@@ -40,6 +40,7 @@ from twitchAPI.oauth import UserAuthenticator
 from twitchAPI.object.eventsub import (
     ChannelBitsUseEvent,
     ChannelChatMessageEvent,
+    ChannelChatNotificationEvent,
     ChannelCheerEvent,
     ChannelFollowEvent,
     ChannelModerateEvent,
@@ -797,6 +798,105 @@ class Twitch_API:
                 f"Error sending chat message to WebSocket clients: {str(e)}",
                 exc_info=True,
             )
+
+    async def on_chat_notification(self, data: ChannelChatNotificationEvent):
+        """Handle channel chat notifications; only watch streaks trigger alerts."""
+        ev = data.event
+        watch = getattr(ev, "watch_streak", None)
+        if watch is None:
+            return
+
+        notice_raw = getattr(ev, "notice_type", None)
+        notice_type = (
+            notice_raw.value
+            if hasattr(notice_raw, "value")
+            else str(notice_raw or "")
+        )
+        if str(notice_type) != "watch_streak":
+            return
+
+        streak_count = int(getattr(watch, "streak_count", None) or 0)
+        if streak_count < 1:
+            logger.debug("Watch streak event with invalid streak_count, skipping")
+            return
+
+        channel_points_awarded = int(
+            getattr(watch, "channel_points_awarded", None) or 0
+        )
+        username = getattr(ev, "chatter_user_name", None) or "Someone"
+
+        msg_obj = getattr(ev, "message", None)
+        user_msg = None
+        if msg_obj is not None:
+            user_msg = getattr(msg_obj, "text", None)
+        if not user_msg:
+            user_msg = getattr(ev, "system_message", None) or ""
+
+        logger.debug(
+            f"Watch streak from {username}: count={streak_count}, "
+            f"points={channel_points_awarded}"
+        )
+
+        alert = alertutils.fetch_streak_alert(streak_count)
+        if not alert:
+            logger.debug("No streak alert configuration matched, skipping")
+            return
+
+        current_timestamp = time.time()
+        alert.username = username
+        alert.alert_type = "streak"
+        alert.streak_count = streak_count
+        alert.channel_points_awarded = channel_points_awarded
+        alert.message = user_msg
+        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.timestamp = current_timestamp
+
+        alert_processor.ALERT_QUEUE.append(alert)
+        alertutils.alert_state_manager.store_completed_alert(
+            alert.alert_id, alert.__dict__
+        )
+
+        try:
+            if (
+                hasattr(web_engine, "web_engine_instance")
+                and web_engine.web_engine_instance
+            ):
+                alert_data = {
+                    "type": "streak",
+                    "alert_type": "streak",
+                    "username": username,
+                    "streak_count": streak_count,
+                    "channel_points_awarded": channel_points_awarded,
+                    "message": user_msg,
+                    "alert_id": alert.alert_id,
+                    "timestamp": alert.timestamp,
+                }
+                web_engine.web_engine_instance.instant_alert(alert_data)
+                logger.debug(f"Sent instant alert for watch streak: {username}")
+        except Exception as e:
+            logger.error(
+                f"Error sending instant alert for watch streak: {str(e)}",
+                exc_info=True,
+            )
+
+        add_alert_to_feed(
+            alert_type="Streak",
+            message=user_msg or f"{username} reached a {streak_count} stream streak!",
+            badge_type="streak",
+            timestamp=str(int(alert.timestamp)),
+            user_message=user_msg,
+            alert_id=alert.alert_id,
+        )
+
+        try:
+            stats_manager = statistics_manager.get_statistics_manager()
+            stats_manager.increment_watch_streak_alerts(
+                streak_count=streak_count,
+                username=username,
+                alert_name=getattr(alert, "alert_name", None) or "",
+            )
+        except Exception as e:
+            logger.debug("Watch streak statistics update failed: %s", e)
 
     async def on_moderate(self, data: ChannelModerateEvent):
         logger.debug(f"Moderation event received: {data.event}")
@@ -2317,6 +2417,19 @@ class Twitch_API:
                 except Exception as e:
                     logger.error(
                         f"Failed to subscribe to channel chat messages: {str(e)}"
+                    )
+                    raise
+
+                try:
+                    await self.eventsub.listen_channel_chat_notification(
+                        self.user.id, self.user.id, self.on_chat_notification
+                    )
+                    logger.debug(
+                        "Successfully subscribed to channel chat notification events"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to subscribe to channel chat notification events: {str(e)}"
                     )
                     raise
 

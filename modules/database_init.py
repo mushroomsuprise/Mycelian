@@ -120,6 +120,8 @@ def _create_default_data():
             "Alerts/BitAlerts",
             "Alerts/BitRangeAlerts",
             "Alerts/SubAlerts",
+            "Alerts/StreakAlerts",
+            "Alerts/StreakRangeAlerts",
             "Alerts/ResubAlerts",
             "Alerts/GiftsubAlerts",
             "Alerts/GiftsubRangeAlerts",

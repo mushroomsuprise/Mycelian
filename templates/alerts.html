@@ -671,6 +671,7 @@
         raid: {{ EnableRaidAlerts | tojson }},
         point: {{ EnablePointAlerts | tojson }},
         donation: {{ EnableDonationAlerts | tojson }},
+        streak: {{ EnableStreakAlerts | tojson }},
         hype_train_start: {{ EnableHypeTrainAlerts | tojson }},
         hype_train_progress: {{ EnableHypeTrainAlerts | tojson }},
         hype_train_end: {{ EnableHypeTrainAlerts | tojson }}
@@ -1150,7 +1151,9 @@
                 'tip': 'donation',
                 'tips': 'donation',
                 'hypetrain': 'hype_train_start',
-                'hype_train': 'hype_train_start'
+                'hype_train': 'hype_train_start',
+                'streaks': 'streak',
+                'watch_streak': 'streak'
             };
 
             if (alertType && alertTypeMap[alertType]) {
@@ -1743,6 +1746,12 @@
                     break;
                 case 'resub':
                     text = `${alertData.resub_month} month subscriber!`;
+                    break;
+                case 'streak':
+                    {
+                        const sc = alertData.streak_count != null ? alertData.streak_count : 0;
+                        text = sc === 1 ? `1 stream watch streak!` : `${sc} stream watch streak!`;
+                    }
                     break;
                 case 'giftsub':
                     text = `gifted ${alertData.gift_qty} sub${alertData.gift_qty > 1 ? 's' : ''}!`;

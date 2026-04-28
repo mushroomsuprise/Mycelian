@@ -1577,6 +1577,7 @@ async def load_all_initial_data() -> Dict[str, Any]:
         # Core alert types (remove extended ranges that aren't needed immediately)
         "Alerts/BitAlerts",
         "Alerts/SubAlerts",
+        "Alerts/StreakAlerts",
         "Alerts/FollowAlerts",
         "Alerts/DonationAlerts",
         "Alerts/PointAlerts",

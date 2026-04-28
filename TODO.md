@@ -149,6 +149,8 @@ General Items:
     [x] - Add badge size option to the chat template.
     [x] - Add emote size option to the chat template.
     [x] - Fix Spotify client id and secret saving only the first characters of the input field.
+    [] - Ensure statistics database "lazy loads"
+    [] - Fix issue with PSN systems "Connect" button not fetching the NPSSO token after the browser window is opened
 
 
 Priority Fixes:

@@ -60,6 +60,13 @@
         },
         {
             "type": "checkbox",
+            "id": "EnableStreakAlerts",
+            "label": "Enable Watch Streak Alerts",
+            "value": false,
+            "description": "Show alerts for Twitch watch streak milestones (channel chat notification)"
+        },
+        {
+            "type": "checkbox",
             "id": "EnableBitAlerts",
             "label": "Enable Bit Alerts",
             "value": true,

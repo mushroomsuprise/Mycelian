@@ -1457,7 +1457,11 @@ class StatisticsTab:
             for ev in events:
                 etype = ev.get("event_type", "unknown")
                 range_counts[etype] = range_counts.get(etype, 0) + 1
-                range_totals[etype] = range_totals.get(etype, 0) + (ev.get("amount", 0) or 0)
+                amt = float(ev.get("amount", 0) or 0)
+                if etype == "watch_streak":
+                    range_totals[etype] = max(range_totals.get(etype, 0), amt)
+                else:
+                    range_totals[etype] = range_totals.get(etype, 0) + amt
 
             # Build UI
             if self._per_user_results_container:
@@ -1524,6 +1528,7 @@ class StatisticsTab:
                     ("donation", "💰 Donations", "text-green-400", "events"),
                     ("point_redeem", "🎯 Point Redeems", "text-orange-400", "total points"),
                     ("follow", "👤 Follows", "text-cyan-400", "events"),
+                    ("watch_streak", "🔥 Watch streaks", "text-amber-400", "peak streak"),
                     ("raid", "🛡️ Raids", "text-yellow-400", "events"),
                     ("connector", "🔗 Connectors", "text-emerald-400", "trigger weight"),
                     ("chatbot_command", "🤖 Commands", "text-theme-primary", "uses"),
@@ -1569,6 +1574,8 @@ class StatisticsTab:
                             ("Gift Subs", alert_stats.get("gift_subs_played", 0), "text-pink-400"),
                             ("Donations", alert_stats.get("donations", 0), "text-emerald-400"),
                             ("Follow Alerts", alert_stats.get("follow_alerts_played", 0), "text-cyan-400"),
+                            ("Watch streak alerts", alert_stats.get("watch_streak_alerts_played", 0), "text-amber-400"),
+                            ("Highest streak (lifetime)", alert_stats.get("highest_watch_streak", 0), "text-orange-300"),
                             ("Raids", alert_stats.get("raids", 0), "text-yellow-400"),
                             ("Point Alerts", alert_stats.get("point_alerts_redeemed", 0), "text-orange-400"),
                             ("Total Alerts", alert_stats.get("total_alerts", 0), "text-theme-primary"),

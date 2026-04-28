@@ -303,6 +303,9 @@ def create_alert_settings_tab():
             subs_tab = ui.tab("Subscriptions").classes(
                 "transition-all duration-200 hover-theme-surface rounded-md"
             )
+            streaks_tab = ui.tab("Streaks").classes(
+                "transition-all duration-200 hover-theme-surface rounded-md"
+            )
             giftsubs_tab = ui.tab("Gift Subs").classes(
                 "transition-all duration-200 hover-theme-surface rounded-md"
             )
@@ -358,6 +361,11 @@ def create_alert_settings_tab():
                 "transition-all duration-300 w-full h-full"
             ):
                 create_alert_type_panel("subs")
+
+            with ui.tab_panel(streaks_tab).classes(
+                "transition-all duration-300 w-full h-full"
+            ):
+                create_alert_type_panel("streaks")
 
             # Gift Sub Alerts Tab
             with ui.tab_panel(giftsubs_tab).classes(
@@ -425,6 +433,7 @@ def initialize_tab_values(tab_name):
         tab_map = {
             "Bits": "bits",
             "Subscriptions": "subs",
+            "Streaks": "streaks",
             "Gift Subs": "giftsubs",
             "Donations": "donations",
             "Raids": "raids",
@@ -537,7 +546,14 @@ def create_alert_type_panel(alert_type: str):
                     )
 
                 # Alert type specific settings
-                if alert_type in ["bits", "subs", "giftsubs", "donations", "raids"]:
+                if alert_type in [
+                    "bits",
+                    "subs",
+                    "streaks",
+                    "giftsubs",
+                    "donations",
+                    "raids",
+                ]:
                     with ui.row().classes("items-center gap-2"):
                         # Alert type toggle
                         with ui.row().classes("items-center"):
@@ -563,6 +579,12 @@ def create_alert_type_panel(alert_type: str):
                                 input_label = "Month"
                                 input_suffix = None
                                 tooltip_text = "Set the subscription month for this alert (1 for new sub, 2+ for resub months)"
+                            elif alert_type == "streaks":
+                                input_label = "Streak count"
+                                input_suffix = None
+                                tooltip_text = (
+                                    "Watch streak count (consecutive streams) that triggers this alert"
+                                )
                             elif alert_type == "bits":
                                 input_label = "Amount"
                                 input_suffix = " bits"
@@ -608,6 +630,10 @@ def create_alert_type_panel(alert_type: str):
                                 if alert_type == "subs":
                                     min_tooltip = "Minimum subscription month for this alert range"
                                     max_tooltip = "Maximum subscription month for this alert range"
+                                    range_suffix = None
+                                elif alert_type == "streaks":
+                                    min_tooltip = "Minimum streak count for this alert range"
+                                    max_tooltip = "Maximum streak count for this alert range"
                                     range_suffix = None
                                 elif alert_type == "bits":
                                     min_tooltip = "Minimum amount for this alert range"
@@ -1142,7 +1168,14 @@ def set_default_values_for_new_alert(alert_type: str):
     update_tts_custom_message_visibility(alert_type)
 
     # Set appropriate default values for amount-based alerts
-    if alert_type in ["bits", "subs", "giftsubs", "donations", "raids"]:
+    if alert_type in [
+        "bits",
+        "subs",
+        "streaks",
+        "giftsubs",
+        "donations",
+        "raids",
+    ]:
         # Default to exact mode for simplicity
         alert_settings_state.get_elements(alert_type)["range_toggle"].value = False
 
@@ -1151,6 +1184,8 @@ def set_default_values_for_new_alert(alert_type: str):
             alert_settings_state.get_elements(alert_type)["amount_input"].value = 100
         elif alert_type == "subs":
             alert_settings_state.get_elements(alert_type)["amount_input"].value = 1
+        elif alert_type == "streaks":
+            alert_settings_state.get_elements(alert_type)["amount_input"].value = 2
         elif alert_type == "giftsubs":
             alert_settings_state.get_elements(alert_type)["amount_input"].value = 1
         elif alert_type == "donations":
@@ -1163,6 +1198,9 @@ def set_default_values_for_new_alert(alert_type: str):
             # For subs, range would be something like months 1-3, 4-6, etc.
             alert_settings_state.get_elements(alert_type)["min_input"].value = 1
             alert_settings_state.get_elements(alert_type)["max_input"].value = 3
+        elif alert_type == "streaks":
+            alert_settings_state.get_elements(alert_type)["min_input"].value = 2
+            alert_settings_state.get_elements(alert_type)["max_input"].value = 5
         else:
             alert_settings_state.get_elements(alert_type)[
                 "min_input"
@@ -1435,7 +1473,14 @@ def load_alert_settings(alert_type: str, alert_id: str):
 
         # Update range/exact inputs if applicable
         is_fallback = alert_id == alertutils.AlertSettings.FALLBACK_ALERT_ID
-        if alert_type in ["bits", "subs", "giftsubs", "donations", "raids"]:
+        if alert_type in [
+            "bits",
+            "subs",
+            "streaks",
+            "giftsubs",
+            "donations",
+            "raids",
+        ]:
             if is_fallback:
                 # Fallback alert has no amount/range — hide controls
                 _update_amount_inputs_visibility(alert_type, hide=True)
@@ -2489,6 +2534,21 @@ def test_alert(alert_type: str):
                 alert_data["resub_month"] = 1  # Default value
             alert_data["username"] = "TestUser"
             alert_data["tier"] = 1
+        elif alert_type == "streaks":
+            use_range = (
+                bool(elements.get("range_toggle", {}).value)
+                if "range_toggle" in elements and elements["range_toggle"]
+                else False
+            )
+            if use_range and "min_input" in elements and elements["min_input"]:
+                alert_data["streak_count"] = int(elements["min_input"].value or 2)
+            elif "amount_input" in elements and elements["amount_input"]:
+                alert_data["streak_count"] = int(elements["amount_input"].value or 2)
+            else:
+                alert_data["streak_count"] = 2
+            alert_data["channel_points_awarded"] = 0
+            alert_data["username"] = "TestUser"
+            alert_data["message"] = "Test watch streak message"
         elif alert_type == "giftsubs":
             use_range = (
                 bool(elements.get("range_toggle", {}).value)
@@ -2671,7 +2731,14 @@ def save_alert(alert_type: str):
             alert_data["alert_name"] = "Resub Fallback"
             alert_data["resub_month"] = 0
 
-        elif alert_type in ["bits", "subs", "giftsubs", "donations", "raids"]:
+        elif alert_type in [
+            "bits",
+            "subs",
+            "streaks",
+            "giftsubs",
+            "donations",
+            "raids",
+        ]:
             if alert_settings_state.get_elements(alert_type)["range_toggle"].value:
                 # Format as <alert_type><min-max>
                 min_val = int(
@@ -2686,6 +2753,8 @@ def save_alert(alert_type: str):
                     alert_data["amt_cheered"] = min_val
                 elif alert_type == "subs":
                     alert_data["resub_month"] = min_val
+                elif alert_type == "streaks":
+                    alert_data["streak_count"] = min_val
                 elif alert_type == "giftsubs":
                     alert_data["gift_qty"] = min_val
                 elif alert_type == "donations":
@@ -2716,6 +2785,8 @@ def save_alert(alert_type: str):
                     alert_data["amt_cheered"] = quantity
                 elif alert_type == "subs":
                     alert_data["resub_month"] = quantity
+                elif alert_type == "streaks":
+                    alert_data["streak_count"] = quantity
                 elif alert_type == "giftsubs":
                     alert_data["gift_qty"] = quantity
                 elif alert_type == "donations":
@@ -4822,6 +4893,7 @@ def refresh_alert_dropdowns():
         alert_types = [
             "bits",
             "subs",
+            "streaks",
             "giftsubs",
             "donations",
             "raids",

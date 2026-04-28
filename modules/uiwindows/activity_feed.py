@@ -158,6 +158,8 @@ class AlertEventHandler:
             filter_key = "donations"
         elif alert_type == "Raid":
             filter_key = "raids"
+        elif alert_type == "Streak":
+            filter_key = "streaks"
         elif alert_type == "Hype Train":
             filter_key = "hype_train"
 
@@ -342,6 +344,7 @@ class ActivityFeedState:
             "points": True,
             "donations": True,
             "raids": True,
+            "streaks": True,
             "hype_train": True,
         }
         # Map alert types to filter keys
@@ -354,6 +357,7 @@ class ActivityFeedState:
             "Points": "points",
             "Donation": "donations",
             "Raid": "raids",
+            "Streak": "streaks",
             "Hype Train": "hype_train",
         }
         # Track dropdown visibility state
@@ -872,6 +876,7 @@ def update_alert_visibility():
             "Giftsub": "giftsubs",
             "Donation": "donations",
             "Raid": "raids",
+            "Streak": "streaks",
             "Hype Train": "hype_train",
         }
         filter_key = filter_key_map.get(alert_type)
@@ -1123,6 +1128,13 @@ def create_activity_feed_tab():
             background: var(--color-success);
             color: white;
             border-color: var(--color-success);
+        }
+        
+        /* Watch streak alerts */
+        .badge.streak {
+            background: var(--color-primary);
+            color: white;
+            border-color: var(--color-primary);
         }
         
         /* Bits alerts */
@@ -1562,6 +1574,7 @@ def create_activity_feed_tab():
                             create_checkbox("points", "Channel Points")
                             create_checkbox("donations", "Donations")
                             create_checkbox("raids", "Raids")
+                            create_checkbox("streaks", "Watch streaks")
                             create_checkbox("hype_train", "Hype Train")
 
         # Add tab system with custom styling
@@ -2030,6 +2043,8 @@ def add_restored_alert_to_feed(alert_data):
             filter_key = "donations"
         elif alert_type == "Raid":
             filter_key = "raids"
+        elif alert_type == "Streak":
+            filter_key = "streaks"
         elif alert_type == "Hype Train":
             filter_key = "hype_train"
 

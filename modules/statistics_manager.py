@@ -64,6 +64,8 @@ class UserAlertStatistics:
     point_alerts_redeemed: int = 0
     channel_points_redeemed: int = 0  # Total channel points redeemed by this user
     donations: int = 0
+    watch_streak_alerts_played: int = 0
+    highest_watch_streak: int = 0  # Max streak milestone seen for this user (lifetime)
     total_alerts: int = 0
     first_seen: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
@@ -86,6 +88,8 @@ class AlertStatistics:
         0  # Total channel points redeemed across all users
     )
     donations: int = 0
+    watch_streak_alerts_played: int = 0
+    highest_watch_streak_seen: int = 0  # Max streak milestone across all users (lifetime)
     # Per-user tracking
     user_stats: Dict[str, UserAlertStatistics] = field(default_factory=dict)
     # Individual alert type tracking
@@ -561,8 +565,8 @@ class StatisticsManager:
         Args:
             username: The username associated with the event.
             event_type: Type of event (bit, sub, resub, giftsub, donation, point_redeem, follow,
-                raid, connector, chatbot_command, chatbot_event, quote_redeem, chat_message,
-                giveaway_entry, giveaway_win, giveaway_draw_complete).
+                raid, watch_streak, connector, chatbot_command, chatbot_event, quote_redeem,
+                chat_message, giveaway_entry, giveaway_win, giveaway_draw_complete).
             amount: Numeric amount (bits, gift quantity, points, etc.).
             alert_name: Name of the alert that was triggered.
         """
@@ -853,6 +857,106 @@ class StatisticsManager:
         finally:
             self._return_stats_db_connection(conn)
 
+    def get_max_watch_streak_for_user(
+        self,
+        username: str,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+    ) -> int:
+        """Highest watch-streak milestone (single event ``amount``) for a user in the optional window."""
+        if not self._stats_db_initialized or not username:
+            return 0
+        conn = None
+        try:
+            conn = self._get_stats_db_connection()
+            if conn is None:
+                return 0
+            query = (
+                "SELECT COALESCE(MAX(amount), 0) FROM user_events "
+                "WHERE lower(username) = lower(?) AND event_type = 'watch_streak'"
+            )
+            params: list = [username]
+            if start_time is not None:
+                query += " AND timestamp >= ?"
+                params.append(start_time)
+            if end_time is not None:
+                query += " AND timestamp <= ?"
+                params.append(end_time)
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+            return int(row[0] or 0) if row else 0
+        except Exception as e:
+            logger.error(f"Error getting max watch streak for user: {e}")
+            return 0
+        finally:
+            self._return_stats_db_connection(conn)
+
+    def get_highest_watch_streak_event_in_range(
+        self, start_time: float, end_time: float
+    ) -> Optional[Dict[str, Any]]:
+        """The single largest watch-streak milestone in ``[start_time, end_time]`` (one row)."""
+        if not self._stats_db_initialized:
+            return None
+        conn = None
+        try:
+            conn = self._get_stats_db_connection()
+            if conn is None:
+                return None
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT username, amount, alert_name FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'watch_streak' "
+                "ORDER BY amount DESC, timestamp DESC LIMIT 1",
+                (start_time, end_time),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "username": row[0] if row[0] is not None else "?",
+                "streak_count": int(row[1] or 0),
+                "alert_name": row[2] or "",
+            }
+        except Exception as e:
+            logger.error(f"Error getting highest watch streak event: {e}")
+            return None
+        finally:
+            self._return_stats_db_connection(conn)
+
+    def get_top_users_by_peak_watch_streak(
+        self, start_time: float, end_time: float, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Users ranked by their maximum streak milestone in the window (not sum of events)."""
+        if not self._stats_db_initialized:
+            return []
+        conn = None
+        try:
+            conn = self._get_stats_db_connection()
+            if conn is None:
+                return []
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT username, MAX(amount) AS peak, COUNT(*) AS event_count "
+                "FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'watch_streak' "
+                "GROUP BY username ORDER BY peak DESC, event_count DESC LIMIT ?",
+                (start_time, end_time, limit),
+            )
+            return [
+                {
+                    "username": row[0] if row[0] is not None else "?",
+                    "max_streak": int(row[1] or 0),
+                    "event_count": int(row[2] or 0),
+                }
+                for row in cursor.fetchall()
+            ]
+        except Exception as e:
+            logger.error(f"Error getting top users by peak watch streak: {e}")
+            return []
+        finally:
+            self._return_stats_db_connection(conn)
+
     def _compute_highlights_from_user_events(
         self, cursor: sqlite3.Cursor, start_time: float, end_time: float
     ) -> Dict[str, Any]:
@@ -1030,6 +1134,43 @@ class StatisticsManager:
         )
 
         cursor.execute(
+            "SELECT COUNT(*) FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'watch_streak'",
+            ts_params,
+        )
+        highlights["total_watch_streak_alerts"] = int(cursor.fetchone()[0] or 0)
+
+        cursor.execute(
+            "SELECT username, amount FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'watch_streak' "
+            "ORDER BY amount DESC LIMIT 1",
+            ts_params,
+        )
+        row = cursor.fetchone()
+        highlights["biggest_watch_streak"] = (
+            {
+                "username": row[0] if row[0] is not None else "?",
+                "amount": int(row[1] or 0),
+            }
+            if row
+            else None
+        )
+
+        cursor.execute(
+            "SELECT username, MAX(amount) AS peak FROM user_events "
+            "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'watch_streak' "
+            "GROUP BY username ORDER BY peak DESC LIMIT 5",
+            ts_params,
+        )
+        highlights["top_watch_streak_peaks"] = [
+            {
+                "username": (r[0] if r[0] is not None else "?"),
+                "max_streak": int(r[1] or 0),
+            }
+            for r in cursor.fetchall()
+        ]
+
+        cursor.execute(
             "SELECT username, COUNT(*) as event_count FROM user_events "
             "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'chat_message' "
             f"AND {not_system} "
@@ -1114,6 +1255,9 @@ class StatisticsManager:
             "total_giveaway_rounds": 0,
             "top_giveaway_entries": [],
             "top_giveaway_wins": [],
+            "total_watch_streak_alerts": 0,
+            "biggest_watch_streak": None,
+            "top_watch_streak_peaks": [],
             "top_chatter": None,
             "most_active_user": None,
             "unique_users": 0,
@@ -1158,6 +1302,7 @@ class StatisticsManager:
         dn_pairs: List[Tuple[str, int]] = []
         fl_pairs: List[Tuple[str, int]] = []
         rd_pairs: List[Tuple[str, int]] = []
+        ws_peak_pairs: List[Tuple[str, int]] = []
         for un, st in (alerts.user_stats or {}).items():
             if str(un).strip().lower() == sys_lower:
                 continue
@@ -1169,6 +1314,9 @@ class StatisticsManager:
             dn_pairs.append((un, int(getattr(st, "donations", 0) or 0)))
             fl_pairs.append((un, int(getattr(st, "follow_alerts_played", 0) or 0)))
             rd_pairs.append((un, int(getattr(st, "raids", 0) or 0)))
+            ws_peak_pairs.append(
+                (un, int(getattr(st, "highest_watch_streak", 0) or 0))
+            )
 
         chat_pairs: List[Tuple[str, int]] = []
         for un, st in (chat.user_stats or {}).items():
@@ -1230,6 +1378,19 @@ class StatisticsManager:
         top_chat_messages = self._highlights_top_by_count(chat_pairs, 5)
         top_giveaway_wins = self._highlights_top_by_count(gw_win_pairs, 5)
 
+        top_watch_streak_peaks = [
+            {"username": u, "max_streak": v}
+            for u, v in sorted(ws_peak_pairs, key=lambda x: -x[1])[:5]
+            if int(v or 0) > 0
+        ]
+
+        biggest_ws = None
+        for un, peak in ws_peak_pairs:
+            if int(peak or 0) <= 0:
+                continue
+            if biggest_ws is None or peak > biggest_ws[1]:
+                biggest_ws = (un, int(peak))
+
         total_giveaway_wins = sum(int(v or 0) for v in (gb.user_wins or {}).values())
 
         uniq_names = self._in_memory_tracked_usernames()
@@ -1248,6 +1409,7 @@ class StatisticsManager:
             + int(alerts.donations or 0)
             + int(alerts.follow_alerts_played or 0)
             + int(alerts.raids or 0)
+            + int(alerts.watch_streak_alerts_played or 0)
             + int(connectors.total_triggers or 0)
             + int(gb.total_entry_events or 0)
             + int(cbot.total_interactions or 0)
@@ -1283,6 +1445,16 @@ class StatisticsManager:
             "top_follows": top_follows,
             "total_raids": int(alerts.raids or 0),
             "top_raids": top_raids,
+            "total_watch_streak_alerts": int(alerts.watch_streak_alerts_played or 0),
+            "biggest_watch_streak": (
+                {
+                    "username": biggest_ws[0],
+                    "amount": int(biggest_ws[1]),
+                }
+                if biggest_ws
+                else None
+            ),
+            "top_watch_streak_peaks": top_watch_streak_peaks,
             "total_chat_messages": int(chat.total_messages or 0),
             "top_chat_messages": top_chat_messages,
             "total_giveaway_entries": int(gb.total_entry_events or 0),
@@ -1406,6 +1578,11 @@ class StatisticsManager:
                 "total_giveaway_rounds",
                 "SELECT COUNT(*) FROM user_events "
                 "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'giveaway_draw_complete'",
+            ),
+            (
+                "total_watch_streak_alerts",
+                "SELECT COUNT(*) FROM user_events "
+                "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'watch_streak'",
             ),
         ]
         for key, q in mapping:
@@ -2104,6 +2281,8 @@ class StatisticsManager:
                         "point_alerts_redeemed": self.data.alerts.point_alerts_redeemed,
                         "total_channel_points_redeemed": self.data.alerts.total_channel_points_redeemed,
                         "donations": self.data.alerts.donations,
+                        "watch_streak_alerts_played": self.data.alerts.watch_streak_alerts_played,
+                        "highest_watch_streak_seen": self.data.alerts.highest_watch_streak_seen,
                         "user_stats": {
                             username: {
                                 "bit_alerts_played": stats.bit_alerts_played,
@@ -2115,6 +2294,8 @@ class StatisticsManager:
                                 "point_alerts_redeemed": stats.point_alerts_redeemed,
                                 "channel_points_redeemed": stats.channel_points_redeemed,
                                 "donations": stats.donations,
+                                "watch_streak_alerts_played": stats.watch_streak_alerts_played,
+                                "highest_watch_streak": stats.highest_watch_streak,
                                 "total_alerts": stats.total_alerts,
                                 "first_seen": stats.first_seen,
                                 "last_seen": stats.last_seen,
@@ -2422,6 +2603,41 @@ class StatisticsManager:
 
         logger.info(
             f"Follow alerts incremented to: {self.data.alerts.follow_alerts_played}"
+        )
+
+    def increment_watch_streak_alerts(
+        self,
+        streak_count: int,
+        username: Optional[str] = None,
+        alert_name: str = "",
+    ):
+        """Record a watch-streak alert: counts, per-user peak milestone, and event log."""
+        try:
+            sc = int(streak_count)
+        except (TypeError, ValueError):
+            logger.debug("increment_watch_streak_alerts: invalid streak_count %r", streak_count)
+            return
+        if sc < 1:
+            return
+
+        self.data.alerts.watch_streak_alerts_played += 1
+        self.data.alerts.highest_watch_streak_seen = max(
+            self.data.alerts.highest_watch_streak_seen, sc
+        )
+
+        if username:
+            self._track_user_alert(username, "watch_streak_alerts_played")
+            user_row = self.data.alerts.user_stats[username]
+            if sc > user_row.highest_watch_streak:
+                user_row.highest_watch_streak = sc
+            self._record_event(username, "watch_streak", float(sc), alert_name)
+
+        self._track_alert_type("watch_streak", alert_name)
+        logger.debug(
+            "Watch streak alert recorded: count=%s user=%s global_peak=%s",
+            sc,
+            username,
+            self.data.alerts.highest_watch_streak_seen,
         )
 
     def increment_raids(self, username: Optional[str] = None, alert_name: str = ""):
@@ -3127,6 +3343,8 @@ class StatisticsManager:
                 "raids": self.data.alerts.raids,
                 "point_alerts_redeemed": self.data.alerts.point_alerts_redeemed,
                 "total_channel_points_redeemed": self.data.alerts.total_channel_points_redeemed,
+                "watch_streak_alerts_played": self.data.alerts.watch_streak_alerts_played,
+                "highest_watch_streak_seen": self.data.alerts.highest_watch_streak_seen,
             },
             "hype_trains": {
                 "level_completions": self.data.hype_trains.level_completions.copy(),
@@ -3190,6 +3408,7 @@ class StatisticsManager:
                 + self.data.alerts.follow_alerts_played
                 + self.data.alerts.raids
                 + self.data.alerts.point_alerts_redeemed
+                + self.data.alerts.watch_streak_alerts_played
             ),
             "total_hype_trains": self.data.hype_trains.total_completions,
             "total_connectors": self._get_connector_count(),
@@ -3354,7 +3573,10 @@ class StatisticsManager:
                 "follow_alerts_played": alert_stats.follow_alerts_played,
                 "raids": alert_stats.raids,
                 "point_alerts_redeemed": alert_stats.point_alerts_redeemed,
+                "channel_points_redeemed": alert_stats.channel_points_redeemed,
                 "donations": alert_stats.donations,
+                "watch_streak_alerts_played": alert_stats.watch_streak_alerts_played,
+                "highest_watch_streak": alert_stats.highest_watch_streak,
                 "total_alerts": alert_stats.total_alerts,
                 "first_seen": alert_stats.first_seen,
                 "last_seen": alert_stats.last_seen,
@@ -3494,6 +3716,28 @@ class StatisticsManager:
                     {
                         "username": username,
                         "value": stats.point_alerts_redeemed,
+                        "first_seen": stats.first_seen,
+                        "last_seen": stats.last_seen,
+                    }
+                )
+
+        elif stat_type == "watch_streak_alerts":
+            for username, stats in self.data.alerts.user_stats.items():
+                users.append(
+                    {
+                        "username": username,
+                        "value": stats.watch_streak_alerts_played,
+                        "first_seen": stats.first_seen,
+                        "last_seen": stats.last_seen,
+                    }
+                )
+
+        elif stat_type == "highest_watch_streak":
+            for username, stats in self.data.alerts.user_stats.items():
+                users.append(
+                    {
+                        "username": username,
+                        "value": stats.highest_watch_streak,
                         "first_seen": stats.first_seen,
                         "last_seen": stats.last_seen,
                     }

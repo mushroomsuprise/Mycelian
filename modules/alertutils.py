@@ -50,6 +50,7 @@ class AlertSettings:
         "raid",
         "giftsub",
         "donation",
+        "streak",
         "hype_train_start",
         "hype_train_progress",
         "hype_train_end",
@@ -61,6 +62,7 @@ class AlertSettings:
     default_raids_alert: str = "raid1"
     default_giftsub_alert: str = "giftsub1"
     default_donation_alert: str = "donation1"
+    default_streak_alert: str = "streaks1"
     FALLBACK_ALERT_ID: str = "subs_fallback"
 
 
@@ -77,6 +79,8 @@ RaidAlerts = {}
 RaidRangeAlerts = {}
 PointAlerts = {}
 FollowAlerts = {}
+StreakAlerts = {}
+StreakRangeAlerts = {}
 
 # Global alert queue
 ALERT_QUEUE = []
@@ -105,6 +109,8 @@ class AlertStateManager:
             "raid_ranges": {},
             "points": {},
             "follows": {},
+            "streaks": {},
+            "streak_ranges": {},
         }
         # Add alert storage for completed alerts
         self._alert_storage = {}
@@ -122,6 +128,8 @@ class AlertStateManager:
             "raid_ranges": "Alerts/RaidRangeAlerts",
             "points": "Alerts/PointAlerts",
             "follows": "Alerts/FollowAlerts",
+            "streaks": "Alerts/StreakAlerts",
+            "streak_ranges": "Alerts/StreakRangeAlerts",
             "alert_storage": "Alerts/AlertStorage",
         }
         self._initialized = False
@@ -398,7 +406,9 @@ class AlertStateManager:
             RaidAlerts, \
             RaidRangeAlerts, \
             PointAlerts, \
-            FollowAlerts
+            FollowAlerts, \
+            StreakAlerts, \
+            StreakRangeAlerts
 
         # Clear existing collections
         BitAlerts.clear()
@@ -413,6 +423,8 @@ class AlertStateManager:
         RaidRangeAlerts.clear()
         PointAlerts.clear()
         FollowAlerts.clear()
+        StreakAlerts.clear()
+        StreakRangeAlerts.clear()
 
         # Update with new data, filtering out invalid fields
         for key, value in self._alert_state["bits"].items():
@@ -463,6 +475,14 @@ class AlertStateManager:
             filtered_value = self._filter_alert_obj_fields(value)
             FollowAlerts[key] = AlertObj(**filtered_value)
 
+        for key, value in self._alert_state["streaks"].items():
+            filtered_value = self._filter_alert_obj_fields(value)
+            StreakAlerts[key] = AlertObj(**filtered_value)
+
+        for key, value in self._alert_state["streak_ranges"].items():
+            filtered_value = self._filter_alert_obj_fields(value)
+            StreakRangeAlerts[key] = AlertObj(**filtered_value)
+
         logger.debug("Updated global alert collections")
 
     def _get_state_and_firebase_keys(self, alert_type: str, alert_id: str = None):
@@ -478,7 +498,8 @@ class AlertStateManager:
         is_range = (
             alert_id
             and "-" in str(alert_id)
-            and alert_type in ["bits", "subs", "giftsubs", "donations", "raids"]
+            and alert_type
+            in ["bits", "subs", "giftsubs", "donations", "raids", "streaks"]
         )
 
         # Map alert type to state key
@@ -488,6 +509,7 @@ class AlertStateManager:
             "giftsubs": "giftsubs" if not is_range else "giftsub_ranges",
             "donations": "donations" if not is_range else "donation_ranges",
             "raids": "raids" if not is_range else "raid_ranges",
+            "streaks": "streaks" if not is_range else "streak_ranges",
             "follows": "follows",
             "points": "points",
         }
@@ -679,6 +701,7 @@ class AlertStateManager:
                 "raids": "default_raids_alert",
                 "giftsubs": "default_giftsub_alert",
                 "donations": "default_donation_alert",
+                "streaks": "default_streak_alert",
             }
 
             if alert_type not in attr_map:
@@ -748,6 +771,9 @@ class AlertStateManager:
                         else ["donations"]
                     ),
                     "raids": ["raids", "raid_ranges"] if include_ranges else ["raids"],
+                    "streaks": (
+                        ["streaks", "streak_ranges"] if include_ranges else ["streaks"]
+                    ),
                     "follows": ["follows"],
                     "points": ["points"],
                 }
@@ -1018,6 +1044,8 @@ class AlertStateManager:
                 "raider_count": int,
                 "donation_amount": float,
                 "hype_train_level": int,
+                "streak_count": int,
+                "channel_points_awarded": int,
                 "fade_in": int,
                 "fade_out": int,
                 "volume": int,
@@ -1361,6 +1389,8 @@ class AlertStateManager:
                         return f"${min_val}-${max_val} Donation"
                     elif alert_type == "raids":
                         return f"{min_val}-{max_val} Raiders"
+                    elif alert_type == "streaks":
+                        return f"{min_val}-{max_val} Streak"
                 except ValueError:
                     # Fallback if parsing fails
                     return f"{alert_type.title()} {numeric_part}"
@@ -1379,6 +1409,10 @@ class AlertStateManager:
                     return f"${amount} Donation"
                 elif alert_type == "raids":
                     return f"{amount} Raiders"
+                elif alert_type == "streaks":
+                    return (
+                        f"{amount} Streak" if amount == 1 else f"{amount} Streaks"
+                    )
             except ValueError:
                 # Fallback if parsing fails
                 pass
@@ -1411,6 +1445,7 @@ class AlertStateManager:
                 alert_id.startswith(prefix)
                 for prefix in [
                     "bits",
+                    "streaks",
                     "subs",
                     "giftsubs",
                     "donations",
@@ -1428,12 +1463,13 @@ class AlertStateManager:
                 "follows",
                 "raids",
                 "bits",
+                "streaks",
                 "subs",
             ]:
                 if alert_id.startswith(alert_type):
                     actual_id = alert_id[len(alert_type) :]
                     # For follows and subs without numbers, use the full alert_id
-                    if not actual_id and alert_type in ["follows", "subs"]:
+                    if not actual_id and alert_type in ["follows", "subs", "streaks"]:
                         return alert_type, alert_id
                     return alert_type, actual_id
 
@@ -1462,6 +1498,8 @@ class AlertStateManager:
                     "bit_ranges",
                     "subs",
                     "sub_ranges",
+                    "streaks",
+                    "streak_ranges",
                     "giftsubs",
                     "giftsub_ranges",
                     "donations",
@@ -1617,6 +1655,10 @@ class AlertObj:
     # Raid options:
     raider_count: int = 0
 
+    # Watch streak options:
+    streak_count: int = 0
+    channel_points_awarded: int = 0
+
     # Donation options:
     donation_amount: float = 0.0
     currency: str = "USD"
@@ -1673,6 +1715,10 @@ def load_alerts():
     db_raid_range_alerts = database_manager.get_data("Alerts/RaidRangeAlerts") or {}
     db_point_alerts = database_manager.get_data("Alerts/PointAlerts") or {}
     db_follow_alerts = database_manager.get_data("Alerts/FollowAlerts") or {}
+    db_streak_alerts = database_manager.get_data("Alerts/StreakAlerts") or {}
+    db_streak_range_alerts = (
+        database_manager.get_data("Alerts/StreakRangeAlerts") or {}
+    )
 
     # Clear existing global collections first
     BitAlerts.clear()
@@ -1687,6 +1733,8 @@ def load_alerts():
     RaidRangeAlerts.clear()
     PointAlerts.clear()
     FollowAlerts.clear()
+    StreakAlerts.clear()
+    StreakRangeAlerts.clear()
 
     for key, value in db_bit_alerts.items():
         BitAlerts[key] = AlertObj(**value)
@@ -1712,6 +1760,10 @@ def load_alerts():
         PointAlerts[key] = AlertObj(**value)
     for key, value in db_follow_alerts.items():
         FollowAlerts[key] = AlertObj(**value)
+    for key, value in db_streak_alerts.items():
+        StreakAlerts[key] = AlertObj(**value)
+    for key, value in db_streak_range_alerts.items():
+        StreakRangeAlerts[key] = AlertObj(**value)
 
     # Do not update alert state manager from here anymore
     # That would create an infinite loop
@@ -1905,6 +1957,46 @@ def fetch_raid_alert(raider_count: int) -> Optional[AlertObj]:
         return AlertObj(**alerts[default_alert_id])
     elif alerts:
         # Fall back to first available alert if default not found
+        return AlertObj(**next(iter(alerts.values())))
+    return None
+
+
+def fetch_streak_alert(streak_count: int) -> Optional[AlertObj]:
+    """
+    Get watch streak alert data based on consecutive broadcast streak count.
+    Checks exact match and range alerts, then default streak alert.
+
+    Args:
+        streak_count: The watch streak count from Twitch
+
+    Returns:
+        AlertObj or None
+    """
+    alert_state_manager.initialize()
+
+    alerts = alert_state_manager.get_alerts_by_type("streaks", include_ranges=True)
+
+    exact_key = "streaks" + str(streak_count)
+    if exact_key in alerts:
+        return AlertObj(**alerts[exact_key])
+
+    for alert_id, alert_data in alerts.items():
+        if "-" in alert_id:
+            try:
+                range_part = alert_id
+                if alert_id.startswith("streaks"):
+                    range_part = alert_id[7:]
+
+                min_val, max_val = map(int, range_part.split("-"))
+                if min_val <= streak_count <= max_val:
+                    return AlertObj(**alert_data)
+            except ValueError:
+                continue
+
+    default_alert_id = AlertSettings.default_streak_alert
+    if default_alert_id in alerts:
+        return AlertObj(**alerts[default_alert_id])
+    elif alerts:
         return AlertObj(**next(iter(alerts.values())))
     return None
 
