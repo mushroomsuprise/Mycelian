@@ -1158,7 +1158,8 @@ class PSNClient:
             logger.debug(f"Trophy titles response type: {type(trophy_titles)}")
 
             correct_np_comm_id = np_communication_id  # Default to original
-            game_progress_from_titles = None
+            # Full-title aggregates from trophy_titles (base + DLC); used only for np_comm_id resolution and fallback.
+            title_aggregate: dict | None = None
             np_service_name = "trophy2"  # Default to newer service
 
             # Iterate through trophy titles to find matching game
@@ -1196,7 +1197,7 @@ class PSNClient:
                             and earned_trophies
                             and defined_trophies
                         ):
-                            game_progress_from_titles = {
+                            title_aggregate = {
                                 "progress_percentage": progress,
                                 "earned_trophies": {
                                     "bronze": getattr(earned_trophies, "bronze", 0),
@@ -1224,45 +1225,11 @@ class PSNClient:
             logger.debug(f"Final npCommunicationId to use: {correct_np_comm_id}")
             logger.debug(f"Using npServiceName: {np_service_name}")
 
-            # If we found progress data from trophy titles, use that instead of API call
-            if game_progress_from_titles:
+            if title_aggregate:
                 logger.info(
-                    f"Using trophy progress from titles: {game_progress_from_titles['progress_percentage']}%"
+                    "Title-level trophy aggregate available (full title, may include DLC); "
+                    "fetching per-group summary for base vs total split."
                 )
-
-                # Update PSN data with the progress information in consistent structure
-                self.psn_data.current_game_trophies = {
-                    "defined": game_progress_from_titles["defined_trophies"],
-                    "earned": game_progress_from_titles["earned_trophies"],
-                }
-                # Trophy title totals are already for the full title (includes DLC when applicable)
-                self.psn_data.current_game_trophies_all = {
-                    "defined": dict(game_progress_from_titles["defined_trophies"]),
-                    "earned": dict(game_progress_from_titles["earned_trophies"]),
-                }
-                self.psn_data.current_game_progress = game_progress_from_titles[
-                    "progress_percentage"
-                ]
-
-                # Also store defined trophies for reference
-                self.psn_data.current_game_defined_trophies = game_progress_from_titles[
-                    "defined_trophies"
-                ]
-
-                logger.info(
-                    f"Updated current game trophy data: {self.psn_data.current_game_trophies}"
-                )
-                logger.info(
-                    f"Updated current game progress: {self.psn_data.current_game_progress}%"
-                )
-
-                return {
-                    "defined_trophies": game_progress_from_titles["defined_trophies"],
-                    "earned_trophies": game_progress_from_titles["earned_trophies"],
-                    "progress_percentage": game_progress_from_titles[
-                        "progress_percentage"
-                    ],
-                }
 
             # Fetch specific game's defined and earned trophies using trophy_groups_summary
             platform_type = presence_format_to_platform_type(platform)
@@ -1426,13 +1393,11 @@ class PSNClient:
                                         f"Earned trophy counts: {earned_counts}"
                                     )
 
-                            # If we have progress directly available, use it
+                            # If we have progress directly available, log it (do not clobber title_aggregate)
                             if hasattr(group, "progress"):
-                                game_progress_from_titles = getattr(
-                                    group, "progress", 0
-                                )
+                                group_progress = getattr(group, "progress", 0)
                                 logger.debug(
-                                    f"Progress from trophy group: {game_progress_from_titles}%"
+                                    f"Progress from trophy group: {group_progress}%"
                                 )
 
                             break  # Found our group, no need to continue
@@ -1507,7 +1472,27 @@ class PSNClient:
                 "earned": earned_counts,
             }
 
-            if defined_counts["total"] > 0:
+            # Degraded mode: groups summary did not yield this game's group counts
+            if (
+                defined_counts["total"] == 0
+                and earned_counts["total"] == 0
+                and title_aggregate
+            ):
+                logger.warning(
+                    "No per-group trophy data from API; falling back to title-level "
+                    "aggregates (counts may include DLC in both fields)."
+                )
+                d = dict(title_aggregate["defined_trophies"])
+                e = dict(title_aggregate["earned_trophies"])
+                self.psn_data.current_game_trophies = {"defined": d, "earned": e}
+                self.psn_data.current_game_trophies_all = {
+                    "defined": dict(d),
+                    "earned": dict(e),
+                }
+                self.psn_data.current_game_progress = title_aggregate[
+                    "progress_percentage"
+                ]
+            elif defined_counts["total"] > 0:
                 progress = round(
                     (earned_counts["total"] / defined_counts["total"]) * 100
                 )
@@ -1516,11 +1501,12 @@ class PSNClient:
                     f"Game progress calculated: {progress}% ({earned_counts['total']}/{defined_counts['total']})"
                 )
             else:
-                # Fallback to progress from trophy titles if available
-                if game_progress_from_titles is not None:
-                    self.psn_data.current_game_progress = game_progress_from_titles
+                if title_aggregate is not None:
+                    self.psn_data.current_game_progress = title_aggregate[
+                        "progress_percentage"
+                    ]
                     logger.info(
-                        f"Using progress from trophy titles: {game_progress_from_titles}%"
+                        f"Using progress from trophy titles: {self.psn_data.current_game_progress}%"
                     )
                 else:
                     self.psn_data.current_game_progress = 0
