@@ -23,192 +23,211 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import asyncio
-import json
+from __future__ import annotations
+
 import logging
+import os
+import re
+import subprocess
+import sys
 import threading
 import time
-import webbrowser
-from typing import Optional, Callable
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-PSN_HOMEPAGE_URL = "https://www.playstation.com"
-NPSSO_URL = "https://ca.account.sony.com/api/v1/ssocookie"
+_SUBPROCESS_TIMEOUT_SEC = 600
+
+# NPSSO is ~64 chars, alphanumeric / base64url-style (not hex-only).
+_NPSSO_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{64}$")
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _run_npsso_capture_subprocess() -> tuple[bool, str, str]:
+    """
+    Run the isolated pywebview helper. Returns (ok, token_or_empty, error_message).
+    """
+    print(
+        f"[NPSSO_TRACE] t={time.monotonic():.3f} "
+        f"thread={threading.current_thread().name!r} "
+        "npsso_authenticator: subprocess.run starting webview module",
+        flush=True,
+    )
+    root = _project_root()
+    cmd = [sys.executable, "-m", "modules.npsso_webview_capture"]
+    env = os.environ.copy()
+    extra = str(root)
+    sep = os.pathsep
+    if env.get("PYTHONPATH"):
+        env["PYTHONPATH"] = f"{extra}{sep}{env['PYTHONPATH']}"
+    else:
+        env["PYTHONPATH"] = extra
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(root),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=_SUBPROCESS_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("NPSSO webview subprocess timed out")
+        return (
+            False,
+            "",
+            "Timed out waiting for the sign-in window. Close it and try again.",
+        )
+    except OSError as e:
+        logger.error("NPSSO webview subprocess failed to start: %s", e)
+        return False, "", f"Could not start sign-in window: {e}"
+
+    out = (proc.stdout or "").strip()
+    err = (proc.stderr or "").strip()
+    print(
+        f"[NPSSO_TRACE] t={time.monotonic():.3f} "
+        f"thread={threading.current_thread().name!r} "
+        f"npsso_authenticator: subprocess exited code={proc.returncode} "
+        f"stdout_len={len(out)} stderr_len={len(err)}",
+        flush=True,
+    )
+
+    if proc.returncode == 0 and out:
+        if _NPSSO_TOKEN_RE.fullmatch(out):
+            logger.info("NPSSO token acquired via webview subprocess")
+            return True, out, ""
+        logger.error("NPSSO subprocess returned invalid token shape")
+        return False, "", "Invalid token from sign-in window. Try again or paste manually."
+
+    if err:
+        return False, "", err
+
+    logger.error(
+        "NPSSO subprocess failed: code=%s stdout=%r stderr=%r",
+        proc.returncode,
+        out[:80],
+        err[:200],
+    )
+    return (
+        False,
+        "",
+        "NPSSO capture failed. Use Help for manual steps, or try again.",
+    )
 
 
 @dataclass
 class NpssoResult:
     """Result of NPSSO acquisition attempt"""
+
     success: bool
     npsso_code: str = ""
     error_message: str = ""
 
 
-class NpssoAuthenticator:
-    """Handles NPSSO token acquisition via browser-based authentication flow"""
+def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None:
+    """
+    Show the countdown + instructions dialog. When the user clicks Continue,
+    the dialog closes and ``on_after_continue`` runs.
 
-    def __init__(self):
-        self._npsso_code: Optional[str] = None
-        self._completed = threading.Event()
+    Callers should start subprocess capture and poll completion using a
+    ``ui.timer`` anchored to a **persistent** tab element (not this dialog),
+    so NiceGUI can flush UI updates to the client.
+    """
+    from nicegui import ui
 
-    def start_auth_flow(self, on_complete: Callable[[NpssoResult], None]) -> None:
-        """Start the NPSSO authentication flow"""
-        try:
-            # Show instruction dialog
-            self._show_instruction_dialog(on_complete)
-        except Exception as e:
-            logger.error(f"Error starting NPSSO auth flow: {e}")
-            on_complete(NpssoResult(success=False, error_message=str(e)))
+    def on_continue() -> None:
+        print(
+            f"[NPSSO_TRACE] t={time.monotonic():.3f} "
+            f"thread={threading.current_thread().name!r} "
+            "npsso_instruction_dialog: Continue clicked, closing dialog",
+            flush=True,
+        )
+        dialog.close()
+        on_after_continue()
+        print(
+            f"[NPSSO_TRACE] t={time.monotonic():.3f} "
+            f"thread={threading.current_thread().name!r} "
+            "npsso_instruction_dialog: on_after_continue() returned",
+            flush=True,
+        )
 
-    def _show_instruction_dialog(self, on_complete: Callable[[NpssoResult], None]) -> None:
-        """Show the instruction dialog for NPSSO acquisition"""
-        from nicegui import ui
+    def enable_continue() -> None:
+        continue_btn.enable()
+        continue_btn.text = "Continue"
 
-        def on_continue():
-            """Handle continue button click"""
-            dialog.close()
-            self._fetch_npsso_token(on_complete)
+    with ui.dialog() as dialog:
+        with ui.card().classes("w-[600px] p-6"):
+            ui.label("Connect PlayStation Network").classes("text-2xl font-bold mb-4")
 
-        def enable_continue():
-            """Enable the continue button after countdown"""
-            continue_btn.enable()
-            continue_btn.text = "Continue"
+            with ui.column().classes("gap-4"):
+                ui.label(
+                    "To connect your PlayStation Network account, follow these steps:"
+                ).classes("text-lg mb-2")
 
-        with ui.dialog() as dialog:
-            with ui.card().classes("w-[600px] p-6"):
-                ui.label("Connect PlayStation Network").classes("text-2xl font-bold mb-4")
+                with ui.row().classes("gap-3 items-start"):
+                    ui.badge("1", color="primary").classes("rounded-full mt-1")
+                    with ui.column().classes("gap-1 flex-grow"):
+                        ui.label(
+                            "Click Continue to open a dedicated sign-in window"
+                        ).classes("font-medium")
+                        ui.label(
+                            "Sign in to your PlayStation Network account in that window."
+                        ).classes("text-sm secondary-text")
 
-                with ui.column().classes("gap-4"):
-                    ui.label(
-                        "To connect your PlayStation Network account, follow these steps:"
-                    ).classes("text-lg mb-2")
-
-                    # Step 1
-                    with ui.row().classes("gap-3 items-start"):
-                        ui.badge("1", color="primary").classes("rounded-full mt-1")
-                        with ui.column().classes("gap-1 flex-grow"):
-                            ui.label("Open your web browser and go to PlayStation.com").classes("font-medium")
-                            ui.label("Sign in to your PlayStation Network account.").classes("text-sm secondary-text")
-
-                    # Step 2
-                    with ui.row().classes("gap-3 items-start"):
-                        ui.badge("2", color="primary").classes("rounded-full mt-1")
-                        with ui.column().classes("gap-1 flex-grow"):
-                            ui.label("Wait for the page to fully load after signing in").classes("font-medium")
-                            ui.label("Do not close the browser window.").classes("text-sm secondary-text")
-
-                    # Step 3
-                    with ui.row().classes("gap-3 items-start"):
-                        ui.badge("3", color="primary").classes("rounded-full mt-1")
-                        ui.label("Click 'Continue' below to complete the connection").classes("font-medium")
-
-                    ui.separator().classes("my-4")
-
-                    ui.label(
-                        "Note: Your browser will open automatically to retrieve your authentication token."
-                    ).classes("text-sm text-orange-600 font-medium")
-
-                    with ui.row().classes("justify-end gap-2 mt-4"):
-                        ui.button("Cancel", on_click=dialog.close).props("flat")
-
-                        # Continue button - disabled for 10 seconds
-                        continue_btn = ui.button(
-                            "Continue (10)",
-                            on_click=on_continue,
-                            color="primary"
+                with ui.row().classes("gap-3 items-start"):
+                    ui.badge("2", color="primary").classes("rounded-full mt-1")
+                    with ui.column().classes("gap-1 flex-grow"):
+                        ui.label(
+                            "Wait until you are fully signed in on PlayStation.com"
+                        ).classes("font-medium")
+                        ui.label("Keep the sign-in window open.").classes(
+                            "text-sm secondary-text"
                         )
-                        continue_btn.disable()
 
-                        # Countdown timer
-                        def countdown_timer(remaining: int):
-                            if remaining > 0:
-                                continue_btn.text = f"Continue ({remaining})"
-                                ui.timer(1.0, lambda: countdown_timer(remaining - 1), once=True)
-                            else:
-                                enable_continue()
+                with ui.row().classes("gap-3 items-start"):
+                    ui.badge("3", color="primary").classes("rounded-full mt-1")
+                    with ui.column().classes("gap-1 flex-grow"):
+                        ui.label(
+                            "Use the menu: NPSSO → I am signed in — retrieve NPSSO token"
+                        ).classes("font-medium")
+                        ui.label(
+                            "The window will close and Mycelian will save your token."
+                        ).classes("text-sm secondary-text")
 
-                        ui.timer(0.1, lambda: countdown_timer(10), once=True)
+                ui.separator().classes("my-4")
 
-        dialog.open()
+                ui.label(
+                    "The sign-in window shares cookies with the token step, "
+                    "so your token is retrieved automatically after the menu action."
+                ).classes("text-sm text-orange-600 font-medium")
 
-    def _fetch_npsso_token(self, on_complete: Callable[[NpssoResult], None]) -> None:
-        """Fetch the NPSSO token from the Sony endpoint"""
-        def fetch_token():
-            try:
-                # Open browser to the NPSSO endpoint
-                logger.info("Opening browser to NPSSO endpoint")
-                webbrowser.open(NPSSO_URL)
+                with ui.row().classes("justify-end gap-2 mt-4"):
+                    ui.button("Cancel", on_click=dialog.close).props("flat")
 
-                # Wait a moment for the browser to open
-                time.sleep(2)
+                    continue_btn = ui.button(
+                        "Continue (10)",
+                        on_click=on_continue,
+                        color="primary",
+                    )
+                    continue_btn.disable()
 
-                # Fetch the NPSSO token directly
-                import urllib.request
-                import urllib.error
-
-                logger.info("Fetching NPSSO token from Sony endpoint")
-                req = urllib.request.Request(
-                    NPSSO_URL,
-                    headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                        'Accept': 'application/json',
-                    }
-                )
-
-                with urllib.request.urlopen(req, timeout=30) as response:
-                    if response.status == 200:
-                        data = json.loads(response.read().decode('utf-8'))
-                        npsso = data.get("npsso")
-
-                        if npsso and len(npsso) == 64:  # NPSSO tokens are 64 characters
-                            logger.info("NPSSO token acquired successfully")
-                            on_complete(NpssoResult(success=True, npsso_code=npsso))
+                    def countdown_timer(remaining: int) -> None:
+                        if remaining > 0:
+                            continue_btn.text = f"Continue ({remaining})"
+                            ui.timer(
+                                1.0,
+                                lambda: countdown_timer(remaining - 1),
+                                once=True,
+                            )
                         else:
-                            logger.error(f"Invalid NPSSO token received: {npsso}")
-                            on_complete(NpssoResult(
-                                success=False,
-                                error_message="Invalid token format received. Please ensure you're signed into PlayStation Network."
-                            ))
-                    else:
-                        logger.error(f"HTTP error fetching NPSSO: {response.status}")
-                        on_complete(NpssoResult(
-                            success=False,
-                            error_message=f"Failed to fetch token (HTTP {response.status}). Please try again."
-                        ))
+                            enable_continue()
 
-            except urllib.error.HTTPError as e:
-                logger.error(f"HTTP error: {e}")
-                if e.code == 401:
-                    on_complete(NpssoResult(
-                        success=False,
-                        error_message="Not signed in. Please go to PlayStation.com and sign in first."
-                    ))
-                else:
-                    on_complete(NpssoResult(
-                        success=False,
-                        error_message=f"Network error: {e.code}. Please check your internet connection."
-                    ))
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {e}")
-                on_complete(NpssoResult(
-                    success=False,
-                    error_message="Invalid response format. Please try again."
-                ))
-            except Exception as e:
-                logger.error(f"Error fetching NPSSO token: {e}")
-                on_complete(NpssoResult(
-                    success=False,
-                    error_message=f"Unexpected error: {str(e)}. Please try again."
-                ))
+                    ui.timer(0.1, lambda: countdown_timer(10), once=True)
 
-        # Run in background thread to avoid blocking UI
-        thread = threading.Thread(target=fetch_token, daemon=True)
-        thread.start()
-
-
-def start_npsso_auth_flow(on_complete: Callable[[NpssoResult], None]) -> None:
-    """Convenience function to start NPSSO authentication flow"""
-    authenticator = NpssoAuthenticator()
-    authenticator.start_auth_flow(on_complete)
+    dialog.open()

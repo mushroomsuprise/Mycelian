@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
+import time
 from typing import Dict, Any, Optional, List
 
 from nicegui import ui
@@ -8,7 +11,11 @@ from nicegui import ui
 from ... import dataobjects
 from ...dataobjects import state_manager
 from ... import psn_service
-from ...npsso_authenticator import start_npsso_auth_flow, NpssoResult
+from ...npsso_authenticator import (
+    NpssoResult,
+    _run_npsso_capture_subprocess,
+    show_npsso_instruction_dialog,
+)
 from ...psnapi import (
     load_all_psn_game_cache_docs_from_db,
     update_psn_game_cache_in_db,
@@ -18,6 +25,15 @@ from ...psnapi import (
 logger = logging.getLogger(__name__)
 
 
+def _npsso_trace(msg: str) -> None:
+    """Stdout trace for NPSSO flow debugging (remove when stable)."""
+    print(
+        f"[NPSSO_TRACE] t={time.monotonic():.3f} "
+        f"thread={threading.current_thread().name!r} {msg}",
+        flush=True,
+    )
+
+
 class PSNTab:
     name = "PSN"
 
@@ -25,6 +41,7 @@ class PSNTab:
         self.dirty: bool = False
         self.buffer: Optional[dataobjects.PSNSettingsData] = None
         self.ui_elements: Dict[str, Any] = {}
+        self._npsso_capture_timer: Any = None
         self._cached_games: List[dict] = []
         self._selected_game: Optional[dict] = None
         self._game_cache_dirty: bool = False
@@ -178,37 +195,218 @@ class PSNTab:
         self._auth_in_progress = True
         self.connect_button.disable()
         self.connect_button.text = "Connecting..."
+        _npsso_trace("_start_npsso_auth: connect UI armed")
 
-        def on_auth_complete(result: NpssoResult):
-            """Handle authentication result"""
+        def reset_connect_ui() -> None:
+            _npsso_trace("reset_connect_ui: re-enable Connect button")
             self._auth_in_progress = False
             self.connect_button.enable()
             self.connect_button.text = "Connect to PSN"
+            self._refresh_status()
 
-            if result.success:
-                # Update the input field
-                self.ui_elements["npsso_code"].value = result.npsso_code
-                self._set("npsso_code", result.npsso_code)
+        def on_auth_complete(result: NpssoResult):
+            """Handle authentication result (runs on NiceGUI event loop)."""
+            _npsso_trace(
+                f"on_auth_complete: enter success={result.success} "
+                f"token_len={len(result.npsso_code) if result.npsso_code else 0}"
+            )
+            defer_reset = False
+            try:
+                if result.success:
+                    self.ui_elements["npsso_code"].value = result.npsso_code
+                    self._set("npsso_code", result.npsso_code)
+                    _npsso_trace(
+                        "on_auth_complete: set npsso_code input + buffer "
+                        f"(len={len(result.npsso_code)})"
+                    )
+                    ui.notify(
+                        "NPSSO token acquired successfully! PSN service will reconnect automatically.",
+                        type="positive",
+                        position="bottom-right",
+                        duration=5000,
+                    )
+                    defer_reset = True
 
-                # Save the settings
-                self.save()
+                    async def deferred_save() -> None:
+                        """
+                        Yield the event loop so the browser receives the NPSSO field
+                        update, then persist and run PSN service work off the main
+                        thread (join + connect can block ~10s and starve WebSockets).
+                        """
+                        _npsso_trace(
+                            "deferred_save: async enter (first await yields loop)"
+                        )
+                        try:
+                            await asyncio.sleep(0.25)
+                            _npsso_trace(
+                                "deferred_save: after sleep, persist + service (executor)"
+                            )
+                            ok = self._persist_psn_settings()
+                            if ok is None:
+                                return
+                            if not ok:
+                                ui.notify(
+                                    "Error saving PSN settings",
+                                    type="negative",
+                                    position="bottom-right",
+                                    duration=8000,
+                                )
+                                return
+                            loop = asyncio.get_running_loop()
+                            await loop.run_in_executor(
+                                None, psn_service.handle_psn_settings_change
+                            )
+                            _npsso_trace(
+                                "deferred_save: handle_psn_settings_change returned"
+                            )
+                            self.dirty = False
+                            self._refresh_status()
+                        except Exception as save_err:
+                            logger.error(
+                                "Error saving PSN settings after NPSSO capture: %s",
+                                save_err,
+                                exc_info=True,
+                            )
+                            _npsso_trace(f"deferred_save: raised {save_err!r}")
+                            ui.notify(
+                                f"Error saving PSN settings: {save_err}",
+                                type="negative",
+                                position="bottom-right",
+                                duration=8000,
+                            )
+                        finally:
+                            _npsso_trace("deferred_save: finally -> reset_connect_ui")
+                            reset_connect_ui()
 
+                    ui.timer(0.01, deferred_save, once=True)
+                    _npsso_trace(
+                        "on_auth_complete: scheduled async deferred_save via ui.timer"
+                    )
+                else:
+                    ui.notify(
+                        f"Authentication failed: {result.error_message}",
+                        type="negative",
+                        position="bottom-right",
+                        duration=8000,
+                    )
+            except Exception as e:
+                logger.error(f"Error applying NPSSO auth result: {e}", exc_info=True)
                 ui.notify(
-                    "NPSSO token acquired successfully! PSN service will reconnect automatically.",
-                    type="positive",
-                    position="bottom-right",
-                    duration=5000,
-                )
-            else:
-                ui.notify(
-                    f"Authentication failed: {result.error_message}",
+                    f"Error applying NPSSO token: {e}",
                     type="negative",
                     position="bottom-right",
                     duration=8000,
                 )
+            finally:
+                if not defer_reset:
+                    _npsso_trace(
+                        "on_auth_complete: finally immediate reset_connect_ui "
+                        f"(defer_reset={defer_reset})"
+                    )
+                    reset_connect_ui()
+
+        def begin_capture_after_instructions() -> None:
+            """Run webview subprocess in a thread; poll with a tab-anchored timer (see Spotify tab)."""
+            _npsso_trace("begin_capture_after_instructions: enter")
+            if getattr(self, "_npsso_capture_timer", None) is not None:
+                try:
+                    self._npsso_capture_timer.cancel()
+                except Exception:
+                    pass
+                self._npsso_capture_timer = None
+
+            state: dict = {"done": False, "result": None}
+
+            def worker() -> None:
+                _npsso_trace("worker: subprocess thread started")
+                result: NpssoResult | None = None
+                try:
+                    ok, token, err = _run_npsso_capture_subprocess()
+                    _npsso_trace(
+                        f"worker: subprocess returned ok={ok} token_len={len(token) if token else 0} "
+                        f"err_set={bool(err)}"
+                    )
+                    if ok:
+                        result = NpssoResult(success=True, npsso_code=token)
+                    else:
+                        result = NpssoResult(
+                            success=False,
+                            error_message=err or "NPSSO capture failed.",
+                        )
+                except Exception as e:
+                    logger.exception("NPSSO capture error")
+                    result = NpssoResult(success=False, error_message=str(e))
+                state["result"] = result
+                state["done"] = True
+                _npsso_trace("worker: state['done']=True")
+
+            threading.Thread(target=worker, daemon=True).start()
+
+            checks = {"n": 0}
+            max_checks = 3000  # ~10 minutes at 0.2s (subprocess timeout is longer)
+
+            def poll_capture() -> None:
+                checks["n"] += 1
+                if not state["done"] and checks["n"] % 25 == 1:
+                    _npsso_trace(
+                        f"poll_capture: tick n={checks['n']} still waiting worker"
+                    )
+                if checks["n"] >= max_checks:
+                    _npsso_trace(
+                        f"poll_capture: max_checks={max_checks} timeout, failing auth"
+                    )
+                    try:
+                        if self._npsso_capture_timer is not None:
+                            self._npsso_capture_timer.cancel()
+                    except Exception:
+                        pass
+                    self._npsso_capture_timer = None
+                    on_auth_complete(
+                        NpssoResult(
+                            success=False,
+                            error_message="Timed out waiting for the NPSSO sign-in window.",
+                        )
+                    )
+                    return
+                if not state["done"]:
+                    return
+                _npsso_trace(
+                    f"poll_capture: worker done, cancel timer and on_auth_complete "
+                    f"success={bool(state.get('result') and state['result'].success)}"
+                )
+                try:
+                    if self._npsso_capture_timer is not None:
+                        self._npsso_capture_timer.cancel()
+                except Exception:
+                    pass
+                self._npsso_capture_timer = None
+                r = state["result"]
+                if r is None:
+                    on_auth_complete(
+                        NpssoResult(
+                            success=False,
+                            error_message="Unknown error during NPSSO capture.",
+                        )
+                    )
+                else:
+                    on_auth_complete(r)
+
+            slot = getattr(self.connect_button, "parent_slot", None)
+            if slot is None:
+                logger.error("PSN tab: connect_button has no parent_slot")
+                on_auth_complete(
+                    NpssoResult(
+                        success=False,
+                        error_message="UI error: cannot start NPSSO capture timer.",
+                    )
+                )
+                return
+            with slot:
+                self._npsso_capture_timer = ui.timer(0.2, poll_capture)
+                _npsso_trace("begin_capture_after_instructions: poll timer started")
 
         try:
-            start_npsso_auth_flow(on_auth_complete)
+            show_npsso_instruction_dialog(begin_capture_after_instructions)
         except Exception as e:
             logger.error(f"Error starting NPSSO auth: {e}")
             self._auth_in_progress = False
@@ -301,9 +499,17 @@ class PSNTab:
             setattr(self.buffer, field, value)
             self.dirty = True
 
-    def save(self) -> None:
+    def _persist_psn_settings(self) -> Optional[bool]:
+        """
+        Copy inputs + buffer into state_manager and flush to DB.
+
+        Returns:
+            None if there is no buffer (nothing to do).
+            True if ``save_changes()`` succeeded.
+            False if persistence failed.
+        """
         if not self.buffer:
-            return
+            return None
         for field in ("npsso_code", "psn_username"):
             el = self.ui_elements.get(field)
             if el and hasattr(el, "value"):
@@ -312,13 +518,28 @@ class PSNTab:
                     self._set(field, str(v))
         for field in self.buffer.__dataclass_fields__.keys():
             state_manager.update_psn_setting(field, getattr(self.buffer, field))
-        if state_manager.save_changes():
-            psn_service.handle_psn_settings_change()
-            ui.notify("PSN settings saved", type="positive")
-            self.dirty = False
-            self._refresh_status()
-        else:
+        _npsso_trace("save(): calling state_manager.save_changes() …")
+        return state_manager.save_changes()
+
+    def save(self, *, suppress_saved_notification: bool = False) -> None:
+        _npsso_trace(
+            f"save(): enter suppress_saved_notification={suppress_saved_notification}"
+        )
+        ok = self._persist_psn_settings()
+        if ok is None:
+            _npsso_trace("save(): no buffer, return")
+            return
+        if not ok:
+            _npsso_trace("save(): save_changes returned False")
             ui.notify("Error saving PSN settings", type="negative")
+            return
+        _npsso_trace("save(): save_changes OK, calling handle_psn_settings_change() …")
+        psn_service.handle_psn_settings_change()
+        _npsso_trace("save(): handle_psn_settings_change() returned")
+        if not suppress_saved_notification:
+            ui.notify("PSN settings saved", type="positive")
+        self.dirty = False
+        self._refresh_status()
 
     def discard(self) -> None:
         self._load_from_state()
