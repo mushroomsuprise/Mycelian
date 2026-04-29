@@ -159,3 +159,4 @@ Priority Fixes:
     [x] - Make the file dialog resizable, change so it swaps between back and forward slashes based on if the file is a "browser" path IE: alert audio/gif sources, or a file path for the app itself.
     [x] - Add setting to start app not maximized
     [] - Setup "generic image/video" template, so the file can just be renamed and all websocket events will point to the file name.
+    [] - Fix PSN base game option showing "object Object" instead of the trophy count
