@@ -160,3 +160,4 @@ Priority Fixes:
     [x] - Add setting to start app not maximized
     [] - Setup "generic image/video" template, so the file can just be renamed and all websocket events will point to the file name.
     [x] - Fix PSN base game option showing "object Object" instead of the trophy count
+    [] - Inspect Spotify OAuth flow. Tokens are not being refreshed upon app startup properly
