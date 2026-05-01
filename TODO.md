@@ -125,6 +125,17 @@ FF7 Hook
     [x] - Double check total materia count, may not be correct, it should only be calculated based off the equipped materia for the characters in the party only, it should not include materia counts for the other characters not in the main party.
     [x] - Add option to query inventory (including weapons, armor, accessories, and materia. both equipped and unequipped) via a Connector action. This should take <item_name> as an arg, and return the quantity of that item in the inventory.
 
+Notification Upgrades:
+    [] - Create a "notification engine" in a new python file, convert all notification displays to run through this instead
+    [] - Add a "notification center" to all tabs of the app (locate button in the top right corner), list of notifcations should be scrollable with the notifications appearing as small cards with "X" buttons to clear, and have clickable actions based on the notification.
+    [] - Add notification history to the notification center, stores notifications until cleared by user
+    [] - When notifications are clicked on, it should either copy the message, move to the corresponding area in the UI, or do nothing. This is dependant on the type of notification, multiple actions of this might be applicable.
+    [] - Move notifications from the bottom center to the top right corner
+    [] - Ensure all notifications only display once, some still infinitely trigger until the app is closed
+    [] - Add game hook notifications if streaming in a category that contains a hook (frame it like: "Playing {game} on PC? Try the game hook out!")
+    [] - Stylize notification colors to match the theme, but still have differentiated colors for errors, successes, and general info. Note: we will need to add color fields to the themes for this, and ensure the mock-ui in settings, and the create theme dialog contains these
+
+
 General Items:
     [x] - Auto-update is not notifying the user of updates upon startup.
     [x] - Interval update timer is not notifying when an update is available after the app has been already opened and running.
