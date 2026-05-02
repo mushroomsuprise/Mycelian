@@ -1,9 +1,11 @@
 Game Hooks
     [] - Rewrite game hook so it works as a generic manager. any hooks are defined within the specific game's hook file.
+    [] - Game hook manager should be platform agnostic, and select the appropriate path to modify memory based on the detected OS. specific game hook files should define the platforms it will work on within them. The settings UI should look to this when setting up the platform icons and the toggle.
     [] - The game hook manager should check the process list for any games that fall under enabled game hooks. If a game is found, it should spawn a new thread dedicated to that specific game's hook.
+    [] - Relocate ff7 hook components into the ff7_hook.py file. The main game hook file should not contain game specific items.
 
 FF7 Hook
-    [] - Rewrite to match newly reworked game hook manager
+    [] - Rewrite to match newly reworked game hook manager.
 
 Notification Upgrades:
     [] - Create a "notification engine" in a new python file, convert all notification displays to run through this instead
@@ -14,6 +16,10 @@ Notification Upgrades:
     [] - Ensure all notifications only display once, some still infinitely trigger until the app is closed
     [] - Add game hook notifications if streaming in a category that contains a hook (frame it like: "Playing {game} on PC? Try the game hook out!")
     [] - Stylize notification colors to match the theme, but still have differentiated colors for errors, successes, and general info. Note: we will need to add color fields to the themes for this, and ensure the mock-ui in settings, and the create theme dialog contains these
+
+Template Previewer:
+    [] - Create a template preview inside the Source Settings menu (on the right hand side), that will display a live preview of the template, and show any changes (both saved and pending).
+    [] - Templates that auto-hide (spotify, PSN trophies to name a few) should always display in the preview. Other templates that appear and disappear (things like alerts, chat) should mock the behavior of the template while its in use (IE play alerts, add chat messages, etc)
 
 OBS Websocket:
     [] - Add in OBS websocket support. 
