@@ -21,6 +21,18 @@ Template Previewer:
     [] - Create a template preview inside the Source Settings menu (on the right hand side), that will display a live preview of the template, and show any changes (both saved and pending).
     [] - Templates that auto-hide (spotify, PSN trophies to name a few) should always display in the preview. Other templates that appear and disappear (things like alerts, chat) should mock the behavior of the template while its in use (IE play alerts, add chat messages, etc)
 
+Template Creator:
+    [] - Add a new "main" tab after Settings called "Spore Studio".
+    [] - Create a GUI based editor for creating and/or editting HTML templates and their JSON files specifically for Mycelian. This editor MUST be easy to use, as it will be the main source of customization for standard users. I still want a comprehensive list of options for the user to pick from.
+    [] - Add a "Create" button that will generate a starting HTML template and JSON file in the correct location. This should give options for the user to select what alert system to listen to (queue vs instant), whether it should copy from an existing template, and a name. This is to set up basic items like the websockets, files, etc etc. This will also need to create the template's asset folder in the /assets directory.
+    [] - The GUI editor should contain options to: add images, text, videos, audio, animations, effects, auto-hiding, etc etc.
+    [] - The editor should work off a "drag and drop" style system for placing elements. When an element is placed, it should ask for a "category name" that will correspond to the properties segment for that element in its companion JSON file.
+    [] - There should be a "properties" window when clicking on an element that will allow the user to edit options for it (font size, location, display type, animation, segment name, etc etc). The properties of these items should be populated into the JSON file with the set values automatically, and sorted within the segment name. The user should be able to add/remove properties to an element as desired (filtered to required properties: IE: font size for text).
+    [] - Populate any items in the template's asset folder to be placed in. Repopulate this list if changes were detected within the asset folder.
+    [] - Include an "undo" system to revert the most recent change. Include an undo history. Ideally store all changes to undo, but limit to a set value for the history if performance will be an issue.
+    [] - Incorporate the same preview system that the Source Settings menu will have (detailed above)
+
+
 OBS Websocket:
     [] - Add in OBS websocket support. 
     [] - Create settings tab for OBS to input the websocket connection information (Must persist across restarts, so store in database)
