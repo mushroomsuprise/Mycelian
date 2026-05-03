@@ -36,6 +36,7 @@ from .connector_core import ActionType, Connector, EventData, TriggerType
 from .connector_triggers import create_trigger
 from .hotkey_listener import get_listener
 from .statistics_manager import get_statistics_manager
+from .notification_engine import nav_actions_main_tab, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,11 @@ class ConnectorManager:
 
             except Exception as e:
                 logger.error(f"Error in connector thread: {e}", exc_info=True)
+                notify_critical(
+                    "Connector background processing crashed. Connectors may not run until you restart the app.",
+                    dedupe_key="connector:thread_crash",
+                    actions=nav_actions_main_tab("Connectors"),
+                )
 
         # Start the connector processing in a background thread
         self.connector_thread = threading.Thread(
@@ -298,6 +304,11 @@ class ConnectorManager:
 
         except Exception as e:
             logger.error(f"Error loading connectors: {e}", exc_info=True)
+            notify_critical(
+                "Could not load connectors from the database.",
+                dedupe_key="connector:load_failed",
+                actions=nav_actions_main_tab("Connectors"),
+            )
 
     def save_connectors(self):
         """Save connectors to database"""
@@ -322,6 +333,11 @@ class ConnectorManager:
 
         except Exception as e:
             logger.error(f"Error saving connectors: {e}", exc_info=True)
+            notify_critical(
+                "Could not save connectors to the database.",
+                dedupe_key="connector:save_failed",
+                actions=nav_actions_main_tab("Connectors"),
+            )
 
     def add_connector(self, connector: Connector) -> bool:
         """Add a new connector"""
@@ -787,6 +803,11 @@ def initialize():
         logger.info("Connector system initialized successfully")
     except Exception as e:
         logger.error(f"Error initializing connector system: {e}", exc_info=True)
+        notify_critical(
+            "Connector system failed to initialize (hotkeys/connectors may be unavailable).",
+            dedupe_key="connector:init_failed",
+            actions=nav_actions_main_tab("Connectors"),
+        )
 
 
 async def cleanup():

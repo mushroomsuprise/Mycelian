@@ -40,6 +40,7 @@ from .chatbot_core import (
     Quote,
 )
 from .statistics_manager import get_statistics_manager
+from .notification_engine import nav_actions_main_tab, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +312,11 @@ class ChatbotManager:
 
         except Exception as e:
             logger.error(f"Error during migration: {e}")
+            notify_critical(
+                "Chatbot data migration from old files failed. Check logs.",
+                dedupe_key="chatbot:migrate_failed",
+                actions=nav_actions_main_tab("Chatbot"),
+            )
 
     def _load_data(self):
         """Load commands and events from database manager"""
@@ -459,6 +465,11 @@ class ChatbotManager:
 
         except Exception as e:
             logger.error(f"Error loading chatbot data: {e}")
+            notify_critical(
+                "Could not load chatbot commands and settings from the database.",
+                dedupe_key="chatbot:load_failed",
+                actions=nav_actions_main_tab("Chatbot"),
+            )
 
     def _save_data(self):
         """Save commands and events to database manager"""
@@ -502,6 +513,11 @@ class ChatbotManager:
 
         except Exception as e:
             logger.error(f"Error saving chatbot data: {e}")
+            notify_critical(
+                "Could not save chatbot data to the database.",
+                dedupe_key="chatbot:save_failed",
+                actions=nav_actions_main_tab("Chatbot"),
+            )
 
     def get_manager(self):
         """Get the manager instance (for compatibility)"""

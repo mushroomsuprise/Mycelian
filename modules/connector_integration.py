@@ -30,6 +30,7 @@ from typing import Any, Dict, List
 
 from .connector_core import EventData
 from .connector_manager import get_manager
+from .notification_engine import nav_actions_main_tab, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +453,11 @@ def initialize_integration():
         logger.info("Connector integration initialized successfully")
     except Exception as e:
         logger.error(f"Error initializing connector integration: {e}", exc_info=True)
+        notify_critical(
+            "Connector integration failed to start (Twitch events may not trigger connectors).",
+            dedupe_key="connector:integration_init",
+            actions=nav_actions_main_tab("Connectors"),
+        )
 
 
 def get_integration() -> ConnectorIntegration:

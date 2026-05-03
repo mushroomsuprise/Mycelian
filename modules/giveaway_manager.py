@@ -101,6 +101,16 @@ class GiveawayManager:
             set_data(DATA_PATH, dict(self._config))
         except Exception as e:
             logger.error("Giveaway config save failed: %s", e)
+            try:
+                from .notification_engine import nav_actions_main_tab, notify_critical
+
+                notify_critical(
+                    "Could not save giveaway settings to the database.",
+                    dedupe_key="giveaway:save_config",
+                    actions=nav_actions_main_tab("Chatbot"),
+                )
+            except Exception:
+                pass
 
     def get_config(self) -> Dict[str, Any]:
         with self._lock:
@@ -296,6 +306,16 @@ class GiveawayManager:
                 return False, self._last_error, []
         except Exception as e:
             logger.error("Giveaway announcement error: %s", e, exc_info=True)
+            try:
+                from .notification_engine import nav_actions_main_tab, notify_critical
+
+                notify_critical(
+                    "Giveaway winner announcement failed to send. Check chatbot connection.",
+                    dedupe_key="giveaway:announce_failed",
+                    actions=nav_actions_main_tab("Chatbot"),
+                )
+            except Exception:
+                pass
             with self._lock:
                 self._last_error = str(e)
             return False, self._last_error, []

@@ -36,6 +36,7 @@ from .api_credentials_manager import (
 )
 from .database_manager import DatabaseConfig, database_manager
 from .dataobjects import DatabaseSettings, state_manager
+from .notification_engine import nav_actions_settings, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,11 @@ def _create_default_data():
 
     except Exception as e:
         logger.error(f"Error creating default data: {str(e)}", exc_info=True)
+        notify_critical(
+            "Could not create default database entries. Check logs.",
+            dedupe_key="db:default_data",
+            actions=nav_actions_settings("Database"),
+        )
 
 
 def initialize_database_system() -> bool:
@@ -191,10 +197,20 @@ def initialize_database_system() -> bool:
 
         if not config_success:
             logger.error("Failed to initialize configuration manager")
+            notify_critical(
+                "Failed to load application configuration. Check config.json and logs.",
+                dedupe_key="startup:config_manager",
+                actions=nav_actions_settings("App Settings"),
+            )
             return False
 
         if not api_success:
             logger.error("Failed to initialize API credentials manager")
+            notify_critical(
+                "Failed to initialize API credentials storage. Check file permissions and logs.",
+                dedupe_key="startup:api_credentials",
+                actions=nav_actions_settings("App Settings"),
+            )
             return False
 
         # Get database configuration from external config file
@@ -244,6 +260,11 @@ def initialize_database_system() -> bool:
             logger.error(
                 f"Failed to initialize database manager with {config.database_type}"
             )
+            notify_critical(
+                "Could not connect using the configured database. Check Settings → Database.",
+                dedupe_key=f"startup:db_manager:{config.database_type}",
+                actions=nav_actions_settings("Database"),
+            )
             # Fall back to SQL if the configured database type fails
             if config.database_type != "sql":
                 logger.info("Falling back to SQL database...")
@@ -254,6 +275,11 @@ def initialize_database_system() -> bool:
 
     except Exception as e:
         logger.error(f"Error initializing database system: {str(e)}", exc_info=True)
+        notify_critical(
+            "Database system failed to start. See logs for details.",
+            dedupe_key="startup:database_system",
+            actions=nav_actions_settings("Database"),
+        )
         return False
 
 
@@ -434,6 +460,11 @@ def migrate_from_firebase_only() -> bool:
 
     except Exception as e:
         logger.error(f"Error during Firebase migration: {str(e)}", exc_info=True)
+        notify_critical(
+            "Firebase settings migration failed. Your data may need a manual fix.",
+            dedupe_key="db:migrate_firebase",
+            actions=nav_actions_settings("Database"),
+        )
         return False
 
 
@@ -525,4 +556,9 @@ def ensure_database_initialized() -> bool:
 
     except Exception as e:
         logger.error(f"Error ensuring database initialization: {str(e)}", exc_info=True)
+        notify_critical(
+            "Database initialization error. Some features may be unavailable.",
+            dedupe_key="db:ensure_init",
+            actions=nav_actions_settings("Database"),
+        )
         return False

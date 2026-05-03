@@ -513,4 +513,14 @@ def generate_highlights_image(
     except Exception as e:
         logger.error("Error generating highlights image: %s", e, exc_info=True)
         print("[highlights render] FAILED:", repr(e))
+        try:
+            from .notification_engine import nav_actions_settings, notify_critical
+
+            notify_critical(
+                "Could not export statistics highlights image. Check logs.",
+                dedupe_key="stats:highlights_export",
+                actions=nav_actions_settings("Statistics"),
+            )
+        except Exception:
+            pass
         return False

@@ -37,6 +37,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 
 from .path_utils import get_data_path
+from .notification_engine import nav_actions_settings, notify_critical
 
 # Third-party imports (will be optional based on selected database)
 try:
@@ -1301,6 +1302,11 @@ class DatabaseManager:
                 self._database = MongoDatabase(self._config)
             else:
                 logger.error(f"Unsupported database type: {self._config.database_type}")
+                notify_critical(
+                    f"Unsupported database type configured: {self._config.database_type}.",
+                    dedupe_key="db:unsupported_type",
+                    actions=nav_actions_settings("Database"),
+                )
                 return False
 
             # Initialize the database
@@ -1313,6 +1319,11 @@ class DatabaseManager:
             else:
                 logger.error(
                     f"Failed to initialize {self._config.database_type} database"
+                )
+                notify_critical(
+                    f"Failed to initialize the {self._config.database_type} database. Check connection settings.",
+                    dedupe_key=f"db:init_fail:{self._config.database_type}",
+                    actions=nav_actions_settings("Database"),
                 )
                 return False
 
@@ -1475,6 +1486,11 @@ class DatabaseManager:
                 logger.error(
                     f"Unsupported source database type: {source_config.database_type}"
                 )
+                notify_critical(
+                    "Database migration aborted: unsupported source database type.",
+                    dedupe_key="db:migrate:bad_source",
+                    actions=nav_actions_settings("Database"),
+                )
                 return False
 
             if target_config.database_type == "sql":
@@ -1487,15 +1503,30 @@ class DatabaseManager:
                 logger.error(
                     f"Unsupported target database type: {target_config.database_type}"
                 )
+                notify_critical(
+                    "Database migration aborted: unsupported target database type.",
+                    dedupe_key="db:migrate:bad_target",
+                    actions=nav_actions_settings("Database"),
+                )
                 return False
 
             # Initialize both databases
             if not source_db.initialize():
                 logger.error("Failed to initialize source database")
+                notify_critical(
+                    "Database migration failed: could not open the source database.",
+                    dedupe_key="db:migrate:source_init",
+                    actions=nav_actions_settings("Database"),
+                )
                 return False
 
             if not target_db.initialize():
                 logger.error("Failed to initialize target database")
+                notify_critical(
+                    "Database migration failed: could not open the target database.",
+                    dedupe_key="db:migrate:target_init",
+                    actions=nav_actions_settings("Database"),
+                )
                 return False
 
             paths_to_migrate = source_db.get_all_paths()
@@ -1528,6 +1559,11 @@ class DatabaseManager:
 
         except Exception as e:
             logger.error(f"Error during data migration: {str(e)}", exc_info=True)
+            notify_critical(
+                "Database migration failed. Check logs before retrying.",
+                dedupe_key="db:migrate_abort",
+                actions=nav_actions_settings("Database"),
+            )
             return False
 
 

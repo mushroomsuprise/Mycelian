@@ -19,12 +19,12 @@ class TwitchTab:
         self.buffer: Optional[dataobjects.TwitchData] = None
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
+        self._status_timer: Optional[Any] = None
 
     def on_enter(self) -> None:
-        # Refresh status when tab becomes active
-        from nicegui import ui
-
-        ui.timer(0.1, lambda: self._refresh_status(), once=True)
+        if self._status_timer is not None:
+            self._status_timer.active = True
+        ui.timer(0.05, self._refresh_status, once=True)
 
     def _refresh_main_status(self) -> None:
         """Refresh main Twitch account status display."""
@@ -128,7 +128,8 @@ class TwitchTab:
         self._refresh_chatbot_status()
 
     def on_exit(self) -> None:
-        pass
+        if self._status_timer is not None:
+            self._status_timer.active = False
 
     def build(self, parent_container) -> None:
         self._load_from_state()
@@ -306,6 +307,12 @@ class TwitchTab:
                     with ui.row().classes("justify-end gap-2 mt-3"):
                         ui.button("Discard", on_click=self.discard).props("outline")
                         ui.button("Save", on_click=self.save).props("color=primary")
+
+                # Live status polling: active=True keeps it running even if on_enter
+                # ran before this lazy build() executed.
+                self._status_timer = ui.timer(
+                    3.0, self._refresh_status, active=True
+                )
 
     # ----- helpers -----
     def _load_from_state(self) -> None:

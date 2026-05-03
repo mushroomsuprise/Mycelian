@@ -7,6 +7,8 @@ import time
 from typing import Callable, Dict
 import logging
 
+from .notification_engine import notify_critical, nav_actions_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,6 +87,11 @@ class DeferredServiceManager:
 
                     except Exception as e:
                         logger.error(f"Deferred init failed for {name}: {e}")
+                        notify_critical(
+                            f"A background service failed to start ({name}). Check logs.",
+                            dedupe_key=f"deferred_init:{name}",
+                            actions=nav_actions_settings("App Settings"),
+                        )
                         # Continue with other services even if one fails
 
             if not self._shutdown:

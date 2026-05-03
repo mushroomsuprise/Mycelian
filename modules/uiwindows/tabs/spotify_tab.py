@@ -18,6 +18,7 @@ class SpotifyTab:
         self.buffer: Optional[dataobjects.SpotifyData] = None
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
+        self._status_timer: Optional[Any] = None
 
     @staticmethod
     def _str_from_value_event(e: Any) -> str:
@@ -36,10 +37,9 @@ class SpotifyTab:
         return ""
 
     def on_enter(self) -> None:
-        # Refresh status when tab becomes active (delayed to avoid spam)
-        from nicegui import ui
-
-        ui.timer(2.0, lambda: self._refresh_status(), once=True)
+        if self._status_timer is not None:
+            self._status_timer.active = True
+        ui.timer(0.05, self._refresh_status, once=True)
 
     def _refresh_status(self) -> None:
         """Refresh Spotify status display."""
@@ -115,7 +115,8 @@ class SpotifyTab:
                 )
 
     def on_exit(self) -> None:
-        pass
+        if self._status_timer is not None:
+            self._status_timer.active = False
 
     def build(self, parent_container) -> None:
         self._load_from_state()
@@ -221,6 +222,12 @@ class SpotifyTab:
                     with ui.row().classes("justify-end gap-2 mt-3"):
                         ui.button("Discard", on_click=self.discard).props("outline")
                         ui.button("Save", on_click=self.save).props("color=primary")
+
+                # Live status polling: active=True so updates run even if on_enter
+                # ran before this lazy build() executed.
+                self._status_timer = ui.timer(
+                    5.0, self._refresh_status, active=True
+                )
 
     def _load_from_state(self) -> None:
         sp = state_manager.get_spotify_data()

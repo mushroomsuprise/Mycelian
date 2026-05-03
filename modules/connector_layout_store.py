@@ -12,6 +12,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from . import database_manager
+from .notification_engine import nav_actions_main_tab, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,11 @@ def save_layout(layout: Dict[str, Any]) -> bool:
         return database_manager.set_data(LAYOUT_PATH, payload)
     except Exception as e:
         logger.error(f"Error saving connectors layout: {e}", exc_info=True)
+        notify_critical(
+            "Could not save Connectors tab layout.",
+            dedupe_key="connectors:layout_save",
+            actions=nav_actions_main_tab("Connectors"),
+        )
         return False
 
 

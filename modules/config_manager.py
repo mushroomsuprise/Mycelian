@@ -41,6 +41,7 @@ from dataclasses import dataclass, asdict
 
 from .path_utils import get_data_path
 from .database_manager import normalize_firebase_database_url
+from .notification_engine import nav_actions_settings, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,11 @@ class ConfigManager:
             
         except Exception as e:
             logger.error(f"Failed to initialize configuration manager: {str(e)}", exc_info=True)
+            notify_critical(
+                "Failed to initialize application configuration. Check config.json and logs.",
+                dedupe_key="config:init_failed",
+                actions=nav_actions_settings("App Settings"),
+            )
             return False
     
     def _load_config(self) -> AppConfig:
@@ -155,6 +161,11 @@ class ConfigManager:
             
         except Exception as e:
             logger.error(f"Error saving config to {self.config_path}: {str(e)}", exc_info=True)
+            notify_critical(
+                "Could not save application configuration to disk.",
+                dedupe_key="config:save_failed",
+                actions=nav_actions_settings("App Settings"),
+            )
             return False
     
     def get_config(self) -> Optional[AppConfig]:

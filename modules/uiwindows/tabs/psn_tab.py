@@ -48,13 +48,22 @@ class PSNTab:
         self._game_cache_dirty: bool = False
         self._cache_chip_container: Any = None
         self._game_select_container: Any = None
+        self._status_timer: Optional[Any] = None
+        self._mismatch_timer: Optional[Any] = None
 
     def on_enter(self) -> None:
-        ui.timer(0.2, lambda: self.refresh_game_cache(), once=True)
-        ui.timer(0.2, lambda: self._refresh_status(), once=True)
+        if self._status_timer is not None:
+            self._status_timer.active = True
+        if self._mismatch_timer is not None:
+            self._mismatch_timer.active = True
+        ui.timer(0.05, self._refresh_status, once=True)
+        ui.timer(0.2, self.refresh_game_cache, once=True)
 
     def on_exit(self) -> None:
-        pass
+        if self._status_timer is not None:
+            self._status_timer.active = False
+        if self._mismatch_timer is not None:
+            self._mismatch_timer.active = False
 
     @staticmethod
     def _str_from_value_event(e: Any) -> str:
@@ -178,11 +187,18 @@ class PSNTab:
                     self._build_game_cache_section()
 
                     # Status: first tick can run before PSN service writes live data
-                    ui.timer(0.1, lambda: self._refresh_status(), once=True)
-                    ui.timer(0.8, lambda: self._refresh_status(), once=True)
-                    ui.timer(0.5, lambda: self._check_mismatch(), once=True)
-                    # Periodic mismatch check
-                    ui.timer(10.0, lambda: self._check_mismatch())
+                    ui.timer(0.1, self._refresh_status, once=True)
+                    ui.timer(0.8, self._refresh_status, once=True)
+                    ui.timer(0.5, self._check_mismatch, once=True)
+                    # Live polling: stored on self so on_enter/on_exit can pause
+                    # them when the tab is not visible. active=True keeps them
+                    # running even if on_enter ran before this lazy build().
+                    self._status_timer = ui.timer(
+                        3.0, self._refresh_status, active=True
+                    )
+                    self._mismatch_timer = ui.timer(
+                        10.0, self._check_mismatch, active=True
+                    )
 
     def _start_npsso_auth(self) -> None:
         """Start the NPSSO authentication flow"""
@@ -567,9 +583,12 @@ class PSNTab:
                 token_in_live = str(live_psn_data.npsso_code or "").strip()
             has_credentials = bool(token_in_settings or token_in_live)
 
+            # status_color tracks the connection state: error (no creds),
+            # success (live online), or warning (configured but not online).
             if not has_credentials:
                 status_text = "Not Connected"
                 user_text = "N/A"
+                status_color = "text-theme-error"
             elif live_psn_data and live_psn_data.is_online:
                 if target_username:
                     status_text = f"Connected - Tracking {target_username}"
@@ -577,6 +596,7 @@ class PSNTab:
                 else:
                     status_text = f"Connected as {live_psn_data.online_id}"
                     user_text = f"{live_psn_data.online_id} (own account)"
+                status_color = "text-theme-success"
             else:
                 if target_username:
                     status_text = f"Configured - Tracking {target_username}"
@@ -588,10 +608,14 @@ class PSNTab:
                         if live_psn_data and live_psn_data.online_id
                         else "Unknown"
                     )
+                status_color = "text-theme-warning"
 
             # Update UI elements if they exist
             if "status_label" in self.ui_elements:
                 self.ui_elements["status_label"].set_text(status_text)
+                self.ui_elements["status_label"].classes(
+                    replace=f"font-semibold {status_color}"
+                )
             if "user_label" in self.ui_elements:
                 self.ui_elements["user_label"].set_text(user_text)
 
@@ -600,6 +624,9 @@ class PSNTab:
             # Set error status if UI elements exist
             if "status_label" in self.ui_elements:
                 self.ui_elements["status_label"].set_text("Error")
+                self.ui_elements["status_label"].classes(
+                    replace="font-semibold text-theme-error"
+                )
             if "user_label" in self.ui_elements:
                 self.ui_elements["user_label"].set_text("N/A")
 

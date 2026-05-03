@@ -45,6 +45,7 @@ from .encryption_utils import (
     ensure_encrypted,
     ensure_decrypted,
 )
+from .notification_engine import nav_actions_settings, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,11 @@ class APICredentialsManager:
         except Exception as e:
             logger.error(
                 f"Failed to initialize API credentials manager: {str(e)}", exc_info=True
+            )
+            notify_critical(
+                "Failed to initialize API credentials. Check api_credentials.json and permissions.",
+                dedupe_key="api_creds:init_failed",
+                actions=nav_actions_settings("App Settings"),
             )
             return False
 
@@ -191,6 +197,11 @@ class APICredentialsManager:
             logger.error(
                 f"Error saving credentials to {self.config_path}: {str(e)}",
                 exc_info=True,
+            )
+            notify_critical(
+                "Could not save API credentials to disk.",
+                dedupe_key="api_creds:save_failed",
+                actions=nav_actions_settings("App Settings"),
             )
             return False
 

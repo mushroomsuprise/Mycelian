@@ -18,12 +18,12 @@ class YouTubeTab:
         self.ui_elements: Dict[str, Any] = {}
         self._playlist_chip_container: Optional[ui.row] = None
         self._playlist_input: Optional[ui.input] = None
+        self._status_timer: Optional[Any] = None
 
     def on_enter(self) -> None:
-        # Refresh status when tab becomes active (delayed to avoid spam)
-        from nicegui import ui
-
-        ui.timer(2.0, lambda: self._refresh_status(), once=True)
+        if self._status_timer is not None:
+            self._status_timer.active = True
+        ui.timer(0.05, self._refresh_status, once=True)
 
     def _refresh_status(self) -> None:
         """Refresh YouTube status display."""
@@ -227,7 +227,8 @@ class YouTubeTab:
             logger.error(f"Error cleaning up YouTube test: {str(e)}")
 
     def on_exit(self) -> None:
-        pass
+        if self._status_timer is not None:
+            self._status_timer.active = False
 
     def _on_playlist_input_enter(self, _event=None) -> None:
         """Handle Enter key in the playlist filter input."""
@@ -389,7 +390,13 @@ class YouTubeTab:
                         ui.button("Discard", on_click=self.discard).props("outline")
                         ui.button("Save", on_click=self.save).props("color=primary")
 
-        # Refresh status information after UI is built
+                # Live status polling: active=True so updates run even if on_enter
+                # ran before this lazy build() executed.
+                self._status_timer = ui.timer(
+                    5.0, self._refresh_status, active=True
+                )
+
+        # Initial population while the timer interval has not elapsed yet.
         self._refresh_status()
 
     def _load_from_state(self) -> None:

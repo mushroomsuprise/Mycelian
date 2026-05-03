@@ -257,6 +257,45 @@ def notify(
     return entry_id
 
 
+def nav_actions_settings(subtab: str) -> List[Dict[str, Any]]:
+    """Toast/history: open Settings and select a sub-tab by label."""
+    return [
+        {
+            "kind": "navigate",
+            "main_tab": "Settings",
+            "settings_subtab": subtab,
+        }
+    ]
+
+
+def nav_actions_main_tab(tab_label: str) -> List[Dict[str, Any]]:
+    """Toast/history: switch a top-level main tab only."""
+    return [{"kind": "navigate", "main_tab": tab_label}]
+
+
+def notify_critical(
+    message: str,
+    *,
+    dedupe_key: Optional[str] = None,
+    dedupe_cooldown_sec: float = 120.0,
+    actions: Optional[List[Dict[str, Any]]] = None,
+    timeout: Optional[float] = 8.0,
+) -> Optional[str]:
+    """
+    User-visible error for serious backend failures (toast + notification history).
+
+    Prefer a stable ``dedupe_key`` when the same condition may log repeatedly.
+    """
+    return notify(
+        message,
+        type="negative",
+        dedupe_key=dedupe_key,
+        dedupe_cooldown_sec=dedupe_cooldown_sec,
+        actions=actions,
+        timeout=timeout,
+    )
+
+
 def maybe_suggest_game_hook_for_category(category: Optional[str]) -> None:
     """If Twitch category matches a supported hook game, nudge user toward Game Hooks."""
     if not category or not str(category).strip():

@@ -41,6 +41,7 @@ from typing import Any, Dict, List, Optional, Union
 from nicegui import ui
 
 from .encryption_utils import ensure_decrypted, ensure_encrypted
+from .notification_engine import nav_actions_settings, notify_critical
 from .psnapi import PSNData
 
 # Import database_manager in functions that need it, not at the module level
@@ -488,6 +489,11 @@ class StateManager:
             logger.debug("Loaded data from database")
         except Exception as e:
             logger.error(f"Error loading data from database: {str(e)}", exc_info=True)
+            notify_critical(
+                "Could not load application data from the database.",
+                dedupe_key="state:load_from_db",
+                actions=nav_actions_settings("Database"),
+            )
 
     async def _load_from_firebase_async(self):
         """Load all data from Firebase asynchronously and update the state"""
@@ -555,6 +561,11 @@ class StateManager:
             logger.debug("Loaded data from database")
         except Exception as e:
             logger.error(f"Error loading data from database: {str(e)}", exc_info=True)
+            notify_critical(
+                "Could not load application data from the database.",
+                dedupe_key="state:load_from_db_async",
+                actions=nav_actions_settings("Database"),
+            )
 
     def _update_local_objects(self):
         """Update the local objects from the current state"""
@@ -1637,6 +1648,11 @@ class StateManager:
             except Exception as e:
                 logger.error(
                     f"Error saving changes to database: {str(e)}", exc_info=True
+                )
+                notify_critical(
+                    "Could not save changes to the database. Your edits may be lost.",
+                    dedupe_key="state:save_changes",
+                    actions=nav_actions_settings("Database"),
                 )
                 return False
 

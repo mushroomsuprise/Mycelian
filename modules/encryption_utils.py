@@ -82,6 +82,16 @@ def encrypt_value(value: str) -> str:
         
     except Exception as e:
         logger.error(f"Error encrypting value: {str(e)}")
+        try:
+            from .notification_engine import notify_critical
+
+            notify_critical(
+                "Credential encryption failed. Secrets may be stored in plain form; check logs.",
+                dedupe_key="crypto:encrypt_failed",
+                dedupe_cooldown_sec=300.0,
+            )
+        except Exception:
+            pass
         return value  # Return original value if encryption fails
 
 def decrypt_value(encrypted_value: str) -> str:
@@ -111,6 +121,17 @@ def decrypt_value(encrypted_value: str) -> str:
         
     except Exception as e:
         logger.error(f"Error decrypting value: {str(e)}")
+        try:
+            from .notification_engine import nav_actions_settings, notify_critical
+
+            notify_critical(
+                "Could not decrypt stored credentials. You may need to re-enter keys in Settings.",
+                dedupe_key="crypto:decrypt_failed",
+                dedupe_cooldown_sec=300.0,
+                actions=nav_actions_settings("App Settings"),
+            )
+        except Exception:
+            pass
         return encrypted_value  # Return original value if decryption fails
 
 def is_encrypted(value: str) -> bool:

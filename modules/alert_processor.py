@@ -29,6 +29,7 @@ import time
 
 from . import web_engine
 from .alertutils import AlertObj, initialize_alert_state
+from .notification_engine import nav_actions_settings, notify_critical
 
 ALERT_QUEUE: list[AlertObj] = []
 web_engine_instance = None  # Initialize to None
@@ -111,6 +112,11 @@ def process_alert(alert: AlertObj):
         logger.debug(f"Processed alert: {alert_data}")
     except Exception as e:
         logger.error(f"Error processing alert: {str(e)}", exc_info=True)
+        notify_critical(
+            "An alert failed to process. Check logs if this keeps happening.",
+            dedupe_key="alert:process_failed",
+            dedupe_cooldown_sec=60.0,
+        )
 
 
 def alert_queue():
@@ -169,6 +175,11 @@ def alert_queue():
 
         except Exception as e:
             logger.error(f"Error in alert queue processor: {str(e)}", exc_info=True)
+            notify_critical(
+                "Alert queue hit an error and may be stalled. Check logs.",
+                dedupe_key="alert:queue_error",
+                dedupe_cooldown_sec=90.0,
+            )
             time.sleep(1.0)  # Sleep longer on error
 
 
@@ -246,6 +257,11 @@ def initialize():
         logger.info("Game hooks service started")
     except Exception as e:
         logger.error("Failed to start game hooks service: %s", e, exc_info=True)
+        notify_critical(
+            "Game hooks service failed to start. In-game overlays may not work.",
+            dedupe_key="game_hooks:start_failed",
+            actions=nav_actions_settings("Game Hooks"),
+        )
 
     # Mark as initialized
     _initialized = True

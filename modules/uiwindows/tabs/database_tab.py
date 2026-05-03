@@ -677,12 +677,15 @@ class DatabaseTab:
         self.dirty: bool = False
         self.buffer: Optional[dataobjects.DatabaseSettings] = None
         self.ui_elements: Dict[str, Any] = {}
+        self._status_timer: Optional[Any] = None
+        # Tracks the last set of Firebase config issues we notified for, so the
+        # periodic status timer does not spam the same toast every tick.
+        self._last_firebase_issues_signature: Optional[str] = None
 
     def on_enter(self) -> None:
-        # Refresh status when tab becomes active
-        from nicegui import ui
-
-        ui.timer(0.1, lambda: self._refresh_status(), once=True)
+        if self._status_timer is not None:
+            self._status_timer.active = True
+        ui.timer(0.05, self._refresh_status, once=True)
 
     def _refresh_status(self) -> None:
         """Refresh Database status display."""
@@ -700,11 +703,11 @@ class DatabaseTab:
                 # Update color based on status
                 if is_connected:
                     self.ui_elements["status_label"].classes(
-                        replace="font-semibold text-green-500"
+                        replace="font-semibold text-theme-success"
                     )
                 else:
                     self.ui_elements["status_label"].classes(
-                        replace="font-semibold text-red-500"
+                        replace="font-semibold text-theme-error"
                     )
 
             # Update database type label
@@ -727,17 +730,23 @@ class DatabaseTab:
 
                 self.ui_elements["last_check_label"].set_text(last_check)
 
-            # Show specific Firebase configuration issues if present
+            # Show specific Firebase configuration issues if present. Notify only
+            # when the issue set changes so the periodic status timer does not
+            # repeat the toast every tick.
             if status_info.get("database_type") == "Firebase" and not status_info.get(
                 "is_connected", False
             ):
                 firebase_issues = status_info.get("config_issues", [])
-                if firebase_issues:
+                signature = "|".join(firebase_issues) if firebase_issues else ""
+                if firebase_issues and signature != self._last_firebase_issues_signature:
                     issue_text = "Firebase Configuration Issues:\n" + "\n".join(
                         f"• {issue}"
                         for issue in firebase_issues[:3]  # Limit to 3 issues
                     )
                     notify(issue_text, type="warning", timeout=8000)
+                self._last_firebase_issues_signature = signature
+            else:
+                self._last_firebase_issues_signature = None
 
         except Exception as e:
             import logging
@@ -748,7 +757,7 @@ class DatabaseTab:
             if "status_label" in self.ui_elements:
                 self.ui_elements["status_label"].set_text("Status Error")
                 self.ui_elements["status_label"].classes(
-                    replace="font-semibold text-red-500"
+                    replace="font-semibold text-theme-error"
                 )
 
     def _test_connection(self) -> None:
@@ -1038,7 +1047,8 @@ class DatabaseTab:
             return False
 
     def on_exit(self) -> None:
-        pass
+        if self._status_timer is not None:
+            self._status_timer.active = False
 
     def build(self, parent_container) -> None:
         self._load_from_config()
@@ -1248,6 +1258,12 @@ class DatabaseTab:
                     with ui.row().classes("justify-end gap-2 mt-3"):
                         ui.button("Discard", on_click=self.discard).props("outline")
                         ui.button("Save", on_click=self.save).props("color=primary")
+
+                # Live status polling: active=True so updates run even if on_enter
+                # ran before this lazy build() executed.
+                self._status_timer = ui.timer(
+                    3.0, self._refresh_status, active=True
+                )
 
     def _load_from_config(self) -> None:
         cfg = config_manager.get_database_config()

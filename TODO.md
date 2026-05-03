@@ -7,17 +7,6 @@ Game Hooks
 FF7 Hook
     [] - Rewrite to match newly reworked game hook manager.
 
-Notification Upgrades:
-    [] - Create a "notification engine" in a new python file, convert all notification displays to run through this instead
-    [] - Add a "notification center" that is accessable in all tabs of the app (locate button in the top right corner), list of notifcations should be scrollable with the notifications appearing as small cards with "X" buttons to clear, and have clickable actions based on the notification.
-    [] - Add notification history to the notification center, stores notifications until cleared by user (persist upon app restarts)
-    [] - When notifications are clicked on, it should either copy the message, move to the corresponding area in the UI, or do nothing. This is dependant on the type of notification, multiple actions of this might be applicable.
-    [] - Move notifications from the bottom center to the top right corner
-    [] - Ensure all notifications only display once, some still infinitely trigger until the app is started
-    [] - Add game hook notifications if streaming in a category that contains a hook (frame it like: "Playing {game} on PC? Try the game hook out!"). Clicking on this notification should take the user to the Game Hooks tab.
-    [] - Add notifications when a service's status changes (IE: Twitch is disconnected, Spotify is connected, etc etc)
-    [] - Stylize notification colors to match the theme, but still have differentiated colors for errors, successes, and general info. Note: we will need to add color fields to the themes for this, and ensure the mock-ui in settings, and the create theme dialog contains these
-
 Template Previewer:
     [] - Create a template preview inside the Source Settings menu (on the right hand side), that will display a live preview of the template, and show any changes (both saved and pending).
     [] - Templates that auto-hide (spotify, PSN trophies to name a few) should always display in the preview. Other templates that appear and disappear (things like alerts, chat) should mock the behavior of the template while its in use (IE play alerts, add chat messages, etc)
