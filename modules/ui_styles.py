@@ -495,6 +495,149 @@ body:not(.body--dark) .text-grey {
 .q-notification {
     background: var(--color-bg-elevated) !important;
     color: var(--color-text-primary) !important;
+    border: 1px solid var(--color-border-default) !important;
+}
+
+.q-notification.bg-positive,
+.q-notification--positive {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-success, var(--color-success)) 22%,
+        var(--color-bg-elevated)
+    ) !important;
+    border-color: color-mix(
+        in srgb,
+        var(--color-notify-success, var(--color-success)) 45%,
+        var(--color-border-default)
+    ) !important;
+}
+
+.q-notification.bg-negative,
+.q-notification--negative {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-error, var(--color-error)) 22%,
+        var(--color-bg-elevated)
+    ) !important;
+    border-color: color-mix(
+        in srgb,
+        var(--color-notify-error, var(--color-error)) 45%,
+        var(--color-border-default)
+    ) !important;
+}
+
+.q-notification.bg-warning,
+.q-notification--warning {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-warning, var(--color-warning)) 22%,
+        var(--color-bg-elevated)
+    ) !important;
+    border-color: color-mix(
+        in srgb,
+        var(--color-notify-warning, var(--color-warning)) 45%,
+        var(--color-border-default)
+    ) !important;
+}
+
+.q-notification.bg-info,
+.q-notification--info {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-info, var(--color-info)) 22%,
+        var(--color-bg-elevated)
+    ) !important;
+    border-color: color-mix(
+        in srgb,
+        var(--color-notify-info, var(--color-info)) 45%,
+        var(--color-border-default)
+    ) !important;
+}
+
+/*
+ * Top-right toasts: Quasar uses .q-notifications__list--top + .items-end (see Notify.js).
+ * Offset top only; horizontal alignment (right) unchanged.
+ */
+.q-notifications__list.q-notifications__list--top.items-end {
+    top: var(--mycelian-notify-header-clearance, 64px) !important;
+}
+
+body.q-ios-padding .q-notifications__list.q-notifications__list--top.items-end {
+    top: calc(
+        var(--mycelian-notify-header-clearance, 64px) + env(safe-area-inset-top, 0px)
+    ) !important;
+}
+
+/* Notification center history cards (see modules/notification_engine.py) */
+.nc-history-card {
+    border-radius: 8px;
+    transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nc-history-card--positive {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-success, var(--color-success)) 22%,
+        var(--color-bg-surface)
+    ) !important;
+    border: 1px solid color-mix(
+        in srgb,
+        var(--color-notify-success, var(--color-success)) 42%,
+        var(--color-border-default)
+    ) !important;
+    box-shadow: 0 1px 3px var(--color-bg-overlay);
+}
+
+.nc-history-card--negative {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-error, var(--color-error)) 22%,
+        var(--color-bg-surface)
+    ) !important;
+    border: 1px solid color-mix(
+        in srgb,
+        var(--color-notify-error, var(--color-error)) 42%,
+        var(--color-border-default)
+    ) !important;
+    box-shadow: 0 1px 3px var(--color-bg-overlay);
+}
+
+.nc-history-card--warning {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-warning, var(--color-warning)) 22%,
+        var(--color-bg-surface)
+    ) !important;
+    border: 1px solid color-mix(
+        in srgb,
+        var(--color-notify-warning, var(--color-warning)) 42%,
+        var(--color-border-default)
+    ) !important;
+    box-shadow: 0 1px 3px var(--color-bg-overlay);
+}
+
+.nc-history-card--info,
+.nc-history-card--ongoing {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-info, var(--color-info)) 22%,
+        var(--color-bg-surface)
+    ) !important;
+    border: 1px solid color-mix(
+        in srgb,
+        var(--color-notify-info, var(--color-info)) 42%,
+        var(--color-border-default)
+    ) !important;
+    box-shadow: 0 1px 3px var(--color-bg-overlay);
+}
+
+.nc-history-card--default {
+    background: var(--color-bg-surface) !important;
+    border: 1px solid var(--color-border-default) !important;
+}
+
+.nc-history-card__body--clickable:hover {
+    filter: brightness(1.06);
 }
 
 /* Linear progress */
@@ -657,6 +800,42 @@ body:not(.body--dark) .q-notification {
     background: var(--color-bg-elevated) !important;
     color: var(--color-text-primary) !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+body:not(.body--dark) .q-notification.bg-positive,
+body:not(.body--dark) .q-notification--positive {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-success, var(--color-success)) 18%,
+        var(--color-bg-elevated)
+    ) !important;
+}
+
+body:not(.body--dark) .q-notification.bg-negative,
+body:not(.body--dark) .q-notification--negative {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-error, var(--color-error)) 18%,
+        var(--color-bg-elevated)
+    ) !important;
+}
+
+body:not(.body--dark) .q-notification.bg-warning,
+body:not(.body--dark) .q-notification--warning {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-warning, var(--color-warning)) 18%,
+        var(--color-bg-elevated)
+    ) !important;
+}
+
+body:not(.body--dark) .q-notification.bg-info,
+body:not(.body--dark) .q-notification--info {
+    background: color-mix(
+        in srgb,
+        var(--color-notify-info, var(--color-info)) 18%,
+        var(--color-bg-elevated)
+    ) !important;
 }
 
 body:not(.body--dark) .q-tooltip {

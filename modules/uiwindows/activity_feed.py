@@ -32,6 +32,7 @@ from multiprocessing import current_process
 from typing import Any, Dict, List, Optional
 
 from nicegui import app, ui
+from ..notification_engine import notify
 
 logger = logging.getLogger(__name__)
 
@@ -400,7 +401,7 @@ def replay_alert(alert_data):
             logger.error("No alert_id found in alert data, cannot replay")
             from nicegui import ui
 
-            ui.notify("Cannot replay alert: no alert ID available", type="negative")
+            notify("Cannot replay alert: no alert ID available", type="negative")
             return
 
         # First try to get stored alert data from the alert data itself (for current alerts)
@@ -417,7 +418,7 @@ def replay_alert(alert_data):
             logger.error(f"No stored alert data found for alert_id: {alert_id}")
             from nicegui import ui
 
-            ui.notify("Cannot replay alert: stored data not found", type="negative")
+            notify("Cannot replay alert: stored data not found", type="negative")
             return
 
         logger.debug(
@@ -506,13 +507,13 @@ def replay_alert(alert_data):
         # Show user feedback
         from nicegui import ui
 
-        ui.notify(f"Replaying {alert_data.get('type', 'alert')} alert", type="info")
+        notify(f"Replaying {alert_data.get('type', 'alert')} alert", type="info")
 
     except Exception as e:
         logger.error(f"Error replaying alert: {str(e)}", exc_info=True)
         from nicegui import ui
 
-        ui.notify(f"Error replaying alert: {str(e)}", type="negative")
+        notify(f"Error replaying alert: {str(e)}", type="negative")
 
 
 def extract_username_from_message(message):
@@ -570,7 +571,7 @@ def skip_alert(alert_data):
         # Show user feedback
         from nicegui import ui
 
-        ui.notify(f"Skipped {alert_data.get('type', 'alert')} alert", type="warning")
+        notify(f"Skipped {alert_data.get('type', 'alert')} alert", type="warning")
 
     except Exception as e:
         logger.error(f"Error skipping alert: {str(e)}", exc_info=True)

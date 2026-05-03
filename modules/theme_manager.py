@@ -53,6 +53,12 @@ class ThemeColors:
     error: str = ""
     info: str = ""
 
+    # Toast / notification accents (fall back to status colors when empty)
+    notify_success: str = ""
+    notify_warning: str = ""
+    notify_error: str = ""
+    notify_info: str = ""
+
     # Interactive states
     hover_overlay: str = ""
     active_overlay: str = ""
@@ -94,6 +100,12 @@ def generate_css_variables(theme: ThemeColors) -> str:
     --color-warning: {theme.warning};
     --color-error: {theme.error};
     --color-info: {theme.info};
+
+    /* Notifications (toast + center accents) */
+    --color-notify-success: {theme.notify_success or theme.success};
+    --color-notify-warning: {theme.notify_warning or theme.warning};
+    --color-notify-error: {theme.notify_error or theme.error};
+    --color-notify-info: {theme.notify_info or theme.info};
 
     /* Interactive */
     --color-hover-overlay: {theme.hover_overlay};
@@ -138,6 +150,12 @@ def generate_preview_css_variables(theme: ThemeColors) -> str:
     --preview-color-warning: {theme.warning or '#ff9800'};
     --preview-color-error: {theme.error or '#f44336'};
     --preview-color-info: {theme.info or '#2196f3'};
+
+    /* Notifications */
+    --preview-color-notify-success: {(theme.notify_success or theme.success) or '#4caf50'};
+    --preview-color-notify-warning: {(theme.notify_warning or theme.warning) or '#ff9800'};
+    --preview-color-notify-error: {(theme.notify_error or theme.error) or '#f44336'};
+    --preview-color-notify-info: {(theme.notify_info or theme.info) or '#2196f3'};
 
     /* Interactive */
     --preview-color-hover-overlay: {theme.hover_overlay or 'rgba(255, 255, 255, 0.05)'};
@@ -1136,6 +1154,10 @@ class ThemeManager:
                 "warning": "rgb(202, 138, 4)",
                 "error": "rgb(220, 38, 38)",
                 "info": "rgb(37, 99, 235)",
+                "notify_success": "rgb(22, 163, 74)",
+                "notify_warning": "rgb(202, 138, 4)",
+                "notify_error": "rgb(220, 38, 38)",
+                "notify_info": "rgb(37, 99, 235)",
                 "hover_overlay": "rgba(0, 0, 0, 0.04)",
                 "active_overlay": "rgba(0, 0, 0, 0.08)",
                 "focus_ring": "rgba(100, 0, 230, 0.4)",
@@ -1160,6 +1182,10 @@ class ThemeManager:
                 "warning": "rgb(234, 179, 8)",
                 "error": "rgb(239, 68, 68)",
                 "info": "rgb(59, 130, 246)",
+                "notify_success": "rgb(34, 197, 94)",
+                "notify_warning": "rgb(234, 179, 8)",
+                "notify_error": "rgb(239, 68, 68)",
+                "notify_info": "rgb(59, 130, 246)",
                 "hover_overlay": "rgba(255, 255, 255, 0.05)",
                 "active_overlay": "rgba(255, 255, 255, 0.1)",
                 "focus_ring": "rgba(115, 0, 255, 0.5)",
@@ -1196,6 +1222,10 @@ class ThemeManager:
             "warning": theme.warning,
             "error": theme.error,
             "info": theme.info,
+            "notify_success": theme.notify_success,
+            "notify_warning": theme.notify_warning,
+            "notify_error": theme.notify_error,
+            "notify_info": theme.notify_info,
             "hover_overlay": theme.hover_overlay,
             "active_overlay": theme.active_overlay,
             "focus_ring": theme.focus_ring,

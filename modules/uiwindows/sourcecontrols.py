@@ -28,6 +28,7 @@ import logging
 import os
 
 from nicegui import ui
+from ..notification_engine import notify
 
 from .. import template_config_parser, web_engine
 
@@ -525,7 +526,7 @@ def show_debug_info():
 
             dialog.open()
         else:
-            ui.notify("Web engine not available", type="negative")
+            notify("Web engine not available", type="negative")
     except Exception as e:
         logger.error(f"Error showing debug info: {str(e)}", exc_info=True)
-        ui.notify(f"Error: {str(e)}", type="negative")
+        notify(f"Error: {str(e)}", type="negative")

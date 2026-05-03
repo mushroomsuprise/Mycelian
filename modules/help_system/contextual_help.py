@@ -6,7 +6,7 @@ Provides help buttons and inline help components for UI integration.
 
 from nicegui import ui
 import logging
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from .help_manager import get_help_manager
 from .help_browser import ensure_help_system_styles, show_help_browser
 
@@ -17,6 +17,7 @@ _main_tabs = None
 _main_tab_panels = None
 _settings_tabs = None
 _settings_tab_panels = None
+_main_tab_refs: Dict[str, Any] = {}
 
 
 def set_main_ui_references(tabs, tab_panels):
@@ -26,11 +27,54 @@ def set_main_ui_references(tabs, tab_panels):
     _main_tab_panels = tab_panels
 
 
+def register_main_tabs(tab_refs: Dict[str, Any]) -> None:
+    """Map main tab labels (e.g. \"Settings\") to NiceGUI tab objects for navigation."""
+    global _main_tab_refs
+    _main_tab_refs = dict(tab_refs) if tab_refs else {}
+
+
 def set_settings_ui_references(tabs, tab_panels):
     """Set references to settings UI tabs and panels for context detection"""
     global _settings_tabs, _settings_tab_panels
     _settings_tabs = tabs
     _settings_tab_panels = tab_panels
+
+
+def navigate_to_main_tab(tab_label: str) -> None:
+    """Switch the top-level app tab by label (e.g. \"Settings\", \"Activity Feed\")."""
+    try:
+        if not _main_tabs:
+            return
+        ref = _main_tab_refs.get(tab_label)
+        if ref is not None:
+            _main_tabs.value = ref
+            return
+        _main_tabs.value = tab_label
+    except Exception as e:
+        logger.debug("navigate_to_main_tab failed: %s", e)
+
+
+def navigate_to_settings_subtab(
+    subtab_label: str,
+    *,
+    main_tab: Optional[str] = None,
+) -> None:
+    """Open Settings and select a sub-tab by name (e.g. \"Game Hooks\", \"Twitch\")."""
+    target_main = main_tab or "Settings"
+
+    def go_sub() -> None:
+        try:
+            if _settings_tabs:
+                _settings_tabs.value = subtab_label
+        except Exception as e:
+            logger.debug("navigate_to_settings_subtab inner failed: %s", e)
+
+    try:
+        navigate_to_main_tab(target_main)
+        ui.timer(0.12, go_sub, once=True)
+        ui.timer(0.45, go_sub, once=True)
+    except Exception as e:
+        logger.debug("navigate_to_settings_subtab failed: %s", e)
 
 
 def get_current_tab_context() -> Tuple[str, Optional[str]]:
@@ -184,7 +228,9 @@ def help_button(context: str = None, topic_id: str = None, tooltip: str = "Help"
                 logger.debug("Opened general help browser")
         except Exception as e:
             logger.error(f"Error opening help: {e}")
-            ui.notify(f"Error opening help: {e}", type="error")
+            from ..notification_engine import notify as app_notify
+
+            app_notify(f"Error opening help: {e}", type="negative")
 
     # Choose icon based on size
     icon_name = "help_outline" if size == "sm" else "help"

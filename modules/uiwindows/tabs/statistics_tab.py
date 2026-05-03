@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from nicegui import ui
+from ...notification_engine import notify
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -329,40 +330,40 @@ class StatisticsTab:
     def _refresh_statistics(self):
         """Refresh the statistics dashboard"""
         try:
-            ui.notify("🔄 Refreshing statistics...", type="info")
+            notify("🔄 Refreshing statistics...", type="info")
 
             # Clear the current container and rebuild
             if self.statistics_container is not None:
                 self.statistics_container.clear()
                 with self.statistics_container:
                     self._rebuild_statistics_content()
-                ui.notify("✅ Statistics refreshed!", type="positive")
+                notify("✅ Statistics refreshed!", type="positive")
             else:
                 # If no container exists, rebuild the entire dashboard
                 self._build_statistics_dashboard()
-                ui.notify("✅ Statistics dashboard rebuilt!", type="positive")
+                notify("✅ Statistics dashboard rebuilt!", type="positive")
 
         except Exception as e:
             print(f"Error refreshing statistics: {str(e)}", exc_info=True)
-            ui.notify("❌ Error refreshing statistics", type="negative")
+            notify("❌ Error refreshing statistics", type="negative")
 
     def _force_save_statistics(self):
         """Force an immediate save of statistics"""
         try:
-            ui.notify("Force saving statistics...", type="info")
+            notify("Force saving statistics...", type="info")
 
             stats_manager = get_statistics_manager()
             saved_stats = stats_manager.force_save()
-            ui.notify("Statistics saved successfully!", type="positive")
+            notify("Statistics saved successfully!", type="positive")
 
         except Exception as e:
             print(f"Error force saving statistics: {str(e)}", exc_info=True)
-            ui.notify("Error saving statistics", type="negative")
+            notify("Error saving statistics", type="negative")
 
     def _debug_counts(self):
         """Debug current dynamic counts"""
         try:
-            ui.notify("🔍 Checking dynamic counts...", type="info")
+            notify("🔍 Checking dynamic counts...", type="info")
 
             stats_manager = get_statistics_manager()
 
@@ -372,7 +373,7 @@ class StatisticsTab:
             quotes_count = stats_manager._get_quotes_count()
             connectors_count = stats_manager._get_connector_count()
 
-            ui.notify(
+            notify(
                 f"Counts - Commands: {commands_count}, Events: {events_count}, Quotes: {quotes_count}, Connectors: {connectors_count}",
                 type="info",
             )
@@ -382,7 +383,7 @@ class StatisticsTab:
 
         except Exception as e:
             print(f"Error debugging counts: {str(e)}", exc_info=True)
-            ui.notify("Error checking counts", type="negative")
+            notify("Error checking counts", type="negative")
 
     def _start_live_updates(self):
         """Start automatic live updates for the statistics dashboard"""
@@ -439,13 +440,13 @@ class StatisticsTab:
         """Toggle live updates on/off"""
         if self.live_updates_enabled:
             self._stop_live_updates()
-            ui.notify(" Live updates disabled", type="info")
+            notify(" Live updates disabled", type="info")
             # Update button text if it exists
             if hasattr(self, "_live_toggle_button") and self._live_toggle_button:
                 self._live_toggle_button.set_text(" Live Updates")
         else:
             self._start_live_updates()
-            ui.notify(" Live updates enabled", type="positive")
+            notify(" Live updates enabled", type="positive")
             # Update button text if it exists
             if hasattr(self, "_live_toggle_button") and self._live_toggle_button:
                 self._live_toggle_button.set_text("⏸️ Stop Live")
@@ -1414,7 +1415,7 @@ class StatisticsTab:
             )
             if not username:
                 if notify:
-                    ui.notify("Please enter a username.", type="warning")
+                    notify("Please enter a username.", type="warning")
                 return
 
             self._selected_username = username
@@ -1435,7 +1436,7 @@ class StatisticsTab:
                     hour=23, minute=59, second=59, microsecond=999999
                 )
             except ValueError:
-                ui.notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
+                notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
                 return
 
             start_ts = start_dt.timestamp()
@@ -1472,12 +1473,12 @@ class StatisticsTab:
                     )
 
             if notify:
-                ui.notify(f"Found {len(events)} events for {username}.", type="positive")
+                notify(f"Found {len(events)} events for {username}.", type="positive")
 
         except Exception as e:
             print(f"Error in user search: {e}")
             if notify:
-                ui.notify("Error searching user statistics.", type="negative")
+                notify("Error searching user statistics.", type="negative")
 
     def _render_per_user_results(
         self,
@@ -1815,7 +1816,7 @@ class StatisticsTab:
                 end_dt = datetime.strptime(end_str, "%Y-%m-%d") if end_str else datetime.now()
                 end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
             except ValueError:
-                ui.notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
+                notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
                 return
 
             start_ts = start_dt.timestamp()
@@ -1875,7 +1876,7 @@ class StatisticsTab:
                         )
                     else:
                         extra = f" ({total_rows:,} rows in log; could not read date span.)"
-                ui.notify(
+                notify(
                     "Nothing to export: no events in the event log for this date range." + extra,
                     type="warning",
                 )
@@ -1921,7 +1922,7 @@ class StatisticsTab:
                     if _hl_source == "lifetime"
                     else ""
                 )
-                ui.notify(
+                notify(
                     f"Highlights image exported successfully!{lifetime_note}\n{output_path}",
                     type="positive",
                     close_button=True,
@@ -1929,10 +1930,10 @@ class StatisticsTab:
             else:
                 if self._export_status_label:
                     self._export_status_label.set_text("Export failed.")
-                ui.notify("Failed to generate highlights image.", type="negative")
+                notify("Failed to generate highlights image.", type="negative")
 
         except Exception as e:
             print(f"Error exporting highlights: {e}")
             if self._export_status_label:
                 self._export_status_label.set_text(f"Error: {e}")
-            ui.notify("Error exporting highlights image.", type="negative")
+            notify("Error exporting highlights image.", type="negative")

@@ -31,6 +31,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
 from nicegui import context, ui
+from ..notification_engine import notify
 
 from ..help_system.contextual_help import help_button
 
@@ -631,7 +632,7 @@ def _open_folder_floating_window(folder_id: str) -> None:
     )
     spec = (layout.get("folders") or {}).get(folder_id)
     if not spec or not isinstance(spec, dict):
-        ui.notify("Folder not found", type="warning")
+        notify("Folder not found", type="warning")
         return
     title = str(spec.get("name") or "Folder")
     member_ids = [cid for cid in spec.get("connector_ids") or [] if cid in connectors]
@@ -640,7 +641,7 @@ def _open_folder_floating_window(folder_id: str) -> None:
     if existing:
         sh = existing.get("shell")
         if sh is not None and not sh.is_deleted:
-            ui.notify("This folder is already open", type="info", timeout=1.5)
+            notify("This folder is already open", type="info", timeout=1.5)
             return
         _folder_floaters.pop(folder_id, None)
 
@@ -1382,7 +1383,7 @@ def create_connector_form(connector_id: str = None):
             existing_connector = manager.get_connector(connector_id)
         except Exception as e:
             logger.error(f"Error loading connector for edit: {e}")
-            ui.notify("Error loading connector data", type="negative")
+            notify("Error loading connector data", type="negative")
             return
 
     # Form state - populate with existing data if editing
@@ -2701,15 +2702,15 @@ def request_permissions_and_update(container):
     try:
         success = request_audio_permissions()
         if success:
-            ui.notify("Permission request initiated", type="positive")
+            notify("Permission request initiated", type="positive")
         else:
-            ui.notify("Permission request failed or not supported", type="warning")
+            notify("Permission request failed or not supported", type="warning")
 
         # Refresh the permission status
         update_permission_status(container)
     except Exception as e:
         logger.error(f"Error requesting permissions: {e}")
-        ui.notify(f"Error requesting permissions: {e}", type="negative")
+        notify(f"Error requesting permissions: {e}", type="negative")
 
 
 def create_system_volume_config(
@@ -4424,15 +4425,15 @@ def save_new_connector(form_data: dict):
     try:
         # Validate form data
         if not form_data.get("name"):
-            ui.notify("Connector name is required", type="negative")
+            notify("Connector name is required", type="negative")
             return
 
         if not form_data.get("trigger_type"):
-            ui.notify("Trigger type is required", type="negative")
+            notify("Trigger type is required", type="negative")
             return
 
         if not form_data.get("actions"):
-            ui.notify("At least one action is required", type="negative")
+            notify("At least one action is required", type="negative")
             return
 
         # Create trigger
@@ -4549,7 +4550,7 @@ def save_new_connector(form_data: dict):
         logger.info(f"Save result: {success}")
 
         if success:
-            ui.notify(
+            notify(
                 f"Connector '{connector.name}' created successfully", type="positive"
             )
             # Direct execution for testing
@@ -4557,11 +4558,11 @@ def save_new_connector(form_data: dict):
             close_dialog_and_refresh()
             logger.info("Finished close dialog and refresh")
         else:
-            ui.notify("Failed to create connector", type="negative")
+            notify("Failed to create connector", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving connector: {e}", exc_info=True)
-        ui.notify(f"Error creating connector: {str(e)}", type="negative")
+        notify(f"Error creating connector: {str(e)}", type="negative")
 
 
 def save_updated_connector(form_data: dict):
@@ -4569,20 +4570,20 @@ def save_updated_connector(form_data: dict):
     try:
         connector_id = form_data.get("connector_id")
         if not connector_id:
-            ui.notify("Invalid connector ID", type="negative")
+            notify("Invalid connector ID", type="negative")
             return
 
         # Validate form data
         if not form_data.get("name"):
-            ui.notify("Connector name is required", type="negative")
+            notify("Connector name is required", type="negative")
             return
 
         if not form_data.get("trigger_type"):
-            ui.notify("Trigger type is required", type="negative")
+            notify("Trigger type is required", type="negative")
             return
 
         if not form_data.get("actions"):
-            ui.notify("At least one action is required", type="negative")
+            notify("At least one action is required", type="negative")
             return
 
         # Get the manager and existing connector
@@ -4590,7 +4591,7 @@ def save_updated_connector(form_data: dict):
         existing_connector = manager.get_connector(connector_id)
 
         if not existing_connector:
-            ui.notify("Connector not found", type="negative")
+            notify("Connector not found", type="negative")
             return
 
         # Create updated trigger
@@ -4702,17 +4703,17 @@ def save_updated_connector(form_data: dict):
         success = manager.update_connector(connector_id, updated_connector)
 
         if success:
-            ui.notify(
+            notify(
                 f"Connector '{updated_connector.name}' updated successfully",
                 type="positive",
             )
             close_dialog_and_refresh()
         else:
-            ui.notify("Failed to update connector", type="negative")
+            notify("Failed to update connector", type="negative")
 
     except Exception as e:
         logger.error(f"Error updating connector: {e}", exc_info=True)
-        ui.notify(f"Error updating connector: {str(e)}", type="negative")
+        notify(f"Error updating connector: {str(e)}", type="negative")
 
 
 def show_edit_connector_dialog(connector_id: str):
@@ -4727,7 +4728,7 @@ def test_connector(connector_id: str):
         connector = manager.get_connector(connector_id)
 
         if not connector:
-            ui.notify("Connector not found", type="negative")
+            notify("Connector not found", type="negative")
             return
 
         # Create sample test data based on trigger type
@@ -4738,17 +4739,17 @@ def test_connector(connector_id: str):
             result = await manager.test_connector(connector_id, test_data)
             if result.get("success"):
                 if result.get("triggered"):
-                    ui.notify(
+                    notify(
                         f"Test successful: Connector triggered and executed {result.get('action_count', 0)} actions",
                         type="positive",
                     )
                 else:
-                    ui.notify(
+                    notify(
                         "Test completed: Connector did not trigger (conditions not met)",
                         type="info",
                     )
             else:
-                ui.notify(
+                notify(
                     f"Test failed: {result.get('error', 'Unknown error')}",
                     type="negative",
                 )
@@ -4757,7 +4758,7 @@ def test_connector(connector_id: str):
 
     except Exception as e:
         logger.error(f"Error testing connector: {e}", exc_info=True)
-        ui.notify(f"Error testing connector: {str(e)}", type="negative")
+        notify(f"Error testing connector: {str(e)}", type="negative")
 
 
 def create_test_data_for_trigger(trigger_type: TriggerType) -> Dict[str, Any]:
@@ -4816,13 +4817,13 @@ def toggle_connector(connector_id: str, enabled: bool):
 
         if success:
             status = "enabled" if enabled else "disabled"
-            ui.notify(f"Connector {status}", type="positive")
+            notify(f"Connector {status}", type="positive")
             refresh_connectors()
         else:
-            ui.notify("Failed to toggle connector", type="negative")
+            notify("Failed to toggle connector", type="negative")
     except Exception as e:
         logger.error(f"Error toggling connector: {e}", exc_info=True)
-        ui.notify(f"Error toggling connector: {str(e)}", type="negative")
+        notify(f"Error toggling connector: {str(e)}", type="negative")
 
 
 def delete_connector(connector_id: str):
@@ -4834,16 +4835,16 @@ def delete_connector(connector_id: str):
             success = manager.remove_connector(connector_id)
 
             if success:
-                ui.notify("Connector deleted", type="positive")
+                notify("Connector deleted", type="positive")
                 # Remove from card references before refreshing
                 if connector_id in connector_cards:
                     del connector_cards[connector_id]
                 refresh_connectors()
             else:
-                ui.notify("Failed to delete connector", type="negative")
+                notify("Failed to delete connector", type="negative")
         except Exception as e:
             logger.error(f"Error deleting connector: {e}", exc_info=True)
-            ui.notify(f"Error deleting connector: {str(e)}", type="negative")
+            notify(f"Error deleting connector: {str(e)}", type="negative")
 
     # Show confirmation dialog
     with ui.dialog().props("persistent") as dialog:
@@ -5291,14 +5292,14 @@ def create_examples():
     """Create example connectors"""
     try:
         connector_examples.create_example_connectors()
-        ui.notify(
+        notify(
             "Example connectors created! Check them out below (they start disabled).",
             type="positive",
         )
         refresh_connectors()
     except Exception as e:
         logger.error(f"Error creating example connectors: {e}", exc_info=True)
-        ui.notify(f"Error creating examples: {str(e)}", type="negative")
+        notify(f"Error creating examples: {str(e)}", type="negative")
 
 
 def refresh_connectors():

@@ -11,6 +11,7 @@ from ...theme_manager import (
     ThemeColors,
 )
 from ...help_system.contextual_help import help_button
+from ...notification_engine import notify
 from .base import TabBase
 
 
@@ -276,6 +277,40 @@ body .theme-preview-container .q-spinner {
     background: var(--preview-color-text-muted);
 }
 
+.mock-nc-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.mock-nc-chip {
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--preview-color-border-subtle);
+    background: var(--preview-color-bg-surface);
+    color: var(--preview-color-text-primary);
+    border-left-width: 3px;
+}
+
+.mock-nc-chip.success {
+    border-left-color: var(--preview-color-notify-success);
+}
+
+.mock-nc-chip.warning {
+    border-left-color: var(--preview-color-notify-warning);
+}
+
+.mock-nc-chip.error {
+    border-left-color: var(--preview-color-notify-error);
+}
+
+.mock-nc-chip.info {
+    border-left-color: var(--preview-color-notify-info);
+}
+
 /* ============================================
    Preview Button Styles
    ============================================ */
@@ -411,6 +446,10 @@ body .theme-preview-container .typography-muted {
 .preview-swatch-warning { background: var(--preview-color-warning) !important; }
 .preview-swatch-error { background: var(--preview-color-error) !important; }
 .preview-swatch-info { background: var(--preview-color-info) !important; }
+.preview-swatch-notify-success { background: var(--preview-color-notify-success) !important; }
+.preview-swatch-notify-warning { background: var(--preview-color-notify-warning) !important; }
+.preview-swatch-notify-error { background: var(--preview-color-notify-error) !important; }
+.preview-swatch-notify-info { background: var(--preview-color-notify-info) !important; }
 .preview-swatch-bg-base { background: var(--preview-color-bg-base) !important; }
 .preview-swatch-bg-elevated { background: var(--preview-color-bg-elevated) !important; }
 .preview-swatch-bg-surface { background: var(--preview-color-bg-surface) !important; }
@@ -458,7 +497,7 @@ class ThemeTab:
         except Exception as e:
             from nicegui import ui
 
-            ui.notify(f"Error accessing theme manager: {str(e)}", type="negative")
+            notify(f"Error accessing theme manager: {str(e)}", type="negative")
             return None
 
     def _get_available_themes(self, theme_manager):
@@ -468,7 +507,7 @@ class ThemeTab:
         except Exception as e:
             from nicegui import ui
 
-            ui.notify(f"Error loading themes: {str(e)}", type="negative")
+            notify(f"Error loading themes: {str(e)}", type="negative")
             return []
 
     def _get_current_theme(self, theme_name=None):
@@ -481,7 +520,7 @@ class ThemeTab:
         except Exception as e:
             from nicegui import ui
 
-            ui.notify(f"Error loading theme: {str(e)}", type="negative")
+            notify(f"Error loading theme: {str(e)}", type="negative")
             return None
 
     def _safe_get_theme_attribute(self, theme, attribute, default=""):
@@ -523,7 +562,7 @@ class ThemeTab:
         except Exception as e:
             from nicegui import ui
 
-            ui.notify(f"Error updating theme options: {str(e)}", type="negative")
+            notify(f"Error updating theme options: {str(e)}", type="negative")
             return False
 
     # ----- lifecycle -----
@@ -658,6 +697,7 @@ class ThemeTab:
         with container:
             # 1. Mock app tab bar
             self._build_mock_tab_bar()
+            self._build_mock_notification_chips()
 
             # 2. Mock content area with settings sub-tabs and content
             with ui.element("div").classes("mock-content-area"):
@@ -693,6 +733,20 @@ class ThemeTab:
                 active = "active" if tab_name == "Settings" else ""
                 with ui.element("div").classes(f"mock-tab {active}"):
                     ui.html(tab_name)
+            with ui.element("div").classes("mock-tab"):
+                ui.html("Bell")
+
+    def _build_mock_notification_chips(self):
+        """Preview notification toast accents (theme notify colors)."""
+        with ui.element("div").classes("mock-nc-preview-row"):
+            for cls, label in (
+                ("success", "Saved"),
+                ("info", "Info"),
+                ("warning", "Warning"),
+                ("error", "Error"),
+            ):
+                with ui.element("div").classes(f"mock-nc-chip {cls}"):
+                    ui.html(label)
 
     def _build_mock_sub_tabs(self):
         """Build mock settings sub-tab bar with icons"""
@@ -803,6 +857,10 @@ class ThemeTab:
                 ("Warning", "preview-swatch-warning"),
                 ("Error", "preview-swatch-error"),
                 ("Info", "preview-swatch-info"),
+                ("N-Success", "preview-swatch-notify-success"),
+                ("N-Warn", "preview-swatch-notify-warning"),
+                ("N-Err", "preview-swatch-notify-error"),
+                ("N-Info", "preview-swatch-notify-info"),
                 ("Base", "preview-swatch-bg-base"),
                 ("Elevated", "preview-swatch-bg-elevated"),
                 ("Surface", "preview-swatch-bg-surface"),
@@ -931,7 +989,7 @@ class ThemeTab:
     def save(self) -> None:
         """Apply and persist selected theme"""
         if not self.buffer:
-            ui.notify("No theme selected to apply", type="warning")
+            notify("No theme selected to apply", type="warning")
             return
 
         try:
@@ -939,7 +997,7 @@ class ThemeTab:
             state_manager.update_app_setting("current_theme", self.buffer)
 
             if not state_manager.save_changes():
-                ui.notify("Error saving theme setting", type="negative")
+                notify("Error saving theme setting", type="negative")
                 return
 
             # Apply theme immediately without restart
@@ -947,14 +1005,14 @@ class ThemeTab:
 
             apply_theme(self.buffer)
 
-            ui.notify(
+            notify(
                 f"Theme '{self.buffer}' applied successfully!",
                 type="positive",
                 timeout=3000,
             )
             self.dirty = False
         except Exception as e:
-            ui.notify(f"Error applying theme: {str(e)}", type="negative")
+            notify(f"Error applying theme: {str(e)}", type="negative")
 
     def discard(self) -> None:
         """Revert to saved theme"""
@@ -967,7 +1025,7 @@ class ThemeTab:
             self._apply_preview()
             self.dirty = False
         except Exception as e:
-            ui.notify(f"Error discarding changes: {str(e)}", type="negative")
+            notify(f"Error discarding changes: {str(e)}", type="negative")
 
     # ------------------------------------------------------------------ #
     #  Color field definitions used by the theme editor dialog             #
@@ -1017,6 +1075,15 @@ class ThemeTab:
             ],
         ),
         (
+            "Notification Colors",
+            [
+                ("notify_success", "Notify Success"),
+                ("notify_warning", "Notify Warning"),
+                ("notify_error", "Notify Error"),
+                ("notify_info", "Notify Info"),
+            ],
+        ),
+        (
             "Interactive States",
             [
                 ("hover_overlay", "Hover Overlay"),
@@ -1043,7 +1110,7 @@ class ThemeTab:
         if editing:
             source_theme = theme_manager.get_theme_by_name(theme_name)
             if source_theme is None:
-                ui.notify(f"Theme '{theme_name}' not found", type="negative")
+                notify(f"Theme '{theme_name}' not found", type="negative")
                 return
 
         # Storage for editor UI element references
@@ -1362,19 +1429,19 @@ class ThemeTab:
 
         # --- validation ---
         if not name:
-            ui.notify("Theme name is required", type="negative")
+            notify("Theme name is required", type="negative")
             return
         if not display_name:
-            ui.notify("Display name is required", type="negative")
+            notify("Display name is required", type="negative")
             return
         if not re.match(r"^[a-zA-Z0-9_]+$", name):
-            ui.notify(
+            notify(
                 "Theme name can only contain letters, numbers, and underscores",
                 type="negative",
             )
             return
         if not editing and theme_manager.theme_name_exists(name):
-            ui.notify(f"Theme '{name}' already exists", type="negative")
+            notify(f"Theme '{name}' already exists", type="negative")
             return
 
         # --- build ThemeColors from editor state ---
@@ -1403,6 +1470,10 @@ class ThemeTab:
             warning=_cv("warning"),
             error=_cv("error"),
             info=_cv("info"),
+            notify_success=_cv("notify_success"),
+            notify_warning=_cv("notify_warning"),
+            notify_error=_cv("notify_error"),
+            notify_info=_cv("notify_info"),
             hover_overlay=_cv("hover_overlay"),
             active_overlay=_cv("active_overlay"),
             focus_ring=_cv("focus_ring"),
@@ -1416,7 +1487,7 @@ class ThemeTab:
 
         if ok:
             verb = "updated" if editing else "created"
-            ui.notify(
+            notify(
                 f"Theme '{display_name}' {verb} successfully!", type="positive"
             )
             # Refresh the theme selector dropdown (use plain string list)
@@ -1430,4 +1501,4 @@ class ThemeTab:
                 self._apply_preview()
             dialog.close()
         else:
-            ui.notify("Failed to save theme", type="negative")
+            notify("Failed to save theme", type="negative")

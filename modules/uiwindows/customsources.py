@@ -29,6 +29,7 @@ import sys
 from typing import Any, Dict
 
 from nicegui import app, ui
+from ..notification_engine import notify
 
 # Use proper relative import for template_config_parser
 from ..template_config_parser import TemplateConfigParser
@@ -1103,7 +1104,7 @@ def save_config(config_parser, config_select, config_container):
     """Save the current config"""
     config_name = config_select.value
     if not config_name:
-        ui.notify("No configuration selected.", type="negative")
+        notify("No configuration selected.", type="negative")
         return
 
     try:
@@ -1211,14 +1212,14 @@ def save_config(config_parser, config_select, config_container):
                 f"Config save for {config_name}: {len(missing_element_ids)} elements missing from form data: {missing_element_ids}"
             )
             # Show a notification to the user about this issue
-            ui.notify(
+            notify(
                 f"Warning: Some configuration values may not have been updated due to UI tracking issues. Missing: {', '.join(missing_element_ids[:3])}{'...' if len(missing_element_ids) > 3 else ''}",
                 type="warning",
             )
 
         # Save the config
         if config_parser.save_config(config_name, original_config):
-            ui.notify(f"Configuration saved for {config_name}.", type="positive")
+            notify(f"Configuration saved for {config_name}.", type="positive")
             if config_name == "ff7":
                 try:
                     from ..game_hooks_service import game_hooks_service
@@ -1231,21 +1232,21 @@ def save_config(config_parser, config_select, config_container):
             # Reset original values to current values
             reset_original_values(config_name)
         else:
-            ui.notify(
+            notify(
                 f"Failed to save configuration for {config_name}.", type="negative"
             )
     except Exception as e:
         logger.error(
             f"Error saving configuration for {config_name}: {str(e)}", exc_info=True
         )
-        ui.notify(f"Error saving configuration: {str(e)}", type="negative")
+        notify(f"Error saving configuration: {str(e)}", type="negative")
 
 
 def reset_config(config_parser, config_select, config_container):
     """Reset the current config to the saved version"""
     config_name = config_select.value
     if not config_name:
-        ui.notify("No configuration selected.", type="negative")
+        notify("No configuration selected.", type="negative")
         return
 
     # Clear element_ui_map before re-rendering
@@ -1253,7 +1254,7 @@ def reset_config(config_parser, config_select, config_container):
 
     # Re-render the config UI
     render_config_ui(config_parser, config_name, config_container, "")
-    ui.notify(f"Configuration reset for {config_name}.", type="positive")
+    notify(f"Configuration reset for {config_name}.", type="positive")
 
 
 def create_new_config(config_parser, config_select, config_container):
@@ -1284,7 +1285,7 @@ def create_config_action(name, config_parser, config_select, config_container, d
     """Handle the create config action"""
     name = name.strip()
     if not name:
-        ui.notify("Please enter a name for the configuration.", type="negative")
+        notify("Please enter a name for the configuration.", type="negative")
         return
 
     # Create a default config structure
@@ -1303,7 +1304,7 @@ def create_config_action(name, config_parser, config_select, config_container, d
 
     # Create the config
     if config_parser.create_config(name, default_config):
-        ui.notify(f"New configuration created: {name}", type="positive")
+        notify(f"New configuration created: {name}", type="positive")
         dialog.close()
 
         # Reload the config files
@@ -1313,14 +1314,14 @@ def create_config_action(name, config_parser, config_select, config_container, d
         config_select.value = name
         render_config_ui(config_parser, name, config_container, "")
     else:
-        ui.notify(f"Failed to create configuration: {name}", type="negative")
+        notify(f"Failed to create configuration: {name}", type="negative")
 
 
 def delete_config(config_parser, config_select, config_container):
     """Delete the current config"""
     config_name = config_select.value
     if not config_name:
-        ui.notify("No configuration selected.", type="negative")
+        notify("No configuration selected.", type="negative")
         return
 
     # Create a confirmation dialog
@@ -1348,7 +1349,7 @@ def delete_config_action(
     """Handle the delete config action"""
     # Delete the config
     if config_parser.delete_config(config_name):
-        ui.notify(f"Configuration deleted for {config_name}.", type="positive")
+        notify(f"Configuration deleted for {config_name}.", type="positive")
         dialog.close()
 
         # Remove from form data store
@@ -1358,7 +1359,7 @@ def delete_config_action(
         # Reload the config files
         load_config_files(config_parser, config_select, config_container)
     else:
-        ui.notify(f"Failed to delete configuration for {config_name}.", type="negative")
+        notify(f"Failed to delete configuration for {config_name}.", type="negative")
 
 
 def track_element_change(element_id, element, value):

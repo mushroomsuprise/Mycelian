@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from nicegui import ui
+from ...notification_engine import notify
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -74,7 +75,7 @@ class AppSettingsTab:
             )
 
             if not source_dir.exists():
-                ui.notify(
+                notify(
                     "Plugin source files not found. Please ensure sd_plugin directory exists.",
                     type="negative",
                 )
@@ -83,7 +84,7 @@ class AppSettingsTab:
             # Get destination directory
             plugins_dir = self._get_streamdeck_plugins_dir()
             if not plugins_dir:
-                ui.notify(
+                notify(
                     "Stream Deck plugins directory not found. Please ensure Stream Deck is installed.",
                     type="negative",
                 )
@@ -103,7 +104,7 @@ class AppSettingsTab:
 
             # Verify installation
             if self._check_plugin_installed():
-                ui.notify(
+                notify(
                     "Plugin installed successfully! Please restart Stream Deck for changes to take effect.",
                     type="positive",
                     timeout=5000,
@@ -114,18 +115,18 @@ class AppSettingsTab:
                         self._get_plugin_status_text()
                     )
             else:
-                ui.notify(
+                notify(
                     "Plugin installation verification failed. Please try again.",
                     type="negative",
                 )
 
         except PermissionError:
-            ui.notify(
+            notify(
                 "Permission denied. Please ensure you have write access to the Stream Deck plugins directory.",
                 type="negative",
             )
         except Exception as e:
-            ui.notify(f"Error installing plugin: {str(e)}", type="negative")
+            notify(f"Error installing plugin: {str(e)}", type="negative")
 
     # ----- lifecycle -----
     def on_enter(self) -> None:
@@ -309,12 +310,10 @@ class AppSettingsTab:
                 continue
             state_manager.update_app_setting(field, getattr(self.buffer, field))
         if state_manager.save_changes():
-            from nicegui import ui as _ui
-
-            _ui.notify("Settings saved", type="positive")
+            notify("Settings saved", type="positive")
             self.dirty = False
         else:
-            ui.notify("Error saving settings", type="negative")
+            notify("Error saving settings", type="negative")
 
     def discard(self) -> None:
         # reload from state and update UI controls

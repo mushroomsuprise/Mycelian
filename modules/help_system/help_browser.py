@@ -6,6 +6,7 @@ Styled to match the Mycelian application design.
 """
 
 from nicegui import ui, core
+from ..notification_engine import notify
 import json
 import logging
 import re
@@ -106,7 +107,7 @@ class HelpBrowser:
 
         except Exception as e:
             logger.error(f"Error opening help browser: {e}")
-            ui.notify(f"Error opening help: {e}", type="negative")
+            notify(f"Error opening help: {e}", type="negative")
 
     def _handle_help_link(self, e):
         """Handle a help: protocol link click from JavaScript."""
@@ -523,7 +524,7 @@ class HelpBrowser:
         try:
             topic = self.help_manager.get_topic(topic_id)
             if not topic:
-                ui.notify(f"Help topic not found: {topic_id}", type="warning")
+                notify(f"Help topic not found: {topic_id}", type="warning")
                 return
 
             if self.current_topic and self.current_topic.id != topic_id:
@@ -543,7 +544,7 @@ class HelpBrowser:
 
         except Exception as e:
             logger.error(f"Error navigating to topic {topic_id}: {e}")
-            ui.notify(f"Error loading help topic: {e}", type="negative")
+            notify(f"Error loading help topic: {e}", type="negative")
 
     def _render_topic(self, topic: HelpTopic):
         """Render a help topic with metadata, TOC, content, prev/next, and related topics"""
@@ -1030,4 +1031,4 @@ def show_help_browser(topic_id: str = None, category: str = None):
         browser.show(initial_topic=topic_id, category=category)
     except Exception as e:
         logger.error(f"Error showing help browser: {e}")
-        ui.notify(f"Error opening help: {e}", type="negative")
+        notify(f"Error opening help: {e}", type="negative")

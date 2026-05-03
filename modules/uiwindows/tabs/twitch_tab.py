@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from nicegui import ui
+from ...notification_engine import notify
 
 from ... import dataobjects
 from ...api_credentials_manager import api_credentials_manager
@@ -357,10 +358,10 @@ class TwitchTab:
         )
 
         if state_manager.save_changes():
-            ui.notify("Twitch saved", type="positive")
+            notify("Twitch saved", type="positive")
             self.dirty = False
         else:
-            ui.notify("Error saving Twitch", type="negative")
+            notify("Error saving Twitch", type="negative")
 
     def discard(self) -> None:
         self._load_from_state()
@@ -387,7 +388,7 @@ class TwitchTab:
 
             # Check if client ID and secret are provided
             if not self._creds.get("client_id") or not self._creds.get("client_secret"):
-                ui.notify(
+                notify(
                     "Please enter your main Twitch Client ID and Client Secret first!",
                     type="warning",
                 )
@@ -399,7 +400,7 @@ class TwitchTab:
                 self.ui_elements["main_connect_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Starting main Twitch OAuth connection...", type="info")
+            notify("Starting main Twitch OAuth connection...", type="info")
 
             # Save only Twitch settings to avoid triggering database and other notifications
             self._save_settings_only()
@@ -444,14 +445,14 @@ class TwitchTab:
                     try:
                         oauth_result["notification_shown"] = True
                         if oauth_result["success"]:
-                            ui.notify(
+                            notify(
                                 "Successfully connected main Twitch account!",
                                 type="positive",
                                 timeout=3000,
                             )
                             logger.info("Main Twitch OAuth connection successful")
                         else:
-                            ui.notify(
+                            notify(
                                 "Failed to connect main Twitch account. Please check your credentials and try again.",
                                 type="negative",
                                 timeout=5000,
@@ -476,7 +477,7 @@ class TwitchTab:
                 ):
                     try:
                         oauth_result["notification_shown"] = True
-                        ui.notify(
+                        notify(
                             f"Error during main Twitch connection: {oauth_result['error']}",
                             type="negative",
                         )
@@ -508,7 +509,7 @@ class TwitchTab:
                 ):
                     oauth_result["notification_shown"] = True
                     logger.warning("Main OAuth check timed out after 30 seconds")
-                    ui.notify(
+                    notify(
                         "Main OAuth connection timed out. Please try again.",
                         type="negative",
                     )
@@ -535,7 +536,7 @@ class TwitchTab:
             logger.error(
                 f"Error handling main Twitch OAuth connection: {str(e)}", exc_info=True
             )
-            ui.notify(
+            notify(
                 f"Error starting main Twitch connection: {str(e)}", type="negative"
             )
             # Reset button state
@@ -555,7 +556,7 @@ class TwitchTab:
             if not self._creds.get("chatbot_client_id") or not self._creds.get(
                 "chatbot_client_secret"
             ):
-                ui.notify(
+                notify(
                     "Please enter your chatbot Twitch Client ID and Client Secret first!",
                     type="warning",
                 )
@@ -567,7 +568,7 @@ class TwitchTab:
                 self.ui_elements["chatbot_connect_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Starting chatbot Twitch OAuth connection...", type="info")
+            notify("Starting chatbot Twitch OAuth connection...", type="info")
 
             # Save settings to ensure chatbot credentials are persisted
             self.save()
@@ -614,14 +615,14 @@ class TwitchTab:
                     try:
                         oauth_result["notification_shown"] = True
                         if oauth_result["success"]:
-                            ui.notify(
+                            notify(
                                 "Successfully connected chatbot Twitch account!",
                                 type="positive",
                                 timeout=3000,
                             )
                             logger.info("Chatbot Twitch OAuth connection successful")
                         else:
-                            ui.notify(
+                            notify(
                                 "Failed to connect chatbot Twitch account. Please check your credentials and try again.",
                                 type="negative",
                                 timeout=5000,
@@ -646,7 +647,7 @@ class TwitchTab:
                 ):
                     try:
                         oauth_result["notification_shown"] = True
-                        ui.notify(
+                        notify(
                             f"Error during chatbot Twitch connection: {oauth_result['error']}",
                             type="negative",
                         )
@@ -678,7 +679,7 @@ class TwitchTab:
                 ):
                     oauth_result["notification_shown"] = True
                     logger.warning("Chatbot OAuth check timed out after 60 seconds")
-                    ui.notify(
+                    notify(
                         "Chatbot OAuth connection timed out. Please try again.",
                         type="negative",
                     )
@@ -706,7 +707,7 @@ class TwitchTab:
                 f"Error handling chatbot Twitch OAuth connection: {str(e)}",
                 exc_info=True,
             )
-            ui.notify(
+            notify(
                 f"Error starting chatbot Twitch connection: {str(e)}", type="negative"
             )
             # Reset button state

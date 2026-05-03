@@ -839,7 +839,9 @@ def initialize_ui() -> None:
 
     except Exception as e:
         logger.error(f"Error during UI initialization: {str(e)}", exc_info=True)
-        ui.notify(
+        from .notification_engine import notify as app_notify
+
+        app_notify(
             "Application initialization failed. Please restart.",
             type="negative",
             position="center",
@@ -1176,17 +1178,36 @@ def create_ui_elements():
     if _ui_elements_created:
         return  # Already created
 
-    # No header - help icons are in individual tabs
+    # Top row: main tabs (flex) + notification bell
+    with ui.row().classes("w-full items-stretch gap-1 flex-nowrap"):
+        with ui.column().classes("flex-grow min-w-0"):
+            with ui.tabs().classes("w-full") as tabs:
+                activity_tab = ui.tab("Activity Feed")
+                alerts_tab = ui.tab("Alerts")
+                source_settings_tab = ui.tab("Source Settings")
+                source_controls_tab = ui.tab("Source Controls")
+                connectors_tab = ui.tab("Connectors")
+                chatbot_tab = ui.tab("Chatbot")
+                settings_tab = ui.tab("Settings")
 
-    # Create tabs at the top
-    with ui.tabs().classes("w-full") as tabs:
-        activity_tab = ui.tab("Activity Feed")
-        alerts_tab = ui.tab("Alerts")
-        source_settings_tab = ui.tab("Source Settings")
-        source_controls_tab = ui.tab("Source Controls")
-        connectors_tab = ui.tab("Connectors")
-        chatbot_tab = ui.tab("Chatbot")
-        settings_tab = ui.tab("Settings")
+        from .help_system.contextual_help import register_main_tabs
+        from .notification_engine import (
+            create_notification_tray_button,
+            start_service_watcher_timer,
+        )
+
+        register_main_tabs(
+            {
+                "Activity Feed": activity_tab,
+                "Alerts": alerts_tab,
+                "Source Settings": source_settings_tab,
+                "Source Controls": source_controls_tab,
+                "Connectors": connectors_tab,
+                "Chatbot": chatbot_tab,
+                "Settings": settings_tab,
+            }
+        )
+        create_notification_tray_button()
 
     # Main content area with tab panels - no overflow
     with ui.element("div").classes("main-content"):
@@ -1315,6 +1336,8 @@ def create_ui_elements():
 
         ui.timer(0.5, check_tab_changes, active=True)  # Check every 500ms
 
+        start_service_watcher_timer()
+
         def show_settings_unsaved_dialog(
             tabs_component, tab_panels_component, current_tab, target_tab
         ):
@@ -1408,9 +1431,13 @@ def toggle_alerts():
         ui.update()
 
         # Show user feedback
+        from .notification_engine import notify as app_notify
+
         state_text = "paused" if web_engine.ALERTS_PAUSED else "resumed"
-        ui.notify(f"Alerts {state_text}", type="info")
+        app_notify(f"Alerts {state_text}", type="info")
 
     except Exception as e:
         logger.error(f"Error toggling alerts: {str(e)}", exc_info=True)
-        ui.notify("Error toggling alerts", type="negative")
+        from .notification_engine import notify as app_notify
+
+        app_notify("Error toggling alerts", type="negative")

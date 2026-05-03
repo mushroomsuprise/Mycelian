@@ -1,0 +1,32 @@
+[
+  {
+    "id": "d3813888-8e92-413d-aa18-c9378bc10a80",
+    "ts": 1777821054.470378,
+    "message": "Theme 'crimson_night' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "07f0687b-692f-4c3b-ae4d-e9bd66afad7e",
+    "ts": 1777821063.204303,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "1d3a5ede-4984-490f-9606-d00223fe62bc",
+    "ts": 1777821108.687207,
+    "message": "Theme 'dark' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  }
+]

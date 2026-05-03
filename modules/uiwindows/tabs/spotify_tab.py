@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Any, Optional
 
 from nicegui import ui
+from ...notification_engine import notify
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -249,10 +250,10 @@ class SpotifyTab:
             client_secret=self._creds.get("client_secret", ""),
         )
         if state_manager.save_changes():
-            ui.notify("Spotify saved", type="positive")
+            notify("Spotify saved", type="positive")
             self.dirty = False
         else:
-            ui.notify("Error saving Spotify", type="negative")
+            notify("Error saving Spotify", type="negative")
 
     def discard(self) -> None:
         self._load_from_state()
@@ -276,12 +277,12 @@ class SpotifyTab:
                 logger.warning(
                     "Spotify OAuth already in progress, ignoring duplicate request"
                 )
-                ui.notify("Spotify connection already in progress...", type="info")
+                notify("Spotify connection already in progress...", type="info")
                 return
 
             # Check if client ID and secret are provided
             if not self._creds.get("client_id") or not self._creds.get("client_secret"):
-                ui.notify(
+                notify(
                     "Please enter your Spotify Client ID and Client Secret first!",
                     type="warning",
                 )
@@ -296,7 +297,7 @@ class SpotifyTab:
                 self.ui_elements["connect_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Starting Spotify OAuth connection...", type="info")
+            notify("Starting Spotify OAuth connection...", type="info")
 
             # Save only Spotify settings to avoid triggering database and other notifications
             self._save_settings_only()
@@ -349,7 +350,7 @@ class SpotifyTab:
                 if check_count["count"] >= max_checks:
                     logger.warning("Spotify OAuth check timed out")
                     self._cleanup_oauth()
-                    ui.notify("Spotify OAuth timed out", type="negative")
+                    notify("Spotify OAuth timed out", type="negative")
                     return False
 
                 if oauth_result["status"] == "connecting":
@@ -357,7 +358,7 @@ class SpotifyTab:
                 elif oauth_result["status"] == "complete":
                     try:
                         if oauth_result["success"]:
-                            ui.notify(
+                            notify(
                                 "Spotify authorization will open in your browser. Please authorize the application.",
                                 type="info",
                                 timeout=5000,
@@ -366,7 +367,7 @@ class SpotifyTab:
                                 "Spotify automatic OAuth flow started successfully"
                             )
                         else:
-                            ui.notify(
+                            notify(
                                 "Failed to start Spotify authorization. Please check your credentials.",
                                 type="negative",
                                 timeout=5000,
@@ -385,7 +386,7 @@ class SpotifyTab:
                     return False  # Stop checking
                 elif oauth_result["status"] == "error":
                     try:
-                        ui.notify(
+                        notify(
                             f"Error during Spotify OAuth: {oauth_result['error']}",
                             type="negative",
                         )
@@ -407,7 +408,7 @@ class SpotifyTab:
             logger.error(
                 f"Error handling Spotify OAuth connection: {str(e)}", exc_info=True
             )
-            ui.notify(f"Error starting Spotify connection: {str(e)}", type="negative")
+            notify(f"Error starting Spotify connection: {str(e)}", type="negative")
             self._cleanup_oauth()
 
     def _cleanup_oauth(self) -> None:
@@ -439,7 +440,7 @@ class SpotifyTab:
                 logger.warning(
                     "Spotify test already in progress, ignoring duplicate request"
                 )
-                ui.notify("Spotify test already in progress...", type="info")
+                notify("Spotify test already in progress...", type="info")
                 return
 
             # Mark test as in progress
@@ -451,7 +452,7 @@ class SpotifyTab:
                 self.ui_elements["test_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Testing Spotify connection...", type="info")
+            notify("Testing Spotify connection...", type="info")
 
             # Save only Spotify settings to avoid triggering database and other notifications
             self._save_settings_only()
@@ -495,7 +496,7 @@ class SpotifyTab:
 
                     if test_result["status"] == "complete":
                         if test_result["success"]:
-                            ui.notify(
+                            notify(
                                 "Spotify connection successful!",
                                 type="positive",
                                 timeout=3000,
@@ -504,7 +505,7 @@ class SpotifyTab:
                                 "Spotify connection test completed successfully"
                             )
                         else:
-                            ui.notify(
+                            notify(
                                 "Spotify connection failed. Please check your credentials and try again.",
                                 type="negative",
                                 timeout=5000,
@@ -512,7 +513,7 @@ class SpotifyTab:
                             logger.warning("Spotify connection test failed")
 
                     elif test_result["status"] == "error":
-                        ui.notify(
+                        notify(
                             f"Error testing Spotify connection: {test_result['error']}",
                             type="negative",
                         )
@@ -538,7 +539,7 @@ class SpotifyTab:
             logger.error(
                 f"Error handling Spotify test connection: {str(e)}", exc_info=True
             )
-            ui.notify(f"Error starting Spotify test: {str(e)}", type="negative")
+            notify(f"Error starting Spotify test: {str(e)}", type="negative")
             self._cleanup_test()
 
     def _cleanup_test(self) -> None:

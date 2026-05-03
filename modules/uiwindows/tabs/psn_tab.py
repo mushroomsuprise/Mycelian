@@ -7,6 +7,7 @@ import time
 from typing import Dict, Any, Optional, List
 
 from nicegui import ui
+from ...notification_engine import notify
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -189,7 +190,7 @@ class PSNTab:
             self._auth_in_progress = False
 
         if self._auth_in_progress:
-            ui.notify("Authentication already in progress", type="warning")
+            notify("Authentication already in progress", type="warning")
             return
 
         self._auth_in_progress = True
@@ -219,7 +220,7 @@ class PSNTab:
                         "on_auth_complete: set npsso_code input + buffer "
                         f"(len={len(result.npsso_code)})"
                     )
-                    ui.notify(
+                    notify(
                         "NPSSO token acquired successfully! PSN service will reconnect automatically.",
                         type="positive",
                         position="bottom-right",
@@ -245,7 +246,7 @@ class PSNTab:
                             if ok is None:
                                 return
                             if not ok:
-                                ui.notify(
+                                notify(
                                     "Error saving PSN settings",
                                     type="negative",
                                     position="bottom-right",
@@ -268,7 +269,7 @@ class PSNTab:
                                 exc_info=True,
                             )
                             _npsso_trace(f"deferred_save: raised {save_err!r}")
-                            ui.notify(
+                            notify(
                                 f"Error saving PSN settings: {save_err}",
                                 type="negative",
                                 position="bottom-right",
@@ -283,7 +284,7 @@ class PSNTab:
                         "on_auth_complete: scheduled async deferred_save via ui.timer"
                     )
                 else:
-                    ui.notify(
+                    notify(
                         f"Authentication failed: {result.error_message}",
                         type="negative",
                         position="bottom-right",
@@ -291,7 +292,7 @@ class PSNTab:
                     )
             except Exception as e:
                 logger.error(f"Error applying NPSSO auth result: {e}", exc_info=True)
-                ui.notify(
+                notify(
                     f"Error applying NPSSO token: {e}",
                     type="negative",
                     position="bottom-right",
@@ -412,7 +413,7 @@ class PSNTab:
             self._auth_in_progress = False
             self.connect_button.enable()
             self.connect_button.text = "Connect to PSN"
-            ui.notify(f"Error: {str(e)}", type="negative")
+            notify(f"Error: {str(e)}", type="negative")
 
     def _show_help_dialog(self) -> None:
         """Show help dialog with NPSSO token acquisition steps."""
@@ -531,13 +532,13 @@ class PSNTab:
             return
         if not ok:
             _npsso_trace("save(): save_changes returned False")
-            ui.notify("Error saving PSN settings", type="negative")
+            notify("Error saving PSN settings", type="negative")
             return
         _npsso_trace("save(): save_changes OK, calling handle_psn_settings_change() …")
         psn_service.handle_psn_settings_change()
         _npsso_trace("save(): handle_psn_settings_change() returned")
         if not suppress_saved_notification:
-            ui.notify("PSN settings saved", type="positive")
+            notify("PSN settings saved", type="positive")
         self.dirty = False
         self._refresh_status()
 
@@ -779,9 +780,9 @@ class PSNTab:
         if not np_comm:
             return
         if not delete_psn_game_cache_in_db(np_comm):
-            ui.notify("Failed to remove cache entry", type="negative")
+            notify("Failed to remove cache entry", type="negative")
             return
-        ui.notify("Cache entry removed", type="positive", position="bottom-right")
+        notify("Cache entry removed", type="positive", position="bottom-right")
         if self._selected_game and self._selected_game.get("np_communication_id") == (
             np_comm
         ):
@@ -893,12 +894,12 @@ class PSNTab:
     def _save_game_cache(self) -> None:
         """Save changes to the game cache."""
         if not self._selected_game:
-            ui.notify("No game selected", type="warning")
+            notify("No game selected", type="warning")
             return
 
         np_comm_id = self._selected_game.get("np_communication_id")
         if not np_comm_id:
-            ui.notify("Invalid game data", type="negative")
+            notify("Invalid game data", type="negative")
             return
 
         # Gather updated values
@@ -915,14 +916,14 @@ class PSNTab:
                 updates["np_title_id"] = new_np_title_id
 
         if not updates:
-            ui.notify("No changes to save", type="info")
+            notify("No changes to save", type="info")
             return
 
         # Save to cache
         try:
             success = update_psn_game_cache_in_db(np_comm_id, updates)
             if success:
-                ui.notify("Game cache updated successfully", type="positive")
+                notify("Game cache updated successfully", type="positive")
                 for key, value in updates.items():
                     self._selected_game[key] = value
                 self._game_cache_dirty = False
@@ -930,10 +931,10 @@ class PSNTab:
                     self.ui_elements["cache_save_btn"].disable()
                 self.refresh_game_cache()
             else:
-                ui.notify("Failed to update game cache", type="negative")
+                notify("Failed to update game cache", type="negative")
         except Exception as e:
             logger.error(f"Error saving game cache: {str(e)}")
-            ui.notify(f"Error saving: {str(e)}", type="negative")
+            notify(f"Error saving: {str(e)}", type="negative")
 
     def refresh_game_cache(self) -> None:
         """Reload list from the database and rebuild selector, chips, and details sync."""

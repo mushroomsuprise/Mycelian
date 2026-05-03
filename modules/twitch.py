@@ -987,6 +987,13 @@ class Twitch_API:
                 exc_info=True,
             )
 
+        try:
+            from .notification_engine import maybe_suggest_game_hook_for_category
+
+            maybe_suggest_game_hook_for_category(current_category)
+        except Exception as e:
+            logger.debug("game hook suggestion skipped: %s", e)
+
         # Send instant alert
         try:
             if (

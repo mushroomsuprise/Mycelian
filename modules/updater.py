@@ -33,6 +33,8 @@ import time
 from typing import Any, Callable, Dict, Optional
 
 import aiohttp
+
+from .notification_engine import notify
 from packaging.version import \
     parse as parse_version  # For robust version comparison
 
@@ -868,7 +870,7 @@ class UpdateManager:
             self._check_running = True
 
             if manual:
-                ui.notify("Checking for updates...", type="info", timeout=2000)
+                notify("Checking for updates...", type="info", timeout=2000)
 
             result_holder: Dict[str, Any] = {"completed": False, "update_info": None, "error": None}
 
@@ -908,7 +910,7 @@ class UpdateManager:
 
                     if result_holder["error"]:
                         if manual:
-                            ui.notify(f"Error checking for updates: {result_holder['error']}", type="negative")
+                            notify(f"Error checking for updates: {result_holder['error']}", type="negative")
                         self._check_running = False
                         return False
 
@@ -917,7 +919,7 @@ class UpdateManager:
                         self._show_update_modal(update_info, manual=manual)
                     else:
                         if manual:
-                            ui.notify("You are running the latest version!", type="positive", timeout=3000)
+                            notify("You are running the latest version!", type="positive", timeout=3000)
                     self._check_running = False
                     return False
                 except Exception as e:
@@ -1001,7 +1003,7 @@ class UpdateManager:
                         try:
                             # Validate URL first
                             if not is_valid_installer_url(download_url):
-                                ui.notify("No valid installer asset found for this release yet.", type="warning")
+                                notify("No valid installer asset found for this release yet.", type="warning")
                                 return
                             # Switch UI to progress mode
                             content_area.style("display: none;")

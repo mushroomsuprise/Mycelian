@@ -32,6 +32,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from nicegui import ui
+from ..notification_engine import notify
 
 from ..help_system.contextual_help import help_button
 
@@ -1839,7 +1840,7 @@ def render_giveaways_tab(container_el) -> None:
 
                 def do_start():
                     ok, msg = get_giveaway_manager().start_giveaway()
-                    ui.notify(
+                    notify(
                         msg or "Accepting entries.",
                         type="positive" if ok else "negative",
                     )
@@ -1847,17 +1848,17 @@ def render_giveaways_tab(container_el) -> None:
 
                 def do_stop():
                     get_giveaway_manager().stop_accepting()
-                    ui.notify("Stopped accepting new entries.", type="info")
+                    notify("Stopped accepting new entries.", type="info")
                     reload_giveaways()
 
                 def do_draw():
                     ok, msg, _w = get_giveaway_manager().draw_winners()
-                    ui.notify(msg, type="positive" if ok else "negative")
+                    notify(msg, type="positive" if ok else "negative")
                     reload_giveaways()
 
                 def do_clear():
                     get_giveaway_manager().clear_giveaway()
-                    ui.notify("Giveaway cleared (pool and keyword).", type="info")
+                    notify("Giveaway cleared (pool and keyword).", type="info")
                     reload_giveaways()
 
                 with ui.row().classes("flex-wrap gap-2"):
@@ -2814,7 +2815,7 @@ def save_new_quote(text: str, author: str):
     """Save a new quote"""
     try:
         if not text.strip():
-            ui.notify("Quote text cannot be empty", type="negative")
+            notify("Quote text cannot be empty", type="negative")
             return
 
         manager = get_chatbot_manager()
@@ -2823,16 +2824,16 @@ def save_new_quote(text: str, author: str):
         )
 
         if success:
-            ui.notify(f"Quote #{quote_number} added successfully!", type="positive")
+            notify(f"Quote #{quote_number} added successfully!", type="positive")
             if create_dialog:
                 create_dialog.close()
             refresh_chatbot_items()
         else:
-            ui.notify(f"Error adding quote: {error}", type="negative")
+            notify(f"Error adding quote: {error}", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving quote: {e}", exc_info=True)
-        ui.notify(f"Error saving quote: {str(e)}", type="negative")
+        notify(f"Error saving quote: {str(e)}", type="negative")
 
 
 def toggle_quote_system(enabled: bool):
@@ -2843,13 +2844,13 @@ def toggle_quote_system(enabled: bool):
 
         if success:
             status = "enabled" if enabled else "disabled"
-            ui.notify(f"Quote system {status}", type="positive")
+            notify(f"Quote system {status}", type="positive")
         else:
-            ui.notify("Failed to toggle quote system", type="negative")
+            notify("Failed to toggle quote system", type="negative")
 
     except Exception as e:
         logger.error(f"Error toggling quote system: {e}", exc_info=True)
-        ui.notify(f"Error toggling quote system: {str(e)}", type="negative")
+        notify(f"Error toggling quote system: {str(e)}", type="negative")
 
 
 def toggle_greetings_system(enabled: bool):
@@ -2860,13 +2861,13 @@ def toggle_greetings_system(enabled: bool):
 
         if success:
             status = "enabled" if enabled else "disabled"
-            ui.notify(f"Greetings system {status}", type="positive")
+            notify(f"Greetings system {status}", type="positive")
         else:
-            ui.notify("Failed to toggle greetings system", type="negative")
+            notify("Failed to toggle greetings system", type="negative")
 
     except Exception as e:
         logger.error(f"Error toggling greetings system: {e}", exc_info=True)
-        ui.notify(f"Error toggling greetings system: {str(e)}", type="negative")
+        notify(f"Error toggling greetings system: {str(e)}", type="negative")
 
 
 def show_chatbot_dialog(item_id: Optional[str] = None, item_type: Optional[str] = None):
@@ -3193,7 +3194,7 @@ def insert_api_variable_into_textarea(variable: str, textarea_element=None):
     try:
         if textarea_element is None:
             # Try to find the response input field
-            ui.notify(f"Variable: {variable} - Click to copy", type="info", timeout=3)
+            notify(f"Variable: {variable} - Click to copy", type="info", timeout=3)
             return
 
         # Get current value of the textarea
@@ -3206,11 +3207,11 @@ def insert_api_variable_into_textarea(variable: str, textarea_element=None):
         textarea_element.set_value(new_value)
 
         # Show a brief notification
-        ui.notify(f"Inserted {variable}", type="positive", timeout=1)
+        notify(f"Inserted {variable}", type="positive", timeout=1)
 
     except Exception as e:
         logger.error(f"Error inserting API variable into textarea: {e}")
-        ui.notify(f"Error inserting variable: {str(e)}", type="negative")
+        notify(f"Error inserting variable: {str(e)}", type="negative")
 
 
 def create_api_section(form_data: dict, response_input=None) -> ui.element:
@@ -3460,7 +3461,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                 existing_item = manager.get_event(item_id)
         except Exception as e:
             logger.error(f"Error loading chatbot item for edit: {e}")
-            ui.notify("Error loading item data", type="negative")
+            notify("Error loading item data", type="negative")
             return
 
     # Form state - populate with existing data if editing
@@ -5805,17 +5806,17 @@ def create_custom_variable(
     """Create or update a custom variable from expression"""
     try:
         if not var_name.strip():
-            ui.notify("Variable name is required", type="negative")
+            notify("Variable name is required", type="negative")
             return
 
         if not expression.strip():
-            ui.notify("Expression is required", type="negative")
+            notify("Expression is required", type="negative")
             return
 
         # Validate that all variables in the expression exist
         invalid_vars = validate_expression_variables(expression.strip())
         if invalid_vars:
-            ui.notify(
+            notify(
                 f"Expression contains invalid variables: {', '.join(invalid_vars)}. "
                 "Please check variable names and ensure they exist.",
                 type="negative",
@@ -5845,7 +5846,7 @@ def create_custom_variable(
             )
 
             action_text = "updated" if edit_mode else "created"
-            ui.notify(
+            notify(
                 f"Custom variable '{clean_name}' {action_text} successfully!",
                 type="positive",
             )
@@ -5857,11 +5858,11 @@ def create_custom_variable(
             # Call update callback
             update_callback()
         else:
-            ui.notify("Failed to save custom variable", type="negative")
+            notify("Failed to save custom variable", type="negative")
 
     except Exception as e:
         logger.error(f"Error creating/updating custom variable: {e}", exc_info=True)
-        ui.notify(f"Error creating/updating custom variable: {str(e)}", type="negative")
+        notify(f"Error creating/updating custom variable: {str(e)}", type="negative")
 
 
 def edit_custom_variable(var_name: str, form_data: dict, update_callback):
@@ -5870,7 +5871,7 @@ def edit_custom_variable(var_name: str, form_data: dict, update_callback):
         # Check if variable exists
         custom_vars = load_custom_variables()
         if var_name not in custom_vars:
-            ui.notify(f"Custom variable '{var_name}' not found", type="negative")
+            notify(f"Custom variable '{var_name}' not found", type="negative")
             return
 
         # Open dialog in edit mode
@@ -5882,7 +5883,7 @@ def edit_custom_variable(var_name: str, form_data: dict, update_callback):
         logger.error(
             f"Error opening edit dialog for custom variable: {e}", exc_info=True
         )
-        ui.notify(f"Error opening edit dialog: {str(e)}", type="negative")
+        notify(f"Error opening edit dialog: {str(e)}", type="negative")
 
 
 def delete_custom_variable(var_name: str, update_callback, form_data: dict = None):
@@ -5900,18 +5901,18 @@ def delete_custom_variable(var_name: str, update_callback, form_data: dict = Non
             ):
                 del form_data["custom_variables"][var_name]
 
-            ui.notify(
+            notify(
                 f"Custom variable '{var_name}' deleted successfully!", type="positive"
             )
 
             # Refresh the variables display
             update_callback()
         else:
-            ui.notify("Failed to delete custom variable", type="negative")
+            notify("Failed to delete custom variable", type="negative")
 
     except Exception as e:
         logger.error(f"Error deleting custom variable: {e}", exc_info=True)
-        ui.notify(f"Error deleting custom variable: {str(e)}", type="negative")
+        notify(f"Error deleting custom variable: {str(e)}", type="negative")
 
 
 def get_available_variables(
@@ -6219,7 +6220,7 @@ def get_available_variables(
 def insert_variable(variable: str):
     """Insert variable into response text (legacy function)"""
     # This is kept for backward compatibility
-    ui.notify(f"Click to insert: {variable}", type="info")
+    notify(f"Click to insert: {variable}", type="info")
 
 
 def insert_variable_into_textarea(variable: str, description: str, textarea_element):
@@ -6240,11 +6241,11 @@ def insert_variable_into_textarea(variable: str, description: str, textarea_elem
         textarea_element.set_value(new_value)
 
         # Show a brief notification
-        ui.notify(f"Inserted {variable}", type="positive", timeout=1)
+        notify(f"Inserted {variable}", type="positive", timeout=1)
 
     except Exception as e:
         logger.error(f"Error inserting variable into textarea: {e}")
-        ui.notify(f"Error inserting variable: {str(e)}", type="negative")
+        notify(f"Error inserting variable: {str(e)}", type="negative")
 
 
 def get_variable_examples(
@@ -6979,23 +6980,23 @@ def save_chatbot_item(form_data: dict):
 
         # Validate form data
         if not form_data.get("name"):
-            ui.notify("Name is required", type="negative")
+            notify("Name is required", type="negative")
             return
 
         if not form_data.get("response_text"):
-            ui.notify("Response text is required", type="negative")
+            notify("Response text is required", type="negative")
             return
 
         if form_data["item_type"] == "command":
             if not form_data.get("command_name"):
-                ui.notify("Command name is required", type="negative")
+                notify("Command name is required", type="negative")
                 return
 
             # Check for reserved command names
             reserved_commands = ["quote", "add_quote"]
             command_name_lower = form_data.get("command_name", "").lower().strip()
             if command_name_lower in reserved_commands:
-                ui.notify(
+                notify(
                     f"Command name '{command_name_lower}' is reserved and cannot be used",
                     type="negative",
                 )
@@ -7007,14 +7008,14 @@ def save_chatbot_item(form_data: dict):
                 for alias in aliases:
                     alias_lower = alias.lower().strip()
                     if alias_lower in reserved_commands:
-                        ui.notify(
+                        notify(
                             f"Alias '{alias_lower}' is reserved and cannot be used",
                             type="negative",
                         )
                         return
         else:
             if not form_data.get("event_type"):
-                ui.notify("Event type is required", type="negative")
+                notify("Event type is required", type="negative")
                 return
 
         # Create the item
@@ -7025,7 +7026,7 @@ def save_chatbot_item(form_data: dict):
 
     except Exception as e:
         logger.error(f"Error saving chatbot item: {e}", exc_info=True)
-        ui.notify(f"Error saving item: {str(e)}", type="negative")
+        notify(f"Error saving item: {str(e)}", type="negative")
 
 
 def save_chatbot_command(form_data: dict):
@@ -7104,16 +7105,16 @@ def save_chatbot_command(form_data: dict):
             action = "created"
 
         if success:
-            ui.notify(
+            notify(
                 f"Command '{command.name}' {action} successfully", type="positive"
             )
             close_dialog_and_refresh()
         else:
-            ui.notify(f"Failed to {action} command", type="negative")
+            notify(f"Failed to {action} command", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving command: {e}", exc_info=True)
-        ui.notify(f"Error saving command: {str(e)}", type="negative")
+        notify(f"Error saving command: {str(e)}", type="negative")
 
 
 def save_chatbot_event(form_data: dict):
@@ -7142,7 +7143,7 @@ def save_chatbot_event(form_data: dict):
                 ChatEvent()
             )  # Create temporary instance to use conversion method
             if not temp_event.set_interval_from_string(interval_str):
-                ui.notify(
+                notify(
                     "Invalid interval format. Please use hh:mm:ss format (e.g., 01:30:00)",
                     type="negative",
                 )
@@ -7151,7 +7152,7 @@ def save_chatbot_event(form_data: dict):
 
         # Validate Interval events require an interval
         if event_type_value == "interval" and interval_seconds <= 0:
-            ui.notify(
+            notify(
                 "Interval events require an interval to be set. Please specify a time interval (hh:mm:ss).",
                 type="negative",
             )
@@ -7159,7 +7160,7 @@ def save_chatbot_event(form_data: dict):
 
         # Validate Specific Time events require a time
         if event_type_value == "specific_time" and not form_data.get("specific_time"):
-            ui.notify(
+            notify(
                 "Specific Time events require a time to be set. Please specify a time in HH:MM format.",
                 type="negative",
             )
@@ -7244,14 +7245,14 @@ def save_chatbot_event(form_data: dict):
             action = "created"
 
         if success:
-            ui.notify(f"Event '{event.name}' {action} successfully", type="positive")
+            notify(f"Event '{event.name}' {action} successfully", type="positive")
             close_dialog_and_refresh()
         else:
-            ui.notify(f"Failed to {action} event", type="negative")
+            notify(f"Failed to {action} event", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving event: {e}", exc_info=True)
-        ui.notify(f"Error saving event: {str(e)}", type="negative")
+        notify(f"Error saving event: {str(e)}", type="negative")
 
 
 def close_dialog_and_refresh():
@@ -7327,28 +7328,28 @@ def test_chatbot_item(item_id: str, item_type: str):
 
             # Check for errors
             if "error" in result_container:
-                ui.notify(f"Test error: {result_container['error']}", type="negative")
+                notify(f"Test error: {result_container['error']}", type="negative")
                 return
 
             result = result_container.get("result", {})
 
             if result.get("success"):
-                ui.notify(
+                notify(
                     f"Test successful: {result.get('message', 'Item triggered')}",
                     type="positive",
                 )
             else:
-                ui.notify(
+                notify(
                     f"Test failed: {result.get('error', 'Unknown error')}",
                     type="negative",
                 )
         except Exception as test_error:
             logger.error(f"Error during test execution: {test_error}", exc_info=True)
-            ui.notify(f"Test error: {str(test_error)}", type="negative")
+            notify(f"Test error: {str(test_error)}", type="negative")
 
     except Exception as e:
         logger.error(f"Error testing chatbot item: {e}", exc_info=True)
-        ui.notify(f"Error testing item: {str(e)}", type="negative")
+        notify(f"Error testing item: {str(e)}", type="negative")
 
 
 def create_test_data_for_event(event_type: str) -> Dict[str, Any]:
@@ -7396,13 +7397,13 @@ def toggle_chatbot_item(item_id: str, enabled: bool):
 
         if success:
             status = "enabled" if enabled else "disabled"
-            ui.notify(f"Item {status}", type="positive")
+            notify(f"Item {status}", type="positive")
             refresh_chatbot_items()
         else:
-            ui.notify("Failed to toggle item", type="negative")
+            notify("Failed to toggle item", type="negative")
     except Exception as e:
         logger.error(f"Error toggling chatbot item: {e}", exc_info=True)
-        ui.notify(f"Error toggling item: {str(e)}", type="negative")
+        notify(f"Error toggling item: {str(e)}", type="negative")
 
 
 def reset_command_counter(command_id: str):
@@ -7412,13 +7413,13 @@ def reset_command_counter(command_id: str):
         success = manager.reset_command_counter(command_id)
 
         if success:
-            ui.notify("Command counter reset", type="positive")
+            notify("Command counter reset", type="positive")
             refresh_chatbot_items()
         else:
-            ui.notify("Failed to reset counter", type="negative")
+            notify("Failed to reset counter", type="negative")
     except Exception as e:
         logger.error(f"Error resetting command counter: {e}", exc_info=True)
-        ui.notify(f"Error resetting counter: {str(e)}", type="negative")
+        notify(f"Error resetting counter: {str(e)}", type="negative")
 
 
 def delete_chatbot_item(item_id: str, item_type: str):
@@ -7435,13 +7436,13 @@ def delete_chatbot_item(item_id: str, item_type: str):
                 success = manager.delete_quote(item_id)
 
             if success:
-                ui.notify(f"{item_type.title()} deleted", type="positive")
+                notify(f"{item_type.title()} deleted", type="positive")
                 refresh_chatbot_items()
             else:
-                ui.notify(f"Failed to delete {item_type}", type="negative")
+                notify(f"Failed to delete {item_type}", type="negative")
         except Exception as e:
             logger.error(f"Error deleting chatbot item: {e}", exc_info=True)
-            ui.notify(f"Error deleting item: {str(e)}", type="negative")
+            notify(f"Error deleting item: {str(e)}", type="negative")
 
     # Show confirmation dialog
     with ui.dialog().props("persistent") as dialog:
@@ -7551,21 +7552,21 @@ def handle_greeting_save(username: str, greeting_text: str, enabled: bool):
     try:
         # Validate inputs first
         if not username.strip():
-            ui.notify("Username is required", type="negative")
+            notify("Username is required", type="negative")
             return
 
         if not greeting_text.strip():
-            ui.notify("Greeting text is required", type="negative")
+            notify("Greeting text is required", type="negative")
             return
 
         # Show loading state
-        ui.notify("Looking up Twitch user...", type="info")
+        notify("Looking up Twitch user...", type="info")
 
         # Make the API call synchronously
         result = save_new_greeting_sync(username, greeting_text, enabled)
 
         if result and result.get("success"):
-            ui.notify(
+            notify(
                 f"Greeting for @{result['username']} added successfully!",
                 type="positive",
             )
@@ -7573,13 +7574,13 @@ def handle_greeting_save(username: str, greeting_text: str, enabled: bool):
                 create_dialog.close()
             refresh_chatbot_items()
         elif result:
-            ui.notify(f"Error: {result.get('error', 'Unknown error')}", type="negative")
+            notify(f"Error: {result.get('error', 'Unknown error')}", type="negative")
         else:
-            ui.notify("Error: Failed to save greeting", type="negative")
+            notify("Error: Failed to save greeting", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving greeting: {e}", exc_info=True)
-        ui.notify(f"Error: {str(e)}", type="negative")
+        notify(f"Error: {str(e)}", type="negative")
 
 
 def save_new_greeting_sync(username: str, greeting_text: str, enabled: bool) -> dict:
@@ -7667,7 +7668,7 @@ def show_edit_greeting_dialog(greeting_id: str):
     greeting = manager.get_greeting(greeting_id)
 
     if not greeting:
-        ui.notify("Greeting not found", type="negative")
+        notify("Greeting not found", type="negative")
         return
 
     # Create the dialog
@@ -7739,15 +7740,15 @@ def update_greeting(greeting_id: str, greeting_text: str, enabled: bool):
         success = manager.update_greeting(greeting_id, greeting_text, enabled)
 
         if success:
-            ui.notify("Greeting updated successfully!", type="positive")
+            notify("Greeting updated successfully!", type="positive")
             close_edit_dialog()
             refresh_chatbot_items()
         else:
-            ui.notify("Failed to update greeting", type="negative")
+            notify("Failed to update greeting", type="negative")
 
     except Exception as e:
         logger.error(f"Error updating greeting: {e}", exc_info=True)
-        ui.notify(f"Error updating greeting: {str(e)}", type="negative")
+        notify(f"Error updating greeting: {str(e)}", type="negative")
 
 
 def toggle_greeting(greeting_id: str, enabled: bool):
@@ -7758,13 +7759,13 @@ def toggle_greeting(greeting_id: str, enabled: bool):
 
         if success:
             status = "enabled" if enabled else "disabled"
-            ui.notify(f"Greeting {status}", type="positive")
+            notify(f"Greeting {status}", type="positive")
             refresh_chatbot_items()
         else:
-            ui.notify("Failed to toggle greeting", type="negative")
+            notify("Failed to toggle greeting", type="negative")
     except Exception as e:
         logger.error(f"Error toggling greeting: {e}", exc_info=True)
-        ui.notify(f"Error toggling greeting: {str(e)}", type="negative")
+        notify(f"Error toggling greeting: {str(e)}", type="negative")
 
 
 def delete_greeting(greeting_id: str):
@@ -7776,13 +7777,13 @@ def delete_greeting(greeting_id: str):
             success = manager.remove_greeting(greeting_id)
 
             if success:
-                ui.notify("Greeting deleted", type="positive")
+                notify("Greeting deleted", type="positive")
                 refresh_chatbot_items()
             else:
-                ui.notify("Failed to delete greeting", type="negative")
+                notify("Failed to delete greeting", type="negative")
         except Exception as e:
             logger.error(f"Error deleting greeting: {e}", exc_info=True)
-            ui.notify(f"Error deleting greeting: {str(e)}", type="negative")
+            notify(f"Error deleting greeting: {str(e)}", type="negative")
 
     # Show confirmation dialog
     with ui.dialog().props("persistent") as dialog:
@@ -7963,13 +7964,13 @@ def toggle_default_greeting(enabled: bool):
 
         if success:
             status = "enabled" if enabled else "disabled"
-            ui.notify(f"Default greetings {status}", type="positive")
+            notify(f"Default greetings {status}", type="positive")
         else:
-            ui.notify("Failed to toggle default greetings", type="negative")
+            notify("Failed to toggle default greetings", type="negative")
 
     except Exception as e:
         logger.error(f"Error toggling default greetings: {e}", exc_info=True)
-        ui.notify(f"Error toggling default greetings: {str(e)}", type="negative")
+        notify(f"Error toggling default greetings: {str(e)}", type="negative")
 
 
 def toggle_custom_greeting(enabled: bool):
@@ -7980,13 +7981,13 @@ def toggle_custom_greeting(enabled: bool):
 
         if success:
             status = "enabled" if enabled else "disabled"
-            ui.notify(f"Custom greetings {status}", type="positive")
+            notify(f"Custom greetings {status}", type="positive")
         else:
-            ui.notify("Failed to toggle custom greetings", type="negative")
+            notify("Failed to toggle custom greetings", type="negative")
 
     except Exception as e:
         logger.error(f"Error toggling custom greetings: {e}", exc_info=True)
-        ui.notify(f"Error toggling custom greetings: {str(e)}", type="negative")
+        notify(f"Error toggling custom greetings: {str(e)}", type="negative")
 
 
 def save_greeting_settings_and_close(
@@ -7995,7 +7996,7 @@ def save_greeting_settings_and_close(
     """Save greeting settings and close the dialog"""
     try:
         if not default_greeting.strip():
-            ui.notify("Default greeting text is required", type="negative")
+            notify("Default greeting text is required", type="negative")
             return
 
         # Parse reset interval hours
@@ -8015,15 +8016,15 @@ def save_greeting_settings_and_close(
         success2 = manager.set_greeting_reset_interval(reset_interval_hours)
 
         if success1 and success2:
-            ui.notify("Greeting settings updated successfully!", type="positive")
+            notify("Greeting settings updated successfully!", type="positive")
             dialog.close()
             refresh_chatbot_items()
         else:
-            ui.notify("Failed to update greeting settings", type="negative")
+            notify("Failed to update greeting settings", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving greeting settings: {e}", exc_info=True)
-        ui.notify(f"Error saving greeting settings: {str(e)}", type="negative")
+        notify(f"Error saving greeting settings: {str(e)}", type="negative")
 
 
 def show_quote_settings_dialog():
@@ -8125,15 +8126,15 @@ def save_quote_settings(quote_cooldown_str: str):
         success = manager.set_quote_cooldown(quote_cooldown_seconds)
 
         if success:
-            ui.notify("Quote settings updated successfully!", type="positive")
+            notify("Quote settings updated successfully!", type="positive")
             close_edit_dialog()
             refresh_chatbot_items()
         else:
-            ui.notify("Failed to update quote settings", type="negative")
+            notify("Failed to update quote settings", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving quote settings: {e}", exc_info=True)
-        ui.notify(f"Error saving quote settings: {str(e)}", type="negative")
+        notify(f"Error saving quote settings: {str(e)}", type="negative")
 
 
 def _create_commands_help_content():

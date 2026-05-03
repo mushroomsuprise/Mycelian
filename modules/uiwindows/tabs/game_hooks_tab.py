@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Optional, Tuple
 
 from nicegui import ui
+from ...notification_engine import notify
 
 from ...database_manager import database_manager
 from ...help_system.contextual_help import help_button
@@ -247,13 +248,13 @@ class GameHooksTab:
                 self._loaded_ff7_enabled = bool(to_save)
                 self._buffer_ff7_enabled = bool(to_save)
                 self.dirty = False
-                ui.notify("Game Hooks saved", type="positive")
+                notify("Game Hooks saved", type="positive")
                 logger.info("GameHooks: ff7_enabled=%s", to_save)
             else:
-                ui.notify("Failed to save Game Hooks", type="negative")
+                notify("Failed to save Game Hooks", type="negative")
         except Exception as e:
             logger.error("GameHooks save failed: %s", e, exc_info=True)
-            ui.notify(f"Error saving Game Hooks: {e}", type="negative")
+            notify(f"Error saving Game Hooks: {e}", type="negative")
         self._refresh_ff7_runtime_status()
 
     def discard(self) -> None:

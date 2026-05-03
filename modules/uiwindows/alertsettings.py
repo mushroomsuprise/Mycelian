@@ -27,6 +27,7 @@ import logging
 import time
 
 from nicegui import ui
+from ..notification_engine import notify
 
 from ..help_system.contextual_help import help_button
 
@@ -1062,7 +1063,7 @@ def handle_alert_selection(e, alert_type: str):
 
         if e.value == "new":
             # Show notification for creating new alert
-            ui.notify("Creating new alert...", type="info")
+            notify("Creating new alert...", type="info")
             # Load default values for new alert
             set_default_values_for_new_alert(alert_type)
             # Store initial values as originals
@@ -1073,15 +1074,15 @@ def handle_alert_selection(e, alert_type: str):
                 alert_type, fallback_id
             )
             if fallback_data:
-                ui.notify("Loading Resub Fallback alert...", type="info")
+                notify("Loading Resub Fallback alert...", type="info")
                 load_alert_settings(alert_type, fallback_id)
             else:
-                ui.notify("Configuring new Resub Fallback alert...", type="info")
+                notify("Configuring new Resub Fallback alert...", type="info")
                 set_default_values_for_new_alert(alert_type)
                 store_original_values(alert_type)
         else:
             # Show notification for loading selected alert
-            ui.notify(f"Loading alert: {e.value}", type="info")
+            notify(f"Loading alert: {e.value}", type="info")
             # Load selected alert settings
             load_alert_settings(alert_type, e.value)
 
@@ -1093,7 +1094,7 @@ def handle_alert_selection(e, alert_type: str):
 
     except Exception as e:
         logger.error(f"Error handling alert selection: {str(e)}", exc_info=True)
-        ui.notify("Error loading alert settings", type="negative")
+        notify("Error loading alert settings", type="negative")
 
 
 def _update_amount_inputs_visibility(alert_type: str, hide: bool):
@@ -1267,7 +1268,7 @@ def load_alert_settings(alert_type: str, alert_id: str):
         )
         if not alert_data:
             logger.error(f"Alert {alert_id} not found for type {alert_type}")
-            ui.notify(
+            notify(
                 f"Alert {alert_id} not found for type {alert_type}", type="negative"
             )
             return
@@ -1301,7 +1302,7 @@ def load_alert_settings(alert_type: str, alert_id: str):
         ]
         if missing_elements:
             logger.error(f"Missing UI elements for {alert_type}: {missing_elements}")
-            ui.notify(
+            notify(
                 f"UI elements not ready for {alert_type}. Please try again.",
                 type="warning",
             )
@@ -1529,7 +1530,7 @@ def load_alert_settings(alert_type: str, alert_id: str):
 
     except Exception as e:
         logger.error(f"Error loading alert settings: {str(e)}", exc_info=True)
-        ui.notify("Error loading alert settings", type="negative")
+        notify("Error loading alert settings", type="negative")
 
 
 def handle_browse(folder_type: str):
@@ -1542,7 +1543,7 @@ def handle_browse(folder_type: str):
         # Get the current alert type from the global state
         current_alert_type = alert_settings_state.current_tab
         if not current_alert_type:
-            ui.notify("No alert type selected", type="warning")
+            notify("No alert type selected", type="warning")
             return
 
         # Get UI elements to check what fields exist
@@ -1592,7 +1593,7 @@ def handle_browse(folder_type: str):
             browse_mode = "directory"  # Select directories only
             target_fields = [dir_field_name]
         else:
-            ui.notify(f"Unknown folder type: {folder_type}", type="negative")
+            notify(f"Unknown folder type: {folder_type}", type="negative")
             return
 
         # Verify that the required fields exist
@@ -1602,7 +1603,7 @@ def handle_browse(folder_type: str):
             if field not in elements or elements[field] is None
         ]
         if missing_fields:
-            ui.notify(
+            notify(
                 f"Required UI fields not found: {missing_fields}", type="negative"
             )
             return
@@ -1625,7 +1626,7 @@ def handle_browse(folder_type: str):
         logger.error(
             f"Error handling browse for {folder_type}: {str(e)}", exc_info=True
         )
-        ui.notify(f"Error opening file browser for {folder_type}", type="negative")
+        notify(f"Error opening file browser for {folder_type}", type="negative")
 
 
 def get_initial_browse_path(alert_type: str, dir_field_name: str) -> str:
@@ -2006,7 +2007,7 @@ def navigate_to_path(dialog_state, path=None):
         except ValueError:
             logger.warning(f"Attempt to navigate outside assets directory: {path}")
             path = assets_dir
-            ui.notify("Navigation is restricted to the assets folder", type="warning")
+            notify("Navigation is restricted to the assets folder", type="warning")
 
         if path.exists():
             path_str = _alert_browser_path_str(path)
@@ -2025,11 +2026,11 @@ def navigate_to_path(dialog_state, path=None):
 
             update_file_listing(dialog_state)
         else:
-            ui.notify(f"Path does not exist: {path}", type="warning")
+            notify(f"Path does not exist: {path}", type="warning")
 
     except Exception as e:
         logger.error(f"Error navigating to path: {str(e)}")
-        ui.notify(f"Error navigating to path: {str(e)}", type="negative")
+        notify(f"Error navigating to path: {str(e)}", type="negative")
 
 
 def select_current_directory(dialog_state, dialog):
@@ -2045,7 +2046,7 @@ def select_current_directory(dialog_state, dialog):
         current_path = Path(dialog_state["current_path"])
 
         if not current_path.exists() or not current_path.is_dir():
-            ui.notify("Current path is not a valid directory", type="warning")
+            notify("Current path is not a valid directory", type="warning")
             return
 
         # Format path for web server (converts to /assets/... format)
@@ -2075,19 +2076,19 @@ def select_current_directory(dialog_state, dialog):
                 )
 
                 logger.info(f"Selected directory: {web_server_path}")
-                ui.notify(f"Selected directory: {current_path.name}", type="positive")
+                notify(f"Selected directory: {current_path.name}", type="positive")
             else:
                 logger.error(f"Target UI field not found: {dir_field}")
-                ui.notify("Error updating directory field", type="negative")
+                notify("Error updating directory field", type="negative")
         else:
             logger.error(f"Invalid target fields for directory mode: {target_fields}")
-            ui.notify("Error updating directory field", type="negative")
+            notify("Error updating directory field", type="negative")
 
         dialog.close()
 
     except Exception as e:
         logger.error(f"Error selecting current directory: {str(e)}", exc_info=True)
-        ui.notify("Error selecting directory", type="negative")
+        notify("Error selecting directory", type="negative")
 
 
 def update_file_listing(dialog_state):
@@ -2311,7 +2312,7 @@ def select_file_from_dialog(dialog_state, dialog):
         selected_path_obj = _resolve_alert_browser_selection(dialog_state)
         if not selected_path_obj:
             selection_type = "directory" if browse_mode == "directory" else "file"
-            ui.notify(f"Please select a {selection_type}", type="warning")
+            notify(f"Please select a {selection_type}", type="warning")
             return
 
         if browse_mode == "file":
@@ -2319,7 +2320,7 @@ def select_file_from_dialog(dialog_state, dialog):
             file_extension = selected_path_obj.suffix.lower()
             if file_extension not in dialog_state["extensions"]:
                 extensions_str = ", ".join(dialog_state["extensions"])
-                ui.notify(
+                notify(
                     f"Please select a file with one of these extensions: {extensions_str}",
                     type="warning",
                 )
@@ -2344,7 +2345,7 @@ def select_file_from_dialog(dialog_state, dialog):
                 # Format directory path for web server
                 directory_web_path = format_path_for_web_server(str(file_path.parent))
                 if not _path_under_assets(file_path):
-                    ui.notify(
+                    notify(
                         "This file is outside the assets folder. Move it under assets for correct browser-source paths.",
                         type="warning",
                     )
@@ -2368,10 +2369,10 @@ def select_file_from_dialog(dialog_state, dialog):
                 )
 
                 logger.info(f"Selected file: {directory_web_path}/{filename}")
-                ui.notify(f"Selected file: {filename}", type="positive")
+                notify(f"Selected file: {filename}", type="positive")
             else:
                 logger.error(f"Target UI fields not found: {target_fields}")
-                ui.notify("Error updating file fields", type="negative")
+                notify("Error updating file fields", type="negative")
 
         elif browse_mode == "directory" and len(target_fields) == 1:
             # Directory mode with only directory field
@@ -2381,7 +2382,7 @@ def select_file_from_dialog(dialog_state, dialog):
                 # Format directory path for web server
                 directory_web_path = format_path_for_web_server(str(selected_path_obj))
                 if not _path_under_assets(selected_path_obj):
-                    ui.notify(
+                    notify(
                         "This folder is outside the assets folder. Move or copy it under assets for browser-source paths.",
                         type="warning",
                     )
@@ -2399,23 +2400,23 @@ def select_file_from_dialog(dialog_state, dialog):
                 )
 
                 logger.info(f"Selected directory: {directory_web_path}")
-                ui.notify(
+                notify(
                     f"Selected directory: {selected_path_obj.name}", type="positive"
                 )
             else:
                 logger.error(f"Target UI field not found: {dir_field}")
-                ui.notify("Error updating directory field", type="negative")
+                notify("Error updating directory field", type="negative")
         else:
             logger.error(
                 f"Invalid field configuration for {browse_mode} mode: {target_fields}"
             )
-            ui.notify("Error updating fields", type="negative")
+            notify("Error updating fields", type="negative")
 
         dialog.close()
 
     except Exception as e:
         logger.error(f"Error selecting from dialog: {str(e)}", exc_info=True)
-        ui.notify("Error processing selection", type="negative")
+        notify("Error processing selection", type="negative")
 
 
 def test_alert(alert_type: str):
@@ -2428,7 +2429,7 @@ def test_alert(alert_type: str):
         # Check if UI elements are properly initialized
         elements = alert_settings_state.get_elements(alert_type)
         if not elements:
-            ui.notify(
+            notify(
                 f"UI elements not initialized for {alert_type} tab", type="warning"
             )
             return
@@ -2458,7 +2459,7 @@ def test_alert(alert_type: str):
             if elem not in elements or elements[elem] is None
         ]
         if missing_elements:
-            ui.notify(f"Missing UI elements: {missing_elements}", type="warning")
+            notify(f"Missing UI elements: {missing_elements}", type="warning")
             return
 
         # Create test alert data with safe value extraction
@@ -2607,10 +2608,10 @@ def test_alert(alert_type: str):
         alert_processor.ALERT_QUEUE.append(alert)
 
         logger.debug(f"Testing {alert_type} alert with data: {alert_data}")
-        ui.notify(f"Testing {alert_type} alert...", type="info")
+        notify(f"Testing {alert_type} alert...", type="info")
     except Exception as e:
         logger.error(f"Error testing alert: {str(e)}", exc_info=True)
-        ui.notify("Error testing alert", type="negative")
+        notify("Error testing alert", type="negative")
 
 
 def save_alert(alert_type: str):
@@ -2844,7 +2845,7 @@ def save_alert(alert_type: str):
         )
 
         if success:
-            ui.notify(
+            notify(
                 f'Saved {alert_type} alert: {alert_data["alert_name"]}', type="positive"
             )
 
@@ -2910,11 +2911,11 @@ def save_alert(alert_type: str):
             # Clear changed styling
             clear_changed_styling(alert_type)
         else:
-            ui.notify("Error saving alert settings", type="negative")
+            notify("Error saving alert settings", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving alert: {str(e)}", exc_info=True)
-        ui.notify("Error saving alert settings", type="negative")
+        notify("Error saving alert settings", type="negative")
 
 
 # Add the following functions for change detection and styling
@@ -3954,7 +3955,7 @@ def handle_point_reward_selection(e, alert_type: str):
             return
 
         if e.value == "new":
-            ui.notify(
+            notify(
                 "New reward: set Twitch Options and alert settings, then Save Alert.",
                 type="info",
             )
@@ -3966,19 +3967,19 @@ def handle_point_reward_selection(e, alert_type: str):
             # Validate that it's a valid reward ID (should be a UUID-like string)
             if len(e.value) > 5:  # Basic validation - real reward IDs are much longer
                 # Show notification for loading selected reward
-                ui.notify(f"Loading point reward: {e.value}", type="info")
+                notify(f"Loading point reward: {e.value}", type="info")
                 # Load selected point reward settings
                 load_point_reward_settings(alert_type, e.value)
             else:
                 logger.warning(f"Invalid reward ID format: {e.value}")
-                ui.notify("Invalid reward selection", type="warning")
+                notify("Invalid reward selection", type="warning")
 
         # Update delete button visibility based on selection
         update_delete_button_visibility(alert_type)
 
     except Exception as e:
         logger.error(f"Error handling point reward selection: {str(e)}", exc_info=True)
-        ui.notify("Error loading point reward settings", type="negative")
+        notify("Error loading point reward settings", type="negative")
 
 
 def _schedule_point_reward_select_refresh(select_element):
@@ -4041,7 +4042,7 @@ def load_twitch_point_rewards():
             }
             if hasattr(select_element, "update"):
                 select_element.update()
-            ui.notify(
+            notify(
                 "This Twitch account does not have Channel Points (custom rewards) unlocked.",
                 type="warning",
             )
@@ -4057,9 +4058,16 @@ def load_twitch_point_rewards():
             }
             if hasattr(select_element, "update"):
                 select_element.update()
-            ui.notify(
+            notify(
                 "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
                 type="warning",
+                actions=[
+                    {
+                        "kind": "navigate",
+                        "main_tab": "Settings",
+                        "settings_subtab": "Twitch",
+                    }
+                ],
             )
             _schedule_point_reward_select_refresh(select_element)
             return
@@ -4071,7 +4079,7 @@ def load_twitch_point_rewards():
             }
             if hasattr(select_element, "update"):
                 select_element.update()
-            ui.notify(
+            notify(
                 "Error loading Twitch point rewards. Please check your Twitch connection and authentication in Settings.",
                 type="negative",
             )
@@ -4090,14 +4098,14 @@ def load_twitch_point_rewards():
                 reward_cost = reward.get("cost", 0)
                 display_name = f"{reward_title} ({reward_cost} points)"
                 reward_options[reward_id] = display_name
-            ui.notify(
+            notify(
                 f"Loaded {len(rewards)} point rewards from Twitch", type="positive"
             )
         else:
             reward_options["no_rewards"] = (
                 "No rewards yet — choose + Create New Reward and click Save Alert"
             )
-            ui.notify(
+            notify(
                 "No point rewards on Twitch yet. Use + Create New Reward, set Twitch Options, then Save Alert.",
                 type="info",
             )
@@ -4128,7 +4136,7 @@ def load_twitch_point_rewards():
             if hasattr(select_element, "update"):
                 select_element.update()
             _schedule_point_reward_select_refresh(select_element)
-        ui.notify(
+        notify(
             "Error loading Twitch point rewards. Please check your Twitch connection and authentication in Settings.",
             type="negative",
         )
@@ -4238,7 +4246,7 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
         # First, get the Twitch reward data
         reward_data = twitch.get_point_reward_by_id(reward_id)
         if not reward_data:
-            ui.notify(f"Point reward {reward_id} not found on Twitch", type="negative")
+            notify(f"Point reward {reward_id} not found on Twitch", type="negative")
             return
 
         # Load Twitch settings into UI
@@ -4489,7 +4497,7 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
 
     except Exception as e:
         logger.error(f"Error loading point reward settings: {str(e)}", exc_info=True)
-        ui.notify("Error loading point reward settings", type="negative")
+        notify("Error loading point reward settings", type="negative")
 
 
 def _twitch_ui_values_equal(orig, cur) -> bool:
@@ -4565,29 +4573,36 @@ def save_point_alert():
         selected = elements["alert_select"].value
 
         if not twitch.twitch_api or not twitch.twitch_api.is_connected:
-            ui.notify(
+            notify(
                 "Twitch is not connected. Please connect to Twitch in Settings first.",
                 type="negative",
+                actions=[
+                    {
+                        "kind": "navigate",
+                        "main_tab": "Settings",
+                        "settings_subtab": "Twitch",
+                    }
+                ],
             )
             return
 
         fetch = twitch.fetch_channel_point_rewards()
         if fetch["status"] == "not_unlocked":
-            ui.notify(
+            notify(
                 "Channel Points are not unlocked for this Twitch account.",
                 type="warning",
             )
             return
 
         if fetch["status"] not in ("ok",):
-            ui.notify(
+            notify(
                 "Cannot reach Twitch Channel Points right now. Try Refresh Rewards.",
                 type="warning",
             )
             return
 
         if selected in POINTS_REWARD_SELECT_PLACEHOLDERS and selected != "new":
-            ui.notify("Please select a valid point reward", type="warning")
+            notify("Please select a valid point reward", type="warning")
             return
 
         selected_reward_id = selected
@@ -4595,21 +4610,21 @@ def save_point_alert():
         if selected == "new":
             title = (elements["twitch_title_input"].value or "").strip()
             if not title:
-                ui.notify(
+                notify(
                     "Please enter a reward title in Twitch Options.",
                     type="warning",
                 )
                 return
             cost_val = elements["twitch_cost_input"].value
             if cost_val is None or int(cost_val) < 1:
-                ui.notify("Point cost must be at least 1.", type="warning")
+                notify("Point cost must be at least 1.", type="warning")
                 return
-            ui.notify("Creating reward on Twitch...", type="info")
+            notify("Creating reward on Twitch...", type="info")
             new_reward = twitch.create_point_reward(
                 build_twitch_reward_payload_from_ui(alert_type)
             )
             if not new_reward or not new_reward.get("id"):
-                ui.notify("Failed to create reward on Twitch.", type="negative")
+                notify("Failed to create reward on Twitch.", type="negative")
                 return
             selected_reward_id = new_reward["id"]
         else:
@@ -4618,7 +4633,7 @@ def save_point_alert():
                     selected_reward_id,
                     build_twitch_reward_payload_from_ui(alert_type),
                 ):
-                    ui.notify(
+                    notify(
                         "Error updating Twitch point reward. Local alert was not saved.",
                         type="negative",
                     )
@@ -4690,7 +4705,7 @@ def save_point_alert():
         )
 
         if success:
-            ui.notify(f'Saved point alert: {alert_data["title"]}', type="positive")
+            notify(f'Saved point alert: {alert_data["title"]}', type="positive")
             load_twitch_point_rewards()
             rid = selected_reward_id
 
@@ -4714,11 +4729,11 @@ def save_point_alert():
 
             ui.timer(0.85, after_list_refresh, once=True)
         else:
-            ui.notify("Error saving point alert settings", type="negative")
+            notify("Error saving point alert settings", type="negative")
 
     except Exception as e:
         logger.error(f"Error saving point alert: {str(e)}", exc_info=True)
-        ui.notify("Error saving point alert settings", type="negative")
+        notify("Error saving point alert settings", type="negative")
 
 
 def show_delete_confirmation(alert_type: str):
@@ -4737,7 +4752,7 @@ def show_delete_confirmation(alert_type: str):
             not selected_alert_id
             or selected_alert_id in POINTS_REWARD_SELECT_PLACEHOLDERS
         ):
-            ui.notify("No valid alert selected for deletion", type="warning")
+            notify("No valid alert selected for deletion", type="warning")
             return
 
         # Get alert data to show in confirmation
@@ -4745,7 +4760,7 @@ def show_delete_confirmation(alert_type: str):
             alert_type, selected_alert_id
         )
         if not alert_data:
-            ui.notify("Alert not found", type="negative")
+            notify("Alert not found", type="negative")
             return
 
         # Get display name for the alert using the centralized method
@@ -4793,7 +4808,7 @@ def show_delete_confirmation(alert_type: str):
 
     except Exception as e:
         logger.error(f"Error showing delete confirmation: {str(e)}", exc_info=True)
-        ui.notify("Error showing delete confirmation dialog", type="negative")
+        notify("Error showing delete confirmation dialog", type="negative")
 
 
 def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
@@ -4809,13 +4824,13 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
         dialog.close()
 
         # Show deletion in progress
-        ui.notify("Deleting alert...", type="info")
+        notify("Deleting alert...", type="info")
 
         # Delete the alert using AlertStateManager
         success = alertutils.alert_state_manager.delete_alert(alert_type, alert_id)
 
         if success:
-            ui.notify(
+            notify(
                 f"Successfully deleted {alert_type} alert: {alert_id}", type="positive"
             )
 
@@ -4879,11 +4894,11 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
                 )
                 # This shouldn't prevent the deletion from being successful
         else:
-            ui.notify("Error deleting alert", type="negative")
+            notify("Error deleting alert", type="negative")
 
     except Exception as e:
         logger.error(f"Error confirming alert deletion: {str(e)}", exc_info=True)
-        ui.notify("Error deleting alert", type="negative")
+        notify("Error deleting alert", type="negative")
 
 
 def refresh_alert_dropdowns():

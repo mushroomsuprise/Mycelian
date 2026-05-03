@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Any, List, Optional
 
 from nicegui import ui
+from ...notification_engine import notify
 
 from ... import dataobjects
 from ...dataobjects import state_manager, YouTubeData
@@ -110,7 +111,7 @@ class YouTubeTab:
                 logger.warning(
                     "YouTube test already in progress, ignoring duplicate request"
                 )
-                ui.notify("YouTube test already in progress...", type="info")
+                notify("YouTube test already in progress...", type="info")
                 return
 
             # Mark test as in progress
@@ -122,7 +123,7 @@ class YouTubeTab:
                 self.ui_elements["test_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Testing YouTube connection...", type="info")
+            notify("Testing YouTube connection...", type="info")
 
             # Test the connection in a separate thread
             import threading
@@ -163,7 +164,7 @@ class YouTubeTab:
 
                     if test_result["status"] == "complete":
                         if test_result["success"]:
-                            ui.notify(
+                            notify(
                                 "YouTube connection successful!",
                                 type="positive",
                                 timeout=3000,
@@ -172,7 +173,7 @@ class YouTubeTab:
                                 "YouTube connection test completed successfully"
                             )
                         else:
-                            ui.notify(
+                            notify(
                                 "YouTube connection failed. Please check your API key and channel URLs.",
                                 type="negative",
                                 timeout=5000,
@@ -180,7 +181,7 @@ class YouTubeTab:
                             logger.warning("YouTube connection test failed")
 
                     elif test_result["status"] == "error":
-                        ui.notify(
+                        notify(
                             f"Error testing YouTube connection: {test_result['error']}",
                             type="negative",
                         )
@@ -206,7 +207,7 @@ class YouTubeTab:
             logger.error(
                 f"Error handling YouTube test connection: {str(e)}", exc_info=True
             )
-            ui.notify(f"Error starting YouTube test: {str(e)}", type="negative")
+            notify(f"Error starting YouTube test: {str(e)}", type="negative")
             self._cleanup_test()
 
     def _cleanup_test(self) -> None:
@@ -243,7 +244,7 @@ class YouTubeTab:
         if not self.buffer:
             return
         if name in self.buffer.playlist_filter:
-            ui.notify(f"'{name}' is already in the filter list", type="warning")
+            notify(f"'{name}' is already in the filter list", type="warning")
             return
         self.buffer.playlist_filter.append(name)
         self.dirty = True
@@ -416,10 +417,10 @@ class YouTubeTab:
         }
         state_manager.set_youtube_data(yt_dict)
         if state_manager.save_changes():
-            ui.notify("YouTube saved", type="positive")
+            notify("YouTube saved", type="positive")
             self.dirty = False
         else:
-            ui.notify("Error saving YouTube", type="negative")
+            notify("Error saving YouTube", type="negative")
 
     def discard(self) -> None:
         self._load_from_state()

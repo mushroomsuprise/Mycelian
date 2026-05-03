@@ -33,6 +33,7 @@ from typing import Dict, List, Optional
 
 import aiohttp
 from nicegui import ui
+from ..notification_engine import notify
 
 from .. import dataobjects, psn_service, twitch
 from ..api_credentials_manager import api_credentials_manager
@@ -1655,7 +1656,7 @@ class SettingsUI:
                     f"No actual change detected for {section}.{field} (old={old_value}, new={new_value})"
                 )
                 # Show a small tooltip notification to inform the user that no actual change was made
-                ui.notify(
+                notify(
                     f"Value for {field.replace('_', ' ')} unchanged",
                     type="info",
                     position="bottom-right",
@@ -1685,7 +1686,7 @@ class SettingsUI:
                 logger.info(f"Database type field changed to: {new_value}")
                 # Note: UI visibility update is now handled in on_database_type_change_immediate
                 # Don't update database manager config here - wait for save
-                # ui.notify(f"Database type changed to {new_value}. Save changes to apply.", type="info", timeout=3000)
+                # notify(f"Database type changed to {new_value}. Save changes to apply.", type="info", timeout=3000)
 
             # Update field styling (this relies on state_manager.field_has_changes)
             field_key = f"{section}.{field}"
@@ -1740,14 +1741,14 @@ class SettingsUI:
                 )
 
             logger.debug(f"API credential changed: {service}.{field} updated")
-            ui.notify(
+            notify(
                 f"{service.title()} {field.replace('_', ' ').title()} updated",
                 type="positive",
             )
 
         except Exception as e:
             logger.error(f"Error handling API credential change: {e}", exc_info=True)
-            ui.notify(f"Error updating {service} credentials", type="negative")
+            notify(f"Error updating {service} credentials", type="negative")
 
     def update_field_styling(self, field_key: str):
         """Update the styling of a field based on changes"""
@@ -1783,7 +1784,7 @@ class SettingsUI:
 
                 # Add a dynamic notification when a field is first changed
                 section, field = field_key.split(".")
-                ui.notify(
+                notify(
                     f"Changed: {field.replace('_', ' ')}",
                     type="positive",
                     position="bottom-right",
@@ -1903,7 +1904,7 @@ class SettingsUI:
                         logger.error(
                             "Failed to save database settings to config manager"
                         )
-                        ui.notify("Failed to save database settings", type="negative")
+                        notify("Failed to save database settings", type="negative")
                         return
 
                 # If database type changed, log it specifically
@@ -1914,7 +1915,7 @@ class SettingsUI:
                     logger.info(
                         f"Database type changed from {old_database_type} to {new_database_type}"
                     )
-                    ui.notify(
+                    notify(
                         f"Database type changed to {new_database_type}",
                         type="info",
                         timeout=3000,
@@ -1959,15 +1960,15 @@ class SettingsUI:
                 # Refresh database status after potential type change
                 ui.timer(0.2, lambda: self.refresh_database_status(), once=True)
 
-                ui.notify("Settings saved successfully", type="positive", timeout=2000)
+                notify("Settings saved successfully", type="positive", timeout=2000)
                 logger.info(
                     f"Settings saved successfully. Updated fields: {updated_fields}"
                 )
             else:
-                ui.notify("Error saving settings", type="negative")
+                notify("Error saving settings", type="negative")
                 logger.error("StateManager.save_changes() returned False.")
         except Exception as e:
-            ui.notify(f"Error saving settings: {str(e)}", type="negative")
+            notify(f"Error saving settings: {str(e)}", type="negative")
             logger.error(f"Error in SettingsUI.save_changes: {str(e)}", exc_info=True)
 
     def _save_twitch_settings_only(self):
@@ -2092,9 +2093,9 @@ class SettingsUI:
                 self.update_database_config_visibility()
                 self.update_database_manager_config()
 
-            ui.notify("Changes discarded", type="info")
+            notify("Changes discarded", type="info")
         else:
-            ui.notify("No changes to discard", type="info")
+            notify("No changes to discard", type="info")
 
     def refresh_ui(self):
         """Refresh all UI elements with the latest data"""
@@ -2185,7 +2186,7 @@ class SettingsUI:
 
             # Check if client ID and secret are provided
             if not self.twitch_data.client_id or not self.twitch_data.client_secret:
-                ui.notify(
+                notify(
                     "Please enter your Twitch Client ID and Client Secret first!",
                     type="warning",
                 )
@@ -2197,7 +2198,7 @@ class SettingsUI:
                 self.ui_elements["connect_twitch_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Starting Twitch OAuth connection...", type="info")
+            notify("Starting Twitch OAuth connection...", type="info")
 
             # Save only Twitch settings to avoid triggering database and other notifications
             self._save_twitch_settings_only()
@@ -2231,14 +2232,14 @@ class SettingsUI:
                 elif oauth_result["status"] == "complete":
                     try:
                         if oauth_result["success"]:
-                            ui.notify(
+                            notify(
                                 "Successfully connected to Twitch!",
                                 type="positive",
                                 timeout=3000,
                             )
                             logger.info("Twitch OAuth connection successful")
                         else:
-                            ui.notify(
+                            notify(
                                 "Failed to connect to Twitch. Please check your credentials and try again.",
                                 type="negative",
                                 timeout=5000,
@@ -2257,7 +2258,7 @@ class SettingsUI:
                     return False  # Stop checking
                 elif oauth_result["status"] == "error":
                     try:
-                        ui.notify(
+                        notify(
                             f"Error during Twitch connection: {oauth_result['error']}",
                             type="negative",
                         )
@@ -2282,7 +2283,7 @@ class SettingsUI:
                 # Add timeout protection
                 if check_count["count"] >= max_checks:
                     logger.warning("OAuth check timed out after 30 seconds")
-                    ui.notify(
+                    notify(
                         "OAuth connection timed out. Please try again.", type="negative"
                     )
                     # Reset button state
@@ -2305,7 +2306,7 @@ class SettingsUI:
             logger.error(
                 f"Error handling Twitch OAuth connection: {str(e)}", exc_info=True
             )
-            ui.notify(f"Error starting Twitch connection: {str(e)}", type="negative")
+            notify(f"Error starting Twitch connection: {str(e)}", type="negative")
             # Reset button state
             if "connect_twitch_button" in self.ui_elements:
                 self.ui_elements["connect_twitch_button"].set_text("Connect to Twitch")
@@ -2443,12 +2444,12 @@ class SettingsUI:
                 logger.warning(
                     "Spotify OAuth already in progress, ignoring duplicate request"
                 )
-                ui.notify("Spotify connection already in progress...", type="info")
+                notify("Spotify connection already in progress...", type="info")
                 return
 
             # Check if client ID and secret are provided
             if not self.spotify_data.client_id or not self.spotify_data.client_secret:
-                ui.notify(
+                notify(
                     "Please enter your Spotify Client ID and Client Secret first!",
                     type="warning",
                 )
@@ -2463,7 +2464,7 @@ class SettingsUI:
                 self.ui_elements["connect_spotify_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Starting Spotify OAuth connection...", type="info")
+            notify("Starting Spotify OAuth connection...", type="info")
 
             # Save only Spotify settings to avoid triggering database and other notifications
             self._save_spotify_settings_only()
@@ -2517,7 +2518,7 @@ class SettingsUI:
                 if oauth_check_count >= max_oauth_checks:
                     logger.warning("Spotify OAuth check timed out")
                     self._cleanup_spotify_oauth()
-                    ui.notify("Spotify OAuth timed out", type="negative")
+                    notify("Spotify OAuth timed out", type="negative")
                     return False
 
                 if spotify_oauth_result["status"] == "connecting":
@@ -2525,7 +2526,7 @@ class SettingsUI:
                 elif spotify_oauth_result["status"] == "complete":
                     try:
                         if spotify_oauth_result["success"]:
-                            ui.notify(
+                            notify(
                                 "Spotify authorization will open in your browser. Please authorize the application.",
                                 type="info",
                                 timeout=5000,
@@ -2534,7 +2535,7 @@ class SettingsUI:
                                 "Spotify automatic OAuth flow started successfully"
                             )
                         else:
-                            ui.notify(
+                            notify(
                                 "Failed to start Spotify authorization. Please check your credentials.",
                                 type="negative",
                                 timeout=5000,
@@ -2553,7 +2554,7 @@ class SettingsUI:
                     return False  # Stop checking
                 elif spotify_oauth_result["status"] == "error":
                     try:
-                        ui.notify(
+                        notify(
                             f"Error during Spotify connection: {spotify_oauth_result['error']}",
                             type="negative",
                         )
@@ -2577,7 +2578,7 @@ class SettingsUI:
                 # Add timeout protection
                 if spotify_check_count["count"] >= spotify_max_checks:
                     logger.warning("Spotify OAuth check timed out after 30 seconds")
-                    ui.notify(
+                    notify(
                         "Spotify OAuth connection timed out. Please try again.",
                         type="negative",
                     )
@@ -2596,7 +2597,7 @@ class SettingsUI:
             logger.error(
                 f"Error handling Spotify OAuth connection: {str(e)}", exc_info=True
             )
-            ui.notify(f"Error starting Spotify connection: {str(e)}", type="negative")
+            notify(f"Error starting Spotify connection: {str(e)}", type="negative")
             self._cleanup_spotify_oauth()
 
     def refresh_spotify_status(self):
@@ -2698,7 +2699,7 @@ class SettingsUI:
             logger.info(f"Database type changed from {old_type} to {new_type}")
 
             # Show user notification
-            ui.notify(
+            notify(
                 f"Database type changed to: {new_type}", type="positive", timeout=2000
             )
 
@@ -2733,12 +2734,12 @@ class SettingsUI:
             logger.error(
                 f"Error in database type change handler: {str(e)}", exc_info=True
             )
-            ui.notify(f"Error changing database type: {str(e)}", type="negative")
+            notify(f"Error changing database type: {str(e)}", type="negative")
 
     def debug_toggle_visibility(self):
         """Debug method to manually test visibility toggling"""
         try:
-            ui.notify("Testing visibility toggle...", type="info")
+            notify("Testing visibility toggle...", type="info")
             logger.info("--- DEBUG: Manual visibility toggle test ---")
 
             # Get current database type from the dropdown
@@ -2756,7 +2757,7 @@ class SettingsUI:
             if hasattr(self, "sql_config"):
                 sql_visible = current_dropdown_value == "sql"
                 self.sql_config.visible = sql_visible
-                ui.notify(
+                notify(
                     f"Set SQL config visible: {sql_visible}", type="info", timeout=1000
                 )
                 logger.info(f"Set SQL config visible: {sql_visible}")
@@ -2764,7 +2765,7 @@ class SettingsUI:
             if hasattr(self, "firebase_config"):
                 firebase_visible = current_dropdown_value == "firebase"
                 self.firebase_config.visible = firebase_visible
-                ui.notify(
+                notify(
                     f"Set Firebase config visible: {firebase_visible}",
                     type="info",
                     timeout=1000,
@@ -2774,7 +2775,7 @@ class SettingsUI:
             if hasattr(self, "mongodb_config"):
                 mongodb_visible = current_dropdown_value == "mongodb"
                 self.mongodb_config.visible = mongodb_visible
-                ui.notify(
+                notify(
                     f"Set MongoDB config visible: {mongodb_visible}",
                     type="info",
                     timeout=1000,
@@ -2783,7 +2784,7 @@ class SettingsUI:
 
         except Exception as e:
             logger.error(f"Error in debug_toggle_visibility: {str(e)}", exc_info=True)
-            ui.notify(f"Debug error: {str(e)}", type="negative")
+            notify(f"Debug error: {str(e)}", type="negative")
 
     def test_database_connection(self):
         """Handle the Test Connection button click"""
@@ -2796,7 +2797,7 @@ class SettingsUI:
                 self.ui_elements["test_database_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Testing database connection...", type="info")
+            notify("Testing database connection...", type="info")
 
             # Save current settings first to ensure the database manager has the latest configuration
             self.save_changes()
@@ -2839,7 +2840,7 @@ class SettingsUI:
                 # Add timeout protection
                 if db_check_count["count"] >= db_max_checks:
                     logger.warning("Database test timed out after 20 seconds")
-                    ui.notify(
+                    notify(
                         "Database test timed out. Please check your configuration.",
                         type="negative",
                     )
@@ -2860,14 +2861,14 @@ class SettingsUI:
                 elif db_test_result["status"] == "complete":
                     try:
                         if db_test_result["success"]:
-                            ui.notify(
+                            notify(
                                 "Database connection successful!",
                                 type="positive",
                                 timeout=3000,
                             )
                             logger.info("Database connection test successful")
                         else:
-                            ui.notify(
+                            notify(
                                 "Database connection failed. Please check your configuration.",
                                 type="negative",
                                 timeout=5000,
@@ -2886,7 +2887,7 @@ class SettingsUI:
                     return False  # Stop checking
                 elif db_test_result["status"] == "error":
                     try:
-                        ui.notify(
+                        notify(
                             f"Error during database test: {db_test_result['error']}",
                             type="negative",
                         )
@@ -2909,7 +2910,7 @@ class SettingsUI:
 
         except Exception as e:
             logger.error(f"Error handling database test: {str(e)}", exc_info=True)
-            ui.notify(f"Error starting database test: {str(e)}", type="negative")
+            notify(f"Error starting database test: {str(e)}", type="negative")
             # Reset button state
             if "test_database_button" in self.ui_elements:
                 self.ui_elements["test_database_button"].set_text("Test Connection")
@@ -2970,13 +2971,13 @@ class SettingsUI:
 
         except Exception as e:
             logger.error(f"Error showing migration dialog: {str(e)}", exc_info=True)
-            ui.notify(f"Error showing migration dialog: {str(e)}", type="negative")
+            notify(f"Error showing migration dialog: {str(e)}", type="negative")
 
     def start_migration(self, source_type: str, target_type: str, dialog):
         """Start the database migration process"""
         try:
             if source_type == target_type:
-                ui.notify(
+                notify(
                     "Source and target databases cannot be the same", type="warning"
                 )
                 return
@@ -2984,7 +2985,7 @@ class SettingsUI:
             dialog.close()
 
             # Show progress notification
-            ui.notify("Starting database migration...", type="info")
+            notify("Starting database migration...", type="info")
 
             # Create a status tracking mechanism
             migration_status = {
@@ -3127,7 +3128,7 @@ class SettingsUI:
                     migration_status["notified"] = True  # Mark as notified
 
                     if migration_status["success"]:
-                        ui.notify(
+                        notify(
                             f"Migration from {source_type} to {target_type} completed successfully!",
                             type="positive",
                             timeout=5000,
@@ -3135,7 +3136,7 @@ class SettingsUI:
                         self.refresh_database_status()
                     else:
                         error_msg = migration_status.get("error", "Unknown error")
-                        ui.notify(error_msg, type="negative", timeout=5000)
+                        notify(error_msg, type="negative", timeout=5000)
 
                     # Cancel the timer to stop checking
                     if migration_timer:
@@ -3160,7 +3161,7 @@ class SettingsUI:
                 # Add timeout protection
                 if migration_check_count["count"] >= migration_max_checks:
                     logger.warning("Migration check timed out after 60 seconds")
-                    ui.notify(
+                    notify(
                         "Migration operation timed out. Please check the logs.",
                         type="negative",
                     )
@@ -3177,7 +3178,7 @@ class SettingsUI:
 
         except Exception as e:
             logger.error(f"Error starting migration: {str(e)}", exc_info=True)
-            ui.notify(f"Error starting migration: {str(e)}", type="negative")
+            notify(f"Error starting migration: {str(e)}", type="negative")
 
     def refresh_database_status(self):
         """Refresh the database connection status display"""
@@ -3233,7 +3234,7 @@ class SettingsUI:
                     issue_text = "Configuration Issues:\n" + "\n".join(
                         f"• {issue}" for issue in config_issues
                     )
-                    ui.notify(issue_text, type="warning", timeout=8000)
+                    notify(issue_text, type="warning", timeout=8000)
 
             logger.debug(f"Database status refreshed: {status_info}")
 
@@ -3327,7 +3328,7 @@ class SettingsUI:
                 )
                 # Show success notification for database type changes
                 if config.database_type != "sql":  # Only show for non-default databases
-                    ui.notify(
+                    notify(
                         f"Switched to {config.database_type} database",
                         type="positive",
                         timeout=2000,
@@ -3337,7 +3338,7 @@ class SettingsUI:
                     f"Failed to update database manager configuration to {config.database_type}"
                 )
                 # Show error notification
-                ui.notify(
+                notify(
                     f"Failed to switch to {config.database_type} database. Check configuration and logs.",
                     type="negative",
                     timeout=5000,
@@ -3350,7 +3351,7 @@ class SettingsUI:
             logger.error(
                 f"Error updating database manager config: {str(e)}", exc_info=True
             )
-            ui.notify(
+            notify(
                 f"Error updating database configuration: {str(e)}", type="negative"
             )
 
@@ -3361,7 +3362,7 @@ class SettingsUI:
             self._show_database_file_browser_dialog("sql")
         except Exception as e:
             logger.error(f"Error in database file browser: {str(e)}", exc_info=True)
-            ui.notify(
+            notify(
                 "Error opening file browser. Please enter the path manually.",
                 type="negative",
             )
@@ -3493,7 +3494,7 @@ class SettingsUI:
                 import pyperclip
 
                 pyperclip.copy(url)
-                ui.notify(f"Copied: {url}", type="positive", timeout=2000)
+                notify(f"Copied: {url}", type="positive", timeout=2000)
                 logger.debug(f"Copied URL to clipboard using pyperclip: {url}")
                 return
             except ImportError:
@@ -3505,11 +3506,11 @@ class SettingsUI:
 
             if sys.platform == "darwin":  # macOS
                 subprocess.run(["pbcopy"], input=url.encode(), check=True)
-                ui.notify(f"Copied: {url}", type="positive", timeout=2000)
+                notify(f"Copied: {url}", type="positive", timeout=2000)
                 logger.debug(f"Copied URL to clipboard using pbcopy: {url}")
             elif sys.platform == "win32":  # Windows
                 subprocess.run(["clip"], input=url.encode(), shell=True, check=True)
-                ui.notify(f"Copied: {url}", type="positive", timeout=2000)
+                notify(f"Copied: {url}", type="positive", timeout=2000)
                 logger.debug(f"Copied URL to clipboard using clip: {url}")
             elif sys.platform.startswith("linux"):  # Linux
                 # Try xclip first, then xsel as fallback
@@ -3519,7 +3520,7 @@ class SettingsUI:
                         input=url.encode(),
                         check=True,
                     )
-                    ui.notify(f"Copied: {url}", type="positive", timeout=2000)
+                    notify(f"Copied: {url}", type="positive", timeout=2000)
                     logger.debug(f"Copied URL to clipboard using xclip: {url}")
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     subprocess.run(
@@ -3527,14 +3528,14 @@ class SettingsUI:
                         input=url.encode(),
                         check=True,
                     )
-                    ui.notify(f"Copied: {url}", type="positive", timeout=2000)
+                    notify(f"Copied: {url}", type="positive", timeout=2000)
                     logger.debug(f"Copied URL to clipboard using xsel: {url}")
             else:
                 raise Exception(f"Unsupported platform: {sys.platform}")
 
         except Exception as e:
             logger.error(f"Error copying URL to clipboard: {str(e)}", exc_info=True)
-            ui.notify(
+            notify(
                 "Failed to copy URL to clipboard. You can manually select and copy the URL from the text field.",
                 type="warning",
                 timeout=4000,
@@ -3551,7 +3552,7 @@ class SettingsUI:
             updater.update_manager.trigger_manual_check()
         except Exception as e:
             logger.error(f"Error delegating manual update check: {e}", exc_info=True)
-            ui.notify("Failed to start update check.", type="negative")
+            notify("Failed to start update check.", type="negative")
 
     def open_documentation(self):
         """Open the documentation page in the default browser"""
@@ -3559,14 +3560,14 @@ class SettingsUI:
             logger.info("User clicked Open Documentation button")
             documentation_url = "https://mycelian.readthedocs.io/en/latest/"
             webbrowser.open(documentation_url)
-            ui.notify(
+            notify(
                 "Opening documentation in your default browser...",
                 type="info",
                 timeout=2000,
             )
         except Exception as e:
             logger.error(f"Error opening documentation: {e}", exc_info=True)
-            ui.notify(f"Error opening documentation: {str(e)}", type="negative")
+            notify(f"Error opening documentation: {str(e)}", type="negative")
 
     async def fetch_all_releases_from_github(self) -> List[Dict[str, str]]:
         """
@@ -3663,13 +3664,13 @@ class SettingsUI:
 
             # Prevent multiple concurrent requests
             if hasattr(self, "_changelog_loading") and self._changelog_loading:
-                ui.notify("Changelog is already loading...", type="info", timeout=2000)
+                notify("Changelog is already loading...", type="info", timeout=2000)
                 return
 
             self._changelog_loading = True
 
             # Show loading notification
-            ui.notify("Fetching changelog from GitHub...", type="info", timeout=2000)
+            notify("Fetching changelog from GitHub...", type="info", timeout=2000)
 
             # Use a shared variable to communicate between threads
             changelog_result = {
@@ -3728,7 +3729,7 @@ class SettingsUI:
                         if releases:
                             self._create_changelog_modal(releases)
                         else:
-                            ui.notify(
+                            notify(
                                 "No releases found or repository not available yet.",
                                 type="warning",
                                 timeout=4000,
@@ -3738,7 +3739,7 @@ class SettingsUI:
                         changelog_result["processed"] = True  # Mark as processed
                         self._changelog_loading = False  # Reset loading flag
 
-                        ui.notify(
+                        notify(
                             f"Error fetching changelog: {changelog_result['error']}",
                             type="negative",
                         )
@@ -3756,7 +3757,7 @@ class SettingsUI:
         except Exception as e:
             logger.error(f"Error showing changelog modal: {e}", exc_info=True)
             self._changelog_loading = False  # Reset loading flag on error
-            ui.notify(f"Error displaying changelog: {str(e)}", type="negative")
+            notify(f"Error displaying changelog: {str(e)}", type="negative")
 
     def _create_changelog_modal(self, releases: List[Dict[str, str]]):
         """Create and display the changelog modal with release data"""
@@ -3841,7 +3842,7 @@ class SettingsUI:
 
         except Exception as e:
             logger.error(f"Error creating changelog modal: {e}", exc_info=True)
-            ui.notify("Error displaying changelog data", type="negative")
+            notify("Error displaying changelog data", type="negative")
 
     def _format_release_notes(self, notes: str) -> str:
         """Format release notes for HTML display"""
@@ -3926,7 +3927,7 @@ class SettingsUI:
             self._show_database_file_browser_dialog("firebase")
         except Exception as e:
             logger.error(f"Error in database file browser: {str(e)}", exc_info=True)
-            ui.notify(
+            notify(
                 "Error opening file browser. Please enter the path manually.",
                 type="negative",
             )
@@ -4077,11 +4078,11 @@ class SettingsUI:
 
                 self._update_database_file_listing(dialog_state)
             else:
-                ui.notify(f"Path does not exist: {path}", type="warning")
+                notify(f"Path does not exist: {path}", type="warning")
 
         except Exception as e:
             logger.error(f"Error navigating to database path: {str(e)}")
-            ui.notify(f"Error navigating to path: {str(e)}", type="negative")
+            notify(f"Error navigating to path: {str(e)}", type="negative")
 
     def _update_database_file_listing(self, dialog_state):
         """Update the file listing in the database browser"""
@@ -4220,13 +4221,13 @@ class SettingsUI:
                     selected_path = str(current_dir / filename)
 
             if not selected_path:
-                ui.notify("Please select a file or enter a path", type="warning")
+                notify("Please select a file or enter a path", type="warning")
                 return
 
             # Validate file extension
             extension_filter = dialog_state["extension_filter"]
             if not selected_path.lower().endswith(extension_filter):
-                ui.notify(f"Please select a {extension_filter} file", type="warning")
+                notify(f"Please select a {extension_filter} file", type="warning")
                 return
 
             # Update the main input field
@@ -4248,15 +4249,15 @@ class SettingsUI:
                 logger.info(
                     f"User selected database file ({dialog_state['file_type']}): {selected_path}"
                 )
-                ui.notify(f"Selected file: {Path(selected_path).name}", type="positive")
+                notify(f"Selected file: {Path(selected_path).name}", type="positive")
 
                 dialog.close()
             else:
-                ui.notify("Error updating file path", type="negative")
+                notify("Error updating file path", type="negative")
 
         except Exception as e:
             logger.error(f"Error in database file selection: {str(e)}")
-            ui.notify(f"Error selecting file: {str(e)}", type="negative")
+            notify(f"Error selecting file: {str(e)}", type="negative")
 
     def test_spotify_connection(self):
         """Handle the Test Connection button click for Spotify"""
@@ -4271,7 +4272,7 @@ class SettingsUI:
                 logger.warning(
                     "Spotify test already in progress, ignoring duplicate request"
                 )
-                ui.notify("Spotify test already in progress...", type="info")
+                notify("Spotify test already in progress...", type="info")
                 return
 
             # Mark test as in progress
@@ -4283,7 +4284,7 @@ class SettingsUI:
                 self.ui_elements["test_spotify_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Testing Spotify connection...", type="info")
+            notify("Testing Spotify connection...", type="info")
 
             # Save only Spotify settings to avoid triggering database and other notifications
             self._save_spotify_settings_only()
@@ -4331,7 +4332,7 @@ class SettingsUI:
 
                     if test_result["status"] == "complete":
                         if test_result["success"]:
-                            ui.notify(
+                            notify(
                                 "Spotify connection successful!",
                                 type="positive",
                                 timeout=3000,
@@ -4340,7 +4341,7 @@ class SettingsUI:
                                 "Spotify connection test completed successfully"
                             )
                         else:
-                            ui.notify(
+                            notify(
                                 "Failed to connect to Spotify. You may need to re-authorize.",
                                 type="negative",
                                 timeout=5000,
@@ -4353,18 +4354,18 @@ class SettingsUI:
                         self.refresh_spotify_status()
 
                     elif test_result["status"] == "error":
-                        ui.notify(
+                        notify(
                             f"Error during Spotify test: {test_result['error']}",
                             type="negative",
                         )
                     else:
                         # Test didn't complete in time
-                        ui.notify("Spotify test timed out", type="negative")
+                        notify("Spotify test timed out", type="negative")
                         logger.warning("Spotify test timed out")
 
                 except Exception as e:
                     logger.error(f"Error handling test completion: {str(e)}")
-                    ui.notify("Error during Spotify test", type="negative")
+                    notify("Error during Spotify test", type="negative")
                 finally:
                     self._cleanup_spotify_test()
 
@@ -4373,7 +4374,7 @@ class SettingsUI:
 
         except Exception as e:
             logger.error(f"Error handling Spotify test: {str(e)}", exc_info=True)
-            ui.notify(f"Error starting Spotify test: {str(e)}", type="negative")
+            notify(f"Error starting Spotify test: {str(e)}", type="negative")
             self._cleanup_spotify_test()
 
     def _cleanup_spotify_test(self):
@@ -4405,7 +4406,7 @@ class SettingsUI:
             return
         current_list = list(self.youtube_data.playlist_filter or [])
         if name in current_list:
-            ui.notify(f"'{name}' is already in the filter list", type="warning")
+            notify(f"'{name}' is already in the filter list", type="warning")
             return
         current_list.append(name)
         self.youtube_data.playlist_filter = current_list
@@ -4536,7 +4537,7 @@ class SettingsUI:
                 logger.warning(
                     "YouTube test already in progress, ignoring duplicate request"
                 )
-                ui.notify("YouTube test already in progress...", type="info")
+                notify("YouTube test already in progress...", type="info")
                 return
 
             # Mark test as in progress
@@ -4548,7 +4549,7 @@ class SettingsUI:
                 self.ui_elements["test_youtube_button"].disable()
 
             # Show a notification that the process is starting
-            ui.notify("Testing YouTube connection...", type="info")
+            notify("Testing YouTube connection...", type="info")
 
             # Save only YouTube settings to avoid triggering database and other notifications
             self._save_youtube_settings_only()
@@ -4615,7 +4616,7 @@ class SettingsUI:
 
                     if test_result["status"] == "complete":
                         if test_result["success"]:
-                            ui.notify(
+                            notify(
                                 "YouTube connection successful!",
                                 type="positive",
                                 timeout=3000,
@@ -4624,7 +4625,7 @@ class SettingsUI:
                                 "YouTube connection test completed successfully"
                             )
                         else:
-                            ui.notify(
+                            notify(
                                 "Failed to connect to YouTube. Check your API key and channel URL.",
                                 type="negative",
                                 timeout=5000,
@@ -4637,18 +4638,18 @@ class SettingsUI:
                         self.refresh_youtube_status()
 
                     elif test_result["status"] == "error":
-                        ui.notify(
+                        notify(
                             f"Error during YouTube test: {test_result['error']}",
                             type="negative",
                         )
                     else:
                         # Test didn't complete in time
-                        ui.notify("YouTube test timed out", type="negative")
+                        notify("YouTube test timed out", type="negative")
                         logger.warning("YouTube test timed out")
 
                 except Exception as e:
                     logger.error(f"Error handling test completion: {str(e)}")
-                    ui.notify("Error during YouTube test", type="negative")
+                    notify("Error during YouTube test", type="negative")
                 finally:
                     self._cleanup_youtube_test()
 
@@ -4657,7 +4658,7 @@ class SettingsUI:
 
         except Exception as e:
             logger.error(f"Error handling YouTube test: {str(e)}", exc_info=True)
-            ui.notify(f"Error starting YouTube test: {str(e)}", type="negative")
+            notify(f"Error starting YouTube test: {str(e)}", type="negative")
             self._cleanup_youtube_test()
 
     def _cleanup_youtube_test(self):

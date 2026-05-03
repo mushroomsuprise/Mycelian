@@ -22,5 +22,9 @@
   "info": "rgb(37, 99, 235)",
   "hover_overlay": "rgba(0, 0, 0, 0.04)",
   "active_overlay": "rgba(0, 0, 0, 0.08)",
-  "focus_ring": "rgba(100, 0, 230, 0.4)"
+  "focus_ring": "rgba(100, 0, 230, 0.4)",
+  "notify_success": "rgb(22, 163, 74)",
+  "notify_warning": "rgb(202, 138, 4)",
+  "notify_error": "rgb(220, 38, 38)",
+  "notify_info": "rgb(37, 99, 235)"
 }

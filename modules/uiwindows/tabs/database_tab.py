@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import Dict, Any, Optional, List
 
 from nicegui import ui
+from ...notification_engine import notify
 
 from ... import dataobjects
 from ...config_manager import config_manager
@@ -455,9 +456,9 @@ class DatabaseViewer:
             data = json.loads(self._json_editor.value)
             formatted = json.dumps(data, indent=2, default=str)
             self._json_editor.value = formatted
-            ui.notify("JSON formatted", type="positive")
+            notify("JSON formatted", type="positive")
         except json.JSONDecodeError as e:
-            ui.notify(f"Invalid JSON: {e}", type="negative")
+            notify(f"Invalid JSON: {e}", type="negative")
 
     def _reset_editor(self) -> None:
         """Reset editor to original value"""
@@ -471,7 +472,7 @@ class DatabaseViewer:
         if self._save_btn:
             self._save_btn.disable()
 
-        ui.notify("Editor reset", type="info")
+        notify("Editor reset", type="info")
 
     def _save_current_path(self) -> None:
         """Save the current path data to database"""
@@ -481,12 +482,12 @@ class DatabaseViewer:
         try:
             data = json.loads(self._json_editor.value)
         except json.JSONDecodeError as e:
-            ui.notify(f"Invalid JSON: {e}", type="negative")
+            notify(f"Invalid JSON: {e}", type="negative")
             return
 
         # Save to database
         if database_manager.set_data(self.current_path, data):
-            ui.notify(f"Saved: {self.current_path}", type="positive")
+            notify(f"Saved: {self.current_path}", type="positive")
             db_type = database_manager.get_config().database_type
             if db_type in ("sql", "mongodb"):
                 self._load_snapshot()
@@ -497,7 +498,7 @@ class DatabaseViewer:
             if self._save_btn:
                 self._save_btn.disable()
         else:
-            ui.notify("Failed to save data", type="negative")
+            notify("Failed to save data", type="negative")
 
     def _set_data_in_snapshot(self, path: str, data: Any) -> None:
         """Update a path in the local snapshot"""
@@ -542,7 +543,7 @@ class DatabaseViewer:
     def _execute_delete(self, path: str, dialog: ui.dialog) -> None:
         """Execute path deletion"""
         if database_manager.delete_data(path):
-            ui.notify(f"Deleted: {path}", type="positive")
+            notify(f"Deleted: {path}", type="positive")
             # Refresh snapshot
             self._load_snapshot()
             self._build_tree()
@@ -550,7 +551,7 @@ class DatabaseViewer:
             self._update_breadcrumb()
             self._show_welcome_content()
         else:
-            ui.notify("Failed to delete", type="negative")
+            notify("Failed to delete", type="negative")
 
         dialog.close()
 
@@ -599,7 +600,7 @@ class DatabaseViewer:
     def _execute_create(self, path: str, json_data: str, dialog: ui.dialog) -> None:
         """Execute path creation"""
         if not path or not path.strip():
-            ui.notify("Path cannot be empty", type="warning")
+            notify("Path cannot be empty", type="warning")
             return
 
         path = path.strip()
@@ -609,18 +610,18 @@ class DatabaseViewer:
         try:
             data = json.loads(json_data) if json_data.strip() else {}
         except json.JSONDecodeError as e:
-            ui.notify(f"Invalid JSON: {e}", type="negative")
+            notify(f"Invalid JSON: {e}", type="negative")
             return
 
         if database_manager.set_data(path, data):
-            ui.notify(f"Created: {path}", type="positive")
+            notify(f"Created: {path}", type="positive")
             # Refresh snapshot
             self._load_snapshot()
             self._build_tree()
             self._select_path(path)
             dialog.close()
         else:
-            ui.notify("Failed to create path", type="negative")
+            notify("Failed to create path", type="negative")
 
     def _refresh_snapshot(self) -> None:
         """Refresh the database snapshot"""
@@ -633,7 +634,7 @@ class DatabaseViewer:
         else:
             self._show_welcome_content()
 
-        ui.notify(f"Refreshed: {len(self.all_paths)} paths", type="positive")
+        notify(f"Refreshed: {len(self.all_paths)} paths", type="positive")
 
     def _filter_tree(self, e) -> None:
         """Filter the tree based on search input"""
@@ -736,7 +737,7 @@ class DatabaseTab:
                         f"• {issue}"
                         for issue in firebase_issues[:3]  # Limit to 3 issues
                     )
-                    ui.notify(issue_text, type="warning", timeout=8000)
+                    notify(issue_text, type="warning", timeout=8000)
 
         except Exception as e:
             import logging
@@ -753,14 +754,14 @@ class DatabaseTab:
     def _test_connection(self) -> None:
         """Test database connection"""
         try:
-            ui.notify("Testing database connection...", type="info")
+            notify("Testing database connection...", type="info")
 
             if database_manager.test_connection():
-                ui.notify(
+                notify(
                     "Database connection successful!", type="positive", timeout=3000
                 )
             else:
-                ui.notify(
+                notify(
                     "Database connection failed. Check configuration and logs.",
                     type="negative",
                     timeout=5000,
@@ -770,7 +771,7 @@ class DatabaseTab:
 
         except Exception as e:
             logger.error(f"Error testing database connection: {str(e)}", exc_info=True)
-            ui.notify(f"Error testing connection: {str(e)}", type="negative")
+            notify(f"Error testing connection: {str(e)}", type="negative")
 
     def _event_select_value(self, e: Any) -> Any:
         """Resolve NiceGUI select value from change events (value vs args)."""
@@ -788,7 +789,7 @@ class DatabaseTab:
         try:
             available_dbs = database_manager.get_available_databases()
             if not available_dbs:
-                ui.notify("No database backends available", type="negative")
+                notify("No database backends available", type="negative")
                 return
 
             with ui.dialog() as migration_dialog:
@@ -847,20 +848,20 @@ class DatabaseTab:
 
         except Exception as e:
             logger.error(f"Error showing migration dialog: {str(e)}", exc_info=True)
-            ui.notify(f"Error opening migration dialog: {str(e)}", type="negative")
+            notify(f"Error opening migration dialog: {str(e)}", type="negative")
 
     def _start_migration(self, source_type: str, target_type: str, dialog: Any) -> None:
         """Run migration in a background thread; update config when complete."""
         try:
             if source_type == target_type:
-                ui.notify(
+                notify(
                     "Source and target must be different database types",
                     type="warning",
                 )
                 return
 
             dialog.close()
-            ui.notify("Starting database migration…", type="info")
+            notify("Starting database migration…", type="info")
 
             migration_status: Dict[str, Any] = {
                 "completed": False,
@@ -962,12 +963,12 @@ class DatabaseTab:
                 if check_count["n"] >= max_checks:
                     if not migration_status["notified"]:
                         migration_status["notified"] = True
-                        ui.notify("Migration timed out; check logs.", type="warning")
+                        notify("Migration timed out; check logs.", type="warning")
                     return
                 if migration_status["completed"] and not migration_status["notified"]:
                     migration_status["notified"] = True
                     if migration_status["success"]:
-                        ui.notify(
+                        notify(
                             f"Migration to {target_type} finished successfully.",
                             type="positive",
                             timeout=5000,
@@ -978,7 +979,7 @@ class DatabaseTab:
                                 element.value = getattr(self.buffer, key)
                         self.dirty = False
                     else:
-                        ui.notify(
+                        notify(
                             migration_status.get("error", "Migration failed"),
                             type="negative",
                             timeout=8000,
@@ -992,7 +993,7 @@ class DatabaseTab:
 
         except Exception as e:
             logger.error(f"Error starting migration: {e}", exc_info=True)
-            ui.notify(f"Error starting migration: {e}", type="negative")
+            notify(f"Error starting migration: {e}", type="negative")
 
     def _show_data_viewer_dialog(self) -> None:
         """Show database data viewer and editor dialog"""
@@ -1003,7 +1004,7 @@ class DatabaseTab:
 
         except Exception as e:
             logger.error(f"Error showing data viewer dialog: {str(e)}", exc_info=True)
-            ui.notify(f"Error opening data viewer dialog: {str(e)}", type="negative")
+            notify(f"Error opening data viewer dialog: {str(e)}", type="negative")
 
     def _validate_path_name(self, path: str) -> bool:
         """Validate data path name format"""
@@ -1283,16 +1284,16 @@ class DatabaseTab:
         # apply to config manager
         ok = config_manager.update_database_config(**self.buffer.__dict__)
         if not ok:
-            ui.notify("Failed to save database config", type="negative")
+            notify("Failed to save database config", type="negative")
             return
 
         # update runtime database manager
         cfg = DatabaseConfig(**self.buffer.__dict__, streamer_name="mycelian")
         if database_manager.update_config(**cfg.__dict__):
-            ui.notify("Database settings saved", type="positive")
+            notify("Database settings saved", type="positive")
             self.dirty = False
         else:
-            ui.notify("Failed to apply database settings", type="negative")
+            notify("Failed to apply database settings", type="negative")
 
     def discard(self) -> None:
         self._load_from_config()
