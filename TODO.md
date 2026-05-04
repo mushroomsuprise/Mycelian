@@ -8,8 +8,13 @@ FF7 Hook
     [] - Rewrite to match newly reworked game hook manager.
 
 Template Previewer:
-    [] - Create a template preview inside the Source Settings menu (on the right hand side), that will display a live preview of the template, and show any changes (both saved and pending).
-    [] - Templates that auto-hide (spotify, PSN trophies to name a few) should always display in the preview. Other templates that appear and disappear (things like alerts, chat) should mock the behavior of the template while its in use (IE play alerts, add chat messages, etc)
+    [x] - Create a template preview inside the Source Settings menu (on the right hand side), that will display a live preview of the template, and show any changes (both saved and pending).
+    [x] - Templates that auto-hide (spotify, PSN trophies to name a few) should always display in the preview. Other templates that appear and disappear (things like alerts, chat) should mock the behavior of the template while its in use (IE play alerts, add chat messages, etc)
+    [] - Fix template previewer to display the entire template in the preview area (scaled down to fit within the size of the preview window)
+    [] - Live preview is not reflecting the pending changes the user makes before saving
+    [] - Change previewer so no special javascript is needed inside the template files, it should run the animated preview items the same way they would get added into the template with real data. This is imperative as it must display and behave EXACTLY how the real template would. Maybe do this through a new websocket within the template specifically for the previewer?
+    [] - Change the slide bar scaler at the top show it actually rescales the frame window
+    [] - Set the previewer window so it is not interactable, and make it draggable so the user can move it by holding left click in the previewer window
 
 Template Creator:
     [] - Add a new "main" tab after Settings called "Spore Studio".
