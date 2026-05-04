@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import asyncio
+import copy
 import dataclasses  # Added for converting PSNData to dict
 import glob
 import json
@@ -65,6 +66,31 @@ from .template_config_parser import (
 
 logger = logging.getLogger(__name__)
 
+# Default preview profile when template JSON has no ``preview_behavior`` root key.
+_PREVIEW_ANIMATED_DEMO_TEMPLATES = frozenset(
+    {"alerts", "pausedalerts", "chat", "activity_feed"}
+)
+
+
+def resolve_template_preview_profile(
+    template_name: str, template_config: Dict[str, Any]
+) -> str:
+    """
+    Return ``persistent`` (static overlay) or ``animated_demo`` (mock activity in preview).
+
+    Optional root key ``preview_behavior`` in the template JSON may be
+    ``persistent`` or ``animated_demo``.
+    """
+    if not isinstance(template_config, dict):
+        return "persistent"
+    raw = template_config.get("preview_behavior")
+    if raw in ("persistent", "animated_demo"):
+        return str(raw)
+    if template_name in _PREVIEW_ANIMATED_DEMO_TEMPLATES:
+        return "animated_demo"
+    return "persistent"
+
+
 ALERT_PLAYING = False
 ALERTS_PAUSED = False
 
@@ -99,6 +125,10 @@ class WebEngine:
 
         # Thread lock for authentication synchronization
         self._auth_lock = threading.Lock()
+
+        # Custom Sources iframe preview: token -> {template, overrides, ts}
+        self._preview_sessions_lock = threading.Lock()
+        self._preview_sessions: Dict[str, Dict[str, Any]] = {}
 
         # Log template directory info
         logger.debug(f"Template directory: {template_dir}")
@@ -1145,13 +1175,37 @@ class WebEngine:
             self._create_template_assets_folder(template_name)
 
             def create_route_handler(template):
+                engine_self = self
+
                 def route_handler():
                     logger.debug(f"Serving template {template}")
                     try:
                         # Load template configuration
-                        template_config = self.template_config_parser.load_config(
-                            template
+                        template_config = copy.deepcopy(
+                            engine_self.template_config_parser.load_config(template)
                         )
+
+                        preview_token = request.args.get("__preview_token")
+                        mycelian_preview_mode = False
+                        overrides: Dict[str, Any] = {}
+                        if preview_token:
+                            with engine_self._preview_sessions_lock:
+                                sess = engine_self._preview_sessions.get(
+                                    preview_token
+                                )
+                            if isinstance(sess, dict) and sess.get("template") == template:
+                                ov = sess.get("overrides")
+                                if isinstance(ov, dict):
+                                    overrides = ov
+                                    mycelian_preview_mode = True
+
+                        if overrides:
+                            for element in template_config.get("elements", []):
+                                if not isinstance(element, dict):
+                                    continue
+                                eid = element.get("id")
+                                if eid in overrides:
+                                    element["value"] = overrides[eid]
 
                         # Convert config elements to template variables
                         template_vars = {}
@@ -1160,6 +1214,10 @@ class WebEngine:
                                 if "id" in element and "value" in element:
                                     template_vars[element["id"]] = element["value"]
 
+                        mycelian_preview_profile = resolve_template_preview_profile(
+                            template, template_config
+                        )
+
                         logger.debug(
                             f"Template {template} variables: {list(template_vars.keys())}"
                         )
@@ -1167,6 +1225,8 @@ class WebEngine:
                             f"{template}.html",
                             **template_vars,
                             mycelian_html_stem=str(template),
+                            mycelian_preview_mode=mycelian_preview_mode,
+                            mycelian_preview_profile=mycelian_preview_profile,
                         )
                     except Exception as e:
                         logger.error(
@@ -1217,6 +1277,25 @@ class WebEngine:
                 f"Error creating assets folder for template {template_name}: {str(e)}",
                 exc_info=True,
             )
+
+    def push_preview_overrides(
+        self, token: str, template_name: str, overrides: Dict[str, Any]
+    ) -> None:
+        """
+        Store unsaved form values for the Custom Sources iframe preview.
+
+        The template GET handler merges ``overrides`` into the loaded JSON when
+        ``__preview_token`` matches and ``template_name`` equals the route template.
+        """
+        if not token or not template_name:
+            return
+        safe = dict(overrides) if isinstance(overrides, dict) else {}
+        with self._preview_sessions_lock:
+            self._preview_sessions[token] = {
+                "template": template_name,
+                "overrides": safe,
+                "ts": time.time(),
+            }
 
     def _rebuild_url_map(self):
         """Rebuild the entire URL map to handle removed routes"""
@@ -2068,6 +2147,48 @@ class WebEngine:
             self.socketio.emit(
                 "pause_status_update", {"paused": ALERTS_PAUSED}, to=client_sid
             )
+
+        @self.socketio.on("mycelian_preview_emit_activity_feed")
+        def handle_mycelian_preview_emit_activity_feed():
+            """Custom Sources iframe only: replay production-shaped activity_feed_alert payloads."""
+            sid = request.sid
+            try:
+                from modules.uiwindows.activity_feed import iter_activity_feed_preview_payloads
+
+                for payload in iter_activity_feed_preview_payloads():
+                    self.socketio.emit("activity_feed_alert", payload, to=sid)
+            except Exception as e:
+                logger.warning(
+                    "mycelian_preview_emit_activity_feed failed: %s", e, exc_info=True
+                )
+
+        @self.socketio.on("mycelian_preview_emit_alerts")
+        def handle_mycelian_preview_emit_alerts():
+            """Same path as connector ``alerts_play_alert`` → template listener."""
+            sid = request.sid
+            self.socketio.emit("alerts_play_alert", None, to=sid)
+
+        @self.socketio.on("mycelian_preview_emit_chat")
+        def handle_mycelian_preview_emit_chat():
+            sid = request.sid
+            self.socketio.emit("chat_add_message", None, to=sid)
+            self.socketio.emit(
+                "chat_add_message",
+                {
+                    "username": "PreviewViewer",
+                    "message": "Another sample line for preview.",
+                    "color": "#1E90FF",
+                    "timestamp": time.time(),
+                    "id": "mycelian-preview-b",
+                },
+                to=sid,
+            )
+
+        @self.socketio.on("mycelian_preview_emit_pausedalerts")
+        def handle_mycelian_preview_emit_pausedalerts():
+            """Show paused UI in preview without broadcasting global pause state."""
+            sid = request.sid
+            self.socketio.emit("pause_status_update", {"paused": True}, to=sid)
 
         @self.socketio.on("get_pause_status")
         def handle_get_pause_status():

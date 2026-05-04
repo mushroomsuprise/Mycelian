@@ -23,16 +23,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import json
 import logging
 import os
 import sys
-from typing import Any, Dict
+import time
+import uuid
+from typing import Any, Dict, Tuple
 
 from nicegui import app, ui
 from ..notification_engine import notify
+from ..path_utils import get_template_path
 
 # Use proper relative import for template_config_parser
 from ..template_config_parser import TemplateConfigParser
+from .. import web_engine as web_engine_module
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +59,12 @@ current_container = None
 
 # Add global dictionary to store expansion elements for dynamic title updates
 roulette_expansions = {}
+
+# Custom Sources preview pane (iframe + labels); populated in create_custom_sources_tab
+CUSTOM_SOURCES_PREVIEW_TOKEN = str(uuid.uuid4())
+_custom_sources_preview_gen: list[int] = [0]
+_custom_sources_ctx: Dict[str, Any] = {}
+_custom_sources_preview_scale_js_done = False
 
 # Add custom CSS for animations and styling (removed pulsing animations)
 CUSTOM_CSS = """
@@ -166,6 +177,216 @@ CUSTOM_CSS = """
 """
 
 
+def _template_html_exists(config_name: str) -> bool:
+    if not config_name:
+        return False
+    stem = get_template_path()
+    return os.path.isfile(os.path.join(stem, f"{config_name}.html"))
+
+
+def _estimate_design_size(form_data: Dict[str, Any]) -> Tuple[int, int]:
+    """
+    Logical overlay width/height for scaling the preview to fit the panel.
+
+    Uses common JSON keys from template configs; defaults match a typical stream canvas.
+    """
+    w, h = 1920, 1080
+    for key in (
+        "StreamWidth",
+        "CanvasWidth",
+        "OverlayWidth",
+        "AlertWidth",
+        "FeedWidth",
+        "PreviewWidth",
+    ):
+        v = form_data.get(key)
+        if v is not None:
+            try:
+                w = int(float(v))
+                break
+            except (TypeError, ValueError):
+                pass
+    for key in (
+        "StreamHeight",
+        "CanvasHeight",
+        "OverlayHeight",
+        "AlertHeight",
+        "PreviewHeight",
+    ):
+        v = form_data.get(key)
+        if v is not None:
+            try:
+                h = int(float(v))
+                break
+            except (TypeError, ValueError):
+                pass
+    w = max(320, min(w, 7680))
+    h = max(240, min(h, 4320))
+    return w, h
+
+
+def _ensure_preview_scale_script() -> None:
+    """Inject one-off JS to scale the preview iframe to the panel width."""
+    global _custom_sources_preview_scale_js_done
+    if _custom_sources_preview_scale_js_done:
+        return
+    ui.add_head_html(
+        """<script id="mycelian-cs-preview-scale">
+window.mycelianCsPreviewScale = function (outerId, innerId, designW, designH) {
+  var outer = document.getElementById(outerId);
+  var inner = document.getElementById(innerId);
+  if (!outer || !inner) { return; }
+  var iframe = inner.querySelector("iframe");
+  function apply() {
+    var cw = outer.clientWidth || 1;
+    var s = Math.min(1, cw / designW);
+    inner.style.transformOrigin = "top left";
+    inner.style.transform = "scale(" + s + ")";
+    inner.style.width = designW + "px";
+    if (iframe) {
+      iframe.setAttribute("width", String(designW));
+      iframe.setAttribute("height", String(designH));
+      iframe.style.width = designW + "px";
+      iframe.style.height = designH + "px";
+    }
+    outer.style.minHeight = (designH * s) + "px";
+  }
+  apply();
+  if (outer._mycelianCsRo) { outer._mycelianCsRo.disconnect(); }
+  outer._mycelianCsRo = new ResizeObserver(function () { apply(); });
+  outer._mycelianCsRo.observe(outer);
+};
+</script>""",
+        shared=True,
+    )
+    _custom_sources_preview_scale_js_done = True
+
+
+def _preview_values_differ(saved: Any, current: Any) -> bool:
+    """Loose equality for dirty preview (align with update_form_data switch handling)."""
+    if isinstance(current, bool) and not isinstance(saved, bool):
+        if isinstance(saved, str):
+            saved = saved.lower() == "true"
+        else:
+            saved = bool(saved)
+    elif isinstance(saved, bool) and not isinstance(current, bool):
+        if isinstance(current, str):
+            current = current.lower() == "true"
+        else:
+            current = bool(current)
+    try:
+        return saved != current
+    except Exception:
+        return True
+
+
+def _refresh_preview_dirty_label(config_name: str) -> None:
+    label = _custom_sources_ctx.get("preview_dirty_label")
+    if not label or not config_name:
+        return
+    fd = form_data_store.get(config_name, {})
+    dirty = False
+    for eid, val in fd.items():
+        if _preview_values_differ(original_values.get(eid, val), val):
+            dirty = True
+            break
+    # label.text = (
+    #     "Unsaved changes reflected in preview"
+    #     if dirty
+    #     else "Preview matches saved file"
+    # )
+
+
+def _flush_template_preview() -> None:
+    """Push form data to WebEngine and reload the preview iframe."""
+    ctx = _custom_sources_ctx
+    sel = ctx.get("config_select")
+    iframe_el = ctx.get("preview_iframe")
+    ph = ctx.get("preview_placeholder")
+    if not sel:
+        return
+    config_name = sel.value
+    if not config_name:
+        if ph:
+            ph.text = "Select a configuration to preview."
+        if iframe_el:
+            iframe_el.props("src=")
+        return
+
+    _refresh_preview_dirty_label(config_name)
+
+    inst = getattr(web_engine_module, "web_engine_instance", None)
+    if not inst or not getattr(inst, "is_running", False):
+        if ph:
+            ph.text = (
+                "Overlay server is not ready yet. It starts with the alert system."
+            )
+            ph.visible = True
+        if iframe_el:
+            iframe_el.props("src=")
+        return
+
+    if not _template_html_exists(config_name):
+        if ph:
+            ph.text = f"No browser template at templates/{config_name}.html — preview unavailable."
+            ph.visible = True
+        if iframe_el:
+            iframe_el.props("src=")
+        return
+
+    fd = form_data_store.get(config_name, {})
+    try:
+        inst.push_preview_overrides(CUSTOM_SOURCES_PREVIEW_TOKEN, config_name, fd)
+    except Exception as e:
+        logger.warning("Template preview push failed: %s", e)
+
+    port = getattr(inst, "port", 5000) or 5000
+    cache_bust = time.time()
+    src = (
+        f"http://127.0.0.1:{port}/{config_name}"
+        f"?__preview_token={CUSTOM_SOURCES_PREVIEW_TOKEN}&_cb={cache_bust}"
+    )
+    design_w, design_h = _estimate_design_size(fd)
+
+    if iframe_el:
+        iframe_el.props(f'src="{src}"')
+        iframe_el.props(f"width={design_w}")
+        iframe_el.props(f"height={design_h}")
+        iframe_el.style(
+            f"width:{design_w}px;height:{design_h}px;display:block;border:none;background:transparent"
+        )
+        iframe_el.update()
+
+    oid = ctx.get("preview_outer_id")
+    iid = ctx.get("preview_inner_id")
+    if oid and iid:
+        scale_js = (
+            "window.mycelianCsPreviewScale && window.mycelianCsPreviewScale("
+            f"{json.dumps(oid)}, {json.dumps(iid)}, {int(design_w)}, {int(design_h)})"
+        )
+        try:
+            ui.run_javascript(scale_js)
+            ui.timer(0.15, lambda j=scale_js: ui.run_javascript(j), once=True)
+        except Exception as e:
+            logger.debug("Preview scale JS skipped: %s", e)
+
+    if ph:
+        ph.text = ""
+        ph.visible = False
+
+
+def _schedule_template_preview_refresh() -> None:
+    _custom_sources_preview_gen[0] += 1
+    gen = _custom_sources_preview_gen[0]
+
+    def _tick() -> None:
+        if _custom_sources_preview_gen[0] != gen:
+            return
+        _flush_template_preview()
+
+    ui.timer(0.32, _tick, once=True)
+
+
 def create_custom_sources_tab():
     """
     Create the custom sources tab content using NiceGUI
@@ -175,6 +396,7 @@ def create_custom_sources_tab():
     """
     # Add custom CSS to the page
     ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
+    _ensure_preview_scale_script()
 
     # Initialize the config parser
     config_dir = "templates/template_configs"
@@ -273,22 +495,103 @@ def create_custom_sources_tab():
                         ),
                     ).classes("control-button btn-success")
 
-        # Create a container for the config editor - flexible height
-        with ui.element("div").classes("flex-grow overflow-hidden"):
-            config_container = ui.element("div").classes("w-full h-full")
+        # Adjustable split: editor (left) vs preview (right)
+        preview_outer_id = "mycelian-cs-pe-" + uuid.uuid4().hex[:12]
+        preview_inner_id = preview_outer_id + "-inner"
 
-            # Help text
-            with ui.expansion("Help").classes("mt-4 opacity-75"):
-                help_text = (
-                    "This tab allows you to manage template configurations. Each configuration is stored as a "
-                    "JSON file in the templates/template_configs directory. You can create, edit, and delete "
-                    "configuration files. Note: Templates marked as 'hidden' will not appear here but can still "
-                    "be controlled through the Source Controls tab."
+        with ui.element("div").classes(
+            "flex-grow overflow-hidden flex flex-row min-h-0 px-2 pb-2 gap-0 items-stretch w-full"
+        ):
+            editor_panel = ui.column().classes(
+                "min-h-0 min-w-0 overflow-hidden flex flex-col gap-1"
+            )
+            preview_panel = ui.column().classes(
+                "min-h-0 overflow-hidden flex flex-col gap-1 shrink-0 "
+                "border-l border-[var(--color-border-default)] pl-2"
+            )
+
+            with editor_panel:
+                config_container = ui.element("div").classes(
+                    "flex-1 min-h-0 overflow-auto w-full"
                 )
-                ui.label(help_text).classes("text-sm p-2")
+                with (
+                    ui.expansion("Help")
+                    .classes("shrink-0 opacity-75")
+                    .props("dense default-opened=false")
+                ):
+                    help_text = (
+                        "This tab allows you to manage template configurations. Each configuration is stored as a "
+                        "JSON file in the templates/template_configs directory. You can create, edit, and delete "
+                        "configuration files. Note: Templates marked as 'hidden' will not appear here but can still "
+                        "be controlled through the Source Controls tab."
+                    )
+                    ui.label(help_text).classes("text-sm p-2")
 
-            # Load the config files initially
-            load_config_files(config_parser, config_select, config_container)
+            with preview_panel:
+                with ui.row().classes("w-full items-center gap-2 shrink-0 flex-wrap"):
+                    ui.label("Preview").classes("text-sm font-medium shrink-0")
+                    preview_split_slider = (
+                        ui.slider(min=22, max=72, value=38, step=1)
+                        .classes("flex-1 min-w-[140px]")
+                        .props("dense label-always")
+                    )
+                    preview_split_slider.tooltip("Preview panel width (% of row)")
+                preview_dirty_label = ui.label("").classes(
+                    "text-xs opacity-70 min-h-[1.25rem]"
+                )
+                preview_placeholder = ui.label("Waiting for overlay server…").classes(
+                    "text-xs opacity-60"
+                )
+                preview_outer = (
+                    ui.element("div")
+                    .props(f"id={preview_outer_id}")
+                    .classes(
+                        "relative w-full flex-1 min-h-[200px] overflow-hidden rounded bg-black/10"
+                    )
+                )
+                with preview_outer:
+                    preview_inner = (
+                        ui.element("div")
+                        .props(f"id={preview_inner_id}")
+                        .classes("absolute left-0 top-0 origin-top-left")
+                    )
+                    with preview_inner:
+                        preview_iframe = ui.element("iframe").classes(
+                            "block border-0 bg-transparent"
+                        )
+
+            def apply_preview_split(_: Any = None) -> None:
+                try:
+                    pct = int(preview_split_slider.value)
+                except (TypeError, ValueError):
+                    pct = 38
+                pct = max(22, min(72, pct))
+                editor_panel.style(
+                    f"flex: {100 - pct} {100 - pct} 0%; min-width: 0; max-width: 100%"
+                )
+                preview_panel.style(
+                    f"flex: {pct} {pct} 0%; min-width: 160px; max-width: 92%"
+                )
+
+            preview_split_slider.on_value_change(apply_preview_split)
+            apply_preview_split()
+
+        _custom_sources_ctx.clear()
+        _custom_sources_ctx.update(
+            {
+                "config_select": config_select,
+                "config_container": config_container,
+                "config_parser": config_parser,
+                "preview_iframe": preview_iframe,
+                "preview_placeholder": preview_placeholder,
+                "preview_dirty_label": preview_dirty_label,
+                "preview_outer_id": preview_outer_id,
+                "preview_inner_id": preview_inner_id,
+            }
+        )
+
+        # Load the config files initially
+        load_config_files(config_parser, config_select, config_container)
 
 
 def load_config_files(config_parser, config_select, config_container):
@@ -305,6 +608,7 @@ def load_config_files(config_parser, config_select, config_container):
 
         # Load the first config
         render_config_ui(config_parser, configs[0], config_container, "")
+        _flush_template_preview()
     else:
         # Clear the select options
         config_select.options = []
@@ -314,6 +618,7 @@ def load_config_files(config_parser, config_select, config_container):
         config_container.clear()
         with config_container:
             ui.label("No configuration files found.").classes("text-sm opacity-75")
+        _flush_template_preview()
 
 
 def on_config_selected(e, config_parser, config_container):
@@ -330,6 +635,7 @@ def on_config_selected(e, config_parser, config_container):
 
     # Render the config UI
     render_config_ui(config_parser, config_name, config_container, "")
+    _flush_template_preview()
 
 
 def on_search_changed(e, config_parser, config_select, config_container):
@@ -358,7 +664,7 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
 
     # Create a form for the config
     with container:
-        with ui.column().classes("w-full h-full flex flex-col gap-4 p-4"):
+        with ui.column().classes("w-full h-full flex flex-col gap-2 p-2"):
             # Title and description - fixed height section
             with ui.column().classes("flex-none"):
                 ui.label(f"Configuration: {config_name}").classes(
@@ -436,7 +742,7 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
                                 ):
                                     # Dynamically set columns based on number of elements, max 3
                                     num_elements = len(group_elements)
-                                    grid_cols = max(1, min(num_elements, 3))
+                                    grid_cols = max(1, min(num_elements, 2))
 
                                     # Create UI elements for each general element in the group
                                     with ui.grid(columns=grid_cols).classes(
@@ -466,7 +772,7 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
                                 ):
                                     # Dynamically set columns based on number of elements, max 3
                                     num_elements = len(group_elements)
-                                    grid_cols = max(1, min(num_elements, 3))
+                                    grid_cols = max(1, min(num_elements, 2))
 
                                     # Create UI elements for each general element in the group
                                     with ui.grid(columns=grid_cols).classes(
@@ -534,7 +840,7 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
                             expansion.props(f'data-option="{option_num}"')
                             # Create UI elements for this option's elements
                             num_elements = len(option_elements)
-                            grid_cols = max(1, min(num_elements, 3))
+                            grid_cols = max(1, min(num_elements, 2))
 
                             with ui.grid(columns=grid_cols).classes(
                                 "w-full gap-x-2 gap-y-px"
@@ -562,7 +868,7 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
                             ):
                                 # Dynamically set columns based on number of elements, max 3
                                 num_elements = len(group_elements)
-                                grid_cols = max(1, min(num_elements, 3))
+                                grid_cols = max(1, min(num_elements, 2))
 
                                 # Create UI elements for each config element in the group
                                 with ui.grid(columns=grid_cols).classes(
@@ -582,7 +888,7 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
                             ):
                                 # Dynamically set columns based on number of elements, max 3
                                 num_elements = len(group_elements)
-                                grid_cols = max(1, min(num_elements, 3))
+                                grid_cols = max(1, min(num_elements, 2))
 
                                 # Create UI elements for each config element in the group
                                 with ui.grid(columns=grid_cols).classes(
@@ -635,6 +941,9 @@ def initialize_values(config_name):
 
     # Clear any changed styling that might be present
     clear_changed_styling()
+
+    _refresh_preview_dirty_label(config_name)
+    _schedule_template_preview_refresh()
 
 
 def group_config_elements(elements):
@@ -1009,6 +1318,9 @@ def update_form_data(form_data, element_id, value):
             config_name = name
             break
 
+    if config_name:
+        _refresh_preview_dirty_label(config_name)
+
     if config_name == "combobar" and element_id in [
         "Tier2EXP",
         "Tier3EXP",
@@ -1073,6 +1385,8 @@ def update_form_data(form_data, element_id, value):
             logger.debug(
                 f"No change in {element_id}, removing animation from {element.id}"
             )
+
+    _schedule_template_preview_refresh()
 
 
 def clear_changed_styling():
@@ -1227,14 +1541,15 @@ def save_config(config_parser, config_select, config_container):
                     game_hooks_service.reload_ff7_boss_match_sets()
                 except Exception as e:
                     logger.warning(
-                        "FF7 boss match sets refresh after save failed: %s", e, exc_info=True
+                        "FF7 boss match sets refresh after save failed: %s",
+                        e,
+                        exc_info=True,
                     )
             # Reset original values to current values
             reset_original_values(config_name)
+            _flush_template_preview()
         else:
-            notify(
-                f"Failed to save configuration for {config_name}.", type="negative"
-            )
+            notify(f"Failed to save configuration for {config_name}.", type="negative")
     except Exception as e:
         logger.error(
             f"Error saving configuration for {config_name}: {str(e)}", exc_info=True
@@ -1254,6 +1569,7 @@ def reset_config(config_parser, config_select, config_container):
 
     # Re-render the config UI
     render_config_ui(config_parser, config_name, config_container, "")
+    _flush_template_preview()
     notify(f"Configuration reset for {config_name}.", type="positive")
 
 

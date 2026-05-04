@@ -2635,6 +2635,24 @@
             currentAlertsFeed.innerHTML = '<div class="no-alerts">No alerts yet</div>';
         }
 
+        // Custom Sources: production payloads via ``activity_feed_alert`` (Python-built)
+        (function setupMycelianActivityFeedPreviewDemo() {
+            var previewMode = {{ mycelian_preview_mode | default(false) | tojson }};
+            var previewProfile = {{ mycelian_preview_profile | default("persistent") | tojson }};
+            if (!previewMode || previewProfile !== 'animated_demo') {
+                return;
+            }
+            function requestSamples() {
+                socket.emit('mycelian_preview_emit_activity_feed');
+            }
+            socket.on('connect', function () {
+                setTimeout(requestSamples, 650);
+            });
+            if (socket.connected) {
+                setTimeout(requestSamples, 650);
+            }
+        })();
+
         // Start initialization when DOM is ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initialize);

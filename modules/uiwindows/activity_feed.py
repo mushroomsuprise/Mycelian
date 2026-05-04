@@ -577,6 +577,83 @@ def skip_alert(alert_data):
         logger.error(f"Error skipping alert: {str(e)}", exc_info=True)
 
 
+def build_activity_feed_alert_payload(
+    alert_type,
+    message,
+    badge_type="follow",
+    timestamp="now",
+    tier=None,
+    user_message=None,
+    alert_id=None,
+):
+    """
+    Build the same dict that is sent over ``activity_feed_alert`` WebSocket events.
+
+    Shared by ``add_alert_to_feed`` and browser-source preview so payloads stay identical.
+    """
+    alert_data = {
+        "type": alert_type,
+        "message": message,
+        "badge_type": badge_type,
+        "timestamp": timestamp if timestamp != "now" else time.time(),
+        "created_at": time.time(),
+        "tier": tier,
+        "user_message": user_message,
+    }
+
+    if alert_id:
+        try:
+            from modules import alertutils
+
+            alertutils.alert_state_manager.initialize()
+            stored_alert_data = alertutils.alert_state_manager.get_stored_alert_by_id(
+                alert_id
+            )
+
+            if stored_alert_data:
+                logger.debug(
+                    f"Found stored alert data for live alert {alert_id}: {list(stored_alert_data.keys())}"
+                )
+                alert_data["stored_alert_data"] = stored_alert_data
+                alert_data["alert_id"] = alert_id
+
+                if isinstance(stored_alert_data, dict):
+                    if (
+                        "username" in stored_alert_data
+                        and stored_alert_data["username"]
+                    ):
+                        alert_data["username"] = stored_alert_data["username"]
+            else:
+                logger.debug(f"No stored alert data found for alert_id {alert_id}")
+
+        except Exception as e:
+            logger.warning(
+                f"Error retrieving stored alert data for {alert_id}: {str(e)}"
+            )
+
+    return alert_data
+
+
+def iter_activity_feed_preview_payloads():
+    """Sample alerts matching production-style messages (Custom Sources iframe only)."""
+    now = time.time()
+    ts = str(int(now))
+    yield build_activity_feed_alert_payload(
+        "Follow",
+        "PreviewUser just followed!",
+        "follow",
+        timestamp=ts,
+    )
+    yield build_activity_feed_alert_payload(
+        "Sub",
+        "PreviewMod subscribed (Tier 1)!",
+        "sub",
+        timestamp=ts,
+        tier=1,
+        user_message=None,
+    )
+
+
 def add_alert_to_feed(
     alert_type,
     message,
@@ -597,51 +674,15 @@ def add_alert_to_feed(
         user_message (str, optional): User's message for resubs, bits, points, or donations
         alert_id (str, optional): The alert ID to look up stored alert data
     """
-    # Create basic alert data
-    alert_data = {
-        "type": alert_type,
-        "message": message,
-        "badge_type": badge_type,
-        "timestamp": timestamp if timestamp != "now" else time.time(),
-        "created_at": time.time(),  # Add creation timestamp
-        "tier": tier,  # Add tier information
-        "user_message": user_message,  # Add user message if provided
-    }
-
-    # Try to retrieve the complete stored alert data if alert_id is provided
-    stored_alert_data = None
-    if alert_id:
-        try:
-            from modules import alertutils
-
-            alertutils.alert_state_manager.initialize()
-            # Retrieve stored alert data for proper replay functionality
-            stored_alert_data = alertutils.alert_state_manager.get_stored_alert_by_id(
-                alert_id
-            )
-
-            if stored_alert_data:
-                logger.debug(
-                    f"Found stored alert data for live alert {alert_id}: {list(stored_alert_data.keys())}"
-                )
-                # Attach the complete stored alert data to the live alert
-                alert_data["stored_alert_data"] = stored_alert_data
-                alert_data["alert_id"] = alert_id
-
-                # Also extract and include the username from stored data if available
-                if isinstance(stored_alert_data, dict):
-                    if (
-                        "username" in stored_alert_data
-                        and stored_alert_data["username"]
-                    ):
-                        alert_data["username"] = stored_alert_data["username"]
-            else:
-                logger.debug(f"No stored alert data found for alert_id {alert_id}")
-
-        except Exception as e:
-            logger.warning(
-                f"Error retrieving stored alert data for {alert_id}: {str(e)}"
-            )
+    alert_data = build_activity_feed_alert_payload(
+        alert_type,
+        message,
+        badge_type=badge_type,
+        timestamp=timestamp,
+        tier=tier,
+        user_message=user_message,
+        alert_id=alert_id,
+    )
 
     # Process the alert immediately using the event-based system
     alert_event_handler.process_alert_immediately(alert_data)
