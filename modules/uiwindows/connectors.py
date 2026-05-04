@@ -955,6 +955,7 @@ def load_connectors():
         logger.error("Connectors container not initialized")
         return
 
+    open_folder_ids = list(_folder_floaters.keys())
     _close_all_folder_floaters()
     connectors_container.clear()
     connector_cards.clear()
@@ -1086,6 +1087,11 @@ def load_connectors():
                                 spec = (layout.get("folders") or {}).get(iid)
                                 if spec and isinstance(spec, dict):
                                     render_folder(iid, spec)
+
+        folder_specs = layout.get("folders") or {}
+        for fid in open_folder_ids:
+            if fid in folder_specs:
+                _open_folder_floating_window(fid)
 
     except Exception as e:
         logger.error(f"Error loading connectors: {e}", exc_info=True)

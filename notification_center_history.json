@@ -42,5 +42,75 @@
         "settings_subtab": "Twitch"
       }
     ]
+  },
+  {
+    "id": "b890f9c1-bc44-4767-a14d-fdfb0e352dd7",
+    "ts": 1777854533.699105,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "401e036a-98bc-4a4e-b90b-32ea1cb3ef49",
+    "ts": 1777854568.4082508,
+    "message": "Trigger type is required",
+    "type": "negative",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "b115cdcd-df40-46de-8430-3d1f3d229a1c",
+    "ts": 1777854573.505056,
+    "message": "At least one action is required",
+    "type": "negative",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "405136f1-8c22-4f9f-8dcd-95b70441db60",
+    "ts": 1777854587.561606,
+    "message": "Connector 'Test1' created successfully",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "0dc814a3-25c9-406c-8193-cbbf67c64c53",
+    "ts": 1777854597.790025,
+    "message": "Connector 'Test2' created successfully",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "8fbdba02-5d11-4003-a6d6-168e7fa2999c",
+    "ts": 1777854601.64214,
+    "message": "Connector disabled",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "3ef57e35-2dd6-4b97-90c8-00628c6ec7ba",
+    "ts": 1777854602.3773062,
+    "message": "Connector enabled",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "9d591901-76ee-46d1-8351-a7c768004d45",
+    "ts": 1777854611.156523,
+    "message": "Connector deleted",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
   }
 ]

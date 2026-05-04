@@ -451,8 +451,54 @@ def start_service_watcher_timer() -> None:
 # Load persisted history at import (for non-UI code paths); UI registers refresh later
 load_history()
 
+_history_last_read_ts: float = time.time()
+
 _history_column: Optional[Any] = None
 _notification_dialog: Optional[Any] = None
+_tray_badge_ref: Optional[Any] = None
+
+
+def _notification_panel_is_open() -> bool:
+    global _notification_dialog
+    if _notification_dialog is None:
+        return False
+    try:
+        if getattr(_notification_dialog, "is_deleted", False):
+            return False
+    except Exception:
+        return False
+    return bool(getattr(_notification_dialog, "value", False))
+
+
+def _compute_tray_badge_count() -> int:
+    if _notification_panel_is_open():
+        return 0
+    cut = _history_last_read_ts
+    return sum(1 for e in _history if float(e.get("ts") or 0.0) > cut)
+
+
+def _update_tray_badge() -> None:
+    ref = _tray_badge_ref
+    if ref is None:
+        return
+    try:
+        if getattr(ref, "is_deleted", False):
+            return
+    except Exception:
+        return
+    n = _compute_tray_badge_count()
+    if n <= 0:
+        ref.text = ""
+        ref.classes(add="hidden")
+        return
+    ref.classes(remove="hidden")
+    ref.text = str(n) if n < 100 else "99+"
+
+
+def _bump_history_read_watermark() -> None:
+    global _history_last_read_ts
+    _history_last_read_ts = time.time()
+    _update_tray_badge()
 
 
 def _render_history_cards() -> None:
@@ -536,10 +582,11 @@ def _render_history_cards() -> None:
 
 def create_notification_tray_button() -> None:
     """Place inside the main header row (next to tabs). Opens notification center."""
-    global _history_column, _notification_dialog
+    global _history_column, _notification_dialog, _tray_badge_ref
 
     def refresh() -> None:
         _render_history_cards()
+        _update_tray_badge()
 
     register_history_refresh(refresh)
 
@@ -549,8 +596,15 @@ def create_notification_tray_button() -> None:
             return
         if _notification_dialog.value:
             _notification_dialog.close()
+            _bump_history_read_watermark()
         else:
             _notification_dialog.open()
+            _bump_history_read_watermark()
+
+    def close_notification_panel() -> None:
+        if _notification_dialog is not None:
+            _notification_dialog.close()
+        _bump_history_read_watermark()
 
     # Seamless right panel: no modal backdrop, app stays clickable; persistent = no click-outside dismiss
     with ui.dialog().props(
@@ -566,13 +620,19 @@ def create_notification_tray_button() -> None:
                 ui.button("Clear all", on_click=lambda: clear_history()).props(
                     "flat dense no-caps"
                 )
-                ui.button(icon="close", on_click=dlg.close).props(
-                    "flat dense round"
-                ).tooltip("Close panel")
+                ui.button(
+                    icon="close",
+                    on_click=close_notification_panel,
+                ).props("flat dense round").tooltip("Close panel")
         with ui.scroll_area().classes("w-full flex-grow min-h-0"):
             _history_column = ui.column().classes("w-full gap-2")
 
-    ui.button(icon="notifications", on_click=toggle_panel).props(
-        "flat round dense"
-    ).tooltip("Notifications")
+    with ui.row().classes("relative inline-flex items-center shrink-0"):
+        ui.button(icon="notifications", on_click=toggle_panel).props(
+            "flat round dense"
+        ).tooltip("Notifications")
+        _tray_badge_ref = ui.badge("", color="negative").classes(
+            "absolute -top-0.5 -right-0.5 min-w-[1.125rem] text-[0.65rem] "
+            "leading-none px-1 py-0.5 pointer-events-none hidden"
+        ).props("rounded")
     refresh()
