@@ -304,19 +304,33 @@ class SpotifyClient:
                 f"Error updating Spotify field {field}: {str(e)}", exc_info=True
             )
 
-    def refresh_token(self) -> bool:
-        """Refresh the Spotify access token using direct API call"""
+    @staticmethod
+    def _token_expiry_epoch(token_expiry: Any) -> Optional[float]:
+        """Parse stored token_expiry (epoch seconds) from DB / state; None if missing or invalid."""
+        if token_expiry is None or token_expiry == "":
+            return None
+        try:
+            return float(token_expiry)
+        except (TypeError, ValueError):
+            return None
+
+    def refresh_token(self, force: bool = False) -> bool:
+        """Refresh the Spotify access token using direct API call.
+
+        When force is False, skips the token endpoint only if we have a non-empty
+        access_token and token_expiry indicates it is still valid (avoids redundant
+        refresh). When force is True (e.g. after HTTP 401), always performs the
+        refresh grant if a refresh_token is present.
+        """
         try:
             if not self.spotify_data.refresh_token:
                 logger.warning("No refresh token available")
                 return False
 
-            # Check if token needs refreshing
-            if (
-                self.spotify_data.token_expiry
-                and time.time() < self.spotify_data.token_expiry - 30
-            ):
-                return True  # Token still valid
+            if not force and self.spotify_data.access_token:
+                exp = self._token_expiry_epoch(self.spotify_data.token_expiry)
+                if exp is not None and time.time() < exp - 30:
+                    return True
 
             logger.info("Refreshing Spotify access token...")
 
@@ -367,14 +381,19 @@ class SpotifyClient:
             self.update_field("connection_status", "Token Refresh Error")
             return False
 
-    def get_current_playback(self) -> Optional[Dict[str, Any]]:
+    def get_current_playback(
+        self, _allow_auth_retry: bool = True
+    ) -> Optional[Dict[str, Any]]:
         """Get current playback state using direct API call"""
         try:
             # Reset API success flag
             self._last_api_success = False
 
             if not self.spotify_data.access_token:
-                return None
+                if not (
+                    self.spotify_data.refresh_token and self.refresh_token(force=True)
+                ):
+                    return None
 
             # Refresh token if needed
             if not self.refresh_token():
@@ -395,11 +414,14 @@ class SpotifyClient:
                 logger.debug("No active playback (status 204)")
                 self._last_api_success = True
                 return None
-            elif response.status_code == 401:
-                # Token expired, try refreshing
-                logger.warning("Access token expired (401), attempting refresh")
-                if self.refresh_token():
-                    return self.get_current_playback()  # Retry once
+            elif response.status_code in (401, 403):
+                # Invalid or expired bearer — force refresh (ignore local expiry short-circuit)
+                logger.warning(
+                    "Access token rejected (%s), forcing refresh",
+                    response.status_code,
+                )
+                if _allow_auth_retry and self.refresh_token(force=True):
+                    return self.get_current_playback(_allow_auth_retry=False)
                 else:
                     self.is_authenticated = False
                     self.update_field("connection_status", "Authorization Required")
@@ -407,8 +429,8 @@ class SpotifyClient:
             elif response.status_code == 502:
                 # Bad gateway, try refreshing token
                 logger.warning("Bad gateway (502), attempting token refresh")
-                if self.refresh_token():
-                    return self.get_current_playback()  # Retry once
+                if _allow_auth_retry and self.refresh_token():
+                    return self.get_current_playback(_allow_auth_retry=False)
                 else:
                     return None
             else:
@@ -430,15 +452,11 @@ class SpotifyClient:
                 self.is_authenticated = False
                 return False
 
-            # If we have a refresh token but no access token, try refreshing first
-            if not self.spotify_data.access_token and self.spotify_data.refresh_token:
-                logger.info(
-                    "No access token but refresh token available - attempting refresh"
-                )
-                if self.refresh_token():
-                    logger.info("Successfully refreshed access token on startup")
-                else:
-                    logger.warning("Failed to refresh token on startup")
+            # Proactive refresh on startup when a refresh token exists (fresh access token)
+            if self.spotify_data.refresh_token:
+                logger.info("Spotify authenticate: refreshing access token from refresh token")
+                if not self.refresh_token(force=True):
+                    logger.warning("Forced token refresh on authenticate failed")
                     self.update_field("connection_status", "Authorization Required")
                     self.is_authenticated = False
                     return False
