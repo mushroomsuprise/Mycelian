@@ -7,29 +7,6 @@ Game Hooks
 FF7 Hook
     [] - Rewrite to match newly reworked game hook manager.
 
-Template Previewer:
-    [x] - Create a template preview inside the Source Settings menu (on the right hand side), that will display a live preview of the template, and show any changes (both saved and pending).
-    [x] - Templates that auto-hide (spotify, PSN trophies to name a few) should always display in the preview. Other templates that appear and disappear (things like alerts, chat) should mock the behavior of the template while its in use (IE play alerts, add chat messages, etc)
-    [] - Fix template previewer to display the entire template in the preview area (scaled down to fit within the size of the preview window)
-    [] - Live preview is not reflecting the pending changes the user makes before saving
-    [] - Change previewer so no special javascript is needed inside the template files, it should run the animated preview items the same way they would get added into the template with real data. This is imperative as it must display and behave EXACTLY how the real template would. Maybe do this through a new websocket within the template specifically for the previewer?
-    [] - Change the slide bar scaler at the top show it actually rescales the frame window
-    [] - Set the previewer window so it is not interactable, and make it draggable so the user can move it by holding left click in the previewer window
-    [x] - Force-show data-driven hidden elements in the previewer only.
-          Mechanism: add the CSS class `mycelian-preview-show` to any element that
-          gets hidden at runtime because of *missing data* (e.g. Spotify when nothing
-          is playing, PSN trophies when no game is active, FF7 panelEnemies /
-          panelBattleLog when no game is attached). The previewer injects a small
-          helper script (web_engine.MYCELIAN_PREVIEW_HELPER_HTML) that strips the
-          `.hidden` class and inline `display:none` from those elements and a
-          MutationObserver re-applies that whenever the template's own JS tries to
-          hide them again. Real OBS overlays receive nothing.
-          Optional companion: a `previewState.mock_values` dict in the template's
-          JSON config can pre-set element values for preview-only render
-          (Jinja `{% if %}` branches that depend on a config value will pick the
-          mock branch). Pending unsaved user overrides always win over mock_values.
-          Reference example: see panelEnemies / panelBattleLog in templates/ff7.html.
-
 Template Creator:
     [] - Add a new "main" tab after Settings called "Spore Studio".
     [] - Create a GUI based editor for creating and/or editting HTML templates and their JSON files specifically for Mycelian. This editor MUST be easy to use, as it will be the main source of customization for standard users. I still want a comprehensive list of options for the user to pick from.
