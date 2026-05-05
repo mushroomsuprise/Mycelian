@@ -30,6 +30,7 @@ import glob
 import json
 import logging
 import os
+import random
 import sys
 import threading
 import time
@@ -46,7 +47,7 @@ import eventlet.green.time
 import eventlet.wsgi
 from engineio.async_drivers import gevent
 from engineio.payload import Payload
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, make_response, render_template, request, send_from_directory
 from flask_socketio import SocketIO, emit
 
 from . import alertutils, database_manager, statistics_manager, twitch
@@ -67,9 +68,160 @@ from .template_config_parser import (
 logger = logging.getLogger(__name__)
 
 # Default preview profile when template JSON has no ``preview_behavior`` root key.
+# Templates listed here run an animated demo loop in the Custom Sources iframe,
+# emitting production-shaped socket events to a single sid so the user can see
+# the template's runtime behavior without real Twitch / game data.
 _PREVIEW_ANIMATED_DEMO_TEMPLATES = frozenset(
-    {"alerts", "pausedalerts", "chat", "activity_feed"}
+    {
+        "alerts",
+        "pausedalerts",
+        "chat",
+        "activity_feed",
+        "giveaway",
+        "title",
+        "bitbar",
+        "subbar",
+        "counter",
+        "roulette",
+    }
 )
+
+# Mock data pools used by the per-template preview demo handlers
+# (web_engine._preview_demo_*). These keep the previewer interesting without
+# touching the underlying templates.
+_DEMO_USERNAMES = (
+    "PixelPanda", "NeonNova", "TacoTuesday", "ShinyHaxor", "QwertyKnight",
+    "MidnightMango", "EmberFox", "GlitchWizard", "VelvetVortex", "OptimusByte",
+    "RetroRogue", "CelestialCat", "BlueberryBoss", "QuantumQuokka", "ZenithZen",
+    "FrostyFlame", "LunarLynx", "RubyRanger", "SableSpark", "TwilightTitan",
+)
+_DEMO_CHAT_MESSAGES = (
+    "GG!",
+    "Let's gooo!",
+    "That was insane!",
+    "Pog moment!",
+    "How did you do that?!",
+    "First time catching the stream, loving the vibes",
+    "Hello chat o/",
+    "Are we doing the next quest?",
+    "I just subscribed!",
+    "Been here since the start, keep it up :)",
+    "What's the build?",
+    "MVP play right there",
+    "Sub goal when?",
+    "BibleThump that was close",
+    "Big W energy",
+    "Take a snack break <3",
+    "Lurking but watching",
+    "rofl",
+    "monkaW",
+    "PogChamp content",
+)
+_DEMO_GAME_TITLES = (
+    "Final Fantasy VII Rebirth",
+    "Elden Ring",
+    "Hades II",
+    "Stardew Valley",
+    "Minecraft",
+    "Just Chatting",
+    "Sekiro: Shadows Die Twice",
+    "Baldur's Gate 3",
+    "Counter-Strike 2",
+    "Apex Legends",
+)
+_DEMO_CHAT_COLORS = (
+    "#FF4500", "#1E90FF", "#00CED1", "#FF69B4", "#9ACD32",
+    "#FFA500", "#9370DB", "#FFD700", "#20C997", "#FF6B6B",
+)
+# Alert presets used by the alerts-template demo loop. Each entry is the body
+# of an ``alerts_play_alert`` payload (the template's connector-action handler).
+# ``username``, ``timestamp`` and a default ``duration`` are filled in per-cycle.
+_DEMO_ALERT_PRESETS = (
+    {"alert_type": "sub", "tier": "1000"},
+    {"alert_type": "bit", "amt_cheered": 200, "message": "Awesome stream!"},
+    {"alert_type": "raid", "raider_count": 25},
+    {"alert_type": "donation", "amount": 5.0, "currency": "USD",
+     "message": "Keep it up <3"},
+    {"alert_type": "follow"},
+    {"alert_type": "giftsub", "gift_qty": 3, "tier": "1000"},
+    {"alert_type": "resub", "tier": "1000", "cumulative_months": 7,
+     "message": "7 months strong!"},
+    {"alert_type": "point", "alert_name": "Hydrate Reminder",
+     "message": "Time to drink water!"},
+)
+
+# Snippet appended to a template's HTML response when served in preview mode
+# (i.e. with ``__preview_token``). Forces elements opted-in via the
+# ``mycelian-preview-show`` CSS class to remain visible in the previewer
+# even when the template's normal data-driven logic would hide them
+# (e.g. FF7 enemy panel when no game is attached, Spotify panel when
+# nothing is playing). The override is "display only" — opacity / visibility
+# / animation states are intentionally untouched so entrance fades and
+# legitimate transient UI keep working.
+#
+# Real OBS overlays never receive this snippet (no preview token, no
+# cookie, no injection).
+MYCELIAN_PREVIEW_HELPER_HTML = """
+<style id="__mycelian_preview_helper_css">
+/* reserved for future preview-only CSS overrides */
+</style>
+<script id="__mycelian_preview_helper_js">
+(function () {
+  if (window.__mycelianPreviewHelperReady) { return; }
+  window.__mycelianPreviewHelperReady = true;
+  var SEL = ".mycelian-preview-show";
+  function unhide(el) {
+    if (!el || !el.classList) { return; }
+    if (el.classList.contains("hidden")) { el.classList.remove("hidden"); }
+    if (el.style && el.style.display === "none") {
+      el.style.removeProperty("display");
+    }
+  }
+  function bindAttrObserver(el, attrObs) {
+    if (!el || el.__mycelianPreviewBound) { return; }
+    el.__mycelianPreviewBound = true;
+    attrObs.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
+  }
+  function init() {
+    var attrObs = new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var t = muts[i].target;
+        if (t && t.matches && t.matches(SEL)) { unhide(t); }
+      }
+    });
+    document.querySelectorAll(SEL).forEach(function (el) {
+      unhide(el);
+      bindAttrObserver(el, attrObs);
+    });
+    var treeObs = new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var added = muts[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          var n = added[j];
+          if (!n || n.nodeType !== 1) { continue; }
+          if (n.matches && n.matches(SEL)) {
+            unhide(n);
+            bindAttrObserver(n, attrObs);
+          }
+          if (n.querySelectorAll) {
+            n.querySelectorAll(SEL).forEach(function (c) {
+              unhide(c);
+              bindAttrObserver(c, attrObs);
+            });
+          }
+        }
+      }
+    });
+    treeObs.observe(document.documentElement, { childList: true, subtree: true });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+</script>
+"""
 
 
 def resolve_template_preview_profile(
@@ -129,6 +281,8 @@ class WebEngine:
         # Custom Sources iframe preview: token -> {template, overrides, ts}
         self._preview_sessions_lock = threading.Lock()
         self._preview_sessions: Dict[str, Dict[str, Any]] = {}
+        # Custom Sources preview demo loops: sid -> stop flag
+        self._preview_demo_stop: Dict[str, bool] = {}
 
         # Log template directory info
         logger.debug(f"Template directory: {template_dir}")
@@ -287,6 +441,7 @@ class WebEngine:
             try:
                 configs = {}
                 config_parser = self.template_config_parser
+                preview_tok = request.cookies.get("mycelian_preview_token")
 
                 # Get all config files
                 config_files = config_parser.get_config_files()
@@ -300,8 +455,8 @@ class WebEngine:
 
                         # Only include configs that have dynamic_controls
                         if isinstance(config, dict) and "dynamic_controls" in config:
-                            dynamic_controls = resolve_dynamic_control_values_from_elements(
-                                config
+                            dynamic_controls = (
+                                resolve_dynamic_control_values_from_elements(config)
                             )
                             if (
                                 isinstance(dynamic_controls, dict)
@@ -310,6 +465,9 @@ class WebEngine:
                                 if dynamic_controls[
                                     "elements"
                                 ]:  # Only include if there are elements
+                                    self._merge_preview_session_into_config(
+                                        preview_tok, config_name, dynamic_controls
+                                    )
                                     configs[config_name] = dynamic_controls
                                     logger.debug(
                                         f"Added dynamic controls for {config_name}: {len(dynamic_controls['elements'])} elements"
@@ -340,6 +498,7 @@ class WebEngine:
             try:
                 configs = {}
                 config_parser = self.template_config_parser
+                preview_tok = request.cookies.get("mycelian_preview_token")
 
                 # Get all config files
                 config_files = config_parser.get_config_files()
@@ -352,6 +511,9 @@ class WebEngine:
                         # Load raw config without any filtering
                         config = config_parser.load_config(
                             config_name, include_dynamic_controls=False
+                        )
+                        self._merge_preview_session_into_config(
+                            preview_tok, config_name, config
                         )
                         configs[config_name] = config
                         logger.debug(f"Added config for {config_name}")
@@ -1190,10 +1352,11 @@ class WebEngine:
                         overrides: Dict[str, Any] = {}
                         if preview_token:
                             with engine_self._preview_sessions_lock:
-                                sess = engine_self._preview_sessions.get(
-                                    preview_token
-                                )
-                            if isinstance(sess, dict) and sess.get("template") == template:
+                                sess = engine_self._preview_sessions.get(preview_token)
+                            if (
+                                isinstance(sess, dict)
+                                and sess.get("template") == template
+                            ):
                                 ov = sess.get("overrides")
                                 if isinstance(ov, dict):
                                     overrides = ov
@@ -1207,6 +1370,29 @@ class WebEngine:
                                 if eid in overrides:
                                     element["value"] = overrides[eid]
 
+                        # In preview mode, optionally apply preview-only mock
+                        # values (template_config["previewState"]["mock_values"]).
+                        # Used so templates that conditionally render via Jinja
+                        # {% if X %} can show the conditional branch in the
+                        # previewer without the user having to set X for real.
+                        # Pending user overrides always win over mock_values.
+                        if mycelian_preview_mode:
+                            preview_state = template_config.get("previewState")
+                            if isinstance(preview_state, dict):
+                                mock_values = preview_state.get("mock_values")
+                                if isinstance(mock_values, dict):
+                                    for element in template_config.get(
+                                        "elements", []
+                                    ):
+                                        if not isinstance(element, dict):
+                                            continue
+                                        eid = element.get("id")
+                                        if (
+                                            eid in mock_values
+                                            and eid not in overrides
+                                        ):
+                                            element["value"] = mock_values[eid]
+
                         # Convert config elements to template variables
                         template_vars = {}
                         if "elements" in template_config:
@@ -1214,20 +1400,37 @@ class WebEngine:
                                 if "id" in element and "value" in element:
                                     template_vars[element["id"]] = element["value"]
 
-                        mycelian_preview_profile = resolve_template_preview_profile(
-                            template, template_config
-                        )
-
                         logger.debug(
                             f"Template {template} variables: {list(template_vars.keys())}"
                         )
-                        return render_template(
+                        html = render_template(
                             f"{template}.html",
                             **template_vars,
                             mycelian_html_stem=str(template),
-                            mycelian_preview_mode=mycelian_preview_mode,
-                            mycelian_preview_profile=mycelian_preview_profile,
                         )
+                        if mycelian_preview_mode and preview_token:
+                            # Inject preview helper (force-show + mock-data
+                            # MutationObserver). Try </body> first, then
+                            # fall back to appending so malformed templates
+                            # still get the helper.
+                            if "</body>" in html:
+                                html = html.replace(
+                                    "</body>",
+                                    MYCELIAN_PREVIEW_HELPER_HTML + "</body>",
+                                    1,
+                                )
+                            else:
+                                html = html + MYCELIAN_PREVIEW_HELPER_HTML
+                            resp = make_response(html)
+                            resp.set_cookie(
+                                "mycelian_preview_token",
+                                preview_token,
+                                path="/",
+                                samesite="Lax",
+                                httponly=False,
+                            )
+                            return resp
+                        return html
                     except Exception as e:
                         logger.error(
                             f"Error rendering template {template}: {str(e)}",
@@ -1296,6 +1499,336 @@ class WebEngine:
                 "overrides": safe,
                 "ts": time.time(),
             }
+
+    def _merge_preview_session_into_config(
+        self,
+        token: Optional[str],
+        config_name: str,
+        config: Dict[str, Any],
+    ) -> None:
+        """Merge pending preview overrides into ``config`` when cookie/token matches."""
+        if not token or not isinstance(config, dict):
+            return
+        with self._preview_sessions_lock:
+            sess = self._preview_sessions.get(token)
+        if not isinstance(sess, dict) or sess.get("template") != config_name:
+            return
+        overrides = sess.get("overrides")
+        if not isinstance(overrides, dict):
+            return
+        for element in config.get("elements", []):
+            if not isinstance(element, dict):
+                continue
+            eid = element.get("id")
+            if eid in overrides:
+                element["value"] = overrides[eid]
+
+    def _maybe_start_preview_demo(self, sid: str) -> None:
+        """Custom Sources iframe: drive animated previews via production-shaped emits."""
+        try:
+            token = request.cookies.get(
+                "mycelian_preview_token"
+            ) or request.args.get("__preview_token")
+            if not token:
+                return
+            with self._preview_sessions_lock:
+                sess = self._preview_sessions.get(token)
+            if not isinstance(sess, dict) or not sess.get("template"):
+                return
+            self._preview_demo_stop[sid] = False
+            self.socketio.start_background_task(self._preview_demo_loop, sid, token)
+        except Exception as e:
+            logger.warning("preview demo start failed: %s", e, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Custom Sources iframe preview helpers
+    # ------------------------------------------------------------------
+
+    def _preview_sleep(self, sid: str, seconds: float) -> bool:
+        """Cooperative sleep that breaks early on stop signal.
+
+        Returns True if the loop should stop (preview disconnected or
+        another reason set ``_preview_demo_stop[sid]``), False if the
+        full duration elapsed normally.
+        """
+        if seconds <= 0:
+            return self._preview_demo_stop.get(sid, False)
+        end = time.time() + seconds
+        while True:
+            if self._preview_demo_stop.get(sid, False):
+                return True
+            remaining = end - time.time()
+            if remaining <= 0:
+                return False
+            self.socketio.sleep(min(0.4, remaining))
+
+    def _preview_demo_loop(self, sid: str, token: str) -> None:
+        """Drive a per-template animated preview for the Custom Sources iframe.
+
+        Each template has its own ``_preview_demo_<name>`` handler that emits
+        production-shaped socket events to the preview ``sid`` only. The handler
+        is responsible for its own loop + cooperative ``_preview_sleep`` calls.
+        """
+        try:
+            with self._preview_sessions_lock:
+                sess = self._preview_sessions.get(token)
+            if not isinstance(sess, dict):
+                return
+            template_name = sess.get("template")
+            if not template_name:
+                return
+
+            cfg = copy.deepcopy(self.template_config_parser.load_config(template_name))
+            overrides = sess.get("overrides")
+            if isinstance(overrides, dict):
+                for element in cfg.get("elements", []):
+                    if (
+                        isinstance(element, dict)
+                        and element.get("id") in overrides
+                    ):
+                        element["value"] = overrides[element.get("id")]
+
+            profile = resolve_template_preview_profile(template_name, cfg)
+
+            # One-shot demos run to completion and return.
+            if template_name == "pausedalerts":
+                self.socketio.sleep(0.2)
+                self.socketio.emit(
+                    "pause_status_update", {"paused": True}, to=sid
+                )
+                return
+
+            if profile != "animated_demo":
+                return
+
+            handlers = {
+                "chat": self._preview_demo_chat,
+                "alerts": self._preview_demo_alerts,
+                "activity_feed": self._preview_demo_activity_feed,
+                "giveaway": self._preview_demo_giveaway,
+                "title": self._preview_demo_title,
+                "bitbar": self._preview_demo_bitbar,
+                "subbar": self._preview_demo_subbar,
+                "counter": self._preview_demo_counter,
+                "roulette": self._preview_demo_roulette,
+            }
+            handler = handlers.get(template_name)
+            if handler is not None:
+                handler(sid)
+        except Exception as e:
+            logger.warning("preview demo loop: %s", e, exc_info=True)
+        finally:
+            self._preview_demo_stop.pop(sid, None)
+
+    def _preview_demo_chat(self, sid: str) -> None:
+        """One varied chat line per cycle (uses connector-action shape).
+
+        IMPORTANT: chat.html's ``addMessage`` reads ``messageData.message``
+        (not ``.text``). The connector handler only normalizes ``text`` to
+        ``message`` when BOTH are missing — sending ``text`` directly bypasses
+        the fallback and renders the username with an empty body. So we
+        always emit the production field name ``message``.
+        """
+        while not self._preview_demo_stop.get(sid, False):
+            self.socketio.emit(
+                "chat_add_message",
+                {
+                    "username": random.choice(_DEMO_USERNAMES),
+                    "message": random.choice(_DEMO_CHAT_MESSAGES),
+                    "color": random.choice(_DEMO_CHAT_COLORS),
+                    "timestamp": time.time(),
+                },
+                to=sid,
+            )
+            if self._preview_sleep(sid, random.uniform(4.5, 8.0)):
+                return
+
+    def _preview_demo_alerts(self, sid: str) -> None:
+        """One alert per cycle, rotating preset types with random username.
+
+        12s gap is well past typical alert duration (5s + entry/exit
+        animations) so the previously-shown alert finishes its full
+        animation before the next ``alerts_play_alert`` interrupts it.
+        Previously the demo ran at 6s which caused mid-animation interrupts
+        and made the second alert play at the wrong speed.
+        """
+        idx = 0
+        while not self._preview_demo_stop.get(sid, False):
+            preset = dict(_DEMO_ALERT_PRESETS[idx % len(_DEMO_ALERT_PRESETS)])
+            preset["username"] = random.choice(_DEMO_USERNAMES)
+            preset.setdefault("duration", 5)
+            preset["timestamp"] = time.time()
+            self.socketio.emit("alerts_play_alert", preset, to=sid)
+            idx += 1
+            if self._preview_sleep(sid, 12.0):
+                return
+
+    def _preview_demo_activity_feed(self, sid: str) -> None:
+        """Stream a varied set of activity-feed alerts using production shapes.
+
+        Spacing matches roughly how often new alerts trickle into a real
+        feed — fast enough to see the entrance animation cleanly but not so
+        fast that the previous card is still settling.
+        """
+        from modules.uiwindows.activity_feed import (
+            iter_activity_feed_preview_payloads,
+        )
+
+        while not self._preview_demo_stop.get(sid, False):
+            for payload in iter_activity_feed_preview_payloads():
+                if self._preview_demo_stop.get(sid, False):
+                    return
+                self.socketio.emit("activity_feed_alert", payload, to=sid)
+                if self._preview_sleep(sid, random.uniform(4.0, 6.5)):
+                    return
+            # Longer breather before the next batch so the feed scrolls in
+            # readable chunks instead of a continuous waterfall.
+            if self._preview_sleep(sid, random.uniform(8.0, 12.0)):
+                return
+
+    def _preview_demo_giveaway(self, sid: str) -> None:
+        """Cycle: open giveaway -> add entries -> pick winner -> clear."""
+        keywords = ("!join", "!enter", "!giveaway", "!raffle")
+        while not self._preview_demo_stop.get(sid, False):
+            self.socketio.emit(
+                "giveaway_start", {"keyword": random.choice(keywords)}, to=sid
+            )
+            if self._preview_sleep(sid, 1.5):
+                return
+
+            entry_count = random.randint(8, min(15, len(_DEMO_USERNAMES)))
+            chosen = random.sample(_DEMO_USERNAMES, k=entry_count)
+            for i, user in enumerate(chosen, start=1):
+                if self._preview_demo_stop.get(sid, False):
+                    return
+                self.socketio.emit(
+                    "giveaway_entry",
+                    {"username": user, "pool_size": i},
+                    to=sid,
+                )
+                if self._preview_sleep(sid, random.uniform(0.4, 1.1)):
+                    return
+
+            self.socketio.emit("giveaway_stop", None, to=sid)
+            if self._preview_sleep(sid, 1.5):
+                return
+
+            winner = random.choice(chosen)
+            self.socketio.emit(
+                "giveaway_winner",
+                {
+                    "winners": [winner],
+                    "pool_entries": list(chosen),
+                    "pool_size": len(chosen),
+                },
+                to=sid,
+            )
+            if self._preview_sleep(sid, 5.0):
+                return
+
+            self.socketio.emit("giveaway_clear", None, to=sid)
+            if self._preview_sleep(sid, 2.0):
+                return
+
+    def _preview_demo_title(self, sid: str) -> None:
+        """Cycle through demo game categories every few seconds."""
+        # Seed streamer-info so the template doesn't sit waiting for an
+        # initial Twitch API response that will never arrive in preview.
+        self.socketio.emit(
+            "streamer-info",
+            {"streamer_name": "PreviewStreamer", "user_id": "0"},
+            to=sid,
+        )
+        idx = 0
+        while not self._preview_demo_stop.get(sid, False):
+            self.socketio.emit(
+                "twitch_data_update",
+                {"current_category": _DEMO_GAME_TITLES[idx % len(_DEMO_GAME_TITLES)]},
+                to=sid,
+            )
+            idx += 1
+            if self._preview_sleep(sid, 5.0):
+                return
+
+    def _preview_demo_bitbar(self, sid: str) -> None:
+        """Add random small batches of bits, then reset to repeat the fill cycle."""
+        while not self._preview_demo_stop.get(sid, False):
+            for _ in range(random.randint(8, 14)):
+                if self._preview_demo_stop.get(sid, False):
+                    return
+                self.socketio.emit(
+                    "bitbar_add_bits",
+                    {"amount": random.randint(50, 400)},
+                    to=sid,
+                )
+                if self._preview_sleep(sid, random.uniform(1.5, 3.5)):
+                    return
+            # Pause to let the "goal reached" animation finish if it triggered
+            if self._preview_sleep(sid, 4.0):
+                return
+            self.socketio.emit("bitbar_reset", None, to=sid)
+            if self._preview_sleep(sid, 2.0):
+                return
+
+    def _preview_demo_subbar(self, sid: str) -> None:
+        """Stream sub/giftsub/resub instant_alerts to fill the bar, then reset."""
+        while not self._preview_demo_stop.get(sid, False):
+            for _ in range(random.randint(6, 10)):
+                if self._preview_demo_stop.get(sid, False):
+                    return
+                preset_type = random.choice(("sub", "sub", "giftsub", "resub"))
+                payload = {
+                    "username": random.choice(_DEMO_USERNAMES),
+                    "alert_type": preset_type,
+                    "tier": "1000",
+                    "is_replay": False,
+                }
+                if preset_type == "giftsub":
+                    payload["quantity"] = random.randint(1, 5)
+                elif preset_type == "resub":
+                    payload["months"] = random.randint(2, 24)
+                self.socketio.emit("instant_alert", payload, to=sid)
+                if self._preview_sleep(sid, random.uniform(2.5, 5.0)):
+                    return
+            if self._preview_sleep(sid, 4.0):
+                return
+            self.socketio.emit("subbar_reset", None, to=sid)
+            if self._preview_sleep(sid, 2.0):
+                return
+
+    def _preview_demo_counter(self, sid: str) -> None:
+        """Increment / decrement the counter (never below 0).
+
+        Uses ``counter_message`` with an explicit value so the displayed
+        number always matches the Python-side shadow regardless of whatever
+        starting value the template's saved config holds.
+        """
+        value = random.randint(0, 5)
+        self.socketio.emit("counter_message", {"message": str(value)}, to=sid)
+        if self._preview_sleep(sid, 2.0):
+            return
+        while not self._preview_demo_stop.get(sid, False):
+            if value <= 0:
+                value += 1
+            else:
+                # Bias toward incrementing so the counter trends upward
+                # over time but still occasionally dips.
+                if random.random() < 0.65:
+                    value += 1
+                else:
+                    value = max(0, value - 1)
+            self.socketio.emit("counter_message", {"message": str(value)}, to=sid)
+            if self._preview_sleep(sid, random.uniform(2.5, 5.0)):
+                return
+
+    def _preview_demo_roulette(self, sid: str) -> None:
+        """Periodically trigger a wheel spin (12s cycle covers spin + result hold)."""
+        while not self._preview_demo_stop.get(sid, False):
+            if self._preview_sleep(sid, 2.0):
+                return
+            self.socketio.emit("roulette_spin", {}, to=sid)
+            if self._preview_sleep(sid, 12.0):
+                return
 
     def _rebuild_url_map(self):
         """Rebuild the entire URL map to handle removed routes"""
@@ -1514,12 +2047,20 @@ class WebEngine:
                         },
                         to=request.sid,
                     )
-                    logger.debug(
-                        f"Sent initial theme to {request.sid}: {theme.name}"
-                    )
+                    logger.debug(f"Sent initial theme to {request.sid}: {theme.name}")
             except Exception as e:
                 logger.error(
                     f"Error sending initial theme to {request.sid}: {str(e)}",
+                    exc_info=True,
+                )
+
+            try:
+                self._maybe_start_preview_demo(request.sid)
+            except Exception as e:
+                logger.warning(
+                    "preview demo scheduling failed for %s: %s",
+                    request.sid,
+                    e,
                     exc_info=True,
                 )
 
@@ -1540,9 +2081,7 @@ class WebEngine:
                         },
                         to=request.sid,
                     )
-                    logger.debug(
-                        f"Sent current theme to {request.sid}: {theme.name}"
-                    )
+                    logger.debug(f"Sent current theme to {request.sid}: {theme.name}")
             except Exception as e:
                 logger.error(
                     f"Error handling get_current_theme: {str(e)}",
@@ -1553,12 +2092,15 @@ class WebEngine:
         def handle_disconnect():
             print(f" WEBSOCKET: Client disconnected - SID: {request.sid}")
             logger.debug(f"Client disconnected: {request.sid}")
+            self._preview_demo_stop[request.sid] = True
 
         @self.socketio.on("game_hook_command")
         def handle_game_hook_command(data):
             """Template → server commands for game hooks (e.g. clear boss list)."""
             try:
-                from .game_hooks_service import handle_game_hook_command as _run_hook_cmd
+                from .game_hooks_service import (
+                    handle_game_hook_command as _run_hook_cmd,
+                )
 
                 _run_hook_cmd(data)
             except Exception as e:
@@ -2147,48 +2689,6 @@ class WebEngine:
             self.socketio.emit(
                 "pause_status_update", {"paused": ALERTS_PAUSED}, to=client_sid
             )
-
-        @self.socketio.on("mycelian_preview_emit_activity_feed")
-        def handle_mycelian_preview_emit_activity_feed():
-            """Custom Sources iframe only: replay production-shaped activity_feed_alert payloads."""
-            sid = request.sid
-            try:
-                from modules.uiwindows.activity_feed import iter_activity_feed_preview_payloads
-
-                for payload in iter_activity_feed_preview_payloads():
-                    self.socketio.emit("activity_feed_alert", payload, to=sid)
-            except Exception as e:
-                logger.warning(
-                    "mycelian_preview_emit_activity_feed failed: %s", e, exc_info=True
-                )
-
-        @self.socketio.on("mycelian_preview_emit_alerts")
-        def handle_mycelian_preview_emit_alerts():
-            """Same path as connector ``alerts_play_alert`` → template listener."""
-            sid = request.sid
-            self.socketio.emit("alerts_play_alert", None, to=sid)
-
-        @self.socketio.on("mycelian_preview_emit_chat")
-        def handle_mycelian_preview_emit_chat():
-            sid = request.sid
-            self.socketio.emit("chat_add_message", None, to=sid)
-            self.socketio.emit(
-                "chat_add_message",
-                {
-                    "username": "PreviewViewer",
-                    "message": "Another sample line for preview.",
-                    "color": "#1E90FF",
-                    "timestamp": time.time(),
-                    "id": "mycelian-preview-b",
-                },
-                to=sid,
-            )
-
-        @self.socketio.on("mycelian_preview_emit_pausedalerts")
-        def handle_mycelian_preview_emit_pausedalerts():
-            """Show paused UI in preview without broadcasting global pause state."""
-            sid = request.sid
-            self.socketio.emit("pause_status_update", {"paused": True}, to=sid)
 
         @self.socketio.on("get_pause_status")
         def handle_get_pause_status():
@@ -5154,7 +5654,9 @@ class WebEngine:
             )
             return []
 
-    def broadcast_theme_update(self, theme_css: str, theme_name: str, theme_type: str) -> bool:
+    def broadcast_theme_update(
+        self, theme_css: str, theme_name: str, theme_type: str
+    ) -> bool:
         """Broadcast a theme update to all connected WebSocket clients.
 
         Args:

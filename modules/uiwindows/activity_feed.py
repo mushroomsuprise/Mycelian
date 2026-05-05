@@ -635,22 +635,119 @@ def build_activity_feed_alert_payload(
 
 
 def iter_activity_feed_preview_payloads():
-    """Sample alerts matching production-style messages (Custom Sources iframe only)."""
-    now = time.time()
-    ts = str(int(now))
+    """Sample alerts matching production-style messages (Custom Sources iframe only).
+
+    Produces a varied stream of alerts whose ``type`` and ``badge_type`` values
+    match what the live ``add_alert_to_feed`` callers in ``modules/twitch.py``
+    emit, so the previewer card styling (badge color, tier ring, etc.) matches
+    the real Activity Feed exactly.
+    """
+    import random
+
+    ts = str(int(time.time()))
+    usernames = (
+        "PixelPanda", "NeonNova", "TacoTuesday", "ShinyHaxor",
+        "MidnightMango", "EmberFox", "GlitchWizard", "VelvetVortex",
+        "RetroRogue", "CelestialCat", "BlueberryBoss", "QuantumQuokka",
+        "FrostyFlame", "LunarLynx", "RubyRanger", "TwilightTitan",
+    )
+
+    def pick():
+        return random.choice(usernames)
+
+    follow_user = pick()
     yield build_activity_feed_alert_payload(
         "Follow",
-        "PreviewUser just followed!",
+        f"{follow_user} just followed!",
         "follow",
         timestamp=ts,
     )
+
+    sub_user = pick()
+    sub_tier = random.choice((1, 2, 3))
     yield build_activity_feed_alert_payload(
         "Sub",
-        "PreviewMod subscribed (Tier 1)!",
+        f"{sub_user} subscribed (Tier {sub_tier})!",
         "sub",
         timestamp=ts,
-        tier=1,
+        tier=sub_tier,
         user_message=None,
+    )
+
+    resub_user = pick()
+    resub_tier = random.choice((1, 2, 3))
+    resub_months = random.randint(2, 36)
+    yield build_activity_feed_alert_payload(
+        "Resub",
+        f"{resub_user} resubscribed for {resub_months} months (Tier {resub_tier})!",
+        "resub",
+        timestamp=ts,
+        tier=resub_tier,
+        user_message=f"{resub_months} months strong!",
+    )
+
+    bits_user = pick()
+    bits_amount = random.choice((100, 200, 500, 1000, 5000))
+    yield build_activity_feed_alert_payload(
+        "Bits",
+        f"{bits_user} cheered {bits_amount} bits!",
+        "bits",
+        timestamp=ts,
+        user_message="Loving the stream!",
+    )
+
+    raid_user = pick()
+    raid_count = random.randint(5, 250)
+    yield build_activity_feed_alert_payload(
+        "Raid",
+        f"{raid_user} raided with {raid_count} viewers!",
+        "raid",
+        timestamp=ts,
+    )
+
+    gift_user = pick()
+    gift_qty = random.randint(1, 25)
+    gift_tier = random.choice((1, 2, 3))
+    yield build_activity_feed_alert_payload(
+        "Giftsub",
+        f"{gift_user} gifted {gift_qty} Tier {gift_tier} subs!",
+        "giftsub",
+        timestamp=ts,
+        tier=gift_tier,
+    )
+
+    points_user = pick()
+    point_reward = random.choice((
+        "Hydrate Reminder",
+        "Highlight My Message",
+        "Pick the next song",
+        "Take a 5min break",
+    ))
+    yield build_activity_feed_alert_payload(
+        "Points",
+        f"{points_user} redeemed '{point_reward}'!",
+        "points",
+        timestamp=ts,
+        user_message=None,
+    )
+
+    streak_user = pick()
+    streak_count = random.randint(2, 50)
+    yield build_activity_feed_alert_payload(
+        "Streak",
+        f"{streak_user} reached a {streak_count} stream streak!",
+        "streak",
+        timestamp=ts,
+        user_message=f"{streak_count} streams in a row!",
+    )
+
+    hype_user = pick()
+    hype_level = random.randint(1, 5)
+    yield build_activity_feed_alert_payload(
+        "Hype Train",
+        f"Hype Train started by {hype_user}! Level {hype_level}.",
+        "hype_train",
+        timestamp=ts,
     )
 
 

@@ -64,7 +64,6 @@ roulette_expansions = {}
 CUSTOM_SOURCES_PREVIEW_TOKEN = str(uuid.uuid4())
 _custom_sources_preview_gen: list[int] = [0]
 _custom_sources_ctx: Dict[str, Any] = {}
-_custom_sources_preview_scale_js_done = False
 
 # Add custom CSS for animations and styling (removed pulsing animations)
 CUSTOM_CSS = """
@@ -225,41 +224,294 @@ def _estimate_design_size(form_data: Dict[str, Any]) -> Tuple[int, int]:
     return w, h
 
 
-def _ensure_preview_scale_script() -> None:
-    """Inject one-off JS to scale the preview iframe to the panel width."""
-    global _custom_sources_preview_scale_js_done
-    if _custom_sources_preview_scale_js_done:
-        return
-    ui.add_head_html(
-        """<script id="mycelian-cs-preview-scale">
-window.mycelianCsPreviewScale = function (outerId, innerId, designW, designH) {
-  var outer = document.getElementById(outerId);
-  var inner = document.getElementById(innerId);
-  if (!outer || !inner) { return; }
-  var iframe = inner.querySelector("iframe");
-  function apply() {
-    var cw = outer.clientWidth || 1;
-    var s = Math.min(1, cw / designW);
-    inner.style.transformOrigin = "top left";
-    inner.style.transform = "scale(" + s + ")";
-    inner.style.width = designW + "px";
-    if (iframe) {
-      iframe.setAttribute("width", String(designW));
-      iframe.setAttribute("height", String(designH));
-      iframe.style.width = designW + "px";
-      iframe.style.height = designH + "px";
+_PREVIEW_SCALE_IIFE = r"""
+(function () {
+  if (window.mycelianCsPreviewScale) { return; }
+  function getState(outer) {
+    if (!outer._mycelianCs) {
+      outer._mycelianCs = {
+        designW: 1920,
+        designH: 1080,
+        zoomPct: 100,
+        panX: 0,
+        panY: 0,
+        innerId: null,
+      };
     }
-    outer.style.minHeight = (designH * s) + "px";
+    return outer._mycelianCs;
   }
-  apply();
-  if (outer._mycelianCsRo) { outer._mycelianCsRo.disconnect(); }
-  outer._mycelianCsRo = new ResizeObserver(function () { apply(); });
-  outer._mycelianCsRo.observe(outer);
-};
-</script>""",
-        shared=True,
+  function clampPan(state, cw, ch, scaledW, scaledH) {
+    var cx = (cw - scaledW) / 2;
+    var cy = (ch - scaledH) / 2;
+    var fx = cx + state.panX;
+    var fy = cy + state.panY;
+    if (scaledW <= cw) {
+      fx = cx;
+      state.panX = 0;
+    } else {
+      var minFx = cw - scaledW;
+      fx = Math.max(minFx, Math.min(0, fx));
+      state.panX = fx - cx;
+    }
+    if (scaledH <= ch) {
+      fy = cy;
+      state.panY = 0;
+    } else {
+      var minFy = ch - scaledH;
+      fy = Math.max(minFy, Math.min(0, fy));
+      state.panY = fy - cy;
+    }
+    return { fx: fx, fy: fy };
+  }
+  function applyTransform(outer) {
+    var state = getState(outer);
+    var inner = document.getElementById(state.innerId);
+    if (!inner) { return; }
+    var cw = outer.clientWidth || 1;
+    var ch = outer.clientHeight || 1;
+    var sFit = Math.min(cw / state.designW, ch / state.designH);
+    if (!isFinite(sFit) || sFit <= 0) { sFit = 1; }
+    var eff = sFit * (state.zoomPct / 100);
+    var scaledW = state.designW * eff;
+    var scaledH = state.designH * eff;
+    var pos = clampPan(state, cw, ch, scaledW, scaledH);
+    inner.style.transformOrigin = "top left";
+    inner.style.width = state.designW + "px";
+    inner.style.height = state.designH + "px";
+    inner.style.transform = "translate(" + pos.fx + "px," + pos.fy + "px) scale(" + eff + ")";
+    var iframe = inner.querySelector("iframe");
+    if (iframe) {
+      iframe.setAttribute("width", String(state.designW));
+      iframe.setAttribute("height", String(state.designH));
+      iframe.style.width = state.designW + "px";
+      iframe.style.height = state.designH + "px";
+      iframe.style.pointerEvents = "none";
+    }
+  }
+  function ensureOverlay(outer) {
+    var overlay = outer.querySelector(".mycelian-cs-pan-overlay");
+    if (overlay) { return overlay; }
+    overlay = document.createElement("div");
+    overlay.className = "mycelian-cs-pan-overlay";
+    overlay.style.position = "absolute";
+    overlay.style.left = "0";
+    overlay.style.top = "0";
+    overlay.style.right = "0";
+    overlay.style.bottom = "0";
+    overlay.style.zIndex = "10";
+    overlay.style.cursor = "grab";
+    overlay.style.background = "transparent";
+    overlay.style.userSelect = "none";
+    outer.appendChild(overlay);
+    var dragging = false;
+    var lastX = 0, lastY = 0;
+    overlay.addEventListener("mousedown", function (ev) {
+      if (ev.button !== 0) { return; }
+      dragging = true;
+      overlay.style.cursor = "grabbing";
+      lastX = ev.clientX;
+      lastY = ev.clientY;
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+    document.addEventListener("mousemove", function (ev) {
+      if (!dragging) { return; }
+      var dx = ev.clientX - lastX;
+      var dy = ev.clientY - lastY;
+      lastX = ev.clientX;
+      lastY = ev.clientY;
+      var state = getState(outer);
+      state.panX += dx;
+      state.panY += dy;
+      applyTransform(outer);
+    });
+    document.addEventListener("mouseup", function () {
+      if (dragging) {
+        dragging = false;
+        overlay.style.cursor = "grab";
+      }
+    });
+    return overlay;
+  }
+  window.mycelianCsPreviewScale = function (outerId, innerId, designW, designH, zoomPct, resetPan) {
+    var outer = document.getElementById(outerId);
+    var inner = document.getElementById(innerId);
+    if (!outer || !inner) { return; }
+    outer.style.overflow = "hidden";
+    outer.style.position = "relative";
+    var state = getState(outer);
+    state.innerId = innerId;
+    state.designW = Number(designW) || state.designW;
+    state.designH = Number(designH) || state.designH;
+    var z = Number(zoomPct);
+    if (isFinite(z) && z > 0) { state.zoomPct = z; }
+    if (resetPan) { state.panX = 0; state.panY = 0; }
+    ensureOverlay(outer);
+    applyTransform(outer);
+    if (outer._mycelianCsRo) { outer._mycelianCsRo.disconnect(); }
+    outer._mycelianCsRo = new ResizeObserver(function () { applyTransform(outer); });
+    outer._mycelianCsRo.observe(outer);
+  };
+  window.mycelianCsPreviewSetZoom = function (outerId, zoomPct, resetPan) {
+    var outer = document.getElementById(outerId);
+    if (!outer) { return; }
+    var state = getState(outer);
+    var z = Number(zoomPct);
+    if (isFinite(z) && z > 0) { state.zoomPct = z; }
+    if (resetPan) { state.panX = 0; state.panY = 0; }
+    applyTransform(outer);
+  };
+  window.mycelianCsSplitDrag = function (rowId, leftId, rightId, minLeftPct, maxLeftPct) {
+    var row = document.getElementById(rowId);
+    var divider = row && row.querySelector(".mycelian-cs-split-divider");
+    if (!row || !divider) { return; }
+    if (divider._mycelianBound) { return; }
+    divider._mycelianBound = true;
+    var dragging = false;
+    var startX = 0, startLeftPct = 50;
+    minLeftPct = Number(minLeftPct) || 28;
+    maxLeftPct = Number(maxLeftPct) || 78;
+    function getCurrentLeftPct() {
+      var left = document.getElementById(leftId);
+      var rowW = row.clientWidth || 1;
+      var leftW = left ? left.getBoundingClientRect().width : rowW / 2;
+      return Math.max(minLeftPct, Math.min(maxLeftPct, (leftW / rowW) * 100));
+    }
+    function applyPct(pct) {
+      var left = document.getElementById(leftId);
+      var right = document.getElementById(rightId);
+      if (left) {
+        left.style.flex = pct + " " + pct + " 0%";
+        left.style.minWidth = "0";
+        left.style.maxWidth = "100%";
+      }
+      if (right) {
+        var rp = 100 - pct;
+        right.style.flex = rp + " " + rp + " 0%";
+        right.style.minWidth = "160px";
+        right.style.maxWidth = "100%";
+      }
+    }
+    applyPct(getCurrentLeftPct());
+    divider.addEventListener("mousedown", function (ev) {
+      if (ev.button !== 0) { return; }
+      dragging = true;
+      startX = ev.clientX;
+      startLeftPct = getCurrentLeftPct();
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+    document.addEventListener("mousemove", function (ev) {
+      if (!dragging) { return; }
+      var rowW = row.clientWidth || 1;
+      var dx = ev.clientX - startX;
+      var pct = startLeftPct + (dx / rowW) * 100;
+      pct = Math.max(minLeftPct, Math.min(maxLeftPct, pct));
+      applyPct(pct);
+      var outer = document.querySelector("[data-mycelian-cs-preview-outer]");
+      if (outer) { applyTransform(outer); }
+    });
+    document.addEventListener("mouseup", function () {
+      if (dragging) {
+        dragging = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+    });
+  };
+})();
+"""
+
+
+def _ensure_preview_scale_script() -> None:
+    """Define the preview JS helpers on `window` via run_javascript (eval).
+
+    NOTE: We intentionally do NOT use ui.add_head_html here. Per the HTML5 spec,
+    <script> tags injected via document.head.insertAdjacentHTML(...) (which is
+    what NiceGUI's add_head_html does at runtime with shared=False) have their
+    "already started" flag set to true and DO NOT execute. ui.run_javascript
+    sends the code to the client which evaluates it via eval(), which runs
+    the IIFE, defines window.mycelianCs* helpers, and lets later
+    ui.run_javascript("window.mycelianCsPreviewScale(...)") calls succeed.
+    """
+    try:
+        ui.run_javascript(_PREVIEW_SCALE_IIFE)
+    except Exception as e:
+        logger.debug("Preview scale JS injection skipped: %s", e)
+
+
+def _current_preview_zoom_pct() -> int:
+    zsl = _custom_sources_ctx.get("preview_zoom_slider")
+    if zsl is None:
+        return 100
+    try:
+        z = int(zsl.value)
+    except (TypeError, ValueError):
+        z = 100
+    return max(25, min(200, z))
+
+
+def _run_preview_scale_js(reset_pan: bool) -> None:
+    """Apply fit/zoom/pan transform to the preview pane (uses form_data + zoom slider)."""
+    ctx = _custom_sources_ctx
+    sel = ctx.get("config_select")
+    if not sel or not sel.value:
+        return
+    fd = form_data_store.get(sel.value, {})
+    dw, dh = _estimate_design_size(fd)
+    z = _current_preview_zoom_pct()
+    oid = ctx.get("preview_outer_id")
+    iid = ctx.get("preview_inner_id")
+    if not oid or not iid:
+        return
+    js = (
+        "window.mycelianCsPreviewScale && window.mycelianCsPreviewScale("
+        f"{json.dumps(oid)}, {json.dumps(iid)}, {int(dw)}, {int(dh)}, {int(z)}, "
+        f"{str(reset_pan).lower()})"
     )
-    _custom_sources_preview_scale_js_done = True
+    try:
+        ui.run_javascript(js)
+        ui.timer(0.15, lambda j=js: ui.run_javascript(j), once=True)
+    except Exception as e:
+        logger.debug("Preview scale JS skipped: %s", e)
+
+
+def _run_preview_zoom_js(reset_pan: bool) -> None:
+    """Apply only the zoom delta to the existing preview transform (no iframe reload)."""
+    ctx = _custom_sources_ctx
+    oid = ctx.get("preview_outer_id")
+    if not oid:
+        return
+    z = _current_preview_zoom_pct()
+    js = (
+        "window.mycelianCsPreviewSetZoom && window.mycelianCsPreviewSetZoom("
+        f"{json.dumps(oid)}, {int(z)}, {str(reset_pan).lower()})"
+    )
+    try:
+        ui.run_javascript(js)
+    except Exception as e:
+        logger.debug("Preview zoom JS skipped: %s", e)
+
+
+def _bind_split_divider_js() -> None:
+    """Bind the draggable split divider (idempotent on the JS side)."""
+    ctx = _custom_sources_ctx
+    rid = ctx.get("preview_split_row_id")
+    lid = ctx.get("preview_editor_panel_id")
+    rrid = ctx.get("preview_panel_id")
+    if not rid or not lid or not rrid:
+        return
+    js = (
+        "window.mycelianCsSplitDrag && window.mycelianCsSplitDrag("
+        f"{json.dumps(rid)}, {json.dumps(lid)}, {json.dumps(rrid)}, 28, 78)"
+    )
+    try:
+        ui.run_javascript(js)
+        ui.timer(0.2, lambda j=js: ui.run_javascript(j), once=True)
+    except Exception as e:
+        logger.debug("Preview split JS skipped: %s", e)
 
 
 def _preview_values_differ(saved: Any, current: Any) -> bool:
@@ -357,18 +609,7 @@ def _flush_template_preview() -> None:
         )
         iframe_el.update()
 
-    oid = ctx.get("preview_outer_id")
-    iid = ctx.get("preview_inner_id")
-    if oid and iid:
-        scale_js = (
-            "window.mycelianCsPreviewScale && window.mycelianCsPreviewScale("
-            f"{json.dumps(oid)}, {json.dumps(iid)}, {int(design_w)}, {int(design_h)})"
-        )
-        try:
-            ui.run_javascript(scale_js)
-            ui.timer(0.15, lambda j=scale_js: ui.run_javascript(j), once=True)
-        except Exception as e:
-            logger.debug("Preview scale JS skipped: %s", e)
+    _run_preview_scale_js(True)
 
     if ph:
         ph.text = ""
@@ -498,16 +739,40 @@ def create_custom_sources_tab():
         # Adjustable split: editor (left) vs preview (right)
         preview_outer_id = "mycelian-cs-pe-" + uuid.uuid4().hex[:12]
         preview_inner_id = preview_outer_id + "-inner"
+        preview_split_row_id = "mycelian-cs-row-" + uuid.uuid4().hex[:12]
+        preview_editor_panel_id = "mycelian-cs-ed-" + uuid.uuid4().hex[:12]
+        preview_panel_id = "mycelian-cs-pv-" + uuid.uuid4().hex[:12]
 
-        with ui.element("div").classes(
-            "flex-grow overflow-hidden flex flex-row min-h-0 px-2 pb-2 gap-0 items-stretch w-full"
-        ):
-            editor_panel = ui.column().classes(
-                "min-h-0 min-w-0 overflow-hidden flex flex-col gap-1"
+        with (
+            ui.element("div")
+            .props(f"id={preview_split_row_id}")
+            .classes(
+                "flex-grow overflow-hidden flex flex-row min-h-0 px-2 pb-2 gap-0 items-stretch w-full"
             )
-            preview_panel = ui.column().classes(
-                "min-h-0 overflow-hidden flex flex-col gap-1 shrink-0 "
-                "border-l border-[var(--color-border-default)] pl-2"
+        ):
+            editor_panel = (
+                ui.column()
+                .props(f"id={preview_editor_panel_id}")
+                .classes("min-h-0 min-w-0 overflow-hidden flex flex-col gap-1")
+                .style("flex: 62 62 0%; min-width: 0; max-width: 100%")
+            )
+            split_divider = (
+                ui.element("div")
+                .classes("mycelian-cs-split-divider shrink-0")
+                .style(
+                    "width: 6px; cursor: col-resize; background: var(--color-border-default); "
+                    "opacity: 0.6; transition: opacity 0.2s ease; align-self: stretch;"
+                )
+            )
+            split_divider.tooltip("Drag to resize editor / preview split")
+            preview_panel = (
+                ui.column()
+                .props(f"id={preview_panel_id}")
+                .classes(
+                    "min-h-0 overflow-hidden flex flex-col gap-1 "
+                    "border-l border-[var(--color-border-default)] pl-2"
+                )
+                .style("flex: 38 38 0%; min-width: 160px; max-width: 100%")
             )
 
             with editor_panel:
@@ -530,12 +795,17 @@ def create_custom_sources_tab():
             with preview_panel:
                 with ui.row().classes("w-full items-center gap-2 shrink-0 flex-wrap"):
                     ui.label("Preview").classes("text-sm font-medium shrink-0")
-                    preview_split_slider = (
-                        ui.slider(min=22, max=72, value=38, step=1)
+                    ui.label("Zoom").classes("text-xs opacity-70 shrink-0")
+                    preview_zoom_slider = (
+                        ui.slider(min=25, max=200, value=100, step=1)
                         .classes("flex-1 min-w-[140px]")
                         .props("dense label-always")
                     )
-                    preview_split_slider.tooltip("Preview panel width (% of row)")
+                    preview_zoom_slider.tooltip("Preview zoom (% of fit-to-area)")
+                    preview_zoom_reset_btn = ui.button(
+                        text="Fit",
+                    ).props("dense flat size=sm")
+                    preview_zoom_reset_btn.tooltip("Reset zoom to 100% (fit)")
                 preview_dirty_label = ui.label("").classes(
                     "text-xs opacity-70 min-h-[1.25rem]"
                 )
@@ -544,7 +814,9 @@ def create_custom_sources_tab():
                 )
                 preview_outer = (
                     ui.element("div")
-                    .props(f"id={preview_outer_id}")
+                    .props(
+                        f"id={preview_outer_id} data-mycelian-cs-preview-outer=true"
+                    )
                     .classes(
                         "relative w-full flex-1 min-h-[200px] overflow-hidden rounded bg-black/10"
                     )
@@ -557,24 +829,25 @@ def create_custom_sources_tab():
                     )
                     with preview_inner:
                         preview_iframe = ui.element("iframe").classes(
-                            "block border-0 bg-transparent"
+                            "block border-0 bg-transparent pointer-events-none"
                         )
 
-            def apply_preview_split(_: Any = None) -> None:
+            def apply_preview_zoom(_: Any = None) -> None:
                 try:
-                    pct = int(preview_split_slider.value)
+                    z = int(preview_zoom_slider.value)
                 except (TypeError, ValueError):
-                    pct = 38
-                pct = max(22, min(72, pct))
-                editor_panel.style(
-                    f"flex: {100 - pct} {100 - pct} 0%; min-width: 0; max-width: 100%"
-                )
-                preview_panel.style(
-                    f"flex: {pct} {pct} 0%; min-width: 160px; max-width: 92%"
-                )
+                    z = 100
+                zc = max(25, min(200, z))
+                if zc != z:
+                    preview_zoom_slider.value = zc
+                _run_preview_zoom_js(False)
 
-            preview_split_slider.on_value_change(apply_preview_split)
-            apply_preview_split()
+            def reset_preview_zoom() -> None:
+                preview_zoom_slider.value = 100
+                _run_preview_zoom_js(True)
+
+            preview_zoom_slider.on_value_change(apply_preview_zoom)
+            preview_zoom_reset_btn.on_click(reset_preview_zoom)
 
         _custom_sources_ctx.clear()
         _custom_sources_ctx.update(
@@ -587,8 +860,14 @@ def create_custom_sources_tab():
                 "preview_dirty_label": preview_dirty_label,
                 "preview_outer_id": preview_outer_id,
                 "preview_inner_id": preview_inner_id,
+                "preview_zoom_slider": preview_zoom_slider,
+                "preview_split_row_id": preview_split_row_id,
+                "preview_editor_panel_id": preview_editor_panel_id,
+                "preview_panel_id": preview_panel_id,
             }
         )
+
+        _bind_split_divider_js()
 
         # Load the config files initially
         load_config_files(config_parser, config_select, config_container)

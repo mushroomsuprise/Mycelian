@@ -15,6 +15,20 @@ Template Previewer:
     [] - Change previewer so no special javascript is needed inside the template files, it should run the animated preview items the same way they would get added into the template with real data. This is imperative as it must display and behave EXACTLY how the real template would. Maybe do this through a new websocket within the template specifically for the previewer?
     [] - Change the slide bar scaler at the top show it actually rescales the frame window
     [] - Set the previewer window so it is not interactable, and make it draggable so the user can move it by holding left click in the previewer window
+    [x] - Force-show data-driven hidden elements in the previewer only.
+          Mechanism: add the CSS class `mycelian-preview-show` to any element that
+          gets hidden at runtime because of *missing data* (e.g. Spotify when nothing
+          is playing, PSN trophies when no game is active, FF7 panelEnemies /
+          panelBattleLog when no game is attached). The previewer injects a small
+          helper script (web_engine.MYCELIAN_PREVIEW_HELPER_HTML) that strips the
+          `.hidden` class and inline `display:none` from those elements and a
+          MutationObserver re-applies that whenever the template's own JS tries to
+          hide them again. Real OBS overlays receive nothing.
+          Optional companion: a `previewState.mock_values` dict in the template's
+          JSON config can pre-set element values for preview-only render
+          (Jinja `{% if %}` branches that depend on a config value will pick the
+          mock branch). Pending unsaved user overrides always win over mock_values.
+          Reference example: see panelEnemies / panelBattleLog in templates/ff7.html.
 
 Template Creator:
     [] - Add a new "main" tab after Settings called "Spore Studio".

@@ -2415,24 +2415,6 @@
                 console.warn('No streamer ID available for cheermotes request');
             }
         }
-
-        // Custom Sources: server emits ``chat_add_message`` (same as connectors)
-        (function setupMycelianChatPreviewDemo() {
-            var previewMode = {{ mycelian_preview_mode | default(false) | tojson }};
-            var previewProfile = {{ mycelian_preview_profile | default("persistent") | tojson }};
-            if (!previewMode || previewProfile !== 'animated_demo') {
-                return;
-            }
-            function requestSamples() {
-                socket.emit('mycelian_preview_emit_chat');
-            }
-            socket.on('connect', function () {
-                setTimeout(requestSamples, 450);
-            });
-            if (socket.connected) {
-                setTimeout(requestSamples, 450);
-            }
-        })();
     </script>
 </body>
 

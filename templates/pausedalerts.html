@@ -516,24 +516,6 @@
         
         // Periodically reload config to pick up changes (every 5 seconds)
         // setInterval(loadTemplateConfig, 5000);
-        
-        // Custom Sources: ``pause_status_update`` only to this client (same handler as live)
-        (function setupMycelianPausedAlertsPreview() {
-            var previewMode = {{ mycelian_preview_mode | default(false) | tojson }};
-            var previewProfile = {{ mycelian_preview_profile | default("persistent") | tojson }};
-            if (!previewMode || previewProfile !== 'animated_demo') {
-                return;
-            }
-            function requestPreview() {
-                socket.emit('mycelian_preview_emit_pausedalerts');
-            }
-            socket.on('connect', function () {
-                setTimeout(requestPreview, 250);
-            });
-            if (socket.connected) {
-                setTimeout(requestPreview, 250);
-            }
-        })();
 
         console.log('Mycelian Paused Alerts initialized');
     </script>

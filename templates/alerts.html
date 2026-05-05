@@ -1958,24 +1958,6 @@
             applyTextVisibilityStyles();
         }
 
-        // Custom Sources: same path as connector — server emits ``alerts_play_alert``
-        (function setupMycelianAlertsPreviewDemo() {
-            var previewMode = {{ mycelian_preview_mode | default(false) | tojson }};
-            var previewProfile = {{ mycelian_preview_profile | default("persistent") | tojson }};
-            if (!previewMode || previewProfile !== 'animated_demo') {
-                return;
-            }
-            function requestSample() {
-                socket.emit('mycelian_preview_emit_alerts');
-            }
-            socket.on('connect', function () {
-                setTimeout(requestSample, 500);
-            });
-            if (socket.connected) {
-                setTimeout(requestSample, 500);
-            }
-        })();
-
         // Load config on startup
         loadTemplateConfig();
 
