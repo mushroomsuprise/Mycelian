@@ -18,6 +18,12 @@ Template Creator:
     [] - Include an "undo" system to revert the most recent change. Include an undo history. Ideally store all changes to undo, but limit to a set value for the history if performance will be an issue.
     [] - Incorporate the same preview system that the Source Settings menu will have (detailed above)
 
+Chat Improvements:
+    [] - Add more entry animations, including complex ones
+    [] - Change font boxes so they "autocomplete" from available fonts in the /assets/default_assets/fonts folder
+
+Alerts Improvements:
+    [] - Add emote parsing to alert messages (see chat template for the emote parser). Note: Alert messages have different payloads for emotes than chat messages for Twitch emotes specifically, 3rd party emotes can be parsed the same way.
 
 OBS Websocket:
     [] - Add in OBS websocket support. 
@@ -32,6 +38,8 @@ General Items:
     [] - Ensure statistics database "lazy loads"
     [] - Add the game category to Raid activity feed items. It should say something like: {user} has raided with {count} viewers, they were last playing {category}.
     [] - .wav audio files are not working (at least in the alerts template)
+    [] - Stream streaks are not appearing in the activity feed, it seems like the data is not coming in at all
+    [] - Stream streaks missing from the HTML template (OBS dock) but are in the python file
 
 Priority Fixes:
     [] - Setup "generic image/video" template, so the file can just be renamed and all websocket events will point to the file name.

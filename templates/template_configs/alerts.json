@@ -346,7 +346,7 @@
             "type": "text",
             "id": "BackgroundImageURL",
             "label": "Background Image URL",
-            "value": "/assets/alerts/AlertBackgroundOpac.png",
+            "value": "",
             "description": "URL or path to background image (when media type is 'image')"
         },
         {
