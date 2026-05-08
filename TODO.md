@@ -7,6 +7,12 @@ Game Hooks
 FF7 Hook
     [] - Rewrite to match newly reworked game hook manager.
 
+Connectors:
+    [] - Disable output of connectors when a "game hook" is the action, and that particular hook is either not enabled, or not connected to the game
+
+Template Previewer:
+    [] - Add settings menu with persistant storage of options to enable/disable mock data, sounds, etc
+
 Template Creator:
     [] - Add a new "main" tab after Settings called "Spore Studio".
     [] - Create a GUI based editor for creating and/or editting HTML templates and their JSON files specifically for Mycelian. This editor MUST be easy to use, as it will be the main source of customization for standard users. I still want a comprehensive list of options for the user to pick from.
