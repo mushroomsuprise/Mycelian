@@ -7,6 +7,9 @@ Game Hooks
 FF7 Hook
     [] - Rewrite to match newly reworked game hook manager.
 
+Spore Studio:
+    [] - Work more on loading in the existing templates correctly (reverse parser to create sidecar files?)
+
 Connectors:
     [] - Disable output of connectors when a "game hook" is the action, and that particular hook is either not enabled, or not connected to the game
 
