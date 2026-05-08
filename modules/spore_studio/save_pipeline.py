@@ -256,16 +256,73 @@ def create_template(
     return model
 
 
+def _save_legacy_template(
+    model: Dict[str, Any], template_name: str
+) -> Dict[str, Any]:
+    """
+    Persist value edits for a legacy template without touching its HTML.
+
+    Legacy templates are hand-authored HTML files with no
+    ``.spore.json`` sidecar; their structure is loaded into the editor
+    by synthesizing one element per id'd JSON config field
+    (``template_parser_back._synthesize_legacy_elements``). On save, we
+    must NOT regenerate the HTML — that would clobber user code — and we
+    must NOT write a sidecar — the template would silently become a
+    Spore Studio template on the next load. We just copy the edited
+    ``props.value`` from each synthetic element back onto the matching
+    field in the public JSON config and write only that file.
+    """
+    parser = TemplateConfigParser()
+    json_path = parser.get_config_path(template_name)
+    if not os.path.isfile(json_path):
+        raise SporeStudioError(
+            f"Legacy template '{template_name}' has no JSON config to update."
+        )
+
+    try:
+        with open(json_path, "r", encoding="utf-8") as fh:
+            config = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        raise SporeStudioError(
+            f"Could not read legacy config {json_path}: {e}"
+        ) from e
+
+    edited_values: Dict[str, Any] = {}
+    for el in model.get("elements") or []:
+        if not isinstance(el, dict):
+            continue
+        eid = el.get("id")
+        props = el.get("props") or {}
+        if eid and "value" in props:
+            edited_values[str(eid)] = props["value"]
+
+    raw_elements = config.get("elements")
+    if isinstance(raw_elements, list):
+        for entry in raw_elements:
+            if not isinstance(entry, dict):
+                continue
+            eid = entry.get("id")
+            if eid and str(eid) in edited_values:
+                entry["value"] = edited_values[str(eid)]
+
+    _atomic_write_json(json_path, config)
+    _refresh_web_engine_routes()
+    return model
+
+
 def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     """
     Save an editor model to disk.
 
-    Writes:
+    For Spore Studio (non-legacy) templates this writes:
 
     * ``templates/{name}.html``
     * ``templates/template_configs/{name}.json``
-    * ``templates/template_configs/{name}.spore.json``
+    * ``templates/_spore/{name}.spore.json``
     * ``assets/{name}/`` (created if missing)
+
+    For legacy templates (``model["legacy"]`` is truthy) only the public
+    JSON config is updated — see :func:`_save_legacy_template`.
 
     Re-saves are non-destructive for user-tuned ``value`` fields in the
     public JSON config: we use :func:`merge_template_configs.merge_config`
@@ -286,6 +343,9 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     model = dict(model)
     model["template_name"] = template_name
     model["alert_system"] = alert_system
+
+    if model.get("legacy"):
+        return _save_legacy_template(model, template_name)
 
     existing_html = _load_existing_html(template_name)
     html_text, json_config = template_codegen.compile_model(

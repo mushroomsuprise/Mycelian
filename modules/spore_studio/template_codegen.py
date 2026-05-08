@@ -4,7 +4,7 @@ Compile a Spore Studio editor model into the (HTML, JSON) pair Mycelian
 already understands.
 
 The editor model is the source of truth while editing and is persisted as
-``templates/template_configs/{name}.spore.json``. From it we deterministically
+``templates/_spore/{name}.spore.json``. From it we deterministically
 derive:
 
 - ``templates/{name}.html`` — Jinja-rendered overlay with a stable

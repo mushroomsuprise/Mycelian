@@ -171,6 +171,18 @@
         return candidate;
     }
 
+    function isLegacyElement(el) {
+        // Legacy synthetic elements never get a position when produced by
+        // template_parser_back._synthesize_legacy_elements; that's our
+        // signal to keep them out of the canvas and show only an Outline
+        // entry.
+        return !el || !el.position || el.position.x == null;
+    }
+
+    function isLegacyModel() {
+        return !!(state.model && state.model.legacy);
+    }
+
     /* ------------------------------------------------------------------
      * Render: stage (canvas)
      * ------------------------------------------------------------------ */
@@ -183,6 +195,7 @@
         stage.style.height = design.height + "px";
 
         (state.model.elements || []).forEach(function (el) {
+            if (isLegacyElement(el)) { return; }
             var node = document.createElement("div");
             node.className = "ss-element";
             node.dataset.sporeId = el.id;
@@ -314,12 +327,108 @@
         renderBindings();
     }
 
+    function renderLegacyProperties(host, el) {
+        var field = el.legacy_field || {};
+        var fieldType = String(field.type || "text").toLowerCase();
+
+        host.appendChild(formRow("ID", (function () {
+            var span = document.createElement("div");
+            span.style.fontFamily = "ui-monospace,SFMono-Regular,Menlo,monospace";
+            span.style.fontSize = "12px";
+            span.textContent = el.id;
+            return span;
+        })()));
+        host.appendChild(formRow("Category", (function () {
+            var span = document.createElement("div");
+            span.textContent = el.category || "Settings";
+            return span;
+        })()));
+        if (field.label) {
+            host.appendChild(formRow("Label", (function () {
+                var span = document.createElement("div");
+                span.textContent = String(field.label);
+                return span;
+            })()));
+        }
+
+        // Build the value editor matching the underlying JSON config field
+        // so saves write back semantically-correct values.
+        var ctrl;
+        if (fieldType === "checkbox" || fieldType === "switch" ||
+            fieldType === "toggle") {
+            ctrl = document.createElement("input");
+            ctrl.type = "checkbox";
+            ctrl.checked = !!el.props.value;
+        } else if (fieldType === "select" && Array.isArray(field.options)) {
+            ctrl = document.createElement("select");
+            field.options.forEach(function (opt) {
+                var op = document.createElement("option");
+                op.value = String(opt);
+                op.textContent = String(opt);
+                if (String(opt) === String(el.props.value)) { op.selected = true; }
+                ctrl.appendChild(op);
+            });
+        } else if (fieldType === "color") {
+            ctrl = document.createElement("input");
+            ctrl.type = "color";
+            ctrl.value = /^#[0-9a-f]{6}$/i.test(String(el.props.value || ""))
+                ? el.props.value : "#ffffff";
+        } else if (fieldType === "number") {
+            ctrl = document.createElement("input");
+            ctrl.type = "number";
+            if (field.min != null) { ctrl.min = field.min; }
+            if (field.max != null) { ctrl.max = field.max; }
+            if (field.step != null) { ctrl.step = field.step; }
+            ctrl.value = el.props.value == null ? "" : String(el.props.value);
+        } else if (fieldType === "textarea") {
+            ctrl = document.createElement("textarea");
+            ctrl.rows = 3;
+            ctrl.value = el.props.value == null ? "" : String(el.props.value);
+        } else {
+            ctrl = document.createElement("input");
+            ctrl.type = "text";
+            ctrl.value = el.props.value == null ? "" : String(el.props.value);
+        }
+        ctrl.addEventListener("change", function () {
+            if (ctrl.type === "checkbox") { el.props.value = ctrl.checked; }
+            else if (ctrl.type === "number") {
+                el.props.value = ctrl.value === "" ? null : Number(ctrl.value);
+            } else {
+                el.props.value = ctrl.value;
+            }
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        host.appendChild(formRow("Value", ctrl));
+
+        if (field.description) {
+            var desc = document.createElement("p");
+            desc.textContent = String(field.description);
+            desc.style.cssText =
+                "color:var(--ss-text-muted);font-size:11px;margin:4px 0 0;";
+            host.appendChild(desc);
+        }
+
+        var note = document.createElement("p");
+        note.textContent =
+            "Read-only legacy template. Edits to this value persist to " +
+            "the JSON config; HTML is not regenerated.";
+        note.style.cssText =
+            "color:var(--ss-warn);font-size:11px;margin-top:10px;";
+        host.appendChild(note);
+    }
+
     function renderProperties() {
         var host = $("#ss-properties-host");
         host.innerHTML = "";
         var el = selectedElement();
         if (!el) {
-            host.innerHTML = '<div class="ss-empty">Select an element on the canvas.</div>';
+            host.innerHTML = '<div class="ss-empty">Select an element on the canvas or in the outline.</div>';
+            return;
+        }
+
+        if (isLegacyElement(el)) {
+            renderLegacyProperties(host, el);
             return;
         }
 
@@ -482,6 +591,13 @@
         var el = selectedElement();
         if (!el) {
             host.innerHTML = '<div class="ss-empty">Select an element to attach event bindings.</div>';
+            return;
+        }
+        if (isLegacyElement(el)) {
+            host.innerHTML = '<div class="ss-empty">' +
+                'Legacy templates manage their own websocket bindings inside ' +
+                'the hand-authored HTML — bindings are not editable here.' +
+                '</div>';
             return;
         }
 
@@ -688,39 +804,116 @@
     function addElement(type, x, y, propsOverride) {
         if (!state.model) { return; }
         if (!ELEMENT_PROP_SCHEMA[type]) { return; }
-        var category = promptCategory();
-        if (category === null) { return; }
-        var id = uniqueElementId(type);
-        var sz = DEFAULT_SIZE[type] || { w: 100, h: 30 };
-        var props = Object.assign({}, DEFAULT_PROPS[type] || {}, propsOverride || {});
-        var el = {
-            id: id,
-            type: type,
-            category: category,
-            position: { x: x, y: y },
-            size: { w: sz.w, h: sz.h },
-            props: props,
-            bindings: []
-        };
-        state.model.elements = state.model.elements || [];
-        state.model.elements.push(el);
-        state.selectedId = id;
-        pushHistory();
-        renderAll();
-        modelTouch();
+        if (isLegacyModel()) {
+            toast(
+                "Legacy templates can't accept new blocks — create a new " +
+                "template via '+ New' to edit visually.",
+                "error"
+            );
+            return;
+        }
+        promptCategory().then(function (category) {
+            if (category === null) { return; }
+            var id = uniqueElementId(type);
+            var sz = DEFAULT_SIZE[type] || { w: 100, h: 30 };
+            var props = Object.assign({}, DEFAULT_PROPS[type] || {}, propsOverride || {});
+            var el = {
+                id: id,
+                type: type,
+                category: category,
+                position: { x: x, y: y },
+                size: { w: sz.w, h: sz.h },
+                props: props,
+                bindings: []
+            };
+            state.model.elements = state.model.elements || [];
+            state.model.elements.push(el);
+            state.selectedId = id;
+            pushHistory();
+            renderAll();
+            modelTouch();
+        });
     }
 
+    function existingCategories() {
+        var seen = {};
+        var out = [];
+        (state.model && state.model.elements ? state.model.elements : [])
+            .forEach(function (el) {
+                var c = (el.category || "").trim();
+                if (c && !seen[c]) { seen[c] = true; out.push(c); }
+            });
+        return out;
+    }
+
+    /**
+     * Show the category picker modal. Returns a Promise that resolves to a
+     * non-empty category string, or null if the user cancelled. Falls back
+     * to a free-text input when no existing categories are available.
+     */
     function promptCategory() {
-        var existing = (state.model.elements || []).map(function (e) { return e.category; })
-            .filter(function (c) { return !!c; });
-        var defaultName = existing[existing.length - 1] || "Elements";
-        var entered = prompt(
-            "Category name for this element\n" +
-            "(used as a separator label in the JSON config; group elements by sharing a category)",
-            defaultName
-        );
-        if (entered === null) { return null; }
-        return (entered || "").trim() || "Elements";
+        return new Promise(function (resolve) {
+            var tpl = $("#ss-category-template");
+            var node = tpl.content.firstElementChild.cloneNode(true);
+            document.body.appendChild(node);
+
+            var sel = node.querySelector("[data-cat='select']");
+            var newRow = node.querySelector("[data-cat='new-row']");
+            var newInput = node.querySelector("[data-cat='new']");
+            var selectRow = node.querySelector("[data-cat='select-row']");
+
+            var categories = existingCategories();
+            var NEW_VALUE = "__ss_new__";
+
+            if (categories.length === 0) {
+                selectRow.style.display = "none";
+                newInput.value = "Elements";
+            } else {
+                categories.forEach(function (c) {
+                    var op = document.createElement("option");
+                    op.value = c;
+                    op.textContent = c;
+                    sel.appendChild(op);
+                });
+                var newOp = document.createElement("option");
+                newOp.value = NEW_VALUE;
+                newOp.textContent = "+ New category…";
+                sel.appendChild(newOp);
+                sel.value = categories[categories.length - 1];
+                newRow.style.display = "none";
+                sel.addEventListener("change", function () {
+                    if (sel.value === NEW_VALUE) {
+                        newRow.style.display = "";
+                        newInput.value = "";
+                        newInput.focus();
+                    } else {
+                        newRow.style.display = "none";
+                    }
+                });
+            }
+
+            function close(value) { node.remove(); resolve(value); }
+
+            node.querySelector("[data-cat-action='cancel']")
+                .addEventListener("click", function () { close(null); });
+            node.querySelector("[data-cat-action='ok']")
+                .addEventListener("click", function () {
+                    var value;
+                    if (categories.length === 0 || sel.value === NEW_VALUE) {
+                        value = (newInput.value || "").trim();
+                        if (!value) { value = "Elements"; }
+                    } else {
+                        value = sel.value;
+                    }
+                    close(value);
+                });
+            newInput.addEventListener("keydown", function (ev) {
+                if (ev.key === "Enter") {
+                    ev.preventDefault();
+                    node.querySelector("[data-cat-action='ok']").click();
+                }
+            });
+        });
     }
 
     function updateBindingsForRename(oldId, newId) {
@@ -861,8 +1054,13 @@
             el.id = el.id || uuid();
             el.type = el.type || "container";
             el.category = el.category || "Elements";
-            el.position = el.position || { x: 0, y: 0 };
-            el.size = el.size || (DEFAULT_SIZE[el.type] || { w: 100, h: 30 });
+            // Preserve null position/size — that's how legacy synthetic
+            // elements signal "no canvas placement" so the stage skips
+            // them and they only appear in the Outline panel.
+            if (el.position === undefined) { el.position = { x: 0, y: 0 }; }
+            if (el.size === undefined) {
+                el.size = DEFAULT_SIZE[el.type] || { w: 100, h: 30 };
+            }
             el.props = el.props || {};
             el.bindings = el.bindings || [];
         });
@@ -899,15 +1097,107 @@
     }
 
     /* ------------------------------------------------------------------
-     * Preview
+     * Preview — floating, draggable, resizable popup dialog.
+     *
+     * Closing the dialog clears the iframe src so the server stops the
+     * mock activity loop tied to this preview token. Opening the dialog
+     * (or pressing Reload) re-points the iframe at /{template}?__preview_token=…
+     * which the server augments via MYCELIAN_PREVIEW_HELPER_HTML.
      * ------------------------------------------------------------------ */
+    function previewDialogOpen() {
+        var dlg = $("#ss-preview-dialog");
+        return !!(dlg && !dlg.hasAttribute("hidden"));
+    }
+
     function refreshPreview(forceReload) {
         var iframe = $("#ss-preview-iframe");
         if (!iframe || !state.model) { return; }
+        // No-op when the popup is closed so we never burn server-side
+        // mock-event cycles for a preview the user can't see.
+        if (!previewDialogOpen()) { return; }
         var bust = Date.now();
         iframe.src = "/" + encodeURIComponent(state.model.template_name) +
             "?__preview_token=" + encodeURIComponent(state.previewToken) +
             "&_cb=" + bust + (forceReload ? "&_force=1" : "");
+    }
+
+    function openPreviewDialog() {
+        var dlg = $("#ss-preview-dialog");
+        if (!dlg) { return; }
+        dlg.removeAttribute("hidden");
+        refreshPreview(true);
+    }
+
+    function closePreviewDialog() {
+        var dlg = $("#ss-preview-dialog");
+        var iframe = $("#ss-preview-iframe");
+        if (!dlg) { return; }
+        dlg.setAttribute("hidden", "");
+        if (iframe) { iframe.src = "about:blank"; }
+    }
+
+    function togglePreviewDialog() {
+        if (previewDialogOpen()) { closePreviewDialog(); }
+        else { openPreviewDialog(); }
+    }
+
+    function setupPreviewDialog() {
+        var dlg = $("#ss-preview-dialog");
+        if (!dlg) { return; }
+        var head = dlg.querySelector("[data-drag-handle]");
+        var resize = dlg.querySelector("[data-resize-handle]");
+
+        var dragData = null;
+        head.addEventListener("mousedown", function (ev) {
+            // Header buttons should still be clickable.
+            if (ev.target.closest("button")) { return; }
+            var rect = dlg.getBoundingClientRect();
+            dragData = {
+                startX: ev.clientX,
+                startY: ev.clientY,
+                origLeft: rect.left,
+                origTop: rect.top
+            };
+            ev.preventDefault();
+        });
+        document.addEventListener("mousemove", function (ev) {
+            if (!dragData) { return; }
+            var x = dragData.origLeft + (ev.clientX - dragData.startX);
+            var y = dragData.origTop + (ev.clientY - dragData.startY);
+            x = Math.max(0, Math.min(window.innerWidth - 80, x));
+            y = Math.max(0, Math.min(window.innerHeight - 40, y));
+            dlg.style.left = x + "px";
+            dlg.style.top = y + "px";
+        });
+        document.addEventListener("mouseup", function () { dragData = null; });
+
+        var resizeData = null;
+        resize.addEventListener("mousedown", function (ev) {
+            var rect = dlg.getBoundingClientRect();
+            resizeData = {
+                startX: ev.clientX,
+                startY: ev.clientY,
+                origW: rect.width,
+                origH: rect.height
+            };
+            ev.preventDefault();
+            ev.stopPropagation();
+        });
+        document.addEventListener("mousemove", function (ev) {
+            if (!resizeData) { return; }
+            var w = Math.max(280, resizeData.origW + (ev.clientX - resizeData.startX));
+            var h = Math.max(200, resizeData.origH + (ev.clientY - resizeData.startY));
+            dlg.style.width = w + "px";
+            dlg.style.height = h + "px";
+        });
+        document.addEventListener("mouseup", function () { resizeData = null; });
+
+        var closeBtn = $("#ss-preview-close");
+        if (closeBtn) { closeBtn.addEventListener("click", closePreviewDialog); }
+        var reloadBtn = $("#ss-preview-reload");
+        if (reloadBtn) {
+            reloadBtn.addEventListener("click", function () { refreshPreview(true); });
+        }
     }
 
     /* ------------------------------------------------------------------
@@ -965,7 +1255,69 @@
     function renderAll() {
         renderStage();
         renderInspector();
+        renderOutline();
         renderCanvasPanel();
+    }
+
+    /* ------------------------------------------------------------------
+     * Outline list: groups every element in state.model.elements by
+     * category. Click → select + open inspector. Particularly important
+     * for legacy synthetic elements that have no canvas presence.
+     * ------------------------------------------------------------------ */
+    function renderOutline() {
+        var host = $("#ss-outline-list");
+        if (!host) { return; }
+        host.innerHTML = "";
+        if (!state.model) { return; }
+        var elements = state.model.elements || [];
+        if (elements.length === 0) {
+            host.innerHTML = '<div class="ss-outline-empty">' +
+                'No elements yet — drag a block onto the canvas, or open ' +
+                'an existing template to populate this list.</div>';
+            return;
+        }
+
+        var groups = {};
+        var order = [];
+        elements.forEach(function (el) {
+            var cat = (el.category || "Elements").trim() || "Elements";
+            if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+            groups[cat].push(el);
+        });
+
+        order.forEach(function (cat) {
+            var group = document.createElement("div");
+            group.className = "ss-outline-group";
+            var head = document.createElement("div");
+            head.className = "ss-outline-group__head";
+            head.textContent = cat;
+            group.appendChild(head);
+            groups[cat].forEach(function (el) {
+                var row = document.createElement("div");
+                row.className = "ss-outline-row";
+                if (el.id === state.selectedId) { row.classList.add("selected"); }
+                var label = document.createElement("span");
+                label.className = "ss-outline-row__id";
+                label.textContent = el.id;
+                var typeTag = document.createElement("span");
+                typeTag.className = "ss-outline-row__type";
+                typeTag.textContent = el.type;
+                row.appendChild(label);
+                row.appendChild(typeTag);
+                row.addEventListener("click", function () {
+                    state.selectedId = el.id;
+                    renderInspector();
+                    renderOutline();
+                    $$(".ss-element", $("#ss-stage")).forEach(function (n) {
+                        n.classList.toggle(
+                            "selected", n.dataset.sporeId === el.id
+                        );
+                    });
+                });
+                group.appendChild(row);
+            });
+            host.appendChild(group);
+        });
     }
 
     function renderCanvasPanel() {
@@ -1071,7 +1423,7 @@
         $("#ss-btn-undo").addEventListener("click", undo);
         $("#ss-btn-redo").addEventListener("click", redo);
         $("#ss-btn-save").addEventListener("click", saveCurrent);
-        $("#ss-btn-refresh-preview").addEventListener("click", function () { refreshPreview(true); });
+        $("#ss-btn-preview").addEventListener("click", togglePreviewDialog);
         $("#ss-stage").addEventListener("mousedown", function () {
             state.selectedId = null;
             $$(".ss-element").forEach(function (n) { n.classList.remove("selected"); });
@@ -1084,6 +1436,7 @@
         setupToolbar();
         setupCanvasPanel();
         setupBlockPaletteDnD();
+        setupPreviewDialog();
         setupKeyboard();
         setupSocket();
 

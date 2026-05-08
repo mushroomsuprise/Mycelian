@@ -15,6 +15,8 @@ The tab renders one of two states:
 from __future__ import annotations
 
 import logging
+import time
+import webbrowser
 from typing import Any, Dict
 
 from nicegui import ui
@@ -158,7 +160,11 @@ def _refresh_iframe(state: Dict[str, Any]) -> None:
         placeholder.style("display:flex")
         return
     iframe.style("display:block")
-    iframe.props(f'src="{url}"')
+    # Cache-bust so the iframe actually reloads when the URL is otherwise
+    # unchanged — without this, calling props(src=...) with the same value
+    # is a no-op and the "Reload editor" button silently does nothing.
+    cache_busted = f"{url}?_cb={int(time.time() * 1000)}"
+    iframe.props(f'src="{cache_busted}"')
     placeholder.style("display:none")
 
 
@@ -169,4 +175,14 @@ def _open_externally() -> None:
 
         notify("Overlay server is not running yet.", type="warning")
         return
-    ui.run_javascript(f"window.open({url!r}, '_blank');")
+    # Server-side webbrowser.open is the pattern used elsewhere in the app
+    # (settings, help_browser, spotify) and is far more reliable than
+    # ui.run_javascript("window.open(...)") which is async-only and gets
+    # blocked by browser popup heuristics when not in a click-stack.
+    try:
+        webbrowser.open(url, new=2)
+    except Exception as e:
+        logger.warning("Failed to open Spore Studio externally: %s", e)
+        from ...notification_engine import notify
+
+        notify(f"Could not open browser: {e}", type="negative")

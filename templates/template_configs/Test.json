@@ -1,0 +1,36 @@
+{
+    "template_name": "Test",
+    "spore_studio": true,
+    "alert_system": "queue",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Canvas"
+        },
+        {
+            "type": "number",
+            "id": "DesignWidth",
+            "label": "Design Width",
+            "value": 800,
+            "min": 320,
+            "max": 7680,
+            "description": "Logical canvas width in pixels."
+        },
+        {
+            "type": "number",
+            "id": "DesignHeight",
+            "label": "Design Height",
+            "value": 200,
+            "min": 240,
+            "max": 4320,
+            "description": "Logical canvas height in pixels."
+        },
+        {
+            "type": "text",
+            "id": "TemplateTitle",
+            "label": "Title",
+            "value": "Test",
+            "description": "Browser title for this overlay."
+        }
+    ]
+}

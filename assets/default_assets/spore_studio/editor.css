@@ -237,10 +237,17 @@ html, body {
 }
 
 .ss-stage {
+    /*
+     * No solid fill: most overlays end up with transparent backgrounds in
+     * OBS, so the canvas surface itself is transparent and uses a faint
+     * checkerboard hint to indicate "this area is see-through". The
+     * design width/height is shown only as a dashed outline.
+     */
     position: relative;
-    background: #000;
+    background:
+        linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.05) 75%) 0 0 / 16px 16px,
+        linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.05) 75%) 8px 8px / 16px 16px;
     border: 1px dashed rgba(255,255,255,0.18);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
 }
 
 .ss-element {
@@ -324,6 +331,53 @@ html, body {
     font-size: 14px;
 }
 
+.ss-outline-group {
+    margin-bottom: 10px;
+}
+.ss-outline-group__head {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ss-text-muted);
+    padding: 4px 0;
+    border-bottom: 1px solid var(--ss-border);
+    margin-bottom: 4px;
+}
+.ss-outline-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: var(--ss-radius);
+    cursor: pointer;
+    font-size: 12px;
+    user-select: none;
+}
+.ss-outline-row:hover { background: rgba(255,255,255,0.04); }
+.ss-outline-row.selected {
+    background: rgba(115, 0, 255, 0.15);
+    outline: 1px solid var(--ss-accent);
+}
+.ss-outline-row__id {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ss-outline-row__type {
+    color: var(--ss-text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+.ss-outline-empty {
+    font-size: 11px;
+    color: var(--ss-text-muted);
+    padding: 6px 0;
+}
+.ss-status--legacy { color: var(--ss-warn); font-weight: 500; }
+
 .ss-asset-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -353,6 +407,65 @@ html, body {
     flex: 1;
     min-height: 200px;
     border-top: 1px solid var(--ss-border);
+}
+
+/* Preview popup — modeless, draggable, resizable */
+.ss-preview-dialog {
+    position: fixed;
+    top: 80px;
+    left: 80px;
+    width: 520px;
+    height: 340px;
+    min-width: 280px;
+    min-height: 200px;
+    background: var(--ss-bg-elevated);
+    border: 1px solid var(--ss-border);
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    z-index: 9000;
+    overflow: hidden;
+}
+.ss-preview-dialog[hidden] { display: none; }
+.ss-preview-dialog__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--ss-bg-input);
+    border-bottom: 1px solid var(--ss-border);
+    cursor: move;
+    user-select: none;
+}
+.ss-preview-dialog__title {
+    font-weight: 600;
+    font-size: 12px;
+}
+.ss-preview-dialog__body {
+    flex: 1;
+    background:
+        linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%) 0 0 / 16px 16px,
+        linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%) 8px 8px / 16px 16px;
+    overflow: hidden;
+    position: relative;
+}
+.ss-preview-dialog__body iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    display: block;
+}
+.ss-preview-dialog__resize {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    background:
+        linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.4) 50%);
 }
 
 .ss-create-overlay {

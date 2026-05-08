@@ -162,7 +162,17 @@ class TemplateConfigParser:
             logger.warning(f"Config directory {self.config_dir} not found.")
             return []
         
-        json_files = glob.glob(os.path.join(self.config_dir, '*.json'))
+        # Spore Studio editor sidecars use a ``.spore.json`` suffix and
+        # used to live alongside the public configs here, leaking into
+        # the Source Settings dropdown as e.g. ``title.spore``. They now
+        # live under ``templates/_spore/`` (see
+        # ``modules/spore_studio/template_parser_back.py``); this filter
+        # is a defensive safety net so a stray sidecar in the wrong dir
+        # never resurfaces in the UI.
+        json_files = [
+            f for f in glob.glob(os.path.join(self.config_dir, '*.json'))
+            if not f.endswith('.spore.json')
+        ]
         config_names = [os.path.basename(f).replace('.json', '') for f in json_files]
         logger.debug(f"Found {len(config_names)} config files in {self.config_dir}")
         return config_names

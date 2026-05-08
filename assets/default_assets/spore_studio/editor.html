@@ -17,8 +17,8 @@
             <button class="ss-btn ss-btn--ghost" id="ss-btn-undo" title="Undo (Ctrl+Z)">&#8630;</button>
             <button class="ss-btn ss-btn--ghost" id="ss-btn-redo" title="Redo (Ctrl+Shift+Z)">&#8631;</button>
             <span class="ss-spacer"></span>
-            <button class="ss-btn ss-btn--ghost" id="ss-btn-refresh-preview"
-                    title="Reload preview">Reload preview</button>
+            <button class="ss-btn" id="ss-btn-preview"
+                    title="Open live preview window">Preview</button>
             <button class="ss-btn ss-btn--primary" id="ss-btn-save">Save</button>
         </div>
 
@@ -47,6 +47,10 @@
                         <span class="ss-block__label">Container</span>
                     </div>
                 </div>
+            </div>
+            <div class="ss-section">
+                <h3>Outline</h3>
+                <div id="ss-outline-list"></div>
             </div>
             <div class="ss-section">
                 <h3>Assets</h3>
@@ -116,12 +120,6 @@
                         <input type="text" id="ss-template-title">
                     </div>
                 </div>
-                <div class="ss-section">
-                    <h3>Live preview</h3>
-                    <iframe id="ss-preview-iframe"
-                            style="width:100%;height:200px;border:1px solid var(--ss-border);border-radius:var(--ss-radius);background:#000;"
-                            sandbox="allow-scripts allow-same-origin"></iframe>
-                </div>
             </div>
         </div>
 
@@ -133,6 +131,48 @@
     </div>
 
     <div id="ss-toast" class="ss-toast" role="status" aria-live="polite"></div>
+
+    <div id="ss-preview-dialog" class="ss-preview-dialog" hidden>
+        <div class="ss-preview-dialog__head" data-drag-handle>
+            <span class="ss-preview-dialog__title">Live preview</span>
+            <span class="ss-spacer" style="flex:1"></span>
+            <button class="ss-btn ss-btn--ghost" id="ss-preview-reload"
+                    title="Reload the preview iframe">Reload</button>
+            <button class="ss-btn ss-btn--ghost" id="ss-preview-close"
+                    title="Close the preview window">Close</button>
+        </div>
+        <div class="ss-preview-dialog__body">
+            <iframe id="ss-preview-iframe"
+                    sandbox="allow-scripts allow-same-origin"></iframe>
+        </div>
+        <div class="ss-preview-dialog__resize" data-resize-handle></div>
+    </div>
+
+    <template id="ss-category-template">
+        <div class="ss-create-overlay">
+            <div class="ss-create-overlay__card">
+                <h2>Element category</h2>
+                <p style="color:var(--ss-text-muted);font-size:11px;margin:0 0 10px;">
+                    Pick an existing category or create a new one. Categories
+                    group elements in the saved JSON config.
+                </p>
+                <div class="ss-form-row" data-cat="select-row">
+                    <label>Existing category</label>
+                    <select data-cat="select"></select>
+                </div>
+                <div class="ss-form-row" data-cat="new-row">
+                    <label>New category name</label>
+                    <input type="text" data-cat="new" autocomplete="off"
+                           placeholder="e.g. Headline">
+                </div>
+                <div class="ss-row" style="justify-content:flex-end;margin-top:8px;">
+                    <button class="ss-btn" data-cat-action="cancel">Cancel</button>
+                    <button class="ss-btn ss-btn--primary"
+                            data-cat-action="ok">Use category</button>
+                </div>
+            </div>
+        </div>
+    </template>
 
     <template id="ss-create-template">
         <div class="ss-create-overlay">

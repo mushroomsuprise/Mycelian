@@ -1,0 +1,10 @@
+{
+  "template_name": "Test",
+  "alert_system": "queue",
+  "design": {
+    "width": 800,
+    "height": 200
+  },
+  "elements": [],
+  "advanced_js": ""
+}

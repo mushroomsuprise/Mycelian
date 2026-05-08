@@ -20,6 +20,8 @@ NiceGUI "Spore Studio" tab. Public surface:
   removed, or modified inside ``assets/{template_name}/``.
 """
 
+import logging as _logging
+
 from . import (
     assets_watcher,
     behavior_blocks,
@@ -28,6 +30,23 @@ from . import (
     template_codegen,
     template_parser_back,
 )
+
+# One-time migration: relocate any ``.spore.json`` sidecars still living
+# inside ``templates/template_configs/`` (the original layout) to the new
+# hidden ``templates/_spore/`` folder so they stop polluting the Source
+# Settings dropdown. Safe to run on every import — idempotent and a no-op
+# once the on-disk tree is already migrated.
+try:
+    _migrated = template_parser_back.migrate_all_sidecars()
+    if _migrated:
+        _logging.getLogger(__name__).info(
+            "Spore Studio: migrated %d sidecar(s) into templates/_spore/",
+            _migrated,
+        )
+except Exception:  # pragma: no cover - best-effort startup migration
+    _logging.getLogger(__name__).exception(
+        "Spore Studio sidecar migration failed (non-fatal)"
+    )
 
 __all__ = [
     "assets_watcher",
