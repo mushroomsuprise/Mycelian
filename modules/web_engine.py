@@ -538,6 +538,150 @@ class WebEngine:
                     {"Content-Type": "application/json"},
                 )
 
+        # ------------------------------------------------------------------
+        # Spore Studio — visual template editor endpoints.
+        # The editor itself is a static HTML/JS bundle under
+        # assets/default_assets/spore_studio/ that runs inside an iframe in
+        # the NiceGUI tab. These endpoints are the bridge between that
+        # bundle and the Mycelian filesystem.
+        # ------------------------------------------------------------------
+        @self.app.route("/_spore_studio_editor")
+        def serve_spore_studio_editor():
+            """Serve the Spore Studio editor shell HTML."""
+            editor_path = get_assets_path(
+                os.path.join("default_assets", "spore_studio", "editor.html")
+            )
+            if not os.path.isfile(editor_path):
+                return ("Spore Studio editor bundle missing.", 500)
+            try:
+                directory = os.path.dirname(editor_path)
+                return send_from_directory(directory, "editor.html")
+            except Exception as e:
+                logger.error("Error serving Spore Studio editor: %s", e)
+                return (f"Error serving editor: {e}", 500)
+
+        @self.app.route("/api/spore-studio/events")
+        def serve_spore_studio_events():
+            """Return the curated event + action registry for the binding picker."""
+            try:
+                from .spore_studio import event_registry as _ev
+
+                return _ev.get_event_registry(), 200, {
+                    "Content-Type": "application/json"
+                }
+            except Exception as e:
+                logger.error("Spore Studio events endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/templates")
+        def serve_spore_studio_templates():
+            """List all templates with a Spore Studio sidecar plus legacy ones."""
+            try:
+                from .spore_studio import save_pipeline as _sp
+
+                spore, legacy = _sp.list_spore_templates()
+                return (
+                    {"spore_templates": spore, "legacy_templates": legacy},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Spore Studio templates endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/model/<template_name>")
+        def serve_spore_studio_model(template_name):
+            """Return the editor model (sidecar or legacy fallback) for a template."""
+            try:
+                from .spore_studio import template_parser_back as _tpb
+
+                model = _tpb.parse_existing(template_name)
+                return model, 200, {"Content-Type": "application/json"}
+            except Exception as e:
+                logger.error("Spore Studio model endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/assets/<template_name>")
+        def serve_spore_studio_assets(template_name):
+            """Return the asset tree for a single template (drives the asset browser)."""
+            try:
+                from .spore_studio import assets_watcher as _aw
+
+                snapshot = _aw.request_snapshot(template_name)
+                return snapshot, 200, {"Content-Type": "application/json"}
+            except Exception as e:
+                logger.error("Spore Studio assets endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/save", methods=["POST"])
+        def save_spore_studio_template():
+            """Persist an editor model and regenerate HTML + JSON config."""
+            try:
+                from .spore_studio import save_pipeline as _sp
+
+                payload = request.get_json(silent=True) or {}
+                model = payload.get("model")
+                if not isinstance(model, dict):
+                    return (
+                        {"error": "Request body must include a 'model' object."},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                try:
+                    saved = _sp.save_template(model)
+                except _sp.SporeStudioError as ex:
+                    return (
+                        {"error": str(ex)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                return (
+                    {"ok": True, "model": saved},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Spore Studio save error: %s", e, exc_info=True)
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route("/api/spore-studio/create", methods=["POST"])
+        def create_spore_studio_template():
+            """Create a fresh template (boilerplate or copy-from)."""
+            try:
+                from .spore_studio import save_pipeline as _sp
+
+                payload = request.get_json(silent=True) or {}
+                try:
+                    model = _sp.create_template(
+                        name=str(payload.get("name") or ""),
+                        alert_system=str(payload.get("alert_system") or "queue"),
+                        copy_from=payload.get("copy_from") or None,
+                        design_width=int(payload.get("design_width") or 800),
+                        design_height=int(payload.get("design_height") or 200),
+                    )
+                except _sp.SporeStudioError as ex:
+                    return (
+                        {"error": str(ex)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                return (
+                    {"ok": True, "model": model},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Spore Studio create error: %s", e, exc_info=True)
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
         # Add Stream Deck API endpoints
         @self.app.route("/api/streamdeck/toggle_alerts", methods=["POST"])
         def streamdeck_toggle_alerts():
@@ -1273,6 +1417,15 @@ class WebEngine:
         # Register dynamic routes based on HTML templates
         self.register_routes()
 
+        # Register a catch-all template route AFTER all explicit routes so
+        # templates created at runtime (Spore Studio "Create" or files
+        # dropped into ``templates/``) become live without an app restart.
+        # Flask 3 forbids ``add_url_rule`` after the first request, but
+        # this one-time registration during __init__ is safe; subsequent
+        # template creations are served by a single fallback that does
+        # the disk lookup at request time.
+        self._register_template_fallback_route()
+
         # WebSocket event handlers
         self.register_socket_events()
 
@@ -1448,17 +1601,142 @@ class WebEngine:
 
             logger.debug(f"Successfully registered route for template: {template_name}")
 
+        except AssertionError as e:
+            # Flask 3.x forbids add_url_rule after the first request. The
+            # template fallback registered in __init__ handles runtime-
+            # created templates instead; downgrade this from error to
+            # debug so the log isn't spammed on every save.
+            logger.debug(
+                "Skipping explicit route for template %s (post-startup); "
+                "fallback route will serve it: %s",
+                template_name, e,
+            )
         except Exception as e:
             logger.error(
                 f"Error registering route for template {template_name}: {str(e)}",
                 exc_info=True,
             )
 
+    def _register_template_fallback_route(self):
+        """Register a one-time catch-all route for runtime-created templates.
+
+        Flask 3.x forbids ``add_url_rule`` after the first request. Without
+        this fallback, templates created at runtime (e.g. through Spore
+        Studio's Create dialog) would 404 until the user restarted the
+        app. The single ``/<__spore_template>`` rule is registered now,
+        during ``__init__``, and resolves the template file from disk on
+        every request — so any new ``templates/{name}.html`` is served
+        immediately.
+
+        Specific routes registered by :func:`_register_template_route`
+        always win over this catch-all (Flask matches exact rules before
+        variable rules), so existing behavior is unchanged.
+        """
+        engine_self = self
+
+        def template_fallback(spore_template_name):
+            template_name = spore_template_name
+            if not template_name or "/" in template_name:
+                return ("Not found", 404)
+            html_path = os.path.join(self.template_dir, f"{template_name}.html")
+            if not os.path.isfile(html_path):
+                return ("Not found", 404)
+            try:
+                template_config = copy.deepcopy(
+                    engine_self.template_config_parser.load_config(template_name)
+                )
+                preview_token = request.args.get("__preview_token")
+                mycelian_preview_mode = False
+                overrides: Dict[str, Any] = {}
+                if preview_token:
+                    with engine_self._preview_sessions_lock:
+                        sess = engine_self._preview_sessions.get(preview_token)
+                    if (
+                        isinstance(sess, dict)
+                        and sess.get("template") == template_name
+                    ):
+                        ov = sess.get("overrides")
+                        if isinstance(ov, dict):
+                            overrides = ov
+                            mycelian_preview_mode = True
+
+                if overrides:
+                    for element in template_config.get("elements", []):
+                        if not isinstance(element, dict):
+                            continue
+                        eid = element.get("id")
+                        if eid in overrides:
+                            element["value"] = overrides[eid]
+
+                if mycelian_preview_mode:
+                    preview_state = template_config.get("previewState")
+                    if isinstance(preview_state, dict):
+                        mock_values = preview_state.get("mock_values")
+                        if isinstance(mock_values, dict):
+                            for element in template_config.get("elements", []):
+                                if not isinstance(element, dict):
+                                    continue
+                                eid = element.get("id")
+                                if eid in mock_values and eid not in overrides:
+                                    element["value"] = mock_values[eid]
+
+                template_vars: Dict[str, Any] = {}
+                if "elements" in template_config:
+                    for element in template_config["elements"]:
+                        if "id" in element and "value" in element:
+                            template_vars[element["id"]] = element["value"]
+
+                html = render_template(
+                    f"{template_name}.html",
+                    **template_vars,
+                    mycelian_html_stem=str(template_name),
+                )
+                if mycelian_preview_mode and preview_token:
+                    if "</body>" in html:
+                        html = html.replace(
+                            "</body>",
+                            MYCELIAN_PREVIEW_HELPER_HTML + "</body>",
+                            1,
+                        )
+                    else:
+                        html = html + MYCELIAN_PREVIEW_HELPER_HTML
+                    resp = make_response(html)
+                    resp.set_cookie(
+                        "mycelian_preview_token",
+                        preview_token,
+                        path="/",
+                        samesite="Lax",
+                        httponly=False,
+                    )
+                    return resp
+                return html
+            except Exception as e:
+                logger.error(
+                    "Template fallback render error for %s: %s",
+                    template_name, e, exc_info=True,
+                )
+                return (f"Error loading template {template_name}: {e}", 500)
+
+        try:
+            self.app.add_url_rule(
+                "/<spore_template_name>",
+                "template_fallback",
+                template_fallback,
+                methods=["GET"],
+            )
+        except AssertionError as e:
+            logger.warning(
+                "Template fallback registration skipped (post-startup): %s", e
+            )
+
     def _create_template_assets_folder(self, template_name):
         """Create assets folder for a template if it doesn't exist"""
         try:
-            # Create main assets directory if it doesn't exist
-            assets_dir = os.path.abspath("assets")
+            # Resolve the assets root through path_utils so dev and frozen
+            # builds agree on a single location (matches the rest of the
+            # codebase). Using os.path.abspath("assets") here would diverge
+            # under PyInstaller because cwd != exe_dir.
+            assets_dir = get_assets_path()
             if not os.path.exists(assets_dir):
                 os.makedirs(assets_dir)
                 logger.debug(f"Created main assets directory: {assets_dir}")
@@ -5507,6 +5785,16 @@ class WebEngine:
             time.sleep(1)
             web_engine_running = self.is_running
             web_engine_instance = self  # Set global instance
+
+            # Start the Spore Studio assets watcher so the editor sees
+            # filesystem changes (drag-drop into assets/{name}/) without
+            # forcing the user to manually refresh.
+            try:
+                from .spore_studio import assets_watcher as _aw
+
+                _aw.start_watcher()
+            except Exception as e:
+                logger.debug("Could not start Spore Studio assets watcher: %s", e)
         else:
             logger.warning("WebEngine server thread already running")
 

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Spore Studio</title>
+    <link rel="stylesheet" href="/assets/default_assets/spore_studio/editor.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+            crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="ss-root">
+        <div class="ss-toolbar">
+            <span class="ss-toolbar__title">Spore Studio</span>
+            <select id="ss-template-select" class="ss-toolbar__name"
+                    title="Active template"></select>
+            <button class="ss-btn" id="ss-btn-create">+ New</button>
+            <button class="ss-btn ss-btn--ghost" id="ss-btn-undo" title="Undo (Ctrl+Z)">&#8630;</button>
+            <button class="ss-btn ss-btn--ghost" id="ss-btn-redo" title="Redo (Ctrl+Shift+Z)">&#8631;</button>
+            <span class="ss-spacer"></span>
+            <button class="ss-btn ss-btn--ghost" id="ss-btn-refresh-preview"
+                    title="Reload preview">Reload preview</button>
+            <button class="ss-btn ss-btn--primary" id="ss-btn-save">Save</button>
+        </div>
+
+        <div class="ss-panel-blocks">
+            <div class="ss-section">
+                <h3>Blocks</h3>
+                <div id="ss-blocks-list">
+                    <div class="ss-block" draggable="true" data-block-type="text">
+                        <span class="ss-block__icon">T</span>
+                        <span class="ss-block__label">Text</span>
+                    </div>
+                    <div class="ss-block" draggable="true" data-block-type="image">
+                        <span class="ss-block__icon">&#128247;</span>
+                        <span class="ss-block__label">Image</span>
+                    </div>
+                    <div class="ss-block" draggable="true" data-block-type="video">
+                        <span class="ss-block__icon">&#127916;</span>
+                        <span class="ss-block__label">Video</span>
+                    </div>
+                    <div class="ss-block" draggable="true" data-block-type="audio">
+                        <span class="ss-block__icon">&#128266;</span>
+                        <span class="ss-block__label">Audio</span>
+                    </div>
+                    <div class="ss-block" draggable="true" data-block-type="container">
+                        <span class="ss-block__icon">&#9633;</span>
+                        <span class="ss-block__label">Container</span>
+                    </div>
+                </div>
+            </div>
+            <div class="ss-section">
+                <h3>Assets</h3>
+                <div id="ss-asset-grid" class="ss-asset-grid"></div>
+            </div>
+        </div>
+
+        <div class="ss-panel-canvas">
+            <div class="ss-canvas-wrap">
+                <div id="ss-stage" class="ss-stage" tabindex="0"></div>
+            </div>
+        </div>
+
+        <div class="ss-panel-inspector">
+            <div class="ss-tabs">
+                <div class="ss-tab active" data-tab="properties">Properties</div>
+                <div class="ss-tab" data-tab="bindings">Bindings</div>
+                <div class="ss-tab" data-tab="advanced">Advanced JS</div>
+                <div class="ss-tab" data-tab="canvas">Canvas</div>
+            </div>
+            <div class="ss-tab-pane active" id="ss-pane-properties">
+                <div class="ss-section" id="ss-properties-host">
+                    <div class="ss-empty">Select an element on the canvas.</div>
+                </div>
+            </div>
+            <div class="ss-tab-pane" id="ss-pane-bindings">
+                <div class="ss-section" id="ss-bindings-host">
+                    <div class="ss-empty">Select an element to attach event bindings.</div>
+                </div>
+            </div>
+            <div class="ss-tab-pane" id="ss-pane-advanced">
+                <div class="ss-section">
+                    <h3>Advanced JS</h3>
+                    <p style="color:var(--ss-text-muted);font-size:11px;margin:0 0 8px;">
+                        Hand-written JavaScript inserted between the
+                        <code>SPORE_STUDIO:user-begin</code> /
+                        <code>SPORE_STUDIO:user-end</code> markers in the saved
+                        HTML. Persists across saves.
+                    </p>
+                    <textarea id="ss-advanced-js" rows="20"
+                              style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#0b0d12;color:#d8e0ec;border:1px solid var(--ss-border);border-radius:var(--ss-radius);padding:8px;"
+                              placeholder="// Place advanced custom JavaScript here.\n// You can call sporeShow(id), sporeHide(id), sporeSetText(id, value),\n// or attach additional socket.on(...) handlers."></textarea>
+                </div>
+            </div>
+            <div class="ss-tab-pane" id="ss-pane-canvas">
+                <div class="ss-section">
+                    <h3>Canvas</h3>
+                    <div class="ss-row">
+                        <div class="ss-form-row">
+                            <label>Width (px)</label>
+                            <input type="number" id="ss-canvas-w" min="320" max="7680">
+                        </div>
+                        <div class="ss-form-row">
+                            <label>Height (px)</label>
+                            <input type="number" id="ss-canvas-h" min="240" max="4320">
+                        </div>
+                    </div>
+                    <div class="ss-form-row">
+                        <label>Alert system</label>
+                        <select id="ss-alert-system">
+                            <option value="queue">Queue (next_alert + alert_complete)</option>
+                            <option value="instant">Instant (instant_alert)</option>
+                        </select>
+                    </div>
+                    <div class="ss-form-row">
+                        <label>Title</label>
+                        <input type="text" id="ss-template-title">
+                    </div>
+                </div>
+                <div class="ss-section">
+                    <h3>Live preview</h3>
+                    <iframe id="ss-preview-iframe"
+                            style="width:100%;height:200px;border:1px solid var(--ss-border);border-radius:var(--ss-radius);background:#000;"
+                            sandbox="allow-scripts allow-same-origin"></iframe>
+                </div>
+            </div>
+        </div>
+
+        <div class="ss-status">
+            <span id="ss-status-text">Ready</span>
+            <span class="ss-spacer" style="flex:1"></span>
+            <span id="ss-dirty-indicator"></span>
+        </div>
+    </div>
+
+    <div id="ss-toast" class="ss-toast" role="status" aria-live="polite"></div>
+
+    <template id="ss-create-template">
+        <div class="ss-create-overlay">
+            <div class="ss-create-overlay__card">
+                <h2>New template</h2>
+                <div class="ss-form-row">
+                    <label>Name</label>
+                    <input type="text" data-create="name" autocomplete="off"
+                           placeholder="my_alert">
+                </div>
+                <div class="ss-form-row">
+                    <label>Alert system</label>
+                    <select data-create="alert_system">
+                        <option value="queue">Queue (next_alert + alert_complete)</option>
+                        <option value="instant">Instant (instant_alert)</option>
+                    </select>
+                </div>
+                <div class="ss-form-row">
+                    <label>Copy from existing</label>
+                    <select data-create="copy_from">
+                        <option value="">(none)</option>
+                    </select>
+                </div>
+                <div class="ss-row">
+                    <div class="ss-form-row">
+                        <label>Width (px)</label>
+                        <input type="number" data-create="design_width" value="800">
+                    </div>
+                    <div class="ss-form-row">
+                        <label>Height (px)</label>
+                        <input type="number" data-create="design_height" value="200">
+                    </div>
+                </div>
+                <div class="ss-row" style="justify-content:flex-end;margin-top:8px;">
+                    <button class="ss-btn" data-create-action="cancel">Cancel</button>
+                    <button class="ss-btn ss-btn--primary"
+                            data-create-action="create">Create</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="/assets/default_assets/spore_studio/editor.js"></script>
+</body>
+</html>

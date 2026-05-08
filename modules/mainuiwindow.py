@@ -1189,6 +1189,7 @@ def create_ui_elements():
                 connectors_tab = ui.tab("Connectors")
                 chatbot_tab = ui.tab("Chatbot")
                 settings_tab = ui.tab("Settings")
+                spore_studio_tab = ui.tab("Spore Studio")
 
         from .help_system.contextual_help import register_main_tabs
         from .notification_engine import (
@@ -1205,6 +1206,7 @@ def create_ui_elements():
                 "Connectors": connectors_tab,
                 "Chatbot": chatbot_tab,
                 "Settings": settings_tab,
+                "Spore Studio": spore_studio_tab,
             }
         )
         create_notification_tray_button()
@@ -1251,6 +1253,11 @@ def create_ui_elements():
 
                 create_settings_tab()
 
+            def build_spore_studio_tab():
+                from .uiwindows.spore_studio import create_spore_studio_tab
+
+                create_spore_studio_tab()
+
             tab_definitions = [
                 ("Alerts", build_alerts_tab, alerts_tab),
                 ("Source Settings", create_custom_sources_tab, source_settings_tab),
@@ -1258,6 +1265,7 @@ def create_ui_elements():
                 ("Connectors", build_connectors_tab, connectors_tab),
                 ("Chatbot", build_chatbot_tab, chatbot_tab),
                 ("Settings", build_settings_tab, settings_tab),
+                ("Spore Studio", build_spore_studio_tab, spore_studio_tab),
             ]
 
             for tab_name, build_func, tab_obj in tab_definitions:

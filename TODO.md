@@ -22,7 +22,7 @@ Template Creator:
     [] - There should be a "properties" window when clicking on an element that will allow the user to edit options for it (font size, location, display type, animation, segment name, etc etc). The properties of these items should be populated into the JSON file with the set values automatically, and sorted within the segment name. The user should be able to add/remove properties to an element as desired (filtered to required properties: IE: font size for text).
     [] - Populate any items in the template's asset folder to be placed in. Repopulate this list if changes were detected within the asset folder.
     [] - Include an "undo" system to revert the most recent change. Include an undo history. Ideally store all changes to undo, but limit to a set value for the history if performance will be an issue.
-    [] - Incorporate the same preview system that the Source Settings menu will have (detailed above)
+    [] - Incorporate the same preview system that the Source Settings menu will have
 
 Chat Improvements:
     [] - Add more entry animations, including complex ones

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<!--
+    Mycelian Spore Studio - instant_alert boilerplate
+    Generated for: __TEMPLATE_NAME__
+    Alert system: instant (responds to instant_alert, no alert_complete handshake)
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian {{ TemplateTitle }}</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" crossorigin="anonymous"></script>
+    <style id="spore-studio-styles">
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: Arial, sans-serif;
+        }
+
+        #sporeRoot {
+            position: relative;
+            width: {{ DesignWidth }}px;
+            height: {{ DesignHeight }}px;
+        }
+
+        .spore-element {
+            position: absolute;
+        }
+
+        .spore-element[data-spore-hidden="true"] {
+            display: none;
+        }
+    </style>
+    <!-- SPORE_STUDIO:styles-begin -->
+    <!-- SPORE_STUDIO:styles-end -->
+</head>
+<body>
+    <div id="sporeRoot" data-mycelian-template="__TEMPLATE_NAME__">
+        <!-- SPORE_STUDIO:dom-begin -->
+        <!-- SPORE_STUDIO:dom-end -->
+    </div>
+
+    <script>
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        function sporeShow(id) {
+            var el = document.getElementById(id);
+            if (el) { el.removeAttribute('data-spore-hidden'); }
+        }
+        function sporeHide(id) {
+            var el = document.getElementById(id);
+            if (el) { el.setAttribute('data-spore-hidden', 'true'); }
+        }
+        function sporeSetText(id, value) {
+            var el = document.getElementById(id);
+            if (el) { el.textContent = (value == null ? '' : String(value)); }
+        }
+
+        function sporeMatchesFilter(payload, filter) {
+            if (!filter || typeof filter !== 'object') { return true; }
+            for (var k in filter) {
+                if (!Object.prototype.hasOwnProperty.call(filter, k)) { continue; }
+                if (payload == null) { return false; }
+                if (payload[k] !== filter[k]) { return false; }
+            }
+            return true;
+        }
+
+        // SPORE_STUDIO:auto-begin
+        // Auto-generated bindings will be inserted here by template_codegen.
+        // Do not edit between the auto-begin/auto-end markers; changes are
+        // overwritten on every save in Spore Studio.
+        function sporeApplyBindings(eventName, payload) {
+            // no bindings yet
+        }
+        // SPORE_STUDIO:auto-end
+
+        socket.on('connect', function () {
+            console.log('[__TEMPLATE_NAME__] connected');
+        });
+
+        socket.on('instant_alert', function (data) {
+            try {
+                sporeApplyBindings('instant_alert', data || {});
+            } catch (err) {
+                console.error('[__TEMPLATE_NAME__] binding error', err);
+            }
+        });
+
+        // SPORE_STUDIO:user-begin
+        // Place advanced custom JavaScript below. Anything between the
+        // user-begin and user-end markers is preserved across Spore Studio
+        // saves. Use sporeShow(id) / sporeHide(id) / sporeSetText(id,val)
+        // helpers, and listen for additional socket events here if needed.
+        // SPORE_STUDIO:user-end
+    </script>
+</body>
+</html>
