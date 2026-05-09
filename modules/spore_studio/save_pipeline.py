@@ -256,6 +256,63 @@ def create_template(
     return model
 
 
+def _resolve_model_path(el: Dict[str, Any], dotted: str) -> Any:
+    """
+    Walk a dotted path inside a model element (e.g. ``"props.font_size"``).
+
+    Returns ``None`` when any segment is missing — callers treat that as
+    "no edit to apply" and leave the JSON config field untouched.
+    """
+    cur: Any = el
+    for segment in dotted.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(segment)
+    return cur
+
+
+def _resolved_legacy_binding_value(
+    el: Dict[str, Any],
+    model_path: str,
+    design: Dict[str, Any],
+) -> Any:
+    """
+    Compute the value to write back to the JSON config for one binding.
+
+    For position/size, the editor model always stores the rendered
+    top-left coordinates. When the original template anchored the
+    element to ``bottom`` / ``right`` we have to invert the value
+    against the design canvas size before writing it back, otherwise
+    the next render would jump.
+    """
+    anchor = el.get("legacy_anchor") or {}
+    raw = _resolve_model_path(el, model_path)
+    if raw is None:
+        return None
+
+    if model_path == "position.y" and anchor.get("y") == "bottom":
+        height = _resolve_model_path(el, "size.h")
+        try:
+            return int(round(
+                float(design.get("height") or 0)
+                - float(raw)
+                - float(height or 0)
+            ))
+        except (TypeError, ValueError):
+            return raw
+    if model_path == "position.x" and anchor.get("x") == "right":
+        width = _resolve_model_path(el, "size.w")
+        try:
+            return int(round(
+                float(design.get("width") or 0)
+                - float(raw)
+                - float(width or 0)
+            ))
+        except (TypeError, ValueError):
+            return raw
+    return raw
+
+
 def _save_legacy_template(
     model: Dict[str, Any], template_name: str
 ) -> Dict[str, Any]:
@@ -264,13 +321,23 @@ def _save_legacy_template(
 
     Legacy templates are hand-authored HTML files with no
     ``.spore.json`` sidecar; their structure is loaded into the editor
-    by synthesizing one element per id'd JSON config field
-    (``template_parser_back._synthesize_legacy_elements``). On save, we
-    must NOT regenerate the HTML — that would clobber user code — and we
-    must NOT write a sidecar — the template would silently become a
-    Spore Studio template on the next load. We just copy the edited
-    ``props.value`` from each synthetic element back onto the matching
-    field in the public JSON config and write only that file.
+    in one of two ways:
+
+    * **JSON-only** (``legacy_source == "json_config"``): one synthetic
+      element per id'd JSON config field. Edits arrive on
+      ``el.props.value`` and write back to ``entry.value`` by element
+      ``id``.
+    * **HTML-parsed** (``legacy_source == "html_parsed"``): synthetic
+      elements with a ``legacy_bindings`` map. Each map entry is
+      ``"position.x" -> "TitleLeft"`` etc. — we resolve the dotted
+      path on the model and write the value to the matching JSON
+      config field, applying inverse anchoring for bottom/right
+      positioned elements so the JSON value stays semantically correct.
+
+    On save we must NOT regenerate the HTML (that would clobber
+    hand-authored JS / animations) and we must NOT write a sidecar
+    (the template would silently become a Spore Studio template on
+    the next load). Only the public JSON config is touched.
     """
     parser = TemplateConfigParser()
     json_path = parser.get_config_path(template_name)
@@ -287,6 +354,7 @@ def _save_legacy_template(
             f"Could not read legacy config {json_path}: {e}"
         ) from e
 
+    design = model.get("design") or {}
     edited_values: Dict[str, Any] = {}
     for el in model.get("elements") or []:
         if not isinstance(el, dict):
@@ -295,6 +363,18 @@ def _save_legacy_template(
         props = el.get("props") or {}
         if eid and "value" in props:
             edited_values[str(eid)] = props["value"]
+
+        bindings = el.get("legacy_bindings") or {}
+        if isinstance(bindings, dict):
+            for model_path, field_id in bindings.items():
+                if not field_id:
+                    continue
+                value = _resolved_legacy_binding_value(
+                    el, model_path, design
+                )
+                if value is None:
+                    continue
+                edited_values[str(field_id)] = value
 
     raw_elements = config.get("elements")
     if isinstance(raw_elements, list):

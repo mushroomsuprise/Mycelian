@@ -19,6 +19,10 @@ import os
 from typing import Any, Dict, Optional
 
 from .template_codegen import extract_user_js
+from .template_reverse_parser import (
+    design_size_from_config,
+    reverse_parse_legacy,
+)
 from ..path_utils import get_template_path
 
 logger = logging.getLogger(__name__)
@@ -206,14 +210,21 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
     """
     Build a usable editor model for ``template_name``.
 
-    Behaviour:
+    Resolution order:
 
-    * If a ``.spore.json`` sidecar exists, return it (it is authoritative).
-    * Otherwise synthesize editor elements from the public JSON config so
-      the user can at least see and tweak the existing fields. The model
-      is flagged ``legacy=True`` so the editor skips canvas rendering and
-      the save pipeline skips HTML codegen (legacy HTML stays
-      hand-authored on disk).
+    1. If a ``.spore.json`` sidecar exists, return it verbatim.
+    2. Else try the HTML reverse parser. When the legacy template has
+       absolutely-positioned descendants with ``id`` attributes the
+       parser produces synthetic elements with real ``position`` /
+       ``size`` and a ``legacy_bindings`` map back to the JSON-config
+       field IDs that drive each property. The model is flagged
+       ``legacy=True`` so the editor renders the elements on the canvas
+       (because positions are non-null) but the save pipeline still
+       skips HTML codegen — only JSON-config field values are written
+       back, never the hand-authored HTML.
+    3. Fall back to the JSON-only synthesizer
+       (:func:`_synthesize_legacy_elements`) — produces position-less
+       Outline entries, same as before.
     """
     sidecar = load_sidecar(template_name)
     if sidecar is not None:
@@ -232,6 +243,27 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
                 advanced_js = extract_user_js(fh.read())
         except OSError as e:
             logger.warning("Could not read legacy template %s: %s", html_path, e)
+
+    positioned: Optional[list] = None
+    try:
+        positioned = reverse_parse_legacy(template_name)
+    except Exception as e:  # pragma: no cover - parser is best-effort
+        logger.warning(
+            "Reverse parser failed for %s: %s", template_name, e,
+        )
+        positioned = None
+
+    if positioned:
+        design_w, design_h = design_size_from_config(template_name)
+        return {
+            "template_name": template_name,
+            "alert_system": "queue",
+            "design": {"width": design_w, "height": design_h},
+            "elements": positioned,
+            "advanced_js": advanced_js,
+            "legacy": True,
+            "legacy_source": "html_parsed",
+        }
 
     return {
         "template_name": template_name,

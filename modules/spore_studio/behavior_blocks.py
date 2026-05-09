@@ -172,9 +172,18 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
     return [f"// Unknown action: {action}"]
 
 
+# Events the boilerplate templates wire up themselves — those have
+# bespoke handling (queue/instant alert lifecycle), so the auto-block
+# must NOT add a duplicate ``socket.on`` for them. Every other event the
+# user binds to (chat messages, pause toggles, refresh-alerts, …) needs a
+# generic listener emitted alongside ``sporeApplyBindings`` because the
+# boilerplate doesn't know about them in advance.
+_BOILERPLATE_HANDLED_EVENTS = frozenset({"next_alert", "instant_alert"})
+
+
 def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
     """
-    Compile every binding across every element into a single JS function body.
+    Compile every binding across every element into a JS block.
 
     Args:
         elements: The editor model's ``elements`` array. Each element may
@@ -183,9 +192,10 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
     Returns:
         A dict with:
 
-        - ``js``: the body of ``sporeApplyBindings(eventName, payload)``,
-          ready to drop between ``SPORE_STUDIO:auto-begin`` and
-          ``SPORE_STUDIO:auto-end``.
+        - ``js``: ready-to-drop body for the ``SPORE_STUDIO:auto-*`` block.
+          Contains ``sporeApplyBindings(eventName, payload)`` plus a
+          ``socket.on`` registration for every non-built-in event used by
+          a binding (chat, pause toggles, etc.).
         - ``css``: keyframe / animation class CSS for any animations the
           bindings reference. Empty string when no animation is used.
     """
@@ -230,6 +240,46 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
             lines.append("        " + stmt)
         lines.append("    }")
     lines.append("}")
+
+    extra_events = sorted(
+        ev for ev in by_event.keys()
+        if ev not in _BOILERPLATE_HANDLED_EVENTS
+    )
+    if extra_events:
+        lines.append("")
+        lines.append(
+            "// Auto-registered listeners for events the boilerplate does"
+        )
+        lines.append(
+            "// not handle natively (chat messages, pause toggles, etc.)."
+        )
+        lines.append(
+            "// Guarded with __sporeBoundEvents so a hot-reloaded auto-block"
+        )
+        lines.append("// never double-binds the same event on the same socket.")
+        lines.append(
+            "if (typeof socket !== 'undefined' && socket && socket.on) {"
+        )
+        lines.append("    window.__sporeBoundEvents = window.__sporeBoundEvents || {};")
+        for event in extra_events:
+            ev_str = _js_string(event)
+            lines.append(f"    if (!window.__sporeBoundEvents[{ev_str}]) {{")
+            lines.append(f"        window.__sporeBoundEvents[{ev_str}] = true;")
+            lines.append(f"        socket.on({ev_str}, function (data) {{")
+            lines.append("            try {")
+            lines.append(
+                f"                sporeApplyBindings({ev_str}, data || {{}});"
+            )
+            lines.append("            } catch (err) {")
+            lines.append(
+                f"                console.error('[spore-studio] binding error on '"
+                f" + {ev_str}, err);"
+            )
+            lines.append("            }")
+            lines.append("        });")
+            lines.append("    }")
+        lines.append("}")
+
     js = "\n".join(lines)
 
     css = ANIMATION_CSS if use_animation else ""

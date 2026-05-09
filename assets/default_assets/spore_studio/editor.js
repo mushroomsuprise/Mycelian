@@ -87,8 +87,7 @@
         socket: null,
         previewToken: "",
         idCounter: 0,
-        dirty: false,
-        suppressNextHistorySnapshot: false
+        dirty: false
     };
 
     function uuid() {
@@ -100,15 +99,53 @@
 
     function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
-    function toast(message, kind) {
-        var el = $("#ss-toast");
-        el.textContent = message;
-        el.classList.remove("ss-toast--success", "ss-toast--error");
-        if (kind === "success") { el.classList.add("ss-toast--success"); }
-        else if (kind === "error") { el.classList.add("ss-toast--error"); }
-        el.classList.add("visible");
-        clearTimeout(el._timeout);
-        el._timeout = setTimeout(function () { el.classList.remove("visible"); }, 1800);
+    /**
+     * Show a user-facing message.
+     *
+     * Default path: POST to /api/spore-studio/notify so the parent
+     * NiceGUI window's notification engine handles it (top-right toast +
+     * notification center history). The in-iframe ss-toast element is
+     * only used as a fallback when that round-trip fails (network blip,
+     * server stopped) so we never silently swallow errors.
+     *
+     * Pass forceLocal=true for transport-layer messages whose whole
+     * point is to report that the network call failed.
+     */
+    function toast(message, kind, forceLocal) {
+        if (!message) { return; }
+        var ntype = kind || "info";
+        if (ntype === "success") { ntype = "positive"; }
+        else if (ntype === "error") { ntype = "negative"; }
+
+        function showLocal() {
+            var el = $("#ss-toast");
+            if (!el) { return; }
+            el.textContent = message;
+            el.classList.remove("ss-toast--success", "ss-toast--error");
+            if (kind === "success") { el.classList.add("ss-toast--success"); }
+            else if (kind === "error") { el.classList.add("ss-toast--error"); }
+            el.classList.add("visible");
+            clearTimeout(el._timeout);
+            el._timeout = setTimeout(function () {
+                el.classList.remove("visible");
+            }, 1800);
+        }
+
+        if (forceLocal) { showLocal(); return; }
+
+        try {
+            fetch("/api/spore-studio/notify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: message, type: ntype })
+            })
+                .then(function (r) {
+                    if (!r.ok) { showLocal(); }
+                })
+                .catch(function () { showLocal(); });
+        } catch (e) {
+            showLocal();
+        }
     }
 
     function setStatus(text) { $("#ss-status-text").textContent = text || ""; }
@@ -117,31 +154,70 @@
         $("#ss-dirty-indicator").textContent = isDirty ? "Unsaved changes" : "";
     }
 
+    /*
+     * Undo/redo invariant
+     * --------------------
+     * Every call site in this file follows the pattern:
+     *
+     *     mutate(state.model);
+     *     pushHistory();
+     *
+     * i.e. ``pushHistory`` snapshots the *post*-mutation model. As a
+     * consequence the top of ``state.history`` is always equal to the
+     * current ``state.model``. ``undo`` therefore needs to:
+     *
+     *   1. Pop and discard that "current" snapshot (it's redundant).
+     *   2. Save the current model into ``state.future`` for redo.
+     *   3. Restore the new top of ``state.history`` as the model.
+     *
+     * That way the very first Undo click after a change actually moves
+     * the model back to the prior version (the prior bug was that it
+     * pop'd the current snapshot and restored it as the model, so the
+     * UI never visibly changed until the second click).
+     *
+     * The initial ``loadTemplate`` snapshot guarantees that the very
+     * first entry in history is the loaded baseline, so undo bottoms
+     * out cleanly when ``history.length <= 1``.
+     */
     function pushHistory() {
         if (!state.model) { return; }
-        if (state.suppressNextHistorySnapshot) {
-            state.suppressNextHistorySnapshot = false;
+        var snapshot = JSON.stringify(state.model);
+        var top = state.history.length > 0
+            ? state.history[state.history.length - 1]
+            : null;
+        if (snapshot === top) {
+            // Multiple debounced calls landed on the same state — keep
+            // the stack lean and don't break the "every entry is a real
+            // checkpoint" property used by undo().
+            state.future = [];
             return;
         }
-        state.history.push(JSON.stringify(state.model));
+        state.history.push(snapshot);
         if (state.history.length > 50) { state.history.shift(); }
         state.future = [];
     }
 
     function undo() {
-        if (state.history.length === 0) { return; }
-        state.future.push(JSON.stringify(state.model));
-        state.model = JSON.parse(state.history.pop());
-        state.suppressNextHistorySnapshot = true;
+        if (!state.model) { return; }
+        if (state.history.length <= 1) { return; }
+        var current = JSON.stringify(state.model);
+        var top = state.history[state.history.length - 1];
+        if (current === top) {
+            state.history.pop();
+        }
+        state.future.push(current);
+        var prev = state.history[state.history.length - 1];
+        state.model = JSON.parse(prev);
         renderAll();
         setDirty(true);
     }
 
     function redo() {
+        if (!state.model) { return; }
         if (state.future.length === 0) { return; }
-        state.history.push(JSON.stringify(state.model));
-        state.model = JSON.parse(state.future.pop());
-        state.suppressNextHistorySnapshot = true;
+        var snapshot = state.future.pop();
+        state.history.push(snapshot);
+        state.model = JSON.parse(snapshot);
         renderAll();
         setDirty(true);
     }
@@ -172,15 +248,31 @@
     }
 
     function isLegacyElement(el) {
-        // Legacy synthetic elements never get a position when produced by
-        // template_parser_back._synthesize_legacy_elements; that's our
-        // signal to keep them out of the canvas and show only an Outline
-        // entry.
+        // JSON-only legacy synthetic elements never get a position when
+        // produced by template_parser_back._synthesize_legacy_elements.
+        // Those skip canvas rendering and only appear in the Outline.
         return !el || !el.position || el.position.x == null;
     }
 
     function isLegacyModel() {
         return !!(state.model && state.model.legacy);
+    }
+
+    function isReadOnlyLegacyElement(el) {
+        // Reverse-parsed legacy elements ARE drawn on the canvas (their
+        // position/size live in the model), but every property funnels
+        // back into the public JSON config via legacy_bindings. The
+        // inspector hides the binding editor and the delete button for
+        // these to make the constraint obvious. Any positioned element
+        // in a legacy model qualifies — including ones the parser found
+        // but couldn't bind to a config field, since deleting them would
+        // be a no-op across save+reload anyway.
+        return !!(
+            isLegacyModel()
+            && el
+            && el.position
+            && el.position.x != null
+        );
     }
 
     /* ------------------------------------------------------------------
@@ -418,6 +510,155 @@
         host.appendChild(note);
     }
 
+    function renderReverseParsedLegacyProperties(host, el) {
+        var bindings = el.legacy_bindings || {};
+        var anchor = el.legacy_anchor || { x: "left", y: "top" };
+
+        host.appendChild(formRow("ID", (function () {
+            var span = document.createElement("div");
+            span.style.fontFamily =
+                "ui-monospace,SFMono-Regular,Menlo,monospace";
+            span.style.fontSize = "12px";
+            span.textContent = el.id;
+            return span;
+        })()));
+        host.appendChild(formRow("Type", document.createTextNode(el.type)));
+        host.appendChild(formRow("Category", (function () {
+            var span = document.createElement("div");
+            span.textContent = el.category || "Layout";
+            return span;
+        })()));
+
+        function bindingHint(modelPath) {
+            var fieldId = bindings[modelPath];
+            if (!fieldId) { return null; }
+            var hint = document.createElement("div");
+            hint.style.cssText =
+                "color:var(--ss-text-muted);font-size:10px;margin-top:-2px;";
+            hint.textContent = "→ JSON config: " + fieldId;
+            return hint;
+        }
+
+        var posRow = document.createElement("div");
+        posRow.className = "ss-row";
+        var xCol = document.createElement("div");
+        xCol.style.flex = "1";
+        xCol.appendChild(formRow(
+            anchor.x === "right" ? "X (anchored right)" : "X",
+            numberEl(el.position && el.position.x || 0, function (v) {
+                el.position = el.position || { x: 0, y: 0 };
+                el.position.x = Math.max(0, parseInt(v, 10) || 0);
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            })
+        ));
+        var xHint = bindingHint("position.x");
+        if (xHint) { xCol.appendChild(xHint); }
+        var yCol = document.createElement("div");
+        yCol.style.flex = "1";
+        yCol.appendChild(formRow(
+            anchor.y === "bottom" ? "Y (anchored bottom)" : "Y",
+            numberEl(el.position && el.position.y || 0, function (v) {
+                el.position = el.position || { x: 0, y: 0 };
+                el.position.y = Math.max(0, parseInt(v, 10) || 0);
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            })
+        ));
+        var yHint = bindingHint("position.y");
+        if (yHint) { yCol.appendChild(yHint); }
+        posRow.appendChild(xCol);
+        posRow.appendChild(yCol);
+        host.appendChild(posRow);
+
+        var sizeRow = document.createElement("div");
+        sizeRow.className = "ss-row";
+        var wCol = document.createElement("div");
+        wCol.style.flex = "1";
+        wCol.appendChild(formRow("W", numberEl(
+            el.size && el.size.w || 100, function (v) {
+                el.size = el.size || { w: 100, h: 30 };
+                el.size.w = Math.max(10, parseInt(v, 10) || 10);
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }
+        )));
+        var wHint = bindingHint("size.w");
+        if (wHint) { wCol.appendChild(wHint); }
+        var hCol = document.createElement("div");
+        hCol.style.flex = "1";
+        hCol.appendChild(formRow("H", numberEl(
+            el.size && el.size.h || 30, function (v) {
+                el.size = el.size || { w: 100, h: 30 };
+                el.size.h = Math.max(10, parseInt(v, 10) || 10);
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }
+        )));
+        var hHint = bindingHint("size.h");
+        if (hHint) { hCol.appendChild(hHint); }
+        sizeRow.appendChild(wCol);
+        sizeRow.appendChild(hCol);
+        host.appendChild(sizeRow);
+
+        // Render bound style props (color / background / font-size /
+        // border-radius) when the parser was able to bind them.
+        var STYLE_FIELDS = [
+            { path: "props.color", label: "Color", input: "color" },
+            { path: "props.background_color", label: "Background", input: "text" },
+            { path: "props.font_size", label: "Font size (px)", input: "number" },
+            { path: "props.border_radius", label: "Border radius (px)", input: "number" }
+        ];
+        STYLE_FIELDS.forEach(function (field) {
+            if (!bindings[field.path]) { return; }
+            var key = field.path.split(".").pop();
+            var current = el.props && el.props[key];
+            var ctrl;
+            if (field.input === "color") {
+                ctrl = document.createElement("input");
+                ctrl.type = "color";
+                ctrl.value = /^#[0-9a-f]{6}$/i.test(String(current || ""))
+                    ? current : "#ffffff";
+            } else if (field.input === "number") {
+                ctrl = document.createElement("input");
+                ctrl.type = "number";
+                ctrl.value = current == null ? "" : String(current);
+            } else {
+                ctrl = document.createElement("input");
+                ctrl.type = "text";
+                ctrl.value = current == null ? "" : String(current);
+            }
+            ctrl.addEventListener("change", function () {
+                el.props = el.props || {};
+                if (field.input === "number") {
+                    el.props[key] = ctrl.value === ""
+                        ? null : Number(ctrl.value);
+                } else {
+                    el.props[key] = ctrl.value;
+                }
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            });
+            host.appendChild(formRow(field.label, ctrl));
+            var hint = bindingHint(field.path);
+            if (hint) { host.appendChild(hint); }
+        });
+
+        var note = document.createElement("p");
+        note.textContent =
+            "Reverse-parsed legacy element. Drag / resize / edit the " +
+            "values above and they save back to the JSON config; the " +
+            "hand-authored HTML is never regenerated.";
+        note.style.cssText =
+            "color:var(--ss-warn);font-size:11px;margin-top:10px;";
+        host.appendChild(note);
+    }
+
     function renderProperties() {
         var host = $("#ss-properties-host");
         host.innerHTML = "";
@@ -429,6 +670,11 @@
 
         if (isLegacyElement(el)) {
             renderLegacyProperties(host, el);
+            return;
+        }
+
+        if (isReadOnlyLegacyElement(el)) {
+            renderReverseParsedLegacyProperties(host, el);
             return;
         }
 
@@ -593,7 +839,7 @@
             host.innerHTML = '<div class="ss-empty">Select an element to attach event bindings.</div>';
             return;
         }
-        if (isLegacyElement(el)) {
+        if (isLegacyElement(el) || isReadOnlyLegacyElement(el)) {
             host.innerHTML = '<div class="ss-empty">' +
                 'Legacy templates manage their own websocket bindings inside ' +
                 'the hand-authored HTML — bindings are not editable here.' +
@@ -659,17 +905,43 @@
             card.appendChild(formRow("Event", eventSelect));
 
             var ev = registryEvent(binding.event);
+            if (ev && ev.description) {
+                var evDesc = document.createElement("div");
+                evDesc.className = "ss-binding-row__hint";
+                evDesc.textContent = ev.description;
+                card.appendChild(evDesc);
+            }
             if (ev && ev.payload && ev.payload.length) {
                 var filterHost = document.createElement("div");
-                filterHost.className = "ss-section";
+                filterHost.className = "ss-section ss-binding-row__filters";
                 filterHost.style.padding = "0";
                 filterHost.style.borderBottom = "none";
+
+                var filterHelp = document.createElement("div");
+                filterHelp.className = "ss-binding-row__hint";
+                filterHelp.textContent = (
+                    "Filters narrow when this binding fires. Leave a field " +
+                    "blank to match any value; type an exact value to only " +
+                    "fire when the payload field matches."
+                );
+                filterHost.appendChild(filterHelp);
+
                 ev.payload.forEach(function (field) {
                     var input = document.createElement("input");
                     input.type = "text";
                     var current = (binding.filter || {})[field.key];
                     input.value = current == null ? "" : String(current);
-                    input.placeholder = "(any)";
+                    var examples = field.examples || [];
+                    if (examples.length > 0) {
+                        input.placeholder = "(any) — e.g. " +
+                            examples.slice(0, 3).join(", ");
+                    } else if (field.type) {
+                        input.placeholder = "(any " + field.type + ")";
+                    } else {
+                        input.placeholder = "(any)";
+                    }
+                    input.title = "Payload key: " + field.key +
+                        (field.type ? "  (" + field.type + ")" : "");
                     input.addEventListener("change", function () {
                         binding.filter = binding.filter || {};
                         if (input.value === "") {
@@ -704,6 +976,12 @@
             card.appendChild(formRow("Action", actionSelect));
 
             var act = registryAction(binding.action);
+            if (act && act.description) {
+                var actDesc = document.createElement("div");
+                actDesc.className = "ss-binding-row__hint";
+                actDesc.textContent = act.description;
+                card.appendChild(actDesc);
+            }
             if (act && act.args && act.args.length) {
                 act.args.forEach(function (arg) {
                     var current = (binding.args || {})[arg.key];
@@ -728,6 +1006,15 @@
                         ctrl = document.createElement("input");
                         ctrl.type = "text";
                         ctrl.value = current == null ? "" : String(current);
+                        if (arg.key === "from_payload" && ev && ev.payload && ev.payload.length) {
+                            ctrl.placeholder = "e.g. " +
+                                ev.payload.slice(0, 3).map(function (p) {
+                                    return p.key;
+                                }).join(", ");
+                        }
+                    }
+                    if (arg.description) {
+                        ctrl.title = arg.description;
                     }
                     ctrl.addEventListener("change", function () {
                         binding.args = binding.args || {};
@@ -740,6 +1027,12 @@
                         modelTouch();
                     });
                     card.appendChild(formRow(arg.label || arg.key, ctrl));
+                    if (arg.description) {
+                        var argHint = document.createElement("div");
+                        argHint.className = "ss-binding-row__hint ss-binding-row__hint--inline";
+                        argHint.textContent = arg.description;
+                        card.appendChild(argHint);
+                    }
                 });
             }
 
@@ -1109,16 +1402,50 @@
         return !!(dlg && !dlg.hasAttribute("hidden"));
     }
 
+    /**
+     * Tell the server to remember (token -> template) so the iframe page
+     * response can set the mycelian_preview_token cookie. Without that
+     * cookie the websocket connect handler can't link this preview iframe
+     * to a sid, and /api/spore-studio/preview/emit returns
+     * "No preview iframe registered for that token".
+     */
+    function registerPreviewSession() {
+        if (!state.model || !state.model.template_name) {
+            return Promise.resolve();
+        }
+        return fetch("/api/spore-studio/preview/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                token: state.previewToken,
+                template: state.model.template_name
+            })
+        }).catch(function () { /* best-effort; refreshPreview still tries */ });
+    }
+
+    function releasePreviewSession() {
+        if (!state.previewToken) { return; }
+        try {
+            fetch("/api/spore-studio/preview/release", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token: state.previewToken })
+            }).catch(function () { /* fire and forget */ });
+        } catch (e) { /* ignore */ }
+    }
+
     function refreshPreview(forceReload) {
         var iframe = $("#ss-preview-iframe");
         if (!iframe || !state.model) { return; }
         // No-op when the popup is closed so we never burn server-side
         // mock-event cycles for a preview the user can't see.
         if (!previewDialogOpen()) { return; }
-        var bust = Date.now();
-        iframe.src = "/" + encodeURIComponent(state.model.template_name) +
-            "?__preview_token=" + encodeURIComponent(state.previewToken) +
-            "&_cb=" + bust + (forceReload ? "&_force=1" : "");
+        registerPreviewSession().then(function () {
+            var bust = Date.now();
+            iframe.src = "/" + encodeURIComponent(state.model.template_name) +
+                "?__preview_token=" + encodeURIComponent(state.previewToken) +
+                "&_cb=" + bust + (forceReload ? "&_force=1" : "");
+        });
     }
 
     function openPreviewDialog() {
@@ -1134,6 +1461,7 @@
         if (!dlg) { return; }
         dlg.setAttribute("hidden", "");
         if (iframe) { iframe.src = "about:blank"; }
+        releasePreviewSession();
     }
 
     function togglePreviewDialog() {
@@ -1141,11 +1469,73 @@
         else { openPreviewDialog(); }
     }
 
+    /**
+     * Build a row of "Emit mock <event>" buttons inside the preview
+     * dialog. Each button POSTs to /api/spore-studio/preview/emit and
+     * the server pushes one mock socket event into the iframe's sid.
+     * Re-rendered whenever the events registry loads (init flow) so
+     * the toolbar reflects exactly the events the binding picker can
+     * attach actions to.
+     */
+    function renderPreviewMockToolbar() {
+        var host = $("#ss-preview-mocks");
+        if (!host) { return; }
+        host.innerHTML = "";
+        var events = state.registry.events || [];
+        if (events.length === 0) {
+            var empty = document.createElement("span");
+            empty.className = "ss-mocktools-empty";
+            empty.textContent = "Loading mock events…";
+            host.appendChild(empty);
+            return;
+        }
+        var label = document.createElement("span");
+        label.className = "ss-mocktools-empty";
+        label.textContent = "Mock:";
+        host.appendChild(label);
+        events.forEach(function (ev) {
+            var btn = document.createElement("button");
+            btn.className = "ss-btn ss-btn--ghost";
+            btn.textContent = ev.label || ev.event;
+            btn.title = "Emit mock '" + ev.event +
+                "' over the preview socket";
+            btn.addEventListener("click", function () {
+                fetch("/api/spore-studio/preview/emit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        token: state.previewToken,
+                        event: ev.event,
+                    }),
+                })
+                    .then(function (r) {
+                        return r.json().then(function (data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function (res) {
+                        if (!res.ok) {
+                            toast(
+                                (res.data && res.data.error) ||
+                                    "Mock emit failed",
+                                "error"
+                            );
+                        }
+                    })
+                    .catch(function () {
+                        toast("Mock emit failed", "error");
+                    });
+            });
+            host.appendChild(btn);
+        });
+    }
+
     function setupPreviewDialog() {
         var dlg = $("#ss-preview-dialog");
         if (!dlg) { return; }
         var head = dlg.querySelector("[data-drag-handle]");
         var resize = dlg.querySelector("[data-resize-handle]");
+        renderPreviewMockToolbar();
 
         var dragData = null;
         head.addEventListener("mousedown", function (ev) {
@@ -1445,6 +1835,7 @@
             .then(function (data) {
                 state.registry.events = data.events || [];
                 state.registry.actions = data.actions || [];
+                renderPreviewMockToolbar();
             })
             .then(refreshTemplateList)
             .then(function () {

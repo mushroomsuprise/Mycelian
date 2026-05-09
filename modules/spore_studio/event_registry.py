@@ -121,6 +121,58 @@ _EVENTS: List[Dict[str, Any]] = [
             {"key": "paused", "label": "Paused", "type": "boolean"},
         ],
     },
+    {
+        "event": "new-message",
+        "label": "Chat message (Twitch)",
+        "alert_system": "either",
+        "description": (
+            "Fired for every Twitch chat message ingested by Mycelian. "
+            "Carries the full message payload — username, message body, "
+            "user color, badges, emote map, and message type."
+        ),
+        "payload": [
+            {"key": "username", "label": "Username", "type": "string"},
+            {"key": "message", "label": "Message text", "type": "string"},
+            {"key": "color", "label": "Username color", "type": "string"},
+            {"key": "badges", "label": "Badges (csv)", "type": "string"},
+            {"key": "emotes", "label": "Emotes (string)", "type": "string"},
+            {"key": "message_type", "label": "Message type", "type": "string",
+             "examples": ["text", "action", "highlight"]},
+            {"key": "userid", "label": "User ID", "type": "string"},
+            {"key": "timestamp", "label": "Timestamp", "type": "number"},
+        ],
+    },
+    {
+        "event": "chat_add_message",
+        "label": "Chat message (connector)",
+        "alert_system": "either",
+        "description": (
+            "Connector-driven chat message — fired by the chat "
+            "template's 'Add message' connector action (handy for "
+            "bot replies, Stream Deck shoutouts, etc.)."
+        ),
+        "payload": [
+            {"key": "username", "label": "Username", "type": "string"},
+            {"key": "message_text", "label": "Message text", "type": "string"},
+            {"key": "is_moderator", "label": "Moderator", "type": "boolean"},
+        ],
+    },
+    {
+        "event": "message_moderation",
+        "label": "Chat moderation event",
+        "alert_system": "either",
+        "description": (
+            "Sent when a moderator deletes a chat message or times out "
+            "a user; chat overlays use this to fade or strikethrough "
+            "the affected messages."
+        ),
+        "payload": [
+            {"key": "action", "label": "Action", "type": "string",
+             "examples": ["delete", "timeout", "ban"]},
+            {"key": "user_id", "label": "User ID", "type": "string"},
+            {"key": "message_id", "label": "Message ID", "type": "string"},
+        ],
+    },
 ]
 
 

@@ -281,8 +281,17 @@ class WebEngine:
         # Custom Sources iframe preview: token -> {template, overrides, ts}
         self._preview_sessions_lock = threading.Lock()
         self._preview_sessions: Dict[str, Dict[str, Any]] = {}
-        # Custom Sources preview demo loops: sid -> stop flag
+        # Custom Sources preview demo loops: sid -> stop flag (legacy —
+        # the auto-demo loop has been removed in favour of manual mock
+        # buttons in the Spore Studio preview dialog. Kept around so
+        # disconnect handlers don't crash on a missing attribute.)
         self._preview_demo_stop: Dict[str, bool] = {}
+        # Spore Studio preview iframe: token -> sid (lets the manual
+        # mock-event endpoint resolve which client to emit to). Inverse
+        # mapping (sid -> token) is maintained so disconnect cleanup is
+        # O(1) without scanning the dict.
+        self._preview_iframe_sids: Dict[str, str] = {}
+        self._preview_iframe_tokens: Dict[str, str] = {}
 
         # Log template directory info
         logger.debug(f"Template directory: {template_dir}")
@@ -642,6 +651,191 @@ class WebEngine:
                 )
             except Exception as e:
                 logger.error("Spore Studio save error: %s", e, exc_info=True)
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route(
+            "/api/spore-studio/preview/register", methods=["POST"]
+        )
+        def register_spore_studio_preview():
+            """
+            Register an empty preview session for the Spore Studio iframe.
+
+            The Spore Studio editor never has unsaved JSON overrides to
+            push (Custom Sources owns that flow). But the template GET
+            handler only sets the ``mycelian_preview_token`` cookie when
+            ``_preview_sessions`` already has an entry for the token, and
+            the cookie is what lets ``_maybe_start_preview_demo`` link the
+            websocket sid to the preview token. Without a session entry
+            the cookie never gets set, the websocket connects "anonymously",
+            and ``/preview/emit`` cannot find an sid for the token.
+
+            The editor calls this endpoint right before pointing the
+            preview iframe at ``/{template}?__preview_token=…`` so the
+            session, cookie, and sid registration all line up.
+            """
+            try:
+                payload = request.get_json(silent=True) or {}
+                token = payload.get("token")
+                template = payload.get("template")
+                if not token or not template:
+                    return (
+                        {"error": "token and template are required"},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                self.push_preview_overrides(
+                    str(token), str(template), {}
+                )
+                return (
+                    {"ok": True},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    "Spore Studio preview register error: %s",
+                    e, exc_info=True,
+                )
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route(
+            "/api/spore-studio/preview/release", methods=["POST"]
+        )
+        def release_spore_studio_preview():
+            """Drop the preview session created by ``/preview/register``."""
+            try:
+                payload = request.get_json(silent=True) or {}
+                token = payload.get("token")
+                if not token:
+                    return (
+                        {"ok": True},
+                        200,
+                        {"Content-Type": "application/json"},
+                    )
+                with self._preview_sessions_lock:
+                    self._preview_sessions.pop(str(token), None)
+                self._preview_iframe_sids.pop(str(token), None)
+                return (
+                    {"ok": True},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    "Spore Studio preview release error: %s",
+                    e, exc_info=True,
+                )
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route("/api/spore-studio/notify", methods=["POST"])
+        def proxy_spore_studio_notify():
+            """
+            Route Spore Studio iframe notifications through
+            ``notification_engine.notify`` so they appear in the parent
+            NiceGUI window's notification engine instead of being shown
+            as bottom-center DOM toasts inside the iframe.
+
+            The editor still keeps its own toast as a fallback for the
+            case where this endpoint is unreachable (network blip during
+            save, etc.).
+            """
+            try:
+                from . import notification_engine as _ne
+
+                payload = request.get_json(silent=True) or {}
+                message = payload.get("message")
+                if not isinstance(message, str) or not message.strip():
+                    return (
+                        {"error": "message is required"},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                kind = payload.get("type") or "info"
+                _ne.notify(str(message), type=str(kind))
+                return (
+                    {"ok": True},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    "Spore Studio notify proxy error: %s",
+                    e, exc_info=True,
+                )
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route("/api/spore-studio/preview/emit", methods=["POST"])
+        def emit_spore_studio_preview_mock():
+            """
+            Emit a single mock socket event into the Spore Studio
+            preview iframe identified by ``token``. The continuous
+            auto-demo loop has been removed in favour of these manual
+            triggers; the editor's preview dialog renders one button
+            per registry event and POSTs here on click.
+            """
+            try:
+                from .spore_studio import preview_mocks as _pm
+
+                payload = request.get_json(silent=True) or {}
+                token = payload.get("token")
+                event_name = payload.get("event")
+                if not token or not event_name:
+                    return (
+                        {"error": "token and event are required"},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                sid = self._preview_iframe_sids.get(str(token))
+                if not sid:
+                    return (
+                        {
+                            "error": (
+                                "No preview iframe registered for that "
+                                "token (open the preview dialog first)."
+                            ),
+                        },
+                        404,
+                        {"Content-Type": "application/json"},
+                    )
+                spec = _pm.build_mock_payload(str(event_name))
+                if spec is None:
+                    return (
+                        {
+                            "error": (
+                                f"No mock payload defined for "
+                                f"'{event_name}'."
+                            ),
+                        },
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                socket_event, body = spec
+                self.socketio.emit(socket_event, body, to=sid)
+                return (
+                    {"ok": True, "event": socket_event},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    "Spore Studio preview emit error: %s", e, exc_info=True,
+                )
                 return (
                     {"error": str(e)},
                     500,
@@ -1802,21 +1996,23 @@ class WebEngine:
                 element["value"] = overrides[eid]
 
     def _maybe_start_preview_demo(self, sid: str) -> None:
-        """Custom Sources iframe: drive animated previews via production-shaped emits."""
+        """
+        Hook fired when a preview iframe (Custom Sources OR Spore Studio)
+        connects. The continuous auto-demo loop has been removed; this
+        hook now only exists to register the ``token -> sid`` mapping
+        used by the Spore Studio manual mock-event endpoint
+        (``/api/spore-studio/preview/emit``).
+        """
         try:
             token = request.cookies.get(
                 "mycelian_preview_token"
             ) or request.args.get("__preview_token")
             if not token:
                 return
-            with self._preview_sessions_lock:
-                sess = self._preview_sessions.get(token)
-            if not isinstance(sess, dict) or not sess.get("template"):
-                return
-            self._preview_demo_stop[sid] = False
-            self.socketio.start_background_task(self._preview_demo_loop, sid, token)
+            self._preview_iframe_sids[token] = sid
+            self._preview_iframe_tokens[sid] = token
         except Exception as e:
-            logger.warning("preview demo start failed: %s", e, exc_info=True)
+            logger.warning("preview iframe register failed: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------
     # Custom Sources iframe preview helpers
@@ -2371,6 +2567,15 @@ class WebEngine:
             print(f" WEBSOCKET: Client disconnected - SID: {request.sid}")
             logger.debug(f"Client disconnected: {request.sid}")
             self._preview_demo_stop[request.sid] = True
+            stale_token = self._preview_iframe_tokens.pop(
+                request.sid, None
+            )
+            if stale_token is not None:
+                # Only drop the token mapping when it still points at
+                # this sid — a stale entry could otherwise nuke a fresh
+                # iframe that re-registered the same token.
+                if self._preview_iframe_sids.get(stale_token) == request.sid:
+                    self._preview_iframe_sids.pop(stale_token, None)
 
         @self.socketio.on("game_hook_command")
         def handle_game_hook_command(data):

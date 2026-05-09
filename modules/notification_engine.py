@@ -251,10 +251,82 @@ def notify(
         opts.update(kwargs)
         try:
             ui.notify(message, **opts)
+        except RuntimeError:
+            # No NiceGUI slot context (called from a Flask route, a
+            # background thread, or any other non-UI task). Fall back
+            # to enqueuing the notify message directly into every live
+            # client's outbox — same payload shape ``ui.notify`` would
+            # have produced. This keeps the toast behaviour for
+            # background callers (Spore Studio /notify proxy, service
+            # watchers, etc.) without forcing every site to wrap calls
+            # in a ``with client:`` block.
+            try:
+                _broadcast_notify(message, opts)
+            except Exception as e:
+                logger.warning(
+                    "broadcast notify fallback failed: %s", e, exc_info=True,
+                )
         except Exception as e:
             logger.error("ui.notify failed: %s", e, exc_info=True)
 
     return entry_id
+
+
+def _broadcast_notify(message: str, opts: Dict[str, Any]) -> None:
+    """Push a notify payload directly into every connected client's outbox.
+
+    Mirrors what ``ui.notify`` does internally, minus the ``context.client``
+    lookup that requires a slot stack. Designed to be called from any
+    thread (Flask request handlers, background workers, …) — the actual
+    enqueue runs on NiceGUI's asyncio loop via ``call_soon_threadsafe``
+    because ``Outbox.enqueue_message`` triggers ``asyncio.Event.set()``,
+    which is not safe to invoke from a foreign thread.
+    """
+    from nicegui import Client, core
+
+    payload: Dict[str, Any] = {}
+    for k, v in opts.items():
+        if v is None:
+            continue
+        key = "closeBtn" if k == "close_button" else (
+            "multiLine" if k == "multi_line" else k
+        )
+        payload[key] = v
+    payload["message"] = str(message)
+
+    loop = getattr(core, "loop", None)
+
+    def _enqueue_on_loop() -> None:
+        # Mycelian uses NiceGUI's auto-index pattern (no @ui.page), so
+        # ``Client.auto_index_client`` IS the live UI window — we MUST
+        # include it. The outbox loop already skips clients without a
+        # socket connection, so no extra filter is needed here.
+        for client in list(Client.instances.values()):
+            try:
+                client.outbox.enqueue_message(
+                    "notify", dict(payload), client.id
+                )
+            except Exception as e:
+                logger.debug(
+                    "notify broadcast skipped client %s: %s", client, e
+                )
+
+    if loop is not None and loop.is_running():
+        try:
+            loop.call_soon_threadsafe(_enqueue_on_loop)
+            return
+        except RuntimeError as e:
+            logger.debug(
+                "notify broadcast: call_soon_threadsafe failed (%s); "
+                "falling back to direct enqueue",
+                e,
+            )
+
+    # NiceGUI loop unavailable (e.g. unit test, app shutting down).
+    # Direct enqueue is best-effort: the deque write itself is GIL-safe,
+    # and if the asyncio.Event.set() race fails it's harmless — the next
+    # naturally-triggered enqueue will flush this message too.
+    _enqueue_on_loop()
 
 
 def nav_actions_settings(subtab: str) -> List[Dict[str, Any]]:

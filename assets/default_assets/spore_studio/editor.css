@@ -330,6 +330,20 @@ html, body {
     cursor: pointer;
     font-size: 14px;
 }
+.ss-binding-row__hint {
+    font-size: 11px;
+    color: var(--ss-text-muted);
+    line-height: 1.4;
+    padding: 4px 2px 6px;
+}
+.ss-binding-row__hint--inline {
+    padding: 2px 2px 6px;
+    margin-top: -4px;
+    font-style: italic;
+}
+.ss-binding-row__filters {
+    margin-top: 6px;
+}
 
 .ss-outline-group {
     margin-bottom: 10px;
@@ -441,6 +455,37 @@ html, body {
 .ss-preview-dialog__title {
     font-weight: 600;
     font-size: 12px;
+}
+.ss-preview-dialog__mocktools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: var(--ss-bg-input);
+    border-bottom: 1px solid var(--ss-border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+.ss-preview-dialog__mocktools::-webkit-scrollbar {
+    height: 6px;
+}
+.ss-preview-dialog__mocktools::-webkit-scrollbar-thumb {
+    background: var(--ss-border);
+    border-radius: 3px;
+}
+.ss-preview-dialog__mocktools .ss-btn {
+    flex: 0 0 auto;
+    font-size: 10px;
+    padding: 2px 8px;
+    min-height: 0;
+    line-height: 1.4;
+}
+.ss-preview-dialog__mocktools .ss-mocktools-empty {
+    color: var(--ss-text-muted);
+    font-size: 11px;
+    padding: 2px 4px;
 }
 .ss-preview-dialog__body {
     flex: 1;
