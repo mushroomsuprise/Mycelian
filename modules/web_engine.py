@@ -37,6 +37,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import eventlet
 import eventlet.green.select
@@ -47,7 +48,14 @@ import eventlet.green.time
 import eventlet.wsgi
 from engineio.async_drivers import gevent
 from engineio.payload import Payload
-from flask import Flask, make_response, render_template, request, send_from_directory
+from flask import (
+    Flask,
+    make_response,
+    render_template,
+    render_template_string,
+    request,
+    send_from_directory,
+)
 from flask_socketio import SocketIO, emit
 
 from . import alertutils, database_manager, statistics_manager, twitch
@@ -662,20 +670,13 @@ class WebEngine:
         )
         def register_spore_studio_preview():
             """
-            Register an empty preview session for the Spore Studio iframe.
+            Register a preview session for the Spore Studio iframe.
 
-            The Spore Studio editor never has unsaved JSON overrides to
-            push (Custom Sources owns that flow). But the template GET
-            handler only sets the ``mycelian_preview_token`` cookie when
-            ``_preview_sessions`` already has an entry for the token, and
-            the cookie is what lets ``_maybe_start_preview_demo`` link the
-            websocket sid to the preview token. Without a session entry
-            the cookie never gets set, the websocket connects "anonymously",
-            and ``/preview/emit`` cannot find an sid for the token.
-
-            The editor calls this endpoint right before pointing the
-            preview iframe at ``/{template}?__preview_token=…`` so the
-            session, cookie, and sid registration all line up.
+            Ensures ``_preview_sessions[token]`` exists so the template GET handler
+            sets ``mycelian_preview_token`` and links the websocket sid for mock
+            emits. Preserves unsaved draft HTML from
+            ``/api/spore-studio/preview/draft`` when the template name matches
+            (:meth:`_register_spore_preview_session_keep_draft`).
             """
             try:
                 payload = request.get_json(silent=True) or {}
@@ -687,8 +688,8 @@ class WebEngine:
                         400,
                         {"Content-Type": "application/json"},
                     )
-                self.push_preview_overrides(
-                    str(token), str(template), {}
+                self._register_spore_preview_session_keep_draft(
+                    str(token), str(template)
                 )
                 return (
                     {"ok": True},
@@ -700,6 +701,61 @@ class WebEngine:
                     "Spore Studio preview register error: %s",
                     e, exc_info=True,
                 )
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route(
+            "/api/spore-studio/preview/draft", methods=["POST"]
+        )
+        def spore_studio_preview_draft():
+            """Compile unsaved editor model into the preview session (HTML + JSON)."""
+            try:
+                from .spore_studio import save_pipeline as _sp
+
+                payload = request.get_json(silent=True) or {}
+                token = payload.get("token")
+                model = payload.get("model")
+                if not token or not isinstance(model, dict):
+                    return (
+                        {"error": "token and model are required"},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                try:
+                    draft_html, draft_config = _sp.compile_preview_draft(model)
+                except _sp.SporeStudioError as ex:
+                    return (
+                        {"error": str(ex)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                template_name = str(model.get("template_name") or "").strip()
+                with self._preview_sessions_lock:
+                    sess = self._preview_sessions.get(str(token))
+                    if not isinstance(sess, dict) or sess.get("template") != template_name:
+                        return (
+                            {
+                                "error": (
+                                    "Preview session not registered for this "
+                                    "template; open preview first."
+                                )
+                            },
+                            400,
+                            {"Content-Type": "application/json"},
+                        )
+                    sess["draft_html"] = draft_html
+                    sess["draft_config"] = copy.deepcopy(draft_config)
+                    sess["ts"] = time.time()
+                return (
+                    {"ok": True},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Spore Studio preview draft error: %s", e, exc_info=True)
                 return (
                     {"error": str(e)},
                     500,
@@ -870,6 +926,34 @@ class WebEngine:
                 )
             except Exception as e:
                 logger.error("Spore Studio create error: %s", e, exc_info=True)
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route("/api/spore-studio/delete", methods=["POST"])
+        def delete_spore_studio_template():
+            """Delete a Spore Studio template (HTML, config, sidecar, assets)."""
+            try:
+                from .spore_studio import save_pipeline as _sp
+
+                payload = request.get_json(silent=True) or {}
+                try:
+                    _sp.delete_template(str(payload.get("name") or ""))
+                except _sp.SporeStudioError as ex:
+                    return (
+                        {"error": str(ex)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                return (
+                    {"ok": True},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Spore Studio delete error: %s", e, exc_info=True)
                 return (
                     {"error": str(e)},
                     500,
@@ -1689,14 +1773,10 @@ class WebEngine:
                 def route_handler():
                     logger.debug(f"Serving template {template}")
                     try:
-                        # Load template configuration
-                        template_config = copy.deepcopy(
-                            engine_self.template_config_parser.load_config(template)
-                        )
-
                         preview_token = request.args.get("__preview_token")
                         mycelian_preview_mode = False
                         overrides: Dict[str, Any] = {}
+                        sess: Optional[Dict[str, Any]] = None
                         if preview_token:
                             with engine_self._preview_sessions_lock:
                                 sess = engine_self._preview_sessions.get(preview_token)
@@ -1707,54 +1787,53 @@ class WebEngine:
                                 ov = sess.get("overrides")
                                 if isinstance(ov, dict):
                                     overrides = ov
-                                    mycelian_preview_mode = True
+                                mycelian_preview_mode = True
 
-                        if overrides:
-                            for element in template_config.get("elements", []):
-                                if not isinstance(element, dict):
-                                    continue
-                                eid = element.get("id")
-                                if eid in overrides:
-                                    element["value"] = overrides[eid]
+                        draft_html: Optional[str] = None
+                        draft_config: Optional[Dict[str, Any]] = None
+                        if isinstance(sess, dict):
+                            dh = sess.get("draft_html")
+                            dc = sess.get("draft_config")
+                            if (
+                                isinstance(dh, str)
+                                and dh.strip()
+                                and isinstance(dc, dict)
+                            ):
+                                draft_html = dh
+                                draft_config = dc
 
-                        # In preview mode, optionally apply preview-only mock
-                        # values (template_config["previewState"]["mock_values"]).
-                        # Used so templates that conditionally render via Jinja
-                        # {% if X %} can show the conditional branch in the
-                        # previewer without the user having to set X for real.
-                        # Pending user overrides always win over mock_values.
-                        if mycelian_preview_mode:
-                            preview_state = template_config.get("previewState")
-                            if isinstance(preview_state, dict):
-                                mock_values = preview_state.get("mock_values")
-                                if isinstance(mock_values, dict):
-                                    for element in template_config.get(
-                                        "elements", []
-                                    ):
-                                        if not isinstance(element, dict):
-                                            continue
-                                        eid = element.get("id")
-                                        if (
-                                            eid in mock_values
-                                            and eid not in overrides
-                                        ):
-                                            element["value"] = mock_values[eid]
+                        if draft_html is not None and draft_config is not None:
+                            template_config = copy.deepcopy(draft_config)
+                        else:
+                            template_config = copy.deepcopy(
+                                engine_self.template_config_parser.load_config(template)
+                            )
 
-                        # Convert config elements to template variables
-                        template_vars = {}
-                        if "elements" in template_config:
-                            for element in template_config["elements"]:
-                                if "id" in element and "value" in element:
-                                    template_vars[element["id"]] = element["value"]
+                        engine_self._apply_preview_config_layers(
+                            template_config,
+                            overrides,
+                            preview_mode=mycelian_preview_mode,
+                        )
+
+                        template_vars = WebEngine._template_variable_map(
+                            template_config
+                        )
 
                         logger.debug(
                             f"Template {template} variables: {list(template_vars.keys())}"
                         )
-                        html = render_template(
-                            f"{template}.html",
-                            **template_vars,
-                            mycelian_html_stem=str(template),
-                        )
+                        if draft_html is not None:
+                            html = render_template_string(
+                                draft_html,
+                                **template_vars,
+                                mycelian_html_stem=str(template),
+                            )
+                        else:
+                            html = render_template(
+                                f"{template}.html",
+                                **template_vars,
+                                mycelian_html_stem=str(template),
+                            )
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
                             # MutationObserver). Try </body> first, then
@@ -1836,12 +1915,10 @@ class WebEngine:
             if not os.path.isfile(html_path):
                 return ("Not found", 404)
             try:
-                template_config = copy.deepcopy(
-                    engine_self.template_config_parser.load_config(template_name)
-                )
                 preview_token = request.args.get("__preview_token")
                 mycelian_preview_mode = False
                 overrides: Dict[str, Any] = {}
+                sess: Optional[Dict[str, Any]] = None
                 if preview_token:
                     with engine_self._preview_sessions_lock:
                         sess = engine_self._preview_sessions.get(preview_token)
@@ -1852,39 +1929,48 @@ class WebEngine:
                         ov = sess.get("overrides")
                         if isinstance(ov, dict):
                             overrides = ov
-                            mycelian_preview_mode = True
+                        mycelian_preview_mode = True
 
-                if overrides:
-                    for element in template_config.get("elements", []):
-                        if not isinstance(element, dict):
-                            continue
-                        eid = element.get("id")
-                        if eid in overrides:
-                            element["value"] = overrides[eid]
+                draft_html: Optional[str] = None
+                draft_config: Optional[Dict[str, Any]] = None
+                if isinstance(sess, dict):
+                    dh = sess.get("draft_html")
+                    dc = sess.get("draft_config")
+                    if (
+                        isinstance(dh, str)
+                        and dh.strip()
+                        and isinstance(dc, dict)
+                    ):
+                        draft_html = dh
+                        draft_config = dc
 
-                if mycelian_preview_mode:
-                    preview_state = template_config.get("previewState")
-                    if isinstance(preview_state, dict):
-                        mock_values = preview_state.get("mock_values")
-                        if isinstance(mock_values, dict):
-                            for element in template_config.get("elements", []):
-                                if not isinstance(element, dict):
-                                    continue
-                                eid = element.get("id")
-                                if eid in mock_values and eid not in overrides:
-                                    element["value"] = mock_values[eid]
+                if draft_html is not None and draft_config is not None:
+                    template_config = copy.deepcopy(draft_config)
+                else:
+                    template_config = copy.deepcopy(
+                        engine_self.template_config_parser.load_config(template_name)
+                    )
 
-                template_vars: Dict[str, Any] = {}
-                if "elements" in template_config:
-                    for element in template_config["elements"]:
-                        if "id" in element and "value" in element:
-                            template_vars[element["id"]] = element["value"]
-
-                html = render_template(
-                    f"{template_name}.html",
-                    **template_vars,
-                    mycelian_html_stem=str(template_name),
+                engine_self._apply_preview_config_layers(
+                    template_config,
+                    overrides,
+                    preview_mode=mycelian_preview_mode,
                 )
+
+                template_vars = WebEngine._template_variable_map(template_config)
+
+                if draft_html is not None:
+                    html = render_template_string(
+                        draft_html,
+                        **template_vars,
+                        mycelian_html_stem=str(template_name),
+                    )
+                else:
+                    html = render_template(
+                        f"{template_name}.html",
+                        **template_vars,
+                        mycelian_html_stem=str(template_name),
+                    )
                 if mycelian_preview_mode and preview_token:
                     if "</body>" in html:
                         html = html.replace(
@@ -1971,6 +2057,86 @@ class WebEngine:
                 "overrides": safe,
                 "ts": time.time(),
             }
+
+    def _register_spore_preview_session_keep_draft(
+        self, token: str, template_name: str
+    ) -> None:
+        """
+        Create or refresh Spore preview session without discarding compiled draft HTML.
+
+        Custom Sources continues to use :meth:`push_preview_overrides`, which
+        replaces the whole session — intentional: no Spore drafts there.
+        """
+        if not token or not template_name:
+            return
+        with self._preview_sessions_lock:
+            prev = self._preview_sessions.get(str(token))
+            overrides: Dict[str, Any] = {}
+            draft_html = None
+            draft_config = None
+            if isinstance(prev, dict):
+                ov = prev.get("overrides")
+                if isinstance(ov, dict):
+                    overrides = ov
+                if prev.get("template") == str(template_name):
+                    dh = prev.get("draft_html")
+                    dc = prev.get("draft_config")
+                    if (
+                        isinstance(dh, str)
+                        and dh.strip()
+                        and isinstance(dc, dict)
+                    ):
+                        draft_html = dh
+                        draft_config = dc
+            self._preview_sessions[str(token)] = {
+                "template": str(template_name),
+                "overrides": overrides,
+                "draft_html": draft_html,
+                "draft_config": draft_config,
+                "ts": time.time(),
+            }
+
+    @staticmethod
+    def _apply_preview_config_layers(
+        template_config: Dict[str, Any],
+        overrides: Dict[str, Any],
+        *,
+        preview_mode: bool,
+    ) -> None:
+        """Apply Custom Sources overrides and preview mock_values to config."""
+        if overrides:
+            for element in template_config.get("elements", []):
+                if not isinstance(element, dict):
+                    continue
+                eid = element.get("id")
+                if eid in overrides:
+                    element["value"] = overrides[eid]
+        if preview_mode:
+            preview_state = template_config.get("previewState")
+            if isinstance(preview_state, dict):
+                mock_values = preview_state.get("mock_values")
+                if isinstance(mock_values, dict):
+                    for element in template_config.get("elements", []):
+                        if not isinstance(element, dict):
+                            continue
+                        eid = element.get("id")
+                        if (
+                            eid in mock_values
+                            and eid not in overrides
+                        ):
+                            element["value"] = mock_values[eid]
+
+    @staticmethod
+    def _template_variable_map(template_config: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for element in template_config.get("elements", []):
+            if (
+                isinstance(element, dict)
+                and "id" in element
+                and "value" in element
+            ):
+                out[element["id"]] = element["value"]
+        return out
 
     def _merge_preview_session_into_config(
         self,
@@ -3972,13 +4138,14 @@ class WebEngine:
         def handle_twitch_api_request(data):
             """
             Handle twitch-api-request websocket event.
-            Proxies Twitch API requests for chat templates (emotes, badges, etc.).
+            Proxies Twitch Helix requests for templates.
 
-            Args:
-                data (dict): Dictionary containing:
-                    - endpoint (str): The Twitch API endpoint URL
-                    - method (str, optional): HTTP method (default: GET)
-                    - requestId (str): Unique request identifier for response matching
+            Payload:
+                - endpoint (str): Full URL, must be https://api.twitch.tv/...
+                - method (str, optional): HTTP method (default GET).
+                - requestId (str): Client correlation id for twitch-api-response.
+                - params (dict, optional): URL query parameters.
+                - json_data or json (dict, optional): JSON body for POST/PATCH/PUT.
             """
             client_sid = request.sid
             logger.debug(f"Received twitch-api-request from {client_sid}: {data}")
@@ -3999,11 +4166,57 @@ class WebEngine:
                     )
                     return
 
-                endpoint = data["endpoint"]
-                method = data.get("method", "GET").upper()
                 request_id = data["requestId"]
+                endpoint = str(data["endpoint"]).strip()
+                method = data.get("method", "GET").upper()
 
-                # Check if Twitch API is available
+                try:
+                    parsed = urlparse(endpoint)
+                except Exception:
+                    parsed = None
+                allowed_host = (
+                    parsed
+                    and parsed.scheme.lower() == "https"
+                    and (parsed.hostname or "").lower() == "api.twitch.tv"
+                )
+                if not allowed_host:
+                    self.socketio.emit(
+                        "twitch-api-response",
+                        {
+                            "success": False,
+                            "error": "endpoint must be https://api.twitch.tv/…",
+                            "requestId": request_id,
+                        },
+                        to=client_sid,
+                    )
+                    return
+
+                params = data.get("params")
+                if params is not None and not isinstance(params, dict):
+                    self.socketio.emit(
+                        "twitch-api-response",
+                        {
+                            "success": False,
+                            "error": "params must be an object when provided",
+                            "requestId": request_id,
+                        },
+                        to=client_sid,
+                    )
+                    return
+                json_data = data.get("json_data")
+                if json_data is None:
+                    json_data = data.get("json")
+                if json_data is not None and not isinstance(json_data, dict):
+                    self.socketio.emit(
+                        "twitch-api-response",
+                        {
+                            "success": False,
+                            "error": "json_data (or json) must be an object when provided",
+                            "requestId": request_id,
+                        },
+                        to=client_sid,
+                    )
+                    return
                 if not twitch.twitch_api:
                     logger.warning("Twitch API not initialized for API request")
                     response_data = {
@@ -4062,9 +4275,13 @@ class WebEngine:
 
                         async def handle_request():
                             try:
-                                # Call the generic_api_call method
-                                api_response = await twitch.twitch_api.generic_api_call(
-                                    url=endpoint, method=method
+                                api_response = (
+                                    await twitch.twitch_api.generic_api_call(
+                                        url=endpoint,
+                                        method=method,
+                                        params=params,
+                                        json_data=json_data,
+                                    )
                                 )
 
                                 response_data = {

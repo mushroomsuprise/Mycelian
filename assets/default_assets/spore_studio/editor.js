@@ -210,6 +210,7 @@
         state.model = JSON.parse(prev);
         renderAll();
         setDirty(true);
+        schedulePreviewDraft();
     }
 
     function redo() {
@@ -220,9 +221,43 @@
         state.model = JSON.parse(snapshot);
         renderAll();
         setDirty(true);
+        schedulePreviewDraft();
     }
 
-    function modelTouch() { setDirty(true); }
+    function modelTouch() {
+        setDirty(true);
+        schedulePreviewDraft();
+    }
+
+    var previewDraftTimer = null;
+    function postPreviewDraft() {
+        if (!state.model || state.model.legacy) {
+            return Promise.resolve();
+        }
+        return fetch("/api/spore-studio/preview/draft", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: state.previewToken, model: state.model })
+        }).catch(function () { /* best-effort */ });
+    }
+
+    function schedulePreviewDraft() {
+        if (!previewDialogOpen() || !state.model || state.model.legacy) { return; }
+        clearTimeout(previewDraftTimer);
+        previewDraftTimer = setTimeout(function () {
+            previewDraftTimer = null;
+            registerPreviewSession()
+                .then(postPreviewDraft)
+                .then(function () {
+                    var iframe = $("#ss-preview-iframe");
+                    if (!iframe || !state.model || !previewDialogOpen()) { return; }
+                    var bust = Date.now();
+                    iframe.src = "/" + encodeURIComponent(state.model.template_name) +
+                        "?__preview_token=" + encodeURIComponent(state.previewToken) +
+                        "&_cb=" + bust;
+                });
+        }, 280);
+    }
 
     function selectedElement() {
         if (!state.model || !state.selectedId) { return null; }
@@ -273,6 +308,68 @@
             && el.position
             && el.position.x != null
         );
+    }
+
+    function exposeKeysForType(elType) {
+        var sch = ELEMENT_PROP_SCHEMA[elType] || [];
+        var keys = sch.map(function (e) { return e.key; });
+        if (elType === "text") { keys.push("text"); }
+        if (["image", "video", "audio"].indexOf(elType) !== -1) {
+            keys.push("src");
+        }
+        return keys;
+    }
+
+    function ensureElementExposeDefaults(el) {
+        if (!el || el.legacy_bindings || el.legacy_field) { return; }
+        if (isLegacyModel()) { return; }
+        el.source_settings_expose =
+            el.source_settings_expose && typeof el.source_settings_expose === "object"
+                ? el.source_settings_expose
+                : {};
+        exposeKeysForType(el.type || "container").forEach(function (k) {
+            if (el.source_settings_expose[k] === undefined) {
+                el.source_settings_expose[k] = true;
+            }
+        });
+    }
+
+    function formRowPropWithExpose(el, exportKey, labelText, controlNode) {
+        ensureElementExposeDefaults(el);
+        if (el.source_settings_expose[exportKey] === undefined) {
+            el.source_settings_expose[exportKey] = true;
+        }
+
+        var wrap = document.createElement("div");
+        wrap.className = "ss-form-prop";
+        var head = document.createElement("div");
+        head.className = "ss-form-prop__head";
+        var lbl = document.createElement("div");
+        lbl.className = "ss-form-prop__label";
+        lbl.textContent = labelText;
+
+        var exLbl = document.createElement("label");
+        exLbl.className = "ss-form-prop__expose";
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!el.source_settings_expose[exportKey];
+        cb.title = "When off, value is inlined in HTML only (omitted from template JSON).";
+        cb.addEventListener("change", function () {
+            el.source_settings_expose[exportKey] = cb.checked;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        var exText = document.createElement("span");
+        exText.className = "ss-form-prop__expose-text";
+        exText.textContent = "Expose in Source Settings (JSON)";
+        exLbl.appendChild(cb);
+        exLbl.appendChild(exText);
+
+        head.appendChild(lbl);
+        head.appendChild(exLbl);
+        wrap.appendChild(head);
+        wrap.appendChild(controlNode);
+        return wrap;
     }
 
     /* ------------------------------------------------------------------
@@ -785,7 +882,7 @@
                 pushHistory();
                 modelTouch();
             });
-            host.appendChild(formRow(entry.label, ctrl));
+            host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl));
         });
 
         var deleteBtn = document.createElement("button");
@@ -829,6 +926,194 @@
         i.value = value == null ? "" : String(value);
         i.addEventListener("change", function () { onChange(i.value); });
         return i;
+    }
+
+    function ensureTwitchBindingDefaults(binding) {
+        if (binding.event !== "twitch-api-response") { return; }
+        if (!binding.twitch_api || typeof binding.twitch_api !== "object") {
+            binding.twitch_api = {};
+        }
+        var ta = binding.twitch_api;
+        if (ta.endpoint == null) { ta.endpoint = ""; }
+        if (ta.method == null) { ta.method = "GET"; }
+        if (ta.params_json == null) { ta.params_json = ""; }
+        if (ta.body_json == null) { ta.body_json = ""; }
+        if (!Array.isArray(binding.twitch_filters)) {
+            binding.twitch_filters = [];
+            var f = binding.filter || {};
+            if (f && typeof f === "object") {
+                Object.keys(f).forEach(function (k) {
+                    if (k === "requestId") { return; }
+                    var v = f[k];
+                    binding.twitch_filters.push({
+                        key: k,
+                        value: v == null ? "" : (
+                            typeof v === "object"
+                                ? JSON.stringify(v)
+                                : String(v)
+                        )
+                    });
+                });
+            }
+            binding.filter = {};
+        }
+        if (binding.twitch_filters.length === 0) {
+            binding.twitch_filters.push({ key: "", value: "" });
+        }
+    }
+
+    function renderTwitchApiRequestFields(binding, card) {
+        var ta = binding.twitch_api;
+        var sec = document.createElement("div");
+        sec.className = "ss-binding-row__section-title";
+        sec.textContent = "Twitch API request";
+        card.appendChild(sec);
+
+        var rqHint = document.createElement("div");
+        rqHint.className = "ss-binding-row__hint";
+        rqHint.textContent = (
+            "Emitted once after the socket connects (same pattern as standalone templates). " +
+            "URL must start with https://api.twitch.tv/. requestId is fixed for this binding " +
+            "and applied to response filters automatically."
+        );
+        card.appendChild(rqHint);
+
+        var ep = document.createElement("input");
+        ep.type = "text";
+        ep.value = ta.endpoint || "";
+        ep.placeholder = "https://api.twitch.tv/helix/users";
+        ep.addEventListener("change", function () {
+            ta.endpoint = ep.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        card.appendChild(formRow("Endpoint", ep));
+
+        var methodSel = document.createElement("select");
+        ["GET", "POST", "PUT", "PATCH", "DELETE"].forEach(function (m) {
+            var op = document.createElement("option");
+            op.value = m;
+            op.textContent = m;
+            if ((ta.method || "GET") === m) { op.selected = true; }
+            methodSel.appendChild(op);
+        });
+        methodSel.addEventListener("change", function () {
+            ta.method = methodSel.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        card.appendChild(formRow("Method", methodSel));
+
+        var paramsTa = document.createElement("textarea");
+        paramsTa.rows = 3;
+        paramsTa.className = "ss-json-inline";
+        paramsTa.value = ta.params_json || "";
+        paramsTa.placeholder = "Optional JSON object for query params, e.g. {\"login\":\"someone\"}";
+        paramsTa.addEventListener("change", function () {
+            ta.params_json = paramsTa.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        card.appendChild(formRow("JSON parameters (query)", paramsTa));
+
+        var bodyTa = document.createElement("textarea");
+        bodyTa.rows = 4;
+        bodyTa.className = "ss-json-inline";
+        bodyTa.value = ta.body_json || "";
+        bodyTa.placeholder = "Optional JSON object body for POST / PUT / PATCH";
+        bodyTa.addEventListener("change", function () {
+            ta.body_json = bodyTa.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        card.appendChild(formRow("JSON body", bodyTa));
+    }
+
+    function renderTwitchDynamicFilters(binding, card) {
+        var sec = document.createElement("div");
+        sec.className = "ss-binding-row__section-title";
+        sec.textContent = "Response filters";
+        card.appendChild(sec);
+
+        var filterHost = document.createElement("div");
+        filterHost.className = "ss-section ss-binding-row__filters";
+        filterHost.style.padding = "0";
+        filterHost.style.borderBottom = "none";
+
+        var filterHelp = document.createElement("div");
+        filterHelp.className = "ss-binding-row__hint";
+        filterHelp.textContent = (
+            "Add one row per payload field on twitch-api-response. Leave a row's " +
+            "key empty to ignore it. Value is compared with strict equality — use JSON " +
+            "literals where needed (e.g. true, false, {\"x\":1}). Leave value empty " +
+            "to match any."
+        );
+        filterHost.appendChild(filterHelp);
+
+        var rowsWrap = document.createElement("div");
+        filterHost.appendChild(rowsWrap);
+
+        binding.twitch_filters.forEach(function (row, ii) {
+            var rowEl = document.createElement("div");
+            rowEl.className = "ss-twitch-filter-row";
+
+            var keyIn = document.createElement("input");
+            keyIn.type = "text";
+            keyIn.className = "ss-twitch-filter__key input-grow";
+            keyIn.placeholder = "Payload field";
+            keyIn.value = row.key == null ? "" : String(row.key);
+            keyIn.addEventListener("change", function () {
+                row.key = keyIn.value;
+                pushHistoryDebounced();
+                modelTouch();
+            });
+
+            var valIn = document.createElement("input");
+            valIn.type = "text";
+            valIn.className = "ss-twitch-filter__val input-grow";
+            valIn.placeholder = "Value (optional; JSON)";
+            valIn.value = row.value == null ? "" : String(row.value);
+            valIn.addEventListener("change", function () {
+                row.value = valIn.value;
+                pushHistoryDebounced();
+                modelTouch();
+            });
+
+            var rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "ss-btn";
+            rm.textContent = "\u2212";
+            rm.title = "Remove filter row";
+            rm.addEventListener("click", function () {
+                binding.twitch_filters.splice(ii, 1);
+                if (binding.twitch_filters.length === 0) {
+                    binding.twitch_filters.push({ key: "", value: "" });
+                }
+                pushHistory();
+                renderBindings();
+                modelTouch();
+            });
+
+            rowEl.appendChild(keyIn);
+            rowEl.appendChild(valIn);
+            rowEl.appendChild(rm);
+            rowsWrap.appendChild(rowEl);
+        });
+
+        var addBtn = document.createElement("button");
+        addBtn.type = "button";
+        addBtn.className = "ss-btn ss-btn--primary";
+        addBtn.style.marginTop = "6px";
+        addBtn.textContent = "+ Add filter";
+        addBtn.addEventListener("click", function () {
+            binding.twitch_filters.push({ key: "", value: "" });
+            pushHistory();
+            renderBindings();
+            modelTouch();
+        });
+        filterHost.appendChild(addBtn);
+
+        card.appendChild(filterHost);
     }
 
     function renderBindings() {
@@ -904,6 +1189,8 @@
             });
             card.appendChild(formRow("Event", eventSelect));
 
+            ensureTwitchBindingDefaults(binding);
+
             var ev = registryEvent(binding.event);
             if (ev && ev.description) {
                 var evDesc = document.createElement("div");
@@ -911,7 +1198,10 @@
                 evDesc.textContent = ev.description;
                 card.appendChild(evDesc);
             }
-            if (ev && ev.payload && ev.payload.length) {
+            if (binding.event === "twitch-api-response") {
+                renderTwitchApiRequestFields(binding, card);
+                renderTwitchDynamicFilters(binding, card);
+            } else if (ev && ev.payload && ev.payload.length) {
                 var filterHost = document.createElement("div");
                 filterHost.className = "ss-section ss-binding-row__filters";
                 filterHost.style.padding = "0";
@@ -1011,6 +1301,11 @@
                                 ev.payload.slice(0, 3).map(function (p) {
                                     return p.key;
                                 }).join(", ");
+                        } else if (
+                            arg.key === "from_payload"
+                            && binding.event === "twitch-api-response"
+                        ) {
+                            ctrl.placeholder = "e.g. error, success, requestId";
                         }
                     }
                     if (arg.description) {
@@ -1119,6 +1414,7 @@
                 props: props,
                 bindings: []
             };
+            ensureElementExposeDefaults(el);
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
             state.selectedId = id;
@@ -1356,6 +1652,9 @@
             }
             el.props = el.props || {};
             el.bindings = el.bindings || [];
+            if (!model.legacy) {
+                ensureElementExposeDefaults(el);
+            }
         });
         model.advanced_js = typeof model.advanced_js === "string" ? model.advanced_js : "";
         return model;
@@ -1440,12 +1739,14 @@
         // No-op when the popup is closed so we never burn server-side
         // mock-event cycles for a preview the user can't see.
         if (!previewDialogOpen()) { return; }
-        registerPreviewSession().then(function () {
-            var bust = Date.now();
-            iframe.src = "/" + encodeURIComponent(state.model.template_name) +
-                "?__preview_token=" + encodeURIComponent(state.previewToken) +
-                "&_cb=" + bust + (forceReload ? "&_force=1" : "");
-        });
+        registerPreviewSession()
+            .then(postPreviewDraft)
+            .then(function () {
+                var bust = Date.now();
+                iframe.src = "/" + encodeURIComponent(state.model.template_name) +
+                    "?__preview_token=" + encodeURIComponent(state.previewToken) +
+                    "&_cb=" + bust + (forceReload ? "&_force=1" : "");
+            });
     }
 
     function openPreviewDialog() {
@@ -1647,6 +1948,7 @@
         renderInspector();
         renderOutline();
         renderCanvasPanel();
+        updateDeleteTemplateButton();
     }
 
     /* ------------------------------------------------------------------
@@ -1780,6 +2082,61 @@
         }
     }
 
+    function updateDeleteTemplateButton() {
+        var btn = $("#ss-btn-delete");
+        if (!btn) { return; }
+        var ok = !!(state.model && !state.model.legacy);
+        btn.disabled = !ok;
+        btn.title = ok
+            ? "Permanently delete this Spore Studio template"
+            : (state.model && state.model.legacy
+                ? "Legacy templates cannot be deleted here"
+                : "Choose a template to delete");
+    }
+
+    function deleteCurrentTemplate() {
+        if (!state.model || state.model.legacy) { return; }
+        var name = state.model.template_name;
+        if (!window.confirm(
+            'Delete template "' + name +
+            '"? This removes its HTML, JSON config, editor sidecar, and assets folder.'
+        )) {
+            return;
+        }
+        fetch("/api/spore-studio/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name })
+        })
+            .then(function (r) {
+                return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+            })
+            .then(function (res) {
+                if (!res.ok) {
+                    throw new Error((res.data && res.data.error) || "Delete failed");
+                }
+                toast("Deleted " + name, "success");
+                setDirty(false);
+                return refreshTemplateList();
+            })
+            .then(function () {
+                var sel = $("#ss-template-select");
+                closePreviewDialog();
+                if (!sel.options.length) {
+                    loadTemplate("");
+                    updateDeleteTemplateButton();
+                    setStatus("No templates — click '+ New'.");
+                    return;
+                }
+                sel.value = sel.options[0].value;
+                return loadTemplate(sel.options[0].value);
+            })
+            .catch(function (err) {
+                console.error("Delete failed", err);
+                toast("Delete failed: " + err.message, "error");
+            });
+    }
+
     function setupKeyboard() {
         window.addEventListener("keydown", function (ev) {
             var meta = ev.ctrlKey || ev.metaKey;
@@ -1810,6 +2167,7 @@
             loadTemplate(ev.target.value);
         });
         $("#ss-btn-create").addEventListener("click", openCreateDialog);
+        $("#ss-btn-delete").addEventListener("click", deleteCurrentTemplate);
         $("#ss-btn-undo").addEventListener("click", undo);
         $("#ss-btn-redo").addEventListener("click", redo);
         $("#ss-btn-save").addEventListener("click", saveCurrent);

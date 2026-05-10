@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Orchestrate the Spore Studio "Create" and "Save" actions.
+Orchestrate Spore Studio template lifecycle: Create, Save, Delete.
 
-These are the only two server-side write paths; everything else (preview
-overrides, asset listings, event registry) is read-only.
+Preview overrides, asset listings, and event registry are read-only.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ import copy
 import json
 import logging
 import os
+import shutil
 from typing import Any, Dict, Optional, Tuple
 
 from . import template_codegen, template_parser_back
@@ -23,6 +23,10 @@ from ..path_utils import (
 from ..template_config_parser import TemplateConfigParser
 
 logger = logging.getLogger(__name__)
+
+
+# First-party overlays: excluded from Spore Studio's picker and non-deletable.
+SPORE_STUDIO_PROTECTED_TEMPLATES = frozenset({"activity_feed", "source_controls"})
 
 
 # Names that would conflict with built-in Flask routes or our own helpers.
@@ -160,6 +164,23 @@ def _load_existing_html(template_name: str) -> Optional[str]:
     except OSError as e:
         logger.warning("Could not read existing template %s: %s", path, e)
         return None
+
+
+def compile_preview_draft(model: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    """
+    Compile an in-memory editor model to (html, json_config) for live preview.
+
+    Does not write to disk. Raises SporeStudioError on invalid model or legacy
+    templates (no codegen path).
+    """
+    if not isinstance(model, dict):
+        raise SporeStudioError("Editor model must be a JSON object.")
+    if model.get("legacy"):
+        raise SporeStudioError("Live draft preview is only for Spore templates.")
+    template_name = _validate_name(model.get("template_name") or "")
+    existing = _load_existing_html(template_name)
+    html_text, json_config = template_codegen.compile_model(model, existing_html=existing)
+    return html_text, json_config
 
 
 def ensure_template_assets_folder(template_name: str) -> str:
@@ -460,6 +481,45 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     return model
 
 
+def delete_template(name: str) -> None:
+    """
+    Delete a Spore Studio template's HTML, public JSON config, sidecar, and assets.
+
+    Refuses protected or non-Spore templates.
+    """
+    template_name = _validate_name(name)
+    if template_name.lower() in SPORE_STUDIO_PROTECTED_TEMPLATES:
+        raise SporeStudioError(
+            f"Template '{template_name}' is protected and cannot be deleted."
+        )
+    if template_parser_back.load_sidecar(template_name) is None:
+        raise SporeStudioError(
+            f"'{template_name}' is not a Spore Studio template (no sidecar)."
+        )
+
+    html_path = get_template_path(f"{template_name}.html")
+    parser = TemplateConfigParser()
+    json_path = parser.get_config_path(template_name)
+
+    template_parser_back.remove_sidecar(template_name)
+
+    for path in (html_path, json_path):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError as e:
+            raise SporeStudioError(f"Could not remove {path}: {e}") from e
+
+    assets_dir = os.path.join(get_assets_path(), template_name)
+    if os.path.isdir(assets_dir):
+        try:
+            shutil.rmtree(assets_dir)
+        except OSError as e:
+            logger.warning("Could not remove assets directory %s: %s", assets_dir, e)
+
+    _refresh_web_engine_routes()
+
+
 def list_spore_templates() -> Tuple[list, list]:
     """
     Enumerate templates by Spore Studio authorship.
@@ -477,6 +537,8 @@ def list_spore_templates() -> Tuple[list, list]:
             continue
         stem = entry[:-5]
         if stem.startswith("_"):
+            continue
+        if stem.lower() in SPORE_STUDIO_PROTECTED_TEMPLATES:
             continue
         if template_parser_back.load_sidecar(stem) is not None:
             spore.append(stem)

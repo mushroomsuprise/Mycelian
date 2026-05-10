@@ -173,6 +173,19 @@ _EVENTS: List[Dict[str, Any]] = [
             {"key": "message_id", "label": "Message ID", "type": "string"},
         ],
     },
+    {
+        "event": "twitch-api-response",
+        "label": "Twitch API call (response)",
+        "alert_system": "either",
+        "description": (
+            "Configure the Helix URL and optional query/body JSON in the inspector. "
+            "The overlay emits ``twitch-api-request`` after connect using a binding id "
+            "as ``requestId`` (also applied to response filters automatically). "
+            "Add filters for fields on the socket payload — e.g. ``success`` with value "
+            "``true`` (JSON)."
+        ),
+        "payload": [],
+    },
 ]
 
 

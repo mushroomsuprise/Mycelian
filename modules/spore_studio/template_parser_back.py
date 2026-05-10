@@ -129,7 +129,15 @@ def save_sidecar(template_name: str, model: Dict[str, Any]) -> bool:
             os.unlink(tmp_path)
         except OSError:
             pass
-        return False
+def remove_sidecar(template_name: str) -> None:
+    """Delete ``.spore.json`` sidecar(s) for this template if they exist."""
+    _migrate_legacy_sidecar(template_name)
+    for path in (_spore_sidecar_path(template_name), _legacy_sidecar_path(template_name)):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError as e:
+            logger.warning("Could not remove sidecar %s: %s", path, e)
 
 
 _LEGACY_TYPE_MAP = {

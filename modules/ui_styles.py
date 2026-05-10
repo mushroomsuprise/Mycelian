@@ -134,17 +134,31 @@ body:not(.body--dark) .text-grey {
     color: var(--color-text-secondary) !important;
 }
 
+/*
+ * Locks the NiceGUI chrome (tabs + tab panels) inside the viewport. The tab strip
+ * and .main-content are wrapped in .mycelian-main-shell (see create_ui_elements);
+ * flex + min-height: 0 keeps nested iframes (e.g. Spore Studio) from spilling past
+ * the native window edge.
+ */
+.mycelian-main-shell {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+}
+
 /* Main content area styling */
 .main-content {
     background: var(--color-bg-elevated);
     border-radius: 8px;
-    margin: 8px;
-    height: calc(100vh - 16px);
+    margin: 0;
+    flex: 1 1 0%;
+    min-height: 0;
     overflow: hidden;
     border: 1px solid var(--color-border-subtle);
     display: flex;
     flex-direction: column;
-    width: calc(100% - 16px);
+    width: 100%;
 }
 
 /* Content section styling */

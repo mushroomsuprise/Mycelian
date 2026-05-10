@@ -100,6 +100,20 @@ def _moderation_payload() -> Dict[str, Any]:
     }
 
 
+def _twitch_api_response_payload() -> Dict[str, Any]:
+    return {
+        "success": True,
+        "requestId": f"mock-{int(time.time() * 1000)}",
+        "data": {
+            "data": [
+                {"id": str(random.randint(10_000_000, 99_999_999)),
+                 "login": random.choice(("previewuser", "mockstreamer")),
+                 "display_name": "PreviewStreamer"},
+            ],
+        },
+    }
+
+
 # Maps registry event_name -> (socket_event_to_emit, payload_builder).
 # Most events emit on the same channel name as the registry key; the
 # pause/resume trio map onto a single "pause_status_update" channel
@@ -140,6 +154,10 @@ _BUILDERS: Dict[str, Tuple[str, Any]] = {
     "message_moderation": (
         "message_moderation",
         lambda pools: _moderation_payload(),
+    ),
+    "twitch-api-response": (
+        "twitch-api-response",
+        lambda pools: _twitch_api_response_payload(),
     ),
 }
 

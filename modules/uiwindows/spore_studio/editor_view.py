@@ -50,7 +50,9 @@ _INJECTED_CSS = {"injected": False}
 def _inject_css() -> None:
     if _INJECTED_CSS["injected"]:
         return
-    ui.add_head_html(f"<style id='spore-studio-tab-css'>{_TAB_CSS}</style>", shared=True)
+    ui.add_head_html(
+        f"<style id='spore-studio-tab-css'>{_TAB_CSS}</style>", shared=True
+    )
     _INJECTED_CSS["injected"] = True
 
 
@@ -78,7 +80,7 @@ def create_spore_studio_tab() -> None:
     state = _state()
 
     with ui.element("div").classes(
-        "spore-studio-host w-full h-full flex flex-col"
+        "spore-studio-host w-full h-full min-h-0 flex flex-col"
     ) as container:
         state["container"] = container
 
@@ -94,46 +96,47 @@ def create_spore_studio_tab() -> None:
                 ).classes("text-xs opacity-70")
 
             with ui.row().classes("items-center gap-2"):
-                refresh_btn = ui.button(
-                    icon="refresh",
-                    text="Reload editor",
-                    on_click=lambda: _refresh_iframe(state),
-                ).props("dense flat").classes("text-xs")
+                refresh_btn = (
+                    ui.button(
+                        icon="refresh",
+                        text="Reload editor",
+                        on_click=lambda: _refresh_iframe(state),
+                    )
+                    .props("dense flat")
+                    .classes("text-xs")
+                )
                 refresh_btn.tooltip("Reload the editor inside the iframe")
 
-                open_external_btn = ui.button(
-                    icon="open_in_new",
-                    text="Open externally",
-                    on_click=lambda: _open_externally(),
-                ).props("dense flat").classes("text-xs")
-                open_external_btn.tooltip(
-                    "Open the editor in your default browser"
+                open_external_btn = (
+                    ui.button(
+                        icon="open_in_new",
+                        text="Open externally",
+                        on_click=lambda: _open_externally(),
+                    )
+                    .props("dense flat")
+                    .classes("text-xs")
                 )
+                open_external_btn.tooltip("Open the editor in your default browser")
 
-        body = ui.element("div").classes("w-full flex-grow relative")
+        body = ui.element("div").classes("w-full flex-grow relative min-h-0 pb-3")
         state["body"] = body
 
         with body:
-            iframe = ui.element("iframe").classes(
-                "block w-full h-full border-0"
-            )
+            iframe = ui.element("iframe").classes("block w-full h-full border-0")
             state["iframe"] = iframe
             iframe.props("allow=clipboard-read;clipboard-write")
 
             placeholder = (
                 ui.column()
                 .classes(
-                    "absolute inset-0 items-center justify-center "
-                    "spore-studio-empty"
+                    "absolute inset-0 items-center justify-center " "spore-studio-empty"
                 )
                 .style("display:none;gap:8px;")
             )
             state["placeholder"] = placeholder
             with placeholder:
                 ui.icon("hourglass_empty", size="2rem")
-                ui.label(
-                    "Waiting for the overlay server to start…"
-                ).classes("text-sm")
+                ui.label("Waiting for the overlay server to start…").classes("text-sm")
                 ui.label(
                     "Spore Studio runs in-browser inside an iframe served "
                     "by Mycelian's web engine. The server starts with the "

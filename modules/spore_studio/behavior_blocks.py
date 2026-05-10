@@ -4,6 +4,16 @@ Compile Spore Studio editor bindings into the JavaScript snippet that
 lives between the ``SPORE_STUDIO:auto-begin`` and ``SPORE_STUDIO:auto-end``
 markers of a generated template.
 
+Helix calls from user script (outside generated bindings) can use the same
+Socket.IO pattern as ``templates/title.html``:
+
+- ``socket.emit('twitch-api-request', { endpoint, method, requestId, params?, json_data? })``
+- ``socket.on('twitch-api-response', …)`` — match on ``requestId``
+
+``endpoint`` must be ``https://api.twitch.tv/...``. Optional ``params`` is a
+query object; optional ``json_data`` (or ``json``) is the JSON body for
+POST/PATCH/PUT.
+
 A binding looks like::
 
     {
@@ -12,6 +22,13 @@ A binding looks like::
         "action": "show_for",
         "args": {"seconds": 5, "anim_in": "fade", "anim_out": "fade"}
     }
+
+``twitch-api-response`` bindings add ``twitch_api`` (``endpoint``, ``method``,
+``params_json``, ``body_json``) and ``twitch_filters`` (list of ``{"key", "value"}``
+rows). Values are coerced with :func:`json.loads` when valid JSON so filters can
+match booleans and numbers. The compiler injects ``requestId`` into each row's
+effective filter and emits a matching ``twitch-api-request`` after the socket
+connects.
 
 We do NOT use ``json.dumps`` to inject the values directly into JS because
 the helper script runs inside a Jinja-rendered HTML page; we want the
@@ -23,7 +40,8 @@ by element id.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+import re
+from typing import Any, Dict, List, Optional
 
 
 # Animation CSS injected into the head when at least one binding asks for
@@ -80,6 +98,134 @@ def _compile_filter(filter_obj: Dict[str, Any]) -> str:
     if not filter_obj:
         return "true"
     return "sporeMatchesFilter(payload, " + _js_value(filter_obj) + ")"
+
+
+def _safe_element_token(element_id: Any) -> str:
+    raw = str(element_id) if element_id is not None else "el"
+    return re.sub(r"[^a-zA-Z0-9_]", "_", raw) or "el"
+
+
+def _twitch_request_id(element_id: Any, binding_index: int) -> str:
+    return f"spore_tw_{_safe_element_token(element_id)}_{int(binding_index)}"
+
+
+def _coerce_twitch_filter_cell(raw: Any) -> Any:
+    """Turn a user-typed filter value into a JSON-friendly Python value."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        return raw
+    s = raw.strip()
+    if s == "":
+        return None
+    try:
+        return json.loads(s)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return s
+
+
+def _twitch_response_filter_dict(binding: Dict[str, Any], request_id: str) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"requestId": request_id}
+    for row in binding.get("twitch_filters") or []:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip()
+        if not key or key == "requestId":
+            continue
+        coerced = _coerce_twitch_filter_cell(row.get("value"))
+        if coerced is None:
+            continue
+        out[key] = coerced
+    return out
+
+
+def _compile_twitch_emit_iife(binding: Dict[str, Any], request_id: str) -> str:
+    """
+    Produce an IIFE that emits ``twitch-api-request`` after the socket connects.
+    Warns in the console when the endpoint is blank or JSON fields are invalid.
+    """
+    ta = binding.get("twitch_api")
+    if not isinstance(ta, dict):
+        ta = {}
+    endpoint = str(ta.get("endpoint") or "").strip()
+    if not endpoint:
+        return (
+            "(function () {\n"
+            "    try {\n"
+            "        console.warn('[spore-studio] Twitch API binding skipped: "
+            "set an HTTPS api.twitch.tv endpoint in Spore Studio.');\n"
+            "    } catch (e) {}\n"
+            "})();"
+        )
+
+    method = str(ta.get("method") or "GET").strip().upper() or "GET"
+    emit_obj: Dict[str, Any] = {
+        "endpoint": endpoint,
+        "method": method,
+        "requestId": request_id,
+    }
+
+    params_err: Optional[str] = None
+    params_raw = ta.get("params_json")
+    if isinstance(params_raw, str) and params_raw.strip():
+        try:
+            parsed_p = json.loads(params_raw)
+        except json.JSONDecodeError as e:
+            params_err = f"params JSON: {e}"
+            parsed_p = None
+        if params_err is None:
+            if not isinstance(parsed_p, dict):
+                params_err = "params JSON must be an object `{...}`"
+            else:
+                emit_obj["params"] = parsed_p
+
+    body_err: Optional[str] = None
+    body_raw = ta.get("body_json")
+    if isinstance(body_raw, str) and body_raw.strip():
+        try:
+            parsed_b = json.loads(body_raw)
+        except json.JSONDecodeError as e:
+            body_err = f"body JSON: {e}"
+            parsed_b = None
+        if body_err is None:
+            if not isinstance(parsed_b, dict):
+                body_err = "body JSON must be an object `{...}`"
+            else:
+                emit_obj["json_data"] = parsed_b
+
+    err_parts: List[str] = []
+    if params_err:
+        err_parts.append(params_err)
+    if body_err:
+        err_parts.append(body_err)
+
+    if err_parts:
+        msg = "; ".join(err_parts)
+        return (
+            "(function () {\n"
+            f"    try {{ console.warn('[spore-studio] Twitch API emit: ' + "
+            f"{_js_string(msg)}); }}\n"
+            "    catch (e) {}\n"
+            "})();"
+        )
+
+    emit_literal = _js_value(emit_obj)
+    return (
+        "(function () {\n"
+        "    var __payload = "
+        + emit_literal
+        + ";\n"
+        "    var __go = function () {\n"
+        "        try {\n"
+        "            socket.emit('twitch-api-request', __payload);\n"
+        "        } catch (e) {\n"
+        "            console.error('[spore-studio] twitch-api-request emit', e);\n"
+        "        }\n"
+        "    };\n"
+        "    if (socket && socket.connected) { __go(); }\n"
+        "    else if (socket) { socket.once('connect', __go); }\n"
+        "})();"
+    )
 
 
 def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[str]:
@@ -209,14 +355,19 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
         bindings = element.get("bindings") or []
         if not eid or not isinstance(bindings, list):
             continue
-        for binding in bindings:
+        for bidx, binding in enumerate(bindings):
             if not isinstance(binding, dict):
                 continue
             event = binding.get("event")
             action = binding.get("action")
             if not event or not action:
                 continue
-            filter_obj = binding.get("filter") or {}
+            if event == "twitch-api-response":
+                filter_obj = _twitch_response_filter_dict(
+                    binding, _twitch_request_id(eid, bidx)
+                )
+            else:
+                filter_obj = binding.get("filter") or {}
             args = binding.get("args") or {}
 
             block: List[str] = []
@@ -281,6 +432,30 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
         lines.append("}")
 
     js = "\n".join(lines)
+
+    # One-shot Helix requests for twitch-api-response bindings (after listeners).
+    twitch_emits: List[str] = []
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        eid = element.get("id")
+        bindings = element.get("bindings") or []
+        if not eid or not isinstance(bindings, list):
+            continue
+        for bidx, binding in enumerate(bindings):
+            if not isinstance(binding, dict):
+                continue
+            if binding.get("event") != "twitch-api-response":
+                continue
+            if not binding.get("action"):
+                continue
+            rid = _twitch_request_id(eid, bidx)
+            emit_js = _compile_twitch_emit_iife(binding, rid)
+            if emit_js:
+                twitch_emits.append(emit_js)
+
+    if twitch_emits:
+        js = js + "\n\n" + "\n\n".join(twitch_emits)
 
     css = ANIMATION_CSS if use_animation else ""
     return {"js": js, "css": css}

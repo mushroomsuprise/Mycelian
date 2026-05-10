@@ -443,7 +443,10 @@
             socket.emit('get-streamer-info');
         }
 
-        // Make initial Twitch API call to get current stream info
+        // Make initial Twitch API call to get current stream info.
+        // twitch-api-request supports optional `params` (query object) and
+        // `json_data` / `json` (body object) for POST/PATCH; endpoint must be
+        // https://api.twitch.tv/...
         function makeInitialTwitchApiCall(streamerName) {
             var apiRequest = {
                 endpoint: `https://api.twitch.tv/helix/streams?user_login=${streamerName}`,

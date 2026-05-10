@@ -218,6 +218,16 @@ def _load_boilerplate(alert_system: str) -> str:
         return fh.read()
 
 
+def _expose_field(element: Dict[str, Any], field_key: str) -> bool:
+    """When False, the field is inlined in HTML only (omitted from template JSON)."""
+    mm = element.get("source_settings_expose")
+    if not isinstance(mm, dict):
+        return True
+    if field_key not in mm:
+        return True
+    return bool(mm[field_key])
+
+
 def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
     """
     Build the public ``templates/template_configs/{name}.json`` from the model.
@@ -286,31 +296,57 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
 
             if etype == "text":
                 text_var = element.get("text_var") or eid + "Text"
-                elements_out.append(
-                    {
-                        "type": "text",
-                        "id": text_var,
-                        "label": f"{element.get('id', eid)} text",
-                        "value": str(props.get("text", "")),
-                        "description":
-                            f"Text shown by element '{element.get('id', eid)}'.",
-                    }
-                )
+                if _expose_field(element, "text"):
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": text_var,
+                            "label": f"{element.get('id', eid)} text",
+                            "value": str(props.get("text", "")),
+                            "description":
+                                f"Text shown by element '{element.get('id', eid)}'.",
+                        }
+                    )
             elif etype in ("image", "video", "audio"):
                 src_var = element.get("src_var") or eid + "Src"
-                elements_out.append(
-                    {
-                        "type": "text",
-                        "id": src_var,
-                        "label": f"{element.get('id', eid)} source URL",
-                        "value": str(props.get("src", "")),
-                        "description":
-                            f"Source URL or path for element '{element.get('id', eid)}'.",
-                    }
-                )
+                if _expose_field(element, "src"):
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": src_var,
+                            "label": f"{element.get('id', eid)} source URL",
+                            "value": str(props.get("src", "")),
+                            "description":
+                                f"Source URL or path for element "
+                                f"'{element.get('id', eid)}'.",
+                        }
+                    )
+
+            if etype == "video":
+                vdefaults = {"autoplay": True, "loop": False, "muted": True}
+                for bkey, blabel in (
+                    ("autoplay", "autoplay"),
+                    ("loop", "loop"),
+                    ("muted", "muted"),
+                ):
+                    if not _expose_field(element, bkey):
+                        continue
+                    raw = props.get(bkey, vdefaults[bkey])
+                    elements_out.append(
+                        {
+                            "type": "checkbox",
+                            "id": f"{eid}_{bkey}",
+                            "label": f"{element.get('id', eid)} {blabel}",
+                            "value": bool(raw),
+                            "description": f"{blabel.title()} for "
+                            f"'{element.get('id', eid)}'.",
+                        }
+                    )
 
             for key in ("color", "background_color", "font_family"):
                 if props.get(key) in (None, ""):
+                    continue
+                if not _expose_field(element, key):
                     continue
                 elements_out.append(
                     {
@@ -323,8 +359,28 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                             f"'{element.get('id', eid)}'.",
                     }
                 )
+
+            for key in ("font_weight", "text_align"):
+                if props.get(key) in (None, ""):
+                    continue
+                if not _expose_field(element, key):
+                    continue
+                elements_out.append(
+                    {
+                        "type": "text",
+                        "id": f"{eid}_{key}",
+                        "label": f"{element.get('id', eid)} {key.replace('_', ' ')}",
+                        "value": str(props[key]),
+                        "description":
+                            f"{key.replace('_', ' ').title()} for "
+                            f"'{element.get('id', eid)}'.",
+                    }
+                )
+
             for key in ("font_size", "border_radius", "border_width"):
                 if props.get(key) in (None, ""):
+                    continue
+                if not _expose_field(element, key):
                     continue
                 try:
                     value = int(props[key])
@@ -341,6 +397,42 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                         "description":
                             f"{key.replace('_', ' ').title()} for "
                             f"'{element.get('id', eid)}' (pixels).",
+                    }
+                )
+
+            if props.get("opacity") not in (None, "") and _expose_field(
+                element, "opacity"
+            ):
+                try:
+                    opv = float(props["opacity"])
+                except (TypeError, ValueError):
+                    opv = None
+                if opv is not None:
+                    elements_out.append(
+                        {
+                            "type": "number",
+                            "id": f"{eid}_opacity",
+                            "label": f"{element.get('id', eid)} opacity",
+                            "value": opv,
+                            "min": 0,
+                            "max": 1,
+                            "step": 0.05,
+                            "description": f"Opacity for '{element.get('id', eid)}'.",
+                        }
+                    )
+
+            if props.get("border_color") not in (None, "") and _expose_field(
+                element, "border_color"
+            ):
+                elements_out.append(
+                    {
+                        "type": "color",
+                        "id": f"{eid}_border_color",
+                        "label": f"{element.get('id', eid)} border color",
+                        "value": str(props["border_color"]),
+                        "description": (
+                            f"Border color for '{element.get('id', eid)}'."
+                        ),
                     }
                 )
 

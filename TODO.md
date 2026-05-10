@@ -7,21 +7,25 @@ Game Hooks
 FF7 Hook
     [] - Rewrite to match newly reworked game hook manager.
 
-Spore Studio:
-    [] - Work more on loading in the existing templates correctly (reverse parser to create sidecar files?)
-
 Connectors:
     [] - Disable output of connectors when a "game hook" is the action, and that particular hook is either not enabled, or not connected to the game
 
 Template Previewer:
-    [] - Add settings menu with persistant storage of options to enable/disable mock data, sounds, etc
+    [] - Add settings menu with persistant storage of options to enable/disable sounds, etc
+    [] - Change mock data to be clickable buttons above the preview frame like the Spore Studio module uses. Mock data will no longer go to specialized websockets in the templates, but will use the actual websocket that live data uses
+    [] - When data is changed, it currently refreshes the entire previewer, i would prefer it does not refresh the entire thing, just modify what changed.
 
 Chat Improvements:
     [] - Add more entry animations, including complex ones
     [] - Change font boxes so they "autocomplete" from available fonts in the /assets/default_assets/fonts folder
+    [] - Create a .spore.json sidecar file for the Spore Studio module
 
 Alerts Improvements:
     [] - Add emote parsing to alert messages (see chat template for the emote parser). Note: Alert messages have different payloads for emotes than chat messages for Twitch emotes specifically, 3rd party emotes can be parsed the same way.
+    [] - Create a .spore.json sidecar file for the Spore Studio module
+
+Other Standard Templates:
+    [] - Create a .spore.json sidecar file for the Spore Studio module for bitbar.html, bitboss.html, counter.html, ff7.html, giveaway.html, pausedalerts.html, roulette.html, subbar.html, and title.html
 
 OBS Websocket:
     [] - Add in OBS websocket support. 

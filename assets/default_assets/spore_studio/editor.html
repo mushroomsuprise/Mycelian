@@ -14,8 +14,20 @@
             <select id="ss-template-select" class="ss-toolbar__name"
                     title="Active template"></select>
             <button class="ss-btn" id="ss-btn-create">+ New</button>
-            <button class="ss-btn ss-btn--ghost" id="ss-btn-undo" title="Undo (Ctrl+Z)">&#8630;</button>
-            <button class="ss-btn ss-btn--ghost" id="ss-btn-redo" title="Redo (Ctrl+Shift+Z)">&#8631;</button>
+            <button class="ss-btn ss-btn--danger" id="ss-btn-delete"
+                    disabled title="Open a Spore template to delete">Delete</button>
+            <button class="ss-btn ss-btn--ghost" id="ss-btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo">
+                <svg class="ss-toolbar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M3 10h10a5 5 0 0 1 5 5 0 0 1-5 5H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 6 3 10l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <button class="ss-btn ss-btn--ghost" id="ss-btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
+                <svg class="ss-toolbar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M21 10H11a5 5 0 0 0-5 5 0 0 0 5 5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="m17 6 4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
             <span class="ss-spacer"></span>
             <button class="ss-btn" id="ss-btn-preview"
                     title="Open live preview window">Preview</button>
