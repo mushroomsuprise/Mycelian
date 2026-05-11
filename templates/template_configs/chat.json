@@ -702,7 +702,7 @@
             "label": "Badge Size",
             "value": 18,
             "min": 12,
-            "max": 32,
+            "max": 100,
             "description": "Size of badges in pixels"
         },
         {

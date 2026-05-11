@@ -1,6 +1,6 @@
 [project]
 name = "mycelian"
-version = "1.8.5"
+version = "1.9.0"
 description = "Mycelian is a custom alert and browser source tool for Twitch streamers."
 readme = "README.md"
 requires-python = ">=3.10"
