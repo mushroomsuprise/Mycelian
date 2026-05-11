@@ -29,17 +29,43 @@ import os
 import sys
 import time
 import uuid
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 from nicegui import app, ui
 from ..notification_engine import notify
-from ..path_utils import get_template_path
+from ..path_utils import get_assets_path, get_template_path
 
 # Use proper relative import for template_config_parser
 from ..template_config_parser import TemplateConfigParser
 from .. import web_engine as web_engine_module
 
 logger = logging.getLogger(__name__)
+
+_FONT_AUTOCOMPLETE_EXTS = {
+    ".ttf",
+    ".otf",
+    ".ttc",
+    ".woff",
+    ".woff2",
+}
+
+
+def _list_default_font_basenames() -> List[str]:
+    """Filenames in assets/default_assets/fonts for template config autocomplete."""
+    fonts_dir = get_assets_path(os.path.join("default_assets", "fonts"))
+    if not os.path.isdir(fonts_dir):
+        return []
+    names: List[str] = []
+    try:
+        for entry in os.listdir(fonts_dir):
+            _, ext = os.path.splitext(entry)
+            if ext.lower() in _FONT_AUTOCOMPLETE_EXTS:
+                names.append(entry)
+    except OSError:
+        return []
+    names.sort(key=str.lower)
+    return names
+
 
 # Global dictionary to store form data for each config
 form_data_store = {}
@@ -1307,7 +1333,16 @@ def render_form_element(
                 ).classes("w-full h-24")
                 element_ui_map[element_id] = input_element
             elif element_type == "select":
-                options = element.get("options", [])
+                options: List[str] = list(element.get("options", []))
+                if element.get("options_from") == "fonts":
+                    options = _list_default_font_basenames()
+                    ev_str = (
+                        str(element_value).strip() if element_value is not None else ""
+                    )
+                    if ev_str and ev_str not in options:
+                        options = [ev_str] + options
+                    if not options and ev_str:
+                        options = [ev_str]
                 display_type = element.get("display", "dropdown")
 
                 if display_type == "color_grid":

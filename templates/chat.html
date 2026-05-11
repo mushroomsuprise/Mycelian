@@ -80,7 +80,11 @@
             word-wrap: break-word;
             display: block;
 
+            {% if MessageAnimation == "none" %}
+            animation: none;
+            {% else %}
             animation: {{ MessageAnimation }} {{ AnimationDuration }}s {{ AnimationEasing }};
+            {% endif %}
 
             min-height: {{ MinMessageHeight }}px;
             flex-shrink: 0;
@@ -182,24 +186,30 @@
             text-indent: 0;
         }
 
-        .emote-img {
-            transform: scale({{ EmoteScale }});
+        /* Emotes: layout uses height (not transform scale) so inline flow matches visual size (~28px nominal) */
+        .emote-img,
+        .emote-base,
+        .emote-zw {
+            height: calc(28px * {{ EmoteScale }});
+            width: auto;
+            object-fit: contain;
             vertical-align: middle;
-            margin: 0 {{ EmoteMargin }}px;
             border-radius: {{ EmoteRadius }}px;
+            box-sizing: border-box;
         }
 
-        /* Zero-width emote support for 7TV */
+        .emote-img {
+            margin: 0 {{ EmoteMargin }}px;
+        }
+
         .emote-container {
             position: relative;
             display: inline-block;
             margin: 0 {{ EmoteMargin }}px;
+            vertical-align: middle;
         }
 
         .emote-base {
-            transform: scale({{ EmoteScale }});
-            vertical-align: middle;
-            border-radius: {{ EmoteRadius }}px;
             display: block;
         }
 
@@ -207,25 +217,33 @@
             position: absolute;
             top: 0;
             left: 0;
-            transform: scale({{ EmoteScale }});
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
             border-radius: {{ EmoteRadius }}px;
             pointer-events: none;
             z-index: 1;
+            box-sizing: border-box;
         }
 
         .emote-zw {
-            transform: scale({{ EmoteScale }});
-            border-radius: {{ EmoteRadius }}px;
             /* Visual indicator for standalone zero-width emotes */
             opacity: 0.8;
             border: 1px dashed rgba(255, 255, 255, 0.3);
+            margin: 0 {{ EmoteMargin }}px;
         }
 
-        /* Gigantified emote styling (Twitch CDN only; uses 112px asset + display scale) */
+        /* Gigantified: 112px CDN tier; height matches EmoteScale * multiplier vs normal ~28px emote */
         .gigantified-emote {
-            transform: scale({{ GigantifiedTwitchDisplayScale }}) !important;
+            height: calc(28px * {{ EmoteScale }} * {{ GigantifiedTwitchDisplayScale }}) !important;
+            width: auto !important;
+            object-fit: contain !important;
             vertical-align: middle;
-            margin: 0 8px;
+            margin: 0 !important;
+        }
+
+        .emote-img.gigantified-emote {
+            margin: 0 {{ EmoteMargin }}px !important;
         }
 
         .gigantified-emote.emote-zw {
@@ -236,18 +254,21 @@
 
         /* Messages containing gigantified emotes need extra line height to prevent overlap */
         .chat-message.gigantified-message {
-            line-height: calc({{ LineHeight }} * (3 * {{ GigantifiedTwitchDisplayScale }} / 0.75));
-            padding: calc({{ MessagePadding }}px * (1.5 * {{ GigantifiedTwitchDisplayScale }} / 0.75)) {{ MessagePadding }}px;
+            line-height: calc({{ LineHeight }} * (0.55 + {{ GigantifiedTwitchDisplayScale }} * 0.35));
+            padding: calc({{ MessagePadding }}px * (1 + {{ GigantifiedTwitchDisplayScale }} * 0.2)) {{ MessagePadding }}px;
         }
 
         .cheermote-container {
             display: inline-block;
             align-items: center;
             gap: 2px;
+            margin: 0 {{ EmoteMargin }}px;
         }
 
         .cheermote-img {
-            transform: scale({{ EmoteScale }});
+            height: calc(28px * {{ EmoteScale }});
+            width: auto;
+            object-fit: contain;
             vertical-align: middle;
         }
 
@@ -307,6 +328,98 @@
             }
         }
 
+        @keyframes slideInLeft {
+            0% {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInRight {
+            0% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInTop {
+            0% {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInBottom {
+            0% {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes scaleIn {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes flipInX {
+            0% {
+                transform: perspective(420px) rotateX(88deg);
+                opacity: 0;
+            }
+
+            100% {
+                transform: perspective(420px) rotateX(0deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes elasticIn {
+            0% {
+                transform: scale(0.25);
+                opacity: 0;
+            }
+
+            45% {
+                transform: scale(1.06);
+            }
+
+            65% {
+                transform: scale(0.94);
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
         /* Responsive design */
         @media (max-width: 768px) {
             .chat-message {
@@ -330,21 +443,26 @@
         }
 
         .emote-img:not(.gigantified-emote),
-        .badge-img,
         .emote-base:not(.gigantified-emote),
-        .emote-overlay:not(.gigantified-emote),
         .emote-zw:not(.gigantified-emote) {
-            transform: scale(calc({{ EmoteScale }} * 0.8));
+            height: calc(28px * {{ EmoteScale }} * 0.8);
         }
 
         .emote-img.gigantified-emote,
         .emote-base.gigantified-emote,
-        .emote-overlay.gigantified-emote,
         .emote-zw.gigantified-emote {
-            transform: scale(calc({{ GigantifiedTwitchDisplayScale }} * 0.8)) !important;
+            height: calc(28px * {{ EmoteScale }} * {{ GigantifiedTwitchDisplayScale }} * 0.8) !important;
+        }
+
+        .cheermote-img {
+            height: calc(28px * {{ EmoteScale }} * 0.8);
         }
 
         .emote-container {
+            margin: 0 calc({{ EmoteMargin }}px * 0.8);
+        }
+
+        .cheermote-container {
             margin: 0 calc({{ EmoteMargin }}px * 0.8);
         }
         }

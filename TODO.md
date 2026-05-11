@@ -18,6 +18,9 @@ Template Previewer:
 Chat Improvements:
     [] - Add more entry animations, including complex ones
     [] - Change font boxes so they "autocomplete" from available fonts in the /assets/default_assets/fonts folder
+    [] - Fix issue with emote container size not matching the scaled emote size
+    [] - Emote padding setting not functional
+    [] - Gigantified emotes not scaling to the correct size based on the JSON settings file
     [] - Create a .spore.json sidecar file for the Spore Studio module
 
 Alerts Improvements:
