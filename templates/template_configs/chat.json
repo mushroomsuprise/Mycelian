@@ -312,7 +312,7 @@
             "label": "Font Size",
             "value": 18,
             "min": 8,
-            "max": 48,
+            "max": 100,
             "description": "Font size for chat messages in pixels"
         },
         {
@@ -834,7 +834,7 @@
             "label": "Username Font Size",
             "value": 18,
             "min": 8,
-            "max": 48,
+            "max": 100,
             "description": "Font size for usernames in pixels (independent of message font size)"
         },
         {
