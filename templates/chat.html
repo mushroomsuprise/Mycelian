@@ -965,7 +965,9 @@
             }
             return html.replace(
                 /(https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/\d+\/default\/(?:light|dark)\/)1\.0/g,
-                '$13.0'
+                function (_match, prefix) {
+                    return prefix + '3.0';
+                }
             );
         }
 

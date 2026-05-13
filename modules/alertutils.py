@@ -1630,6 +1630,8 @@ class AlertObj:
     skip_alert: bool = False
     is_replay: bool = False
     is_test: bool = False
+    # True: main alerts overlay only holds queue timing; dedicated browser sources show visuals
+    hold_queue_only: bool = False
 
     # Twitch data:
     username: str = ""

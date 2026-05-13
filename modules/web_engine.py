@@ -254,6 +254,20 @@ def resolve_template_preview_profile(
 ALERT_PLAYING = False
 ALERTS_PAUSED = False
 
+# Monotonic id for the current queued alert; only matching client alert_complete advances the queue.
+_alert_queue_seq_lock = threading.Lock()
+_alert_queue_seq = 0
+EXPECTED_ALERT_COMPLETE_SEQ: int | None = None
+
+
+def assign_next_alert_queue_seq() -> int:
+    """Reserve the next queue_seq for process_alert; clients must echo this in alert_complete."""
+    global _alert_queue_seq, EXPECTED_ALERT_COMPLETE_SEQ
+    with _alert_queue_seq_lock:
+        _alert_queue_seq += 1
+        EXPECTED_ALERT_COMPLETE_SEQ = _alert_queue_seq
+        return _alert_queue_seq
+
 # Global flag to track Web Engine status
 web_engine_running = False
 
@@ -2758,10 +2772,35 @@ class WebEngine:
                 )
 
         @self.socketio.on("alert_complete")
-        def handle_alert_complete():
-            global ALERT_PLAYING
+        def handle_alert_complete(data=None):
+            global ALERT_PLAYING, EXPECTED_ALERT_COMPLETE_SEQ
+            seq = None
+            if isinstance(data, dict):
+                seq = data.get("queue_seq")
+            try:
+                seq = int(seq)
+            except (TypeError, ValueError):
+                logger.debug(
+                    "alert_complete ignored (missing or invalid queue_seq): %s", data
+                )
+                return
+            if EXPECTED_ALERT_COMPLETE_SEQ is None:
+                logger.debug(
+                    "alert_complete ignored (no active expected queue_seq)"
+                )
+                return
+            if seq != EXPECTED_ALERT_COMPLETE_SEQ:
+                logger.debug(
+                    "alert_complete ignored (seq=%s, expected=%s)",
+                    seq,
+                    EXPECTED_ALERT_COMPLETE_SEQ,
+                )
+                return
             ALERT_PLAYING = False
-            logger.debug("Alert completed, ALERT_PLAYING set to False")
+            logger.debug(
+                "Alert completed for queue_seq=%s, ALERT_PLAYING set to False",
+                seq,
+            )
 
         @self.socketio.on("pause_alerts")
         def handle_pause_alerts():

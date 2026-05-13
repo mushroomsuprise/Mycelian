@@ -43,10 +43,15 @@ _EVENTS: List[Dict[str, Any]] = [
         "alert_system": "queue",
         "description": (
             "Fired by the alert processor for queued alerts (follows, subs, "
-            "raids, donations, etc.). Templates that bind to this event must "
-            "emit alert_complete when finished, otherwise the queue stalls."
+            "raids, donations, etc.). The main ``alerts.html`` overlay must "
+            "emit ``alert_complete`` with a ``queue_seq`` matching the payload "
+            "when finished; other queue-aware overlays must echo the same "
+            "``queue_seq`` if they are the sole completion source. Otherwise the "
+            "queue stalls."
         ),
         "payload": [
+            {"key": "queue_seq", "label": "Queue completion id", "type": "number",
+             "examples": ["1", "2", "3"]},
             {"key": "alert_type", "label": "Alert type", "type": "string",
              "examples": ["follow", "sub", "resub", "giftsub", "bit",
                           "donation", "raid", "hype_train", "point"]},
@@ -62,6 +67,8 @@ _EVENTS: List[Dict[str, Any]] = [
             {"key": "amt_cheered", "label": "Bits cheered", "type": "number"},
             {"key": "gif_dir", "label": "GIF directory", "type": "string"},
             {"key": "gif_name", "label": "GIF file name", "type": "string"},
+            {"key": "hold_queue_only", "label": "Main overlay holds timing only",
+             "type": "boolean"},
             {"key": "duration", "label": "Hold duration (seconds)",
              "type": "number"},
         ],

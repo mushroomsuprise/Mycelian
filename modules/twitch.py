@@ -66,6 +66,7 @@ from . import (
 from .chatbot_core import EventType
 from .chatbot_manager import get_manager as get_chatbot_manager
 from .uiwindows.activity_feed import add_alert_to_feed
+from .template_config_parser import match_point_reward_dedicated_template
 
 logger = logging.getLogger(__name__)
 
@@ -1876,30 +1877,53 @@ class Twitch_API:
             alert.alert_id, alert.__dict__
         )
 
-        # Send instant alert
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                alert_data = {
-                    "type": "points",
-                    "username": alert.username,
-                    "alert_name": alert.alert_name,
-                    "message": alert.message,
-                    "twitch_reward_id": alert.twitch_reward_id,
-                    "alert_id": alert.alert_id,
-                    "timestamp": alert.timestamp,
-                }
-                web_engine.web_engine_instance.instant_alert(alert_data)
-                logger.debug(
-                    f"Sent instant alert for unconfigured points redemption: {alert.username}"
-                )
-        except Exception as e:
-            logger.error(
-                f"Error sending instant alert for unconfigured points redemption: {str(e)}",
-                exc_info=True,
+        dedicated = match_point_reward_dedicated_template(alert.alert_name)
+        send_instant = True
+        if dedicated and dedicated.get("queued"):
+            hold = alertutils.AlertObj()
+            hold.alert_type = "point"
+            hold.alert_name = alert.alert_name
+            hold.twitch_reward_id = alert.twitch_reward_id
+            hold.message = alert.message
+            hold.username = alert.username
+            hold.alert_id = alert.alert_id
+            hold.timestamp = alert.timestamp
+            hold.point_cost = int(data.event.reward.cost or 0)
+            hold.duration = float(dedicated["duration_seconds"])
+            hold.hold_queue_only = True
+            hold.enable_alert = False
+            alert_processor.ALERT_QUEUE.append(hold)
+            send_instant = False
+            logger.debug(
+                "Queued dedicated template point redemption (no DB alert): %s",
+                alert.alert_name,
             )
+
+        if send_instant:
+            try:
+                if (
+                    hasattr(web_engine, "web_engine_instance")
+                    and web_engine.web_engine_instance
+                ):
+                    alert_data = {
+                        "type": "points",
+                        "username": alert.username,
+                        "alert_name": alert.alert_name,
+                        "message": alert.message,
+                        "twitch_reward_id": alert.twitch_reward_id,
+                        "alert_id": alert.alert_id,
+                        "timestamp": alert.timestamp,
+                    }
+                    web_engine.web_engine_instance.instant_alert(alert_data)
+                    logger.debug(
+                        "Sent instant alert for unconfigured points redemption: %s",
+                        alert.username,
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Error sending instant alert for unconfigured points redemption: {str(e)}",
+                    exc_info=True,
+                )
 
         # Add to activity feed
         add_alert_to_feed(
@@ -1928,6 +1952,18 @@ class Twitch_API:
         alert.timestamp = time.time()
         alert.point_cost = data.event.reward.cost
         if alert.enable_alert:
+            dedicated = match_point_reward_dedicated_template(alert.alert_name)
+            if dedicated and dedicated.get("queued"):
+                gif_ok = (
+                    alert.gif_dir
+                    and str(alert.gif_dir).strip()
+                    and alert.gif_name
+                    and str(alert.gif_name).strip()
+                )
+                audio_ok = alert.single_audio_dir and alert.single_audio_name
+                if not gif_ok and not audio_ok and not alert.randomized:
+                    alert.hold_queue_only = True
+                    alert.duration = float(dedicated["duration_seconds"])
             alert_processor.ALERT_QUEUE.append(alert)
         # Store completed alert using AlertStateManager
         alertutils.alert_state_manager.store_completed_alert(

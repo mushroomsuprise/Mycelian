@@ -414,4 +414,76 @@ class TemplateConfigParser:
                 logger.warning(f"Error checking Stream Deck config for {config_name}: {str(e)}")
 
         logger.debug(f"Found {len(streamdeck_configs)} templates with Stream Deck integration")
-        return streamdeck_configs 
+        return streamdeck_configs
+
+
+def normalize_template_match_key(s: Any) -> str:
+    """Lowercase alnum-only key for matching reward titles to template config names."""
+    return "".join(c for c in str(s or "").strip().lower() if c.isalnum())
+
+
+def _config_element_value(config: Optional[Dict[str, Any]], element_id: str) -> Any:
+    elements = config.get("elements") if isinstance(config, dict) else None
+    if not isinstance(elements, list):
+        return None
+    for el in elements:
+        if isinstance(el, dict) and el.get("id") == element_id:
+            return el.get("value")
+    return None
+
+
+def find_template_config_for_reward_title(
+    reward_title: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Match a Twitch reward title to a template JSON (config file stem or template_name).
+    """
+    want = normalize_template_match_key(reward_title)
+    if not want:
+        return None
+    parser = TemplateConfigParser()
+    for stem in parser.get_config_files():
+        try:
+            cfg = parser.load_config(stem, include_dynamic_controls=False)
+        except Exception as e:
+            logger.debug("Skipping template config %s: %s", stem, e)
+            continue
+        if not isinstance(cfg, dict):
+            continue
+        if normalize_template_match_key(stem) == want:
+            return cfg
+        tn = cfg.get("template_name")
+        if tn and normalize_template_match_key(tn) == want:
+            return cfg
+    return None
+
+
+def point_reward_template_duration_seconds(config: Dict[str, Any]) -> float:
+    """Duration field: values >100 treated as milliseconds (boo-style); else seconds."""
+    raw = _config_element_value(config, "Duration")
+    if raw is None or raw == "":
+        return 5.0
+    try:
+        dur_num = float(raw)
+    except (TypeError, ValueError):
+        return 5.0
+    if dur_num > 100:
+        return dur_num / 1000.0
+    return dur_num
+
+
+def match_point_reward_dedicated_template(
+    reward_title: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    If a companion template_config exists for this reward title, return queue-related fields.
+
+    Returns:
+        None if no JSON match, else {"queued": bool, "duration_seconds": float}.
+    """
+    cfg = find_template_config_for_reward_title(reward_title)
+    if not cfg:
+        return None
+    queued = bool(_config_element_value(cfg, "Queued"))
+    duration_seconds = point_reward_template_duration_seconds(cfg)
+    return {"queued": queued, "duration_seconds": duration_seconds} 

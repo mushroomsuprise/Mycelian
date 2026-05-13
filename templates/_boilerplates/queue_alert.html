@@ -100,7 +100,12 @@
             var hold = (data && typeof data.duration === 'number') ? data.duration : 5;
             setTimeout(function () {
                 alertActive = false;
-                socket.emit('alert_complete');
+                var seq = data && data.queue_seq != null ? parseInt(data.queue_seq, 10) : null;
+                if (seq != null && !Number.isNaN(seq)) {
+                    socket.emit('alert_complete', { queue_seq: seq });
+                } else {
+                    console.warn('[__TEMPLATE_NAME__] alert_complete skipped: no queue_seq on payload');
+                }
                 sporeProcessNext();
             }, hold * 1000);
         }

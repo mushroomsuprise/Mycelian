@@ -592,10 +592,33 @@
         var isSilentEmptyPoint = false;
         var silentPointHoldId = 0; // When incremented, in-flight silent pollers stop; next_alert can sync multi-source
         var silentPointHoldStale = false; // If true, skip one pending alert_complete delay (preempted by next_alert)
+        var isHoldQueueOnly = false; // Server: dedicated template — main overlay only holds queue duration
+        var pendingQueueCompletionSeq = null; // Echo in alert_complete for current queue item
+        var pendingCompleteTimeout = null; // Final delay before alert_complete (must clear on new alert)
         var pointAlertSilentNoMedia = {{ PointAlertSilentNoMedia | default(false) | tojson }};
         var showUsernameText = {{ EnableUsernameText | default(true) | tojson }};
         var showHeaderLineText = {{ EnableHeaderText | default(true) | tojson }};
         var showMessageText = {{ EnableMessageText | default(true) | tojson }};
+
+        function clearPendingCompletionTimer() {
+            if (pendingCompleteTimeout) {
+                clearTimeout(pendingCompleteTimeout);
+                pendingCompleteTimeout = null;
+            }
+        }
+
+        function emitQueueAlertComplete(seq) {
+            if (seq == null || seq === '') {
+                console.warn('alert_complete skipped: no queue_seq');
+                return;
+            }
+            var n = parseInt(seq, 10);
+            if (Number.isNaN(n)) {
+                console.warn('alert_complete skipped: invalid queue_seq', seq);
+                return;
+            }
+            socket.emit('alert_complete', { queue_seq: n });
+        }
 
         function showHeaderRow() {
             return showUsernameText || showHeaderLineText;
@@ -656,10 +679,6 @@
         socket.on('connect_error', function (error) {
             console.error('Socket connection error:', error);
         });
-
-        // Send initial alert_complete signal and log it
-        console.log('Sending initial alert_complete signal');
-        socket.emit('alert_complete');
 
         // Alert type toggles from config
         var alertToggles = {
@@ -1054,20 +1073,26 @@
             const delayBetweenAlerts = {{ DelayBetweenAlerts | default(0.5) }} * 1000; // Convert to milliseconds
             console.log(`Alert completion conditions met, waiting ${delayBetweenAlerts}ms before sending alert_complete signal`);
 
-            setTimeout(() => {
+            clearPendingCompletionTimer();
+            const seqToEmit = pendingQueueCompletionSeq;
+            pendingCompleteTimeout = setTimeout(() => {
+                pendingCompleteTimeout = null;
                 if (silentPointHoldStale) {
                     console.log('Skipping alert_complete emit (silent hold already finished via next_alert override)');
                     silentPointHoldStale = false;
                     isSilentEmptyPoint = false;
+                    isHoldQueueOnly = false;
                     return;
                 }
                 console.log('Delay completed, sending alert_complete signal');
-                socket.emit('alert_complete');
+                emitQueueAlertComplete(seqToEmit);
+                pendingQueueCompletionSeq = null;
                 currentAlert = null;
                 alertStartTime = null;
                 exitAnimationStartTime = null;
                 isRandomizedAlert = false;
                 isSilentEmptyPoint = false;
+                isHoldQueueOnly = false;
             }, delayBetweenAlerts);
         }
 
@@ -1166,14 +1191,19 @@
             // Update alertData with determined type
             alertData.alert_type = alertType;
 
-            // If a silent empty point hold is active, a new next_alert overrides the duration (early or
-            // late): sync this client to the server / other browser sources, then process this payload.
-            if (isSilentEmptyPoint) {
+            // If a queue timing hold is active, a new next_alert overrides: complete the current slot first.
+            if (isSilentEmptyPoint || isHoldQueueOnly) {
+                clearPendingCompletionTimer();
+                const doneSeq = pendingQueueCompletionSeq;
                 silentPointHoldId++;
                 isSilentEmptyPoint = false;
-                silentPointHoldStale = true;
-                console.log('Silent point hold: next_alert received — overriding duration, syncing alert_complete');
-                socket.emit('alert_complete');
+                isHoldQueueOnly = false;
+                console.log(
+                    'Queue timing hold: next_alert received — syncing alert_complete for seq',
+                    doneSeq
+                );
+                emitQueueAlertComplete(doneSeq);
+                pendingQueueCompletionSeq = null;
                 currentAlert = null;
                 alertStartTime = null;
                 exitAnimationStartTime = null;
@@ -1182,15 +1212,14 @@
             // Skip follow alerts entirely (separate template will handle these)
             if (alertType === 'follow') {
                 console.log('Follow alert detected, skipping (handled by separate template):', alertType);
-                console.log("Sending alert_complete event to server");
+                emitQueueAlertComplete(alertData.queue_seq);
                 return;
             }
 
             // Check if this alert type is enabled
             if (!alertType || !alertToggles[alertType]) {
                 console.log('Alert type disabled or unknown, skipping:', alertType);
-                console.log("Sending alert_complete event to server");
-                socket.emit('alert_complete');
+                emitQueueAlertComplete(alertData.queue_seq);
                 return;
             }
 
@@ -1220,9 +1249,10 @@
             console.log('Connector action: skip alert', data);
             // Skip current alert if one is playing
             if (currentAlert) {
+                clearPendingCompletionTimer();
                 stopAlertMediaPlayback();
                 const wasSilentEmpty = isSilentEmptyPoint;
-                if (wasSilentEmpty) {
+                if (wasSilentEmpty || isHoldQueueOnly) {
                     silentPointHoldId++;
                     silentPointHoldStale = true;
                 }
@@ -1231,21 +1261,59 @@
                 isRandomizedAlert = false; // Force immediate completion
                 // Bypass the delay and send completion immediately for skipped alerts
                 console.log('Alert skipped via connector action, sending immediate completion');
-                socket.emit('alert_complete');
+                emitQueueAlertComplete(pendingQueueCompletionSeq);
+                pendingQueueCompletionSeq = null;
                 currentAlert = null;
                 alertStartTime = null;
                 exitAnimationStartTime = null;
                 isRandomizedAlert = false;
                 isSilentEmptyPoint = false;
+                isHoldQueueOnly = false;
                 console.log('Alert skipped via connector action');
             }
         });
 
         async function showAlert(alertData) {
+            clearPendingCompletionTimer();
+            pendingQueueCompletionSeq =
+                alertData.queue_seq != null ? Number(alertData.queue_seq) : null;
             // Clear any existing alert
             if (currentAlert) {
                 stopAlertMediaPlayback();
                 hideAlert();
+            }
+
+            if (alertData.hold_queue_only) {
+                const holdToken = silentPointHoldId;
+                currentAlert = alertData;
+                isHoldQueueOnly = true;
+                isSilentEmptyPoint = false;
+                isRandomizedAlert = false;
+                alertStartTime = Date.now();
+                exitAnimationDuration = 0;
+                alertDuration = (alertData.duration || 5) * 1000;
+                console.log(
+                    'hold_queue_only — dedicated template timing hold for',
+                    alertDuration,
+                    'ms (or until next next_alert overrides)'
+                );
+                const selfAlert = alertData;
+                const checkHold = function () {
+                    if (holdToken !== silentPointHoldId) {
+                        return;
+                    }
+                    if (currentAlert !== selfAlert) {
+                        return;
+                    }
+                    const tr = getTimeRemaining();
+                    if (tr > 0) {
+                        setTimeout(checkHold, Math.min(50, tr));
+                    } else {
+                        checkAndSendAlertComplete();
+                    }
+                };
+                setTimeout(checkHold, 50);
+                return;
             }
 
             if (pointAlertSilentNoMedia && alertData.alert_type === 'point') {

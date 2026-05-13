@@ -120,8 +120,8 @@ Create ``templates/my_alerts.html``:
                 setTimeout(() => {
                     container.classList.remove('show');
                     
-                    // Notify completion
-                    socket.emit('alert_complete');
+                    // Notify completion (must echo queue_seq from next_alert payload)
+                    socket.emit('alert_complete', { queue_seq: alertData.queue_seq });
                 }, alertData.duration * 1000 || 5000);
             }
         </script>
@@ -517,8 +517,8 @@ Alert System Integration
     });
     
     // Notify when alert is complete
-    function alertComplete() {
-        socket.emit('alert_complete');
+    function alertComplete(alertData) {
+        socket.emit('alert_complete', { queue_seq: alertData.queue_seq });
     }
 
 **Pause/Resume Status:**

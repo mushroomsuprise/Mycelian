@@ -1155,15 +1155,15 @@ Alert System Events
 **Client to Server:**
 
 ``alert_complete``
-  Sent when an alert finishes playing.
-  
-  **Data:** None
-  
+  Sent when the **primary** alert overlay (typically ``alerts.html``) finishes the current queued item so the server can advance the Python alert queue.
+
+  **Data:** JSON object with ``queue_seq`` (integer) echoing the ``queue_seq`` field on the current ``next_alert`` payload. Emits without a matching ``queue_seq`` are ignored.
+
   **Example:**
-  
+
   .. code-block:: javascript
-  
-     socket.emit('alert_complete');
+
+     socket.emit('alert_complete', { queue_seq: alertData.queue_seq });
 
 ``pause_alerts``
   Toggle the pause state of alerts.

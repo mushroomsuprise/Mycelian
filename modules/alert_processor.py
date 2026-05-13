@@ -56,6 +56,8 @@ def process_alert(alert: AlertObj):
     try:
         # Convert AlertObj to dictionary for JSON serialization
         alert_data = vars(alert)
+        queue_seq = web_engine.assign_next_alert_queue_seq()
+        alert_data["queue_seq"] = queue_seq
 
         # Calculate dynamic timeout based on alert properties
         alert_duration = alert_data.get(
@@ -67,7 +69,15 @@ def process_alert(alert: AlertObj):
             alert_data.get("single_audio_dir") and alert_data.get("single_audio_name")
         )
 
-        if alert_data.get("randomized", False):
+        if alert_data.get("hold_queue_only"):
+            timeout_duration = (
+                float(alert_duration) + 5.0
+            )  # client delay + margin; no A/V in main overlay
+            logger.debug(
+                "hold_queue_only alert, using extended client-aligned timeout: %ss",
+                timeout_duration,
+            )
+        elif alert_data.get("randomized", False):
             # Randomized alerts can take much longer due to audio completion + buffer
             # Give them a generous timeout: max(duration * 3, duration + 30 seconds for audio)
             timeout_duration = max(alert_duration * 3, alert_duration + 30)
