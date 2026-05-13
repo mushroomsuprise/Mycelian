@@ -961,14 +961,72 @@
         // Use Twitch 112px CDN assets for gigantified power-up messages (Twitch native emotes only)
         function upgradeTwitchEmoteUrlsForGigantified(html) {
             if (!html || typeof html !== 'string') {
+                console.log('[gigantified] upgradeTwitchEmoteUrlsForGigantified skipped (empty or non-string html)', html);
                 return html;
             }
             return html.replace(
-                /(https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/\d+\/default\/(?:light|dark)\/)1\.0/g,
-                function (_match, prefix) {
-                    return prefix + '3.0';
+                /(https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/[^/]+\/default\/(?:light|dark)\/)1\.0/g,
+                function (match, prefix) {
+                    var upgraded = prefix + '3.0';
+                    var idMatch = match.match(/emoticons\/v2\/([^/]+)\//);
+                    var emoteId = idMatch ? idMatch[1] : '(unknown)';
+                    console.log('[gigantified] CDN URL upgrade (1.0 -> 3.0 tier)', { emoteId: emoteId, from: match, to: upgraded });
+                    return upgraded;
                 }
             );
+        }
+
+        // Decode + layout diagnostics for Twitch CDN emotes under a gigantified message root
+        function logGigantifiedEmoteImageDiagnostics(rootEl, context) {
+            if (!rootEl) {
+                return;
+            }
+            var msgId = (context && context.messageId != null) ? context.messageId : '';
+            var selector = '.emote-img, .emote-base, .emote-overlay, .emote-zw';
+            var nodes = rootEl.querySelectorAll(selector);
+            nodes.forEach(function (el) {
+                if (el.tagName !== 'IMG') {
+                    return;
+                }
+                var src = el.getAttribute('src') || '';
+                if (src.indexOf('static-cdn.jtvnw.net/emoticons/') === -1) {
+                    return;
+                }
+
+                function logState(phase) {
+                    var rect = el.getBoundingClientRect();
+                    console.log('[gigantified] image diagnostics', {
+                        messageId: msgId,
+                        phase: phase,
+                        src: src,
+                        naturalPixels: { width: el.naturalWidth, height: el.naturalHeight },
+                        displayPixels: { width: Math.round(rect.width), height: Math.round(rect.height) }
+                    });
+                }
+
+                function scheduleLayoutAfterPaint() {
+                    requestAnimationFrame(function () {
+                        requestAnimationFrame(function () {
+                            logState('layout after gigantified CSS (rAF x2)');
+                        });
+                    });
+                }
+
+                if (el.complete) {
+                    logState(el.naturalWidth ? 'decoded (already complete)' : 'complete but natural size 0 (decode/broken?)');
+                    scheduleLayoutAfterPaint();
+                } else {
+                    el.addEventListener('load', function onGigantifiedImgLoad() {
+                        el.removeEventListener('load', onGigantifiedImgLoad);
+                        logState('decoded (load event)');
+                        scheduleLayoutAfterPaint();
+                    });
+                    el.addEventListener('error', function onGigantifiedImgError() {
+                        el.removeEventListener('error', onGigantifiedImgError);
+                        console.log('[gigantified] image load error', { messageId: msgId, src: src });
+                    });
+                }
+            });
         }
 
         // Add a new message to chat
@@ -1076,8 +1134,23 @@
                 }
             }
 
-            if (messageData.message_type === 'power_ups_gigantified_emote' && enableEmotes) {
-                messageContent = upgradeTwitchEmoteUrlsForGigantified(messageContent);
+            if (messageData.message_type === 'power_ups_gigantified_emote') {
+                console.log('[gigantified] message branch', { messageId: messageData.id, enableEmotes: enableEmotes });
+                if (enableEmotes) {
+                    var twitchTier10Re = /static-cdn\.jtvnw\.net\/emoticons\/v2\/[^/]+\/default\/(?:light|dark)\/1\.0/g;
+                    var twitchTier30Re = /static-cdn\.jtvnw\.net\/emoticons\/v2\/[^/]+\/default\/(?:light|dark)\/3\.0/g;
+                    var preUpgrade = messageContent || '';
+                    var count10pre = (preUpgrade.match(twitchTier10Re) || []).length;
+                    var count30pre = (preUpgrade.match(twitchTier30Re) || []).length;
+                    console.log('[gigantified] Twitch CDN URL tier counts (pre-upgrade): /1.0:', count10pre, '/3.0:', count30pre);
+                    messageContent = upgradeTwitchEmoteUrlsForGigantified(messageContent);
+                    var postUpgrade = messageContent || '';
+                    var count10post = (postUpgrade.match(twitchTier10Re) || []).length;
+                    var count30post = (postUpgrade.match(twitchTier30Re) || []).length;
+                    console.log('[gigantified] Twitch CDN URL tier counts (post-upgrade): /1.0:', count10post, '/3.0:', count30post);
+                } else {
+                    console.log('[gigantified] URL upgrade skipped (enableEmotes is false); gigantified-message styling may still apply');
+                }
             }
 
             messageHTML += '<div class="message-content">' + messageContent + '</div>';
@@ -1104,19 +1177,27 @@
 
             // Apply gigantified styling to Twitch CDN emotes only (power-up uses native emotes)
             if (messageData.message_type === 'power_ups_gigantified_emote') {
-                console.log('Applying gigantified styling to message:', messageData.id);
+                console.log('[gigantified] applying gigantified-message class', messageData.id);
                 messageElement.classList.add('gigantified-message');
                 var emoteElements = messageElement.querySelectorAll('.emote-img, .emote-base, .emote-overlay, .emote-zw');
-                emoteElements.forEach(function(emoteElement) {
+                emoteElements.forEach(function (emoteElement) {
                     var src = emoteElement.getAttribute('src') || '';
                     if (src.indexOf('static-cdn.jtvnw.net/emoticons/') !== -1) {
                         emoteElement.classList.add('gigantified-emote');
-                        console.log('Applied gigantified class to Twitch emote:', emoteElement);
+                        console.log('[gigantified] applied gigantified-emote', { messageId: messageData.id, tag: emoteElement.tagName, src: src });
+                    } else if (src) {
+                        console.log('[gigantified] skipped gigantified-emote (non-Twitch CDN src)', { messageId: messageData.id, tag: emoteElement.tagName, src: src });
+                    } else {
+                        console.log('[gigantified] skipped gigantified-emote (missing src)', { messageId: messageData.id, tag: emoteElement.tagName });
                     }
                 });
             }
 
             chatContainer.appendChild(messageElement);
+
+            if (messageData.message_type === 'power_ups_gigantified_emote') {
+                logGigantifiedEmoteImageDiagnostics(messageElement, { messageId: messageData.id });
+            }
 
             // Scroll to bottom
             scrollToBottom();
