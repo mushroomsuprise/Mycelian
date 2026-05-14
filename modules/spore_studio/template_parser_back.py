@@ -18,7 +18,7 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from .template_codegen import extract_user_js
+from .template_codegen import _sanitize_streamdeck_options, extract_user_js
 from .template_reverse_parser import (
     design_size_from_config,
     reverse_parse_legacy,
@@ -26,6 +26,39 @@ from .template_reverse_parser import (
 from ..path_utils import get_template_path
 
 logger = logging.getLogger(__name__)
+
+
+def _hydrate_streamdeck_from_public_config(
+    template_name: str, sidecar: Dict[str, Any]
+) -> None:
+    """If the sidecar defines no Stream Deck actions, copy from public JSON."""
+    acts_raw = sidecar.get("streamdeck_options")
+    if isinstance(acts_raw, dict):
+        inner = acts_raw.get("actions")
+        if isinstance(inner, dict) and inner:
+            return
+    try:
+        from ..template_config_parser import TemplateConfigParser
+    except ImportError:  # pragma: no cover - rare circular/import timing
+        return
+    parser = TemplateConfigParser()
+    cfg_path = parser.get_config_path(template_name)
+    if not os.path.isfile(cfg_path):
+        return
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(cfg, dict):
+        return
+    pub = cfg.get("streamdeck_options")
+    if not isinstance(pub, dict):
+        return
+    sanitized = _sanitize_streamdeck_options(pub)
+    if not sanitized["description"] and not sanitized["actions"]:
+        return
+    sidecar["streamdeck_options"] = sanitized
 
 
 # Sidecars used to live next to the public JSON in ``template_configs/`` —
@@ -129,7 +162,7 @@ def save_sidecar(template_name: str, model: Dict[str, Any]) -> bool:
             os.unlink(tmp_path)
         except OSError:
             pass
-def remove_sidecar(template_name: str) -> None:
+        return False
     """Delete ``.spore.json`` sidecar(s) for this template if they exist."""
     _migrate_legacy_sidecar(template_name)
     for path in (_spore_sidecar_path(template_name), _legacy_sidecar_path(template_name)):
@@ -241,6 +274,11 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
         sidecar.setdefault("design", {"width": 800, "height": 200})
         sidecar.setdefault("elements", [])
         sidecar.setdefault("advanced_js", "")
+        sidecar.setdefault("streamdeck_options", {"description": "", "actions": {}})
+        sidecar["streamdeck_options"] = _sanitize_streamdeck_options(
+            sidecar.get("streamdeck_options")
+        )
+        _hydrate_streamdeck_from_public_config(template_name, sidecar)
         return sidecar
 
     html_path = get_template_path(f"{template_name}.html")

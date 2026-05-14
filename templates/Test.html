@@ -39,7 +39,7 @@
 <body>
     <div id="sporeRoot" data-mycelian-template="Test">
         <!-- SPORE_STUDIO:dom-begin -->
-
+        <img id="image1" class="spore-element" style="left: 4px; top: 3px; width: 200px; height: 200px" data-spore-type="image" src="{{ image1Src|default("/assets/Test/default_avatar.png") }}" alt="" />
 <!-- SPORE_STUDIO:dom-end -->
     </div>
 
@@ -73,6 +73,42 @@
 
         // SPORE_STUDIO:auto-begin
 function sporeApplyBindings(eventName, payload) {
+    if (eventName === "show_test_1") {
+        if (true) {
+            (function () {
+                var __el = document.getElementById("image1");
+                if (!__el) { return; }
+                sporeShow("image1");
+                __el.classList.remove("spore-anim-fade-in");
+                void __el.offsetWidth;
+                __el.classList.add("spore-anim-fade-in");
+                setTimeout(function () {
+                    __el.classList.remove("spore-anim-fade-out");
+                    void __el.offsetWidth;
+                    __el.classList.add("spore-anim-fade-out");
+                    setTimeout(function () { sporeHide("image1"); }, 300);
+                }, 5000.0);
+            })();
+        }
+    }
+}
+
+// Auto-registered listeners for events the boilerplate does
+// not handle natively (chat messages, pause toggles, etc.).
+// Guarded with __sporeBoundEvents so a hot-reloaded auto-block
+// never double-binds the same event on the same socket.
+if (typeof socket !== 'undefined' && socket && socket.on) {
+    window.__sporeBoundEvents = window.__sporeBoundEvents || {};
+    if (!window.__sporeBoundEvents["show_test_1"]) {
+        window.__sporeBoundEvents["show_test_1"] = true;
+        socket.on("show_test_1", function (data) {
+            try {
+                sporeApplyBindings("show_test_1", data || {});
+            } catch (err) {
+                console.error('[spore-studio] binding error on ' + "show_test_1", err);
+            }
+        });
+    }
 }
 // SPORE_STUDIO:auto-end
 
@@ -109,11 +145,11 @@ function sporeApplyBindings(eventName, payload) {
         }
 
         // SPORE_STUDIO:user-begin
-        // Place advanced custom JavaScript below. Anything between the
+// Place advanced custom JavaScript below. Anything between the
         // user-begin and user-end markers is preserved across Spore Studio
         // saves. Use sporeShow(id) / sporeHide(id) / sporeSetText(id,val)
         // helpers, and listen for additional socket events here if needed.
-        // SPORE_STUDIO:user-end
+// SPORE_STUDIO:user-end
     </script>
 </body>
 </html>

@@ -80,6 +80,7 @@
             <div class="ss-tabs">
                 <div class="ss-tab active" data-tab="properties">Properties</div>
                 <div class="ss-tab" data-tab="bindings">Bindings</div>
+                <div class="ss-tab" data-tab="streamdeck">Stream Deck</div>
                 <div class="ss-tab" data-tab="advanced">Advanced JS</div>
                 <div class="ss-tab" data-tab="canvas">Canvas</div>
             </div>
@@ -91,6 +92,11 @@
             <div class="ss-tab-pane" id="ss-pane-bindings">
                 <div class="ss-section" id="ss-bindings-host">
                     <div class="ss-empty">Select an element to attach event bindings.</div>
+                </div>
+            </div>
+            <div class="ss-tab-pane" id="ss-pane-streamdeck">
+                <div class="ss-section" id="ss-streamdeck-host">
+                    <div class="ss-empty">Load a template to configure Stream Deck actions.</div>
                 </div>
             </div>
             <div class="ss-tab-pane" id="ss-pane-advanced">
@@ -123,7 +129,7 @@
                     <div class="ss-form-row">
                         <label>Alert system</label>
                         <select id="ss-alert-system">
-                            <option value="queue">Queue (next_alert + alert_complete)</option>
+                            <option value="queue">Queue (next_alert; emit alert_complete in Advanced JS if you use the alert queue)</option>
                             <option value="instant">Instant (instant_alert)</option>
                         </select>
                     </div>
@@ -201,7 +207,7 @@
                 <div class="ss-form-row">
                     <label>Alert system</label>
                     <select data-create="alert_system">
-                        <option value="queue">Queue (next_alert + alert_complete)</option>
+                        <option value="queue">Queue (next_alert; emit alert_complete in Advanced JS if you use the alert queue)</option>
                         <option value="instant">Instant (instant_alert)</option>
                     </select>
                 </div>

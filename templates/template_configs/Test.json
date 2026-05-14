@@ -31,6 +31,28 @@
             "label": "Title",
             "value": "Test",
             "description": "Browser title for this overlay."
+        },
+        {
+            "type": "separator",
+            "label": "Elements"
+        },
+        {
+            "type": "text",
+            "id": "image1Src",
+            "label": "image1 source URL",
+            "value": "/assets/Test/default_avatar.png",
+            "description": "Source URL or path for element 'image1'."
         }
-    ]
+    ],
+    "streamdeck_options": {
+        "description": "",
+        "actions": {
+            "test_1": {
+                "name": "Show Test",
+                "description": "",
+                "event": "show_test_1",
+                "default_data": {}
+            }
+        }
+    }
 }

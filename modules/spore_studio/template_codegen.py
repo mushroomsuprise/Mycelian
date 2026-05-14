@@ -228,6 +228,49 @@ def _expose_field(element: Dict[str, Any], field_key: str) -> bool:
     return bool(mm[field_key])
 
 
+def _sanitize_streamdeck_options(raw: Any) -> Dict[str, Any]:
+    """
+    Normalize editor ``streamdeck_options`` for ``template_configs/*.json``.
+
+    Matches the shape used by templates like ``counter.json``: ``description``
+    plus ``actions`` (mapping of action id to name/description/event/default_data).
+    """
+    out: Dict[str, Any] = {"description": "", "actions": {}}
+    if not isinstance(raw, dict):
+        return out
+    desc = raw.get("description")
+    if desc is not None:
+        out["description"] = str(desc)
+    actions_in = raw.get("actions")
+    if not isinstance(actions_in, dict):
+        return out
+    actions_out: Dict[str, Any] = {}
+    for action_id, spec in actions_in.items():
+        aid = _slugify_id(str(action_id))
+        if not aid or aid == "el":
+            continue
+        if not isinstance(spec, dict):
+            continue
+        event_name = str(spec.get("event") or "").strip()
+        if not event_name:
+            continue
+        default_data = spec.get("default_data")
+        if default_data is None:
+            dd: Dict[str, Any] = {}
+        elif isinstance(default_data, dict):
+            dd = dict(default_data)
+        else:
+            dd = {}
+        actions_out[aid] = {
+            "name": str(spec.get("name") or aid),
+            "description": str(spec.get("description") or ""),
+            "event": event_name,
+            "default_data": dd,
+        }
+    out["actions"] = actions_out
+    return out
+
+
 def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
     """
     Build the public ``templates/template_configs/{name}.json`` from the model.
@@ -436,12 +479,16 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 )
 
-    return {
+    base: Dict[str, Any] = {
         "template_name": template_name,
         "spore_studio": True,
         "alert_system": str(model.get("alert_system") or "queue"),
         "elements": elements_out,
+        "streamdeck_options": _sanitize_streamdeck_options(
+            model.get("streamdeck_options")
+        ),
     }
+    return base
 
 
 def compile_model(

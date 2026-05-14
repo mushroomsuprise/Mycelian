@@ -1,10 +1,53 @@
 {
-  "template_name": "Test",
+  "advanced_js": "",
   "alert_system": "queue",
   "design": {
-    "width": 800,
-    "height": 200
+    "height": 200,
+    "width": 800
   },
-  "elements": [],
-  "advanced_js": ""
+  "elements": [
+    {
+      "id": "image1",
+      "type": "image",
+      "category": "Elements",
+      "position": {
+        "x": 4,
+        "y": 3
+      },
+      "size": {
+        "w": 200,
+        "h": 200
+      },
+      "props": {
+        "src": "/assets/Test/default_avatar.png"
+      },
+      "bindings": [
+        {
+          "event": "show_test_1",
+          "filter": {},
+          "action": "show_for",
+          "args": {},
+          "trigger": "streamdeck",
+          "streamdeck_action": "test_1"
+        }
+      ],
+      "source_settings_expose": {
+        "src": true,
+        "border_radius": true,
+        "opacity": true
+      }
+    }
+  ],
+  "streamdeck_options": {
+    "actions": {
+      "test_1": {
+        "name": "Show Test",
+        "description": "",
+        "event": "show_test_1",
+        "default_data": {}
+      }
+    },
+    "description": ""
+  },
+  "template_name": "Test"
 }

@@ -10,6 +10,10 @@ FF7 Hook
 Connectors:
     [] - Disable output of connectors when a "game hook" is the action, and that particular hook is either not enabled, or not connected to the game
 
+Spore Studio:
+    [] - Add ability to define streamdeck options in templates (these get defined in the main JSON config file for the template)
+    [] - Add option to set the definable streamdeck options as bindings to elements
+
 Template Previewer:
     [] - Add settings menu with persistant storage of options to enable/disable sounds, etc
     [] - Change mock data to be clickable buttons above the preview frame like the Spore Studio module uses. Mock data will no longer go to specialized websockets in the templates, but will use the actual websocket that live data uses

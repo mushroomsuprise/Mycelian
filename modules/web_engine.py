@@ -853,11 +853,10 @@ class WebEngine:
         @self.app.route("/api/spore-studio/preview/emit", methods=["POST"])
         def emit_spore_studio_preview_mock():
             """
-            Emit a single mock socket event into the Spore Studio
-            preview iframe identified by ``token``. The continuous
-            auto-demo loop has been removed in favour of these manual
-            triggers; the editor's preview dialog renders one button
-            per registry event and POSTs here on click.
+            Emit a mock socket event into the Spore Studio preview iframe
+            (``token``). Registry events use curated mock payloads; when the
+            JSON body includes ``data`` or ``payload``, that object is emitted
+            as-is (for Stream Deck actions and custom events).
             """
             try:
                 from .spore_studio import preview_mocks as _pm
@@ -881,6 +880,16 @@ class WebEngine:
                             ),
                         },
                         404,
+                        {"Content-Type": "application/json"},
+                    )
+                custom = payload.get("data")
+                if custom is None:
+                    custom = payload.get("payload")
+                if custom is not None:
+                    self.socketio.emit(str(event_name), custom, to=sid)
+                    return (
+                        {"ok": True, "event": str(event_name)},
+                        200,
                         {"Content-Type": "application/json"},
                     )
                 spec = _pm.build_mock_payload(str(event_name))

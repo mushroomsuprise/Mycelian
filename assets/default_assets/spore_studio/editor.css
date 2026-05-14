@@ -630,3 +630,15 @@ html, body {
 
 .ss-row { display: flex; gap: 8px; }
 .ss-row > .ss-form-row { flex: 1; }
+
+.ss-streamdeck-list {
+    margin-top: 10px;
+}
+.ss-streamdeck-action {
+    background: var(--ss-bg-input);
+    border: 1px solid var(--ss-border);
+    border-radius: var(--ss-radius);
+    padding: 8px;
+    margin-bottom: 10px;
+}
+

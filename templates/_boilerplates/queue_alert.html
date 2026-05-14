@@ -2,7 +2,7 @@
 <!--
     Mycelian Spore Studio - queue_alert boilerplate
     Generated for: __TEMPLATE_NAME__
-    Alert system: queue (responds to next_alert, must emit alert_complete)
+    Alert system: queue (next_alert + local timing; emit alert_complete in user JS if you use the server alert queue)
 -->
 <html>
 <head>
@@ -101,10 +101,8 @@
             setTimeout(function () {
                 alertActive = false;
                 var seq = data && data.queue_seq != null ? parseInt(data.queue_seq, 10) : null;
-                if (seq != null && !Number.isNaN(seq)) {
-                    socket.emit('alert_complete', { queue_seq: seq });
-                } else {
-                    console.warn('[__TEMPLATE_NAME__] alert_complete skipped: no queue_seq on payload');
+                if (seq == null || Number.isNaN(seq)) {
+                    console.warn('[__TEMPLATE_NAME__] queue item had no queue_seq; emit alert_complete from Advanced JS when your overlay should release the server queue.');
                 }
                 sporeProcessNext();
             }, hold * 1000);

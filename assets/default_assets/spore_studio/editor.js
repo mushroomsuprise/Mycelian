@@ -1116,6 +1116,272 @@
         card.appendChild(filterHost);
     }
 
+
+    function ensureStreamdeckModel() {
+        if (!state.model || state.model.legacy) { return; }
+        if (!state.model.streamdeck_options || typeof state.model.streamdeck_options !== "object") {
+            state.model.streamdeck_options = { description: "", actions: {} };
+        }
+        if (typeof state.model.streamdeck_options.description !== "string") {
+            state.model.streamdeck_options.description = "";
+        }
+        var ax = state.model.streamdeck_options.actions;
+        if (typeof ax !== "object" || ax === null || Array.isArray(ax)) {
+            state.model.streamdeck_options.actions = {};
+        }
+    }
+
+    function applyStreamdeckBindingSync(binding) {
+        if (!state.model || state.model.legacy) { return; }
+        ensureStreamdeckModel();
+        var aid = binding.streamdeck_action;
+        var spec = aid && state.model.streamdeck_options.actions[aid];
+        if (!spec) { return; }
+        binding.event = spec.event;
+        binding.filter = deepClone(spec.default_data || {});
+    }
+
+    function syncAllStreamdeckBindingsForAction(actionId) {
+        if (!state.model || !actionId) { return; }
+        (state.model.elements || []).forEach(function (el) {
+            (el.bindings || []).forEach(function (b) {
+                if (b.streamdeck_action === actionId &&
+                    (b.trigger === "streamdeck" || !b.trigger)) {
+                    applyStreamdeckBindingSync(b);
+                }
+            });
+        });
+    }
+
+    function migrateStreamdeckActionId(oldId, newId) {
+        if (!state.model || oldId === newId || !oldId) { return false; }
+        var acts = state.model.streamdeck_options.actions;
+        if (!acts[oldId] || acts[newId]) { return false; }
+        acts[newId] = acts[oldId];
+        delete acts[oldId];
+        (state.model.elements || []).forEach(function (el) {
+            (el.bindings || []).forEach(function (b) {
+                if (b.streamdeck_action === oldId) { b.streamdeck_action = newId; }
+            });
+        });
+        return true;
+    }
+
+    function bindingTrigger(binding) {
+        if (binding.streamdeck_action && state.model && !state.model.legacy) {
+            ensureStreamdeckModel();
+            if (state.model.streamdeck_options.actions[binding.streamdeck_action]) {
+                return "streamdeck";
+            }
+        }
+        if (binding.trigger === "streamdeck") { return "streamdeck"; }
+        return "registry";
+    }
+
+    function renderStreamdeckPanel() {
+        var host = $("#ss-streamdeck-host");
+        if (!host) { return; }
+        host.innerHTML = "";
+        if (!state.model) {
+            host.innerHTML = '<div class="ss-empty">Load a template to configure Stream Deck actions.</div>';
+            return;
+        }
+        if (state.model.legacy) {
+            host.innerHTML = '<div class="ss-empty">Stream Deck actions are not edited here for legacy templates.</div>';
+            return;
+        }
+        ensureStreamdeckModel();
+        var sd = state.model.streamdeck_options;
+
+        var intro = document.createElement("p");
+        intro.style.cssText = "color:var(--ss-text-muted);font-size:11px;margin:0 0 8px;";
+        intro.textContent = (
+            "Defines streamdeck_options in the template JSON (action ids, socket event, default payload). " +
+            "Bind elements on the Bindings tab using trigger Stream Deck."
+        );
+        host.appendChild(intro);
+
+        var descRow = document.createElement("div");
+        descRow.className = "ss-form-row";
+        var descLbl = document.createElement("label");
+        descLbl.textContent = "Template description";
+        var descTa = document.createElement("textarea");
+        descTa.rows = 2;
+        descTa.style.width = "100%";
+        descTa.value = sd.description || "";
+        descTa.addEventListener("change", function () {
+            sd.description = descTa.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        descRow.appendChild(descLbl);
+        descRow.appendChild(descTa);
+        host.appendChild(descRow);
+
+        var sortedIds = Object.keys(sd.actions || {}).sort();
+        var listHost = document.createElement("div");
+        listHost.className = "ss-streamdeck-list";
+        host.appendChild(listHost);
+
+        function renderActionCards() {
+            listHost.innerHTML = "";
+            sortedIds = Object.keys(sd.actions).sort();
+            sortedIds.forEach(function (aid) {
+                var spec = sd.actions[aid];
+                var card = document.createElement("div");
+                card.className = "ss-streamdeck-action";
+
+                var head = document.createElement("div");
+                head.className = "ss-binding-row__head";
+                var t = document.createElement("span");
+                t.className = "ss-binding-row__title";
+                t.textContent = spec.name || aid;
+                var rm = document.createElement("button");
+                rm.type = "button";
+                rm.className = "ss-binding-row__remove";
+                rm.innerHTML = "&times;";
+                rm.title = "Remove action";
+                rm.addEventListener("click", function () {
+                    delete sd.actions[aid];
+                    (state.model.elements || []).forEach(function (el) {
+                        (el.bindings || []).forEach(function (b) {
+                            if (b.streamdeck_action === aid) {
+                                b.trigger = "registry";
+                                delete b.streamdeck_action;
+                            }
+                        });
+                    });
+                    pushHistory();
+                    renderStreamdeckPanel();
+                    renderPreviewMockToolbar();
+                    renderBindings();
+                    modelTouch();
+                });
+                head.appendChild(t);
+                head.appendChild(rm);
+                card.appendChild(head);
+
+                var idRowLbl = document.createElement("label");
+                idRowLbl.textContent = "Action id";
+                var idIn = document.createElement("input");
+                idIn.type = "text";
+                idIn.value = aid;
+                idIn.title = "Unique key stored in template JSON";
+                card.appendChild(formRow("Action id", idIn));
+
+                var prevId = aid;
+                idIn.addEventListener("change", function () {
+                    var nid = idIn.value.trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_|_$/g, "") || "action";
+                    if (nid === prevId) { return; }
+                    if ((state.model.streamdeck_options.actions || {})[nid]) {
+                        toast("That action id is already in use", "error");
+                        idIn.value = prevId;
+                        return;
+                    }
+                    if (!migrateStreamdeckActionId(prevId, nid)) {
+                        toast("Could not rename action id", "error");
+                        idIn.value = prevId;
+                        return;
+                    }
+                    prevId = nid;
+                    pushHistory();
+                    renderStreamdeckPanel();
+                    renderPreviewMockToolbar();
+                    renderBindings();
+                    modelTouch();
+                });
+
+                var nameIn = document.createElement("input");
+                nameIn.type = "text";
+                nameIn.value = spec.name || "";
+                nameIn.addEventListener("change", function () {
+                    spec.name = nameIn.value;
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Display name", nameIn));
+
+                var infoIn = document.createElement("input");
+                infoIn.type = "text";
+                infoIn.value = spec.description || "";
+                infoIn.addEventListener("change", function () {
+                    spec.description = infoIn.value;
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Description", infoIn));
+
+                var evIn = document.createElement("input");
+                evIn.type = "text";
+                evIn.value = spec.event || "";
+                evIn.placeholder = "e.g. counter_update";
+                evIn.addEventListener("change", function () {
+                    spec.event = evIn.value.trim();
+                    syncAllStreamdeckBindingsForAction(aid);
+                    pushHistory();
+                    renderBindings();
+                    renderPreviewMockToolbar();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Socket event", evIn));
+
+                var ddTa = document.createElement("textarea");
+                ddTa.rows = 4;
+                ddTa.className = "ss-json-inline";
+                ddTa.value = JSON.stringify(spec.default_data || {}, null, 2);
+                ddTa.addEventListener("blur", function () {
+                    var raw = ddTa.value.trim();
+                    if (!raw) {
+                        spec.default_data = {};
+                    } else {
+                        try {
+                            spec.default_data = JSON.parse(raw);
+                            if (typeof spec.default_data !== "object" || spec.default_data === null) {
+                                throw new Error("must be object");
+                            }
+                        } catch (e) {
+                            toast("default_data must be JSON object", "error");
+                            ddTa.value = JSON.stringify(spec.default_data || {}, null, 2);
+                            return;
+                        }
+                    }
+                    syncAllStreamdeckBindingsForAction(aid);
+                    ddTa.value = JSON.stringify(spec.default_data || {}, null, 2);
+                    pushHistory();
+                    renderBindings();
+                    renderPreviewMockToolbar();
+                    modelTouch();
+                });
+                card.appendChild(formRow("default_data (JSON)", ddTa));
+
+                listHost.appendChild(card);
+            });
+        }
+
+        renderActionCards();
+
+        var addBtn = document.createElement("button");
+        addBtn.type = "button";
+        addBtn.className = "ss-btn sds-btn--primary".replace("sds", "ss");
+        addBtn.textContent = "+ Add Stream Deck action";
+        addBtn.addEventListener("click", function () {
+            var n = 1;
+            var nid = "action_1";
+            while (sd.actions[nid]) { n += 1; nid = "action_" + n; }
+            sd.actions[nid] = {
+                name: "New action",
+                description: "",
+                event: "my_custom_event",
+                default_data: {}
+            };
+            pushHistory();
+            renderStreamdeckPanel();
+            renderPreviewMockToolbar();
+            modelTouch();
+        });
+        host.appendChild(addBtn);
+    }
+
     function renderBindings() {
         var host = $("#ss-bindings-host");
         host.innerHTML = "";
@@ -1173,82 +1439,157 @@
             head.appendChild(rm);
             card.appendChild(head);
 
-            var eventSelect = document.createElement("select");
-            (state.registry.events || []).forEach(function (ev) {
-                var op = document.createElement("option");
-                op.value = ev.event;
-                op.textContent = ev.label || ev.event;
-                if (ev.event === binding.event) { op.selected = true; }
-                eventSelect.appendChild(op);
-            });
-            eventSelect.addEventListener("change", function () {
-                binding.event = eventSelect.value;
+            var trigSel = document.createElement("select");
+            var optReg = document.createElement("option");
+            optReg.value = "registry";
+            optReg.textContent = "Registry event";
+            var optSd = document.createElement("option");
+            optSd.value = "streamdeck";
+            optSd.textContent = "Stream Deck action";
+            trigSel.appendChild(optReg);
+            trigSel.appendChild(optSd);
+            var tr = bindingTrigger(binding);
+            trigSel.value = tr;
+            trigSel.addEventListener("change", function () {
+                if (trigSel.value === "streamdeck") {
+                    binding.trigger = "streamdeck";
+                    ensureStreamdeckModel();
+                    var kk = Object.keys(state.model.streamdeck_options.actions || {}).sort();
+                    binding.streamdeck_action = kk[0] || "";
+                    applyStreamdeckBindingSync(binding);
+                } else {
+                    binding.trigger = "registry";
+                    delete binding.streamdeck_action;
+                    binding.event = (state.registry.events[0] || { event: "next_alert" }).event;
+                    binding.filter = {};
+                }
                 pushHistory();
                 renderBindings();
                 modelTouch();
             });
-            card.appendChild(formRow("Event", eventSelect));
+            card.appendChild(formRow("Trigger", trigSel));
 
-            ensureTwitchBindingDefaults(binding);
-
-            var ev = registryEvent(binding.event);
-            if (ev && ev.description) {
-                var evDesc = document.createElement("div");
-                evDesc.className = "ss-binding-row__hint";
-                evDesc.textContent = ev.description;
-                card.appendChild(evDesc);
-            }
-            if (binding.event === "twitch-api-response") {
-                renderTwitchApiRequestFields(binding, card);
-                renderTwitchDynamicFilters(binding, card);
-            } else if (ev && ev.payload && ev.payload.length) {
-                var filterHost = document.createElement("div");
-                filterHost.className = "ss-section ss-binding-row__filters";
-                filterHost.style.padding = "0";
-                filterHost.style.borderBottom = "none";
-
-                var filterHelp = document.createElement("div");
-                filterHelp.className = "ss-binding-row__hint";
-                filterHelp.textContent = (
-                    "Filters narrow when this binding fires. Leave a field " +
-                    "blank to match any value; type an exact value to only " +
-                    "fire when the payload field matches."
-                );
-                filterHost.appendChild(filterHelp);
-
-                ev.payload.forEach(function (field) {
-                    var input = document.createElement("input");
-                    input.type = "text";
-                    var current = (binding.filter || {})[field.key];
-                    input.value = current == null ? "" : String(current);
-                    var examples = field.examples || [];
-                    if (examples.length > 0) {
-                        input.placeholder = "(any) — e.g. " +
-                            examples.slice(0, 3).join(", ");
-                    } else if (field.type) {
-                        input.placeholder = "(any " + field.type + ")";
-                    } else {
-                        input.placeholder = "(any)";
+            var ev = null;
+            if (bindingTrigger(binding) === "streamdeck") {
+                ensureStreamdeckModel();
+                var sdActs = state.model.streamdeck_options.actions || {};
+                var keys = Object.keys(sdActs).sort();
+                if (keys.length === 0) {
+                    var sdEmpty = document.createElement("div");
+                    sdEmpty.className = "ss-binding-row__hint";
+                    sdEmpty.textContent = "Add Stream Deck actions in the Stream Deck tab first.";
+                    card.appendChild(sdEmpty);
+                } else {
+                    var sdSel = document.createElement("select");
+                    keys.forEach(function (k) {
+                        var op = document.createElement("option");
+                        op.value = k;
+                        op.textContent = (sdActs[k].name || k) + " (" + k + ")";
+                        if (k === binding.streamdeck_action) { op.selected = true; }
+                        sdSel.appendChild(op);
+                    });
+                    if (!binding.streamdeck_action || !sdActs[binding.streamdeck_action]) {
+                        binding.streamdeck_action = keys[0];
                     }
-                    input.title = "Payload key: " + field.key +
-                        (field.type ? "  (" + field.type + ")" : "");
-                    input.addEventListener("change", function () {
-                        binding.filter = binding.filter || {};
-                        if (input.value === "") {
-                            delete binding.filter[field.key];
-                        } else {
-                            binding.filter[field.key] = input.value;
-                        }
-                        pushHistoryDebounced();
+                    applyStreamdeckBindingSync(binding);
+                    sdSel.addEventListener("change", function () {
+                        binding.streamdeck_action = sdSel.value;
+                        applyStreamdeckBindingSync(binding);
+                        pushHistory();
+                        renderBindings();
                         modelTouch();
                     });
-                    filterHost.appendChild(formRow(
-                        "Filter: " + (field.label || field.key), input));
+                    card.appendChild(formRow("Stream Deck action", sdSel));
+                    var evName = document.createElement("div");
+                    evName.className = "ss-binding-row__hint";
+                    evName.textContent = "Socket event: " + (binding.event || "(configure in Stream Deck tab)");
+                    card.appendChild(evName);
+                    var flHint = document.createElement("div");
+                    flHint.className = "ss-binding-row__hint";
+                    flHint.textContent = (
+                        "Fires when the server emits that event and the payload matches " +
+                        "default_data (strict equality for each key)."
+                    );
+                    card.appendChild(flHint);
+                }
+            } else {
+                var eventSelect = document.createElement("select");
+                (state.registry.events || []).forEach(function (evrow) {
+                    var op = document.createElement("option");
+                    op.value = evrow.event;
+                    op.textContent = evrow.label || evrow.event;
+                    if (evrow.event === binding.event) { op.selected = true; }
+                    eventSelect.appendChild(op);
                 });
-                card.appendChild(filterHost);
+                eventSelect.addEventListener("change", function () {
+                    binding.event = eventSelect.value;
+                    pushHistory();
+                    renderBindings();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Event", eventSelect));
+
+                ensureTwitchBindingDefaults(binding);
+
+                ev = registryEvent(binding.event);
+                if (ev && ev.description) {
+                    var evDesc = document.createElement("div");
+                    evDesc.className = "ss-binding-row__hint";
+                    evDesc.textContent = ev.description;
+                    card.appendChild(evDesc);
+                }
+                if (binding.event === "twitch-api-response") {
+                    renderTwitchApiRequestFields(binding, card);
+                    renderTwitchDynamicFilters(binding, card);
+                } else if (ev && ev.payload && ev.payload.length) {
+                    var filterHost = document.createElement("div");
+                    filterHost.className = "ss-section ss-binding-row__filters";
+                    filterHost.style.padding = "0";
+                    filterHost.style.borderBottom = "none";
+
+                    var filterHelp = document.createElement("div");
+                    filterHelp.className = "ss-binding-row__hint";
+                    filterHelp.textContent = (
+                        "Filters narrow when this binding fires. Leave a field " +
+                        "blank to match any value; type an exact value to only " +
+                        "fire when the payload field matches."
+                    );
+                    filterHost.appendChild(filterHelp);
+
+                    ev.payload.forEach(function (field) {
+                        var input = document.createElement("input");
+                        input.type = "text";
+                        var current = (binding.filter || {})[field.key];
+                        input.value = current == null ? "" : String(current);
+                        var examples = field.examples || [];
+                        if (examples.length > 0) {
+                            input.placeholder = "(any) — e.g. " +
+                                examples.slice(0, 3).join(", ");
+                        } else if (field.type) {
+                            input.placeholder = "(any " + field.type + ")";
+                        } else {
+                            input.placeholder = "(any)";
+                        }
+                        input.title = "Payload key: " + field.key +
+                            (field.type ? "  (" + field.type + ")" : "");
+                        input.addEventListener("change", function () {
+                            binding.filter = binding.filter || {};
+                            if (input.value === "") {
+                                delete binding.filter[field.key];
+                            } else {
+                                binding.filter[field.key] = input.value;
+                            }
+                            pushHistoryDebounced();
+                            modelTouch();
+                        });
+                        filterHost.appendChild(formRow(
+                            "Filter: " + (field.label || field.key), input));
+                    });
+                    card.appendChild(filterHost);
+                }
             }
 
-            var actionSelect = document.createElement("select");
+                        var actionSelect = document.createElement("select");
             (state.registry.actions || []).forEach(function (act) {
                 var op = document.createElement("option");
                 op.value = act.action;
@@ -1607,6 +1948,7 @@
         if (!name) {
             state.model = null;
             renderAll();
+            renderPreviewMockToolbar();
             return Promise.resolve();
         }
         setStatus("Loading " + name + "…");
@@ -1619,6 +1961,7 @@
                 state.future = [];
                 pushHistory();
                 renderAll();
+                renderPreviewMockToolbar();
                 refreshAssetsForCurrent();
                 refreshPreview();
                 setDirty(false);
@@ -1657,6 +2000,16 @@
             }
         });
         model.advanced_js = typeof model.advanced_js === "string" ? model.advanced_js : "";
+        if (!model.streamdeck_options || typeof model.streamdeck_options !== "object") {
+            model.streamdeck_options = { description: "", actions: {} };
+        }
+        if (typeof model.streamdeck_options.description !== "string") {
+            model.streamdeck_options.description = "";
+        }
+        var ax = model.streamdeck_options.actions;
+        if (typeof ax !== "object" || ax === null || Array.isArray(ax)) {
+            model.streamdeck_options.actions = {};
+        }
         return model;
     }
 
@@ -1788,47 +2141,93 @@
             empty.className = "ss-mocktools-empty";
             empty.textContent = "Loading mock events…";
             host.appendChild(empty);
-            return;
-        }
-        var label = document.createElement("span");
-        label.className = "ss-mocktools-empty";
-        label.textContent = "Mock:";
-        host.appendChild(label);
-        events.forEach(function (ev) {
-            var btn = document.createElement("button");
-            btn.className = "ss-btn ss-btn--ghost";
-            btn.textContent = ev.label || ev.event;
-            btn.title = "Emit mock '" + ev.event +
-                "' over the preview socket";
-            btn.addEventListener("click", function () {
-                fetch("/api/spore-studio/preview/emit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        token: state.previewToken,
-                        event: ev.event,
-                    }),
-                })
-                    .then(function (r) {
-                        return r.json().then(function (data) {
-                            return { ok: r.ok, data: data };
+        } else {
+            var label = document.createElement("span");
+            label.className = "ss-mocktools-empty";
+            label.textContent = "Mock:";
+            host.appendChild(label);
+            events.forEach(function (ev) {
+                var btn = document.createElement("button");
+                btn.className = "ss-btn ss-btn--ghost";
+                btn.textContent = ev.label || ev.event;
+                btn.title = "Emit mock '" + ev.event +
+                    "' over the preview socket";
+                btn.addEventListener("click", function () {
+                    fetch("/api/spore-studio/preview/emit", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            token: state.previewToken,
+                            event: ev.event,
+                        }),
+                    })
+                        .then(function (r) {
+                            return r.json().then(function (data) {
+                                return { ok: r.ok, data: data };
+                            });
+                        })
+                        .then(function (res) {
+                            if (!res.ok) {
+                                toast(
+                                    (res.data && res.data.error) ||
+                                        "Mock emit failed",
+                                    "error"
+                                );
+                            }
+                        })
+                        .catch(function () {
+                            toast("Mock emit failed", "error");
                         });
-                    })
-                    .then(function (res) {
-                        if (!res.ok) {
-                            toast(
-                                (res.data && res.data.error) ||
-                                    "Mock emit failed",
-                                "error"
-                            );
-                        }
-                    })
-                    .catch(function () {
-                        toast("Mock emit failed", "error");
-                    });
+                });
+                host.appendChild(btn);
             });
-            host.appendChild(btn);
-        });
+        }
+        if (state.model && !state.model.legacy && state.model.streamdeck_options) {
+            var ax = state.model.streamdeck_options.actions || {};
+            var sdk = Object.keys(ax).sort();
+            if (sdk.length) {
+                var sdLab = document.createElement("span");
+                sdLab.className = "ss-mocktools-empty";
+                sdLab.textContent = "SD:";
+                host.appendChild(sdLab);
+                sdk.forEach(function (k) {
+                    var spec = ax[k];
+                    var sbtn = document.createElement("button");
+                    sbtn.className = "ss-btn ss-btn--ghost";
+                    sbtn.textContent = spec.name || k;
+                    sbtn.title = "Emit '" + spec.event + "' with default_data";
+                    sbtn.addEventListener("click", function () {
+                        fetch("/api/spore-studio/preview/emit", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                token: state.previewToken,
+                                event: spec.event,
+                                data: spec.default_data || {},
+                            }),
+                        })
+                            .then(function (r) {
+                                return r.json().then(function (data) {
+                                    return { ok: r.ok, data: data };
+                                });
+                            })
+                            .then(function (res) {
+                                if (!res.ok) {
+                                    toast(
+                                        (res.data && res.data.error) ||
+                                            "Mock emit failed",
+                                        "error"
+                                    );
+                                }
+                            })
+                            .catch(function () {
+                                toast("Mock emit failed", "error");
+                            });
+                    });
+                    host.appendChild(sbtn);
+                });
+            }
+        }
     }
 
     function setupPreviewDialog() {
@@ -1946,6 +2345,7 @@
     function renderAll() {
         renderStage();
         renderInspector();
+        renderStreamdeckPanel();
         renderOutline();
         renderCanvasPanel();
         updateDeleteTemplateButton();
