@@ -36,7 +36,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import eventlet
@@ -74,6 +74,45 @@ from .template_config_parser import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_streamdeck_action_data(raw: Any) -> Dict[str, Any]:
+    """Normalize client ``actionData`` (dict or JSON string) to a plain dict."""
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return {}
+        try:
+            parsed = json.loads(s)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return {}
+        if isinstance(parsed, dict):
+            return dict(parsed)
+        return {}
+    return {}
+
+
+def _merged_streamdeck_options_payload(
+    action_config: dict, raw_action_data: Any
+) -> Dict[str, Any]:
+    """
+    ``default_data`` from template ``streamdeck_options`` actions, overridden by
+    coerced client ``actionData``. Same merge semantics as
+    :meth:`WebEngine._execute_streamdeck_action`.
+    """
+    coerced = _coerce_streamdeck_action_data(raw_action_data)
+    dd = action_config.get("default_data", {})
+    if not isinstance(dd, dict):
+        dd = {}
+    merged: Dict[str, Any] = dict(dd)
+    if coerced:
+        merged.update(coerced)
+    return merged
+
 
 # Default preview profile when template JSON has no ``preview_behavior`` root key.
 # Templates listed here run an animated demo loop in the Custom Sources iframe,
@@ -1082,9 +1121,7 @@ class WebEngine:
 
                         template_name = data.get("templateName", "")
                         action_name = data.get("actionName", "")
-                        event_name = data.get(
-                            "eventName", action_name
-                        )  # Use action_name as fallback
+                        event_name = data.get("eventName", action_name)
                         action_data = data.get("actionData", {})
 
                         if not template_name or not action_name:
@@ -1098,42 +1135,37 @@ class WebEngine:
                                 {"Content-Type": "application/json"},
                             )
 
-                        logger.info(
-                            f"Stream Deck: Template action requested - {template_name}.{action_name} (event: {event_name})"
-                        )
-
-                        # Emit the template action event to all connected clients
-                        event_data = {
-                            "templateName": template_name,
-                            "actionName": action_name,
-                            "eventName": event_name,
-                            "actionData": action_data,
-                        }
-
-                        self.socketio.emit("streamdeck_template_action", event_data)
-
-                        # Also emit specific template events for backward compatibility
-                        self.socketio.emit(
-                            f"{template_name}_{action_name}", action_data
-                        )
-
-                        # Emit event-specific events if event_name is different from action_name
-                        if event_name != action_name:
-                            self.socketio.emit(
-                                f"{template_name}_{event_name}", action_data
+                        compat_key, resolved_event = (
+                            self._streamdeck_http_dispatch_emits(
+                                template_name,
+                                action_name,
+                                event_name,
+                                action_data,
                             )
+                        )
+
+                        logger.info(
+                            "Stream Deck: Template action requested - %s.%s "
+                            "(resolved key: %s, event: %s)",
+                            template_name,
+                            action_name,
+                            compat_key,
+                            resolved_event,
+                        )
 
                         logger.debug(
-                            f"Stream Deck: Emitted template action events for {template_name}.{action_name}"
+                            "Stream Deck: Emitted template action events for %s.%s",
+                            template_name,
+                            compat_key,
                         )
 
                         return (
                             {
                                 "success": True,
                                 "templateName": template_name,
-                                "actionName": action_name,
-                                "eventName": event_name,
-                                "message": f"Executed {template_name}.{action_name} (event: {event_name})",
+                                "actionName": compat_key,
+                                "eventName": resolved_event,
+                                "message": f"Executed {template_name}.{compat_key} (event: {resolved_event})",
                             },
                             200,
                             {"Content-Type": "application/json"},
@@ -1445,9 +1477,7 @@ class WebEngine:
 
                 template_name = data.get("templateName", "")
                 action_name = data.get("actionName", "")
-                event_name = data.get(
-                    "eventName", action_name
-                )  # Use action_name as fallback
+                event_name = data.get("eventName", action_name)
                 action_data = data.get("actionData", {})
 
                 if not template_name or not action_name:
@@ -1461,38 +1491,35 @@ class WebEngine:
                         {"Content-Type": "application/json"},
                     )
 
-                logger.info(
-                    f"Stream Deck: Template action requested - {template_name}.{action_name} (event: {event_name})"
+                compat_key, resolved_event = self._streamdeck_http_dispatch_emits(
+                    template_name,
+                    action_name,
+                    event_name,
+                    action_data,
                 )
 
-                # Emit the template action event to all connected clients
-                event_data = {
-                    "templateName": template_name,
-                    "actionName": action_name,
-                    "eventName": event_name,
-                    "actionData": action_data,
-                }
-
-                self.socketio.emit("streamdeck_template_action", event_data)
-
-                # Also emit specific template events for backward compatibility
-                self.socketio.emit(f"{template_name}_{action_name}", action_data)
-
-                # Emit event-specific events if event_name is different from action_name
-                if event_name != action_name:
-                    self.socketio.emit(f"{template_name}_{event_name}", action_data)
+                logger.info(
+                    "Stream Deck: Template action requested - %s.%s "
+                    "(resolved key: %s, event: %s)",
+                    template_name,
+                    action_name,
+                    compat_key,
+                    resolved_event,
+                )
 
                 logger.debug(
-                    f"Stream Deck: Emitted template action events for {template_name}.{action_name}"
+                    "Stream Deck: Emitted template action events for %s.%s",
+                    template_name,
+                    compat_key,
                 )
 
                 return (
                     {
                         "success": True,
                         "templateName": template_name,
-                        "actionName": action_name,
-                        "eventName": event_name,
-                        "message": f"Executed {template_name}.{action_name} (event: {event_name})",
+                        "actionName": compat_key,
+                        "eventName": resolved_event,
+                        "message": f"Executed {template_name}.{compat_key} (event: {resolved_event})",
                     },
                     200,
                     {"Content-Type": "application/json"},
@@ -4635,30 +4662,41 @@ class WebEngine:
             try:
                 if not isinstance(data, dict):
                     logger.error("Invalid data format for streamdeck_template_action")
+                    err = {"success": False, "error": "Invalid data format"}
                     self.socketio.emit(
                         "streamdeck_action_response",
-                        {"success": False, "error": "Invalid data format"},
+                        err,
                         to=client_sid,
                     )
                     return
 
                 template_name = data.get("templateName")
                 action_name = data.get("actionName")
-                action_data = data.get("actionData", {})
+                coerced = _coerce_streamdeck_action_data(data.get("actionData", {}))
 
                 if not template_name or not action_name:
                     logger.error(
                         "Missing templateName or actionName in streamdeck_template_action"
                     )
-                    self.socketio.emit(
-                        "streamdeck_action_response",
-                        {
-                            "success": False,
-                            "error": "Missing templateName or actionName",
-                        },
-                        to=client_sid,
-                    )
+                    err = {
+                        "success": False,
+                        "error": "Missing templateName or actionName",
+                    }
+                    self.socketio.emit("streamdeck_action_response", err, to=client_sid)
+                    if isinstance(data, dict) and data.get("requestId") is not None:
+                        self.socketio.emit(
+                            "response",
+                            {**err, "requestId": data["requestId"]},
+                            to=client_sid,
+                        )
                     return
+
+                event_name_req = (
+                    data.get("eventName", action_name) if isinstance(data, dict) else action_name
+                )
+                compat_action_key = action_name
+                final_broadcast_ad = coerced
+                final_broadcast_event = event_name_req
 
                 # Load template configuration
                 template_config = self.template_config_parser.load_config(
@@ -4669,14 +4707,17 @@ class WebEngine:
 
                 if not template_config:
                     logger.error(f"Template configuration not found: {template_name}")
-                    self.socketio.emit(
-                        "streamdeck_action_response",
-                        {
-                            "success": False,
-                            "error": f"Template not found: {template_name}",
-                        },
-                        to=client_sid,
-                    )
+                    err = {
+                        "success": False,
+                        "error": f"Template not found: {template_name}",
+                    }
+                    self.socketio.emit("streamdeck_action_response", err, to=client_sid)
+                    if isinstance(data, dict) and data.get("requestId") is not None:
+                        self.socketio.emit(
+                            "response",
+                            {**err, "requestId": data["requestId"]},
+                            to=client_sid,
+                        )
                     return
 
                 # Try to find the action in streamdeck_options first
@@ -4688,16 +4729,34 @@ class WebEngine:
                     streamdeck_actions = template_config["streamdeck_options"][
                         "actions"
                     ]
-                    if action_name in streamdeck_actions:
-                        action_config = streamdeck_actions[action_name]
+                    action_config, sd_key = self._resolve_streamdeck_options_action(
+                        streamdeck_actions, action_name
+                    )
+                    if action_config is not None:
                         action_found = True
+                        compat_action_key = sd_key or action_name
                         logger.debug(
-                            f"Found Stream Deck action: {template_name}.{action_name}"
+                            "Found Stream Deck action: %s.%s (key=%s)",
+                            template_name,
+                            action_name,
+                            compat_action_key,
                         )
+
+                        final_broadcast_ad = _merged_streamdeck_options_payload(
+                            action_config, coerced
+                        )
+                        final_broadcast_event = action_config.get(
+                            "event", f"{template_name}_{compat_action_key}"
+                        )
+                        if not isinstance(final_broadcast_event, str):
+                            final_broadcast_event = str(final_broadcast_event)
 
                         # Execute the Stream Deck specific action
                         self._execute_streamdeck_action(
-                            template_name, action_name, action_config, action_data
+                            template_name,
+                            compat_action_key,
+                            action_config,
+                            coerced,
                         )
 
                 # Fallback to dynamic_controls or connector_actions
@@ -4716,7 +4775,7 @@ class WebEngine:
                                         f"Found dynamic control action: {template_name}.{action_name}"
                                     )
                                     self._execute_dynamic_control_action(
-                                        template_name, element, action_data
+                                        template_name, element, coerced
                                     )
                                     break
 
@@ -4731,30 +4790,73 @@ class WebEngine:
                                 template_name,
                                 action_name,
                                 connector_actions[action_name],
-                                action_data,
+                                coerced,
                             )
 
                 if not action_found:
-                    logger.error(f"Action not found: {template_name}.{action_name}")
-                    self.socketio.emit(
-                        "streamdeck_action_response",
-                        {"success": False, "error": f"Action not found: {action_name}"},
-                        to=client_sid,
+                    logger.error(
+                        "Action not found: %s.%s (streamdeck_options keys: %s)",
+                        template_name,
+                        action_name,
+                        list(
+                            (template_config.get("streamdeck_options") or {})
+                            .get("actions", {})
+                            .keys()
+                        )
+                        if isinstance(template_config.get("streamdeck_options"), dict)
+                        else [],
                     )
+                    err = {
+                        "success": False,
+                        "error": f"Action not found: {action_name}",
+                    }
+                    self.socketio.emit("streamdeck_action_response", err, to=client_sid)
+                    if isinstance(data, dict) and data.get("requestId") is not None:
+                        self.socketio.emit(
+                            "response",
+                            {**err, "requestId": data["requestId"]},
+                            to=client_sid,
+                        )
                     return
+
+                # Backward-compatible broadcasts (Stream Deck clients / older overlays)
+                self.socketio.emit(
+                    "streamdeck_template_action",
+                    {
+                        "templateName": template_name,
+                        "actionName": compat_action_key,
+                        "eventName": final_broadcast_event,
+                        "actionData": final_broadcast_ad,
+                    },
+                )
+                self.socketio.emit(
+                    f"{template_name}_{compat_action_key}", final_broadcast_ad
+                )
+                if final_broadcast_event != compat_action_key:
+                    self.socketio.emit(
+                        f"{template_name}_{final_broadcast_event}",
+                        final_broadcast_ad,
+                    )
 
                 # Send success response
                 response = {
                     "success": True,
                     "templateName": template_name,
-                    "actionName": action_name,
-                    "message": f"Executed {template_name}.{action_name}",
+                    "actionName": compat_action_key,
+                    "eventName": final_broadcast_event,
+                    "message": f"Executed {template_name}.{compat_action_key}",
                 }
                 self.socketio.emit(
                     "streamdeck_action_response", response, to=client_sid
                 )
+                if isinstance(data, dict) and data.get("requestId") is not None:
+                    self.socketio.emit(
+                        "response",
+                        {**response, "requestId": data["requestId"]},
+                        to=client_sid,
+                    )
                 logger.info(
-                    f"Stream Deck action executed: {template_name}.{action_name}"
+                    f"Stream Deck action executed: {template_name}.{compat_action_key}"
                 )
 
             except Exception as e:
@@ -4766,23 +4868,121 @@ class WebEngine:
                 self.socketio.emit(
                     "streamdeck_action_response", error_response, to=client_sid
                 )
+                if isinstance(data, dict) and data.get("requestId") is not None:
+                    self.socketio.emit(
+                        "response",
+                        {**error_response, "requestId": data["requestId"]},
+                        to=client_sid,
+                    )
+
+    def _streamdeck_http_dispatch_emits(
+        self,
+        template_name: str,
+        action_name: str,
+        event_name_req: str,
+        action_data_raw: Any,
+    ) -> Tuple[str, str]:
+        """
+        Shared logic for HTTP ``/api/streamdeck/template_action`` and deeplink
+        ``template_action``: coerce payload, resolve ``streamdeck_options``,
+        emit named event via :meth:`_execute_streamdeck_action` when applicable,
+        then emit ``streamdeck_template_action`` and template-prefixed compat
+        events with merged ``actionData``.
+        """
+        coerced = _coerce_streamdeck_action_data(action_data_raw)
+        compat_key = action_name
+        merged_ad = coerced
+        resolved_event = event_name_req if event_name_req else action_name
+
+        cfg = self.template_config_parser.load_config(
+            template_name,
+            include_dynamic_controls=True,
+            include_streamdeck_options=True,
+        )
+        if cfg:
+            sdo = cfg.get("streamdeck_options")
+            if isinstance(sdo, dict):
+                acts = sdo.get("actions")
+                if isinstance(acts, dict):
+                    acfg, sd_key = self._resolve_streamdeck_options_action(
+                        acts, action_name
+                    )
+                    if acfg is not None:
+                        compat_key = sd_key or action_name
+                        merged_ad = _merged_streamdeck_options_payload(acfg, coerced)
+                        resolved_event = str(
+                            acfg.get("event")
+                            or f"{template_name}_{compat_key}"
+                        )
+                        self._execute_streamdeck_action(
+                            template_name, compat_key, acfg, coerced
+                        )
+
+        self.socketio.emit(
+            "streamdeck_template_action",
+            {
+                "templateName": template_name,
+                "actionName": compat_key,
+                "eventName": resolved_event,
+                "actionData": merged_ad,
+            },
+        )
+        self.socketio.emit(f"{template_name}_{compat_key}", merged_ad)
+        if resolved_event != compat_key:
+            self.socketio.emit(f"{template_name}_{resolved_event}", merged_ad)
+        return compat_key, resolved_event
+
+    def _resolve_streamdeck_options_action(
+        self, streamdeck_actions: dict, action_name: str
+    ) -> tuple:
+        """
+        Resolve ``streamdeck_options.actions`` entry by dict key or exact
+        display ``name`` match. Returns ``(action_config_dict_or_None, dict_key)``.
+        """
+        if not isinstance(streamdeck_actions, dict) or not action_name:
+            return None, None
+        if action_name in streamdeck_actions:
+            spec = streamdeck_actions[action_name]
+            return (spec if isinstance(spec, dict) else None), str(action_name)
+        an = str(action_name).strip()
+        for key, spec in streamdeck_actions.items():
+            if not isinstance(spec, dict):
+                continue
+            if str(spec.get("name") or "").strip() == an:
+                return spec, str(key)
+        # Physical Stream Deck keys may not match ``action_*`` ids (typos, older
+        # saves). Match the configured socket ``event`` string or a stable suffix
+        # (e.g. action id ``test_1`` vs event ``show_test_1``).
+        for key, spec in streamdeck_actions.items():
+            if not isinstance(spec, dict):
+                continue
+            ev_raw = spec.get("event")
+            if ev_raw is None:
+                continue
+            ev = str(ev_raw).strip()
+            if not ev:
+                continue
+            if ev == an:
+                return spec, str(key)
+            if ev.endswith("_" + an):
+                return spec, str(key)
+            if len(an) >= 5 and ev.endswith(an):
+                return spec, str(key)
+        return None, None
 
     def _execute_streamdeck_action(
         self,
         template_name: str,
         action_name: str,
         action_config: dict,
-        action_data: dict,
+        action_data: Any,
     ):
         """Execute a Stream Deck specific action"""
         try:
-            # Check if there's a specific event to emit
             event_name = action_config.get("event", f"{template_name}_{action_name}")
-            event_data = action_config.get("default_data", {})
-
-            # Merge with provided action data
-            if action_data:
-                event_data.update(action_data)
+            event_data = _merged_streamdeck_options_payload(
+                action_config, action_data
+            )
 
             # Emit the event to all clients
             self.socketio.emit(event_name, event_data)
@@ -5782,122 +5982,6 @@ class WebEngine:
                     "success": False,
                     "error": str(e),
                     "message": "Failed to get pause status",
-                }
-
-                # Handle SocketIO client error response format
-                if data and isinstance(data, dict) and "requestId" in data:
-                    self.socketio.emit(
-                        "response",
-                        {**error_response, "requestId": data["requestId"]},
-                        to=request.sid,
-                    )
-                else:
-                    return error_response
-
-        @self.socketio.on("streamdeck_template_action")
-        def handle_streamdeck_template_action(data=None):
-            """Handle SocketIO event to execute template actions"""
-            try:
-                # Handle SocketIO client message format
-                if data and isinstance(data, dict) and "event" in data:
-                    # Extract the actual request data from SocketIO client format
-                    request_data = data
-                    template_name = request_data.get("templateName", "")
-                    action_name = request_data.get("actionName", "")
-                    event_name = request_data.get("eventName", action_name)
-                    action_data = request_data.get("actionData", {})
-                else:
-                    # Direct handler call (fallback)
-                    if not isinstance(data, dict):
-                        response = {
-                            "success": False,
-                            "error": "Invalid data format",
-                            "message": "Request must contain JSON data",
-                        }
-                        if hasattr(request, "sid"):
-                            self.socketio.emit(
-                                "response",
-                                {
-                                    **response,
-                                    "requestId": data.get("requestId")
-                                    if data
-                                    else None,
-                                },
-                                to=request.sid,
-                            )
-                        return response
-
-                    template_name = data.get("templateName", "")
-                    action_name = data.get("actionName", "")
-                    event_name = data.get("eventName", action_name)
-                    action_data = data.get("actionData", {})
-
-                if not template_name or not action_name:
-                    response = {
-                        "success": False,
-                        "error": "Missing required fields",
-                        "message": "templateName and actionName are required",
-                    }
-                    if data and isinstance(data, dict) and "requestId" in data:
-                        self.socketio.emit(
-                            "response",
-                            {**response, "requestId": data["requestId"]},
-                            to=request.sid,
-                        )
-                    return response
-
-                logger.info(
-                    f"Stream Deck: Template action requested - {template_name}.{action_name} (event: {event_name})"
-                )
-
-                # Emit the template action event to all connected clients
-                event_data = {
-                    "templateName": template_name,
-                    "actionName": action_name,
-                    "eventName": event_name,
-                    "actionData": action_data,
-                }
-
-                self.socketio.emit("streamdeck_template_action", event_data)
-
-                # Also emit specific template events for backward compatibility
-                self.socketio.emit(f"{template_name}_{action_name}", action_data)
-
-                # Emit event-specific events if event_name is different from action_name
-                if event_name != action_name:
-                    self.socketio.emit(f"{template_name}_{event_name}", action_data)
-
-                logger.debug(
-                    f"Stream Deck: Emitted template action events for {template_name}.{action_name}"
-                )
-
-                response = {
-                    "success": True,
-                    "templateName": template_name,
-                    "actionName": action_name,
-                    "eventName": event_name,
-                    "message": f"Executed {template_name}.{action_name} (event: {event_name})",
-                }
-
-                # Handle SocketIO client response format
-                if data and isinstance(data, dict) and "requestId" in data:
-                    self.socketio.emit(
-                        "response",
-                        {**response, "requestId": data["requestId"]},
-                        to=request.sid,
-                    )
-                else:
-                    return response
-
-            except Exception as e:
-                logger.error(
-                    f"Stream Deck: Error executing template action: {str(e)}",
-                    exc_info=True,
-                )
-                error_response = {
-                    "success": False,
-                    "error": str(e),
-                    "message": "Failed to execute template action",
                 }
 
                 # Handle SocketIO client error response format

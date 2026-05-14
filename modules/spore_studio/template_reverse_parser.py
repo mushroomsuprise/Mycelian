@@ -319,12 +319,14 @@ class _BodyParser(HTMLParser):
         rec: Optional[Dict[str, Any]] = None
         eid = (attrs_d.get("id") or "").strip()
         if eid:
+            dsh = (attrs_d.get("data-spore-hidden") or "").strip().lower()
             rec = {
                 "id": eid,
                 "classes": set(attrs_d.get("class", "").split()),
                 "tag": tag_l,
                 "has_text": False,
                 "style_attr": (attrs_d.get("style") or "").strip(),
+                "data_spore_hidden": dsh == "true",
             }
             self.found.append(rec)
         self._open.append({"tag": tag_l, "rec": rec})
@@ -552,6 +554,8 @@ def _build_element(
         "legacy_bindings": bindings,
         "legacy_anchor": anchor,
     }
+    if rec.get("data_spore_hidden"):
+        element["start_hidden"] = True
     return element
 
 

@@ -7,44 +7,44 @@
   },
   "elements": [
     {
-      "id": "image1",
-      "type": "image",
+      "bindings": [
+        {
+          "event": "new-message",
+          "filter": {},
+          "action": "toggle",
+          "args": {},
+          "chain": []
+        }
+      ],
       "category": "Elements",
+      "id": "image1",
       "position": {
-        "x": 4,
-        "y": 3
-      },
-      "size": {
-        "w": 200,
-        "h": 200
+        "x": 0,
+        "y": 0
       },
       "props": {
         "src": "/assets/Test/default_avatar.png"
       },
-      "bindings": [
-        {
-          "event": "show_test_1",
-          "filter": {},
-          "action": "show_for",
-          "args": {},
-          "trigger": "streamdeck",
-          "streamdeck_action": "test_1"
-        }
-      ],
+      "size": {
+        "h": 200,
+        "w": 200
+      },
       "source_settings_expose": {
-        "src": true,
         "border_radius": true,
-        "opacity": true
-      }
+        "opacity": true,
+        "src": true
+      },
+      "start_hidden": true,
+      "type": "image"
     }
   ],
   "streamdeck_options": {
     "actions": {
-      "test_1": {
-        "name": "Show Test",
+      "action_1": {
+        "default_data": {},
         "description": "",
         "event": "show_test_1",
-        "default_data": {}
+        "name": "Show Test"
       }
     },
     "description": ""

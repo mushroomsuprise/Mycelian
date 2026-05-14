@@ -23,6 +23,11 @@ A binding looks like::
         "args": {"seconds": 5, "anim_in": "fade", "anim_out": "fade"}
     }
 
+Optional ``chain`` runs further actions after the primary ``action``. Each
+chain row has ``delay_ms`` (wait after the previous step's synchronous JS,
+then run this row's ``action`` / ``args``). Chained ``show_for`` timers are
+independent: delays do not wait for the inner hide animation to finish.
+
 ``twitch-api-response`` bindings add ``twitch_api`` (``endpoint``, ``method``,
 ``params_json``, ``body_json``) and ``twitch_filters`` (list of ``{"key", "value"}``
 rows). Values are coerced with :func:`json.loads` when valid JSON so filters can
@@ -41,7 +46,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 # Animation CSS injected into the head when at least one binding asks for
@@ -243,6 +248,9 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
     if action == "hide":
         return [f"sporeHide({eid});"]
 
+    if action == "toggle":
+        return [f"sporeToggle({eid});"]
+
     if action == "show_for":
         seconds = args.get("seconds", 5)
         try:
@@ -318,6 +326,100 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
     return [f"// Unknown action: {action}"]
 
 
+def _coerce_delay_ms(raw: Any) -> float:
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, v)
+
+
+def _binding_action_steps(binding: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any], float]]:
+    """
+    Primary ``action``/``args`` is step 0 (delay unused). Each ``chain`` row
+    is a subsequent step; its ``delay_ms`` is the pause after the previous
+    step's synchronous JS before this step runs.
+    """
+    out: List[Tuple[str, Dict[str, Any], float]] = []
+    primary = binding.get("action")
+    if not primary or not isinstance(primary, str):
+        return out
+    a0 = binding.get("args")
+    args0: Dict[str, Any] = dict(a0) if isinstance(a0, dict) else {}
+    out.append((primary, args0, 0.0))
+    for row in binding.get("chain") or []:
+        if not isinstance(row, dict):
+            continue
+        act = row.get("action")
+        if not act or not isinstance(act, str):
+            continue
+        ra = row.get("args")
+        args_k: Dict[str, Any] = dict(ra) if isinstance(ra, dict) else {}
+        out.append((act, args_k, _coerce_delay_ms(row.get("delay_ms", 0))))
+    return out
+
+
+def _step_uses_animation(action: str, args: Dict[str, Any]) -> bool:
+    if action == "show_for":
+        a = args or {}
+        anim_in_eff = str(a.get("anim_in", "fade") or "none")
+        anim_out_eff = str(a.get("anim_out", "fade") or "none")
+        return anim_in_eff != "none" or anim_out_eff != "none"
+    anim_in = (args or {}).get("anim_in")
+    anim_out = (args or {}).get("anim_out")
+    return bool(
+        (anim_in and str(anim_in) != "none")
+        or (anim_out and str(anim_out) != "none")
+    )
+
+
+def _compile_action_sequence(
+    element_id: str, steps: List[Tuple[str, Dict[str, Any], float]]
+) -> List[str]:
+    if not steps:
+        return []
+    if len(steps) == 1:
+        return _compile_action(element_id, steps[0][0], steps[0][1])
+    tail: List[str] = list(_compile_action(element_id, steps[-1][0], steps[-1][1]))
+    for i in range(len(steps) - 2, -1, -1):
+        delay_ms = int(round(max(0.0, steps[i + 1][2])))
+        prev = _compile_action(element_id, steps[i][0], steps[i][1])
+        block: List[str] = []
+        block.extend(prev)
+        block.append("setTimeout(function () {")
+        for line in tail:
+            block.append("    " + line)
+        block.append(f"}}, {delay_ms});")
+        tail = block
+    return tail
+
+
+def _bindings_need_toggle(elements: List[Dict[str, Any]]) -> bool:
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        for binding in element.get("bindings") or []:
+            if not isinstance(binding, dict):
+                continue
+            for act, _args, _d in _binding_action_steps(binding):
+                if act == "toggle":
+                    return True
+    return False
+
+
+_TOGGLE_JS = """
+function sporeToggle(id) {
+    var el = document.getElementById(id);
+    if (!el) { return; }
+    if (el.hasAttribute('data-spore-hidden')) {
+        el.removeAttribute('data-spore-hidden');
+    } else {
+        el.setAttribute('data-spore-hidden', 'true');
+    }
+}
+""".strip()
+
+
 # Events the boilerplate templates wire up themselves — those have
 # bespoke handling (queue/instant alert lifecycle), so the auto-block
 # must NOT add a duplicate ``socket.on`` for them. Every other event the
@@ -368,23 +470,28 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
                 )
             else:
                 filter_obj = binding.get("filter") or {}
-            args = binding.get("args") or {}
+
+            steps = _binding_action_steps(binding)
+            if not steps:
+                continue
 
             block: List[str] = []
             block.append(f"if ({_compile_filter(filter_obj)}) {{")
-            for stmt in _compile_action(eid, action, args):
+            for stmt in _compile_action_sequence(eid, steps):
                 block.append("    " + stmt)
             block.append("}")
             by_event.setdefault(event, []).extend(block)
 
-            anim_in = (args or {}).get("anim_in")
-            anim_out = (args or {}).get("anim_out")
-            if anim_in and anim_in != "none":
-                use_animation = True
-            if anim_out and anim_out != "none":
-                use_animation = True
+            for act, step_args, _delay in steps:
+                if _step_uses_animation(act, step_args):
+                    use_animation = True
 
-    lines: List[str] = ["function sporeApplyBindings(eventName, payload) {"]
+    lines: List[str] = [
+        "function sporeApplyBindings(eventName, payload) {",
+        "    try {",
+        "        console.log('[spore-studio] sporeApplyBindings', eventName, payload);",
+        "    } catch (__sporeLog) {}",
+    ]
     for event, statements in by_event.items():
         lines.append(f"    if (eventName === {_js_string(event)}) {{")
         for stmt in statements:
@@ -419,6 +526,9 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
             lines.append(f"        socket.on({ev_str}, function (data) {{")
             lines.append("            try {")
             lines.append(
+                f"                console.log('[spore-studio] socket.on', {ev_str}, data);"
+            )
+            lines.append(
                 f"                sporeApplyBindings({ev_str}, data || {{}});"
             )
             lines.append("            } catch (err) {")
@@ -432,6 +542,8 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
         lines.append("}")
 
     js = "\n".join(lines)
+    if _bindings_need_toggle(elements):
+        js = _TOGGLE_JS + "\n\n" + js
 
     # One-shot Helix requests for twitch-api-response bindings (after listeners).
     twitch_emits: List[str] = []

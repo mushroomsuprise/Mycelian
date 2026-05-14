@@ -837,6 +837,28 @@
         })));
         host.appendChild(sizeRow);
 
+        var shWrap = document.createElement("div");
+        shWrap.style.display = "flex";
+        shWrap.style.flexDirection = "column";
+        shWrap.style.gap = "4px";
+        var shCb = document.createElement("input");
+        shCb.type = "checkbox";
+        shCb.checked = resolvedStartHidden(el);
+        shCb.addEventListener("change", function () {
+            el.start_hidden = shCb.checked;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        var shHint = document.createElement("span");
+        shHint.style.cssText = "color:var(--ss-text-muted);font-size:10px;line-height:1.35;";
+        shHint.textContent = elementHasShowBinding(el) &&
+            (el.start_hidden === undefined || el.start_hidden === null)
+            ? "Auto: on while a Show or Show for N seconds binding exists. Uncheck to keep the element visible on load."
+            : "When checked, the overlay starts hidden (data-spore-hidden) until a Show binding runs.";
+        shWrap.appendChild(shCb);
+        shWrap.appendChild(shHint);
+        host.appendChild(formRow("Start hidden until shown", shWrap));
+
         var schema = ELEMENT_PROP_SCHEMA[el.type] || [];
         schema.forEach(function (entry) {
             var current = el.props && el.props[entry.key];
@@ -1131,6 +1153,39 @@
         }
     }
 
+    var SHOW_BIND_ACTIONS = { show: true, show_for: true };
+    var CHAIN_MAX_STEPS = 15;
+
+    function bindingHasShowAction(b) {
+        if (!b) { return false; }
+        if (SHOW_BIND_ACTIONS[b.action]) { return true; }
+        var ch = b.chain || [];
+        for (var i = 0; i < ch.length; i++) {
+            if (ch[i] && SHOW_BIND_ACTIONS[ch[i].action]) { return true; }
+        }
+        return false;
+    }
+
+    function elementHasShowBinding(el) {
+        if (!el) { return false; }
+        return (el.bindings || []).some(bindingHasShowAction);
+    }
+
+    function resolvedStartHidden(el) {
+        if (!el) { return false; }
+        if (el.start_hidden === undefined || el.start_hidden === null) {
+            return elementHasShowBinding(el);
+        }
+        return !!el.start_hidden;
+    }
+
+    function maybeDefaultStartHiddenForShow(el, binding) {
+        if (!el || !binding || !bindingHasShowAction(binding)) { return; }
+        if (el.start_hidden === undefined || el.start_hidden === null) {
+            el.start_hidden = true;
+        }
+    }
+
     function applyStreamdeckBindingSync(binding) {
         if (!state.model || state.model.legacy) { return; }
         ensureStreamdeckModel();
@@ -1138,7 +1193,7 @@
         var spec = aid && state.model.streamdeck_options.actions[aid];
         if (!spec) { return; }
         binding.event = spec.event;
-        binding.filter = deepClone(spec.default_data || {});
+        binding.filter = {};
     }
 
     function syncAllStreamdeckBindingsForAction(actionId) {
@@ -1197,7 +1252,8 @@
         intro.style.cssText = "color:var(--ss-text-muted);font-size:11px;margin:0 0 8px;";
         intro.textContent = (
             "Defines streamdeck_options in the template JSON (action ids, socket event, default payload). " +
-            "Bind elements on the Bindings tab using trigger Stream Deck."
+            "The Stream Deck plugin must send actionName equal to each action id below. " +
+            "Overlays listen for the Socket event string. Bind elements on the Bindings tab using trigger Stream Deck."
         );
         host.appendChild(intro);
 
@@ -1383,6 +1439,75 @@
     }
 
     function renderBindings() {
+        function appendActionArgFields(card, ev, actName, argsObj, el, binding) {
+            if (!argsObj || typeof argsObj !== "object") { return; }
+            var act = registryAction(actName);
+            if (act && act.description) {
+                var actDesc2 = document.createElement("div");
+                actDesc2.className = "ss-binding-row__hint";
+                actDesc2.textContent = act.description;
+                card.appendChild(actDesc2);
+            }
+            if (act && act.args && act.args.length) {
+                act.args.forEach(function (arg) {
+                    var current = argsObj[arg.key];
+                    if (current == null && arg.default != null) { current = arg.default; }
+                    var ctrl;
+                    if (arg.type === "select") {
+                        ctrl = document.createElement("select");
+                        (arg.options || []).forEach(function (opt) {
+                            var op = document.createElement("option");
+                            op.value = opt;
+                            op.textContent = opt;
+                            if (String(opt) === String(current)) { op.selected = true; }
+                            ctrl.appendChild(op);
+                        });
+                    } else if (arg.type === "number") {
+                        ctrl = document.createElement("input");
+                        ctrl.type = "number";
+                        ctrl.value = current == null ? "" : String(current);
+                        if (arg.min != null) { ctrl.min = arg.min; }
+                        if (arg.max != null) { ctrl.max = arg.max; }
+                    } else {
+                        ctrl = document.createElement("input");
+                        ctrl.type = "text";
+                        ctrl.value = current == null ? "" : String(current);
+                        if (arg.key === "from_payload" && ev && ev.payload && ev.payload.length) {
+                            ctrl.placeholder = "e.g. " +
+                                ev.payload.slice(0, 3).map(function (p) {
+                                    return p.key;
+                                }).join(", ");
+                        } else if (
+                            arg.key === "from_payload"
+                            && binding.event === "twitch-api-response"
+                        ) {
+                            ctrl.placeholder = "e.g. error, success, requestId";
+                        }
+                    }
+                    if (arg.description) {
+                        ctrl.title = arg.description;
+                    }
+                    ctrl.addEventListener("change", function () {
+                        if (arg.type === "number") {
+                            argsObj[arg.key] = ctrl.value === "" ? null : Number(ctrl.value);
+                        } else {
+                            argsObj[arg.key] = ctrl.value;
+                        }
+                        maybeDefaultStartHiddenForShow(el, binding);
+                        pushHistoryDebounced();
+                        modelTouch();
+                    });
+                    card.appendChild(formRow(arg.label || arg.key, ctrl));
+                    if (arg.description) {
+                        var argHint = document.createElement("div");
+                        argHint.className = "ss-binding-row__hint ss-binding-row__hint--inline";
+                        argHint.textContent = arg.description;
+                        card.appendChild(argHint);
+                    }
+                });
+            }
+        }
+
         var host = $("#ss-bindings-host");
         host.innerHTML = "";
         var el = selectedElement();
@@ -1408,10 +1533,13 @@
                 event: (state.registry.events[0] || { event: "next_alert" }).event,
                 filter: {},
                 action: (state.registry.actions[0] || { action: "show" }).action,
-                args: {}
+                args: {},
+                chain: []
             });
+            maybeDefaultStartHiddenForShow(el, el.bindings[el.bindings.length - 1]);
             pushHistory();
             renderBindings();
+            renderProperties();
             modelTouch();
         });
         host.appendChild(addBtn);
@@ -1434,6 +1562,7 @@
                 el.bindings.splice(idx, 1);
                 pushHistory();
                 renderBindings();
+                renderProperties();
                 modelTouch();
             });
             head.appendChild(rm);
@@ -1457,6 +1586,7 @@
                     var kk = Object.keys(state.model.streamdeck_options.actions || {}).sort();
                     binding.streamdeck_action = kk[0] || "";
                     applyStreamdeckBindingSync(binding);
+                    maybeDefaultStartHiddenForShow(el, binding);
                 } else {
                     binding.trigger = "registry";
                     delete binding.streamdeck_action;
@@ -1465,6 +1595,7 @@
                 }
                 pushHistory();
                 renderBindings();
+                renderProperties();
                 modelTouch();
             });
             card.appendChild(formRow("Trigger", trigSel));
@@ -1492,11 +1623,14 @@
                         binding.streamdeck_action = keys[0];
                     }
                     applyStreamdeckBindingSync(binding);
+                    maybeDefaultStartHiddenForShow(el, binding);
                     sdSel.addEventListener("change", function () {
                         binding.streamdeck_action = sdSel.value;
                         applyStreamdeckBindingSync(binding);
+                        maybeDefaultStartHiddenForShow(el, binding);
                         pushHistory();
                         renderBindings();
+                        renderProperties();
                         modelTouch();
                     });
                     card.appendChild(formRow("Stream Deck action", sdSel));
@@ -1507,8 +1641,8 @@
                     var flHint = document.createElement("div");
                     flHint.className = "ss-binding-row__hint";
                     flHint.textContent = (
-                        "Fires when the server emits that event and the payload matches " +
-                        "default_data (strict equality for each key)."
+                        "Fires when the server emits the Socket event above. " +
+                        "Add optional payload filters in the binding row if you need stricter matching."
                     );
                     card.appendChild(flHint);
                 }
@@ -1589,7 +1723,7 @@
                 }
             }
 
-                        var actionSelect = document.createElement("select");
+            var actionSelect = document.createElement("select");
             (state.registry.actions || []).forEach(function (act) {
                 var op = document.createElement("option");
                 op.value = act.action;
@@ -1600,77 +1734,126 @@
             actionSelect.addEventListener("change", function () {
                 binding.action = actionSelect.value;
                 binding.args = {};
+                binding.chain = [];
+                maybeDefaultStartHiddenForShow(el, binding);
                 pushHistory();
                 renderBindings();
+                renderProperties();
                 modelTouch();
             });
             card.appendChild(formRow("Action", actionSelect));
 
-            var act = registryAction(binding.action);
-            if (act && act.description) {
-                var actDesc = document.createElement("div");
-                actDesc.className = "ss-binding-row__hint";
-                actDesc.textContent = act.description;
-                card.appendChild(actDesc);
-            }
-            if (act && act.args && act.args.length) {
-                act.args.forEach(function (arg) {
-                    var current = (binding.args || {})[arg.key];
-                    if (current == null && arg.default != null) { current = arg.default; }
-                    var ctrl;
-                    if (arg.type === "select") {
-                        ctrl = document.createElement("select");
-                        (arg.options || []).forEach(function (opt) {
-                            var op = document.createElement("option");
-                            op.value = opt;
-                            op.textContent = opt;
-                            if (String(opt) === String(current)) { op.selected = true; }
-                            ctrl.appendChild(op);
-                        });
-                    } else if (arg.type === "number") {
-                        ctrl = document.createElement("input");
-                        ctrl.type = "number";
-                        ctrl.value = current == null ? "" : String(current);
-                        if (arg.min != null) { ctrl.min = arg.min; }
-                        if (arg.max != null) { ctrl.max = arg.max; }
-                    } else {
-                        ctrl = document.createElement("input");
-                        ctrl.type = "text";
-                        ctrl.value = current == null ? "" : String(current);
-                        if (arg.key === "from_payload" && ev && ev.payload && ev.payload.length) {
-                            ctrl.placeholder = "e.g. " +
-                                ev.payload.slice(0, 3).map(function (p) {
-                                    return p.key;
-                                }).join(", ");
-                        } else if (
-                            arg.key === "from_payload"
-                            && binding.event === "twitch-api-response"
-                        ) {
-                            ctrl.placeholder = "e.g. error, success, requestId";
-                        }
-                    }
-                    if (arg.description) {
-                        ctrl.title = arg.description;
-                    }
-                    ctrl.addEventListener("change", function () {
-                        binding.args = binding.args || {};
-                        if (arg.type === "number") {
-                            binding.args[arg.key] = ctrl.value === "" ? null : Number(ctrl.value);
-                        } else {
-                            binding.args[arg.key] = ctrl.value;
-                        }
-                        pushHistoryDebounced();
-                        modelTouch();
-                    });
-                    card.appendChild(formRow(arg.label || arg.key, ctrl));
-                    if (arg.description) {
-                        var argHint = document.createElement("div");
-                        argHint.className = "ss-binding-row__hint ss-binding-row__hint--inline";
-                        argHint.textContent = arg.description;
-                        card.appendChild(argHint);
-                    }
+            binding.args = binding.args || {};
+            appendActionArgFields(card, ev, binding.action, binding.args, el, binding);
+
+            if (!Array.isArray(binding.chain)) { binding.chain = []; }
+
+            var chainTitle = document.createElement("div");
+            chainTitle.className = "ss-binding-row__hint";
+            chainTitle.style.marginTop = "10px";
+            chainTitle.textContent = "Chained actions";
+            card.appendChild(chainTitle);
+
+            var chainHelp = document.createElement("div");
+            chainHelp.className = "ss-binding-row__hint ss-binding-row__hint--inline";
+            chainHelp.textContent = (
+                "Each step waits delay (ms) after the previous step returns, then runs. " +
+                "show_for still uses its own internal timers."
+            );
+            card.appendChild(chainHelp);
+
+            binding.chain.forEach(function (step, cidx) {
+                if (!step || typeof step !== "object") { return; }
+                if (!step.action) {
+                    step.action = (state.registry.actions[0] || { action: "show" }).action;
+                }
+                step.args = step.args || {};
+                if (step.delay_ms == null) { step.delay_ms = 0; }
+
+                var stepWrap = document.createElement("div");
+                stepWrap.className = "ss-binding-row__chain-step";
+                stepWrap.style.marginTop = "8px";
+                stepWrap.style.paddingTop = "8px";
+                stepWrap.style.borderTop = "1px solid rgba(255,255,255,0.08)";
+
+                var stepHead = document.createElement("div");
+                stepHead.style.display = "flex";
+                stepHead.style.alignItems = "center";
+                stepHead.style.justifyContent = "space-between";
+                stepHead.style.marginBottom = "6px";
+                var stepLabel = document.createElement("span");
+                stepLabel.className = "ss-binding-row__hint";
+                stepLabel.textContent = "Chain step " + (cidx + 1);
+                stepHead.appendChild(stepLabel);
+                var rmStep = document.createElement("button");
+                rmStep.type = "button";
+                rmStep.className = "ss-binding-row__remove";
+                rmStep.innerHTML = "&times;";
+                rmStep.title = "Remove chained step";
+                rmStep.addEventListener("click", function () {
+                    binding.chain.splice(cidx, 1);
+                    maybeDefaultStartHiddenForShow(el, binding);
+                    pushHistory();
+                    renderBindings();
+                    renderProperties();
+                    modelTouch();
                 });
-            }
+                stepHead.appendChild(rmStep);
+                stepWrap.appendChild(stepHead);
+
+                var delayInp = document.createElement("input");
+                delayInp.type = "number";
+                delayInp.min = "0";
+                delayInp.step = "1";
+                delayInp.value = String(step.delay_ms != null ? step.delay_ms : 0);
+                delayInp.addEventListener("change", function () {
+                    var v = parseInt(delayInp.value, 10);
+                    step.delay_ms = Number.isNaN(v) || v < 0 ? 0 : v;
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                stepWrap.appendChild(formRow("Delay before this step (ms)", delayInp));
+
+                var stepActSel = document.createElement("select");
+                (state.registry.actions || []).forEach(function (act) {
+                    var op = document.createElement("option");
+                    op.value = act.action;
+                    op.textContent = act.label || act.action;
+                    if (act.action === step.action) { op.selected = true; }
+                    stepActSel.appendChild(op);
+                });
+                stepActSel.addEventListener("change", function () {
+                    step.action = stepActSel.value;
+                    step.args = {};
+                    maybeDefaultStartHiddenForShow(el, binding);
+                    pushHistory();
+                    renderBindings();
+                    renderProperties();
+                    modelTouch();
+                });
+                stepWrap.appendChild(formRow("Action", stepActSel));
+
+                appendActionArgFields(stepWrap, ev, step.action, step.args, el, binding);
+                card.appendChild(stepWrap);
+            });
+
+            var addChainBtn = document.createElement("button");
+            addChainBtn.type = "button";
+            addChainBtn.className = "ss-btn ss-btn--primary";
+            addChainBtn.style.marginTop = "8px";
+            addChainBtn.textContent = "+ Add chained step";
+            addChainBtn.disabled = binding.chain.length >= CHAIN_MAX_STEPS;
+            addChainBtn.addEventListener("click", function () {
+                if (binding.chain.length >= CHAIN_MAX_STEPS) { return; }
+                var firstA = (state.registry.actions[0] || { action: "show" }).action;
+                binding.chain.push({ delay_ms: 0, action: firstA, args: {} });
+                maybeDefaultStartHiddenForShow(el, binding);
+                pushHistory();
+                renderBindings();
+                renderProperties();
+                modelTouch();
+            });
+            card.appendChild(addChainBtn);
 
             host.appendChild(card);
         });

@@ -118,6 +118,39 @@ def _css_kv(props: Dict[str, Any]) -> List[Tuple[str, str]]:
     return out
 
 
+_SHOW_BIND_ACTIONS = frozenset({"show", "show_for"})
+
+
+def _binding_has_show_action(binding: Dict[str, Any]) -> bool:
+    """True if the primary or any chained step uses ``show`` or ``show_for``."""
+    if not isinstance(binding, dict):
+        return False
+    if binding.get("action") in _SHOW_BIND_ACTIONS:
+        return True
+    for row in binding.get("chain") or []:
+        if isinstance(row, dict) and row.get("action") in _SHOW_BIND_ACTIONS:
+            return True
+    return False
+
+
+def _element_start_hidden(element: Dict[str, Any]) -> bool:
+    """
+    Whether the element should be emitted with ``data-spore-hidden="true"``.
+
+    If ``start_hidden`` is set on the element model, that explicit bool wins.
+    Otherwise (auto): hidden when the element has any binding whose primary
+    or chained action is ``show`` or ``show_for``.
+    """
+    if "start_hidden" in element:
+        return bool(element.get("start_hidden"))
+    for binding in element.get("bindings") or []:
+        if not isinstance(binding, dict):
+            continue
+        if _binding_has_show_action(binding):
+            return True
+    return False
+
+
 def _element_style(element: Dict[str, Any]) -> str:
     """Compose the inline ``style`` attribute for a single absolute-positioned element."""
     pos = element.get("position") or {}
@@ -152,13 +185,16 @@ def _render_element(element: Dict[str, Any]) -> str:
     props = element.get("props") or {}
     style = _element_style(element)
     classes = "spore-element"
+    hidden_attr = (
+        ' data-spore-hidden="true"' if _element_start_hidden(element) else ""
+    )
 
     if etype == "text":
         text_var = element.get("text_var") or eid + "Text"
         text_default = props.get("text", "")
         return (
             f'<div id="{html.escape(eid)}" class="{classes}" '
-            f'style="{html.escape(style, quote=True)}" '
+            f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f'data-spore-type="text">'
             f"{{{{ {text_var}|default({json.dumps(text_default)})|safe }}}}"
             f"</div>"
@@ -169,7 +205,7 @@ def _render_element(element: Dict[str, Any]) -> str:
         src_default = props.get("src", "")
         return (
             f'<img id="{html.escape(eid)}" class="{classes}" '
-            f'style="{html.escape(style, quote=True)}" '
+            f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f'data-spore-type="image" '
             f'src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}" '
             f'alt="" />'
@@ -183,7 +219,7 @@ def _render_element(element: Dict[str, Any]) -> str:
         muted = "muted " if props.get("muted", True) else ""
         return (
             f'<video id="{html.escape(eid)}" class="{classes}" '
-            f'style="{html.escape(style, quote=True)}" '
+            f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f'data-spore-type="video" '
             f"{autoplay}{loop}{muted}playsinline>"
             f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
@@ -194,7 +230,7 @@ def _render_element(element: Dict[str, Any]) -> str:
         src_var = element.get("src_var") or eid + "Src"
         src_default = props.get("src", "")
         return (
-            f'<audio id="{html.escape(eid)}" class="{classes}" '
+            f'<audio id="{html.escape(eid)}" class="{classes}"{hidden_attr} '
             f'data-spore-type="audio" preload="auto">'
             f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
             f"</audio>"
@@ -202,7 +238,7 @@ def _render_element(element: Dict[str, Any]) -> str:
 
     return (
         f'<div id="{html.escape(eid)}" class="{classes}" '
-        f'style="{html.escape(style, quote=True)}" '
+        f'style="{html.escape(style, quote=True)}"{hidden_attr} '
         f'data-spore-type="container"></div>'
     )
 
@@ -269,6 +305,57 @@ def _sanitize_streamdeck_options(raw: Any) -> Dict[str, Any]:
         }
     out["actions"] = actions_out
     return out
+
+
+def _merge_streamdeck_binding_args_into_actions(
+    elements: Any, streamdeck_options: Dict[str, Any]
+) -> None:
+    """
+    Copy binding ``args`` from Stream-Deck-triggered rows into each action's
+    ``default_data`` so HTTP / plugin presses send the same payload shape as
+    the editor (filters, ``streamdeck_template_action``, ``from_payload``, etc.).
+    Merges the primary binding ``args`` and each ``chain`` step's ``args`` (later
+    keys override earlier ones). Mutates ``streamdeck_options`` in place
+    (post-:func:`_sanitize_streamdeck_options`).
+    """
+    actions = streamdeck_options.get("actions")
+    if not isinstance(actions, dict) or not actions:
+        return
+    if not isinstance(elements, list):
+        return
+    for element in elements:
+        if not isinstance(element, dict):
+            continue
+        for binding in element.get("bindings") or []:
+            if not isinstance(binding, dict):
+                continue
+            if binding.get("trigger") != "streamdeck":
+                continue
+            aid_raw = binding.get("streamdeck_action")
+            if not aid_raw:
+                continue
+            aid = _slugify_id(str(aid_raw))
+            if aid not in actions or not isinstance(actions[aid], dict):
+                continue
+            merged_chunks: Dict[str, Any] = {}
+            args = binding.get("args")
+            if isinstance(args, dict):
+                merged_chunks.update(args)
+            for row in binding.get("chain") or []:
+                if not isinstance(row, dict):
+                    continue
+                ca = row.get("args")
+                if isinstance(ca, dict):
+                    merged_chunks.update(ca)
+            if not merged_chunks:
+                continue
+            spec = actions[aid]
+            dd = spec.get("default_data")
+            if not isinstance(dd, dict):
+                dd = {}
+            merged = dict(dd)
+            merged.update(merged_chunks)
+            spec["default_data"] = merged
 
 
 def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
@@ -479,14 +566,14 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 )
 
+    sdo = _sanitize_streamdeck_options(model.get("streamdeck_options"))
+    _merge_streamdeck_binding_args_into_actions(model.get("elements") or [], sdo)
     base: Dict[str, Any] = {
         "template_name": template_name,
         "spore_studio": True,
         "alert_system": str(model.get("alert_system") or "queue"),
         "elements": elements_out,
-        "streamdeck_options": _sanitize_streamdeck_options(
-            model.get("streamdeck_options")
-        ),
+        "streamdeck_options": sdo,
     }
     return base
 

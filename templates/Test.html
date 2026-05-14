@@ -2,7 +2,7 @@
 <!--
     Mycelian Spore Studio - queue_alert boilerplate
     Generated for: Test
-    Alert system: queue (responds to next_alert, must emit alert_complete)
+    Alert system: queue (next_alert + local timing; emit alert_complete in user JS if you use the server alert queue)
 -->
 <html>
 <head>
@@ -39,7 +39,7 @@
 <body>
     <div id="sporeRoot" data-mycelian-template="Test">
         <!-- SPORE_STUDIO:dom-begin -->
-        <img id="image1" class="spore-element" style="left: 4px; top: 3px; width: 200px; height: 200px" data-spore-type="image" src="{{ image1Src|default("/assets/Test/default_avatar.png") }}" alt="" />
+        <img id="image1" class="spore-element" style="left: 0px; top: 0px; width: 200px; height: 200px" data-spore-hidden="true" data-spore-type="image" src="{{ image1Src|default("/assets/Test/default_avatar.png") }}" alt="" />
 <!-- SPORE_STUDIO:dom-end -->
     </div>
 
@@ -72,23 +72,23 @@
         }
 
         // SPORE_STUDIO:auto-begin
+function sporeToggle(id) {
+    var el = document.getElementById(id);
+    if (!el) { return; }
+    if (el.hasAttribute('data-spore-hidden')) {
+        el.removeAttribute('data-spore-hidden');
+    } else {
+        el.setAttribute('data-spore-hidden', 'true');
+    }
+}
+
 function sporeApplyBindings(eventName, payload) {
-    if (eventName === "show_test_1") {
+    try {
+        console.log('[spore-studio] sporeApplyBindings', eventName, payload);
+    } catch (__sporeLog) {}
+    if (eventName === "new-message") {
         if (true) {
-            (function () {
-                var __el = document.getElementById("image1");
-                if (!__el) { return; }
-                sporeShow("image1");
-                __el.classList.remove("spore-anim-fade-in");
-                void __el.offsetWidth;
-                __el.classList.add("spore-anim-fade-in");
-                setTimeout(function () {
-                    __el.classList.remove("spore-anim-fade-out");
-                    void __el.offsetWidth;
-                    __el.classList.add("spore-anim-fade-out");
-                    setTimeout(function () { sporeHide("image1"); }, 300);
-                }, 5000.0);
-            })();
+            sporeToggle("image1");
         }
     }
 }
@@ -99,21 +99,37 @@ function sporeApplyBindings(eventName, payload) {
 // never double-binds the same event on the same socket.
 if (typeof socket !== 'undefined' && socket && socket.on) {
     window.__sporeBoundEvents = window.__sporeBoundEvents || {};
-    if (!window.__sporeBoundEvents["show_test_1"]) {
-        window.__sporeBoundEvents["show_test_1"] = true;
-        socket.on("show_test_1", function (data) {
+    if (!window.__sporeBoundEvents["new-message"]) {
+        window.__sporeBoundEvents["new-message"] = true;
+        socket.on("new-message", function (data) {
             try {
-                sporeApplyBindings("show_test_1", data || {});
+                console.log('[spore-studio] socket.on', "new-message", data);
+                sporeApplyBindings("new-message", data || {});
             } catch (err) {
-                console.error('[spore-studio] binding error on ' + "show_test_1", err);
+                console.error('[spore-studio] binding error on ' + "new-message", err);
             }
         });
     }
 }
 // SPORE_STUDIO:auto-end
 
+        (function () {
+            if (typeof socket !== 'undefined' && socket && socket.on) {
+                socket.on('streamdeck_template_action', function (data) {
+                    try {
+                        console.log('[Test] streamdeck_template_action (debug)', data);
+                    } catch (e) {}
+                });
+            }
+        })();
+
         socket.on('connect', function () {
-            console.log('[Test] connected');
+            var __r = document.getElementById('sporeRoot');
+            var __t = __r && __r.getAttribute('data-mycelian-template');
+            console.log('[Test] socket connect (debug)', {
+                template: __t || 'Test',
+                sid: socket && socket.id
+            });
         });
 
         socket.on('next_alert', function (data) {
@@ -127,6 +143,7 @@ if (typeof socket !== 'undefined' && socket && socket.on) {
             alertActive = true;
             var data = alertQueue.shift();
             try {
+                console.log('[Test] next_alert dequeue (debug)', data);
                 sporeApplyBindings('next_alert', data);
             } catch (err) {
                 console.error('[Test] binding error', err);
@@ -135,10 +152,8 @@ if (typeof socket !== 'undefined' && socket && socket.on) {
             setTimeout(function () {
                 alertActive = false;
                 var seq = data && data.queue_seq != null ? parseInt(data.queue_seq, 10) : null;
-                if (seq != null && !Number.isNaN(seq)) {
-                    socket.emit('alert_complete', { queue_seq: seq });
-                } else {
-                    console.warn('[Test] alert_complete skipped: no queue_seq on payload');
+                if (seq == null || Number.isNaN(seq)) {
+                    console.warn('[Test] queue item had no queue_seq; emit alert_complete from Advanced JS when your overlay should release the server queue.');
                 }
                 sporeProcessNext();
             }, hold * 1000);

@@ -210,6 +210,15 @@ _ACTIONS: List[Dict[str, Any]] = [
         "args": [],
     },
     {
+        "action": "toggle",
+        "label": "Toggle visibility",
+        "description": (
+            "Show the element if it is hidden, or hide it if it is visible "
+            "(toggles data-spore-hidden)."
+        ),
+        "args": [],
+    },
+    {
         "action": "show_for",
         "label": "Show for N seconds",
         "description": "Make the element visible, then hide it after N seconds.",

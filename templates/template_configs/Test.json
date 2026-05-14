@@ -47,7 +47,7 @@
     "streamdeck_options": {
         "description": "",
         "actions": {
-            "test_1": {
+            "action_1": {
                 "name": "Show Test",
                 "description": "",
                 "event": "show_test_1",

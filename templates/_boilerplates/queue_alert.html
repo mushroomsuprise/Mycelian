@@ -78,8 +78,23 @@
         }
         // SPORE_STUDIO:auto-end
 
+        (function () {
+            if (typeof socket !== 'undefined' && socket && socket.on) {
+                socket.on('streamdeck_template_action', function (data) {
+                    try {
+                        console.log('[__TEMPLATE_NAME__] streamdeck_template_action (debug)', data);
+                    } catch (e) {}
+                });
+            }
+        })();
+
         socket.on('connect', function () {
-            console.log('[__TEMPLATE_NAME__] connected');
+            var __r = document.getElementById('sporeRoot');
+            var __t = __r && __r.getAttribute('data-mycelian-template');
+            console.log('[__TEMPLATE_NAME__] socket connect (debug)', {
+                template: __t || '__TEMPLATE_NAME__',
+                sid: socket && socket.id
+            });
         });
 
         socket.on('next_alert', function (data) {
@@ -93,6 +108,7 @@
             alertActive = true;
             var data = alertQueue.shift();
             try {
+                console.log('[__TEMPLATE_NAME__] next_alert dequeue (debug)', data);
                 sporeApplyBindings('next_alert', data);
             } catch (err) {
                 console.error('[__TEMPLATE_NAME__] binding error', err);
