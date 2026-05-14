@@ -15,9 +15,9 @@ NiceGUI "Spore Studio" tab. Public surface:
   atomic write, and dynamic Flask route refresh.
 - :func:`save_pipeline.create_template` — handles the "Create" button by
   stamping the queue/instant boilerplate (or a copy-from clone).
-- :class:`assets_watcher.AssetsWatcher` — mtime-poll watcher that emits
-  ``spore_studio_assets_changed`` over Socket.IO when files are added,
-  removed, or modified inside ``assets/{template_name}/``.
+- :func:`assets_watcher.ensure_background_poller` — schedules the mtime poller
+  (from the first Socket.IO connect) so ``spore_studio_assets_changed`` is
+  emitted when files change under ``assets/{template_name}/``.
 """
 
 import logging as _logging

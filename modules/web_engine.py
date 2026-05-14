@@ -2693,6 +2693,13 @@ class WebEngine:
             print(f" WEBSOCKET: Client connected - SID: {request.sid}")
             logger.debug(f"Client connected: {request.sid}")
 
+            try:
+                from .spore_studio import assets_watcher as _ss_aw
+
+                _ss_aw.ensure_background_poller(self.socketio)
+            except Exception as e:
+                logger.debug("Spore Studio assets poller hook failed: %s", e)
+
             # Send initial pause status to the newly connected client
             try:
                 global ALERTS_PAUSED
@@ -6340,15 +6347,8 @@ class WebEngine:
             web_engine_running = self.is_running
             web_engine_instance = self  # Set global instance
 
-            # Start the Spore Studio assets watcher so the editor sees
-            # filesystem changes (drag-drop into assets/{name}/) without
-            # forcing the user to manually refresh.
-            try:
-                from .spore_studio import assets_watcher as _aw
-
-                _aw.start_watcher()
-            except Exception as e:
-                logger.debug("Could not start Spore Studio assets watcher: %s", e)
+            # Spore Studio asset hot-reload poller is scheduled from the first
+            # Socket.IO connect (see handle_connect) so emits run on gevent.
         else:
             logger.warning("WebEngine server thread already running")
 

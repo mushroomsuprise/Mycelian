@@ -8,11 +8,17 @@ from somewhere else, etc.) so the asset browser can refresh. We use a
 simple mtime poll — running templates only have a handful of assets and
 this avoids pulling in a new dependency like ``watchdog``.
 
+The poller runs as a Flask-SocketIO **background task** (see
+:func:`ensure_background_poller`) so ``socketio.emit`` runs on the same
+async model as the web engine (gevent), not a plain ``threading.Thread``.
+
 Public surface:
 
-* :func:`start_watcher` — idempotently start the global background poller.
+* :func:`ensure_background_poller` — schedule the global poller (idempotent;
+  call from a Socket.IO handler after the server is running).
 * :func:`request_snapshot` — return the current asset tree for one template
   (also used by the HTTP endpoint directly).
+* :func:`stop_watcher` — request shutdown of the background poller.
 """
 
 from __future__ import annotations
@@ -21,7 +27,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ..path_utils import get_assets_path, ensure_directory_exists
 
@@ -30,7 +36,8 @@ logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_SECONDS = 1.5
 _lock = threading.Lock()
-_thread: Optional[threading.Thread] = None
+_poller_lock = threading.Lock()
+_poller_started = False
 _stop_event = threading.Event()
 _known: Dict[str, Dict[str, float]] = {}
 
@@ -116,7 +123,7 @@ def _broadcast_changes(template_name: str, snapshot: Dict[str, Any]) -> None:
             {"template": template_name, "snapshot": snapshot},
         )
     except Exception as e:
-        logger.debug("Failed to emit spore_studio_assets_changed: %s", e)
+        logger.warning("Failed to emit spore_studio_assets_changed: %s", e)
 
 
 def _watched_templates() -> List[str]:
@@ -150,37 +157,70 @@ def _poll_once() -> None:
             _broadcast_changes(template_name, snapshot)
 
 
-def _watcher_loop() -> None:
-    logger.debug("Spore Studio assets watcher loop starting")
+def _seed_baseline() -> None:
     with _lock:
         for template_name in _watched_templates():
             snapshot = _scan_template(template_name)
             _known[template_name] = {
                 f["rel_path"]: f["mtime"] for f in snapshot["files"]
             }
-    while not _stop_event.is_set():
-        try:
-            _poll_once()
-        except Exception as e:
-            logger.warning("Spore Studio assets watcher poll failed: %s", e)
-        if _stop_event.wait(timeout=_POLL_INTERVAL_SECONDS):
+
+
+def _background_poll_loop(socketio: Any) -> None:
+    global _poller_started
+    try:
+        logger.debug("Spore Studio assets watcher loop starting")
+        _seed_baseline()
+        while not _stop_event.is_set():
+            try:
+                _poll_once()
+            except Exception as e:
+                logger.warning("Spore Studio assets watcher poll failed: %s", e)
+            if _stop_event.is_set():
+                break
+            try:
+                socketio.sleep(_POLL_INTERVAL_SECONDS)
+            except Exception:
+                break
+    finally:
+        with _poller_lock:
+            _poller_started = False
+
+
+def ensure_background_poller(socketio: Any) -> None:
+    """
+    Schedule the mtime poller once (idempotent).
+
+    Must be called from the Socket.IO stack after ``socketio.run`` is
+    active — typically the first ``connect`` handler.
+    """
+    global _poller_started
+    with _poller_lock:
+        if _poller_started:
             return
+        _stop_event.clear()
+        _poller_started = True
+    try:
+        socketio.start_background_task(_background_poll_loop, socketio)
+    except Exception as e:
+        with _poller_lock:
+            _poller_started = False
+        logger.warning("Could not schedule Spore Studio assets poller: %s", e)
+        return
+    logger.info("Spore Studio assets watcher started (Socket.IO background task)")
 
 
 def start_watcher() -> None:
-    """Start the watcher thread (idempotent)."""
-    global _thread
-    with _lock:
-        if _thread is not None and _thread.is_alive():
-            return
-        _stop_event.clear()
-        _thread = threading.Thread(
-            target=_watcher_loop, daemon=True, name="spore-studio-assets-watcher"
-        )
-        _thread.start()
-    logger.info("Spore Studio assets watcher started")
+    """
+    Deprecated: the poller is scheduled via :func:`ensure_background_poller`
+    on the first websocket ``connect``. Kept for compatibility with older
+    call sites (no-op).
+    """
+    logger.debug(
+        "start_watcher() is deprecated; use ensure_background_poller from connect"
+    )
 
 
 def stop_watcher() -> None:
-    """Stop the watcher thread (used during application shutdown)."""
+    """Signal the background poller to stop (used during application shutdown)."""
     _stop_event.set()

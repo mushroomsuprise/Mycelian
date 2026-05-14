@@ -2656,7 +2656,8 @@
             state.socket = io.connect("http://" + document.domain + ":" + location.port);
             state.socket.on("spore_studio_assets_changed", function (data) {
                 if (!state.model) { return; }
-                if (data && data.template === state.model.template_name) {
+                var t = data && data.template;
+                if (t && String(t).toLowerCase() === String(state.model.template_name).toLowerCase()) {
                     renderAssets(data.snapshot);
                 }
             });
