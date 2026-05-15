@@ -28,6 +28,13 @@
             position: absolute;
         }
 
+        .spore-element > .spore-video-visual {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
         .spore-element[data-spore-hidden="true"] {
             display: none;
         }
@@ -50,7 +57,117 @@
         }
         function sporeHide(id) {
             var el = document.getElementById(id);
-            if (el) { el.setAttribute('data-spore-hidden', 'true'); }
+            if (!el) { return; }
+            var au = null;
+            if (el.tagName === 'AUDIO') {
+                au = el;
+            } else {
+                au = el.querySelector('audio');
+            }
+            function applyHidden() {
+                el.setAttribute('data-spore-hidden', 'true');
+            }
+            if (!au) {
+                applyHidden();
+                return;
+            }
+            var fadeRaw = au.getAttribute('data-spore-audio-fade-out');
+            var fadeMs = fadeRaw ? parseInt(fadeRaw, 10) : 0;
+            if (!fadeMs || fadeMs <= 0 || isNaN(fadeMs)) {
+                try { au.pause(); } catch (e1) {}
+                applyHidden();
+                return;
+            }
+            var steps = Math.max(8, Math.floor(fadeMs / 40));
+            var iv = fadeMs / steps;
+            var startVol = (typeof au.volume === 'number' && !isNaN(au.volume)) ? au.volume : 1;
+            var step = startVol / steps;
+            var n = 0;
+            var t = setInterval(function () {
+                n += 1;
+                try {
+                    au.volume = Math.max(0, startVol - step * n);
+                } catch (e2) {}
+                if (n >= steps) {
+                    clearInterval(t);
+                    try {
+                        au.volume = startVol;
+                    } catch (e3) {}
+                    try { au.pause(); } catch (e4) {}
+                    applyHidden();
+                }
+            }, iv);
+        }
+        /**
+         * @param {?Object} overrides - optional volume / fade_in_ms from binding args
+         */
+        function sporePlayMediaAudio(domId, overrides) {
+            overrides = overrides || {};
+            var el = document.getElementById(domId);
+            var au = null;
+            if (el && el.tagName === 'AUDIO') {
+                au = el;
+            } else if (el) {
+                au = el.querySelector('audio');
+            }
+            if (!au || typeof au.play !== 'function') {
+                return;
+            }
+            var tgtVolRaw = overrides.volume;
+            if (tgtVolRaw === undefined || tgtVolRaw === '') {
+                var dv = au.getAttribute('data-spore-audio-volume');
+                tgtVolRaw = dv != null && dv !== '' ? parseFloat(dv) : 1;
+            }
+            var tgtVol = Math.max(0, Math.min(1, Number(tgtVolRaw)));
+            if (!isFinite(tgtVol)) {
+                tgtVol = 1;
+            }
+            var fadeInMs = overrides.fade_in_ms;
+            if (fadeInMs === undefined || fadeInMs === '') {
+                var fd = au.getAttribute('data-spore-audio-fade-in');
+                fadeInMs = fd ? parseInt(fd, 10) : 0;
+            }
+            fadeInMs = parseInt(String(fadeInMs), 10);
+            if (isNaN(fadeInMs) || fadeInMs < 0) {
+                fadeInMs = 0;
+            }
+            try {
+                au.currentTime = 0;
+            } catch (e5) {}
+            var doPlay = function () {
+                var p = au.play();
+                if (p && typeof p.catch === 'function') {
+                    p.catch(function () {});
+                }
+            };
+            if (fadeInMs > 0) {
+                try {
+                    au.volume = 0;
+                } catch (e6) {}
+                doPlay();
+                var stepsPi = Math.max(8, Math.floor(fadeInMs / 40));
+                var ivPi = fadeInMs / stepsPi;
+                var nPi = 0;
+                var tPi = setInterval(function () {
+                    nPi += 1;
+                    var v = tgtVol * (nPi / stepsPi);
+                    if (nPi >= stepsPi) {
+                        clearInterval(tPi);
+                        try {
+                            au.volume = tgtVol;
+                        } catch (e7) {}
+                    } else {
+                        try {
+                            au.volume = v;
+                        } catch (e8) {}
+                    }
+                }, ivPi);
+            } else {
+                try {
+                    au.volume = tgtVol;
+                } catch (e9) {}
+                doPlay();
+            }
         }
         function sporeSetText(id, value) {
             var el = document.getElementById(id);

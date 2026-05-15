@@ -59,6 +59,18 @@ ANIMATION_CSS = """
 @keyframes sporeSlideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(30px); opacity: 0; } }
 @keyframes sporeScaleIn { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes sporeScaleOut { from { transform: scale(1); opacity: 1; } to { transform: scale(0.6); opacity: 0; } }
+@keyframes sporeShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+@keyframes sporePop {
+  0% { transform: scale(0.92); opacity: 0.85; }
+  55% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
 
 .spore-anim-fade-in { animation: sporeFadeIn 0.3s ease-out both; }
 .spore-anim-fade-out { animation: sporeFadeOut 0.3s ease-in both; }
@@ -66,6 +78,8 @@ ANIMATION_CSS = """
 .spore-anim-slideout { animation: sporeSlideOut 0.3s ease-in both; }
 .spore-anim-scalein { animation: sporeScaleIn 0.3s ease-out both; }
 .spore-anim-scaleout { animation: sporeScaleOut 0.3s ease-in both; }
+.sporeShake { animation: sporeShake 0.42s ease-in-out both; }
+.sporePop { animation: sporePop 0.35s ease-out both; }
 """.strip()
 
 
@@ -77,6 +91,15 @@ _ANIM_CLASS = {
     "scaleOut": ("spore-anim-scalein", "spore-anim-scaleout"),
     "none": ("", ""),
 }
+
+
+def _coerce_float_opt(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _js_string(value: Any) -> str:
@@ -295,9 +318,9 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
         from_payload = args.get("from_payload") or ""
         literal = args.get("literal", "")
         lines = [
-            f"(function () {{",
+            "(function () {",
             f"    var __el = document.getElementById({eid});",
-            f"    if (!__el) {{ return; }}",
+            "    if (!__el) { return; }",
         ]
         if from_payload:
             lines.append(
@@ -305,23 +328,216 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
             )
         else:
             lines.append(f"    var __src = {_js_string(literal)};")
-        lines += [
-            f"    if (__src) {{ __el.setAttribute('src', String(__src)); }}",
-            f"}})();",
+        lines.extend(
+            [
+                "    if (__src) {",
+                "        var __srcS = String(__src);",
+                "        if (__el.tagName === 'IMG') { __el.setAttribute('src', __srcS); }",
+                "        else {",
+                "            var __img = __el.querySelector('img');",
+                "            if (__img) { __img.setAttribute('src', __srcS); }",
+                "        }",
+                "    }",
+                "})();",
+            ]
+        )
+        return lines
+
+    if action == "set_visual_src":
+        from_payload = args.get("from_payload") or ""
+        literal = args.get("literal", "")
+        lines = [
+            "(function () {",
+            f"    var __el = document.getElementById({eid});",
+            "    if (!__el) { return; }",
         ]
+        if from_payload:
+            lines.append(
+                f"    var __src = payload && payload[{_js_string(from_payload)}];"
+            )
+        else:
+            lines.append(f"    var __src = {_js_string(literal)};")
+        lines.extend(
+            [
+                "    if (__src) {",
+                "        var __u = String(__src);",
+                "        var __im = __el.querySelector('img');",
+                "        if (__im) { __im.setAttribute('src', __u); }",
+                "        var __vd = __el.querySelector('video');",
+                "        if (__vd) {",
+                "            var __sr = __vd.querySelector('source');",
+                "            if (__sr) { __sr.setAttribute('src', __u); }",
+                "            try { __vd.load(); } catch (__l) {}",
+                "        }",
+                "    }",
+                "})();",
+            ]
+        )
         return lines
 
     if action == "play_audio":
+        over: Dict[str, Any] = {}
+        vol_a = args.get("volume")
+        if vol_a not in (None, ""):
+            over["volume"] = vol_a
+        fin_a = args.get("fade_in_ms")
+        if fin_a not in (None, ""):
+            over["fade_in_ms"] = fin_a
+        return [f"sporePlayMediaAudio({eid}, {_js_value(over)});"]
+
+    if action == "randomize_position":
+        x_cv = _coerce_float_opt(args.get("x_min"))
+        xmn = 0.0 if x_cv is None else float(x_cv)
+        x_raw = args.get("x_max")
+        xmx_opt = _coerce_float_opt(x_raw) if x_raw not in (None, "") else None
+        y_cv = _coerce_float_opt(args.get("y_min"))
+        ymn = 0.0 if y_cv is None else float(y_cv)
+        y_raw = args.get("y_max")
+        ymx_opt = _coerce_float_opt(y_raw) if y_raw not in (None, "") else None
+        xmx_sent = float(xmx_opt) if xmx_opt is not None else -1.0
+        ymx_sent = float(ymx_opt) if ymx_opt is not None else -1.0
         return [
-            f"(function () {{",
+            "(function () {",
             f"    var __el = document.getElementById({eid});",
-            f"    if (__el && typeof __el.play === 'function') {{",
-            f"        try {{ __el.currentTime = 0; }} catch (e) {{}}",
-            f"        var __p = __el.play();",
-            f"        if (__p && typeof __p.catch === 'function') {{ __p.catch(function () {{}}); }}",
-            f"    }}",
-            f"}})();",
+            "    if (!__el) { return; }",
+            "    var __root = document.getElementById('sporeRoot');",
+            "    var __rw = __root ? __root.offsetWidth : 1920;",
+            "    var __rh = __root ? __root.offsetHeight : 1080;",
+            "    var __ew = __el.offsetWidth || 1;",
+            "    var __eh = __el.offsetHeight || 1;",
+            f"    var __xMn = {_js_value(xmn)};",
+            f"    var __xMxCfg = {_js_value(xmx_sent)};",
+            f"    var __yMn = {_js_value(ymn)};",
+            f"    var __yMxCfg = {_js_value(ymx_sent)};",
+            "    var __xCap = Math.max(0, __rw - __ew);",
+            "    var __yCap = Math.max(0, __rh - __eh);",
+            "    var __xMx = (__xMxCfg < 0) ? __xCap : Math.min(__xMxCfg, __xCap);",
+            "    var __yMx = (__yMxCfg < 0) ? __yCap : Math.min(__yMxCfg, __yCap);",
+            "    if (__xMx < __xMn) { __xMx = __xMn; }",
+            "    if (__yMx < __yMn) { __yMx = __yMn; }",
+            "    var __nx = __xMn + Math.random() * ((__xMx - __xMn) || 1);",
+            "    var __ny = __yMn + Math.random() * ((__yMx - __yMn) || 1);",
+            "    __el.style.left = Math.round(__nx) + 'px';",
+            "    __el.style.top = Math.round(__ny) + 'px';",
+            "})();",
         ]
+
+    if action == "set_transform":
+        parts_tf: List[str] = []
+        r_tf = args.get("rotate_deg")
+        if r_tf not in (None, ""):
+            try:
+                parts_tf.append(f"rotate({float(r_tf)}deg)")
+            except (TypeError, ValueError):
+                pass
+        sc_tf = args.get("scale")
+        if sc_tf not in (None, ""):
+            try:
+                sf = float(sc_tf)
+                parts_tf.append(f"scale({sf})")
+            except (TypeError, ValueError):
+                pass
+        tx_tf = args.get("translate_x")
+        ty_tf = args.get("translate_y")
+        try:
+            if tx_tf not in (None, "") and ty_tf not in (None, ""):
+                parts_tf.insert(0, f"translate({float(tx_tf)}px, {float(ty_tf)}px)")
+            elif tx_tf not in (None, ""):
+                parts_tf.insert(0, f"translateX({float(tx_tf)}px)")
+            elif ty_tf not in (None, ""):
+                parts_tf.insert(0, f"translateY({float(ty_tf)}px)")
+        except (TypeError, ValueError):
+            pass
+        joined = " ".join(parts_tf)
+        return [
+            "(function () {",
+            f"    var __el = document.getElementById({eid});",
+            "    if (!__el) { return; }",
+            f"    var __tf = {_js_string(joined)};",
+            "    if (__tf) { __el.style.transform = __tf; }",
+            "})();",
+        ]
+
+    if action == "transform_jitter":
+        rot_r_s = args.get("rotate_range")
+        tr_r_s = args.get("translate_range")
+        try:
+            rot_r = abs(float(rot_r_s)) if rot_r_s not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            rot_r = 0.0
+        try:
+            tr_r = abs(float(tr_r_s)) if tr_r_s not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            tr_r = 0.0
+        smin_raw = args.get("scale_min")
+        smax_raw = args.get("scale_max")
+        smin_opt = _coerce_float_opt(smin_raw)
+        smax_opt = _coerce_float_opt(smax_raw)
+        has_scale = smin_opt is not None and smax_opt is not None
+        if rot_r <= 0 and tr_r <= 0 and not has_scale:
+            return ["// transform_jitter: set rotate_range, translate_range, and/or scale_min/max"]
+        if has_scale and smax_opt is not None and smin_opt is not None:
+            lo = min(float(smin_opt), float(smax_opt))
+            hi = max(float(smin_opt), float(smax_opt))
+        else:
+            lo, hi = 1.0, 1.0
+        lines = [
+            "(function () {",
+            f"    var __el = document.getElementById({eid});",
+            "    if (!__el) { return; }",
+            f"    var __rr = {_js_value(rot_r)};",
+            f"    var __tr = {_js_value(tr_r)};",
+            "    var tf = [];",
+            "    var __r1 = function (mx) { return mx > 0 ? (Math.random() * 2 - 1) * mx : 0; };",
+            "    if (__tr > 0) {",
+            "        tf.push('translate(' + __r1(__tr).toFixed(2) + 'px, ' + __r1(__tr).toFixed(2) + 'px)');",
+            "    }",
+            "    if (__rr > 0) {",
+            "        tf.push('rotate(' + __r1(__rr).toFixed(2) + 'deg)');",
+            "    }",
+        ]
+        if has_scale:
+            lines.extend(
+                [
+                    f"    var __sl = {_js_value(lo)};",
+                    f"    var __sh = {_js_value(hi)};",
+                    (
+                        "    tf.push('scale(' + "
+                        "(__sl + Math.random() * (__sh - __sl)).toFixed(4) + ')');"
+                    ),
+                ]
+            )
+        lines.extend(
+            [
+                "    if (tf.length) { __el.style.transform = tf.join(' '); }",
+                "})();",
+            ]
+        )
+        return lines
+
+    if action == "flash_class":
+        cls = str(args.get("class_name") or "").strip()
+        dur_ms_raw = args.get("duration_ms", 500)
+        try:
+            dur_ms = int(float(dur_ms_raw))
+        except (TypeError, ValueError):
+            dur_ms = 500
+        dur_ms = max(0, min(60000, dur_ms))
+        lines = [
+            "(function () {",
+            f"    var __el = document.getElementById({eid});",
+            "    if (!__el) { return; }",
+            f"    var __c = {_js_string(cls)};",
+            "    if (!__c) { return; }",
+            "    __el.classList.remove(__c);",
+            "    void __el.offsetWidth;",
+            "    __el.classList.add(__c);",
+            f"    setTimeout(function () {{",
+            "        try { __el.classList.remove(__c); } catch (__e1) {}",
+            f"    }}, {dur_ms});",
+            "})();",
+        ]
+        return lines
 
     return [f"// Unknown action: {action}"]
 
@@ -403,6 +619,20 @@ def _bindings_need_toggle(elements: List[Dict[str, Any]]) -> bool:
                 continue
             for act, _args, _d in _binding_action_steps(binding):
                 if act == "toggle":
+                    return True
+    return False
+
+
+def _bindings_need_preset_css(elements: List[Dict[str, Any]]) -> bool:
+    """Keyframe utility classes (.sporeShake, .sporePop) used by flash_class."""
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        for binding in element.get("bindings") or []:
+            if not isinstance(binding, dict):
+                continue
+            for act, _args, _d in _binding_action_steps(binding):
+                if act == "flash_class":
                     return True
     return False
 
@@ -569,5 +799,9 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
     if twitch_emits:
         js = js + "\n\n" + "\n\n".join(twitch_emits)
 
-    css = ANIMATION_CSS if use_animation else ""
+    css = (
+        ANIMATION_CSS
+        if (use_animation or _bindings_need_preset_css(elements))
+        else ""
+    )
     return {"js": js, "css": css}

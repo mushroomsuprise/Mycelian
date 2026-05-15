@@ -79,6 +79,25 @@ def _slugify_id(value: str) -> str:
     return value.strip("_") or "el"
 
 
+_NON_STYLE_PROP_KEYS = frozenset(
+    {
+        "text",
+        "src",
+        "autoplay",
+        "loop",
+        "muted",
+        "visual_kind",
+        "audio_src",
+        "volume",
+        "fade_in_ms",
+        "fade_out_ms",
+        "audio_volume",
+        "audio_fade_in_ms",
+        "audio_fade_out_ms",
+    }
+)
+
+
 def _css_kv(props: Dict[str, Any]) -> List[Tuple[str, str]]:
     """
     Collapse the editor-model ``props`` block into a list of CSS declarations.
@@ -102,6 +121,8 @@ def _css_kv(props: Dict[str, Any]) -> List[Tuple[str, str]]:
     }
 
     for key, value in props.items():
+        if key in _NON_STYLE_PROP_KEYS:
+            continue
         if value in (None, ""):
             continue
         css_key = key.replace("_", "-")
@@ -171,9 +192,43 @@ def _element_style(element: Dict[str, Any]) -> str:
     return "; ".join(f"{k}: {v}" for k, v in declarations)
 
 
-def _render_element(element: Dict[str, Any]) -> str:
+def _fmt_audio_data_attrs(vol: Any, fade_in_ms: Any, fade_out_ms: Any) -> str:
+    """HTML data attributes consumed by boilerplate audio helpers."""
+    try:
+        if vol is None or vol == "":
+            vol_s = "1"
+        else:
+            v = float(vol)
+            v = max(0.0, min(1.0, v))
+            vol_s = str(v)
+    except (TypeError, ValueError):
+        vol_s = "1"
+    try:
+        fin_i = max(0, int(float(fade_in_ms or 0)))
+    except (TypeError, ValueError):
+        fin_i = 0
+    try:
+        fout_i = max(0, int(float(fade_out_ms or 0)))
+    except (TypeError, ValueError):
+        fout_i = 0
+    fin_s = str(fin_i)
+    fout_s = str(fout_i)
+    return (
+        f'data-spore-audio-volume="{html.escape(vol_s, quote=True)}" '
+        f'data-spore-audio-fade-in="{html.escape(fin_s, quote=True)}" '
+        f'data-spore-audio-fade-out="{html.escape(fout_s, quote=True)}"'
+    )
+
+
+def _render_element(
+    element: Dict[str, Any], *, children_inner_markup: str = "",
+) -> str:
     """
     Render one editor element as the HTML snippet inserted into the DOM block.
+
+    For ``container`` types, optional ``children_inner_markup`` is inserted
+    verbatim before the closing ``</div>`` (typically leading with a newline
+    when nesting children).
 
     Note: the snippet uses the renderer's existing ``{{ Identifier }}`` Jinja
     convention for the element's text/src so that values can be overridden via
@@ -214,24 +269,60 @@ def _render_element(element: Dict[str, Any]) -> str:
     if etype == "video":
         src_var = element.get("src_var") or eid + "Src"
         src_default = props.get("src", "")
+        visual_kind = str(props.get("visual_kind") or "video").strip().lower()
+        if visual_kind != "image":
+            visual_kind = "video"
         autoplay = "autoplay " if props.get("autoplay") else ""
         loop = "loop " if props.get("loop") else ""
         muted = "muted " if props.get("muted", True) else ""
+
+        audio_src_default = props.get("audio_src") or ""
+        audio_src_var = element.get("audio_src_var") or eid + "AudioSrc"
+        audio_attrs = _fmt_audio_data_attrs(
+            props.get("audio_volume", 1),
+            props.get("audio_fade_in_ms", 0),
+            props.get("audio_fade_out_ms", 0),
+        )
+        if visual_kind == "image":
+            inner = (
+                f'<img class="spore-video-visual" '
+                f'src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}" '
+                f'alt="" />'
+            )
+        else:
+            inner = (
+                f'<video class="spore-video-visual" '
+                f'data-spore-type="video" '
+                f"{autoplay}{loop}{muted}playsinline>"
+                f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
+                f"</video>"
+            )
+        nested_audio = (
+            f'<audio id="{html.escape(eid)}_sporeAudio" '
+            f'class="spore-element-nested-audio" preload="auto" {audio_attrs}>'
+            f'<source src="{{{{ {audio_src_var}|default({json.dumps(audio_src_default)}) }}}}">'
+            f"</audio>"
+        )
         return (
-            f'<video id="{html.escape(eid)}" class="{classes}" '
+            f'<div id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f'data-spore-type="video" '
-            f"{autoplay}{loop}{muted}playsinline>"
-            f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
-            f"</video>"
+            f'data-spore-visual-kind="{html.escape(visual_kind, quote=True)}">'
+            f"{inner}{nested_audio}"
+            f"</div>"
         )
 
     if etype == "audio":
         src_var = element.get("src_var") or eid + "Src"
         src_default = props.get("src", "")
+        audio_attrs = _fmt_audio_data_attrs(
+            props.get("volume", 1),
+            props.get("fade_in_ms", 0),
+            props.get("fade_out_ms", 0),
+        )
         return (
             f'<audio id="{html.escape(eid)}" class="{classes}"{hidden_attr} '
-            f'data-spore-type="audio" preload="auto">'
+            f'data-spore-type="audio" preload="auto" {audio_attrs}>'
             f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
             f"</audio>"
         )
@@ -239,8 +330,94 @@ def _render_element(element: Dict[str, Any]) -> str:
     return (
         f'<div id="{html.escape(eid)}" class="{classes}" '
         f'style="{html.escape(style, quote=True)}"{hidden_attr} '
-        f'data-spore-type="container"></div>'
+        f'data-spore-type="container">{children_inner_markup}</div>'
     )
+
+
+_DOM_ROW_INDENT_BASE = "        "
+
+
+def _partition_elements_for_dom(
+    elements: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+    """
+    Split canonical ``elements`` into DOM roots and ordered child buckets.
+
+    Mirrors the editor-side rules: unknown / non-container parents behave as if
+    the element had no ``parent_id`` (roots).
+    """
+    usable: List[Dict[str, Any]] = []
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for raw in elements:
+        if not isinstance(raw, dict):
+            continue
+        eid_raw = raw.get("id")
+        if eid_raw is None or eid_raw == "":
+            continue
+        ks = str(eid_raw)
+        usable.append(raw)
+        by_id[ks] = raw
+
+    roots: List[Dict[str, Any]] = []
+    kids: Dict[str, List[Dict[str, Any]]] = {}
+
+    for el in usable:
+        pid = el.get("parent_id")
+        if pid is None or str(pid).strip() == "":
+            roots.append(el)
+            continue
+        pk = str(pid)
+        parent = by_id.get(pk)
+        if parent is None:
+            roots.append(el)
+            continue
+        if str(parent.get("type") or "container").lower() != "container":
+            roots.append(el)
+            continue
+        kids.setdefault(pk, []).append(el)
+
+    return roots, kids
+
+
+def _emit_dom_recursive(
+    el: Dict[str, Any],
+    children_map: Dict[str, List[Dict[str, Any]]],
+    rel_indent: str,
+) -> str:
+    """Return fully-indented subtree markup beginning with ``_DOM_ROW_INDENT_BASE``."""
+    etype = str(el.get("type") or "container").lower()
+    eid_raw = el.get("id")
+    cid_key = "" if eid_raw in (None, "") else str(eid_raw)
+
+    if etype != "container":
+        return _DOM_ROW_INDENT_BASE + rel_indent + _render_element(el)
+
+    nested = children_map.get(cid_key, [])
+    if not nested:
+        return (
+            _DOM_ROW_INDENT_BASE
+            + rel_indent
+            + _render_element(el, children_inner_markup="")
+        )
+
+    child_indent = rel_indent + "    "
+    child_chunks = [_emit_dom_recursive(ch, children_map, child_indent) for ch in nested]
+    inner_markup = "\n" + "\n".join(child_chunks)
+    return (
+        _DOM_ROW_INDENT_BASE
+        + rel_indent
+        + _render_element(el, children_inner_markup=inner_markup)
+    )
+
+
+def _render_dom_tree(elements: Any) -> str:
+    if not isinstance(elements, list):
+        return ""
+    dicts_only = [e for e in elements if isinstance(e, dict)]
+    if not dicts_only:
+        return ""
+    roots, cmap = _partition_elements_for_dom(dicts_only)
+    return "\n".join(_emit_dom_recursive(r, cmap, "") for r in roots)
 
 
 def _boilerplate_path(alert_system: str) -> str:
@@ -452,6 +629,53 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                         }
                     )
 
+            if etype == "audio":
+                try:
+                    vol_a = float(props.get("volume", 1))
+                    vol_a = max(0.0, min(1.0, vol_a))
+                except (TypeError, ValueError):
+                    vol_a = 1.0
+                if _expose_field(element, "volume"):
+                    elements_out.append(
+                        {
+                            "type": "number",
+                            "id": f"{eid}_volume",
+                            "label": f"{element.get('id', eid)} volume",
+                            "value": vol_a,
+                            "min": 0,
+                            "max": 1,
+                            "step": 0.05,
+                            "description": (
+                                f"Playback volume (0–1) for '{element.get('id', eid)}'."
+                            ),
+                        }
+                    )
+                for fade_key, fade_label in (
+                    ("fade_in_ms", "fade-in (ms)"),
+                    ("fade_out_ms", "fade-out (ms)"),
+                ):
+                    if not _expose_field(element, fade_key):
+                        continue
+                    try:
+                        fval = int(float(props.get(fade_key, 0)))
+                    except (TypeError, ValueError):
+                        fval = 0
+                    fval = max(0, fval)
+                    elements_out.append(
+                        {
+                            "type": "number",
+                            "id": f"{eid}_{fade_key}",
+                            "label": f"{element.get('id', eid)} {fade_label}",
+                            "value": fval,
+                            "min": 0,
+                            "max": 120000,
+                            "description": (
+                                f"{fade_label.title()} for '{element.get('id', eid)}' "
+                                f"(0 = disabled)."
+                            ),
+                        }
+                    )
+
             if etype == "video":
                 vdefaults = {"autoplay": True, "loop": False, "muted": True}
                 for bkey, blabel in (
@@ -470,6 +694,81 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                             "value": bool(raw),
                             "description": f"{blabel.title()} for "
                             f"'{element.get('id', eid)}'.",
+                        }
+                    )
+                vk = str(props.get("visual_kind") or "video").strip().lower()
+                if vk not in ("video", "image"):
+                    vk = "video"
+                if _expose_field(element, "visual_kind"):
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": f"{eid}_visual_kind",
+                            "label": f"{element.get('id', eid)} visual kind",
+                            "value": vk,
+                            "description": (
+                                f"visual_kind for '{element.get('id', eid)}': "
+                                f"'video' or 'image' (GIF/still)."
+                            ),
+                        }
+                    )
+                audio_src_var_v = element.get("audio_src_var") or eid + "AudioSrc"
+                if _expose_field(element, "audio_src"):
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": audio_src_var_v,
+                            "label": f"{element.get('id', eid)} audio URL",
+                            "value": str(props.get("audio_src", "")),
+                            "description": (
+                                f"Optional separate audio track for "
+                                f"'{element.get('id', eid)}'."
+                            ),
+                        }
+                    )
+                try:
+                    avol = float(props.get("audio_volume", 1))
+                    avol = max(0.0, min(1.0, avol))
+                except (TypeError, ValueError):
+                    avol = 1.0
+                if _expose_field(element, "audio_volume"):
+                    elements_out.append(
+                        {
+                            "type": "number",
+                            "id": f"{eid}_audio_volume",
+                            "label": f"{element.get('id', eid)} audio volume",
+                            "value": avol,
+                            "min": 0,
+                            "max": 1,
+                            "step": 0.05,
+                            "description": (
+                                f"Nested audio volume for '{element.get('id', eid)}'."
+                            ),
+                        }
+                    )
+                for fade_key, vf_label in (
+                    ("audio_fade_in_ms", "audio fade-in (ms)"),
+                    ("audio_fade_out_ms", "audio fade-out (ms)"),
+                ):
+                    if not _expose_field(element, fade_key):
+                        continue
+                    try:
+                        fval_v = int(float(props.get(fade_key, 0)))
+                    except (TypeError, ValueError):
+                        fval_v = 0
+                    fval_v = max(0, fval_v)
+                    elements_out.append(
+                        {
+                            "type": "number",
+                            "id": f"{eid}_{fade_key}",
+                            "label": f"{element.get('id', eid)} {vf_label}",
+                            "value": fval_v,
+                            "min": 0,
+                            "max": 120000,
+                            "description": (
+                                f"{vf_label.title()} for nested audio "
+                                f"(0 = disabled)."
+                            ),
                         }
                     )
 
@@ -605,9 +904,7 @@ def compile_model(
     base_html = base_html.replace("__TEMPLATE_NAME__", template_name)
 
     elements = model.get("elements") or []
-    dom_html = "\n".join(
-        "        " + _render_element(el) for el in elements if isinstance(el, dict)
-    )
+    dom_html = _render_dom_tree(elements)
 
     bindings = compile_bindings(elements)
     advanced_js = str(model.get("advanced_js") or "").rstrip()

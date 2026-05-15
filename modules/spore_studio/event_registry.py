@@ -265,14 +265,91 @@ _ACTIONS: List[Dict[str, Any]] = [
         "action": "play_audio",
         "label": "Play audio element",
         "description": (
-            "Start playback of an <audio> element by id. Useful for "
-            "soundboard-style overlays."
+            "Start playback on this element's audio (or nested <audio> "
+            "inside a video bundle). Honors Spore Studio volume / fade-in."
         ),
-        "args": [],
+        "args": [
+            {"key": "volume", "label": "Volume override (0–1)", "type": "number",
+             "default": "", "min": 0, "max": 1, "step": 0.05,
+             "description": "Blank = element default"},
+            {"key": "fade_in_ms", "label": "Fade-in override (ms)", "type": "number",
+             "default": "", "min": 0, "max": 120000,
+             "description": "Blank = element default"},
+        ],
+    },
+    {
+        "action": "set_visual_src",
+        "label": "Set visual source (GIF/video)",
+        "description": (
+            "Update nested <img> or <video> source URL for a bundled video "
+            "element (GIF swaps, etc.). Payload or literal."
+        ),
+        "args": [
+            {"key": "from_payload", "label": "Payload field", "type": "string",
+             "default": ""},
+            {"key": "literal", "label": "Literal URL", "type": "string",
+             "default": ""},
+        ],
+    },
+    {
+        "action": "randomize_position",
+        "label": "Randomize position within bounds",
+        "description": (
+            "Set left/top to random integers in pixel bounds. Omit x_max/y_max "
+            "(or pass -1) to align with canvas edge minus element width/height."
+        ),
+        "args": [
+            {"key": "x_min", "label": "X min (px)", "type": "number",
+             "default": 0},
+            {"key": "x_max", "label": "X max (px, -1=canvas)", "type": "number",
+             "default": -1},
+            {"key": "y_min", "label": "Y min (px)", "type": "number",
+             "default": 0},
+            {"key": "y_max", "label": "Y max (px, -1=canvas)", "type": "number",
+             "default": -1},
+        ],
+    },
+    {
+        "action": "set_transform",
+        "label": "Set CSS transform",
+        "description": "Replace transform with translate / rotate / scale (blank args skipped).",
+        "args": [
+            {"key": "translate_x", "label": "Translate X (px)", "type": "number"},
+            {"key": "translate_y", "label": "Translate Y (px)", "type": "number"},
+            {"key": "rotate_deg", "label": "Rotate (degrees)", "type": "number"},
+            {"key": "scale", "label": "Scale (uniform)", "type": "number"},
+        ],
+    },
+    {
+        "action": "transform_jitter",
+        "label": "Random transform jitter",
+        "description": (
+            "Random translate ±range, rotate ±rotate_range°, and/or "
+            "uniform scale in [scale_min, scale_max]."
+        ),
+        "args": [
+            {"key": "rotate_range", "label": "Rotate range (degrees)", "type": "number",
+             "default": 0},
+            {"key": "translate_range", "label": "Translate range (px)", "type": "number",
+             "default": 0},
+            {"key": "scale_min", "label": "Scale min", "type": "number"},
+            {"key": "scale_max", "label": "Scale max", "type": "number"},
+        ],
+    },
+    {
+        "action": "flash_class",
+        "label": "Play CSS class animation",
+        "description": (
+            "Add a class briefly (restart if re-triggered). Try sporeShake or sporePop."
+        ),
+        "args": [
+            {"key": "class_name", "label": "Class name", "type": "string",
+             "default": "sporeShake"},
+            {"key": "duration_ms", "label": "Hold (ms)", "type": "number",
+             "default": 420, "min": 0, "max": 60000},
+        ],
     },
 ]
-
-
 def get_event_registry() -> Dict[str, Any]:
     """
     Return the full event + action registry as a JSON-serializable dict.

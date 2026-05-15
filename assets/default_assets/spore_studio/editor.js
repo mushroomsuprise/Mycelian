@@ -29,8 +29,18 @@
     var DEFAULT_PROPS = {
         text: { text: "Hello", font_size: 32, color: "#ffffff", font_family: "Arial" },
         image: { src: "" },
-        video: { src: "", autoplay: true, loop: false, muted: true },
-        audio: { src: "" },
+        video: {
+            src: "",
+            autoplay: true,
+            loop: false,
+            muted: true,
+            visual_kind: "video",
+            audio_src: "",
+            audio_volume: 1,
+            audio_fade_in_ms: 0,
+            audio_fade_out_ms: 0
+        },
+        audio: { src: "", volume: 1, fade_in_ms: 0, fade_out_ms: 0 },
         container: { background_color: "rgba(115,0,255,0.04)" }
     };
 
@@ -60,14 +70,29 @@
             { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1 }
         ],
         video: [
-            { key: "src", label: "Source URL", type: "text" },
+            { key: "src", label: "Visual source URL", type: "text" },
+            { key: "visual_kind", label: "Visual kind", type: "select",
+              options: ["video", "image"] },
+            { key: "audio_src", label: "Optional audio URL", type: "text" },
+            { key: "audio_volume", label: "Audio volume (0–1)", type: "number",
+              step: 0.05, min: 0, max: 1 },
+            { key: "audio_fade_in_ms", label: "Audio fade-in (ms)", type: "number",
+              min: 0, max: 120000 },
+            { key: "audio_fade_out_ms", label: "Audio fade-out (ms)", type: "number",
+              min: 0, max: 120000 },
             { key: "autoplay", label: "Autoplay", type: "checkbox" },
             { key: "loop", label: "Loop", type: "checkbox" },
             { key: "muted", label: "Muted", type: "checkbox" },
             { key: "border_radius", label: "Border radius (px)", type: "number" }
         ],
         audio: [
-            { key: "src", label: "Source URL", type: "text" }
+            { key: "src", label: "Source URL", type: "text" },
+            { key: "volume", label: "Volume (0–1)", type: "number",
+              step: 0.05, min: 0, max: 1 },
+            { key: "fade_in_ms", label: "Fade-in (ms)", type: "number",
+              min: 0, max: 120000 },
+            { key: "fade_out_ms", label: "Fade-out (ms)", type: "number",
+              min: 0, max: 120000 }
         ],
         container: [
             { key: "background_color", label: "Background", type: "text" },
@@ -282,6 +307,257 @@
         return candidate;
     }
 
+    function validContainerParent(byId, parentId) {
+        if (!parentId) {
+            return false;
+        }
+        var p = byId[parentId];
+        return !!(p && (p.type || "container") === "container");
+    }
+
+    /** Collect descendant ids (not including ``rootId``) using ``parent_id`` edges. */
+    function collectSubtreeIds(rootId) {
+        var byParent = {};
+        (state.model.elements || []).forEach(function (e) {
+            var pid = e.parent_id;
+            if (!pid) {
+                return;
+            }
+            if (!byParent[pid]) { byParent[pid] = []; }
+            byParent[pid].push(e.id);
+        });
+        var out = {};
+        var stack = [].concat(byParent[rootId] || []);
+        while (stack.length) {
+            var id = stack.pop();
+            if (out[id]) { continue; }
+            out[id] = true;
+            (byParent[id] || []).forEach(function (cid) {
+                stack.push(cid);
+            });
+        }
+        return out;
+    }
+
+    function descendantSetHas(id, descendantSet) {
+        return !!(id && descendantSet[id]);
+    }
+
+    /** Rebuild ``model.elements``: fix ``parent_id`` links, detach cycles/unreachable nodes, preorder sort. */
+    function normalizeParentLinksAndReorderElements(model) {
+        if (!model || model.legacy) { return; }
+        var elems = model.elements;
+        if (!elems.length) {
+            return;
+        }
+        var origIndexById = {};
+        elems.forEach(function (el, idx) {
+            origIndexById[el.id] = idx;
+        });
+        var byId = {};
+        elems.forEach(function (el) { byId[el.id] = el; });
+
+        elems.forEach(function (el) {
+            if (!validContainerParent(byId, el.parent_id)) {
+                delete el.parent_id;
+            }
+        });
+
+        var childrenOf = {};
+
+        elems.forEach(function (el) {
+            var pid = el.parent_id;
+            if (!pid || !validContainerParent(byId, pid)) { return; }
+            if (!childrenOf[pid]) { childrenOf[pid] = []; }
+            childrenOf[pid].push(el);
+        });
+
+        Object.keys(childrenOf).forEach(function (pk) {
+            childrenOf[pk].sort(function (a, b) {
+                return origIndexById[a.id] - origIndexById[b.id];
+            });
+        });
+
+        function rebuildRootsSorted() {
+            return elems
+                .filter(function (el) {
+                    return !validContainerParent(byId, el.parent_id);
+                })
+                .sort(function (a, b) {
+                    return origIndexById[a.id] - origIndexById[b.id];
+                });
+        }
+
+        var roots = rebuildRootsSorted();
+        var visited = {};
+
+        function visit(el) {
+            if (visited[el.id]) { return; }
+            visited[el.id] = true;
+            (childrenOf[el.id] || []).forEach(visit);
+        }
+
+        roots.forEach(visit);
+
+        elems.forEach(function (el) {
+            if (!visited[el.id]) {
+                delete el.parent_id;
+            }
+        });
+
+        childrenOf = {};
+
+        elems.forEach(function (el) {
+            var pid = el.parent_id;
+            if (!pid || !validContainerParent(byId, pid)) {
+                delete el.parent_id;
+                return;
+            }
+            if (!childrenOf[pid]) {
+                childrenOf[pid] = [];
+            }
+            childrenOf[pid].push(el);
+        });
+
+        Object.keys(childrenOf).forEach(function (pk) {
+            childrenOf[pk].sort(function (a, b) {
+                return origIndexById[a.id] - origIndexById[b.id];
+            });
+        });
+
+        roots = rebuildRootsSorted();
+        visited = {};
+        roots.forEach(visit);
+
+        var out = [];
+
+        function walk(el) {
+            out.push(el);
+            (childrenOf[el.id] || []).forEach(walk);
+        }
+
+        roots.forEach(walk);
+        model.elements = out;
+    }
+
+    function removeElementAndDescendants(id) {
+        if (!state.model || !id) { return; }
+        var sub = collectSubtreeIds(id);
+        sub[id] = true;
+        state.model.elements = state.model.elements.filter(function (e) {
+            return !sub[e.id];
+        });
+    }
+
+    function pointInsideClientRect(px, py, rect) {
+        return px >= rect.left && px <= rect.right &&
+            py >= rect.top && py <= rect.bottom;
+    }
+
+    /**
+     * Pick nested drop target among all rendered containers whose bounds contain
+     * ``(cx, cy)`` — prefers the smallest rectangle (deepest/overlapped target).
+     *
+     * This avoids relying on ``elementFromPoint`` alone: other canvased elements
+     * sitting above transparent container padding still let you hit the bucket.
+     */
+    function pickDropContainerId(stage, clientX, clientY, draggedCanvasElementId) {
+        if (!stage) {
+            return null;
+        }
+        var probe = document.elementFromPoint(clientX, clientY);
+        if (!probe || !stage.contains(probe)) {
+            return null;
+        }
+
+        var sub = {};
+        if (draggedCanvasElementId) {
+            sub = collectSubtreeIds(draggedCanvasElementId);
+            sub[draggedCanvasElementId] = true;
+        }
+
+        var bestId = null;
+        var bestArea = Infinity;
+
+        $$('.ss-element[data-spore-type="container"]', stage).forEach(function (node) {
+            var cid = node.dataset.sporeId;
+            if (!cid || (draggedCanvasElementId && descendantSetHas(cid, sub))) {
+                return;
+            }
+            var rect = node.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) {
+                return;
+            }
+            if (!pointInsideClientRect(clientX, clientY, rect)) {
+                return;
+            }
+            var area = rect.width * rect.height;
+            if (area < bestArea) {
+                bestArea = area;
+                bestId = cid;
+            }
+        });
+
+        return bestId;
+    }
+
+    var ssDropHighlightPid = null;
+
+    function clearCanvasDropHighlight() {
+        ssDropHighlightPid = null;
+        var stage = $("#ss-stage");
+        if (!stage) { return; }
+        $$(".ss-drop-target", stage).forEach(function (n) {
+            n.classList.remove("ss-drop-target");
+        });
+        stage.classList.remove("ss-drop-target-root");
+    }
+
+    /**
+     * Hover feedback for palette / canvas drags.
+     *
+     * When ``preferCanvasDrop`` is true (Alt held), treat the drop target as the
+     * canvas root regardless of overlapping containers — highlight the stage.
+     */
+    function updateCanvasDropHighlight(
+        clientX, clientY, dragExcludeElementId, preferCanvasDrop
+    ) {
+        var stage = $("#ss-stage");
+        if (!stage) { return; }
+
+        $$(".ss-drop-target", stage).forEach(function (n) {
+            n.classList.remove("ss-drop-target");
+        });
+        stage.classList.remove("ss-drop-target-root");
+
+        var tgt = null;
+        if (!preferCanvasDrop) {
+            tgt = pickDropContainerId(
+                stage,
+                clientX,
+                clientY,
+                dragExcludeElementId || null
+            );
+        }
+        ssDropHighlightPid = tgt;
+
+        if (preferCanvasDrop && !tgt) {
+            stage.classList.add("ss-drop-target-root");
+        }
+        if (tgt) {
+            var cn =
+                $(".ss-element[data-spore-id=\"" + cssEscapeSs(tgt) + "\"]", stage);
+            if (cn && cn.dataset.sporeType === "container") {
+                cn.classList.add("ss-drop-target");
+            }
+        }
+    }
+
+    function normalizeParentLinksAndReorderLive() {
+        if (!state.model) { return; }
+        normalizeParentLinksAndReorderElements(state.model);
+    }
+
     function isLegacyElement(el) {
         // JSON-only legacy synthetic elements never get a position when
         // produced by template_parser_back._synthesize_legacy_elements.
@@ -316,6 +592,9 @@
         if (elType === "text") { keys.push("text"); }
         if (["image", "video", "audio"].indexOf(elType) !== -1) {
             keys.push("src");
+        }
+        if (elType === "video") {
+            keys.push("audio_src");
         }
         return keys;
     }
@@ -375,6 +654,12 @@
     /* ------------------------------------------------------------------
      * Render: stage (canvas)
      * ------------------------------------------------------------------ */
+    function childrenElementsInDocumentOrder(containerId) {
+        return (state.model.elements || []).filter(function (e) {
+            return e.parent_id === containerId;
+        });
+    }
+
     function renderStage() {
         var stage = $("#ss-stage");
         stage.innerHTML = "";
@@ -383,7 +668,20 @@
         stage.style.width = design.width + "px";
         stage.style.height = design.height + "px";
 
-        (state.model.elements || []).forEach(function (el) {
+        var elems = state.model.elements || [];
+        var byId = {};
+        elems.forEach(function (e) {
+            byId[e.id] = e;
+        });
+
+        function isRootPlacement(el) {
+            return !validContainerParent(byId, el.parent_id);
+        }
+
+        /**
+         * @param {HTMLElement} attachParent Either ``#ss-stage`` or an ``.ss-element`` container.
+         */
+        function paintElementBranch(el, attachParent) {
             if (isLegacyElement(el)) { return; }
             var node = document.createElement("div");
             node.className = "ss-element";
@@ -396,26 +694,50 @@
             node.style.width = sz.w + "px";
             node.style.height = sz.h + "px";
             applyPropsToNode(node, el);
-            if (el.id === state.selectedId) { node.classList.add("selected"); }
+            if (el.id === state.selectedId) {
+                node.classList.add("selected");
+            }
 
             if (el.type === "text") {
                 node.textContent = (el.props && el.props.text) || "";
             } else if (el.type === "image") {
                 node.textContent = (el.props && el.props.src) ? "img: " + el.props.src : "(image)";
             } else if (el.type === "video") {
-                node.textContent = (el.props && el.props.src) ? "video: " + el.props.src : "(video)";
+                var vk = (el.props && el.props.visual_kind) || "video";
+                var vkLabel = vk === "image" ? "gif/img" : "video";
+                var line = vkLabel + ": " + ((el.props && el.props.src) || "");
+                if (el.props && el.props.audio_src) {
+                    line += " + audio";
+                }
+                node.textContent = line || "(" + vkLabel + ")";
             } else if (el.type === "audio") {
-                node.textContent = "&#127925; " + (el.props && el.props.src ? el.props.src : "(audio)");
+                node.textContent =
+                    "\u266B " + (el.props && el.props.src ? el.props.src : "(audio)");
             } else if (el.type === "container") {
                 node.textContent = "";
             }
 
             var handle = document.createElement("div");
             handle.className = "ss-element__handle ss-element__handle--br";
-            node.appendChild(handle);
 
+            attachParent.appendChild(node);
+
+            if (
+                !isLegacyModel()
+                && el.type === "container"
+            ) {
+                childrenElementsInDocumentOrder(el.id).forEach(function (ch) {
+                    paintElementBranch(ch, node);
+                });
+            }
+            node.appendChild(handle);
             attachElementInteractions(node, el, handle);
-            stage.appendChild(node);
+        }
+
+        elems.forEach(function (el) {
+            if (!isLegacyElement(el) && isRootPlacement(el)) {
+                paintElementBranch(el, stage);
+            }
         });
     }
 
@@ -434,6 +756,55 @@
         if (props.opacity != null) { node.style.opacity = String(props.opacity); }
     }
 
+    function pidNorm(pid) {
+        return pid || null;
+    }
+
+    /** Set ``parent_id`` and ``position`` from drop geometry (viewport rects). */
+    function repositionModelElementForDropTarget(modelEl, domNode, newParentIdMaybe) {
+        var stage = $("#ss-stage");
+        if (!stage || !domNode) { return; }
+        var np = pidNorm(newParentIdMaybe);
+        var nr = domNode.getBoundingClientRect();
+        if (np) {
+            var cn = $(".ss-element[data-spore-id=\"" + cssEscapeSs(np) +
+                "\"]", stage);
+            if (!cn || cn.dataset.sporeType !== "container") {
+                delete modelEl.parent_id;
+                np = null;
+            } else {
+                var pr = cn.getBoundingClientRect();
+                modelEl.parent_id = np;
+                modelEl.position = {
+                    x: Math.max(0, Math.round(nr.left - pr.left)),
+                    y: Math.max(0, Math.round(nr.top - pr.top))
+                };
+                return;
+            }
+        }
+        var sr = stage.getBoundingClientRect();
+        delete modelEl.parent_id;
+        modelEl.position = {
+            x: Math.max(0, Math.round(nr.left - sr.left)),
+            y: Math.max(0, Math.round(nr.top - sr.top))
+        };
+    }
+
+    /** Minimal CSS.escape for alphanumeric editor ids (+ "_" "-"). Fallback for older engines. */
+    function cssEscapeSs(idStr) {
+        if (typeof window.CSS !== "undefined" &&
+                typeof window.CSS.escape === "function") {
+            return window.CSS.escape(String(idStr));
+        }
+        return String(idStr).replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+    }
+
+    function domNodeForCanvasElement(stage, elementId) {
+        if (!stage || !elementId) { return null; }
+        return $(".ss-element[data-spore-id=\"" +
+            cssEscapeSs(elementId) + "\"]", stage);
+    }
+
     function attachElementInteractions(node, modelEl, handle) {
         var dragData = null;
         node.addEventListener("mousedown", function (ev) {
@@ -445,29 +816,95 @@
                 n.classList.toggle("selected", n.dataset.sporeId === modelEl.id);
             });
             dragData = {
-                startX: ev.clientX,
-                startY: ev.clientY,
+                blockReparent: isLegacyModel(),
+                refX: ev.clientX,
+                refY: ev.clientY,
+                didMove: false,
                 origX: (modelEl.position || {}).x || 0,
-                origY: (modelEl.position || {}).y || 0
+                origY: (modelEl.position || {}).y || 0,
+                prevParentNorm: pidNorm(modelEl.parent_id)
             };
             ev.preventDefault();
         });
         document.addEventListener("mousemove", function (ev) {
             if (!dragData) { return; }
-            var dx = ev.clientX - dragData.startX;
-            var dy = ev.clientY - dragData.startY;
+            if (!dragData.didMove && (
+                Math.abs(ev.clientX - dragData.refX) >= 5 ||
+                        Math.abs(ev.clientY - dragData.refY) >= 5
+            )) {
+                dragData.didMove = true;
+            }
+            var dx = ev.clientX - dragData.refX;
+            var dy = ev.clientY - dragData.refY;
             modelEl.position = {
                 x: Math.max(0, Math.round(dragData.origX + dx)),
                 y: Math.max(0, Math.round(dragData.origY + dy))
             };
             node.style.left = modelEl.position.x + "px";
             node.style.top = modelEl.position.y + "px";
-        });
-        document.addEventListener("mouseup", function () {
-            if (dragData) {
-                pushHistoryDebounced();
-                modelTouch();
+            if (!dragData.blockReparent && dragData.didMove) {
+                var prefRoot = ev.altKey;
+                if (!prefRoot && pidNorm(modelEl.parent_id)) {
+                    var pDom = domNodeForCanvasElement(
+                        $("#ss-stage"),
+                        modelEl.parent_id
+                    );
+                    if (pDom) {
+                        var pr = pDom.getBoundingClientRect();
+                        prefRoot = !pointInsideClientRect(ev.clientX, ev.clientY, pr);
+                    }
+                }
+                updateCanvasDropHighlight(
+                    ev.clientX, ev.clientY, modelEl.id, prefRoot
+                );
             }
+        });
+        document.addEventListener("mouseup", function (muEv) {
+            var dd = dragData;
+            if (!dd) {
+                return;
+            }
+            clearCanvasDropHighlight();
+            if (!dd.blockReparent && dd.didMove) {
+                var stageMu = $("#ss-stage");
+                var parentStartDom =
+                    dd.prevParentNorm
+                        ? domNodeForCanvasElement(stageMu, dd.prevParentNorm)
+                        : null;
+                var outsidePrev =
+                    !!(parentStartDom &&
+                        !pointInsideClientRect(muEv.clientX, muEv.clientY,
+                            parentStartDom.getBoundingClientRect()));
+                var forceRoot = muEv.altKey || outsidePrev;
+                var targetPid =
+                    forceRoot
+                        ? null
+                        : pickDropContainerId(
+                            stageMu,
+                            muEv.clientX,
+                            muEv.clientY,
+                            modelEl.id
+                        );
+                var nextPN = pidNorm(targetPid);
+                if (nextPN !== dd.prevParentNorm) {
+                    repositionModelElementForDropTarget(
+                        modelEl,
+                        node,
+                        targetPid
+                    );
+                    normalizeParentLinksAndReorderLive();
+                    renderStage();
+                    renderOutline();
+                    $$(".ss-element", $("#ss-stage")).forEach(function (n) {
+                        n.classList.toggle(
+                            "selected",
+                            n.dataset.sporeId === modelEl.id
+                        );
+                    });
+                }
+            }
+            pushHistoryDebounced();
+            modelTouch();
             dragData = null;
         });
 
@@ -783,6 +1220,12 @@
             });
             if (conflict) { toast("Another element already has id '" + newId + "'", "error"); return; }
             updateBindingsForRename(el.id, newId);
+            var renameFrom = el.id;
+            state.model.elements.forEach(function (e2) {
+                if (e2.parent_id === renameFrom) {
+                    e2.parent_id = newId;
+                }
+            });
             el.id = newId;
             state.selectedId = newId;
             pushHistory();
@@ -800,6 +1243,41 @@
 
         var typeRow = formRow("Type", document.createTextNode(el.type));
         host.appendChild(typeRow);
+
+        if (!isLegacyModel()) {
+            var pnorm = pidNorm(el.parent_id);
+            host.appendChild(formRow(
+                "Parent",
+                document.createTextNode(pnorm || "(canvas root)")
+            ));
+            var nestHint = document.createElement("p");
+            nestHint.style.cssText =
+                "color:var(--ss-text-muted);font-size:10px;margin:6px 0 0;" +
+                "line-height:1.45;";
+            nestHint.textContent =
+                "Toward a container: borders highlight while you drag blocks or " +
+                "elements onto them. Drag past the bounds of your current container " +
+                "to nest on the canvas, or onto a highlighted container to re-nest. " +
+                "Alt while dropping forces canvas-level placement. \"Move to canvas\" below also unnests.";
+            host.appendChild(nestHint);
+            if (pnorm) {
+                var detachBtn = document.createElement("button");
+                detachBtn.type = "button";
+                detachBtn.className = "ss-btn";
+                detachBtn.textContent = "Move to canvas";
+                detachBtn.addEventListener("click", function () {
+                    var st = $("#ss-stage");
+                    var domEl = domNodeForCanvasElement(st, el.id);
+                    if (!domEl || !state.model) { return; }
+                    repositionModelElementForDropTarget(el, domEl, null);
+                    normalizeParentLinksAndReorderLive();
+                    pushHistory();
+                    renderAll();
+                    modelTouch();
+                });
+                host.appendChild(detachBtn);
+            }
+        }
 
         var posRow = document.createElement("div");
         posRow.className = "ss-row";
@@ -913,9 +1391,8 @@
         deleteBtn.style.color = "var(--ss-error)";
         deleteBtn.textContent = "Delete element";
         deleteBtn.addEventListener("click", function () {
-            state.model.elements = state.model.elements.filter(function (e) {
-                return e.id !== el.id;
-            });
+            removeElementAndDescendants(el.id);
+            normalizeParentLinksAndReorderLive();
             state.selectedId = null;
             pushHistory();
             renderAll();
@@ -1885,6 +2362,7 @@
             });
             block.addEventListener("dragend", function () {
                 block.classList.remove("ss-block--dragging");
+                clearCanvasDropHighlight();
             });
         });
 
@@ -1892,28 +2370,56 @@
         stage.addEventListener("dragover", function (ev) {
             ev.preventDefault();
             ev.dataTransfer.dropEffect = "copy";
+            updateCanvasDropHighlight(ev.clientX, ev.clientY, null, ev.altKey);
+        });
+        stage.addEventListener("dragleave", function (ev) {
+            if (ev.target === stage && !stage.contains(ev.relatedTarget)) {
+                clearCanvasDropHighlight();
+            }
         });
         stage.addEventListener("drop", function (ev) {
             ev.preventDefault();
+            clearCanvasDropHighlight();
             var blockType = ev.dataTransfer.getData("text/spore-block");
             var assetUrl = ev.dataTransfer.getData("text/spore-asset");
             var assetKind = ev.dataTransfer.getData("text/spore-asset-kind");
             var rect = stage.getBoundingClientRect();
-            var x = Math.max(0, Math.round(ev.clientX - rect.left));
-            var y = Math.max(0, Math.round(ev.clientY - rect.top));
+            var parentPid =
+                ev.altKey
+                    ? null
+                    : pickDropContainerId(
+                        stage,
+                        ev.clientX,
+                        ev.clientY,
+                        null
+                    );
+            var dropX = Math.max(0, Math.round(ev.clientX - rect.left));
+            var dropY = Math.max(0, Math.round(ev.clientY - rect.top));
+            if (parentPid) {
+                var cnode =
+                    $(".ss-element[data-spore-id=\"" + cssEscapeSs(parentPid) +
+                        "\"]", stage);
+                if (cnode) {
+                    var cr = cnode.getBoundingClientRect();
+                    dropX = Math.max(0, Math.round(ev.clientX - cr.left));
+                    dropY = Math.max(0, Math.round(ev.clientY - cr.top));
+                } else {
+                    parentPid = null;
+                }
+            }
 
             if (blockType) {
-                addElement(blockType, x, y);
+                addElement(blockType, dropX, dropY, {}, parentPid || null);
             } else if (assetUrl) {
                 var t = (assetKind === "video") ? "video"
-                      : (assetKind === "audio") ? "audio"
-                      : "image";
-                addElement(t, x, y, { src: assetUrl });
+                    : (assetKind === "audio") ? "audio"
+                        : "image";
+                addElement(t, dropX, dropY, { src: assetUrl }, parentPid || null);
             }
         });
     }
 
-    function addElement(type, x, y, propsOverride) {
+    function addElement(type, x, y, propsOverride, parentIdMaybe) {
         if (!state.model) { return; }
         if (!ELEMENT_PROP_SCHEMA[type]) { return; }
         if (isLegacyModel()) {
@@ -1926,6 +2432,13 @@
         }
         promptCategory().then(function (category) {
             if (category === null) { return; }
+            var pid = pidNorm(parentIdMaybe);
+            if (pid) {
+                var par = selectedElementMatchingId(pid);
+                if (!par || par.type !== "container") {
+                    pid = null;
+                }
+            }
             var id = uniqueElementId(type);
             var sz = DEFAULT_SIZE[type] || { w: 100, h: 30 };
             var props = Object.assign({}, DEFAULT_PROPS[type] || {}, propsOverride || {});
@@ -1938,14 +2451,31 @@
                 props: props,
                 bindings: []
             };
+            if (pid) {
+                el.parent_id = pid;
+            }
             ensureElementExposeDefaults(el);
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
+            normalizeParentLinksAndReorderLive();
             state.selectedId = id;
             pushHistory();
             renderAll();
             modelTouch();
         });
+    }
+
+    /** Find ``{id}`` anywhere in ``state.model.elements`` (not necessarily selected). */
+    function selectedElementMatchingId(anId) {
+        if (!state.model || !anId) {
+            return null;
+        }
+        for (var i = 0; i < state.model.elements.length; i++) {
+            if (state.model.elements[i].id === anId) {
+                return state.model.elements[i];
+            }
+        }
+        return null;
     }
 
     function existingCategories() {
@@ -2060,6 +2590,9 @@
                 ev.dataTransfer.setData("text/spore-asset", file.url);
                 ev.dataTransfer.setData("text/spore-asset-kind", file.kind || "image");
                 ev.dataTransfer.effectAllowed = "copy";
+            });
+            card.addEventListener("dragend", function () {
+                clearCanvasDropHighlight();
             });
             card.addEventListener("dblclick", function () {
                 var el = selectedElement();
@@ -2177,11 +2710,23 @@
                 el.size = DEFAULT_SIZE[el.type] || { w: 100, h: 30 };
             }
             el.props = el.props || {};
+            var defsMerge = DEFAULT_PROPS[el.type];
+            if (defsMerge) {
+                Object.keys(defsMerge).forEach(function (k) {
+                    if (el.props[k] === undefined) {
+                        el.props[k] = defsMerge[k];
+                    }
+                });
+            }
             el.bindings = el.bindings || [];
             if (!model.legacy) {
                 ensureElementExposeDefaults(el);
             }
+            if (model.legacy && el.parent_id) {
+                delete el.parent_id;
+            }
         });
+        normalizeParentLinksAndReorderElements(model);
         model.advanced_js = typeof model.advanced_js === "string" ? model.advanced_js : "";
         if (!model.streamdeck_options || typeof model.streamdeck_options !== "object") {
             model.streamdeck_options = { description: "", actions: {} };
@@ -2535,10 +3080,27 @@
     }
 
     /* ------------------------------------------------------------------
-     * Outline list: groups every element in state.model.elements by
-     * category. Click → select + open inspector. Particularly important
-     * for legacy synthetic elements that have no canvas presence.
+     * Outline list: preorder-ish flat list indented by nesting depth;
+     * sections group subtree members by ancestor root ``category``.
      * ------------------------------------------------------------------ */
+    function outlineEffectiveCategory(byIdMap, el) {
+        var cur = el;
+        while (validContainerParent(byIdMap, cur.parent_id)) {
+            cur = byIdMap[cur.parent_id];
+        }
+        return (cur.category || "Elements").trim() || "Elements";
+    }
+
+    function outlineNestDepth(byIdMap, el) {
+        var depth = 0;
+        var walker = el;
+        while (validContainerParent(byIdMap, walker.parent_id)) {
+            depth++;
+            walker = byIdMap[walker.parent_id];
+        }
+        return depth;
+    }
+
     function renderOutline() {
         var host = $("#ss-outline-list");
         if (!host) { return; }
@@ -2552,24 +3114,27 @@
             return;
         }
 
-        var groups = {};
-        var order = [];
+        var byId = {};
+        elements.forEach(function (e) { byId[e.id] = e; });
+
+        var categories = [];
         elements.forEach(function (el) {
-            var cat = (el.category || "Elements").trim() || "Elements";
-            if (!groups[cat]) { groups[cat] = []; order.push(cat); }
-            groups[cat].push(el);
+            var gcat = outlineEffectiveCategory(byId, el);
+            if (categories.indexOf(gcat) === -1) { categories.push(gcat); }
         });
 
-        order.forEach(function (cat) {
+        categories.forEach(function (cat) {
             var group = document.createElement("div");
             group.className = "ss-outline-group";
             var head = document.createElement("div");
             head.className = "ss-outline-group__head";
             head.textContent = cat;
             group.appendChild(head);
-            groups[cat].forEach(function (el) {
+            elements.forEach(function (el) {
+                if (outlineEffectiveCategory(byId, el) !== cat) { return; }
                 var row = document.createElement("div");
                 row.className = "ss-outline-row";
+                row.style.paddingLeft = (8 + outlineNestDepth(byId, el) * 14) + "px";
                 if (el.id === state.selectedId) { row.classList.add("selected"); }
                 var label = document.createElement("span");
                 label.className = "ss-outline-row__id";
@@ -2731,9 +3296,8 @@
             else if (ev.key === "Delete" || ev.key === "Backspace") {
                 if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA" || ev.target.tagName === "SELECT")) { return; }
                 if (!state.selectedId) { return; }
-                state.model.elements = state.model.elements.filter(function (e) {
-                    return e.id !== state.selectedId;
-                });
+                removeElementAndDescendants(state.selectedId);
+                normalizeParentLinksAndReorderLive();
                 state.selectedId = null;
                 pushHistory();
                 renderAll();
