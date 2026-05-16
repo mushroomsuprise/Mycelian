@@ -636,6 +636,7 @@ def _open_folder_floating_window(folder_id: str) -> None:
         return
     title = str(spec.get("name") or "Folder")
     member_ids = [cid for cid in spec.get("connector_ids") or [] if cid in connectors]
+    fold_state = _folder_members_enabled_state(member_ids, connectors)
 
     existing = _folder_floaters.get(folder_id)
     if existing:
@@ -687,6 +688,18 @@ def _open_folder_floating_window(folder_id: str) -> None:
                         "text-base font-semibold text-theme-primary truncate"
                     )
                 with ui.row().classes("items-center gap-1 flex-shrink-0"):
+                    floater_enable_sw = ui.switch(
+                        value=(fold_state == "all_on"),
+                        on_change=lambda e, fid=folder_id: set_folder_connectors_enabled(
+                            fid, bool(e.value)
+                        ),
+                    ).props("dense").classes("scale-90").tooltip(
+                        "Enable or disable all connectors in this folder"
+                    )
+                    if fold_state == "mixed":
+                        floater_enable_sw.props("indeterminate")
+                    if not member_ids:
+                        floater_enable_sw.disable()
                     ui.button(icon="close", on_click=lambda f=folder_id: _close_folder_floater(f)).props(
                         "flat dense round"
                     ).tooltip("Close")
@@ -947,6 +960,48 @@ def show_delete_folder_dialog(folder_id: str) -> None:
     dialog.open()
 
 
+def _folder_members_enabled_state(
+    member_ids: List[str], connectors: Dict[str, Connector]
+) -> str:
+    """Return 'all_on', 'all_off', or 'mixed' for connectors in a folder."""
+    if not member_ids:
+        return "all_off"
+    n = len(member_ids)
+    enabled_n = sum(
+        1 for cid in member_ids if connectors.get(cid) and connectors[cid].enabled
+    )
+    if enabled_n == 0:
+        return "all_off"
+    if enabled_n == n:
+        return "all_on"
+    return "mixed"
+
+
+def set_folder_connectors_enabled(folder_id: str, enabled: bool) -> None:
+    """Enable or disable every connector listed in the folder layout."""
+    try:
+        mgr = connector_manager.get_manager()
+        connectors = mgr.get_all_connectors()
+        existing_ids = set(connectors.keys())
+        layout = connector_layout_store.reconcile_layout(
+            connector_layout_store.load_layout(), existing_ids
+        )
+        member_ids = connector_layout_store.list_folder_connector_ids(layout, folder_id)
+        spec = (layout.get("folders") or {}).get(folder_id) or {}
+        title = str(spec.get("name") or "Folder")
+        if not member_ids:
+            notify("Folder is empty", type="warning", timeout=2000)
+            return
+        changed = mgr.set_connectors_enabled(member_ids, enabled)
+        if changed:
+            verb = "Enabled" if enabled else "Disabled"
+            notify(f'{verb} {changed} connector(s) in "{title}"', type="positive")
+        refresh_connectors()
+    except Exception as e:
+        logger.error(f"Error setting folder connectors enabled: {e}", exc_info=True)
+        notify(f"Error updating folder connectors: {str(e)}", type="negative")
+
+
 def load_connectors():
     """Load and display connectors"""
     global connectors_container, connector_cards, folder_cards, connector_parent_folder, folder_tile_title_labels
@@ -984,6 +1039,7 @@ def load_connectors():
                 if cid in connectors
             ]
             count = len(member_ids)
+            fold_state = _folder_members_enabled_state(member_ids, connectors)
 
             wrapper = ui.element("div").classes(
                 "connector-folder connector-folder-tile p-4 rounded-lg fade-in "
@@ -1014,6 +1070,18 @@ def load_connectors():
                             text="Open",
                             on_click=lambda f=folder_id: _open_folder_floating_window(f),
                         ).classes("control-button btn-primary text-xs px-3 py-1")
+                        folder_enable_sw = ui.switch(
+                            value=(fold_state == "all_on"),
+                            on_change=lambda e, fid=folder_id: set_folder_connectors_enabled(
+                                fid, bool(e.value)
+                            ),
+                        ).props("dense").classes("scale-90").tooltip(
+                            "Enable or disable all connectors in this folder"
+                        )
+                        if fold_state == "mixed":
+                            folder_enable_sw.props("indeterminate")
+                        if not member_ids:
+                            folder_enable_sw.disable()
                         with ui.row().classes("items-center gap-1"):
                             ui.button(
                                 icon="edit",

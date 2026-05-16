@@ -2595,6 +2595,14 @@ class GameHookAction(BaseAction):
         try:
             from .game_hooks_service import game_hooks_service
 
+            if not game_hooks_service.is_game_hook_ready(self.game_id):
+                logger.debug(
+                    "Game hook action skipped (hook not ready): game_id=%s op=%s",
+                    self.game_id,
+                    self.operation,
+                )
+                return False
+
             resolved = self._substitute_hook_arguments(
                 dict(self.hook_arguments), trigger_data, event_data
             )

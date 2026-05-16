@@ -485,6 +485,23 @@ class GameHooksServiceImpl:
             snap = dict(self._last_ff7_ui) if self._last_ff7_ui is not None else None
         return {"service_running": running, "ff7": snap}
 
+    def is_game_hook_ready(self, game_id: str) -> bool:
+        """True when settings enable this hook and the service reports attached to the game."""
+        gid = str(game_id or "").strip().lower()
+        if gid == "ff7":
+            if not _ff7_enabled():
+                return False
+            info = self.get_ff7_ui_snapshot()
+            if not info.get("service_running"):
+                return False
+            snap = info.get("ff7")
+            if not isinstance(snap, dict):
+                return False
+            if bool(snap.get("disabled")):
+                return False
+            return bool(snap.get("attached"))
+        return False
+
     def stop(self) -> None:
         self._stop.set()
         if self._thread:

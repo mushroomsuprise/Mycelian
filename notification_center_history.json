@@ -150,5 +150,37 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "fa9c3710-5ea7-4842-bc30-7bfe8cb3d203",
+    "ts": 1778971407.3411489,
+    "message": "Connector 'Test1' created successfully",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "39780d3e-9cba-4564-94ba-6be78c0f5522",
+    "ts": 1778971418.341629,
+    "message": "Connector 'Test2' created successfully",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "b65d90c3-14d6-4fab-93c4-a31d68067e81",
+    "ts": 1778971424.5775628,
+    "message": "Disabled 2 connector(s) in \"New folder\"",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "f39541b4-04bf-4df9-97c6-1fae76bf7038",
+    "ts": 1778971426.311736,
+    "message": "Enabled 2 connector(s) in \"New folder\"",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
   }
 ]

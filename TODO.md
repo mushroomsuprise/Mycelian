@@ -8,7 +8,7 @@ FF7 Hook
     [] - Rewrite to match newly reworked game hook manager.
 
 Connectors:
-    [] - Disable output of connectors when a "game hook" is the action, and that particular hook is either not enabled, or not connected to the game
+    [x] - Disable output of connectors when a "game hook" is the action, and that particular hook is either not enabled, or not connected to the game
 
 
 Template Previewer:

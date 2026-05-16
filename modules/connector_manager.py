@@ -28,7 +28,7 @@ import json
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from . import database_manager
 from .connector_actions import create_action
@@ -453,22 +453,11 @@ class ConnectorManager:
 
                 connector = self.connectors[connector_id]
                 connector.enabled = not connector.enabled
-
-                # Register/unregister hotkey if it's a hotkey trigger
-                if (
-                    connector.trigger
-                    and connector.trigger.trigger_type == TriggerType.HOTKEY
-                ):
-                    if connector.enabled:
-                        self._register_connector_hotkey(connector)
-                    else:
-                        self._unregister_connector_hotkey(connector)
+                self._sync_hotkey_for_connector_enabled(connector)
 
                 logger.info(
                     f"Connector '{connector.name}' {'enabled' if connector.enabled else 'disabled'}"
                 )
-
-                # Save to database
                 self.save_connectors()
                 return True
 
@@ -762,6 +751,69 @@ class ConnectorManager:
                 f"Error unregistering hotkey for connector {connector.connector_id}: {e}",
                 exc_info=True,
             )
+
+    def _sync_hotkey_for_connector_enabled(self, connector: Connector) -> None:
+        if (
+            connector.trigger
+            and connector.trigger.trigger_type == TriggerType.HOTKEY
+        ):
+            if connector.enabled:
+                self._register_connector_hotkey(connector)
+            else:
+                self._unregister_connector_hotkey(connector)
+
+    def set_connector_enabled(self, connector_id: str, enabled: bool) -> bool:
+        """Set a connector's enabled state explicitly."""
+        try:
+            with self._lock:
+                if connector_id not in self.connectors:
+                    return False
+
+                connector = self.connectors[connector_id]
+                if connector.enabled == enabled:
+                    return True
+
+                connector.enabled = enabled
+                self._sync_hotkey_for_connector_enabled(connector)
+
+                logger.info(
+                    f"Connector '{connector.name}' {'enabled' if enabled else 'disabled'}"
+                )
+                self.save_connectors()
+                return True
+
+        except Exception as e:
+            logger.error(f"Error setting connector enabled state: {e}", exc_info=True)
+            return False
+
+    def set_connectors_enabled(
+        self, connector_ids: Sequence[str], enabled: bool
+    ) -> int:
+        """Set enabled state for many connectors. Returns how many were changed."""
+        changed = 0
+        try:
+            with self._lock:
+                for connector_id in connector_ids:
+                    if connector_id not in self.connectors:
+                        continue
+                    connector = self.connectors[connector_id]
+                    if connector.enabled == enabled:
+                        continue
+                    connector.enabled = enabled
+                    self._sync_hotkey_for_connector_enabled(connector)
+                    changed += 1
+                    logger.info(
+                        f"Connector '{connector.name}' "
+                        f"{'enabled' if enabled else 'disabled'} (bulk)"
+                    )
+                if changed:
+                    self.save_connectors()
+            return changed
+        except Exception as e:
+            logger.error(
+                f"Error bulk-setting connector enabled state: {e}", exc_info=True
+            )
+            return changed
 
     async def test_connector(
         self, connector_id: str, test_event_data: Dict[str, Any]

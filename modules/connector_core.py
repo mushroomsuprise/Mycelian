@@ -393,9 +393,36 @@ class Connector:
     trigger_count: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def _game_hook_prerequisites_unmet(self) -> bool:
+        """If any enabled game-hook action's hook is off or not attached, skip the whole connector."""
+        game_ids: set = set()
+        for action in self.actions:
+            if not action.enabled:
+                continue
+            if action.action_type != ActionType.GAME_HOOK:
+                continue
+            gid = str(getattr(action, "game_id", "ff7") or "ff7").strip() or "ff7"
+            game_ids.add(gid)
+        if not game_ids:
+            return False
+        from .game_hooks_service import game_hooks_service
+
+        for gid in sorted(game_ids):
+            if not game_hooks_service.is_game_hook_ready(gid):
+                logger.debug(
+                    "Connector '%s' skipped: game hook %r not ready",
+                    self.name,
+                    gid,
+                )
+                return True
+        return False
+
     async def process_event(self, event_data: Dict[str, Any]) -> bool:
         """Process an event and potentially trigger actions"""
         if not self.enabled or not self.trigger:
+            return False
+
+        if self._game_hook_prerequisites_unmet():
             return False
 
         # Check if trigger should fire
