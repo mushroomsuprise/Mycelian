@@ -39,8 +39,6 @@ General Items:
     [] - Ensure statistics database "lazy loads"
     [] - Add the game category to Raid activity feed items. It should say something like: {user} has raided with {count} viewers, they were last playing {category}.
     [] - .wav audio files are not working (at least in the alerts template)
-    [] - Stream streaks are not appearing in the activity feed, it seems like the data is not coming in at all
-    [] - Stream streak code missing from the HTML template (OBS dock) but are in the python file
 
 Priority Fixes:
     [] - Setup "generic image/video" template, so the file can just be renamed and all websocket events will point to the file name.

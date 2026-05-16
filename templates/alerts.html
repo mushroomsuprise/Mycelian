@@ -1694,6 +1694,22 @@
                     audioElement.volume = audioVolume;
                 }
 
+                audioElement.onerror = function () {
+                    var err = audioElement.error;
+                    if (err) {
+                        var codes = {
+                            1: 'MEDIA_ERR_ABORTED',
+                            2: 'MEDIA_ERR_NETWORK',
+                            3: 'MEDIA_ERR_DECODE',
+                            4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+                        };
+                        console.warn('Alert audio error:', codes[err.code] || err.code, err.message || '');
+                    } else {
+                        console.warn('Alert audio error: unknown');
+                    }
+                };
+                audioElement.load();
+
                 const playPromise = audioElement.play();
                 if (ttsEnabled) {
                     playAlertTts(alertData);

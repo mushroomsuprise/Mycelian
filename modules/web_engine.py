@@ -75,6 +75,24 @@ from .template_config_parser import (
 
 logger = logging.getLogger(__name__)
 
+# Explicit MIME types for media under /assets — OS mimetypes may miss extensions
+# (e.g. .wav on Windows), yielding application/octet-stream and breaking <audio>
+# in strict embedded browsers (OBS Browser Source / CEF).
+_ASSET_MEDIA_MIMETYPES = {
+    ".wav": "audio/wav",
+    ".wave": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+}
+
+
+def _mimetype_for_asset_filename(filename: str) -> Optional[str]:
+    ext = os.path.splitext(filename)[1].lower()
+    return _ASSET_MEDIA_MIMETYPES.get(ext)
+
 
 def _coerce_streamdeck_action_data(raw: Any) -> Dict[str, Any]:
     """Normalize client ``actionData`` (dict or JSON string) to a plain dict."""
@@ -438,6 +456,11 @@ class WebEngine:
                     logger.debug(
                         f"Sending from directory: {directory_path}, filename: {filename_only}"
                     )
+                    mimetype = _mimetype_for_asset_filename(filename_only)
+                    if mimetype:
+                        return send_from_directory(
+                            directory_path, filename_only, mimetype=mimetype
+                        )
                     return send_from_directory(directory_path, filename_only)
                 else:
                     logger.warning(f"Static file not found: {full_path}")
@@ -471,6 +494,11 @@ class WebEngine:
                     logger.debug(
                         f"Sending from directory: {directory_path}, filename: {filename_only}"
                     )
+                    mimetype = _mimetype_for_asset_filename(filename_only)
+                    if mimetype:
+                        return send_from_directory(
+                            directory_path, filename_only, mimetype=mimetype
+                        )
                     return send_from_directory(directory_path, filename_only)
                 else:
                     logger.warning(f"Static file not found: {full_path}")
