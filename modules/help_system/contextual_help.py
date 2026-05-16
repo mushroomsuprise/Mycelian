@@ -186,6 +186,7 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
         "Source Controls": "source_controls",
         "Connectors": "connectors_intro",
         "Chatbot": "chatbot_commands",
+        "Spore Studio": "spore_studio_overview",
         "Settings": "settings",
     }
 
@@ -485,6 +486,10 @@ def connectors_help_button():
 def templates_help_button():
     """Help button specifically for templates"""
     return help_button(topic_id="templates_intro", tooltip="Templates help")
+
+def spore_studio_help_button(**kwargs):
+    """Help button specifically for Spore Studio"""
+    return help_button(topic_id="spore_studio_overview", tooltip="Spore Studio help", **kwargs)
 
 def troubleshooting_help_button():
     """Help button specifically for troubleshooting"""

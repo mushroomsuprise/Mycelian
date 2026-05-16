@@ -70,7 +70,7 @@ multiple platforms.
 - **Browser Sources**: Beautiful, animated [overlays](help:templates_intro) for your stream
 - **Chatbot**: Custom [commands](help:chatbot_commands), events, quotes, and greetings
 - **Integrations**: Connect [Twitch](help:integrations_twitch), [Spotify](help:integrations_spotify), [PlayStation Network](help:integrations_psn), and more
-- **Template System**: Customize every [visual aspect](help:template_configuration)
+- **Template System**: Customize every [visual aspect](help:template_configuration); build custom overlays in [Spore Studio](help:spore_studio_overview)
 
 ## Quick Start
 
@@ -1999,6 +1999,13 @@ Templates are HTML/CSS/JavaScript files served by Mycelian that you add to
 | **Bit Bar** | Bit cheer progress bar |
 | **Title** | Stream title display |
 | **Counter** | Custom counter display |
+| **Custom (Spore Studio)** | User-built overlays edited in [Spore Studio](help:spore_studio_overview) |
+
+## Visual Template Editor (Spore Studio)
+
+Use the **Spore Studio** main tab to design custom browser sources visually: drag blocks,
+wire [event bindings](help:spore_studio_bindings), and **Save** to generate HTML and JSON configs.
+See [Spore Studio Overview](help:spore_studio_overview) for the full workflow.
 
 ## Adding Templates to OBS
 
@@ -2072,10 +2079,13 @@ socket.on('alert', (data) => {
 - Test with real data
 - Verify on different screen sizes
 
-> **Tip:** Learn about [WebSocket events](help:template_websocket) to understand how templates receive live data, and use [Source Controls](help:source_controls) to manage templates during your stream.
+> **Tip:** Learn about [WebSocket events](help:template_websocket) to understand how templates receive live data, use [Source Controls](help:source_controls) during your stream, and build new overlays in [Spore Studio](help:spore_studio_overview).
         """,
-        keywords=["templates", "browser sources", "overlays", "obs", "customization"],
-        related_topics=["template_configuration", "template_custom_css", "template_websocket", "source_controls"]
+        keywords=["templates", "browser sources", "overlays", "obs", "customization", "spore studio"],
+        related_topics=[
+            "template_configuration", "template_custom_css", "template_websocket",
+            "source_controls", "spore_studio_overview",
+        ]
     ),
 
     "template_configuration": HelpTopic(
@@ -2236,7 +2246,12 @@ Show/hide elements based on conditions:
 ## Advanced Customization
 
 ### Custom Templates
-Create your own templates:
+
+**Recommended:** Use [Spore Studio](help:spore_studio_overview) to build overlays visually. Fields you mark
+**Expose in Source Settings (JSON)** appear here automatically — see
+[Designing Templates in Spore Studio](help:spore_studio_design).
+
+**Advanced / legacy:** Create templates manually:
 1. Copy existing template structure
 2. Modify HTML/CSS/JS
 3. Add to template_configs
@@ -2251,8 +2266,10 @@ Create reusable themes:
 
 > **Tip:** For advanced CSS customization, see [Custom CSS for Templates](help:template_custom_css). For live adjustments during your stream, use [Source Controls](help:source_controls).
         """,
-        keywords=["configuration", "settings", "customization", "json", "css"],
-        related_topics=["templates_intro", "source_controls", "template_custom_css"]
+        keywords=["configuration", "settings", "customization", "json", "css", "spore studio"],
+        related_topics=[
+            "templates_intro", "source_controls", "template_custom_css", "spore_studio_design",
+        ]
     ),
 
     "template_custom_css": HelpTopic(
@@ -2428,7 +2445,8 @@ Note: This applies to ALL content in that source.
 # WebSocket Events
 
 WebSocket provides real-time communication between Mycelian and your
-[browser sources](help:templates_intro).
+[browser sources](help:templates_intro). [Spore Studio](help:spore_studio_bindings) provides a visual
+binding picker for the same events without hand-writing `socket.on` handlers.
 
 ## What is WebSocket?
 
@@ -2579,8 +2597,10 @@ socket.on('new_alert', (data) => {
 });
 ```
         """,
-        keywords=["websocket", "events", "real-time", "socket", "javascript", "api"],
-        related_topics=["templates_intro", "template_configuration", "source_controls"]
+        keywords=["websocket", "events", "real-time", "socket", "javascript", "api", "spore studio"],
+        related_topics=[
+            "templates_intro", "template_configuration", "source_controls", "spore_studio_bindings",
+        ]
     ),
 
     "source_controls": HelpTopic(
@@ -2682,6 +2702,934 @@ Controls that only work under certain conditions:
         """,
         keywords=["controls", "real-time", "live", "stream", "interactive"],
         related_topics=["templates_intro", "template_configuration"]
+    ),
+
+    "spore_studio_overview": HelpTopic(
+        id="spore_studio_overview",
+        title="Spore Studio Overview",
+        category=HelpCategory.TEMPLATES,
+        summary="Visual editor for custom overlay templates and their JSON configurations",
+        content="""
+# Spore Studio Overview
+
+[Spore Studio](help:spore_studio_overview) is Mycelian's visual editor for building custom
+[browser source overlays](help:templates_intro). You arrange blocks on a canvas, wire
+[event bindings](help:spore_studio_bindings), and **Save** to generate the HTML, JSON config,
+and editor sidecar files your stream uses.
+
+## What Spore Studio Is — and Is Not
+
+**Spore Studio is:**
+
+- A **block-based canvas designer** (Text, Image, Video, Audio, Container)
+- A **binding editor** for websocket events, Stream Deck actions, and Twitch API calls
+- A **Source Settings author** via per-field **Expose in Source Settings (JSON)** checkboxes
+
+**Spore Studio is not:**
+
+- A split-pane HTML/CSS/JavaScript code editor (except the **Advanced JS** tab for custom script)
+- An OBS scene manager (no WebSocket control of OBS from the editor)
+- An export/import tool (no zip or standalone HTML export)
+
+When you click **Save** on a Spore template, Mycelian writes:
+
+| File | Purpose |
+|------|---------|
+| `templates/{name}.html` | Generated overlay served to OBS |
+| `templates/template_configs/{name}.json` | [Source Settings](help:template_configuration) / Stream Deck public config |
+| `templates/_spore/{name}.spore.json` | Editor model (authoritative for Spore Studio) |
+| `assets/{name}/` | Images, video, audio, fonts for this template |
+
+> **Tip:** Start with [Designing Templates in Spore Studio](help:spore_studio_design), then read
+> [Event Bindings & Actions](help:spore_studio_bindings) when you wire live behavior.
+
+## Prerequisites
+
+1. **Overlay web engine running** — Spore Studio loads inside an iframe at
+   `http://127.0.0.1:{port}/_spore_studio_editor`. The server starts with the alert system.
+   If you open the tab too early, you see **Waiting for the overlay server to start…** and a
+   **Retry** button.
+2. **[OBS](help:obs_setup) or another browser-source host** — to display finished templates on stream.
+3. Familiarity with [templates](help:templates_intro) and optional [alert setup](help:alerts_overview).
+
+## Opening Spore Studio
+
+### From the main app
+
+1. Click the **Spore Studio** tab in the top bar (alongside Activity Feed, Alerts, etc.).
+2. The tab subtitle reads: *Visual editor for Mycelian HTML templates and their JSON configurations.*
+3. The editor loads in a full-bleed iframe once the web engine is up.
+
+### Host controls (outside the iframe)
+
+| Button | What it does |
+|--------|----------------|
+| **Reload editor** | Cache-busts and reloads the iframe (use after server restarts) |
+| **Open externally** | Opens `/_spore_studio_editor` in your default browser |
+
+### Inside the editor toolbar
+
+| Control | Purpose |
+|---------|---------|
+| Template dropdown | Switch active template (`title="Active template"`) |
+| **+ New** | Create a template |
+| **Delete** | Remove current Spore template (disabled for legacy/protected) |
+| Undo / Redo | History (see shortcuts below) |
+| **Preview** | Open [live preview](help:spore_studio_advanced) |
+| **Save** | Write HTML + JSON + sidecar to disk |
+
+Switching templates with unsaved edits prompts: *Discard unsaved changes?*
+
+## Editor Layout
+
+```
+┌─────────────┬──────────────────────┬─────────────────┐
+│ Blocks      │                      │ Properties      │
+│ Outline     │      Canvas          │ Bindings        │
+│ Assets      │   (transparent)      │ Stream Deck     │
+│             │                      │ Advanced JS     │
+│             │                      │ Canvas          │
+├─────────────┴──────────────────────┴─────────────────┤
+│ Status: Ready · Unsaved changes                    │
+└────────────────────────────────────────────────────┘
+```
+
+- **Left column — Blocks:** draggable palette (Text, Image, Video, Audio, Container)
+- **Left column — Outline:** element tree grouped by category; click a row to select
+- **Left column — Assets:** files in `assets/{template_name}/`; drag or double-click to assign
+- **Center — Canvas:** design surface with checkerboard (transparent overlays for OBS)
+- **Right — Inspector tabs:** per-element and template-level settings
+- **Bottom — Status bar:** **Ready**, save messages, **Unsaved changes** indicator
+
+## Template Lifecycle
+
+| Action | UI | Result |
+|--------|-----|--------|
+| **New** | **+ New** → **New template** dialog | Creates `.spore.json` sidecar + boilerplate HTML/JSON from queue or instant preset |
+| **Open** | Template dropdown | Loads model from `templates/_spore/{name}.spore.json` |
+| **Save** | **Save** or Ctrl/Cmd+S | Regenerates HTML; merges JSON config; updates sidecar |
+| **Delete** | **Delete** + confirm | Removes HTML, JSON config, sidecar, and `assets/{name}/` folder |
+| **Copy** | **Copy from existing** in New dialog | Clones an existing Spore template's sidecar |
+
+### New template dialog
+
+| Field | Details |
+|-------|---------|
+| **Name** | Template stem (e.g. `my_follow_alert`). Avoid reserved names like `static`, `api`. |
+| **Alert system** | **Queue** (`next_alert`) or **Instant** (`instant_alert`) — see [Canvas tab](help:spore_studio_design) |
+| **Copy from existing** | `(none)` or pick a Spore template to clone |
+| **Width (px)** | Default 800 (min 320, max 7680) |
+| **Height (px)** | Default 200 (min 240, max 4320) |
+
+Buttons: **Cancel**, **Create**.
+
+### Protected templates
+
+These built-in overlays cannot be opened for visual edit or deleted from Spore Studio:
+
+- `activity_feed`
+- `source_controls`
+
+### Legacy templates (optgroup)
+
+Templates listed under **Legacy (advanced mode)** are hand-authored HTML **without** a
+`.spore.json` sidecar. Spore Studio opens them in a limited mode — see
+[Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced).
+
+## Using Your Template in OBS
+
+1. **Save** your template in Spore Studio.
+2. In Mycelian's **Source Settings** tab (or template URL list), copy the browser source URL:
+   `http://127.0.0.1:{port}/{template_name}`
+3. In OBS: **Add** → **Browser Source** → paste URL.
+4. Set width/height to match your canvas dimensions (or scale in OBS).
+5. Enable **Shutdown source when not visible** for performance when appropriate.
+
+The canvas uses a **transparent** background by design so overlays composite cleanly over your stream.
+
+> **Note:** Spore Studio does not connect to OBS directly. You add the generated URL as a normal browser source, same as built-in templates.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+Z / Cmd+Z | Undo |
+| Ctrl+Shift+Z / Cmd+Shift+Z | Redo |
+| Ctrl+Y / Cmd+Y | Redo |
+| Ctrl+S / Cmd+S | Save |
+| Delete / Backspace | Delete selected element (ignored while typing in inputs) |
+| **Alt** (while dragging) | Force drop onto canvas root instead of nesting in a container |
+
+## Next Steps
+
+| Goal | Read |
+|------|------|
+| Blocks, properties, assets | [Designing Templates in Spore Studio](help:spore_studio_design) |
+| Websocket triggers and actions | [Event Bindings & Actions](help:spore_studio_bindings) |
+| Preview, Advanced JS, legacy | [Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced) |
+| Step-by-step builds | [Spore Studio Examples & Recipes](help:spore_studio_examples) |
+        """,
+        keywords=[
+            "spore studio", "visual editor", "template editor", "overlay designer",
+            "canvas", "blocks", "browser source",
+        ],
+        related_topics=[
+            "templates_intro", "spore_studio_design", "template_configuration", "obs_setup",
+        ],
+        ui_context="spore_studio",
+    ),
+
+    "spore_studio_design": HelpTopic(
+        id="spore_studio_design",
+        title="Designing Templates in Spore Studio",
+        category=HelpCategory.TEMPLATES,
+        summary="Blocks, canvas, assets, element properties, and Source Settings exposure",
+        content="""
+# Designing Templates in Spore Studio
+
+This guide covers everything you draw and configure on the canvas before wiring
+[bindings](help:spore_studio_bindings). For editor chrome and file layout, see
+[Spore Studio Overview](help:spore_studio_overview).
+
+## Block Types
+
+Drag blocks from the **Blocks** panel onto the canvas:
+
+| Block | Label | Typical use |
+|-------|-------|-------------|
+| T | **Text** | Labels, usernames, messages |
+| camera icon | **Image** | Alert art, avatars, static graphics |
+| film icon | **Video** | MP4/WebM loops; can bundle separate audio |
+| speaker icon | **Audio** | Sound effects, voice lines |
+| square icon | **Container** | Group and clip child elements |
+
+Dropping a block opens the **Element category** dialog.
+
+## Element Category Dialog
+
+| Control | Purpose |
+|---------|---------|
+| **Existing category** | Dropdown of categories already used in this template |
+| **New category name** | Type a new group name |
+| **+ New category…** | Switches focus to the new-name field |
+| **Cancel** | Abort — no element is created |
+| **Use category** | Confirm and place the element |
+
+Categories group elements in the **Outline** panel and in the saved
+[template JSON config](help:template_configuration) (Source Settings sections).
+
+> **Tip:** Use one category per logical overlay (e.g. `alert_box`, `username_label`) so
+> [Source Controls](help:source_controls) stay organized.
+
+## Canvas Interactions
+
+| Interaction | Behavior |
+|-------------|----------|
+| **Drag** element | Move; position stored as X/Y in pixels |
+| **Resize handle** (bottom-right) | Change W/H |
+| **Drop into container** | Container highlights; element becomes a child (`parent_id`) |
+| **Drag out of container** | Un-nest to previous parent or canvas root |
+| **Alt + drop** | Force placement on canvas root (skip auto-nest) |
+| **Click empty canvas** | Deselect all |
+| **Delete element** (Properties) | Removes element and all descendants |
+
+Nested children move with their parent container.
+
+## Outline Panel
+
+- Lists every element grouped under its **category** heading.
+- Each row shows the element **id** and type.
+- Click a row to select that element on the canvas and in the inspector.
+
+Empty state: *No elements yet — drag a block onto the canvas, or open an existing template to populate this list.*
+
+## Assets Panel
+
+Media lives on disk at `assets/{template_name}/` (images, video, audio, fonts).
+
+| Action | Result |
+|--------|--------|
+| **Drag** asset onto canvas | Creates an image, video, or audio element at the drop position |
+| **Double-click** asset | Sets **Source URL** on the **selected** image/video/audio element |
+| Drop files into folder on disk | Appears after refresh; hot-reload via `spore_studio_assets_changed` socket event |
+
+Empty hint: *Drop files into assets/{name} to populate.*
+
+If nothing is selected, double-click shows a toast: *Select an image / video / audio element first.*
+
+**URL examples** (after Save, paths are relative to the overlay server):
+
+```
+/assets/my_alert/alert.gif
+/assets/my_alert/sfx.mp3
+```
+
+## Canvas Tab (Template-Level)
+
+Open the **Canvas** inspector tab when no element-specific setting applies, or scroll there for globals:
+
+| Field | Range / options | Purpose |
+|-------|-----------------|--------|
+| **Width (px)** | 320–7680 | Design width; OBS browser source should match |
+| **Height (px)** | 240–4320 | Design height |
+| **Alert system** | Queue / Instant | Which alert websocket event this template expects |
+| **Title** | Text | Human-readable name in Source Settings |
+
+### Queue vs Instant alert system
+
+| Value | Label in UI | Use when |
+|-------|-------------|----------|
+| `queue` | Queue (`next_alert`; emit `alert_complete` in Advanced JS if you use the alert queue) | Full-screen alerts that participate in the alert queue handshake |
+| `instant` | Instant (`instant_alert`) | Sub bars, counters, HUD updates that must not block the queue |
+
+> **Warning:** A queue template that never emits `alert_complete` with the matching `queue_seq`
+> will stall the alert processor. See [Advanced JS](help:spore_studio_advanced).
+
+## Properties Tab — Shared Fields
+
+Select any element to edit:
+
+| Field | Description |
+|-------|-------------|
+| **ID** | Unique element id (used in bindings and generated HTML) |
+| **Category** | Outline / JSON grouping |
+| **Type** | Read-only (`text`, `image`, `video`, `audio`, `container`) |
+| **Parent** | `(canvas root)` or container id; **Move to canvas** unnests |
+| **X**, **Y**, **W**, **H** | Position and size in pixels |
+| **Start hidden until shown** | Element begins hidden; Show bindings reveal it |
+| **Delete element** | Remove element and children |
+
+When **Show** bindings exist, the UI may auto-suggest enabling **Start hidden until shown**.
+
+## Properties by Element Type
+
+### Text
+
+| Property | Notes |
+|----------|-------|
+| **Text** | Default label content |
+| **Font size (px)** | Numeric |
+| **Color** | Color picker |
+| **Font family** | CSS font family string (e.g. `Inter, sans-serif`) |
+| **Font weight** | `normal`, `bold`, or `100`–`900` |
+| **Text align** | `left`, `center`, `right` |
+| **Background** | CSS color or `transparent` |
+
+### Image
+
+| Property | Notes |
+|----------|-------|
+| **Source URL** | Path or URL for `<img src>` |
+| **Border radius (px)** | Corner rounding |
+| **Opacity** | 0–1 |
+
+### Video
+
+| Property | Notes |
+|----------|-------|
+| **Visual source URL** | Video or image URL for the visual layer |
+| **Visual kind** | `video` or `image` (GIF-as-image swaps) |
+| **Optional audio URL** | Separate audio track |
+| **Audio volume (0–1)** | Default playback level |
+| **Audio fade-in (ms)** | 0–120000 |
+| **Audio fade-out (ms)** | 0–120000 |
+| **Autoplay** | Start when shown |
+| **Loop** | Repeat visual |
+| **Muted** | Mute bundled audio |
+| **Border radius (px)** | Corner rounding |
+
+### Audio
+
+| Property | Notes |
+|----------|-------|
+| **Source URL** | Audio file path |
+| **Volume (0–1)** | Default level |
+| **Fade-in (ms)** | 0–120000 |
+| **Fade-out (ms)** | 0–120000 |
+
+### Container
+
+| Property | Notes |
+|----------|-------|
+| **Background** | Fill behind children |
+| **Border radius (px)** | Outer corners |
+| **Border width (px)** | Outline thickness |
+| **Border color** | CSS color |
+
+Containers clip visually; child positions are relative to the container's top-left.
+
+## Expose in Source Settings (JSON)
+
+Most property rows include a checkbox: **Expose in Source Settings (JSON)**.
+
+| Checked | Unchecked |
+|---------|-----------|
+| Value stored in `template_configs/{name}.json` | Value inlined only in generated HTML |
+| Editable in Mycelian **Source Settings** and [Source Controls](help:source_controls) | Fixed until you re-open Spore Studio and Save |
+
+Tooltip when off: *When off, value is inlined in HTML only (omitted from template JSON).*
+
+New elements default exposed keys to **on** for their type's schema fields.
+
+> **Tip:** Expose colors, text, and URLs you tweak often on stream; leave structural sizes
+> un-exposed if you do not need live control.
+
+## Parent and Nesting
+
+- Only **container** elements accept children.
+- **Parent** dropdown lists valid containers; **Move to canvas** sets `parent_id` to root.
+- Dragging with **Alt** avoids accidental nesting when you want a root-level sibling.
+
+## What to Do Next
+
+After layout and styling, open the **Bindings** tab — covered in
+[Event Bindings & Actions](help:spore_studio_bindings) — or try a full walkthrough in
+[Spore Studio Examples & Recipes](help:spore_studio_examples).
+        """,
+        keywords=[
+            "spore studio", "blocks", "canvas", "assets", "properties", "container",
+            "text", "image", "video", "expose", "source settings",
+        ],
+        related_topics=[
+            "spore_studio_overview", "spore_studio_bindings",
+            "template_configuration", "source_controls",
+        ],
+    ),
+
+    "spore_studio_bindings": HelpTopic(
+        id="spore_studio_bindings",
+        title="Event Bindings & Actions",
+        category=HelpCategory.TEMPLATES,
+        summary="Websocket events, payload filters, actions, chained steps, and Twitch API bindings",
+        content="""
+# Event Bindings & Actions
+
+Bindings connect live [websocket events](help:template_websocket) (or Stream Deck actions)
+to visual changes on your overlay. Select an element, open the **Bindings** tab, and click
+**+ Add binding**.
+
+For canvas and property basics, see [Designing Templates in Spore Studio](help:spore_studio_design).
+
+## Binding Workflow
+
+1. Select an element on the canvas or in **Outline**.
+2. Open **Bindings** → **+ Add binding**.
+3. Choose **Trigger** type: **Registry event** or **Stream Deck action**.
+4. Pick the **Event** (or Stream Deck action id).
+5. Optionally add **payload filters** so the binding runs only for matching data.
+6. Choose the primary **Action** and fill in its arguments.
+7. Optionally add **Chained actions** (up to 15 steps with delays).
+
+Empty state: *Select an element to attach event bindings.*
+
+Legacy templates: *Legacy templates manage their own websocket bindings inside the hand-authored HTML…*
+
+## Trigger Types
+
+### Registry event
+
+Curated Mycelian socket events safe for overlay authors (not internal plumbing).
+
+### Stream Deck action
+
+Runs when a button mapped to this template's Stream Deck action fires. Configure actions on the
+**Stream Deck** inspector tab first — see [Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced).
+
+## Payload Filters
+
+Each binding can require payload fields to match before the action runs.
+
+| Filter key | Filter value | Example |
+|------------|--------------|---------|
+| `alert_type` | `follow` | Only follow alerts |
+| `tier` | `3000` | Tier 3 subs |
+| `paused` | `true` | JSON boolean (parsed automatically) |
+| `username` | `CoolViewer` | Exact username match |
+
+Add rows in the binding card's filter section. Leave a row blank to ignore it.
+
+> **Tip:** Test filters with **Preview** mock buttons — see [live preview](help:spore_studio_advanced).
+
+## Chained Actions
+
+After the primary **Action** runs, up to **15** chained steps execute in order.
+
+| Field per step | Purpose |
+|----------------|---------|
+| **delay_ms** | Milliseconds to wait after the previous step's synchronous JS (not after animations finish) |
+| **Action** | Same action list as the primary action |
+| **Args** | Action-specific arguments |
+
+> **Note:** A chained **Show for N seconds** timer is independent of the delay before the next
+> chain step — delays do not wait for the inner hide animation to complete.
+
+Example chain: **Show** → 200 ms → **Play CSS class animation** (`sporeShake`) → 3000 ms → **Hide**.
+
+## Event Reference
+
+| Event | Label | When it fires | Key payload fields |
+|-------|-------|---------------|-------------------|
+| `next_alert` | Alert (queue) | Queued alerts (follow, sub, raid, bits, etc.) | `queue_seq`, `alert_type`, `username`, `message`, `amount`, `tier`, `gif_name`, `duration` |
+| `instant_alert` | Alert (instant) | Non-blocking alerts (HUD, counters) | `alert_type`, `username`, `message`, `amount`, `tier`, `quantity` |
+| `refresh-alerts` | Refresh alerts | Alert settings changed | (empty) |
+| `alerts_paused` | Alerts paused | User paused alerts | `paused` |
+| `alerts_resumed` | Alerts resumed | User resumed alerts | `paused` |
+| `pause_status_update` | Pause status update | Every pause toggle + startup | `paused` |
+| `new-message` | Chat message (Twitch) | Each Twitch chat line | `username`, `message`, `color`, `badges`, `message_type` |
+| `chat_add_message` | Chat message (connector) | Connector "Add message" action | `username`, `message_text`, `is_moderator` |
+| `message_moderation` | Chat moderation event | Delete / timeout / ban | `action`, `user_id`, `message_id` |
+| `twitch-api-response` | Twitch API call (response) | Response to a Helix request you configure | Filter on response fields (e.g. `success`) |
+
+### Example filters by event
+
+**`next_alert`**
+
+```
+alert_type = follow
+alert_type = sub
+tier = 3000
+```
+
+**`new-message`**
+
+```
+message_type = text
+username = StreamerName
+```
+
+**`message_moderation`**
+
+```
+action = delete
+action = timeout
+```
+
+**`pause_status_update`**
+
+```
+paused = true
+```
+
+> **Warning:** Queue templates (`next_alert`) require your overlay (or the main alerts template)
+> to emit `alert_complete` with the same `queue_seq` when done, or the queue stalls.
+> See [Advanced JS](help:spore_studio_advanced).
+
+## Action Reference
+
+| Action | Label | Args |
+|--------|-------|------|
+| `show` | Show element | — |
+| `hide` | Hide element | — |
+| `toggle` | Toggle visibility | — |
+| `show_for` | Show for N seconds | `seconds` (0.1–600, default 5), `anim_in`, `anim_out`: `none`, `fade`, `slideIn`, `scaleIn`, `slideOut`, `scaleOut` |
+| `set_text` | Set text content | `from_payload` (e.g. `username`) **or** `literal` |
+| `set_image` | Set image source | `from_payload` **or** `literal` URL |
+| `play_audio` | Play audio element | Optional `volume` (0–1), `fade_in_ms` (blank = element default) |
+| `set_visual_src` | Set visual source (GIF/video) | `from_payload` **or** `literal` (video bundle) |
+| `randomize_position` | Randomize position within bounds | `x_min`, `x_max`, `y_min`, `y_max` (-1 = canvas edge minus element size) |
+| `set_transform` | Set CSS transform | `translate_x`, `translate_y`, `rotate_deg`, `scale` (blank skipped) |
+| `transform_jitter` | Random transform jitter | `rotate_range`, `translate_range`, `scale_min`, `scale_max` |
+| `flash_class` | Play CSS class animation | `class_name` (e.g. `sporeShake`, `sporePop`), `duration_ms` (default 420) |
+
+### Action examples
+
+**Show follow alert for 5 seconds with fade:**
+
+- Action: **Show for N seconds**
+- `seconds`: `5`
+- `anim_in`: `fade`
+- `anim_out`: `fade`
+
+**Set username from alert payload:**
+
+- Action: **Set text content**
+- `from_payload`: `username`
+
+**Welcome message literal:**
+
+- Action: **Set text content**
+- `from_payload`: *(empty)*
+- `literal`: `Welcome to the stream!`
+
+**Random position in lower third:**
+
+- Action: **Randomize position within bounds**
+- `x_min`: `0`, `x_max`: `-1`, `y_min`: `400`, `y_max`: `-1`
+
+## Twitch API Bindings
+
+For event **`twitch-api-response`**:
+
+| Field | Purpose |
+|-------|---------|
+| **Endpoint** | Full Helix URL, e.g. `https://api.twitch.tv/helix/users` |
+| **Method** | GET, POST, etc. |
+| **JSON parameters (query)** | Query object as JSON |
+| **JSON body** | Body for POST/PATCH/PUT |
+| **Response filters** | Rows of `key` / `value` — only run actions when response matches |
+
+The compiler injects a `requestId` into filters and emits `twitch-api-request` on socket connect.
+
+Example response filter:
+
+```
+success = true
+```
+
+> **Tip:** For one-off Helix calls outside bindings, use Advanced JS — see
+> [Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced).
+
+## Start Hidden Until Shown
+
+Enable **Start hidden until shown** on the element (Properties tab) when using **Show** or
+**Show for N seconds** bindings so the overlay does not flash content before the first event.
+
+## Related Topics
+
+- [Spore Studio Examples & Recipes](help:spore_studio_examples) — complete binding walkthroughs
+- [Connector Examples](help:connector_examples) — automate `chat_add_message` and more
+        """,
+        keywords=[
+            "bindings", "websocket", "events", "actions", "filters", "chain",
+            "next_alert", "instant_alert", "stream deck", "twitch api",
+        ],
+        related_topics=[
+            "spore_studio_design", "spore_studio_advanced",
+            "template_websocket", "connector_examples",
+        ],
+    ),
+
+    "spore_studio_advanced": HelpTopic(
+        id="spore_studio_advanced",
+        title="Advanced JS, Preview & Legacy Templates",
+        category=HelpCategory.TEMPLATES,
+        summary="Live preview mocks, user JavaScript, queue handshake, Stream Deck config, and legacy modes",
+        content="""
+# Advanced JS, Preview & Legacy Templates
+
+Topics beyond the visual canvas: testing without going live, custom JavaScript, Stream Deck
+metadata, and editing older hand-written templates.
+
+## Live Preview
+
+1. Click **Preview** in the toolbar (tooltip: *Open live preview window*).
+2. The **Live preview** dialog opens with a draggable header and resizable corner.
+3. The iframe loads your template with **unsaved** draft changes (no Save required for testing).
+
+| Control | Purpose |
+|---------|---------|
+| **Reload** | Refresh the preview iframe |
+| **Close** | Dismiss the dialog |
+
+### Mock toolbar
+
+Below the title bar:
+
+| Section | Purpose |
+|---------|---------|
+| **Mock:** | One button per registry event — emits a demo payload into the preview only |
+| **SD:** | One button per Stream Deck action defined on this template |
+
+Click a mock button to fire a single socket event into the preview overlay. Payloads use the
+same shape as production events (demo usernames, alert presets, etc.).
+
+> **Tip:** Build bindings in [Event Bindings & Actions](help:spore_studio_bindings), then verify
+> with mocks before adding the browser source to OBS.
+
+**Not supported:** device size presets (iPhone/tablet), responsive breakpoints — resize the
+preview window manually to approximate your OBS browser source size.
+
+## Advanced JS Tab
+
+Hand-written JavaScript is stored between markers in the saved HTML:
+
+```javascript
+// SPORE_STUDIO:user-begin
+// your code here
+// SPORE_STUDIO:user-end
+```
+
+**Do not edit** the generated block between `// SPORE_STUDIO:auto-begin` and `auto-end` — it is
+rebuilt from your bindings on every **Save**.
+
+### Runtime helpers
+
+| Function | Purpose |
+|----------|---------|
+| `sporeShow(id)` | Show element (clears hidden state) |
+| `sporeHide(id)` | Hide element |
+| `sporeSetText(id, value)` | Set text element content |
+| `sporePlayMediaAudio(id, { volume?, fade_in_ms? })` | Play audio on audio/video bundle |
+
+You may also use `socket.on(...)` for events not covered by the binding picker.
+
+### Queue alert handshake
+
+For templates with **Alert system: Queue**, when your overlay finishes displaying a queued alert
+and you are the completion source, emit:
+
+```javascript
+socket.on('next_alert', function (data) {
+    // ... your show/hide logic ...
+    socket.emit('alert_complete', { queue_seq: data.queue_seq });
+});
+```
+
+If the main `alerts.html` overlay handles timing, subsidiary overlays may only need to echo
+`queue_seq` when they are the sole completion source. Otherwise the [alert queue](help:alerts_overview) stalls.
+
+> **Warning:** Missing or mismatched `queue_seq` is the most common cause of "stuck" alerts on
+> custom queue templates.
+
+### Twitch API from user script
+
+Same pattern as built-in templates:
+
+```javascript
+socket.emit('twitch-api-request', {
+    endpoint: 'https://api.twitch.tv/helix/users',
+    method: 'GET',
+    requestId: 'my-follower-check',
+    params: { login: 'someuser' }
+});
+
+socket.on('twitch-api-response', function (data) {
+    if (data.requestId !== 'my-follower-check') return;
+    // handle data
+});
+```
+
+Prefer **Twitch API bindings** in the inspector when you only need request/response tied to an element.
+
+## Stream Deck Tab
+
+Configure buttons that appear in Mycelian's Stream Deck integration for this template.
+
+| Field | Purpose |
+|-------|---------|
+| **Action id** | Stable id referenced by bindings (**Stream Deck action** trigger) |
+| **Display name** | Label on the button |
+| **Description** | Subtitle / tooltip text |
+| **Socket event** | Event name emitted when pressed (often matches a registry event or custom name) |
+| **default_data (JSON)** | Default payload object merged on press |
+
+Click **+ Add Stream Deck action** for each button.
+
+Empty states:
+
+- *Load a template to configure Stream Deck actions.*
+- Legacy templates: actions are not edited here.
+
+## Legacy Templates
+
+Listed under **Legacy (advanced mode)** in the template dropdown — HTML exists without
+`templates/_spore/{name}.spore.json`.
+
+### JSON-only legacy
+
+- Message: *Read-only legacy template. Edits to this value persist to the JSON config; HTML is not regenerated.*
+- Edit **Value** fields tied to Source Settings only.
+- **Save** updates `template_configs/{name}.json` only.
+
+### HTML-parsed legacy
+
+- Position, size, and some styles editable.
+- Bindings are **not** editable in the UI — they live in hand-authored HTML.
+- **Save** updates JSON values mapped from HTML; does not rewrite websocket logic.
+
+> **Tip:** To use the full block editor and binding picker, create a new template with **+ New**
+> and rebuild, or copy from a similar Spore template.
+
+Legacy templates **cannot** receive new blocks from the palette — toast: *Legacy templates can't accept new blocks — create a new template via '+ New' to edit visually.*
+
+## What Save Does
+
+| Template kind | HTML | JSON config | Sidecar |
+|---------------|------|-------------|---------|
+| Spore (`.spore.json`) | Regenerated | Merged (preserves user-tuned values by id) | Updated |
+| Legacy | Unchanged | Updated only | Not written |
+
+## Limitations
+
+| Feature | Status |
+|---------|--------|
+| Export to zip / standalone HTML | Not available |
+| Import external HTML project | Not available |
+| Full HTML/CSS source panes | Not available (use Advanced JS + bindings) |
+| OBS scene/source control | Not available from Spore Studio |
+| Device preview presets | Not available |
+
+## See Also
+
+- [Spore Studio Overview](help:spore_studio_overview)
+- [Spore Studio Examples & Recipes](help:spore_studio_examples)
+        """,
+        keywords=[
+            "advanced js", "preview", "legacy", "stream deck", "alert_complete",
+            "queue", "sporeShow", "mock",
+        ],
+        related_topics=[
+            "spore_studio_bindings", "spore_studio_examples",
+            "template_websocket", "alerts_overview",
+        ],
+    ),
+
+    "spore_studio_examples": HelpTopic(
+        id="spore_studio_examples",
+        title="Spore Studio Examples & Recipes",
+        category=HelpCategory.TEMPLATES,
+        summary="Step-by-step overlay builds with bindings, filters, and testing",
+        content="""
+# Spore Studio Examples & Recipes
+
+Hands-on walkthroughs. For field definitions see [Designing Templates](help:spore_studio_design);
+for action args see [Event Bindings & Actions](help:spore_studio_bindings).
+
+## Recipe 1: Simple Follow Alert (Queue)
+
+**Goal:** 800×200 overlay that shows username + image for follows only.
+
+1. **+ New** → Name: `follow_alert`, Alert system: **Queue**, 800×200.
+2. Drag **Text** → category `label` → set default **Text** to `New follower!`
+3. Drag **Text** → category `username` → leave empty (filled by binding).
+4. Drag **Image** → category `avatar` → set **Source URL** to a placeholder under `assets/follow_alert/`.
+5. Select `username` text → **Bindings** → **+ Add binding**:
+   - Trigger: **Registry event** → `next_alert`
+   - Filter: `alert_type` = `follow`
+   - Action: **Set text content** → `from_payload`: `username`
+6. Select `avatar` image → binding on same event/filter:
+   - Action: **Set image source** → `from_payload`: *(use a URL field from payload or literal path)*
+7. Select container or root group → binding:
+   - Action: **Show for N seconds** → `seconds`: `5`, `anim_in`: `fade`, `anim_out`: `fade`
+8. Enable **Start hidden until shown** on text and image elements.
+9. **Expose in Source Settings** on colors/fonts you want to tweak live.
+10. **Save** → **Preview** → click **Mock:** `next_alert` (follow) → verify animation.
+11. Add OBS browser source: `http://127.0.0.1:5000/follow_alert` (use your actual port).
+
+If this template owns queue completion, add to **Advanced JS**:
+
+```javascript
+socket.on('next_alert', function (data) {
+    if (data.alert_type !== 'follow') return;
+    // generated bindings handle show/hide
+    setTimeout(function () {
+        socket.emit('alert_complete', { queue_seq: data.queue_seq });
+    }, 5000);
+});
+```
+
+## Recipe 2: Instant Sub Counter Bar
+
+**Goal:** HUD that updates on every sub without blocking the alert queue.
+
+1. **+ New** → `sub_counter`, Alert system: **Instant**, 600×80.
+2. One **Text** element: `Subs today: 0`.
+3. Binding on `instant_alert`:
+   - Filter: `alert_type` = `sub`
+   - Action: **Set text content** → `literal`: `Subs today: ` *(or chain two text elements)*
+   - Better: **Set text content** → `from_payload`: `username` on a second line, or use Advanced JS to increment a counter.
+4. **Save** — no `alert_complete` required.
+
+Example binding filter JSON shape (conceptual):
+
+```json
+{
+  "event": "instant_alert",
+  "filter": { "alert_type": "sub" },
+  "action": "set_text",
+  "args": { "from_payload": "username" }
+}
+```
+
+## Recipe 3: Chat Message Pop
+
+**Goal:** Show last chat line briefly.
+
+1. New template, **Instant** or **Queue** as appropriate (chat is independent of alert queue).
+2. **Text** element, **Start hidden until shown** enabled.
+3. Binding:
+   - Event: `new-message`
+   - Action: **Set text content** → `from_payload`: `message`
+   - Chained: **Show for N seconds** → `seconds`: `4`
+4. Optional filter: `message_type` = `text` to ignore actions.
+
+## Recipe 4: GIF Swap on Cheer
+
+**Goal:** Swap video visual to a cheer GIF and play a sound.
+
+1. Add **Video** block; **Visual kind**: `image` or `video` as needed.
+2. Drop cheer GIF into `assets/{template}/`.
+3. Binding on `next_alert`, filter `alert_type` = `bit` (or `donation`):
+   - **Set visual source** → `from_payload`: `gif_name` *(or literal `/assets/.../cheer.gif`)*
+4. Chained step (delay 0 ms): **Play audio element** on a separate **Audio** block.
+
+## Recipe 5: Random Alert Position
+
+**Goal:** Different corner each follow.
+
+1. Group alert art in a **Container**.
+2. Binding on `next_alert` / `follow` filter:
+   - **Randomize position within bounds**
+   - `x_min`: `0`, `x_max`: `-1`, `y_min`: `0`, `y_max`: `-1`
+3. **Show for N seconds** as primary or chained action.
+
+## Recipe 6: Stream Deck Toggle Overlay
+
+**Goal:** Button shows/hides a logo overlay.
+
+1. **Stream Deck** tab → **+ Add Stream Deck action**:
+   - Action id: `toggle_logo`
+   - Display name: `Toggle logo`
+   - Socket event: `toggle_logo` *(custom)*
+   - default_data: `{}`
+2. Select logo **Image** → Binding:
+   - Trigger: **Stream Deck action** → `toggle_logo`
+   - Action: **Toggle visibility**
+3. **Preview** → **SD:** `toggle_logo` to test.
+
+## Recipe 7: Twitch API Follower Check
+
+**Goal:** Show element only when Helix reports success.
+
+1. Binding trigger: **Registry event** → `twitch-api-response`
+2. Configure endpoint/method in binding card.
+3. **Response filters:** `success` = `true`
+4. Action: **Show element** on a status indicator.
+
+## Recipe 8: Chained Action Drama
+
+**Goal:** Pop-in, shake, then hide (max 15 chain steps).
+
+On `next_alert` (any type), primary **Show**, then chain:
+
+| Step | delay_ms | Action | Args |
+|------|----------|--------|------|
+| 1 | 100 | flash_class | `class_name`: `sporePop`, `duration_ms`: 400 |
+| 2 | 450 | flash_class | `class_name`: `sporeShake`, `duration_ms`: 420 |
+| 3 | 3000 | hide | — |
+
+> **Note:** You cannot add more than 15 chained steps per binding.
+
+## Testing Checklist
+
+- [ ] **Preview** mocks for each event you bind
+- [ ] **Save** then reload template in OBS
+- [ ] Queue templates emit `alert_complete` when appropriate
+- [ ] [Source Controls](help:source_controls) adjust exposed fields live
+
+## See Also
+
+- [Spore Studio Overview](help:spore_studio_overview)
+- [First Alert Setup](help:first_alert_setup)
+        """,
+        keywords=[
+            "examples", "recipes", "tutorial", "follow alert", "walkthrough",
+            "spore studio",
+        ],
+        related_topics=[
+            "spore_studio_overview", "spore_studio_bindings",
+            "first_alert_setup", "source_controls",
+        ],
     ),
 
     # =========================================
