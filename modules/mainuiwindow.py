@@ -1116,9 +1116,7 @@ def create_splash_screen():
         with ui.card().classes("w-96 p-8 text-center bg-theme-surface"):
             # Logo/branding
             ui.label("Mycelian").classes("text-3xl font-bold mb-2 text-primary")
-            ui.label("Streaming Toolkit").classes(
-                "text-lg secondary-text mb-6"
-            )
+            ui.label("Streaming Toolkit").classes("text-lg secondary-text mb-6")
 
             # Progress bar
             _splash_progress = ui.linear_progress(value=0).classes("w-full mb-3")
@@ -1204,8 +1202,8 @@ def create_ui_elements():
                     source_controls_tab = ui.tab("Source Controls")
                     connectors_tab = ui.tab("Connectors")
                     chatbot_tab = ui.tab("Chatbot")
-                    settings_tab = ui.tab("Settings")
                     spore_studio_tab = ui.tab("Spore Studio")
+                    settings_tab = ui.tab("Settings")
 
             from .help_system.contextual_help import register_main_tabs
             from .notification_engine import (
@@ -1293,7 +1291,9 @@ def create_ui_elements():
                         lazy_tabs[tab_name] = LazyTabPanel(tab_name, build_func)
                         lazy_tabs[tab_name].container = panel
                         # Create spinner and store reference for later removal
-                        spinner = ui.spinner("dots").classes("mx-auto").props("size=3rem")
+                        spinner = (
+                            ui.spinner("dots").classes("mx-auto").props("size=3rem")
+                        )
                         lazy_tabs[tab_name].spinner = spinner
 
             # Add tab change handler for unsaved changes warning and lazy loading
@@ -1321,7 +1321,9 @@ def create_ui_elements():
                     from .uiwindows.settings import settings_ui
 
                     if settings_ui.has_unsaved_changes():
-                        show_settings_unsaved_dialog(tabs, tab_panels, current_tab, new_tab)
+                        show_settings_unsaved_dialog(
+                            tabs, tab_panels, current_tab, new_tab
+                        )
                         # Prevent the tab switch by reverting the selection
                         tabs.value = current_tab
                         return

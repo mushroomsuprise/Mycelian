@@ -398,48 +398,46 @@ def maybe_suggest_game_hook_for_category(category: Optional[str]) -> None:
     )
 
 
-def _twitch_connected() -> bool:
+def _twitch_configured() -> bool:
     try:
-        from .dataobjects import state_manager
+        from .api_credentials_manager import api_credentials_manager
 
-        t = state_manager.get_twitch_data()
-        if not t:
-            return False
-        return bool((getattr(t, "auth_token", "") or "").strip()) and bool(
-            (getattr(t, "user_id", "") or "").strip()
+        c = api_credentials_manager.get_twitch_credentials()
+        return bool(
+            (c.get("client_id") or "").strip()
+            and (c.get("client_secret") or "").strip()
         )
     except Exception:
         return False
 
 
-def _spotify_connected() -> bool:
+def _spotify_configured() -> bool:
     try:
-        from .dataobjects import state_manager
+        from .api_credentials_manager import api_credentials_manager
 
-        s = state_manager.get_spotify_data()
-        if not s:
-            return False
-        st = (getattr(s, "connection_status", "") or "").strip().lower()
-        return st == "connected"
+        c = api_credentials_manager.get_spotify_credentials()
+        return bool(
+            (c.get("client_id") or "").strip()
+            and (c.get("client_secret") or "").strip()
+        )
     except Exception:
         return False
 
 
-def _youtube_connected() -> bool:
+def _youtube_configured() -> bool:
     try:
         from .dataobjects import state_manager
 
         y = state_manager.get_youtube_data()
         if not y:
             return False
-        st = (getattr(y, "connection_status", "") or "").strip().lower()
-        return st.startswith("connected") or st.startswith("partial")
+        return bool((getattr(y, "api_key", "") or "").strip())
     except Exception:
         return False
 
 
-def _psn_connected() -> bool:
-    """Aligned with PSN tab: NPSSO present in settings or live snapshot."""
+def _psn_configured() -> bool:
+    """NPSSO present in settings or live snapshot (PSN tab semantics)."""
     try:
         from .dataobjects import state_manager
 
@@ -456,55 +454,170 @@ def _psn_connected() -> bool:
         return False
 
 
-_service_last: Dict[str, bool] = {}
+def _obs_configured() -> bool:
+    try:
+        from .dataobjects import state_manager
+
+        o = state_manager.get_obs_data()
+        if not o:
+            return False
+        return bool(getattr(o, "enabled", True))
+    except Exception:
+        return False
 
 
-def poll_service_connection_changes() -> None:
-    """Call from a UI timer; emit notify on edge transitions only."""
+def _service_configured(key: str) -> bool:
+    if key == "twitch":
+        return _twitch_configured()
+    if key == "spotify":
+        return _spotify_configured()
+    if key == "youtube":
+        return _youtube_configured()
+    if key == "psn":
+        return _psn_configured()
+    if key == "obs":
+        return _obs_configured()
+    return False
+
+
+def _service_status_label(key: str) -> str:
+    if key == "twitch":
+        from . import twitch
+
+        info = twitch.get_twitch_connection_status()
+        st = info.get("status")
+        return str(st).strip() if st is not None else "Unknown"
+
+    if key == "spotify":
+        from . import spotify
+        from .dataobjects import state_manager
+
+        s = state_manager.get_spotify_data()
+        if s and (getattr(s, "connection_status", "") or "").strip():
+            return (getattr(s, "connection_status", "") or "").strip()
+        st = spotify.get_spotify_status()
+        return str(st.get("status", "Unknown") or "Unknown").strip()
+
+    if key == "youtube":
+        from .dataobjects import state_manager
+
+        y = state_manager.get_youtube_data()
+        if not y:
+            return "Unknown"
+        return (getattr(y, "connection_status", "") or "Unknown").strip()
+
+    if key == "psn":
+        from .dataobjects import state_manager
+
+        live = state_manager.get_live_psn_data()
+        settings = state_manager.get_psn_settings_data()
+        token_in_settings = (
+            (settings.npsso_code or "").strip() if settings else ""
+        )
+        token_in_live = ""
+        if live and getattr(live, "npsso_code", None):
+            token_in_live = str(live.npsso_code or "").strip()
+        if not (token_in_settings or token_in_live):
+            return "Not Connected"
+        if live and getattr(live, "is_online", False):
+            return "Connected"
+        return "Configured but Offline"
+
+    if key == "obs":
+        from .obs_service import obs_service
+
+        return "Connected" if obs_service.is_connected() else "Disconnected"
+
+    return "Unknown"
+
+
+def _service_status_notify_type(service_key: str, status: str) -> str:
+    s = (status or "").strip().lower()
+    if not s:
+        return "info"
+    if "error" in s or "fail" in s:
+        return "negative"
+    if service_key == "twitch":
+        if s == "connected":
+            return "positive"
+        return "warning"
+    if service_key == "spotify":
+        if s == "connected":
+            return "positive"
+        return "warning"
+    if service_key == "youtube":
+        if s.startswith("connected") or s.startswith("partial"):
+            return "positive"
+        return "warning"
+    if service_key == "psn":
+        if s == "connected":
+            return "positive"
+        return "warning"
+    if service_key == "obs":
+        if s == "connected":
+            return "positive"
+        return "warning"
+    return "info"
+
+
+_SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs")
+
+_SERVICE_LABELS: Dict[str, str] = {
+    "twitch": "Twitch",
+    "spotify": "Spotify",
+    "youtube": "YouTube",
+    "psn": "PSN",
+    "obs": "OBS",
+}
+
+_SERVICE_SUBTABS: Dict[str, str] = {
+    "twitch": "Twitch",
+    "spotify": "Spotify",
+    "youtube": "YouTube",
+    "psn": "PSN",
+    "obs": "OBS",
+}
+
+_service_last: Dict[str, str] = {}
+
+# Same status repeated within this window does not re-notify (flicker).
+_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC = 45.0
+
+
+def poll_service_status_changes() -> None:
+    """Call from a UI timer; notify when a configured integration's status label changes."""
     if not _notifications_enabled():
         return
 
-    states = {
-        "twitch": _twitch_connected(),
-        "spotify": _spotify_connected(),
-        "youtube": _youtube_connected(),
-        "psn": _psn_connected(),
-    }
-    labels = {
-        "twitch": "Twitch",
-        "spotify": "Spotify",
-        "youtube": "YouTube",
-        "psn": "PSN",
-    }
-    subtabs = {
-        "twitch": "Twitch",
-        "spotify": "Spotify",
-        "youtube": "YouTube",
-        "psn": "PSN",
-    }
+    for key in _SERVICE_KEYS:
+        if not _service_configured(key):
+            _service_last.pop(key, None)
+            continue
 
-    for key, now_connected in states.items():
+        try:
+            status = _service_status_label(key)
+        except Exception:
+            logger.debug("service status poll failed for %s", key, exc_info=True)
+            continue
+
         prev = _service_last.get(key)
         if prev is None:
-            _service_last[key] = now_connected
+            _service_last[key] = status
             continue
-        if prev == now_connected:
+        if prev == status:
             continue
-        _service_last[key] = now_connected
-        name = labels[key]
-        sub = subtabs[key]
-        if now_connected:
-            msg = f"{name} connected"
-            ntype = "positive"
-        else:
-            msg = f"{name} disconnected"
-            ntype = "warning"
-        dk = f"svc:{key}:{'1' if now_connected else '0'}"
+
+        _service_last[key] = status
+        label = _SERVICE_LABELS[key]
+        sub = _SERVICE_SUBTABS[key]
+        msg = f"{label}: {status}"
+        ntype = _service_status_notify_type(key, status)
+        dk = f"svc:{key}:{status}"
         notify(
             msg,
             type=ntype,
             dedupe_key=dk,
-            dedupe_cooldown_sec=3.0,
+            dedupe_cooldown_sec=_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC,
             actions=[
                 {
                     "kind": "navigate",
@@ -515,9 +628,14 @@ def poll_service_connection_changes() -> None:
         )
 
 
+def poll_service_connection_changes() -> None:
+    """Backward-compatible alias for :func:`poll_service_status_changes`."""
+    poll_service_status_changes()
+
+
 def start_service_watcher_timer() -> None:
-    """Start periodic polling for integration connection edges (after UI exists)."""
-    ui.timer(2.0, poll_service_connection_changes, active=True)
+    """Start periodic polling for integration status changes (after UI exists)."""
+    ui.timer(2.0, poll_service_status_changes, active=True)
 
 
 # Load persisted history at import (for non-UI code paths); UI registers refresh later

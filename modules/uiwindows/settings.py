@@ -46,6 +46,7 @@ from ..database_manager import (
 from ..dataobjects import YouTubeData, state_manager
 from ..path_utils import get_working_directory
 from ..startup_profiler import StartupTimer, log_startup_summary
+from .service_brand_icons import service_tab_icon
 from .tabs import (
     AppSettingsTab,
     DatabaseTab,
@@ -147,6 +148,11 @@ CSS = """
 /* Style for the tabs */
 .settings-tabs {
     margin-bottom: 1rem;
+}
+
+.settings-tabs .q-tab__icon {
+    width: 1.25em;
+    height: 1.25em;
 }
 """
 
@@ -1254,9 +1260,7 @@ class SettingsUI:
                                     ).classes("secondary-text ml-40")
 
                                     # Firebase requirements info
-                                    with ui.card().classes(
-                                        "w-full p-3 hint-info mt-2"
-                                    ):
+                                    with ui.card().classes("w-full p-3 hint-info mt-2"):
                                         ui.label("Firebase Requirements:").classes(
                                             "text-sm font-semibold text-blue-300"
                                         )
@@ -2710,9 +2714,7 @@ class SettingsUI:
                 (),
                 {"value": new_type, "args": (new_type,)},
             )()
-            self.on_field_change(
-                "database_settings", "database_type", resolved_event
-            )
+            self.on_field_change("database_settings", "database_type", resolved_event)
 
             new_type = self.database_settings.database_type
 
@@ -2978,9 +2980,7 @@ class SettingsUI:
         """Start the database migration process"""
         try:
             if source_type == target_type:
-                notify(
-                    "Source and target databases cannot be the same", type="warning"
-                )
+                notify("Source and target databases cannot be the same", type="warning")
                 return
 
             dialog.close()
@@ -3352,9 +3352,7 @@ class SettingsUI:
             logger.error(
                 f"Error updating database manager config: {str(e)}", exc_info=True
             )
-            notify(
-                f"Error updating database configuration: {str(e)}", type="negative"
-            )
+            notify(f"Error updating database configuration: {str(e)}", type="negative")
 
     def browse_sql_database_file(self):
         """Open file browser for SQLite database file selection"""
@@ -3964,8 +3962,9 @@ class SettingsUI:
             "field_key": field_key,
         }
 
-        with ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog, ui.card().classes(
-            _FILE_BROWSER_CARD_CLASSES
+        with (
+            ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog,
+            ui.card().classes(_FILE_BROWSER_CARD_CLASSES),
         ):
             ui.label(title).classes("text-lg font-bold mb-4 shrink-0")
 
@@ -4041,9 +4040,7 @@ class SettingsUI:
 
                 # Dialog buttons
                 with ui.row().classes("w-full justify-end gap-2 mt-4 shrink-0"):
-                    ui.button("Cancel", on_click=dialog.close).classes(
-                        "btn-cancel"
-                    )
+                    ui.button("Cancel", on_click=dialog.close).classes("btn-cancel")
 
                     select_button = ui.button(
                         "Select File",
@@ -4430,10 +4427,14 @@ class SettingsUI:
         if not hasattr(self, "_yt_playlist_chip_container"):
             return
         with self._yt_playlist_chip_container:
-            with ui.element("div").classes(
-                "flex items-center gap-1 px-3 py-1 rounded-full"
-                " bg-blue-500/20 border border-blue-500/40"
-            ).style("flex-shrink: 0; white-space: nowrap;"):
+            with (
+                ui.element("div")
+                .classes(
+                    "flex items-center gap-1 px-3 py-1 rounded-full"
+                    " bg-blue-500/20 border border-blue-500/40"
+                )
+                .style("flex-shrink: 0; white-space: nowrap;")
+            ):
                 ui.label(name).classes("text-sm").style("white-space: nowrap;")
                 ui.button(
                     icon="close",
@@ -4965,16 +4966,16 @@ class SettingsUI:
                     # Tabs header
                     with StartupTimer("settings_create_tabs_header"):
                         with ui.tabs().classes("w-full settings-tabs") as tabs:
-                            ui.tab("App Settings", icon="tune")
-                            ui.tab("Twitch", icon="stream")
-                            ui.tab("Theme", icon="palette")
-                            ui.tab("PSN", icon="sports_esports")
-                            ui.tab("Spotify", icon="music_note")
-                            ui.tab("YouTube", icon="video_library")
-                            ui.tab("OBS", icon="live_tv")
+                            ui.tab("Twitch", icon=service_tab_icon("twitch"))
+                            ui.tab("OBS", icon=service_tab_icon("obs"))
+                            ui.tab("PSN", icon=service_tab_icon("psn"))
+                            ui.tab("Spotify", icon=service_tab_icon("spotify"))
+                            ui.tab("YouTube", icon=service_tab_icon("youtube"))
                             ui.tab("Game Hooks", icon="memory")
                             ui.tab("Database", icon="storage")
                             ui.tab("Statistics", icon="analytics")
+                            ui.tab("Theme", icon="palette")
+                            ui.tab("App Settings", icon="tune")
                             ui.tab("About", icon="info")
 
                 # Panels for each tab

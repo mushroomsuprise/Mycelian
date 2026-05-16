@@ -25,7 +25,7 @@ Other Standard Templates:
     [] - Create a .spore.json sidecar file for the Spore Studio module for bitbar.html, bitboss.html, counter.html, ff7.html, giveaway.html, pausedalerts.html, roulette.html, subbar.html, and title.html
 
 Settings Tab:
-    [] - Update icons for services to use the actual brand icons
+    [x] - Update icons for services to use the actual brand icons
 
 General Items:
     [] - Update the create theme dialog to show a mock-ui similar to the mock ui in the theme tab. It should live update as the user changes the different color boxes. Do a general overhaul of the create theme dialog to make better use of space.
