@@ -132,28 +132,8 @@ def _merged_streamdeck_options_payload(
     return merged
 
 
-# Default preview profile when template JSON has no ``preview_behavior`` root key.
-# Templates listed here run an animated demo loop in the Custom Sources iframe,
-# emitting production-shaped socket events to a single sid so the user can see
-# the template's runtime behavior without real Twitch / game data.
-_PREVIEW_ANIMATED_DEMO_TEMPLATES = frozenset(
-    {
-        "alerts",
-        "pausedalerts",
-        "chat",
-        "activity_feed",
-        "giveaway",
-        "title",
-        "bitbar",
-        "subbar",
-        "counter",
-        "roulette",
-    }
-)
-
-# Mock data pools used by the per-template preview demo handlers
-# (web_engine._preview_demo_*). These keep the previewer interesting without
-# touching the underlying templates.
+# Mock data pools shared with :mod:`spore_studio.preview_mocks` for manual
+# preview toolbar emits (Custom Sources + Spore Studio).
 _DEMO_USERNAMES = (
     "PixelPanda", "NeonNova", "TacoTuesday", "ShinyHaxor", "QwertyKnight",
     "MidnightMango", "EmberFox", "GlitchWizard", "VelvetVortex", "OptimusByte",
@@ -198,8 +178,8 @@ _DEMO_CHAT_COLORS = (
     "#FF4500", "#1E90FF", "#00CED1", "#FF69B4", "#9ACD32",
     "#FFA500", "#9370DB", "#FFD700", "#20C997", "#FF6B6B",
 )
-# Alert presets used by the alerts-template demo loop. Each entry is the body
-# of an ``alerts_play_alert`` payload (the template's connector-action handler).
+# Alert presets used by manual preview mock emits. Each entry is the body
+# of an ``alerts_play_alert`` / ``next_alert``-style payload.
 # ``username``, ``timestamp`` and a default ``duration`` are filled in per-cycle.
 _DEMO_ALERT_PRESETS = (
     {"alert_type": "sub", "tier": "1000"},
@@ -234,6 +214,22 @@ MYCELIAN_PREVIEW_HELPER_HTML = """
 (function () {
   if (window.__mycelianPreviewHelperReady) { return; }
   window.__mycelianPreviewHelperReady = true;
+  window.__mycelianPreviewSettings = window.__mycelianPreviewSettings || {
+    enable_preview_sounds: true,
+    show_mock_toolbar: true
+  };
+  (function patchPreviewAudio() {
+    if (window.__mycelianPreviewAudioPatched) { return; }
+    window.__mycelianPreviewAudioPatched = true;
+    var origPlay = HTMLAudioElement.prototype.play;
+    HTMLAudioElement.prototype.play = function () {
+      var s = window.__mycelianPreviewSettings;
+      if (s && s.enable_preview_sounds === false) {
+        return Promise.resolve(undefined);
+      }
+      return origPlay.apply(this, arguments);
+    };
+  })();
   var SEL = ".mycelian-preview-show";
   function unhide(el) {
     if (!el || !el.classList) { return; }
@@ -279,33 +275,49 @@ MYCELIAN_PREVIEW_HELPER_HTML = """
     });
     treeObs.observe(document.documentElement, { childList: true, subtree: true });
   }
+  function attachPreviewSocketHooks() {
+    var n = 0;
+    var id = setInterval(function () {
+      n++;
+      var sock = typeof socket !== "undefined" ? socket : null;
+      if (!sock || typeof sock.on !== "function") {
+        if (n > 120) { clearInterval(id); }
+        return;
+      }
+      clearInterval(id);
+      if (sock.__mycelianPreviewHooks) { return; }
+      sock.__mycelianPreviewHooks = true;
+      sock.on("mycelian_preview_config_refresh", function () {
+        if (typeof loadTemplateConfig === "function") {
+          loadTemplateConfig();
+        }
+      });
+      sock.on("mycelian_preview_settings", function (data) {
+        window.__mycelianPreviewSettings = data || {};
+      });
+      try {
+        var qs = window.location.search || "";
+        var tokMatch = /(?:\\?|&)__preview_token=([^&]+)/.exec(qs);
+        if (tokMatch) {
+          sock.emit("mycelian_preview_register", {
+            token: decodeURIComponent(tokMatch[1]),
+          });
+        }
+      } catch (regErr) {}
+      try {
+        sock.emit("mycelian_preview_client_ready");
+      } catch (err) {}
+    }, 50);
+  }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
     init();
   }
+  attachPreviewSocketHooks();
 })();
 </script>
 """
-
-
-def resolve_template_preview_profile(
-    template_name: str, template_config: Dict[str, Any]
-) -> str:
-    """
-    Return ``persistent`` (static overlay) or ``animated_demo`` (mock activity in preview).
-
-    Optional root key ``preview_behavior`` in the template JSON may be
-    ``persistent`` or ``animated_demo``.
-    """
-    if not isinstance(template_config, dict):
-        return "persistent"
-    raw = template_config.get("preview_behavior")
-    if raw in ("persistent", "animated_demo"):
-        return str(raw)
-    if template_name in _PREVIEW_ANIMATED_DEMO_TEMPLATES:
-        return "animated_demo"
-    return "persistent"
 
 
 ALERT_PLAYING = False
@@ -926,8 +938,6 @@ class WebEngine:
             as-is (for Stream Deck actions and custom events).
             """
             try:
-                from .spore_studio import preview_mocks as _pm
-
                 payload = request.get_json(silent=True) or {}
                 token = payload.get("token")
                 event_name = payload.get("event")
@@ -937,44 +947,21 @@ class WebEngine:
                         400,
                         {"Content-Type": "application/json"},
                     )
-                sid = self._preview_iframe_sids.get(str(token))
-                if not sid:
-                    return (
-                        {
-                            "error": (
-                                "No preview iframe registered for that "
-                                "token (open the preview dialog first)."
-                            ),
-                        },
-                        404,
-                        {"Content-Type": "application/json"},
-                    )
                 custom = payload.get("data")
                 if custom is None:
                     custom = payload.get("payload")
-                if custom is not None:
-                    self.socketio.emit(str(event_name), custom, to=sid)
+                ok, err, emitted = self.emit_preview_mock(
+                    str(token), str(event_name), custom
+                )
+                if not ok:
+                    code = 404 if err and "No preview iframe" in err else 400
                     return (
-                        {"ok": True, "event": str(event_name)},
-                        200,
+                        {"error": err or "emit failed"},
+                        code,
                         {"Content-Type": "application/json"},
                     )
-                spec = _pm.build_mock_payload(str(event_name))
-                if spec is None:
-                    return (
-                        {
-                            "error": (
-                                f"No mock payload defined for "
-                                f"'{event_name}'."
-                            ),
-                        },
-                        400,
-                        {"Content-Type": "application/json"},
-                    )
-                socket_event, body = spec
-                self.socketio.emit(socket_event, body, to=sid)
                 return (
-                    {"ok": True, "event": socket_event},
+                    {"ok": True, "event": emitted or str(event_name)},
                     200,
                     {"Content-Type": "application/json"},
                 )
@@ -2136,6 +2123,69 @@ class WebEngine:
                 "ts": time.time(),
             }
 
+    def emit_preview_mock(
+        self,
+        token: str,
+        event_name: str,
+        custom: Optional[Any] = None,
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Emit one mock Socket.IO event to the preview iframe registered for
+        ``token`` (Custom Sources or Spore Studio). Shared by the HTTP emit
+        route and the NiceGUI toolbar.
+
+        Returns:
+            ``(ok, error_message, emitted_event_name)``.
+        """
+        sid = self._preview_iframe_sids.get(str(token))
+        if not sid:
+            return (
+                False,
+                "No preview iframe registered for that token (open preview first).",
+                None,
+            )
+        try:
+            if custom is not None:
+                self.socketio.emit(str(event_name), custom, to=sid)
+                return True, None, str(event_name)
+            from .spore_studio import preview_mocks as _pm
+
+            spec = _pm.build_mock_payload(str(event_name))
+            if spec is None:
+                return False, f"No mock payload defined for '{event_name}'.", None
+            socket_event, body = spec
+            self.socketio.emit(socket_event, body, to=sid)
+            return True, None, str(socket_event)
+        except Exception as e:
+            logger.error("emit_preview_mock failed: %s", e, exc_info=True)
+            return False, str(e), None
+
+    def emit_preview_settings_to_iframe(self, token: str) -> None:
+        """Push persisted preview-only settings (sounds, toolbar) to one iframe."""
+        sid = self._preview_iframe_sids.get(str(token))
+        if not sid:
+            return
+        try:
+            from .template_preview_settings import load_template_preview_settings
+
+            self.socketio.emit(
+                "mycelian_preview_settings",
+                load_template_preview_settings(),
+                to=sid,
+            )
+        except Exception as e:
+            logger.debug("emit_preview_settings_to_iframe skipped: %s", e)
+
+    def emit_preview_config_refresh(self, token: str) -> None:
+        """Ask a preview iframe to reload config via ``loadTemplateConfig`` if present."""
+        sid = self._preview_iframe_sids.get(str(token))
+        if not sid:
+            return
+        try:
+            self.socketio.emit("mycelian_preview_config_refresh", {}, to=sid)
+        except Exception as e:
+            logger.debug("emit_preview_config_refresh skipped: %s", e)
+
     def _register_spore_preview_session_keep_draft(
         self, token: str, template_name: str
     ) -> None:
@@ -2257,296 +2307,6 @@ class WebEngine:
             self._preview_iframe_tokens[sid] = token
         except Exception as e:
             logger.warning("preview iframe register failed: %s", e, exc_info=True)
-
-    # ------------------------------------------------------------------
-    # Custom Sources iframe preview helpers
-    # ------------------------------------------------------------------
-
-    def _preview_sleep(self, sid: str, seconds: float) -> bool:
-        """Cooperative sleep that breaks early on stop signal.
-
-        Returns True if the loop should stop (preview disconnected or
-        another reason set ``_preview_demo_stop[sid]``), False if the
-        full duration elapsed normally.
-        """
-        if seconds <= 0:
-            return self._preview_demo_stop.get(sid, False)
-        end = time.time() + seconds
-        while True:
-            if self._preview_demo_stop.get(sid, False):
-                return True
-            remaining = end - time.time()
-            if remaining <= 0:
-                return False
-            self.socketio.sleep(min(0.4, remaining))
-
-    def _preview_demo_loop(self, sid: str, token: str) -> None:
-        """Drive a per-template animated preview for the Custom Sources iframe.
-
-        Each template has its own ``_preview_demo_<name>`` handler that emits
-        production-shaped socket events to the preview ``sid`` only. The handler
-        is responsible for its own loop + cooperative ``_preview_sleep`` calls.
-        """
-        try:
-            with self._preview_sessions_lock:
-                sess = self._preview_sessions.get(token)
-            if not isinstance(sess, dict):
-                return
-            template_name = sess.get("template")
-            if not template_name:
-                return
-
-            cfg = copy.deepcopy(self.template_config_parser.load_config(template_name))
-            overrides = sess.get("overrides")
-            if isinstance(overrides, dict):
-                for element in cfg.get("elements", []):
-                    if (
-                        isinstance(element, dict)
-                        and element.get("id") in overrides
-                    ):
-                        element["value"] = overrides[element.get("id")]
-
-            profile = resolve_template_preview_profile(template_name, cfg)
-
-            # One-shot demos run to completion and return.
-            if template_name == "pausedalerts":
-                self.socketio.sleep(0.2)
-                self.socketio.emit(
-                    "pause_status_update", {"paused": True}, to=sid
-                )
-                return
-
-            if profile != "animated_demo":
-                return
-
-            handlers = {
-                "chat": self._preview_demo_chat,
-                "alerts": self._preview_demo_alerts,
-                "activity_feed": self._preview_demo_activity_feed,
-                "giveaway": self._preview_demo_giveaway,
-                "title": self._preview_demo_title,
-                "bitbar": self._preview_demo_bitbar,
-                "subbar": self._preview_demo_subbar,
-                "counter": self._preview_demo_counter,
-                "roulette": self._preview_demo_roulette,
-            }
-            handler = handlers.get(template_name)
-            if handler is not None:
-                handler(sid)
-        except Exception as e:
-            logger.warning("preview demo loop: %s", e, exc_info=True)
-        finally:
-            self._preview_demo_stop.pop(sid, None)
-
-    def _preview_demo_chat(self, sid: str) -> None:
-        """One varied chat line per cycle (uses connector-action shape).
-
-        IMPORTANT: chat.html's ``addMessage`` reads ``messageData.message``
-        (not ``.text``). The connector handler only normalizes ``text`` to
-        ``message`` when BOTH are missing — sending ``text`` directly bypasses
-        the fallback and renders the username with an empty body. So we
-        always emit the production field name ``message``.
-        """
-        while not self._preview_demo_stop.get(sid, False):
-            self.socketio.emit(
-                "chat_add_message",
-                {
-                    "username": random.choice(_DEMO_USERNAMES),
-                    "message": random.choice(_DEMO_CHAT_MESSAGES),
-                    "color": random.choice(_DEMO_CHAT_COLORS),
-                    "timestamp": time.time(),
-                },
-                to=sid,
-            )
-            if self._preview_sleep(sid, random.uniform(4.5, 8.0)):
-                return
-
-    def _preview_demo_alerts(self, sid: str) -> None:
-        """One alert per cycle, rotating preset types with random username.
-
-        12s gap is well past typical alert duration (5s + entry/exit
-        animations) so the previously-shown alert finishes its full
-        animation before the next ``alerts_play_alert`` interrupts it.
-        Previously the demo ran at 6s which caused mid-animation interrupts
-        and made the second alert play at the wrong speed.
-        """
-        idx = 0
-        while not self._preview_demo_stop.get(sid, False):
-            preset = dict(_DEMO_ALERT_PRESETS[idx % len(_DEMO_ALERT_PRESETS)])
-            preset["username"] = random.choice(_DEMO_USERNAMES)
-            preset.setdefault("duration", 5)
-            preset["timestamp"] = time.time()
-            self.socketio.emit("alerts_play_alert", preset, to=sid)
-            idx += 1
-            if self._preview_sleep(sid, 12.0):
-                return
-
-    def _preview_demo_activity_feed(self, sid: str) -> None:
-        """Stream a varied set of activity-feed alerts using production shapes.
-
-        Spacing matches roughly how often new alerts trickle into a real
-        feed — fast enough to see the entrance animation cleanly but not so
-        fast that the previous card is still settling.
-        """
-        from modules.uiwindows.activity_feed import (
-            iter_activity_feed_preview_payloads,
-        )
-
-        while not self._preview_demo_stop.get(sid, False):
-            for payload in iter_activity_feed_preview_payloads():
-                if self._preview_demo_stop.get(sid, False):
-                    return
-                self.socketio.emit("activity_feed_alert", payload, to=sid)
-                if self._preview_sleep(sid, random.uniform(4.0, 6.5)):
-                    return
-            # Longer breather before the next batch so the feed scrolls in
-            # readable chunks instead of a continuous waterfall.
-            if self._preview_sleep(sid, random.uniform(8.0, 12.0)):
-                return
-
-    def _preview_demo_giveaway(self, sid: str) -> None:
-        """Cycle: open giveaway -> add entries -> pick winner -> clear."""
-        keywords = ("!join", "!enter", "!giveaway", "!raffle")
-        while not self._preview_demo_stop.get(sid, False):
-            self.socketio.emit(
-                "giveaway_start", {"keyword": random.choice(keywords)}, to=sid
-            )
-            if self._preview_sleep(sid, 1.5):
-                return
-
-            entry_count = random.randint(8, min(15, len(_DEMO_USERNAMES)))
-            chosen = random.sample(_DEMO_USERNAMES, k=entry_count)
-            for i, user in enumerate(chosen, start=1):
-                if self._preview_demo_stop.get(sid, False):
-                    return
-                self.socketio.emit(
-                    "giveaway_entry",
-                    {"username": user, "pool_size": i},
-                    to=sid,
-                )
-                if self._preview_sleep(sid, random.uniform(0.4, 1.1)):
-                    return
-
-            self.socketio.emit("giveaway_stop", None, to=sid)
-            if self._preview_sleep(sid, 1.5):
-                return
-
-            winner = random.choice(chosen)
-            self.socketio.emit(
-                "giveaway_winner",
-                {
-                    "winners": [winner],
-                    "pool_entries": list(chosen),
-                    "pool_size": len(chosen),
-                },
-                to=sid,
-            )
-            if self._preview_sleep(sid, 5.0):
-                return
-
-            self.socketio.emit("giveaway_clear", None, to=sid)
-            if self._preview_sleep(sid, 2.0):
-                return
-
-    def _preview_demo_title(self, sid: str) -> None:
-        """Cycle through demo game categories every few seconds."""
-        # Seed streamer-info so the template doesn't sit waiting for an
-        # initial Twitch API response that will never arrive in preview.
-        self.socketio.emit(
-            "streamer-info",
-            {"streamer_name": "PreviewStreamer", "user_id": "0"},
-            to=sid,
-        )
-        idx = 0
-        while not self._preview_demo_stop.get(sid, False):
-            self.socketio.emit(
-                "twitch_data_update",
-                {"current_category": _DEMO_GAME_TITLES[idx % len(_DEMO_GAME_TITLES)]},
-                to=sid,
-            )
-            idx += 1
-            if self._preview_sleep(sid, 5.0):
-                return
-
-    def _preview_demo_bitbar(self, sid: str) -> None:
-        """Add random small batches of bits, then reset to repeat the fill cycle."""
-        while not self._preview_demo_stop.get(sid, False):
-            for _ in range(random.randint(8, 14)):
-                if self._preview_demo_stop.get(sid, False):
-                    return
-                self.socketio.emit(
-                    "bitbar_add_bits",
-                    {"amount": random.randint(50, 400)},
-                    to=sid,
-                )
-                if self._preview_sleep(sid, random.uniform(1.5, 3.5)):
-                    return
-            # Pause to let the "goal reached" animation finish if it triggered
-            if self._preview_sleep(sid, 4.0):
-                return
-            self.socketio.emit("bitbar_reset", None, to=sid)
-            if self._preview_sleep(sid, 2.0):
-                return
-
-    def _preview_demo_subbar(self, sid: str) -> None:
-        """Stream sub/giftsub/resub instant_alerts to fill the bar, then reset."""
-        while not self._preview_demo_stop.get(sid, False):
-            for _ in range(random.randint(6, 10)):
-                if self._preview_demo_stop.get(sid, False):
-                    return
-                preset_type = random.choice(("sub", "sub", "giftsub", "resub"))
-                payload = {
-                    "username": random.choice(_DEMO_USERNAMES),
-                    "alert_type": preset_type,
-                    "tier": "1000",
-                    "is_replay": False,
-                }
-                if preset_type == "giftsub":
-                    payload["quantity"] = random.randint(1, 5)
-                elif preset_type == "resub":
-                    payload["months"] = random.randint(2, 24)
-                self.socketio.emit("instant_alert", payload, to=sid)
-                if self._preview_sleep(sid, random.uniform(2.5, 5.0)):
-                    return
-            if self._preview_sleep(sid, 4.0):
-                return
-            self.socketio.emit("subbar_reset", None, to=sid)
-            if self._preview_sleep(sid, 2.0):
-                return
-
-    def _preview_demo_counter(self, sid: str) -> None:
-        """Increment / decrement the counter (never below 0).
-
-        Uses ``counter_message`` with an explicit value so the displayed
-        number always matches the Python-side shadow regardless of whatever
-        starting value the template's saved config holds.
-        """
-        value = random.randint(0, 5)
-        self.socketio.emit("counter_message", {"message": str(value)}, to=sid)
-        if self._preview_sleep(sid, 2.0):
-            return
-        while not self._preview_demo_stop.get(sid, False):
-            if value <= 0:
-                value += 1
-            else:
-                # Bias toward incrementing so the counter trends upward
-                # over time but still occasionally dips.
-                if random.random() < 0.65:
-                    value += 1
-                else:
-                    value = max(0, value - 1)
-            self.socketio.emit("counter_message", {"message": str(value)}, to=sid)
-            if self._preview_sleep(sid, random.uniform(2.5, 5.0)):
-                return
-
-    def _preview_demo_roulette(self, sid: str) -> None:
-        """Periodically trigger a wheel spin (12s cycle covers spin + result hold)."""
-        while not self._preview_demo_stop.get(sid, False):
-            if self._preview_sleep(sid, 2.0):
-                return
-            self.socketio.emit("roulette_spin", {}, to=sid)
-            if self._preview_sleep(sid, 12.0):
-                return
 
     def _rebuild_url_map(self):
         """Rebuild the entire URL map to handle removed routes"""
@@ -2728,66 +2488,116 @@ class WebEngine:
             except Exception as e:
                 logger.debug("Spore Studio assets poller hook failed: %s", e)
 
-            # Send initial pause status to the newly connected client
-            try:
-                global ALERTS_PAUSED
-                logger.debug(
-                    f"Sending initial pause status to {request.sid}: paused={ALERTS_PAUSED}"
-                )
-
-                # Send the current pause status immediately
-                self.socketio.emit(
-                    "pause_status_update", {"paused": ALERTS_PAUSED}, to=request.sid
-                )
-
-                # Also send the specific paused/resumed event for templates that only listen for these
-                if ALERTS_PAUSED:
-                    self.socketio.emit(
-                        "alerts_paused", {"paused": True}, to=request.sid
-                    )
-                else:
-                    self.socketio.emit(
-                        "alerts_resumed", {"paused": False}, to=request.sid
-                    )
-
-                logger.debug(f"Successfully sent initial pause status to {request.sid}")
-            except Exception as e:
-                logger.error(
-                    f"Error sending initial pause status to {request.sid}: {str(e)}",
-                    exc_info=True,
-                )
-
-            # Send current theme to the newly connected client
-            try:
-                theme_mgr = get_theme_manager()
-                theme = theme_mgr.get_theme()
-                if theme:
-                    theme_css = generate_css_variables(theme)
-                    self.socketio.emit(
-                        "theme_update",
-                        {
-                            "css": theme_css,
-                            "theme_name": theme.name,
-                            "theme_type": theme.theme_type or "dark",
-                        },
-                        to=request.sid,
-                    )
-                    logger.debug(f"Sent initial theme to {request.sid}: {theme.name}")
-            except Exception as e:
-                logger.error(
-                    f"Error sending initial theme to {request.sid}: {str(e)}",
-                    exc_info=True,
-                )
-
             try:
                 self._maybe_start_preview_demo(request.sid)
             except Exception as e:
                 logger.warning(
-                    "preview demo scheduling failed for %s: %s",
+                    "preview iframe sid registration failed for %s: %s",
                     request.sid,
                     e,
                     exc_info=True,
                 )
+
+            connect_sid = request.sid
+
+            def deferred_initial_client_broadcast() -> None:
+                """Avoid spamming preview iframes with live pause/theme payloads."""
+                try:
+                    self.socketio.sleep(0.12)
+                    if connect_sid in self._preview_iframe_tokens:
+                        return
+                    global ALERTS_PAUSED
+                    logger.debug(
+                        "Sending initial pause status to %s: paused=%s",
+                        connect_sid,
+                        ALERTS_PAUSED,
+                    )
+                    self.socketio.emit(
+                        "pause_status_update",
+                        {"paused": ALERTS_PAUSED},
+                        to=connect_sid,
+                    )
+                    if ALERTS_PAUSED:
+                        self.socketio.emit(
+                            "alerts_paused", {"paused": True}, to=connect_sid
+                        )
+                    else:
+                        self.socketio.emit(
+                            "alerts_resumed", {"paused": False}, to=connect_sid
+                        )
+                    theme_mgr = get_theme_manager()
+                    theme = theme_mgr.get_theme()
+                    if theme:
+                        theme_css = generate_css_variables(theme)
+                        self.socketio.emit(
+                            "theme_update",
+                            {
+                                "css": theme_css,
+                                "theme_name": theme.name,
+                                "theme_type": theme.theme_type or "dark",
+                            },
+                            to=connect_sid,
+                        )
+                        logger.debug(
+                            "Sent initial theme to %s: %s",
+                            connect_sid,
+                            theme.name,
+                        )
+                except Exception as e:
+                    logger.error(
+                        "Error in deferred connect broadcast for %s: %s",
+                        connect_sid,
+                        str(e),
+                        exc_info=True,
+                    )
+
+            try:
+                self.socketio.start_background_task(deferred_initial_client_broadcast)
+            except Exception as e:
+                logger.warning(
+                    "deferred connect broadcast scheduling failed: %s",
+                    e,
+                    exc_info=True,
+                )
+
+        @self.socketio.on("mycelian_preview_register")
+        def handle_mycelian_preview_register(data=None):
+            """Bind preview iframe sid to token (cookie-free fallback)."""
+            try:
+                tok = None
+                if isinstance(data, dict):
+                    tok = data.get("token")
+                if not tok:
+                    return
+                tok = str(tok)
+                self._preview_iframe_sids[tok] = request.sid
+                self._preview_iframe_tokens[request.sid] = tok
+                from .template_preview_settings import load_template_preview_settings
+
+                self.socketio.emit(
+                    "mycelian_preview_settings",
+                    load_template_preview_settings(),
+                    to=request.sid,
+                )
+            except Exception as e:
+                logger.debug("mycelian_preview_register failed: %s", e)
+
+        @self.socketio.on("mycelian_preview_client_ready")
+        def handle_mycelian_preview_client_ready():
+            """Preview iframe registered hooks; push persisted preview-only settings."""
+            try:
+                token = self._preview_iframe_tokens.get(request.sid)
+                if not token:
+                    return
+                from .template_preview_settings import load_template_preview_settings
+
+                self.socketio.emit(
+                    "mycelian_preview_settings",
+                    load_template_preview_settings(),
+                    to=request.sid,
+                )
+            except Exception as e:
+                logger.debug("mycelian_preview_client_ready failed: %s", e)
 
         @self.socketio.on("get_current_theme")
         def handle_get_current_theme():

@@ -29,15 +29,20 @@ import os
 import sys
 import time
 import uuid
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from nicegui import app, ui
+from nicegui import ui
 from ..notification_engine import notify
 from ..path_utils import get_assets_path, get_template_path
 
 # Use proper relative import for template_config_parser
+from ..custom_sources_preview_mocks import get_mock_actions
 from ..template_config_parser import TemplateConfigParser
 from .. import web_engine as web_engine_module
+from ..template_preview_settings import (
+    load_template_preview_settings,
+    save_template_preview_settings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +95,23 @@ roulette_expansions = {}
 CUSTOM_SOURCES_PREVIEW_TOKEN = str(uuid.uuid4())
 _custom_sources_preview_gen: list[int] = [0]
 _custom_sources_ctx: Dict[str, Any] = {}
+
+# Maps config file stem -> overlay HTML route (JSON ``template_name``).
+_preview_route_cache: Dict[str, str] = {}
+
+_PREVIEW_HOT_CONFIG_TEMPLATES = frozenset(
+    {
+        "alerts",
+        "pausedalerts",
+        "bitbar",
+        "bitboss",
+        "counter",
+        "subbar",
+        "activity_feed",
+        "ff7",
+    }
+)
+# roulette, title, chat, giveaway: full iframe reload on edit (no hot config API).
 
 # Add custom CSS for animations and styling (removed pulsing animations)
 CUSTOM_CSS = """
@@ -575,6 +597,96 @@ def _refresh_preview_dirty_label(config_name: str) -> None:
     # )
 
 
+def _invalidate_preview_route_cache(config_name: Optional[str] = None) -> None:
+    """Clear cached JSON ``template_name`` lookup (entire tab or one config)."""
+    global _preview_route_cache
+    if config_name is None:
+        _preview_route_cache.clear()
+    else:
+        _preview_route_cache.pop(config_name, None)
+
+
+def _effective_preview_route(config_name: str) -> str:
+    """Route stem served at ``/{route}.html`` from config JSON ``template_name``."""
+    if not config_name:
+        return ""
+    cached = _preview_route_cache.get(config_name)
+    if cached is not None:
+        return cached
+    cp = _custom_sources_ctx.get("config_parser")
+    route = config_name
+    if cp:
+        try:
+            cfg = cp.load_config(config_name)
+            tn = cfg.get("template_name")
+            if isinstance(tn, str) and tn.strip():
+                route = tn.strip()
+        except Exception:
+            pass
+    _preview_route_cache[config_name] = route
+    return route
+
+
+def _template_preview_supports_hot_config(config_name: str) -> bool:
+    return _effective_preview_route(config_name) in _PREVIEW_HOT_CONFIG_TEMPLATES
+
+
+def _push_hot_preview_overrides() -> None:
+    """Push form values and ping iframe ``loadTemplateConfig`` (no iframe reload)."""
+    ctx = _custom_sources_ctx
+    sel = ctx.get("config_select")
+    if not sel or not sel.value:
+        return
+    config_name = sel.value
+    _refresh_preview_dirty_label(config_name)
+    inst = getattr(web_engine_module, "web_engine_instance", None)
+    if not inst or not getattr(inst, "is_running", False):
+        return
+    if not _template_html_exists(config_name):
+        return
+    fd = form_data_store.get(config_name, {})
+    try:
+        inst.push_preview_overrides(CUSTOM_SOURCES_PREVIEW_TOKEN, config_name, fd)
+        inst.emit_preview_config_refresh(CUSTOM_SOURCES_PREVIEW_TOKEN)
+    except Exception as e:
+        logger.warning("Hot preview config push failed: %s", e)
+
+
+def _rebuild_preview_mock_toolbar(config_name: str) -> None:
+    row = _custom_sources_ctx.get("mock_toolbar_row")
+    if row is None:
+        return
+    row.clear()
+    st = load_template_preview_settings()
+    row.visible = bool(st.get("show_mock_toolbar", True))
+    route = _effective_preview_route(config_name)
+    actions = get_mock_actions(route)
+    with row:
+        if not actions:
+            ui.label("No mock events for this template.").classes(
+                "text-xs opacity-60 shrink-0"
+            )
+            return
+        for act in actions:
+            ev = act["event"]
+            label = act.get("label", ev)
+
+            def _emit_mock(event_name: str = ev) -> None:
+                eng = getattr(web_engine_module, "web_engine_instance", None)
+                if not eng or not getattr(eng, "is_running", False):
+                    notify("Overlay server is not ready.", type="warning")
+                    return
+                ok, err, _ = eng.emit_preview_mock(
+                    CUSTOM_SOURCES_PREVIEW_TOKEN, event_name, None
+                )
+                if not ok:
+                    notify(str(err or "Mock emit failed"), type="negative")
+
+            ui.button(label, on_click=_emit_mock).props("dense flat size=sm").tooltip(
+                str(act.get("tooltip") or f"Emit mock «{ev}»")
+            )
+
+
 def _flush_template_preview() -> None:
     """Push form data to WebEngine and reload the preview iframe."""
     ctx = _custom_sources_ctx
@@ -641,6 +753,8 @@ def _flush_template_preview() -> None:
         ph.text = ""
         ph.visible = False
 
+    _rebuild_preview_mock_toolbar(config_name)
+
 
 def _schedule_template_preview_refresh() -> None:
     _custom_sources_preview_gen[0] += 1
@@ -649,7 +763,15 @@ def _schedule_template_preview_refresh() -> None:
     def _tick() -> None:
         if _custom_sources_preview_gen[0] != gen:
             return
-        _flush_template_preview()
+        sel = _custom_sources_ctx.get("config_select")
+        if not sel or not sel.value:
+            _flush_template_preview()
+            return
+        name = sel.value
+        if _template_preview_supports_hot_config(name):
+            _push_hot_preview_overrides()
+        else:
+            _flush_template_preview()
 
     ui.timer(0.32, _tick, once=True)
 
@@ -818,6 +940,55 @@ def create_custom_sources_tab():
                     )
                     ui.label(help_text).classes("text-sm p-2")
 
+            _pst_initial = load_template_preview_settings()
+            with ui.dialog() as preview_settings_dialog, ui.card():
+                ui.label("Preview settings").classes("text-lg font-medium mb-2")
+                preview_sound_switch = ui.switch(
+                    "Enable preview sounds",
+                    value=bool(_pst_initial.get("enable_preview_sounds", True)),
+                )
+                preview_toolbar_switch = ui.switch(
+                    "Show mock event toolbar",
+                    value=bool(_pst_initial.get("show_mock_toolbar", True)),
+                )
+                ui.label(
+                    "Preview-only — does not change saved template JSON."
+                ).classes("text-xs opacity-60 mb-2")
+
+                def save_preview_settings_dialog() -> None:
+                    if save_template_preview_settings(
+                        {
+                            "enable_preview_sounds": bool(preview_sound_switch.value),
+                            "show_mock_toolbar": bool(preview_toolbar_switch.value),
+                        }
+                    ):
+                        preview_settings_dialog.close()
+                        inst_l = getattr(web_engine_module, "web_engine_instance", None)
+                        if inst_l:
+                            inst_l.emit_preview_settings_to_iframe(
+                                CUSTOM_SOURCES_PREVIEW_TOKEN
+                            )
+                        mr = _custom_sources_ctx.get("mock_toolbar_row")
+                        if mr is not None:
+                            mr.visible = bool(preview_toolbar_switch.value)
+                        notify("Preview settings saved.", type="positive")
+                    else:
+                        notify("Could not save preview settings.", type="negative")
+
+                def open_preview_settings_dialog() -> None:
+                    st = load_template_preview_settings()
+                    preview_sound_switch.value = bool(st.get("enable_preview_sounds", True))
+                    preview_toolbar_switch.value = bool(st.get("show_mock_toolbar", True))
+                    preview_settings_dialog.open()
+
+                with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                    ui.button("Cancel", on_click=preview_settings_dialog.close).props(
+                        "flat dense"
+                    )
+                    ui.button("Save", on_click=save_preview_settings_dialog).props(
+                        "dense"
+                    )
+
             with preview_panel:
                 with ui.row().classes("w-full items-center gap-2 shrink-0 flex-wrap"):
                     ui.label("Preview").classes("text-sm font-medium shrink-0")
@@ -832,8 +1003,17 @@ def create_custom_sources_tab():
                         text="Fit",
                     ).props("dense flat size=sm")
                     preview_zoom_reset_btn.tooltip("Reset zoom to 100% (fit)")
+                    preview_settings_btn = ui.button(icon="settings").props(
+                        "dense flat round"
+                    )
+                    preview_settings_btn.tooltip("Preview settings")
+                    preview_settings_btn.on_click(open_preview_settings_dialog)
                 preview_dirty_label = ui.label("").classes(
                     "text-xs opacity-70 min-h-[1.25rem]"
+                )
+                mock_toolbar_row = ui.row().classes(
+                    "w-full shrink-0 flex-nowrap gap-1 overflow-x-auto py-1 "
+                    "items-center max-h-[4.5rem]"
                 )
                 preview_placeholder = ui.label("Waiting for overlay server…").classes(
                     "text-xs opacity-60"
@@ -890,6 +1070,7 @@ def create_custom_sources_tab():
                 "preview_split_row_id": preview_split_row_id,
                 "preview_editor_panel_id": preview_editor_panel_id,
                 "preview_panel_id": preview_panel_id,
+                "mock_toolbar_row": mock_toolbar_row,
             }
         )
 
@@ -901,6 +1082,7 @@ def create_custom_sources_tab():
 
 def load_config_files(config_parser, config_select, config_container):
     """Load the config files into the select dropdown"""
+    _invalidate_preview_route_cache()
     configs = config_parser.get_non_hidden_config_files()
 
     if configs:
@@ -931,6 +1113,8 @@ def on_config_selected(e, config_parser, config_container):
     config_name = e.value
     if not config_name:
         return
+
+    _invalidate_preview_route_cache(config_name)
 
     # Clear element_ui_map before loading a new config
     element_ui_map.clear()
@@ -1861,6 +2045,7 @@ def save_config(config_parser, config_select, config_container):
                     )
             # Reset original values to current values
             reset_original_values(config_name)
+            _invalidate_preview_route_cache(config_name)
             _flush_template_preview()
         else:
             notify(f"Failed to save configuration for {config_name}.", type="negative")
@@ -1880,6 +2065,8 @@ def reset_config(config_parser, config_select, config_container):
 
     # Clear element_ui_map before re-rendering
     element_ui_map.clear()
+
+    _invalidate_preview_route_cache(config_name)
 
     # Re-render the config UI
     render_config_ui(config_parser, config_name, config_container, "")
