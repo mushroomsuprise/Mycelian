@@ -29,7 +29,7 @@ import time
 from nicegui import ui
 from ..notification_engine import notify
 
-from ..help_system.contextual_help import help_button
+from ..help_system.contextual_help import set_alerts_ui_references
 
 from .. import alert_processor, alertutils
 
@@ -292,10 +292,6 @@ def create_alert_settings_tab():
     ui.add_head_html(f"<style>{CSS}</style>")
 
     with ui.element("div").classes("content-section w-full h-full relative"):
-        # Help icon in top right corner
-        with ui.row().classes("absolute top-1 right-1 z-20"):
-            help_button(topic_id="alerts_overview", tooltip="Alerts help", size="sm")
-
         # Create tabs for different alert types with a more modern style
         with ui.tabs().classes("w-full bg-theme-base rounded-lg p-1") as alert_tabs:
             bits_tab = ui.tab("Bits").classes(
@@ -322,6 +318,8 @@ def create_alert_settings_tab():
             points_tab = ui.tab("Channel Points").classes(
                 "transition-all duration-200 hover-theme-surface rounded-md"
             )
+
+        set_alerts_ui_references(alert_tabs)
 
         # Add an on_change handler to the tabs to initialize values when tab changes
         alert_tabs.on(

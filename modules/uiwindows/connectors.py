@@ -33,7 +33,6 @@ from typing import Any, Dict, List, Optional, Sequence
 from nicegui import context, run, ui
 from ..notification_engine import notify
 
-from ..help_system.contextual_help import help_button
 
 from .. import (
     connector_actions,
@@ -552,10 +551,6 @@ def create_connectors_tab():
 
         # Main content area - flexible height
         with ui.element("div").classes("flex-grow overflow-hidden relative"):
-            # Help icon in top right corner
-            with ui.row().classes("absolute top-1 right-1 z-20"):
-                help_button(topic_id="connectors_intro", tooltip="Connectors help", size="sm")
-
             with ui.scroll_area().classes("w-full h-full"):
                 connectors_container = ui.element("div").classes("w-full p-4")
 

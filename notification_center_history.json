@@ -230,5 +230,41 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "a400717a-d161-4c1e-bc8c-f65add90f1ea",
+    "ts": 1778973430.0245519,
+    "message": "Palette changes discarded",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "5e7bd5f4-e427-4a7e-ae69-25922c9d5ca7",
+    "ts": 1778973471.011101,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "c7fc4c65-480b-4b05-8c6f-aa4fb900972c",
+    "ts": 1778973771.0630379,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
   }
 ]

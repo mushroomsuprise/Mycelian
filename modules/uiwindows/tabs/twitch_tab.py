@@ -8,7 +8,6 @@ from ...notification_engine import notify
 from ... import dataobjects
 from ...api_credentials_manager import api_credentials_manager
 from ...dataobjects import state_manager
-from ...help_system.contextual_help import help_button
 
 
 class TwitchTab:
@@ -137,7 +136,6 @@ class TwitchTab:
             with ui.card().classes("content-section w-full"):
                 with ui.row().classes("w-full justify-between items-center mb-4"):
                     ui.label("Twitch Integration").classes("text-xl font-bold")
-                    help_button(tooltip="Twitch setup help")
 
                 with ui.column().classes("w-full gap-4"):
                     # Main Account Section

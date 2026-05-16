@@ -104,11 +104,6 @@ def create_source_controls_tab():
 
     # Create a card for the entire tab content with flex layout
     with ui.element("div").classes("content-section w-full h-full flex flex-col relative"):
-        # Help icon in top right corner
-        with ui.row().classes("absolute top-1 right-1 z-20"):
-            from ..help_system.contextual_help import help_button
-            help_button(topic_id="source_controls", tooltip="Source controls help", size="sm")
-
         # Compact header section - much smaller
         with ui.column().classes("w-full gap-2 p-3 flex-none"):
             # Header with title and description/refresh on separate rows

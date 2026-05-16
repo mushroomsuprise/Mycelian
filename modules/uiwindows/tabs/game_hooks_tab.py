@@ -11,7 +11,6 @@ from nicegui import ui
 from ...notification_engine import notify
 
 from ...database_manager import database_manager
-from ...help_system.contextual_help import help_button
 from ..os_brand_icons import OS_BRAND_ROW
 
 logger = logging.getLogger(__name__)
@@ -168,7 +167,6 @@ class GameHooksTab:
             with ui.card().classes("content-section w-full"):
                 with ui.row().classes("w-full items-center gap-2 mb-2"):
                     ui.label("Game Hooks").classes("text-xl font-bold")
-                    help_button(topic_id="game_hooks", tooltip="Game Hooks help")
                 ui.label(
                     "When enabled, Mycelian reads live data from supported PC games "
                     "and broadcasts it to browser templates. "

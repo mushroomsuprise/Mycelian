@@ -1486,13 +1486,8 @@ def create_activity_feed_tab():
     )
 
     with ui.element("div").classes("content-section w-full h-full relative"):
-        # Help icon in top right corner
-        with ui.row().classes("absolute top-1 right-1 z-20"):
-            from ..help_system.contextual_help import help_button
-            help_button(topic_id="getting_started_intro", tooltip="Getting started help", size="sm")
-
         # Control buttons row
-        with ui.row().classes("w-full items-center gap-2 mb-4 pr-8"):
+        with ui.row().classes("w-full items-center gap-2 mb-4"):
             from modules import web_engine
             from modules.mainuiwindow import toggle_alerts
 

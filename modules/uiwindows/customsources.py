@@ -795,12 +795,6 @@ def create_custom_sources_tab():
     with ui.element("div").classes(
         "content-section w-full h-full flex flex-col relative"
     ):
-        # Help icon in top right corner
-        with ui.row().classes("absolute top-1 right-1 z-20"):
-            from ..help_system.contextual_help import help_button
-
-            help_button(topic_id="templates_intro", tooltip="Templates help", size="sm")
-
         # Header section with title and controls - fixed height
         with ui.column().classes("w-full gap-4 p-4 flex-none"):
             # Header section with title and controls

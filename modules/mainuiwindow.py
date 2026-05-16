@@ -1205,7 +1205,7 @@ def create_ui_elements():
                     spore_studio_tab = ui.tab("Spore Studio")
                     settings_tab = ui.tab("Settings")
 
-            from .help_system.contextual_help import register_main_tabs
+            from .help_system.contextual_help import help_button, register_main_tabs
             from .notification_engine import (
                 create_notification_tray_button,
                 start_service_watcher_timer,
@@ -1223,7 +1223,9 @@ def create_ui_elements():
                     "Spore Studio": spore_studio_tab,
                 }
             )
-            create_notification_tray_button()
+            with ui.row().classes("items-center gap-0 shrink-0"):
+                help_button(tooltip="Help", size="sm")
+                create_notification_tray_button()
 
         # Main content area with tab panels (flex child: fills remainder)
         with ui.element("div").classes("main-content"):

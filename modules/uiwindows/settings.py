@@ -4956,12 +4956,6 @@ class SettingsUI:
                 scroll_container = ui.scroll_area().classes("w-full h-full relative")
 
             with scroll_container:
-                # Help icon in top right corner
-                with ui.row().classes("absolute top-1 right-1 z-20"):
-                    from ..help_system.contextual_help import help_button
-
-                    help_button(tooltip="Settings help", size="sm")
-
                 with ui.column().classes("w-full gap-4 p-4 relative"):
                     # Tabs header
                     with StartupTimer("settings_create_tabs_header"):

@@ -14,7 +14,6 @@ from ...theme_manager import (
     ThemeColors,
 )
 from ..service_brand_icons import SERVICE_BRAND_SVG
-from ...help_system.contextual_help import help_button
 from ...notification_engine import notify
 from .base import TabBase
 
@@ -890,7 +889,6 @@ class ThemeTab:
                 # Header row
                 with ui.row().classes("w-full justify-between items-center mb-2"):
                     ui.label("Theme").classes("text-lg font-bold")
-                    help_button(tooltip="Theme selection help")
 
                 # Theme selection row - compact
                 with ui.card().classes("w-full p-3 mb-2"):

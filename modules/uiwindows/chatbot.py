@@ -34,7 +34,7 @@ from typing import Any, Dict, Optional
 from nicegui import ui
 from ..notification_engine import notify
 
-from ..help_system.contextual_help import help_button
+from ..help_system.contextual_help import set_chatbot_ui_references
 
 # Import the chatbot modules
 from ..chatbot_core import (
@@ -1359,10 +1359,6 @@ def create_chatbot_tab():
     with ui.element("div").classes(
         "content-section w-full h-full flex flex-col relative"
     ):
-        # Help icon in top right corner
-        with ui.row().classes("absolute top-1 right-1 z-20"):
-            help_button(topic_id="chatbot_commands", tooltip="Chatbot help", size="sm")
-
         # Tabs at the very top
         with ui.tabs().classes("w-full bg-theme-base rounded-lg p-1") as chatbot_tabs:
             commands_tab = ui.tab("Commands").classes(
@@ -1380,6 +1376,8 @@ def create_chatbot_tab():
             giveaways_tab = ui.tab("Giveaways").classes(
                 "transition-all duration-200 hover-theme-surface rounded-md"
             )
+
+        set_chatbot_ui_references(chatbot_tabs)
 
         # Main content area with tab panels - each panel contains its own buttons and content
         with ui.tab_panels(chatbot_tabs, value=commands_tab).classes(
@@ -1660,11 +1658,6 @@ def create_chatbot_tab():
                             text="Refresh",
                             on_click=lambda: refresh_tab_content("giveaways"),
                         ).classes("control-button btn-cancel px-3 py-2")
-                        help_button(
-                            topic_id="chatbot_giveaways",
-                            tooltip="Giveaways help",
-                            size="sm",
-                        )
 
                 with ui.scroll_area().classes("w-full flex-grow"):
                     giveaways_container = ui.element("div").classes("w-full p-4")

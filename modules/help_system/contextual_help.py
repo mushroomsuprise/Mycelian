@@ -17,6 +17,8 @@ _main_tabs = None
 _main_tab_panels = None
 _settings_tabs = None
 _settings_tab_panels = None
+_alerts_tabs = None
+_chatbot_tabs = None
 _main_tab_refs: Dict[str, Any] = {}
 
 
@@ -38,6 +40,27 @@ def set_settings_ui_references(tabs, tab_panels):
     global _settings_tabs, _settings_tab_panels
     _settings_tabs = tabs
     _settings_tab_panels = tab_panels
+
+
+def set_alerts_ui_references(tabs) -> None:
+    """Set reference to Alerts sub-tabs for context detection."""
+    global _alerts_tabs
+    _alerts_tabs = tabs
+
+
+def set_chatbot_ui_references(tabs) -> None:
+    """Set reference to Chatbot sub-tabs for context detection."""
+    global _chatbot_tabs
+    _chatbot_tabs = tabs
+
+
+def _open_help_target(target: str) -> None:
+    """Open help browser for a topic ID or category name."""
+    help_manager = get_help_manager()
+    if help_manager.get_topic(target):
+        show_help_browser(topic_id=target)
+    else:
+        show_help_browser(category=target)
 
 
 def navigate_to_main_tab(tab_label: str) -> None:
@@ -90,9 +113,18 @@ def get_current_tab_context() -> Tuple[str, Optional[str]]:
             current_main_tab = _main_tabs.value
             main_tab_name = _get_tab_name(current_main_tab)
 
-            # Check if we're in settings and get sub-tab
             if main_tab_name == "Settings" and _settings_tabs:
                 current_sub_tab = _settings_tabs.value
+                sub_tab_name = _get_tab_name(current_sub_tab)
+                return main_tab_name, sub_tab_name
+
+            if main_tab_name == "Alerts" and _alerts_tabs:
+                current_sub_tab = _alerts_tabs.value
+                sub_tab_name = _get_tab_name(current_sub_tab)
+                return main_tab_name, sub_tab_name
+
+            if main_tab_name == "Chatbot" and _chatbot_tabs:
+                current_sub_tab = _chatbot_tabs.value
                 sub_tab_name = _get_tab_name(current_sub_tab)
                 return main_tab_name, sub_tab_name
 
@@ -147,34 +179,43 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
     Returns:
         Help category name, topic ID, or None if no mapping found
     """
-    # Main tab mappings (categories)
-    main_tab_mapping = {
-        "Activity Feed": "getting_started",
-        "Alerts": "alerts",
-        "Source Settings": "templates",
-        "Source Controls": "templates",
-        "Connectors": "connectors",
-        "Chatbot": "chatbot",
-        "Settings": "settings"
+    main_tab_topic_mapping = {
+        "Activity Feed": "getting_started_intro",
+        "Alerts": "alerts_overview",
+        "Source Settings": "templates_intro",
+        "Source Controls": "source_controls",
+        "Connectors": "connectors_intro",
+        "Chatbot": "chatbot_commands",
+        "Settings": "settings",
     }
 
-    # If we have a sub-tab (for settings), use specific topic mappings for better targeting
+    if main_tab == "Chatbot" and sub_tab:
+        chatbot_sub_tab_mapping = {
+            "Commands": "chatbot_commands",
+            "Events": "chatbot_events",
+            "Quotes": "chatbot_quotes",
+            "Greetings": "chatbot_greetings",
+            "Giveaways": "chatbot_giveaways",
+        }
+        return chatbot_sub_tab_mapping.get(sub_tab, "chatbot_commands")
+
     if main_tab == "Settings" and sub_tab:
         settings_sub_tab_mapping = {
-            "Twitch": "integrations_twitch",      # Specific topic
-            "PSN": "integrations_psn",            # Specific topic
-            "Spotify": "integrations_spotify",    # Specific topic
-            "YouTube": "integrations_youtube",    # Specific topic
-            "Database": "settings",               # Category
-            "Statistics": "settings",             # Category
-            "App Settings": "settings",           # Category
-            "About": "settings",                   # Category
+            "Twitch": "integrations_twitch",
+            "PSN": "integrations_psn",
+            "Spotify": "integrations_spotify",
+            "YouTube": "integrations_youtube",
+            "OBS": "obs_setup",
+            "Database": "settings",
+            "Statistics": "settings",
+            "Theme": "settings",
+            "App Settings": "settings",
+            "About": "settings",
             "Game Hooks": "game_hooks",
         }
         return settings_sub_tab_mapping.get(sub_tab)
 
-    # Return main tab mapping
-    return main_tab_mapping.get(main_tab)
+    return main_tab_topic_mapping.get(main_tab)
 
 
 def help_button(context: str = None, topic_id: str = None, tooltip: str = "Help", size: str = "sm", variant: str = "flat", auto_context: bool = True):
@@ -210,17 +251,10 @@ def help_button(context: str = None, topic_id: str = None, tooltip: str = "Help"
                     show_help_browser()
                     logger.debug(f"No specific topic found for context: {context}, showing general help")
             elif auto_context:
-                # Automatically detect current tab context
                 main_tab, sub_tab = get_current_tab_context()
                 target = get_help_target_for_tab(main_tab, sub_tab)
                 if target:
-                    # Check if target is a topic ID (contains underscore) or category
-                    if '_' in target and not target.endswith('_started') and not target.endswith('_overview'):
-                        # It's a specific topic ID
-                        show_help_browser(topic_id=target)
-                    else:
-                        # It's a category
-                        show_help_browser(category=target)
+                    _open_help_target(target)
                 else:
                     show_help_browser()
             else:
