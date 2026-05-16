@@ -260,6 +260,18 @@ class YouTubeData:
         pass
 
 
+@dataclass
+class OBSData:
+    """OBS WebSocket connection settings (persisted in app database)."""
+
+    host: str = "localhost"
+    port: int = 4455
+    password: str = ""
+    enabled: bool = True
+    connection_status: str = "Disconnected"
+    last_error: str = ""
+
+
 class StateManager:
     """
     Manages application state including TwitchData and AppSettings.
@@ -278,6 +290,7 @@ class StateManager:
             "database_settings": {},  # Added for DatabaseSettings
             "youtube_data": {},  # Added for YouTube
             "chatbot_data": {},  # Added for Chatbot
+            "obs_data": {},  # OBS WebSocket settings
         }
         self._paths = {
             "twitch_data": "TwitchData",
@@ -287,6 +300,7 @@ class StateManager:
             "database_settings": "DatabaseSettings",  # Firebase path for DatabaseSettings
             "youtube_data": "YouTubeData",  # Firebase path for YouTube data
             "chatbot_data": "ChatbotData",  # Firebase path for Chatbot data
+            "obs_data": "OBSData",
         }
         self._initialized = False
         self._changes_pending = False
@@ -307,6 +321,7 @@ class StateManager:
         )  # Initialize default DatabaseSettings data
         self._youtube_data = YouTubeData()  # Initialize default YouTube data
         self._chatbot_data = ChatbotData()  # Initialize default Chatbot data
+        self._obs_data = OBSData()
 
     def initialize(self):
         """Initialize the state manager by loading data from Firebase"""
@@ -398,6 +413,7 @@ class StateManager:
             self._state["spotify_data"] = all_data.get(self._paths["spotify_data"], {})
             self._state["youtube_data"] = all_data.get(self._paths["youtube_data"], {})
             self._state["chatbot_data"] = all_data.get(self._paths["chatbot_data"], {})
+            self._state["obs_data"] = all_data.get(self._paths["obs_data"], {})
 
             # Update the local objects
             self._update_local_objects()
@@ -482,6 +498,9 @@ class StateManager:
             # Load Chatbot data
             chatbot_data = database_manager.get_data(self._paths["chatbot_data"]) or {}
             self._state["chatbot_data"] = chatbot_data
+
+            obs_data = database_manager.get_data(self._paths["obs_data"]) or {}
+            self._state["obs_data"] = obs_data
 
             # Update the local objects
             self._update_local_objects()
@@ -716,6 +735,30 @@ class StateManager:
             if not field.name.startswith("_")
         }
 
+        # Update OBS data
+        obs_dict = self._state["obs_data"]
+        if obs_dict:
+            valid_keys = [f.name for f in OBSData.__dataclass_fields__.values()]
+            filtered_dict = {k: v for k, v in obs_dict.items() if k in valid_keys}
+
+            if "password" in filtered_dict:
+                filtered_dict["password"] = ensure_decrypted(filtered_dict["password"])
+
+            if "port" in filtered_dict and filtered_dict["port"] is not None:
+                try:
+                    filtered_dict["port"] = int(filtered_dict["port"])
+                except (TypeError, ValueError):
+                    filtered_dict["port"] = 4455
+
+            self._obs_data = OBSData(**filtered_dict)
+        else:
+            self._obs_data = OBSData()
+
+        self._state["obs_data"] = {
+            field.name: getattr(self._obs_data, field.name)
+            for field in OBSData.__dataclass_fields__.values()
+        }
+
         # Update Chatbot data
         chatbot_dict = self._state["chatbot_data"]
         if chatbot_dict:
@@ -888,6 +931,42 @@ class StateManager:
                 return True
             except Exception as e:
                 logger.error(f"Error updating YouTube data: {str(e)}", exc_info=True)
+                return False
+
+    def get_obs_data(self) -> OBSData:
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+            return copy.deepcopy(self._obs_data)
+
+    def set_obs_data(self, obs_data: dict) -> bool:
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+
+            try:
+                self._state["obs_data"] = copy.deepcopy(obs_data)
+
+                for key, value in obs_data.items():
+                    if hasattr(self._obs_data, key):
+                        setattr(self._obs_data, key, value)
+
+                self._changed_fields.add("obs_data")
+                self._changes_pending = True
+
+                try:
+                    self._obs_data.port = int(getattr(self._obs_data, "port", 4455) or 4455)
+                except (TypeError, ValueError):
+                    self._obs_data.port = 4455
+
+                self._state["obs_data"] = {
+                    f.name: getattr(self._obs_data, f.name)
+                    for f in OBSData.__dataclass_fields__.values()
+                }
+
+                return True
+            except Exception as e:
+                logger.error("Error updating OBS data: %s", e, exc_info=True)
                 return False
 
     def set_chatbot_data(self, chatbot_data: dict) -> bool:
@@ -1431,6 +1510,37 @@ class StateManager:
                 )
                 return False
 
+    def update_obs_field(self, field: str, value: Any) -> bool:
+        """Update one field on OBS integration settings."""
+
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+
+            try:
+                if not hasattr(self._obs_data, field):
+                    logger.error("Invalid OBS data field: %s", field)
+                    return False
+
+                current_value = getattr(self._obs_data, field)
+
+                if isinstance(current_value, bool) and not isinstance(value, bool):
+                    value = bool(value)
+                elif isinstance(current_value, int) and not isinstance(value, int):
+                    value = int(value)
+                elif isinstance(current_value, float) and not isinstance(value, float):
+                    value = float(value)
+
+                self._state["obs_data"][field] = value
+                self._changed_fields.add(f"obs_data.{field}")
+                self._changes_pending = True
+
+                self._update_local_objects()
+                return True
+            except Exception as e:
+                logger.error("Error updating OBS field %s: %s", field, e, exc_info=True)
+                return False
+
     def update_chatbot_field(self, field: str, value: Any) -> bool:
         """Update a single field in the Chatbot data
 
@@ -1592,6 +1702,15 @@ class StateManager:
                     database_manager.set_data(
                         self._paths["youtube_data"], encrypted_youtube_data
                     )
+
+                # OBS WebSocket settings (encrypt password like YouTube API key)
+                if any(f.startswith("obs_data") for f in self._changed_fields):
+                    encrypted_obs = self._state["obs_data"].copy()
+                    if "password" in encrypted_obs:
+                        encrypted_obs["password"] = ensure_encrypted(
+                            encrypted_obs["password"]
+                        )
+                    database_manager.set_data(self._paths["obs_data"], encrypted_obs)
 
                 # Save Database settings
                 if any(f.startswith("database_settings") for f in self._changed_fields):

@@ -23,7 +23,7 @@ MOCK_MODULES = [
     'spotipy', 'spotipy.oauth2',
     'firebase_admin', 'firebase_admin.credentials', 'firebase_admin.db',
     'psnawp_api', 'psnawp_api.core', 'psnawp_api.models',
-    'simpleobsws',
+    'obsws_python',
     'cryptography', 'cryptography.fernet',
     'psutil',
     'pyperclip',

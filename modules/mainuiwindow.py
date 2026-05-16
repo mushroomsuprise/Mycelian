@@ -980,6 +980,14 @@ def cleanup_resources():
     try:
         logger.debug("Cleaning up resources before shutdown")
 
+        try:
+            from .obs_service import obs_service as _obs
+
+            _obs.stop()
+            logger.debug("Stopped OBS WebSocket service")
+        except Exception as e:
+            logger.debug("OBS service stop skipped: %s", e)
+
         # Clean up web engine if it's running
         try:
             if (

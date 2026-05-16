@@ -95,6 +95,13 @@ class ConnectorManager:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
+                try:
+                    from .obs_service import obs_service as _obs_svc
+
+                    _obs_svc.set_connector_loop(loop)
+                except Exception:
+                    pass
+
                 # Start the processing task
                 self.processing_task = loop.create_task(self._process_events())
 

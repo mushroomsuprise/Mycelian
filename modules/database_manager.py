@@ -1609,6 +1609,7 @@ async def load_all_initial_data() -> Dict[str, Any]:
         "YouTubeData",  # Include for tab data loading
         "ChatbotData",  # Chatbot is auto-started
         "DatabaseSettings",
+        "OBSData",
         "Statistics",
         # Core alert types (remove extended ranges that aren't needed immediately)
         "Alerts/BitAlerts",

@@ -12,8 +12,6 @@ Connectors:
 
 
 Template Previewer:
-    [] - Add settings menu with persistant storage of options to enable/disable sounds, etc
-    [] - Change mock data to be clickable buttons above the preview frame like the Spore Studio module uses. Mock data will no longer go to specialized websockets in the templates, but will use the actual websocket that live data uses
     [] - When data is changed, it currently refreshes the entire previewer, i would prefer it does not refresh the entire thing, just modify what changed.
 
 Chat Improvements:
@@ -26,11 +24,8 @@ Alerts Improvements:
 Other Standard Templates:
     [] - Create a .spore.json sidecar file for the Spore Studio module for bitbar.html, bitboss.html, counter.html, ff7.html, giveaway.html, pausedalerts.html, roulette.html, subbar.html, and title.html
 
-OBS Websocket:
-    [] - Add in OBS websocket support. 
-    [] - Create settings tab for OBS to input the websocket connection information (Must persist across restarts, so store in database)
-    [] - Add in Connector actions for OBS controls. For example: change scene, enable/disable source, source transformations, mute/unmute audio devices, start/stop recording, start/stop streaming. Each of these will need to have appropriate args to them and should be comboboxes that autopopulate from OBS data when available (IE: scene names, source names, streaming/recording status)
-    [] - Add OBS items as Connector Triggers. These should be things like: changing scene, streaming/recording status, audio device mute/unmute, etc. These triggers should have appropriate conditionals (IE: scene name, source name, etc etc)
+Settings Tab:
+    [] - Update icons for services to use the actual brand icons
 
 General Items:
     [] - Update the create theme dialog to show a mock-ui similar to the mock ui in the theme tab. It should live update as the user changes the different color boxes. Do a general overhaul of the create theme dialog to make better use of space.

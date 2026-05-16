@@ -50,6 +50,7 @@ from .tabs import (
     AppSettingsTab,
     DatabaseTab,
     GameHooksTab,
+    ObsTab,
     PSNTab,
     SpotifyTab,
     StatisticsTab,
@@ -4922,6 +4923,8 @@ class SettingsUI:
                 spotify_tab = SpotifyTab()
             with StartupTimer("settings_tab_objects_youtube"):
                 youtube_tab = YouTubeTab()
+            with StartupTimer("settings_tab_objects_obs"):
+                obs_tab = ObsTab()
             with StartupTimer("settings_tab_objects_game_hooks"):
                 game_hooks_tab = GameHooksTab()
             with StartupTimer("settings_tab_objects_database"):
@@ -4936,6 +4939,7 @@ class SettingsUI:
                 "PSN": psn_tab,
                 "Spotify": spotify_tab,
                 "YouTube": youtube_tab,
+                "OBS": obs_tab,
                 "Game Hooks": game_hooks_tab,
                 "Database": database_tab,
                 "Statistics": statistics_tab,
@@ -4967,6 +4971,7 @@ class SettingsUI:
                             ui.tab("PSN", icon="sports_esports")
                             ui.tab("Spotify", icon="music_note")
                             ui.tab("YouTube", icon="video_library")
+                            ui.tab("OBS", icon="live_tv")
                             ui.tab("Game Hooks", icon="memory")
                             ui.tab("Database", icon="storage")
                             ui.tab("Statistics", icon="analytics")
@@ -5028,6 +5033,8 @@ class SettingsUI:
                                     self._tabs_by_name["Spotify"].build(container)
                                 elif tab_name == "YouTube":
                                     self._tabs_by_name["YouTube"].build(container)
+                                elif tab_name == "OBS":
+                                    self._tabs_by_name["OBS"].build(container)
                                 elif tab_name == "Game Hooks":
                                     self._tabs_by_name["Game Hooks"].build(container)
                                 elif tab_name == "Database":
@@ -5056,6 +5063,7 @@ class SettingsUI:
                             ("PSN", "settings_psn_tab"),
                             ("Spotify", "settings_spotify_tab"),
                             ("YouTube", "settings_youtube_tab"),
+                            ("OBS", "settings_obs_tab"),
                             ("Game Hooks", "settings_game_hooks_tab"),
                             ("Database", "settings_database_tab"),
                             ("Statistics", "settings_statistics_tab"),

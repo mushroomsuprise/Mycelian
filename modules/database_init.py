@@ -114,6 +114,18 @@ def _create_default_data():
             database_manager.set_data("SpotifyData", default_spotify_data)
             logger.debug("Created default SpotifyData with encrypted credentials")
 
+        if not database_manager.get_data("OBSData"):
+            default_obs = {
+                "host": "localhost",
+                "port": 4455,
+                "password": "",
+                "enabled": True,
+                "connection_status": "Disconnected",
+                "last_error": "",
+            }
+            database_manager.set_data("OBSData", default_obs)
+            logger.debug("Created default OBSData")
+
         # Create empty alert collections only if they don't exist
         alert_paths = [
             "Alerts/AlertQueue",

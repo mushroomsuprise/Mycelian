@@ -1472,6 +1472,7 @@ dependencies = [
     { name = "flask-socketio" },
     { name = "gevent" },
     { name = "nicegui" },
+    { name = "obsws-python" },
     { name = "packaging" },
     { name = "pillow" },
     { name = "psnawp" },
@@ -1488,7 +1489,6 @@ dependencies = [
     { name = "pywebview" },
     { name = "requests" },
     { name = "requests-oauthlib" },
-    { name = "simpleobsws" },
     { name = "spotipy" },
     { name = "twitchapi" },
     { name = "websocket-client" },
@@ -1514,6 +1514,7 @@ requires-dist = [
     { name = "gevent", specifier = ">=25.5.1" },
     { name = "myst-parser", marker = "extra == 'docs'" },
     { name = "nicegui", specifier = ">=2.9.1" },
+    { name = "obsws-python", specifier = ">=1.8.0" },
     { name = "packaging", specifier = ">=24.2" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "psnawp", specifier = "==3.0.1" },
@@ -1532,7 +1533,6 @@ requires-dist = [
     { name = "pywebview", specifier = ">=6.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "requests-oauthlib", specifier = ">=2.0.0" },
-    { name = "simpleobsws", specifier = ">=1.4.2" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=4.0" },
     { name = "sphinx-autodoc-typehints", marker = "extra == 'docs'" },
     { name = "sphinx-rtd-theme", marker = "extra == 'docs'" },
@@ -1600,6 +1600,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
+]
+
+[[package]]
+name = "obsws-python"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d6/2f/624af34a5b0f09fbf858bf6743521a8626d712671ac49573e625ad1c97d3/obsws_python-1.8.0.tar.gz", hash = "sha256:e082894f80deb0836861fdc3c222e497308c8f66328da6075baba5b456a20971", size = 28727, upload-time = "2025-07-01T08:24:11.652Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/4b/537f3d372f065b2aeeac3812228066eb70f47436adf88aaacc94eb5fd4e1/obsws_python-1.8.0-py3-none-any.whl", hash = "sha256:537bde416e149b6f59e0b2f31761d4a40329feafec171bde6fc1346ab8516e28", size = 30819, upload-time = "2025-07-01T08:24:10.086Z" },
 ]
 
 [[package]]
@@ -5300,19 +5313,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b0/d4/bfa032f961103eba93de583b161f0e6a5b63cebb8f2c7d0c6e6efe1e3d2e/simple_websocket-1.1.0.tar.gz", hash = "sha256:7939234e7aa067c534abdab3a9ed933ec9ce4691b0713c78acb195560aa52ae4", size = 17300, upload-time = "2024-10-10T22:39:31.412Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/52/59/0782e51887ac6b07ffd1570e0364cf901ebc36345fea669969d2084baebb/simple_websocket-1.1.0-py3-none-any.whl", hash = "sha256:4af6069630a38ed6c561010f0e11a5bc0d4ca569b36306eb257cd9a192497c8c", size = 13842, upload-time = "2024-10-10T22:39:29.645Z" },
-]
-
-[[package]]
-name = "simpleobsws"
-version = "1.4.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "msgpack" },
-    { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/5f/c7f0c7b7e798860b8e002d07a998d2570b5e3f00f6cb6f44f19fe4db216b/simpleobsws-1.4.2.tar.gz", hash = "sha256:636094c95a78b3bf7a98221f7944497fcb01601e35cf66d92d5a3847d928778b", size = 5349, upload-time = "2025-01-06T11:51:24.924Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1c/09/eb69ac7fbd014b5a07bb1a9e68267881c18f5f300db9bec9490c3d7dfad8/simpleobsws-1.4.2-py3-none-any.whl", hash = "sha256:4e346d0d2bcc46ea1c7c9bd5af470b411a69b51064afa93389b138c00241ee02", size = 5511, upload-time = "2025-01-06T11:51:23.189Z" },
 ]
 
 [[package]]

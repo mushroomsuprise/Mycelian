@@ -30,7 +30,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
-from nicegui import context, ui
+from nicegui import context, run, ui
 from ..notification_engine import notify
 
 from ..help_system.contextual_help import help_button
@@ -1259,6 +1259,10 @@ def format_trigger_name(trigger_type: TriggerType) -> str:
         TriggerType.SCHEDULE: "Schedule",
         TriggerType.HOTKEY: "Hotkey",
         TriggerType.WEBHOOK: "Webhook",
+        TriggerType.OBS_SCENE_CHANGED: "OBS Scene",
+        TriggerType.OBS_STREAM_STATE: "OBS Stream",
+        TriggerType.OBS_RECORD_STATE: "OBS Record",
+        TriggerType.OBS_INPUT_MUTE: "OBS Input Mute",
     }
     return name_mapping.get(trigger_type, trigger_type.value.replace("_", " ").title())
 
@@ -1334,6 +1338,9 @@ def get_action_display_name(action) -> str:
             gid = getattr(action, "game_id", "ff7")
             op = getattr(action, "operation", "")
             return f"Game {gid}: {op.replace('_', ' ')}"
+        elif action_type == "obs_control":
+            op = getattr(action, "operation", "")
+            return f"OBS: {op.replace('_', ' ')}"
         else:
             return action_type.replace("_", " ").title()
 
@@ -1501,6 +1508,14 @@ def create_connector_form(connector_id: str = None):
                     for hk, hv in ha.items():
                         action_data["config"][f"arg_{hk}"] = str(hv)
 
+                if getattr(action, "action_type", None) == ActionType.OBS_CONTROL:
+                    action_data["config"]["operation"] = getattr(
+                        action, "operation", ""
+                    )
+                    ha = getattr(action, "obs_arguments", None) or {}
+                    for hk, hv in ha.items():
+                        action_data["config"][f"arg_{hk}"] = str(hv)
+
                 form_data["actions"].append(action_data)
             except Exception as e:
                 logger.error(f"Error processing action during edit: {e}", exc_info=True)
@@ -1545,6 +1560,10 @@ def create_connector_form(connector_id: str = None):
                         "twitch_chat_message": "Chat Message",
                         "donation": "Donation",
                         "hotkey": "Hotkey Trigger",
+                        "obs_scene_changed": "OBS — Program scene changed",
+                        "obs_stream_state": "OBS — Stream status",
+                        "obs_record_state": "OBS — Recording status",
+                        "obs_input_mute": "OBS — Input mute changed",
                     }
 
                     ui.select(
@@ -1677,6 +1696,30 @@ def handle_trigger_type_change(
         ui.label("Add conditions to make the trigger more specific").classes(
             "text-xs muted-text mb-3"
         )
+        _obs_hint = {
+            TriggerType.OBS_SCENE_CHANGED.value: (
+                "Scene changed events include scene_name and previous_scene_name. "
+                'Example: only after switching into a scene named BRB — '
+                "Field scene_name Equals BRB."
+            ),
+            TriggerType.OBS_STREAM_STATE.value: (
+                "OBS sends output_active (streaming output running) and output_state strings such as "
+                "OBS_WEBSOCKET_OUTPUT_STATE_STARTED / STOPPED / PAUSED (plus STARTING / STOPPING while "
+                "transitioning)."
+            ),
+            TriggerType.OBS_RECORD_STATE.value: (
+                'Only fire while recordings are actively running — Field output_active Equals true '
+                "(you can type true or false). For a precise state match instead, Field "
+                "output_state Equals OBS_WEBSOCKET_OUTPUT_STATE_STARTED (recording underway) "
+                "or OBS_WEBSOCKET_OUTPUT_STATE_STOPPED (not recording)."
+            ),
+            TriggerType.OBS_INPUT_MUTE.value: (
+                "Fires when an audio source mute toggles. Fields: input_name, input_muted. "
+                "Example muted: Field input_muted Equals true."
+            ),
+        }
+        if trigger_type in _obs_hint:
+            ui.label(_obs_hint[trigger_type]).classes("text-xs muted-text mb-3")
 
         # Add condition button
         ui.button(
@@ -1836,6 +1879,22 @@ def get_available_fields_for_trigger(trigger_type: str) -> Dict[str, str]:
             "reward_id": "Reward ID",
             "username": "Username",
             "user_input": "User Input",
+        },
+        "obs_scene_changed": {
+            "scene_name": "Scene name",
+            "previous_scene_name": "Previous scene",
+        },
+        "obs_stream_state": {
+            "output_active": "Streaming output active (true/false)",
+            "output_state": "Stream state constant (OBS_WEBSOCKET_OUTPUT_STATE_*)",
+        },
+        "obs_record_state": {
+            "output_active": "Recording active (true/false)",
+            "output_state": "Record state constant (OBS_WEBSOCKET_OUTPUT_STATE_*)",
+        },
+        "obs_input_mute": {
+            "input_name": "Input name",
+            "input_muted": "Input muted",
         },
     }
 
@@ -2053,6 +2112,7 @@ def get_available_actions() -> Dict[str, str]:
         "key_press": "Key Press / Mouse Click",
         "audio_control": "Audio Control",
         "game_hook": "Game Hook (memory write)",
+        "obs_control": "OBS Studio (WebSocket)",
     }
 
 
@@ -2115,6 +2175,8 @@ def handle_action_type_change_with_data(
             create_audio_control_config(action_index, form_data, initial_config)
         elif action_type == "game_hook":
             create_game_hook_config(action_index, form_data, initial_config)
+        elif action_type == "obs_control":
+            create_obs_control_config(action_index, form_data, initial_config)
 
 
 def create_game_hook_config(
@@ -2247,6 +2309,151 @@ def create_game_hook_config(
     ui.label(
         "Requires Game Hooks enabled and the game running on Windows. "
         "Battle-only actions fail safely when not in combat."
+    ).classes("text-xs muted-text mt-2")
+
+
+def create_obs_control_config(
+    action_index: int, form_data: dict, initial_config: dict = None
+):
+    """Configure OBS Studio WebSocket actions (scenes, sources, stream, record, etc.)."""
+    if initial_config is None:
+        initial_config = {}
+
+    from ..obs_connector_catalog import OBS_CONNECTOR_CATALOG
+    from ..obs_service import obs_service
+
+    def _live_cfg() -> dict:
+        try:
+            return form_data["actions"][action_index].get("config") or {}
+        except Exception:
+            return initial_config
+
+    op_container = ui.element("div").classes("w-full")
+    op_labels = {c["id"]: c["label"] for c in OBS_CONNECTOR_CATALOG}
+    cur_op = str(initial_config.get("operation") or "set_program_scene")
+    if cur_op not in op_labels:
+        op_labels[cur_op] = f"{cur_op} (legacy)"
+
+    def _snapshot_placeholder(dynamic: Optional[str]) -> str:
+        """Explain empty OBS selects (dict keys are invisible to users if we used empty-string keys only)."""
+
+        conn_ok, _, _ = obs_service.connection_details()
+        if conn_ok:
+            if dynamic == "scene_item":
+                return (
+                    "(Choose the Scene slot first above, load lists, "
+                    "or tap Refresh OBS lists — scene items appear per scene.)"
+                )
+            return (
+                "(Nothing loaded yet — lists refresh when this opens or when "
+                "you tap Refresh OBS lists)"
+            )
+        return "(OBS disconnected — set up Settings → OBS, then reopen or Refresh)"
+
+    def refresh_op_args() -> None:
+        op_container.clear()
+        cfg = _live_cfg()
+        op_id = str(cfg.get("operation") or "set_program_scene")
+        spec = next((x for x in OBS_CONNECTOR_CATALOG if x["id"] == op_id), None)
+        snap = obs_service.get_connector_snapshot()
+        scene_names = snap.get("scene_names") or []
+        scene_opts = {n: n for n in scene_names}
+        input_opts = {n: n for n in (snap.get("input_names") or [])}
+
+        with op_container:
+            if not spec:
+                ui.label(f'Unknown OBS operation "{op_id}"').classes("text-negative")
+                return
+            desc = spec.get("description") or ""
+            if desc:
+                ui.label(desc).classes("text-sm muted-text mb-2")
+
+            for arg in spec.get("args", []):
+                aname = arg["name"]
+                key = f"arg_{aname}"
+                default_v = str(cfg.get(key, initial_config.get(key, "")))
+
+                if arg.get("control") == "select":
+                    opts: Dict[str, str] = dict(arg.get("options") or {})
+                    dynamic = arg.get("dynamic")
+                    if dynamic == "scene":
+                        opts = {**scene_opts}
+                    elif dynamic == "input":
+                        opts = {**input_opts}
+                    elif dynamic == "scene_item":
+                        sag = arg.get("scene_arg") or "scene_name"
+                        sn = str(cfg.get(f"arg_{sag}", "") or "").strip()
+                        by = (snap.get("sources_by_scene") or {}).get(sn) or {}
+                        opts = dict(by)
+                    if default_v and default_v not in opts:
+                        opts = {**opts, default_v: f"{default_v} (manual)"}
+                    if not opts:
+                        opts = {"": _snapshot_placeholder(dynamic)}
+
+                    first_val = (
+                        default_v
+                        if default_v in opts
+                        else next(iter(opts.keys()))
+                    )
+
+                    def _sel_change(e, k=key):
+                        update_action_config(action_index, k, e.value, form_data)
+                        refresh_op_args()
+
+                    ui.select(
+                        options=opts,
+                        label=arg.get("label", aname),
+                        value=first_val,
+                        on_change=_sel_change,
+                    ).classes("w-full mb-2 action-select")
+                else:
+                    ui.input(
+                        label=arg.get("label", aname),
+                        value=default_v,
+                        on_change=lambda e, k=key: update_action_config(
+                            action_index, k, e.value, form_data
+                        ),
+                    ).classes("w-full mb-2 action-input")
+
+    def _refresh_remote_lists() -> None:
+        async def _job() -> None:
+            ok, err = await run.io_bound(obs_service.refresh_snapshot_blocking, 25.0)
+            if not ok and err:
+                notify(f"Could not refresh OBS lists: {err}", type="warning")
+            else:
+                notify("OBS lists updated", type="positive")
+            refresh_op_args()
+
+        ui.timer(0, _job, once=True)
+
+    ui.button("Refresh OBS lists", icon="refresh", on_click=_refresh_remote_lists).classes(
+        "mb-2"
+    )
+
+    ui.select(
+        options=op_labels,
+        label="OBS operation",
+        value=cur_op if cur_op in op_labels else next(iter(op_labels.keys())),
+        on_change=lambda e: [
+            update_action_config(action_index, "operation", e.value, form_data),
+            refresh_op_args(),
+        ],
+    ).classes("w-full mb-2 action-select")
+
+    refresh_op_args()
+
+    async def _bootstrap_obs_lists_once() -> None:
+        try:
+            await run.io_bound(obs_service.refresh_snapshot_blocking, 25.0)
+        except Exception as e:
+            logger.debug("OBS action UI bootstrap snapshot: %s", e)
+        refresh_op_args()
+
+    ui.timer(0, _bootstrap_obs_lists_once, once=True)
+
+    ui.label(
+        "Requires OBS Studio running with WebSocket enabled "
+        "(default port 4455). Password is saved encrypted in Settings → OBS."
     ).classes("text-xs muted-text mt-2")
 
 
@@ -4528,6 +4735,18 @@ def save_new_connector(form_data: dict):
                     operation=action_config.get("operation", ""),
                     hook_arguments=hook_args,
                 )
+            elif action_type == ActionType.OBS_CONTROL:
+                obs_arguments: Dict[str, Any] = {}
+                for k, v in action_config.items():
+                    if k.startswith("arg_"):
+                        obs_arguments[k[4:]] = v
+                action = connector_actions.create_action(
+                    action_type=action_type,
+                    action_id=action_id,
+                    name=f"{form_data['name']} Action {i+1}",
+                    operation=str(action_config.get("operation", "") or ""),
+                    obs_arguments=obs_arguments,
+                )
             else:
                 action = connector_actions.create_action(
                     action_type=action_type,
@@ -4684,6 +4903,18 @@ def save_updated_connector(form_data: dict):
                     operation=action_config.get("operation", ""),
                     hook_arguments=hook_args,
                 )
+            elif action_type == ActionType.OBS_CONTROL:
+                obs_arguments: Dict[str, Any] = {}
+                for k, v in action_config.items():
+                    if k.startswith("arg_"):
+                        obs_arguments[k[4:]] = v
+                action = connector_actions.create_action(
+                    action_type=action_type,
+                    action_id=action_id,
+                    name=f"{form_data['name']} Action {i+1}",
+                    operation=str(action_config.get("operation", "") or ""),
+                    obs_arguments=obs_arguments,
+                )
             else:
                 action = connector_actions.create_action(
                     action_type=action_type,
@@ -4810,6 +5041,38 @@ def create_test_data_for_trigger(trigger_type: TriggerType) -> Dict[str, Any]:
             "key_code": "f12",
             "modifiers": ["ctrl"],
             "is_global": True,
+        }
+    elif trigger_type == TriggerType.OBS_SCENE_CHANGED:
+        return {
+            **base_data,
+            "source": "obs",
+            "event_type": "obs_scene_changed",
+            "scene_name": "Test Scene",
+            "previous_scene_name": "",
+        }
+    elif trigger_type == TriggerType.OBS_STREAM_STATE:
+        return {
+            **base_data,
+            "source": "obs",
+            "event_type": "obs_stream_state",
+            "output_active": False,
+            "output_state": "OBS_WEBSOCKET_OUTPUT_STATE_STOPPED",
+        }
+    elif trigger_type == TriggerType.OBS_RECORD_STATE:
+        return {
+            **base_data,
+            "source": "obs",
+            "event_type": "obs_record_state",
+            "output_active": False,
+            "output_state": "OBS_WEBSOCKET_OUTPUT_STATE_STOPPED",
+        }
+    elif trigger_type == TriggerType.OBS_INPUT_MUTE:
+        return {
+            **base_data,
+            "source": "obs",
+            "event_type": "obs_input_mute",
+            "input_name": "Mic/Aux",
+            "input_muted": False,
         }
     else:
         return {**base_data, "event_type": "unknown"}

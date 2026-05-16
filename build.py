@@ -427,7 +427,7 @@ def get_hidden_imports(current_os):
     # Audio and multimedia
     hidden_imports.extend(
         [
-            "simpleobsws",
+            "obsws_python",
         ]
     )
 

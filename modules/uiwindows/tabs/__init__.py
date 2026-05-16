@@ -20,6 +20,7 @@ from .statistics_tab import StatisticsTab
 from .theme_tab import ThemeTab
 from .twitch_tab import TwitchTab
 from .youtube_tab import YouTubeTab
+from .obs_tab import ObsTab
 from .game_hooks_tab import GameHooksTab
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "PSNTab",
     "SpotifyTab",
     "YouTubeTab",
+    "ObsTab",
     "GameHooksTab",
     "DatabaseTab",
     "StatisticsTab",

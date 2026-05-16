@@ -2633,6 +2633,69 @@ class GameHookAction(BaseAction):
             return False
 
 
+@dataclass
+class ObsControlAction(BaseAction):
+    """Control OBS Studio via obsws-python from the OBS worker thread."""
+
+    operation: str = ""
+    obs_arguments: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.action_type = ActionType.OBS_CONTROL
+
+    @classmethod
+    def _substitute_obs_arguments(
+        cls,
+        obs_arguments: Dict[str, Any],
+        trigger_data: Dict[str, Any],
+        event_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        ctx = build_connector_placeholder_context(event_data, trigger_data)
+
+        out: Dict[str, Any] = {}
+        for k, v in obs_arguments.items():
+            if isinstance(v, str):
+                out[k] = substitute_connector_placeholders(v, ctx)
+            else:
+                out[k] = v
+        return out
+
+    def validate_parameters(self) -> bool:
+        if not str(self.operation or "").strip():
+            return False
+        return True
+
+    async def execute(
+        self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
+    ) -> bool:
+        try:
+            from .obs_service import obs_service
+
+            resolved = self._substitute_obs_arguments(
+                dict(self.obs_arguments), trigger_data, event_data
+            )
+            cfut = obs_service.enqueue_obs_request(self.operation, resolved)
+            raw = await asyncio.wait_for(asyncio.wrap_future(cfut), timeout=15.0)
+            if isinstance(raw, tuple) and len(raw) >= 1:
+                ok = bool(raw[0])
+            else:
+                ok = False
+            if not ok:
+                err = raw[1] if isinstance(raw, tuple) and len(raw) > 1 else ""
+                logger.warning(
+                    "OBS action failed op=%s err=%s",
+                    self.operation,
+                    err or "unknown error",
+                )
+            return ok
+        except asyncio.TimeoutError:
+            logger.error("OBS action timed out: %s", self.operation)
+            return False
+        except Exception as e:
+            logger.error("OBS action error: %s", e, exc_info=True)
+            return False
+
+
 # Factory function for creating actions
 def create_action(
     action_type: ActionType, action_id: str, name: str, **kwargs
@@ -2652,6 +2715,7 @@ def create_action(
         ActionType.KEY_PRESS: KeyPressAction,
         ActionType.AUDIO_CONTROL: AudioControlAction,
         ActionType.GAME_HOOK: GameHookAction,
+        ActionType.OBS_CONTROL: ObsControlAction,
     }
 
     action_class = action_classes.get(action_type)

@@ -324,6 +324,10 @@ if __name__ == "__main__":
         service_manager.register("psn", psn_service.initialize_psn_module, priority=6)
         service_manager.register("youtube", youtube.start_youtube_service, priority=7)
 
+        from modules.obs_service import start_obs_service as _start_obs_ws
+
+        service_manager.register("obs", _start_obs_ws, priority=8)
+
         # Start deferred init after UI is responsive
         service_manager.start_deferred_init(delay_seconds=1.0)
 

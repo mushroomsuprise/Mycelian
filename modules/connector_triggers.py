@@ -333,6 +333,58 @@ class WebhookTrigger(BaseTrigger):
         return self.evaluate_conditions(event_data)
 
 
+@dataclass
+class ObsSceneChangedTrigger(BaseTrigger):
+    """Fires when OBS program scene changes (WebSocket)."""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.OBS_SCENE_CHANGED
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "obs_scene_changed":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class ObsStreamStateTrigger(BaseTrigger):
+    """Fires when OBS streaming output starts/stops or state string changes."""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.OBS_STREAM_STATE
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "obs_stream_state":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class ObsRecordStateTrigger(BaseTrigger):
+    """Fires when OBS recording output starts/stops or state string changes."""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.OBS_RECORD_STATE
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "obs_record_state":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class ObsInputMuteTrigger(BaseTrigger):
+    """Fires when an OBS audio input mute state toggles."""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.OBS_INPUT_MUTE
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "obs_input_mute":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
 # Factory function for creating triggers
 def create_trigger(
     trigger_type: TriggerType, trigger_id: str, name: str, **kwargs
@@ -354,6 +406,10 @@ def create_trigger(
         TriggerType.SCHEDULE: ScheduleTrigger,
         TriggerType.HOTKEY: HotkeyTrigger,
         TriggerType.WEBHOOK: WebhookTrigger,
+        TriggerType.OBS_SCENE_CHANGED: ObsSceneChangedTrigger,
+        TriggerType.OBS_STREAM_STATE: ObsStreamStateTrigger,
+        TriggerType.OBS_RECORD_STATE: ObsRecordStateTrigger,
+        TriggerType.OBS_INPUT_MUTE: ObsInputMuteTrigger,
     }
 
     trigger_class = trigger_classes.get(trigger_type)

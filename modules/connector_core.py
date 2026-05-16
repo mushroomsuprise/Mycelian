@@ -75,6 +75,12 @@ class TriggerType(Enum):
     HOTKEY = "hotkey"
     WEBHOOK = "webhook"
 
+    # OBS Studio (WebSocket) triggers
+    OBS_SCENE_CHANGED = "obs_scene_changed"
+    OBS_STREAM_STATE = "obs_stream_state"
+    OBS_RECORD_STATE = "obs_record_state"
+    OBS_INPUT_MUTE = "obs_input_mute"
+
 
 class ActionType(Enum):
     """Types of actions available in the connector system"""
@@ -109,6 +115,9 @@ class ActionType(Enum):
 
     # Game memory (crowd control)
     GAME_HOOK = "game_hook"
+
+    # OBS Studio WebSocket controls
+    OBS_CONTROL = "obs_control"
 
 
 @dataclass
@@ -178,11 +187,44 @@ class TriggerCondition:
                 field_value = field_value.lower()
                 expected_value = expected_value.lower()
 
+        def _looks_bool_token(x):
+            return isinstance(x, str) and str(x).strip().lower() in (
+                "true",
+                "false",
+                "0",
+                "1",
+                "yes",
+                "no",
+                "on",
+                "off",
+            )
+
+        def _truthy_plain(x):
+            if isinstance(x, bool):
+                return x
+            return str(x).strip().lower() in ("true", "1", "yes", "on")
+
         # Perform comparison
         if operator == ComparisonOperator.EQUAL:
-            return field_value == expected_value
+            fv, ev = field_value, expected_value
+            if isinstance(fv, bool) or isinstance(ev, bool) or (
+                _looks_bool_token(fv) or _looks_bool_token(ev)
+            ):
+                try:
+                    return bool(_truthy_plain(fv) == _truthy_plain(ev))
+                except Exception:
+                    pass
+            return fv == ev
         elif operator == ComparisonOperator.NOT_EQUAL:
-            return field_value != expected_value
+            fv, ev = field_value, expected_value
+            if isinstance(fv, bool) or isinstance(ev, bool) or (
+                _looks_bool_token(fv) or _looks_bool_token(ev)
+            ):
+                try:
+                    return bool(_truthy_plain(fv) != _truthy_plain(ev))
+                except Exception:
+                    pass
+            return fv != ev
         elif operator == ComparisonOperator.GREATER_THAN:
             return field_value > expected_value
         elif operator == ComparisonOperator.GREATER_THAN_OR_EQUAL:

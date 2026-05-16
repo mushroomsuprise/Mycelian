@@ -1,0 +1,783 @@
+"""OBS Studio WebSocket (v5) integration — ReqClient requests and EventClient subscriptions.
+
+All obsws-python socket I/O runs on this module's daemon thread. Connector actions enqueue
+requests; OBS events dispatch to ConnectorManager via ``asyncio.run_coroutine_threadsafe``.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import concurrent.futures
+import logging
+import queue
+from collections.abc import Mapping
+import threading
+import time
+from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+# When OBS is not running yet, reconnect with exponential backoff between attempts.
+_CONNECT_ATTEMPT_FIRST_WAIT_SEC = 5.0
+_CONNECT_ATTEMPT_MAX_WAIT_SEC = 45.0
+_CONNECT_ATTEMPT_BACKOFF_FACTOR = 1.35
+# Worker thread poll while OBS integration disabled in Settings.
+_DISABLED_POLL_INTERVAL_SEC = 15.0
+# After unexpected thread errors, pause before restarting the outer loop.
+_THREAD_ERROR_COOLDOWN_SEC = 10.0
+# Consecutive idle health-check failures (~queue_empty interval) → drop stale socket.
+_IDLE_HEALTH_DROP_AFTER_FAILS = 12
+
+_CONNECTOR_OPS = frozenset(
+    {
+        "set_program_scene",
+        "set_preview_scene",
+        "set_source_enabled",
+        "toggle_source",
+        "set_source_transform",
+        "set_input_mute",
+        "toggle_input_mute",
+        "start_stream",
+        "stop_stream",
+        "toggle_stream",
+        "start_record",
+        "stop_record",
+        "toggle_record",
+    }
+)
+
+_TRANSFORM_SNAKE_TO_CAMEL = {
+    "position_x": "positionX",
+    "position_y": "positionY",
+    "rotation": "rotation",
+    "scale_x": "scaleX",
+    "scale_y": "scaleY",
+    "alignment": "alignment",
+    "bounds_type": "boundsType",
+    "bounds_alignment": "boundsAlignment",
+    "bounds_width": "boundsWidth",
+    "bounds_height": "boundsHeight",
+    "crop_left": "cropLeft",
+    "crop_top": "cropTop",
+    "crop_right": "cropRight",
+    "crop_bottom": "cropBottom",
+    "width": "width",
+    "height": "height",
+}
+
+
+def _truthy(raw: Any) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    s = str(raw).strip().lower()
+    return s in ("1", "true", "yes", "on")
+
+
+def _coerce_numeric(val: Any) -> Any:
+    if val is None or val == "":
+        return None
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return val
+    try:
+        s = str(val).strip()
+        if "." in s:
+            return float(s)
+        return int(s)
+    except (ValueError, TypeError):
+        return val
+
+
+def _attr(data: Any, *names: str) -> Any:
+    """Read an attribute/snake-case or camel-case key from a dataclass/object or nested dict."""
+
+    if isinstance(data, Mapping) and not isinstance(data, (str, bytes, bytearray)):
+        for n in names:
+            if n in data:
+                return data[n]
+        return None
+    for n in names:
+        if hasattr(data, n):
+            return getattr(data, n)
+    return None
+
+
+def _gather_transform_overrides(obs_args: Dict[str, Any]) -> Dict[str, Any]:
+    """Map catalog snake_case args to OBS sceneItemTransform keys (camelCase)."""
+    out: Dict[str, Any] = {}
+    for snake, camel in _TRANSFORM_SNAKE_TO_CAMEL.items():
+        if snake not in obs_args:
+            continue
+        raw = obs_args.get(snake)
+        if raw is None or raw == "":
+            continue
+        coerced = _coerce_numeric(raw)
+        out[camel] = coerced
+    return out
+
+
+def _is_transient_connect_error(exc: BaseException) -> bool:
+    """Typical failures when OBS is off or restarting (avoid noisy logs)."""
+
+    if isinstance(exc, (ConnectionRefusedError, BrokenPipeError, ConnectionResetError, TimeoutError)):
+        return True
+    return type(exc).__name__ in ("WebSocketTimeoutException", "WebSocketBadStatusException")
+
+
+class ObsServiceImpl:
+    def __init__(self) -> None:
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._req_queue: queue.Queue[
+            Tuple[Optional[concurrent.futures.Future[Any]], str, Dict[str, Any]]
+        ] = queue.Queue(maxsize=500)
+        self._cache_lock = threading.Lock()
+        self._snapshot: Dict[str, Any] = {
+            "scene_names": [],
+            "input_names": [],
+            "sources_by_scene": {},
+            "stream_output_active": False,
+            "stream_output_state": "",
+            "record_output_active": False,
+            "record_output_state": "",
+        }
+        self._req_client: Any = None
+        self._ev_client: Any = None
+        self._connector_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._obs_version: str = ""
+        self._websocket_version: str = ""
+        self._reconnect_wakeup = threading.Event()
+        self._last_connect_attempt: float = 0.0
+        self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+        self._idle_health_failures = 0
+
+    # --- Public API ---
+    def set_connector_loop(self, loop: Optional[asyncio.AbstractEventLoop]) -> None:
+        """Called from ConnectorProcessor when its asyncio loop is ready."""
+        self._connector_loop = loop
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._thread_main, name="ObsWebSocket", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        try:
+            self._req_queue.put_nowait((None, "__shutdown__", {}))
+        except queue.Full:
+            pass
+        self._reconnect_wakeup.set()
+        th = self._thread
+        if th is not None:
+            th.join(timeout=8.0)
+        self._thread = None
+
+    def enqueue_obs_request(
+        self, operation: str, obs_arguments: Optional[Dict[str, Any]] = None
+    ) -> concurrent.futures.Future[Any]:
+        fut: concurrent.futures.Future[Any] = concurrent.futures.Future()
+        try:
+            self._req_queue.put_nowait((fut, operation, dict(obs_arguments or {})))
+        except queue.Full:
+            fut.set_result((False, "OBS request queue is full", None))
+        return fut
+
+    def apply_settings(self) -> None:
+        """Ask the worker thread to reconnect using current ``state_manager`` settings."""
+        self._reconnect_wakeup.set()
+        try:
+            self._req_queue.put_nowait((None, "__reconnect__", {}))
+        except queue.Full:
+            logger.warning("OBS reconnect signal dropped — queue full")
+
+    def refresh_snapshot_blocking(self, timeout_s: float = 12.0) -> Tuple[bool, str]:
+        """Synchronously rebuild scene/input snapshot using a temp future (mostly for tests)."""
+        fut = self.enqueue_obs_request("__refresh_snapshot__", {})
+        try:
+            raw = fut.result(timeout=timeout_s)
+            if isinstance(raw, tuple) and raw[0]:
+                return True, ""
+            msg = ""
+            if isinstance(raw, tuple) and len(raw) > 1 and raw[1]:
+                msg = str(raw[1])
+            return False, msg or "snapshot failed"
+        except Exception as e:
+            return False, str(e)
+
+    def get_connector_snapshot(self) -> Dict[str, Any]:
+        with self._cache_lock:
+            return {
+                "scene_names": list(self._snapshot["scene_names"]),
+                "input_names": list(self._snapshot["input_names"]),
+                "sources_by_scene": {
+                    k: dict(v)
+                    for k, v in (self._snapshot.get("sources_by_scene") or {}).items()
+                    if isinstance(v, dict)
+                },
+                "stream_output_active": bool(self._snapshot.get("stream_output_active")),
+                "stream_output_state": str(self._snapshot.get("stream_output_state") or ""),
+                "record_output_active": bool(self._snapshot.get("record_output_active")),
+                "record_output_state": str(self._snapshot.get("record_output_state") or ""),
+            }
+
+    def is_connected(self) -> bool:
+        return self._req_client is not None
+
+    def get_status_line(self) -> str:
+        if self.is_connected():
+            return f"{self._obs_version or 'Connected'}"
+        return "Disconnected"
+
+    def connection_details(self) -> Tuple[bool, str, str]:
+        """connected, OBS version/plugin string, WebSocket RPC version."""
+        return (
+            self.is_connected(),
+            self._obs_version or "",
+            self._websocket_version or "",
+        )
+
+    # --- Worker loop ---
+    def _thread_main(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self._disconnect_clients()
+                if not self._load_enabled_settings():
+                    self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+                    idle = self._disconnect_idle_wait_or_drain_queue(
+                        _DISABLED_POLL_INTERVAL_SEC
+                    )
+                    if idle == "shutdown":
+                        break
+                    continue
+
+                self._connect_blocking()
+                if self._req_client is None:
+                    # Keep draining the queue (settings refresh, queued ops fail fast).
+                    idle = self._disconnect_idle_wait_or_drain_queue(
+                        self._retry_after_fail_sec
+                    )
+                    if idle == "shutdown":
+                        break
+                    if idle == "done":
+                        self._retry_after_fail_sec = min(
+                            _CONNECT_ATTEMPT_MAX_WAIT_SEC,
+                            round(
+                                self._retry_after_fail_sec
+                                * _CONNECT_ATTEMPT_BACKOFF_FACTOR,
+                                3,
+                            ),
+                        )
+                    continue
+
+                self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+                self._idle_health_failures = 0
+                self._run_loop_iteration()
+            except Exception as e:
+                logger.error("OBS service thread error: %s", e, exc_info=True)
+                self._disconnect_clients()
+                self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+                idle = self._disconnect_idle_wait_or_drain_queue(_THREAD_ERROR_COOLDOWN_SEC)
+                if idle == "shutdown":
+                    break
+
+    def _disconnect_idle_wait_or_drain_queue(self, wait_seconds: float) -> str:
+        """Wait up to ``wait_seconds``, draining queue-safe ops.
+
+        Returns ``shutdown``, ``wake`` (__reconnect__ short-circuit), or ``done`` after the wait."""
+
+        deadline = time.monotonic() + max(0.0, wait_seconds)
+        while time.monotonic() < deadline and not self._stop.is_set():
+            if self._reconnect_wakeup.is_set():
+                self._reconnect_wakeup.clear()
+                self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+                return "wake"
+
+            remaining = deadline - time.monotonic()
+            slice_s = max(0.01, min(2.0, remaining))
+            try:
+                item = self._req_queue.get(timeout=slice_s)
+            except queue.Empty:
+                continue
+            fut, op, kw = item
+            if op == "__shutdown__":
+                return "shutdown"
+            if op == "__reconnect__":
+                self._reconnect_wakeup.clear()
+                self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+                return "wake"
+            if op == "__refresh_snapshot__":
+                if fut is not None:
+                    fut.set_result((False, "Not connected"))
+                continue
+            if fut is not None:
+                fut.set_result((False, "OBS is not connected", None))
+
+        return "shutdown" if self._stop.is_set() else "done"
+
+    def _run_loop_iteration(self) -> None:
+        """Drain request queue until shutdown or disconnect."""
+        while not self._stop.is_set():
+            try:
+                item = self._req_queue.get(timeout=0.3)
+            except queue.Empty:
+                if self._reconnect_wakeup.is_set():
+                    self._reconnect_wakeup.clear()
+                    return
+                # Keep snapshot fresh lightly (stream/record state)
+                if self._req_client:
+                    try:
+                        self._update_output_flags_only()
+                        self._idle_health_failures = 0
+                    except Exception:
+                        self._idle_health_failures += 1
+                        if (
+                            self._idle_health_failures >= _IDLE_HEALTH_DROP_AFTER_FAILS
+                        ):
+                            logger.info(
+                                "OBS websocket appeared dead — reconnecting after idle probe failures",
+                            )
+                            self._disconnect_clients()
+                            return
+                continue
+            fut, op, kw = item
+            if op == "__shutdown__":
+                break
+            if op == "__reconnect__":
+                return
+            try:
+                if op == "__refresh_snapshot__":
+                    if self._req_client is None:
+                        if fut:
+                            fut.set_result((False, "Not connected"))
+                    else:
+                        self._refresh_snapshot_locked()
+                        if fut:
+                            fut.set_result((True, None))
+                    continue
+                if op not in _CONNECTOR_OPS:
+                    raise ValueError(f"Unknown OBS connector operation '{op}'")
+                self._dispatch_connector_operation(op, kw or {})
+                if fut:
+                    fut.set_result((True, None, None))
+            except Exception as e:
+                msg = str(e)
+                logger.warning("OBS connector op failed %s %s — %s", op, kw, msg)
+                if fut:
+                    fut.set_result((False, msg, None))
+
+        self._disconnect_clients()
+
+    def _load_enabled_settings(self) -> bool:
+        """Return True when integration should remain active."""
+        try:
+            from . import dataobjects
+
+            obs = dataobjects.state_manager.get_obs_data()
+            if not obs.enabled:
+                return False
+            return True
+        except Exception as e:
+            logger.debug("OBS settings load: %s", e)
+            return False
+
+    def _connection_kwargs(self) -> Dict[str, Any]:
+        from . import dataobjects
+
+        obs = dataobjects.state_manager.get_obs_data()
+        port = int(obs.port or 4455)
+        pwd = getattr(obs, "password", "") or ""
+        kwargs: Dict[str, Any] = {
+            "host": (obs.host or "localhost").strip() or "localhost",
+            "port": port,
+            "password": pwd,
+            "timeout": 12,
+        }
+        return kwargs
+
+    def _connect_blocking(self) -> None:
+        from obsws_python import ReqClient, EventClient
+        from obsws_python.subs import Subs
+
+        self._disconnect_clients()
+        kw = self._connection_kwargs()
+        try:
+            self._last_connect_attempt = time.monotonic()
+            self._req_client = ReqClient(**kw)
+
+            resp = self._req_client.get_version()
+            plug = getattr(resp, "obs_version", getattr(resp, "obsVersion", "") or "") or ""
+            ws_v = getattr(
+                resp,
+                "obs_web_socket_version",
+                getattr(resp, "obsWebSocketVersion", "") or "",
+            ) or ""
+            self._obs_version = plug
+            self._websocket_version = ws_v
+
+            logger.info(
+                "OBS WebSocket connected (%s)",
+                self._obs_version or self._websocket_version or "?",
+            )
+
+            self._refresh_snapshot_locked()
+            self._update_output_flags_only()
+
+            ev_kw = dict(kw)
+            ev_kw.pop("timeout", None)
+            ev_kw["subs"] = Subs.LOW_VOLUME
+            ev_kw.setdefault("timeout", 12)
+
+            try:
+                self._ev_client = EventClient(**ev_kw)
+                self._register_callbacks()
+            except Exception as e:
+                logger.warning("OBS EventClient unavailable (triggers disabled): %s", e)
+
+        except Exception as e:
+            self._disconnect_clients()
+            msg = str(e)
+            if _is_transient_connect_error(e):
+                logger.debug("OBS unreachable: %s", msg)
+            else:
+                logger.info("OBS connect failed: %s", msg)
+
+    def _disconnect_clients(self) -> None:
+        if self._ev_client is not None:
+            ev = self._ev_client
+            self._ev_client = None
+            try:
+                try:
+                    ev.callback.clear()
+                except Exception:
+                    pass
+                ev.disconnect()
+            except Exception as e:
+                logger.debug("OBS EventClient disconnect: %s", e)
+        if self._req_client is not None:
+            rc = self._req_client
+            self._req_client = None
+            try:
+                rc.disconnect()
+            except Exception as e:
+                logger.debug("OBS ReqClient disconnect: %s", e)
+
+    def _enqueue_connector_event(self, event_data: Dict[str, Any]) -> None:
+        loop = self._connector_loop
+        if loop is None or not loop.is_running():
+            return
+        try:
+            from .connector_integration import get_integration
+
+            asyncio.run_coroutine_threadsafe(get_integration().manager.add_event(event_data), loop)
+        except Exception as e:
+            logger.debug("OBS enqueue connector failed: %s", e)
+
+    def _register_callbacks(self) -> None:
+        cb = getattr(self._ev_client, "callback", None)
+        if cb is None:
+            return
+
+        obs = self
+
+        def on_current_program_scene_changed(data):
+            scene = _attr(data, "scene_name", "sceneName") or ""
+            prev = _attr(data, "previous_scene_name", "previousSceneName") or ""
+            ts = time.time()
+            obs._enqueue_connector_event(
+                {
+                    "event_type": "obs_scene_changed",
+                    "source": "obs",
+                    "timestamp": ts,
+                    "scene_name": scene,
+                    "previous_scene_name": prev,
+                    "username": "",
+                }
+            )
+
+        def on_stream_state_changed(data):
+            active = bool(_attr(data, "output_active", "outputActive") or False)
+            state_str = (
+                _attr(data, "output_state", "outputState")
+                or _attr(data, "state")
+                or ""
+            )
+            state_str = str(state_str or "")
+            ts = time.time()
+            with obs._cache_lock:
+                obs._snapshot["stream_output_active"] = active
+                obs._snapshot["stream_output_state"] = state_str
+            obs._enqueue_connector_event(
+                {
+                    "event_type": "obs_stream_state",
+                    "source": "obs",
+                    "timestamp": ts,
+                    "output_active": active,
+                    "output_state": state_str,
+                    "username": "",
+                }
+            )
+
+        def on_record_state_changed(data):
+            active = bool(_attr(data, "output_active", "outputActive") or False)
+            state_str = (
+                _attr(data, "output_state", "outputState")
+                or _attr(data, "state")
+                or ""
+            )
+            state_str = str(state_str or "")
+            ts = time.time()
+            with obs._cache_lock:
+                obs._snapshot["record_output_active"] = active
+                obs._snapshot["record_output_state"] = state_str
+            obs._enqueue_connector_event(
+                {
+                    "event_type": "obs_record_state",
+                    "source": "obs",
+                    "timestamp": ts,
+                    "output_active": active,
+                    "output_state": state_str,
+                    "username": "",
+                }
+            )
+
+        def on_input_mute_state_changed(data):
+            inp = _attr(data, "input_name", "inputName") or ""
+            muted = bool(_attr(data, "input_muted", "inputMuted") or False)
+            ts = time.time()
+            obs._enqueue_connector_event(
+                {
+                    "event_type": "obs_input_mute",
+                    "source": "obs",
+                    "timestamp": ts,
+                    "input_name": inp,
+                    "input_muted": muted,
+                    "username": "",
+                }
+            )
+
+        cb.register(
+            [
+                on_current_program_scene_changed,
+                on_stream_state_changed,
+                on_record_state_changed,
+                on_input_mute_state_changed,
+            ]
+        )
+
+    def _update_output_flags_only(self) -> None:
+        cl = self._req_client
+        if cl is None:
+            return
+        ss = cl.get_stream_status()
+        rs = cl.get_record_status()
+        sav = bool(_attr(ss, "output_active", "outputActive") or False)
+        s_state = _attr(ss, "output_state", "outputState") or ""
+        rav = bool(_attr(rs, "output_active", "outputActive") or False)
+        r_state = _attr(rs, "output_state", "outputState") or ""
+        with self._cache_lock:
+            self._snapshot["stream_output_active"] = sav
+            self._snapshot["stream_output_state"] = str(s_state or "")
+            self._snapshot["record_output_active"] = rav
+            self._snapshot["record_output_state"] = str(r_state or "")
+
+    def _scene_names_from_resp(self, scene_list_resp: Any) -> List[str]:
+        names: List[str] = []
+        scenes = _attr(scene_list_resp, "scenes", None) or getattr(
+            scene_list_resp, "__dict__", {}
+        ).get("scenes", [])
+        if not isinstance(scenes, list):
+            return names
+        for s in scenes:
+            nm = _attr(s, "scene_name", "sceneName")
+            if nm:
+                names.append(str(nm))
+        return names
+
+    def _sources_for_scene(self, scene_name: str) -> Dict[str, str]:
+        """Label -> underlying source_name (best-effort uniqueness)."""
+        cl = self._req_client
+        if cl is None:
+            return {}
+        try:
+            items = cl.get_scene_item_list(scene_name)
+            lst = _attr(items, "scene_items", "sceneItems") or []
+            if not isinstance(lst, list):
+                return {}
+            out: Dict[str, str] = {}
+            for it in lst:
+                src = _attr(it, "source_name", "sourceName") or ""
+                sid = _attr(it, "scene_item_id", "sceneItemId")
+                if not src:
+                    continue
+                label = f"{src}"
+                key = (
+                    label
+                    if label not in out
+                    else f"{src} (#{sid})"
+                )
+                out[key] = str(src)
+            return out
+        except Exception:
+            return {}
+
+    def _refresh_snapshot_locked(self) -> None:
+        cl = self._req_client
+        if cl is None:
+            return
+        sl = cl.get_scene_list()
+        inp = cl.get_input_list()
+        scene_names = self._scene_names_from_resp(sl)
+        input_names: List[str] = []
+        inputs_list = _attr(inp, "inputs", None) or []
+        if isinstance(inputs_list, list):
+            for inp_row in inputs_list:
+                nm = _attr(inp_row, "input_name", "inputName")
+                if nm:
+                    input_names.append(str(nm))
+        by_scene: Dict[str, Dict[str, str]] = {}
+        for sn in scene_names:
+            mapped = self._sources_for_scene(sn)
+            if mapped:
+                by_scene[sn] = mapped
+
+        try:
+            self._update_output_flags_only()
+        except Exception:
+            pass
+
+        with self._cache_lock:
+            self._snapshot["scene_names"] = sorted(set(scene_names), key=lambda x: x.lower())
+            self._snapshot["input_names"] = sorted(set(input_names), key=lambda x: x.lower())
+            self._snapshot["sources_by_scene"] = by_scene
+
+    # --- Dispatcher ---
+    def _dispatch_connector_operation(self, op: str, obs_args: Dict[str, Any]) -> None:
+        cl = self._req_client
+        if cl is None:
+            raise RuntimeError("OBS is not connected")
+
+        if op == "set_program_scene":
+            nm = obs_args.get("scene_name") or obs_args.get("name")
+            if not nm:
+                raise ValueError("scene_name is required")
+            cl.set_current_program_scene(str(nm))
+            return
+        if op == "set_preview_scene":
+            nm = obs_args.get("scene_name") or obs_args.get("name")
+            if not nm:
+                raise ValueError("scene_name is required")
+            cl.set_current_preview_scene(str(nm))
+            return
+
+        if op == "set_source_enabled":
+            scene_name = obs_args.get("scene_name") or ""
+            src = obs_args.get("source_name") or ""
+            if not scene_name or not src:
+                raise ValueError("scene_name and source_name are required")
+            off_raw = obs_args.get("search_offset")
+            offset = int(off_raw) if off_raw not in ("", None) else None
+            item = cl.get_scene_item_id(str(scene_name), str(src), offset)
+            sid = _attr(item, "scene_item_id", "sceneItemId")
+            if sid is None:
+                raise RuntimeError("Could not resolve scene item id")
+            en_raw = obs_args.get("enabled", True)
+            if isinstance(en_raw, bool):
+                enabled = en_raw
+            else:
+                enabled = _truthy(en_raw)
+            cl.set_scene_item_enabled(scene_name, int(sid), bool(enabled))
+            return
+
+        if op == "toggle_source":
+            scene_name = obs_args.get("scene_name") or ""
+            src = obs_args.get("source_name") or ""
+            if not scene_name or not src:
+                raise ValueError("scene_name and source_name are required")
+            off_raw = obs_args.get("search_offset")
+            offset = int(off_raw) if off_raw not in ("", None) else None
+            item = cl.get_scene_item_id(str(scene_name), str(src), offset)
+            sid = _attr(item, "scene_item_id", "sceneItemId")
+            if sid is None:
+                raise RuntimeError("Could not resolve scene item id")
+            cur = cl.get_scene_item_enabled(scene_name, int(sid))
+            prev = _attr(cur, "scene_item_enabled", "sceneItemEnabled")
+            nv = not bool(prev)
+            cl.set_scene_item_enabled(scene_name, int(sid), nv)
+            return
+
+        if op == "set_source_transform":
+            scene_name = obs_args.get("scene_name") or ""
+            src = obs_args.get("source_name") or ""
+            if not scene_name or not src:
+                raise ValueError("scene_name and source_name are required")
+            off_raw = obs_args.get("search_offset")
+            offset = int(off_raw) if off_raw not in ("", None) else None
+            item = cl.get_scene_item_id(str(scene_name), str(src), offset)
+            sid = _attr(item, "scene_item_id", "sceneItemId")
+            if sid is None:
+                raise RuntimeError("Could not resolve scene item id")
+            mr = obs_args.get("merge_with_current_transform", "1")
+            merge = str(mr).strip().lower() not in ("0", "false", "no")
+
+            overrides = _gather_transform_overrides(obs_args)
+            if merge:
+                merged: Dict[str, Any] = {}
+                raw_tr = cl.send(
+                    "GetSceneItemTransform",
+                    {"sceneName": str(scene_name), "sceneItemId": int(sid)},
+                    raw=True,
+                )
+                sit = raw_tr.get("sceneItemTransform") if isinstance(raw_tr, dict) else None
+                if isinstance(sit, dict):
+                    merged = dict(sit)
+                merged.update(overrides)
+                cl.set_scene_item_transform(scene_name, int(sid), merged)
+            else:
+                if not overrides:
+                    raise ValueError("No transform fields supplied")
+                cl.set_scene_item_transform(scene_name, int(sid), overrides)
+            return
+
+        if op == "set_input_mute":
+            inp = obs_args.get("input_name") or ""
+            if not inp:
+                raise ValueError("input_name is required")
+            cl.set_input_mute(str(inp), _truthy(obs_args.get("muted", True)))
+            return
+        if op == "toggle_input_mute":
+            inp = obs_args.get("input_name") or ""
+            if not inp:
+                raise ValueError("input_name is required")
+            cl.toggle_input_mute(str(inp))
+            return
+        if op == "start_stream":
+            cl.start_stream()
+            return
+        if op == "stop_stream":
+            cl.stop_stream()
+            return
+        if op == "toggle_stream":
+            cl.toggle_stream()
+            return
+        if op == "start_record":
+            cl.start_record()
+            return
+        if op == "stop_record":
+            cl.stop_record()
+            return
+        if op == "toggle_record":
+            cl.toggle_record()
+            return
+
+
+obs_service = ObsServiceImpl()
+
+
+def start_obs_service() -> None:
+    # Avoid ERROR stack traces each attempt while OBS isn't running yet.
+    logging.getLogger("obsws_python.baseclient.ObsClient").setLevel(logging.CRITICAL)
+    obs_service.start()
