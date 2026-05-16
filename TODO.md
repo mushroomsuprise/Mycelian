@@ -17,11 +17,6 @@ Template Previewer:
     [] - When data is changed, it currently refreshes the entire previewer, i would prefer it does not refresh the entire thing, just modify what changed.
 
 Chat Improvements:
-    [] - Add more entry animations, including complex ones
-    [] - Change font boxes so they "autocomplete" from available fonts in the /assets/default_assets/fonts folder
-    [] - Fix issue with emote container size not matching the scaled emote size
-    [] - Emote padding setting not functional
-    [] - Gigantified emotes not scaling to the correct size based on the JSON settings file
     [] - Create a .spore.json sidecar file for the Spore Studio module
 
 Alerts Improvements:
@@ -45,7 +40,7 @@ General Items:
     [] - Add the game category to Raid activity feed items. It should say something like: {user} has raided with {count} viewers, they were last playing {category}.
     [] - .wav audio files are not working (at least in the alerts template)
     [] - Stream streaks are not appearing in the activity feed, it seems like the data is not coming in at all
-    [] - Stream streaks missing from the HTML template (OBS dock) but are in the python file
+    [] - Stream streak code missing from the HTML template (OBS dock) but are in the python file
 
 Priority Fixes:
     [] - Setup "generic image/video" template, so the file can just be renamed and all websocket events will point to the file name.

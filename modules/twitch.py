@@ -65,8 +65,11 @@ from . import (
 )
 from .chatbot_core import EventType
 from .chatbot_manager import get_manager as get_chatbot_manager
-from .uiwindows.activity_feed import add_alert_to_feed
 from .template_config_parser import match_point_reward_dedicated_template
+from .twitch_eventsub_patch import ensure_channel_chat_notification_watch_streak_patch
+from .uiwindows.activity_feed import add_alert_to_feed
+
+ensure_channel_chat_notification_watch_streak_patch()
 
 logger = logging.getLogger(__name__)
 
@@ -803,9 +806,6 @@ class Twitch_API:
     async def on_chat_notification(self, data: ChannelChatNotificationEvent):
         """Handle channel chat notifications; only watch streaks trigger alerts."""
         ev = data.event
-        watch = getattr(ev, "watch_streak", None)
-        if watch is None:
-            return
 
         notice_raw = getattr(ev, "notice_type", None)
         notice_type = (
@@ -814,6 +814,14 @@ class Twitch_API:
             else str(notice_raw or "")
         )
         if str(notice_type) != "watch_streak":
+            return
+
+        watch = getattr(ev, "watch_streak", None)
+        if watch is None:
+            logger.debug(
+                "EventSub chat notification notice_type is watch_streak but "
+                "watch_streak data is missing; check twitch_eventsub_patch and twitchapi"
+            )
             return
 
         streak_count = int(getattr(watch, "streak_count", None) or 0)
@@ -838,55 +846,74 @@ class Twitch_API:
             f"points={channel_points_awarded}"
         )
 
-        alert = alertutils.fetch_streak_alert(streak_count)
-        if not alert:
-            logger.debug("No streak alert configuration matched, skipping")
-            return
-
         current_timestamp = time.time()
-        alert.username = username
-        alert.alert_type = "streak"
-        alert.streak_count = streak_count
-        alert.channel_points_awarded = channel_points_awarded
-        alert.message = user_msg
-        alert.alert_id = f"Alert{round(current_timestamp)}"
-        alert.timestamp = current_timestamp
+        alert_id = f"Alert{round(current_timestamp)}"
 
-        alert_processor.ALERT_QUEUE.append(alert)
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        alert = alertutils.fetch_streak_alert(streak_count)
+        alert_name_for_stats = ""
 
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                alert_data = {
-                    "type": "streak",
-                    "alert_type": "streak",
-                    "username": username,
-                    "streak_count": streak_count,
-                    "channel_points_awarded": channel_points_awarded,
-                    "message": user_msg,
-                    "alert_id": alert.alert_id,
-                    "timestamp": alert.timestamp,
-                }
-                web_engine.web_engine_instance.instant_alert(alert_data)
-                logger.debug(f"Sent instant alert for watch streak: {username}")
-        except Exception as e:
-            logger.error(
-                f"Error sending instant alert for watch streak: {str(e)}",
-                exc_info=True,
+        if alert:
+            alert.username = username
+            alert.alert_type = "streak"
+            alert.streak_count = streak_count
+            alert.channel_points_awarded = channel_points_awarded
+            alert.message = user_msg
+            alert.alert_id = alert_id
+            alert.timestamp = current_timestamp
+
+            alert_processor.ALERT_QUEUE.append(alert)
+            alertutils.alert_state_manager.store_completed_alert(
+                alert.alert_id, alert.__dict__
+            )
+            alert_name_for_stats = getattr(alert, "alert_name", None) or ""
+
+            try:
+                if (
+                    hasattr(web_engine, "web_engine_instance")
+                    and web_engine.web_engine_instance
+                ):
+                    alert_data = {
+                        "type": "streak",
+                        "alert_type": "streak",
+                        "username": username,
+                        "streak_count": streak_count,
+                        "channel_points_awarded": channel_points_awarded,
+                        "message": user_msg,
+                        "alert_id": alert.alert_id,
+                        "timestamp": alert.timestamp,
+                    }
+                    web_engine.web_engine_instance.instant_alert(alert_data)
+                    logger.debug(f"Sent instant alert for watch streak: {username}")
+            except Exception as e:
+                logger.error(
+                    f"Error sending instant alert for watch streak: {str(e)}",
+                    exc_info=True,
+                )
+        else:
+            logger.debug(
+                "No streak alert configuration matched; activity feed/stats still recorded"
+            )
+            streak_storage = {
+                "username": username,
+                "alert_type": "streak",
+                "streak_count": streak_count,
+                "channel_points_awarded": channel_points_awarded,
+                "message": user_msg,
+                "alert_id": alert_id,
+                "timestamp": current_timestamp,
+                "alert_name": "",
+            }
+            alertutils.alert_state_manager.store_completed_alert(
+                alert_id, streak_storage
             )
 
         add_alert_to_feed(
             alert_type="Streak",
             message=user_msg or f"{username} reached a {streak_count} stream streak!",
             badge_type="streak",
-            timestamp=str(int(alert.timestamp)),
+            timestamp=str(int(current_timestamp)),
             user_message=user_msg,
-            alert_id=alert.alert_id,
+            alert_id=alert_id,
         )
 
         try:
@@ -894,7 +921,7 @@ class Twitch_API:
             stats_manager.increment_watch_streak_alerts(
                 streak_count=streak_count,
                 username=username,
-                alert_name=getattr(alert, "alert_name", None) or "",
+                alert_name=alert_name_for_stats,
             )
         except Exception as e:
             logger.debug("Watch streak statistics update failed: %s", e)
