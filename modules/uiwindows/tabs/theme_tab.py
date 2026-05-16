@@ -536,6 +536,25 @@ body .theme-preview-container .typography-muted {
     grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
     gap: 6px;
 }
+
+.theme-palette-panel {
+    background: var(--preview-color-bg-elevated);
+    border-top: 1px solid var(--preview-color-border-subtle);
+    padding: 8px 10px;
+}
+
+.theme-palette-panel .typography-secondary,
+.theme-palette-panel .typography-muted {
+    color: var(--preview-color-text-secondary) !important;
+}
+
+.palette-toolbar {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
 """
 
 # Color field definitions for the palette editor
@@ -612,6 +631,12 @@ PALETTE_SWATCHES: List[Tuple[str, str, str]] = [
     for field_name, label in fields
 ]
 
+_PALETTE_COLOR_FIELDS: Tuple[str, ...] = tuple(
+    field_name for field_name, _label, _css in PALETTE_SWATCHES
+)
+
+_MAX_PALETTE_HISTORY = 50
+
 
 class ThemeTab:
     name = "Theme"
@@ -626,6 +651,9 @@ class ThemeTab:
         self._preview_css_injected: bool = False
         self._working_theme: Optional[ThemeColors] = None
         self._palette_dirty: bool = False
+        self.palette_container = None
+        self._undo_stack: List[ThemeColors] = []
+        self._redo_stack: List[ThemeColors] = []
 
     # ----- helper methods -----
     def _get_theme_manager(self):
@@ -678,14 +706,98 @@ class ThemeTab:
         else:
             self._working_theme = None
         self._palette_dirty = False
+        self._reset_palette_history()
+
+    def _reset_palette_history(self) -> None:
+        """Clear undo/redo stacks (e.g. after theme switch or discard)."""
+        self._undo_stack.clear()
+        self._redo_stack.clear()
+        self._update_palette_toolbar_state()
+
+    def _push_undo_snapshot(self) -> None:
+        """Save current working theme on the undo stack before a palette edit."""
+        if not self._working_theme:
+            return
+        self._undo_stack.append(copy.deepcopy(self._working_theme))
+        if len(self._undo_stack) > _MAX_PALETTE_HISTORY:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+
+    def _palette_matches_disk(self) -> bool:
+        """True when working palette colors match the persisted theme file."""
+        if not self._working_theme or not self.buffer:
+            return True
+        disk = self._get_current_theme(self.buffer)
+        if not disk:
+            return True
+        for field in _PALETTE_COLOR_FIELDS:
+            if getattr(self._working_theme, field, "") != getattr(disk, field, ""):
+                return False
+        return True
+
+    def _refresh_dirty_from_palette(self) -> None:
+        """Sync dirty flags from whether the palette differs from disk / app state."""
+        self._palette_dirty = not self._palette_matches_disk()
+        app_settings = state_manager.get_app_settings()
+        saved_theme = getattr(app_settings, "current_theme", "dark")
+        self.dirty = self._palette_dirty or self.buffer != saved_theme
+
+    def _update_palette_toolbar_state(self) -> None:
+        """Enable or disable undo, redo, and discard palette controls."""
+        undo_btn = self.ui_elements.get("palette_undo_btn")
+        redo_btn = self.ui_elements.get("palette_redo_btn")
+        discard_btn = self.ui_elements.get("palette_discard_btn")
+        if undo_btn is not None:
+            if self._undo_stack:
+                undo_btn.props(remove="disable")
+            else:
+                undo_btn.props("disable")
+        if redo_btn is not None:
+            if self._redo_stack:
+                redo_btn.props(remove="disable")
+            else:
+                redo_btn.props("disable")
+        if discard_btn is not None:
+            if self._palette_dirty:
+                discard_btn.props(remove="disable")
+            else:
+                discard_btn.props("disable")
+
+    def _undo_palette(self) -> None:
+        """Revert the last palette color change."""
+        if not self._undo_stack or not self._working_theme:
+            return
+        self._redo_stack.append(copy.deepcopy(self._working_theme))
+        self._working_theme = self._undo_stack.pop()
+        self._refresh_dirty_from_palette()
+        self._apply_preview()
+
+    def _redo_palette(self) -> None:
+        """Re-apply a palette change that was undone."""
+        if not self._redo_stack:
+            return
+        if self._working_theme:
+            self._undo_stack.append(copy.deepcopy(self._working_theme))
+        self._working_theme = self._redo_stack.pop()
+        self._refresh_dirty_from_palette()
+        self._apply_preview()
+
+    def _discard_palette_edits(self) -> None:
+        """Reload palette colors from the selected theme on disk."""
+        theme = self._get_current_theme(self.buffer)
+        if theme:
+            self._working_theme = copy.deepcopy(theme)
+        self._reset_palette_history()
+        self._refresh_dirty_from_palette()
+        self._apply_preview()
+        notify("Palette changes discarded", type="info")
 
     def _get_preview_theme(self) -> Optional[ThemeColors]:
         """Theme object used for mock-ui preview (working copy preferred)."""
         return self._working_theme or self._get_current_theme()
 
     def _mark_palette_dirty(self) -> None:
-        self._palette_dirty = True
-        self.dirty = True
+        self._refresh_dirty_from_palette()
 
     def _update_theme_type_label(self) -> None:
         """Refresh the theme type badge next to the combobox."""
@@ -855,13 +967,14 @@ class ThemeTab:
 
                 self._sync_working_theme()
 
-                # Preview container
-                self.preview_container = ui.element("div").classes(
-                    "w-full theme-preview-container"
-                )
+                with ui.element("div").classes("w-full theme-preview-container"):
+                    self.preview_container = ui.element("div").classes("w-full")
+                    self.palette_container = ui.element("div").classes(
+                        "w-full theme-palette-panel"
+                    )
 
-                # Build initial preview
                 self._build_preview_ui(self.preview_container)
+                self._build_palette_section()
 
     # ------------------------------------------------------------------ #
     #  Mock UI Preview                                                     #
@@ -895,8 +1008,17 @@ class ThemeTab:
                 # Button showcase row
                 self._build_mock_buttons()
 
-            # 3. Color palette strip
+    def _build_palette_section(self) -> None:
+        """Build the color palette and editor toolbar below the mock preview."""
+        if not self.palette_container:
+            return
+        current_theme = self._get_preview_theme()
+        if not current_theme:
+            return
+        self.palette_container.clear()
+        with self.palette_container:
             self._build_color_palette(current_theme)
+            self._build_palette_toolbar()
 
     def _build_mock_tab_bar(self):
         """Build mock top-level tab bar matching the real app"""
@@ -1031,38 +1153,50 @@ class ThemeTab:
             ui.button("Error").classes("theme-button-error").props("dense size=sm")
 
     def _build_color_palette(self, current_theme):
-        """Build compact color palette strip"""
-        with ui.element("div").style(
-            "background: var(--preview-color-bg-elevated);"
-            "padding: 8px 10px;"
-            "border-top: 1px solid var(--preview-color-border-subtle);"
-        ):
-            ui.label("Color Palette").classes(
-                "text-xs font-semibold typography-secondary"
-            ).style("margin-bottom: 6px;")
+        """Build clickable color palette swatches."""
+        ui.label("Color Palette").classes(
+            "text-xs font-semibold typography-secondary"
+        ).style("margin-bottom: 6px;")
 
-            with ui.element("div").classes("preview-color-grid"):
-                for field_name, label, swatch_class in PALETTE_SWATCHES:
-                    raw_color = getattr(current_theme, field_name, "") or ""
-                    hex_color = self._convert_to_hex(raw_color)
-                    border = self._get_contrast_border_color(hex_color)
-                    with ui.column().classes("items-center gap-0"):
-                        swatch = ui.element("div").classes(
-                            f"preview-swatch {swatch_class}"
-                        ).style(
-                            f"width: 100%; height: 24px; border-radius: 3px;"
-                            f"background: {raw_color or hex_color};"
-                            f"border: 1px solid {border};"
-                        )
-                        swatch.on(
-                            "click",
-                            lambda _, fn=field_name: self._open_palette_color_picker(
-                                fn
-                            ),
-                        )
-                        ui.label(label).classes("typography-muted").style(
-                            "font-size: 9px; margin-top: 2px;"
-                        )
+        with ui.element("div").classes("preview-color-grid"):
+            for field_name, label, swatch_class in PALETTE_SWATCHES:
+                raw_color = getattr(current_theme, field_name, "") or ""
+                hex_color = self._convert_to_hex(raw_color)
+                border = self._get_contrast_border_color(hex_color)
+                with ui.column().classes("items-center gap-0"):
+                    swatch = ui.element("div").classes(
+                        f"preview-swatch {swatch_class}"
+                    ).style(
+                        f"width: 100%; height: 24px; border-radius: 3px;"
+                        f"background: {raw_color or hex_color};"
+                        f"border: 1px solid {border};"
+                    )
+                    swatch.on(
+                        "click",
+                        lambda _, fn=field_name: self._open_palette_color_picker(fn),
+                    )
+                    ui.label(label).classes("typography-muted").style(
+                        "font-size: 9px; margin-top: 2px;"
+                    )
+
+    def _build_palette_toolbar(self) -> None:
+        """Undo, redo, and discard controls below the color palette."""
+        with ui.row().classes("palette-toolbar w-full"):
+            undo_btn = ui.button(
+                "Undo", icon="undo", on_click=self._undo_palette
+            ).props("dense flat size=sm")
+            redo_btn = ui.button(
+                "Redo", icon="redo", on_click=self._redo_palette
+            ).props("dense flat size=sm")
+            discard_btn = ui.button(
+                "Discard",
+                icon="restore",
+                on_click=self._discard_palette_edits,
+            ).props("dense outline size=sm")
+            self.ui_elements["palette_undo_btn"] = undo_btn
+            self.ui_elements["palette_redo_btn"] = redo_btn
+            self.ui_elements["palette_discard_btn"] = discard_btn
+        self._update_palette_toolbar_state()
 
     # ------------------------------------------------------------------ #
     #  Theme list & change handling                                        #
@@ -1075,8 +1209,8 @@ class ThemeTab:
         """Handle theme selection change with enhanced live preview"""
         if new_value and new_value != self.buffer:
             self.buffer = new_value
-            self.dirty = True
             self._sync_working_theme()
+            self._refresh_dirty_from_palette()
             self._update_delete_button_state()
             self._update_theme_type_label()
             self._apply_preview()
@@ -1119,9 +1253,10 @@ class ThemeTab:
             }})();
         """)
 
-        # Rebuild the preview UI so new elements use the updated variables
+        # Rebuild mock preview and refresh palette swatches
         self.preview_container.clear()
         self._build_preview_ui(self.preview_container)
+        self._build_palette_section()
 
     # ----- buffer helpers -----
     def _load_from_state(self) -> None:
@@ -1159,7 +1294,8 @@ class ThemeTab:
                     if not theme_manager.update_custom_theme(self._working_theme):
                         notify("Failed to save theme color changes", type="negative")
                         return
-                    self._palette_dirty = False
+                    self._reset_palette_history()
+                    self._refresh_dirty_from_palette()
 
             state_manager.update_app_setting("current_theme", self.buffer)
 
@@ -1305,7 +1441,8 @@ class ThemeTab:
         notify(f"Theme '{display_name}' saved successfully!", type="positive")
         self.buffer = name
         self._working_theme = copy.deepcopy(theme_obj)
-        self._palette_dirty = False
+        self._reset_palette_history()
+        self._refresh_dirty_from_palette()
         self.dirty = True
         self._refresh_theme_list_after_change(select_name=name)
         self._apply_preview()
@@ -1394,6 +1531,10 @@ class ThemeTab:
         display_name = field_name.replace("_", " ").title()
 
         def on_apply(rgb_value: str) -> None:
+            current = getattr(self._working_theme, field_name, "") or ""
+            if current == rgb_value:
+                return
+            self._push_undo_snapshot()
             setattr(self._working_theme, field_name, rgb_value)
             self._mark_palette_dirty()
             self._apply_preview()
