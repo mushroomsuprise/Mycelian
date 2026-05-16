@@ -15,6 +15,8 @@ from .path_utils import get_data_path
 
 logger = logging.getLogger(__name__)
 
+PROTECTED_THEMES = frozenset({"dark", "light"})
+
 
 @dataclass
 class ThemeColors:
@@ -1348,6 +1350,43 @@ class ThemeManager:
         except Exception as e:
             logger.error(f"Failed to update theme '{theme.name}': {e}")
             return False
+
+    def delete_theme(self, theme_name: str) -> bool:
+        """Delete a theme file and remove it from the in-memory cache.
+
+        Built-in ``dark`` and ``light`` themes cannot be deleted.
+
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if theme_name in PROTECTED_THEMES:
+            logger.error(f"Cannot delete protected theme: {theme_name}")
+            return False
+
+        if self._themes_dir is None:
+            logger.error("Themes directory not initialized")
+            return False
+
+        if not self._loaded_themes:
+            self.load_themes_from_directory()
+
+        theme_file = self._find_theme_file(theme_name)
+        if theme_file is None:
+            logger.error(f"Theme file for '{theme_name}' not found")
+            return False
+
+        try:
+            theme_file.unlink()
+            self._loaded_themes.pop(theme_name, None)
+            logger.info(f"Successfully deleted theme: {theme_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete theme '{theme_name}': {e}")
+            return False
+
+    def is_protected_theme(self, theme_name: str) -> bool:
+        """Return True if the theme cannot be deleted or overwritten in place."""
+        return theme_name in PROTECTED_THEMES
 
 
 # Singleton accessor

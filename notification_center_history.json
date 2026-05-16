@@ -214,5 +214,21 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "81f87a1a-281c-4605-a50e-16d8eae34a54",
+    "ts": 1778973077.4405289,
+    "message": "Built-in themes cannot be overwritten. Use Save as to persist palette changes.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "e79588b9-7319-4b49-bbd9-fca25cda58af",
+    "ts": 1778973077.467854,
+    "message": "Theme 'dark' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
   }
 ]

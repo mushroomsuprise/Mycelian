@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-from typing import Dict, Any, Optional
+import copy
+import re
+from typing import Dict, Any, Optional, Callable, List, Tuple
 
 from nicegui import ui
 
 from ...dataobjects import state_manager
 from ...theme_manager import (
+    PROTECTED_THEMES,
     get_theme_manager,
     generate_preview_css_variables,
     ThemeColors,
 )
+from ..service_brand_icons import SERVICE_BRAND_SVG
 from ...help_system.contextual_help import help_button
 from ...notification_engine import notify
 from .base import TabBase
@@ -161,13 +165,42 @@ body .theme-preview-container .q-spinner {
    Mock UI - Tab Bar
    ============================================ */
 
+.mock-tab-bar-row {
+    display: flex;
+    align-items: stretch;
+    background: var(--preview-color-bg-elevated);
+    border-bottom: 1px solid var(--preview-color-border-default);
+}
+
 .mock-tab-bar {
     display: flex;
     gap: 0;
-    background: var(--preview-color-bg-elevated);
-    border-bottom: 1px solid var(--preview-color-border-default);
+    flex: 1;
+    min-width: 0;
     padding: 0 6px;
     overflow-x: auto;
+}
+
+.mock-notification-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 32px;
+    margin: 4px 6px 4px 0;
+    border-radius: 50%;
+    background: var(--preview-color-bg-surface);
+    border: 1px solid var(--preview-color-border-subtle);
+    color: var(--preview-color-text-secondary) !important;
+    cursor: default;
+    user-select: none;
+}
+
+.mock-notification-btn .icon {
+    font-family: 'Material Icons';
+    font-size: 16px;
+    font-weight: normal;
+    font-style: normal;
 }
 
 .mock-tab {
@@ -219,6 +252,21 @@ body .theme-preview-container .q-spinner {
     font-size: 13px;
     font-weight: normal;
     font-style: normal;
+}
+
+.mock-sub-tab .brand-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.25em;
+    height: 1.25em;
+}
+
+.mock-sub-tab .brand-icon svg {
+    width: 1.25em;
+    height: 1.25em;
+    display: block;
 }
 
 /* ============================================
@@ -439,8 +487,16 @@ body .theme-preview-container .typography-muted {
    Color Swatch Classes (CSS-variable driven)
    ============================================ */
 
-.preview-swatch { border-radius: 4px; }
+.preview-swatch {
+    border-radius: 4px;
+    cursor: pointer;
+}
+.preview-swatch:hover {
+    outline: 2px solid var(--preview-color-primary);
+    outline-offset: 1px;
+}
 .preview-swatch-primary { background: var(--preview-color-primary) !important; }
+.preview-swatch-primary-hover { background: var(--preview-color-primary-hover) !important; }
 .preview-swatch-primary-light { background: var(--preview-color-primary-light) !important; }
 .preview-swatch-success { background: var(--preview-color-success) !important; }
 .preview-swatch-warning { background: var(--preview-color-warning) !important; }
@@ -453,11 +509,17 @@ body .theme-preview-container .typography-muted {
 .preview-swatch-bg-base { background: var(--preview-color-bg-base) !important; }
 .preview-swatch-bg-elevated { background: var(--preview-color-bg-elevated) !important; }
 .preview-swatch-bg-surface { background: var(--preview-color-bg-surface) !important; }
+.preview-swatch-bg-overlay { background: var(--preview-color-bg-overlay) !important; }
 .preview-swatch-text-primary { background: var(--preview-color-text-primary) !important; }
 .preview-swatch-text-secondary { background: var(--preview-color-text-secondary) !important; }
 .preview-swatch-text-muted { background: var(--preview-color-text-muted) !important; }
-.preview-swatch-border-default { background: var(--preview-color-border-default) !important; }
 .preview-swatch-text-inverse { background: var(--preview-color-text-inverse) !important; }
+.preview-swatch-border-default { background: var(--preview-color-border-default) !important; }
+.preview-swatch-border-subtle { background: var(--preview-color-border-subtle) !important; }
+.preview-swatch-border-accent { background: var(--preview-color-border-accent) !important; }
+.preview-swatch-hover-overlay { background: var(--preview-color-hover-overlay) !important; }
+.preview-swatch-active-overlay { background: var(--preview-color-active-overlay) !important; }
+.preview-swatch-focus-ring { background: var(--preview-color-focus-ring) !important; }
 
 /* ============================================
    Grid Helpers
@@ -471,10 +533,84 @@ body .theme-preview-container .typography-muted {
 
 .preview-color-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
     gap: 6px;
 }
 """
+
+# Color field definitions for the palette editor
+_COLOR_SECTIONS: List[Tuple[str, List[Tuple[str, str]]]] = [
+    (
+        "Primary Colors",
+        [
+            ("primary", "Primary"),
+            ("primary_hover", "P-Hover"),
+            ("primary_light", "P-Light"),
+        ],
+    ),
+    (
+        "Background Colors",
+        [
+            ("bg_base", "Base"),
+            ("bg_elevated", "Elevated"),
+            ("bg_surface", "Surface"),
+            ("bg_overlay", "Overlay"),
+        ],
+    ),
+    (
+        "Text Colors",
+        [
+            ("text_primary", "Text"),
+            ("text_secondary", "Secondary"),
+            ("text_muted", "Muted"),
+            ("text_inverse", "Inverse"),
+        ],
+    ),
+    (
+        "Border Colors",
+        [
+            ("border_default", "Border"),
+            ("border_subtle", "B-Subtle"),
+            ("border_accent", "B-Accent"),
+        ],
+    ),
+    (
+        "Status Colors",
+        [
+            ("success", "Success"),
+            ("warning", "Warning"),
+            ("error", "Error"),
+            ("info", "Info"),
+        ],
+    ),
+    (
+        "Notification Colors",
+        [
+            ("notify_success", "N-Success"),
+            ("notify_warning", "N-Warn"),
+            ("notify_error", "N-Err"),
+            ("notify_info", "N-Info"),
+        ],
+    ),
+    (
+        "Interactive States",
+        [
+            ("hover_overlay", "Hover"),
+            ("active_overlay", "Active"),
+            ("focus_ring", "Focus"),
+        ],
+    ),
+]
+
+PALETTE_SWATCHES: List[Tuple[str, str, str]] = [
+    (
+        field_name,
+        label,
+        f"preview-swatch-{field_name.replace('_', '-')}",
+    )
+    for _section_label, fields in _COLOR_SECTIONS
+    for field_name, label in fields
+]
 
 
 class ThemeTab:
@@ -488,6 +624,8 @@ class ThemeTab:
         self.preview_elements = {}
         self._themes_loaded = False
         self._preview_css_injected: bool = False
+        self._working_theme: Optional[ThemeColors] = None
+        self._palette_dirty: bool = False
 
     # ----- helper methods -----
     def _get_theme_manager(self):
@@ -532,6 +670,43 @@ class ThemeTab:
         except Exception:
             return default
 
+    def _sync_working_theme(self) -> None:
+        """Copy the selected theme into the in-memory working editor state."""
+        theme = self._get_current_theme()
+        if theme:
+            self._working_theme = copy.deepcopy(theme)
+        else:
+            self._working_theme = None
+        self._palette_dirty = False
+
+    def _get_preview_theme(self) -> Optional[ThemeColors]:
+        """Theme object used for mock-ui preview (working copy preferred)."""
+        return self._working_theme or self._get_current_theme()
+
+    def _mark_palette_dirty(self) -> None:
+        self._palette_dirty = True
+        self.dirty = True
+
+    def _update_theme_type_label(self) -> None:
+        """Refresh the theme type badge next to the combobox."""
+        if "theme_type_label" not in self.ui_elements:
+            return
+        theme = self._get_preview_theme()
+        theme_type = "Unknown"
+        display_name = "Unknown"
+        if theme:
+            if hasattr(theme, "theme_type") and theme.theme_type:
+                theme_type = theme.theme_type.capitalize()
+            display_name = (
+                theme.display_name
+                or theme.name
+                or self.buffer
+                or "Unknown"
+            )
+        self.ui_elements["theme_type_label"].text = (
+            f"{theme_type} ({display_name})"
+        )
+
     def _update_theme_select_options(self, available_themes=None):
         """Update theme select dropdown options safely"""
         try:
@@ -570,6 +745,9 @@ class ThemeTab:
         """Refresh themes list and apply preview when tab is entered"""
         self._load_from_state()
         self._refresh_theme_list()
+        self._sync_working_theme()
+        self._update_delete_button_state()
+        self._update_theme_type_label()
         self._themes_loaded = True
         self._apply_preview()
 
@@ -661,18 +839,21 @@ class ThemeTab:
                         ).props("color=primary dense").classes("px-3")
 
                         ui.button(
-                            "Create",
-                            on_click=lambda: self.open_theme_editor(),
-                            icon="palette",
+                            "Save as",
+                            on_click=self._open_save_as_dialog,
+                            icon="drive_file_rename_outline",
                         ).props("color=secondary dense").classes("px-3")
 
-                        ui.button(
-                            "Edit",
-                            on_click=lambda: self.open_theme_editor(
-                                theme_name=self.buffer
-                            ),
-                            icon="edit",
-                        ).props("color=secondary outline dense").classes("px-3")
+                        delete_btn = ui.button(
+                            "Delete",
+                            on_click=self._confirm_delete_theme,
+                            icon="delete",
+                        ).props("color=negative outline dense").classes("px-3")
+                        if self.buffer in PROTECTED_THEMES:
+                            delete_btn.props("disable")
+                        self.ui_elements["delete_btn"] = delete_btn
+
+                self._sync_working_theme()
 
                 # Preview container
                 self.preview_container = ui.element("div").classes(
@@ -690,7 +871,7 @@ class ThemeTab:
         if not self.buffer:
             return
 
-        current_theme = self._get_current_theme()
+        current_theme = self._get_preview_theme()
         if not current_theme:
             return
 
@@ -726,15 +907,17 @@ class ThemeTab:
             "Source Controls",
             "Connectors",
             "Chatbot",
+            "Spore Studio",
             "Settings",
         ]
-        with ui.element("div").classes("mock-tab-bar"):
-            for tab_name in tabs:
-                active = "active" if tab_name == "Settings" else ""
-                with ui.element("div").classes(f"mock-tab {active}"):
-                    ui.html(tab_name)
-            with ui.element("div").classes("mock-tab"):
-                ui.html("Bell")
+        with ui.element("div").classes("mock-tab-bar-row"):
+            with ui.element("div").classes("mock-tab-bar"):
+                for tab_name in tabs:
+                    active = "active" if tab_name == "Settings" else ""
+                    with ui.element("div").classes(f"mock-tab {active}"):
+                        ui.html(tab_name)
+            with ui.element("div").classes("mock-notification-btn"):
+                ui.html('<span class="icon">notifications</span>')
 
     def _build_mock_notification_chips(self):
         """Preview notification toast accents (theme notify colors)."""
@@ -749,24 +932,33 @@ class ThemeTab:
                     ui.html(label)
 
     def _build_mock_sub_tabs(self):
-        """Build mock settings sub-tab bar with icons"""
+        """Build mock settings sub-tab bar matching build_ui_v2 order and icons."""
         sub_tabs = [
-            ("tune", "App Settings"),
-            ("palette", "Theme"),
-            ("stream", "Twitch"),
-            ("sports_esports", "PSN"),
-            ("music_note", "Spotify"),
-            ("video_library", "YouTube"),
-            ("memory", "Game Hooks"),
-            ("storage", "Database"),
-            ("analytics", "Statistics"),
-            ("info", "About"),
+            ("brand", "twitch", "Twitch"),
+            ("brand", "obs", "OBS"),
+            ("brand", "psn", "PSN"),
+            ("brand", "spotify", "Spotify"),
+            ("brand", "youtube", "YouTube"),
+            ("material", "memory", "Game Hooks"),
+            ("material", "storage", "Database"),
+            ("material", "analytics", "Statistics"),
+            ("material", "palette", "Theme"),
+            ("material", "tune", "App Settings"),
+            ("material", "info", "About"),
         ]
         with ui.element("div").classes("mock-sub-tab-bar"):
-            for icon_name, tab_label in sub_tabs:
+            for icon_kind, icon_key, tab_label in sub_tabs:
                 active = "active" if tab_label == "Theme" else ""
                 with ui.element("div").classes(f"mock-sub-tab {active}"):
-                    ui.html(f'<span class="icon">{icon_name}</span>{tab_label}')
+                    if icon_kind == "brand":
+                        svg = SERVICE_BRAND_SVG[icon_key]
+                        ui.html(
+                            f'<span class="brand-icon">{svg}</span>{tab_label}'
+                        )
+                    else:
+                        ui.html(
+                            f'<span class="icon">{icon_key}</span>{tab_label}'
+                        )
 
     def _build_mock_settings_card(self):
         """Build mock settings card with form elements"""
@@ -807,7 +999,6 @@ class ThemeTab:
             connections = [
                 ("Twitch", "connected", "Connected"),
                 ("Spotify", "connected", "Connected"),
-                ("StreamElements", "disconnected", "Disconnected"),
                 ("OBS WebSocket", "connected", "Connected"),
                 ("PSN", "idle", "Idle"),
             ]
@@ -850,33 +1041,24 @@ class ThemeTab:
                 "text-xs font-semibold typography-secondary"
             ).style("margin-bottom: 6px;")
 
-            # All colors in a single compact grid
-            swatches = [
-                ("Primary", "preview-swatch-primary"),
-                ("Success", "preview-swatch-success"),
-                ("Warning", "preview-swatch-warning"),
-                ("Error", "preview-swatch-error"),
-                ("Info", "preview-swatch-info"),
-                ("N-Success", "preview-swatch-notify-success"),
-                ("N-Warn", "preview-swatch-notify-warning"),
-                ("N-Err", "preview-swatch-notify-error"),
-                ("N-Info", "preview-swatch-notify-info"),
-                ("Base", "preview-swatch-bg-base"),
-                ("Elevated", "preview-swatch-bg-elevated"),
-                ("Surface", "preview-swatch-bg-surface"),
-                ("Text", "preview-swatch-text-primary"),
-                ("Secondary", "preview-swatch-text-secondary"),
-                ("Muted", "preview-swatch-text-muted"),
-                ("Border", "preview-swatch-border-default"),
-            ]
             with ui.element("div").classes("preview-color-grid"):
-                for label, swatch_class in swatches:
+                for field_name, label, swatch_class in PALETTE_SWATCHES:
+                    raw_color = getattr(current_theme, field_name, "") or ""
+                    hex_color = self._convert_to_hex(raw_color)
+                    border = self._get_contrast_border_color(hex_color)
                     with ui.column().classes("items-center gap-0"):
-                        ui.element("div").classes(
+                        swatch = ui.element("div").classes(
                             f"preview-swatch {swatch_class}"
                         ).style(
-                            "width: 100%; height: 24px; border-radius: 3px;"
-                            "border: 1px solid var(--preview-color-border-subtle);"
+                            f"width: 100%; height: 24px; border-radius: 3px;"
+                            f"background: {raw_color or hex_color};"
+                            f"border: 1px solid {border};"
+                        )
+                        swatch.on(
+                            "click",
+                            lambda _, fn=field_name: self._open_palette_color_picker(
+                                fn
+                            ),
                         )
                         ui.label(label).classes("typography-muted").style(
                             "font-size: 9px; margin-top: 2px;"
@@ -887,53 +1069,16 @@ class ThemeTab:
     # ------------------------------------------------------------------ #
     def _refresh_theme_list(self):
         """Refresh the theme dropdown with available themes"""
-        theme_manager = self._get_theme_manager()
-        available_themes = self._get_available_themes(theme_manager)
-
-        if "theme_select" in self.ui_elements:
-            # Use simple string list for NiceGUI select (this works reliably)
-            select_options = [name for name, display_name in available_themes]
-            self.ui_elements["theme_select"].options = select_options
-
-            # Safely set value only if buffer is in available themes
-            available_values = select_options  # Already the names
-            if self.buffer and self.buffer in available_values:
-                self.ui_elements["theme_select"].value = self.buffer
-            elif available_values:
-                # Set to first available theme if current buffer is invalid
-                self.ui_elements["theme_select"].value = available_values[0]
+        self._refresh_theme_list_after_change(select_name=self.buffer)
 
     def _on_theme_change(self, new_value):
         """Handle theme selection change with enhanced live preview"""
         if new_value and new_value != self.buffer:
             self.buffer = new_value
             self.dirty = True
-
-            # Update theme type label
-            theme = self._get_current_theme(new_value)
-            theme_type = "Unknown"
-            display_name = "Unknown"
-
-            if theme:
-                if hasattr(theme, "theme_type") and theme.theme_type:
-                    theme_type = theme.theme_type.capitalize()
-                if hasattr(theme, "display_name") and theme.display_name:
-                    display_name = theme.display_name
-                elif hasattr(theme, "name") and theme.name:
-                    # Find display name from available themes
-                    theme_manager = self._get_theme_manager()
-                    available_themes = self._get_available_themes(theme_manager)
-                    for name, disp in available_themes:
-                        if name == theme.name:
-                            display_name = disp
-                            break
-
-            if "theme_type_label" in self.ui_elements:
-                self.ui_elements[
-                    "theme_type_label"
-                ].text = f"{theme_type} ({display_name})"
-
-            # Update live preview
+            self._sync_working_theme()
+            self._update_delete_button_state()
+            self._update_theme_type_label()
             self._apply_preview()
 
     # ------------------------------------------------------------------ #
@@ -949,7 +1094,7 @@ class ThemeTab:
         if not self.buffer or not self.preview_container:
             return
 
-        theme = self._get_current_theme()
+        theme = self._get_preview_theme()
         if not theme:
             return
 
@@ -987,20 +1132,41 @@ class ThemeTab:
 
     # ----- actions -----
     def save(self) -> None:
-        """Apply and persist selected theme"""
+        """Apply and persist selected theme (and palette edits for custom themes)."""
         if not self.buffer:
             notify("No theme selected to apply", type="warning")
             return
 
         try:
-            # Update state manager
+            theme_manager = self._get_theme_manager()
+            if (
+                self._palette_dirty
+                and self._working_theme
+                and theme_manager
+            ):
+                if self.buffer in PROTECTED_THEMES:
+                    notify(
+                        "Built-in themes cannot be overwritten. Use Save as to "
+                        "persist palette changes.",
+                        type="warning",
+                    )
+                else:
+                    self._working_theme.name = self.buffer
+                    persisted = theme_manager.get_theme_by_name(self.buffer)
+                    if persisted:
+                        self._working_theme.display_name = persisted.display_name
+                        self._working_theme.theme_type = persisted.theme_type
+                    if not theme_manager.update_custom_theme(self._working_theme):
+                        notify("Failed to save theme color changes", type="negative")
+                        return
+                    self._palette_dirty = False
+
             state_manager.update_app_setting("current_theme", self.buffer)
 
             if not state_manager.save_changes():
                 notify("Error saving theme setting", type="negative")
                 return
 
-            # Apply theme immediately without restart
             from ...mainuiwindow import apply_theme
 
             apply_theme(self.buffer)
@@ -1022,231 +1188,222 @@ class ThemeTab:
             if "theme_select" in self.ui_elements:
                 self.ui_elements["theme_select"].value = self.buffer
 
+            self._sync_working_theme()
+            self._update_delete_button_state()
+            self._update_theme_type_label()
             self._apply_preview()
             self.dirty = False
         except Exception as e:
             notify(f"Error discarding changes: {str(e)}", type="negative")
 
-    # ------------------------------------------------------------------ #
-    #  Color field definitions used by the theme editor dialog             #
-    # ------------------------------------------------------------------ #
-    _COLOR_SECTIONS: list = [
-        (
-            "Primary Colors",
-            [
-                ("primary", "Primary"),
-                ("primary_hover", "Primary Hover"),
-                ("primary_light", "Primary Light"),
-            ],
-        ),
-        (
-            "Background Colors",
-            [
-                ("bg_base", "Background Base"),
-                ("bg_elevated", "Background Elevated"),
-                ("bg_surface", "Background Surface"),
-                ("bg_overlay", "Background Overlay"),
-            ],
-        ),
-        (
-            "Text Colors",
-            [
-                ("text_primary", "Text Primary"),
-                ("text_secondary", "Text Secondary"),
-                ("text_muted", "Text Muted"),
-                ("text_inverse", "Text Inverse"),
-            ],
-        ),
-        (
-            "Border Colors",
-            [
-                ("border_default", "Border Default"),
-                ("border_subtle", "Border Subtle"),
-                ("border_accent", "Border Accent"),
-            ],
-        ),
-        (
-            "Status Colors",
-            [
-                ("success", "Success"),
-                ("warning", "Warning"),
-                ("error", "Error"),
-                ("info", "Info"),
-            ],
-        ),
-        (
-            "Notification Colors",
-            [
-                ("notify_success", "Notify Success"),
-                ("notify_warning", "Notify Warning"),
-                ("notify_error", "Notify Error"),
-                ("notify_info", "Notify Info"),
-            ],
-        ),
-        (
-            "Interactive States",
-            [
-                ("hover_overlay", "Hover Overlay"),
-                ("active_overlay", "Active Overlay"),
-                ("focus_ring", "Focus Ring"),
-            ],
-        ),
-    ]
+    def _update_delete_button_state(self) -> None:
+        """Enable or disable Delete based on whether the theme is protected."""
+        delete_btn = self.ui_elements.get("delete_btn")
+        if delete_btn is None:
+            return
+        if self.buffer in PROTECTED_THEMES:
+            delete_btn.props("disable")
+        else:
+            delete_btn.props(remove="disable")
+
+    def _refresh_theme_list_after_change(self, select_name: Optional[str] = None) -> None:
+        """Refresh combobox options and optionally select a theme by name."""
+        theme_manager = self._get_theme_manager()
+        if not theme_manager:
+            return
+        available_themes = self._get_available_themes(theme_manager)
+        select_options = [name for name, _display in available_themes]
+        if "theme_select" not in self.ui_elements:
+            return
+        self.ui_elements["theme_select"].options = select_options
+        target = select_name or self.buffer
+        if target and target in select_options:
+            self.ui_elements["theme_select"].value = target
+            self.buffer = target
+        elif select_options:
+            self.ui_elements["theme_select"].value = select_options[0]
+            self.buffer = select_options[0]
+        self.ui_elements["theme_select"].update()
+        self._update_delete_button_state()
+        self._update_theme_type_label()
 
     # ------------------------------------------------------------------ #
-    #  Theme editor dialog (create & edit)                                 #
+    #  Save as / Delete                                                    #
     # ------------------------------------------------------------------ #
-    def open_theme_editor(self, theme_name: Optional[str] = None):
-        """Open the theme editor dialog.
+    def _open_save_as_dialog(self) -> None:
+        """Save the current working theme configuration under a new name."""
+        if not self._working_theme:
+            notify("No theme loaded to save", type="warning")
+            return
 
-        Args:
-            theme_name: If provided, opens in **edit** mode for that theme.
-                        If ``None``, opens in **create** mode.
-        """
-        theme_manager = get_theme_manager()
-        editing = theme_name is not None
-        source_theme: Optional[Any] = None
+        dialog_ui: Dict[str, Any] = {}
 
-        if editing:
-            source_theme = theme_manager.get_theme_by_name(theme_name)
-            if source_theme is None:
-                notify(f"Theme '{theme_name}' not found", type="negative")
-                return
+        with ui.dialog() as dialog, ui.card().classes("w-full max-w-md p-6"):
+            ui.label("Save Theme As").classes("text-xl font-bold mb-4")
 
-        # Storage for editor UI element references
-        editor_ui: Dict[str, Any] = {}
+            with ui.column().classes("w-full gap-3"):
+                ui.label("Theme Name *").classes("text-sm font-medium")
+                dialog_ui["name"] = ui.input(
+                    placeholder="my_custom_theme"
+                ).props("outlined dense")
 
-        # ----- helper: resolve initial colour for a field -----
-        def _initial_color(field_name: str, src_theme) -> str:
-            """Return the raw colour string for *field_name* from *src_theme*,
-            falling back to dark-theme defaults."""
-            val = getattr(src_theme, field_name, "") if src_theme else ""
-            if val:
-                return val
-            return theme_manager.get_default_colors_for_type("dark").get(
-                field_name, ""
-            )
+                ui.label("Display Name *").classes("text-sm font-medium")
+                dialog_ui["display_name"] = ui.input(
+                    placeholder="My Custom Theme"
+                ).props("outlined dense")
 
-        # ----- build dialog -----
-        with ui.dialog() as dialog, ui.card().classes("w-full max-w-4xl p-6"):
-            title = f"Edit Theme: {source_theme.display_name}" if editing else "Create New Theme"
-            ui.label(title).classes("text-2xl font-bold mb-4")
+                ui.label("Type *").classes("text-sm font-medium")
+                default_type = self._working_theme.theme_type or "dark"
+                dialog_ui["theme_type"] = ui.radio(
+                    ["dark", "light"], value=default_type
+                ).props("inline dense")
 
-            # -- Metadata row --
-            with ui.row().classes("w-full gap-4 mb-4 items-end"):
-                with ui.column().classes("flex-1"):
-                    ui.label("Theme Name *").classes("text-sm font-medium mb-1")
-                    editor_ui["name"] = ui.input(
-                        value=source_theme.name if editing else "",
-                        placeholder="my_custom_theme",
-                    ).props("outlined dense" + (" readonly" if editing else ""))
-
-                with ui.column().classes("flex-1"):
-                    ui.label("Display Name *").classes("text-sm font-medium mb-1")
-                    editor_ui["display_name"] = ui.input(
-                        value=source_theme.display_name if editing else "",
-                        placeholder="My Custom Theme",
-                    ).props("outlined dense")
-
-                with ui.column().classes("w-40"):
-                    ui.label("Type *").classes("text-sm font-medium mb-1")
-                    editor_ui["theme_type"] = ui.radio(
-                        ["dark", "light"],
-                        value=(source_theme.theme_type if editing and source_theme.theme_type else "dark"),
-                        on_change=lambda e: self._update_editor_colors(
-                            e.value, editor_ui
-                        ),
-                    ).props("inline dense")
-
-            # -- Base-theme selector (create mode only) --
-            if not editing:
-                with ui.row().classes("w-full gap-4 mb-4 items-end"):
-                    with ui.column().classes("flex-1"):
-                        ui.label("Clone colours from").classes(
-                            "text-sm font-medium mb-1"
-                        )
-                        available = theme_manager.get_available_themes()
-                        base_options = [name for name, _disp in available]
-                        editor_ui["base_theme"] = ui.select(
-                            options=base_options,
-                            value=base_options[0] if base_options else None,
-                            on_change=lambda e: self._populate_colors_from_theme(
-                                e.value, editor_ui
-                            ),
-                        ).props("outlined dense").classes("flex-1")
-
-                # Use base theme for initial colours if available
-                base_name = base_options[0] if base_options else None
-                source_theme = (
-                    theme_manager.get_theme_by_name(base_name)
-                    if base_name
-                    else None
-                )
-
-            # -- Color sections --
-            for section_label, fields in self._COLOR_SECTIONS:
-                with ui.expansion(section_label, value=True).classes("w-full"):
-                    with (
-                        ui.element("div")
-                        .style(
-                            "display:grid; grid-template-columns:repeat(3, 1fr); gap:0.75rem;"
-                        )
-                        .classes("w-full py-2")
-                    ):
-                        for field_name, field_label in fields:
-                            color_val = _initial_color(field_name, source_theme)
-                            self._create_color_input(
-                                editor_ui, field_name, field_label, color_val
-                            )
-
-            # -- Action buttons --
             with ui.row().classes("w-full justify-end gap-2 mt-4"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
-                save_label = "Save Changes" if editing else "Create Theme"
                 ui.button(
-                    save_label,
-                    on_click=lambda: self._save_theme(
-                        editor_ui, dialog, editing=editing
-                    ),
+                    "Save",
+                    on_click=lambda: self._execute_save_as(dialog_ui, dialog),
                 ).props("color=primary")
 
         dialog.open()
 
-    # ------------------------------------------------------------------ #
-    #  Editor helper: populate colours from a chosen base theme            #
-    # ------------------------------------------------------------------ #
-    def _populate_colors_from_theme(self, theme_name: str, editor_ui: dict):
-        """Load all colour values from *theme_name* into the editor buttons."""
-        theme_manager = get_theme_manager()
-        theme = theme_manager.get_theme_by_name(theme_name)
-        if not theme:
+    def _execute_save_as(self, dialog_ui: dict, dialog) -> None:
+        """Validate and persist a new theme from the working copy."""
+        theme_manager = self._get_theme_manager()
+        if not theme_manager or not self._working_theme:
             return
-        # Update the theme-type radio to match
-        editor_ui["theme_type"].value = theme.theme_type or "dark"
-        self._set_editor_colors_from_theme(theme, editor_ui)
 
-    def _set_editor_colors_from_theme(self, theme, editor_ui: dict):
-        """Push colour values from a ThemeColors object into editor buttons."""
-        theme_manager = get_theme_manager()
-        default_colors = theme_manager.get_default_colors_for_type(
-            theme.theme_type or "dark"
-        )
-        for _section_label, fields in self._COLOR_SECTIONS:
-            for field_name, _field_label in fields:
-                raw = getattr(theme, field_name, "") or default_colors.get(
-                    field_name, ""
-                )
-                self._set_color_button(editor_ui, field_name, raw)
+        name = dialog_ui["name"].value.strip()
+        display_name = dialog_ui["display_name"].value.strip()
+        theme_type = dialog_ui["theme_type"].value
 
-    def _update_editor_colors(self, theme_type: str, editor_ui: dict):
-        """When the user toggles dark/light, reset colours to that type's defaults."""
-        theme_manager = get_theme_manager()
-        defaults = theme_manager.get_default_colors_for_type(theme_type)
-        for field_name, raw_value in defaults.items():
-            self._set_color_button(editor_ui, field_name, raw_value)
+        if not name:
+            notify("Theme name is required", type="negative")
+            return
+        if not display_name:
+            notify("Display name is required", type="negative")
+            return
+        if not re.match(r"^[a-zA-Z0-9_]+$", name):
+            notify(
+                "Theme name can only contain letters, numbers, and underscores",
+                type="negative",
+            )
+            return
+        if theme_manager.theme_name_exists(name):
+            notify(f"Theme '{name}' already exists", type="negative")
+            return
+
+        theme_obj = copy.deepcopy(self._working_theme)
+        theme_obj.name = name
+        theme_obj.display_name = display_name
+        theme_obj.theme_type = theme_type
+
+        if not theme_manager.save_custom_theme(theme_obj):
+            notify("Failed to save theme", type="negative")
+            return
+
+        notify(f"Theme '{display_name}' saved successfully!", type="positive")
+        self.buffer = name
+        self._working_theme = copy.deepcopy(theme_obj)
+        self._palette_dirty = False
+        self.dirty = True
+        self._refresh_theme_list_after_change(select_name=name)
+        self._apply_preview()
+        dialog.close()
+
+    def _confirm_delete_theme(self) -> None:
+        """Show confirmation before deleting the selected theme."""
+        if not self.buffer:
+            notify("No theme selected", type="warning")
+            return
+        if self.buffer in PROTECTED_THEMES:
+            notify("Built-in themes cannot be deleted", type="warning")
+            return
+
+        theme_manager = self._get_theme_manager()
+        display_name = self.buffer
+        if theme_manager:
+            display_name = theme_manager.get_theme_display_name(self.buffer)
+
+        with ui.dialog() as confirm_dialog:
+            with ui.card().classes("p-4"):
+                with ui.column().classes("gap-3"):
+                    ui.label("Delete Theme").classes("text-lg font-bold")
+                    ui.label(
+                        f'Delete "{display_name}" ({self.buffer})?'
+                    ).classes("text-sm")
+                    ui.label("This action cannot be undone.").classes(
+                        "text-sm text-negative"
+                    )
+                    with ui.row().classes("justify-end gap-2 mt-2"):
+                        ui.button(
+                            "Cancel", on_click=confirm_dialog.close
+                        ).props("flat")
+                        ui.button(
+                            "Delete",
+                            on_click=lambda: self._execute_delete_theme(
+                                confirm_dialog
+                            ),
+                        ).props("color=negative")
+
+        confirm_dialog.open()
+
+    def _execute_delete_theme(self, dialog) -> None:
+        """Delete the selected theme and update UI state."""
+        if not self.buffer or self.buffer in PROTECTED_THEMES:
+            dialog.close()
+            return
+
+        deleted_name = self.buffer
+        theme_manager = self._get_theme_manager()
+        if not theme_manager:
+            notify("Theme manager unavailable", type="negative")
+            dialog.close()
+            return
+
+        if not theme_manager.delete_theme(deleted_name):
+            notify(f"Failed to delete theme '{deleted_name}'", type="negative")
+            dialog.close()
+            return
+
+        app_settings = state_manager.get_app_settings()
+        saved_theme = getattr(app_settings, "current_theme", "dark")
+        fallback = "dark"
+        if saved_theme == deleted_name:
+            state_manager.update_app_setting("current_theme", fallback)
+            state_manager.save_changes()
+
+        self.buffer = fallback
+        self._sync_working_theme()
+        self._refresh_theme_list_after_change(select_name=fallback)
+        self._apply_preview()
+        self.dirty = False
+        self._palette_dirty = False
+        notify(f"Theme '{deleted_name}' deleted", type="positive")
+        dialog.close()
 
     # ------------------------------------------------------------------ #
-    #  Colour button helpers                                               #
+    #  Palette color picker                                                #
+    # ------------------------------------------------------------------ #
+    def _open_palette_color_picker(self, field_name: str) -> None:
+        """Open a color picker for a palette swatch field."""
+        if not self._working_theme:
+            return
+        current = getattr(self._working_theme, field_name, "") or ""
+        current_hex = self._convert_to_hex(current)
+        display_name = field_name.replace("_", " ").title()
+
+        def on_apply(rgb_value: str) -> None:
+            setattr(self._working_theme, field_name, rgb_value)
+            self._mark_palette_dirty()
+            self._apply_preview()
+
+        self._show_color_picker_dialog(
+            display_name, current_hex, on_apply=on_apply
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Colour helpers                                                      #
     # ------------------------------------------------------------------ #
     def _get_contrast_border_color(self, hex_color: str) -> str:
         """Calculate a contrasting border color based on the background color."""
@@ -1261,40 +1418,6 @@ class ThemeTab:
             return "#666666" if brightness > 0.5 else "#cccccc"
         except Exception:
             return "#cccccc"
-
-    def _button_style(self, hex_color: str) -> str:
-        """Return the inline style string for a colour-swatch button."""
-        border = self._get_contrast_border_color(hex_color)
-        return (
-            f"background-color: {hex_color}; min-width: 40px; width: 40px; "
-            f"height: 40px; border-radius: 4px; border: 2px solid {border}; "
-            "box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 0;"
-        )
-
-    def _create_color_input(
-        self, editor_ui: dict, field_name: str, label: str, default_value: str = ""
-    ):
-        """Create a labelled colour-swatch button that opens a colour picker."""
-        hex_default = self._convert_to_hex(default_value)
-
-        # Store both hex and original-format values
-        editor_ui[f"{field_name}_hex"] = hex_default
-        editor_ui[f"{field_name}_rgb"] = default_value if default_value else hex_default
-
-        with ui.row().classes("items-center gap-2"):
-            color_button = (
-                ui.button()
-                .style(self._button_style(hex_default))
-                .props("flat dense")
-                .on(
-                    "click",
-                    lambda _, fn=field_name: self._show_color_picker_dialog(
-                        editor_ui, fn
-                    ),
-                )
-            )
-            editor_ui[field_name] = color_button
-            ui.label(label).classes("text-sm")
 
     def _convert_to_hex(self, color_str: str) -> str:
         """Convert RGB/RGBA color strings to hex format for NiceGUI color input.
@@ -1365,24 +1488,14 @@ class ThemeTab:
         except Exception:
             return hex_color
 
-    def _set_color_button(
-        self, editor_ui: dict, field_name: str, raw_value: str
-    ):
-        """Update a single colour-swatch button and its stored values."""
-        hex_val = self._convert_to_hex(raw_value)
-        editor_ui[f"{field_name}_hex"] = hex_val
-        editor_ui[f"{field_name}_rgb"] = raw_value if raw_value else hex_val
-        if field_name in editor_ui:
-            editor_ui[field_name].style(self._button_style(hex_val))
-
-    # ------------------------------------------------------------------ #
-    #  Colour picker sub-dialog                                            #
-    # ------------------------------------------------------------------ #
-    def _show_color_picker_dialog(self, editor_ui: dict, field_name: str):
-        """Show a dialog with NiceGUI's color picker for the specified field."""
-        current_hex = editor_ui.get(f"{field_name}_hex", "#000000")
-        display_name = field_name.replace("_", " ").title()
-
+    def _show_color_picker_dialog(
+        self,
+        display_name: str,
+        current_hex: str,
+        *,
+        on_apply: Callable[[str], None],
+    ) -> None:
+        """Show a color picker dialog and invoke *on_apply* with the chosen RGB value."""
         with ui.dialog() as picker_dlg, ui.card().classes("p-4"):
             ui.label(f"Select {display_name} Color").classes(
                 "text-lg font-semibold mb-4"
@@ -1396,109 +1509,17 @@ class ThemeTab:
             with ui.row().classes("gap-2 mt-4 justify-end"):
                 ui.button("Cancel", on_click=picker_dlg.close).props("flat")
 
-                def _apply(
+                def _apply_color(
                     _evt=None,
                     _ci=color_input,
-                    _fn=field_name,
                     _dlg=picker_dlg,
+                    _callback=on_apply,
                 ):
                     new_hex = _ci.value
                     if new_hex and new_hex.startswith("#"):
-                        rgb_val = self._hex_to_rgb(new_hex)
-                        editor_ui[f"{_fn}_hex"] = new_hex
-                        editor_ui[f"{_fn}_rgb"] = rgb_val
-                        editor_ui[_fn].style(self._button_style(new_hex))
+                        _callback(self._hex_to_rgb(new_hex))
                     _dlg.close()
 
-                ui.button("Apply", on_click=_apply).props("color=primary")
+                ui.button("Apply", on_click=_apply_color).props("color=primary")
 
         picker_dlg.open()
-
-    # ------------------------------------------------------------------ #
-    #  Save / update theme                                                 #
-    # ------------------------------------------------------------------ #
-    def _save_theme(self, editor_ui: dict, dialog, *, editing: bool = False):
-        """Validate and save (create or update) the theme from the editor."""
-        import re
-
-        theme_manager = get_theme_manager()
-
-        name = editor_ui["name"].value.strip()
-        display_name = editor_ui["display_name"].value.strip()
-        theme_type = editor_ui["theme_type"].value
-
-        # --- validation ---
-        if not name:
-            notify("Theme name is required", type="negative")
-            return
-        if not display_name:
-            notify("Display name is required", type="negative")
-            return
-        if not re.match(r"^[a-zA-Z0-9_]+$", name):
-            notify(
-                "Theme name can only contain letters, numbers, and underscores",
-                type="negative",
-            )
-            return
-        if not editing and theme_manager.theme_name_exists(name):
-            notify(f"Theme '{name}' already exists", type="negative")
-            return
-
-        # --- build ThemeColors from editor state ---
-        def _cv(fn: str) -> str:
-            return editor_ui.get(f"{fn}_rgb", "")
-
-        theme_obj = ThemeColors(
-            name=name,
-            display_name=display_name,
-            theme_type=theme_type,
-            primary=_cv("primary"),
-            primary_hover=_cv("primary_hover"),
-            primary_light=_cv("primary_light"),
-            bg_base=_cv("bg_base"),
-            bg_elevated=_cv("bg_elevated"),
-            bg_surface=_cv("bg_surface"),
-            bg_overlay=_cv("bg_overlay"),
-            text_primary=_cv("text_primary"),
-            text_secondary=_cv("text_secondary"),
-            text_muted=_cv("text_muted"),
-            text_inverse=_cv("text_inverse"),
-            border_default=_cv("border_default"),
-            border_subtle=_cv("border_subtle"),
-            border_accent=_cv("border_accent"),
-            success=_cv("success"),
-            warning=_cv("warning"),
-            error=_cv("error"),
-            info=_cv("info"),
-            notify_success=_cv("notify_success"),
-            notify_warning=_cv("notify_warning"),
-            notify_error=_cv("notify_error"),
-            notify_info=_cv("notify_info"),
-            hover_overlay=_cv("hover_overlay"),
-            active_overlay=_cv("active_overlay"),
-            focus_ring=_cv("focus_ring"),
-        )
-
-        # --- persist ---
-        if editing:
-            ok = theme_manager.update_custom_theme(theme_obj)
-        else:
-            ok = theme_manager.save_custom_theme(theme_obj)
-
-        if ok:
-            verb = "updated" if editing else "created"
-            notify(
-                f"Theme '{display_name}' {verb} successfully!", type="positive"
-            )
-            # Refresh the theme selector dropdown (use plain string list)
-            available_themes = theme_manager.get_available_themes()
-            if "theme_select" in self.ui_elements:
-                select_options = [n for n, _d in available_themes]
-                self.ui_elements["theme_select"].options = select_options
-                self.ui_elements["theme_select"].update()
-            # If editing the currently-previewed theme, refresh preview
-            if editing and self.buffer == name:
-                self._apply_preview()
-            dialog.close()
-        else:
-            notify("Failed to save theme", type="negative")
