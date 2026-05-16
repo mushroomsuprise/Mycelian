@@ -417,6 +417,16 @@ CUSTOM_CSS = """
     cursor: default;
 }
 
+.connector-folder-open-zone {
+    cursor: pointer;
+    border-radius: 0.35rem;
+    transition: background 0.15s ease;
+}
+
+.connector-folder-open-zone:hover {
+    background: var(--color-hover-overlay);
+}
+
 .connector-folder-floating {
     box-shadow: 0 12px 40px var(--color-bg-overlay);
     background: var(--color-bg-surface);
@@ -449,6 +459,19 @@ CUSTOM_CSS = """
     border: 1px solid var(--color-border-accent);
     background: var(--color-bg-elevated);
     overflow: hidden;
+}
+
+.connector-folder-preview-tile-enabled {
+    border-color: var(--color-success);
+}
+
+.connector-folder-preview-tile-disabled {
+    border-color: var(--color-error);
+}
+
+.connector-folder-preview-tile-disabled .preview-name {
+    color: var(--color-text-secondary);
+    opacity: 0.75;
 }
 
 .connector-folder-preview-tile .preview-name {
@@ -1051,61 +1074,75 @@ def load_connectors():
             wrapper.on("drop.prevent", lambda _: _handle_drop_on_folder(folder_id))
 
             with wrapper:
-                with ui.row().classes("w-full items-start justify-between gap-2"):
-                    with ui.column().classes("gap-1 flex-grow min-w-0"):
-                        with ui.row().classes("items-center gap-2"):
-                            ui.icon("folder", size="28px").classes(
-                                "text-amber-400 flex-shrink-0"
-                            )
-                            title_lbl = ui.label(name).classes(
-                                "text-base font-semibold text-theme-primary truncate"
-                            )
-                        folder_tile_title_labels[folder_id] = title_lbl
-                        ui.label(f"{count} connector{'s' if count != 1 else ''}").classes(
-                            "text-xs secondary-text"
+                with ui.row().classes(
+                    "w-full items-center justify-between gap-2 flex-none"
+                ):
+                    with ui.row().classes("items-center gap-2 flex-grow min-w-0"):
+                        ui.icon("folder", size="28px").classes(
+                            "text-amber-400 flex-shrink-0"
                         )
-                    with ui.column().classes("items-end gap-2 flex-shrink-0"):
-                        ui.button(
-                            icon="folder_open",
-                            text="Open",
-                            on_click=lambda f=folder_id: _open_folder_floating_window(f),
-                        ).classes("control-button btn-primary text-xs px-3 py-1")
+                        title_lbl = ui.label(name).classes(
+                            "text-base font-semibold text-theme-primary truncate"
+                        )
+                        folder_tile_title_labels[folder_id] = title_lbl
+                        ui.label(
+                            f"{count} connector{'s' if count != 1 else ''}"
+                        ).classes(
+                            "text-xs secondary-text whitespace-nowrap flex-shrink-0"
+                        )
+                    with ui.row().classes("items-center gap-1 flex-shrink-0"):
                         folder_enable_sw = ui.switch(
+                            "Toggle all",
                             value=(fold_state == "all_on"),
                             on_change=lambda e, fid=folder_id: set_folder_connectors_enabled(
                                 fid, bool(e.value)
                             ),
-                        ).props("dense").classes("scale-90").tooltip(
-                            "Enable or disable all connectors in this folder"
-                        )
+                        ).props("left-label dense").classes("scale-90")
                         if fold_state == "mixed":
                             folder_enable_sw.props("indeterminate")
                         if not member_ids:
                             folder_enable_sw.disable()
-                        with ui.row().classes("items-center gap-1"):
-                            ui.button(
-                                icon="edit",
-                                on_click=lambda f=folder_id: show_rename_folder_dialog(f),
-                            ).props("flat dense round").tooltip("Rename folder")
-                            ui.button(
-                                icon="delete",
-                                on_click=lambda f=folder_id: show_delete_folder_dialog(f),
-                            ).props("flat dense round").tooltip("Delete folder")
+                        ui.button(
+                            icon="edit",
+                            on_click=lambda f=folder_id: show_rename_folder_dialog(f),
+                        ).props("flat dense round").tooltip("Rename folder")
+                        ui.button(
+                            icon="delete",
+                            on_click=lambda f=folder_id: show_delete_folder_dialog(f),
+                        ).props("flat dense round").tooltip("Delete folder")
 
-                if member_ids:
-                    with ui.element("div").classes("connector-folder-preview-grid mt-2"):
-                        for cid in member_ids:
-                            c = connectors.get(cid)
-                            if not c:
-                                continue
-                            with ui.element("div").classes(
-                                "connector-folder-preview-tile"
-                            ):
-                                ui.icon("hub", size="18px").classes(
-                                    "text-amber-300 flex-shrink-0 mb-0.5"
+                open_zone = ui.column().classes(
+                    "connector-folder-open-zone w-full flex-grow min-w-0 p-1 -m-1"
+                )
+                open_zone.on(
+                    "click",
+                    lambda f=folder_id: _open_folder_floating_window(f),
+                )
+                open_zone.tooltip("Open folder")
+                with open_zone:
+                    if member_ids:
+                        with ui.element("div").classes(
+                            "connector-folder-preview-grid"
+                        ):
+                            for cid in member_ids:
+                                c = connectors.get(cid)
+                                if not c:
+                                    continue
+                                tile_cls = (
+                                    "connector-folder-preview-tile "
+                                    + (
+                                        "connector-folder-preview-tile-enabled"
+                                        if c.enabled
+                                        else "connector-folder-preview-tile-disabled"
+                                    )
                                 )
-                                nm = (c.name or "").strip() or "Untitled"
-                                ui.label(nm).classes("preview-name")
+                                icon_cls = "text-amber-300 flex-shrink-0 mb-0.5"
+                                if not c.enabled:
+                                    icon_cls += " opacity-40"
+                                with ui.element("div").classes(tile_cls):
+                                    ui.icon("hub", size="18px").classes(icon_cls)
+                                    nm = (c.name or "").strip() or "Untitled"
+                                    ui.label(nm).classes("preview-name")
 
         with connectors_container:
             if not connectors:

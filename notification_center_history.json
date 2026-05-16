@@ -182,5 +182,37 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "51b74919-7456-4e1f-9c39-52f5930190cb",
+    "ts": 1778971781.7046258,
+    "message": "Connector disabled",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "f7877704-0ac9-4275-a689-d374ac5909fc",
+    "ts": 1778971786.637621,
+    "message": "Enabled 1 connector(s) in \"New folder\"",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "f93ffc6f-60e2-46d4-84e0-350eba0a9392",
+    "ts": 1778971788.399782,
+    "message": "Disabled 2 connector(s) in \"New folder\"",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "fc1aed3d-76e3-4e79-af98-c31de8da096b",
+    "ts": 1778971789.350132,
+    "message": "Enabled 2 connector(s) in \"New folder\"",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
   }
 ]
