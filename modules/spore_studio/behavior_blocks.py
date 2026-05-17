@@ -267,9 +267,9 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
     args = args or {}
 
     if action == "show":
-        return [f"sporeShow({eid});"]
+        return [f"sporeShow({eid}, null);"]
     if action == "hide":
-        return [f"sporeHide({eid});"]
+        return [f"sporeHide({eid}, null);"]
 
     if action == "toggle":
         return [f"sporeToggle({eid});"]
@@ -282,28 +282,19 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
             seconds = 5.0
         anim_in = str(args.get("anim_in", "fade") or "none")
         anim_out = str(args.get("anim_out", "fade") or "none")
-        in_class, _ = _ANIM_CLASS.get(anim_in, ("", ""))
-        _, out_class = _ANIM_CLASS.get(anim_out, ("", ""))
-        lines: List[str] = []
-        lines.append(f"(function () {{")
-        lines.append(f"    var __el = document.getElementById({eid});")
-        lines.append(f"    if (!__el) {{ return; }}")
-        lines.append(f"    sporeShow({eid});")
-        if in_class:
-            lines.append(f"    __el.classList.remove({_js_string(in_class)});")
-            lines.append(f"    void __el.offsetWidth;")
-            lines.append(f"    __el.classList.add({_js_string(in_class)});")
-        lines.append(f"    setTimeout(function () {{")
-        if out_class:
-            lines.append(f"        __el.classList.remove({_js_string(out_class)});")
-            lines.append(f"        void __el.offsetWidth;")
-            lines.append(f"        __el.classList.add({_js_string(out_class)});")
-            lines.append(f"        setTimeout(function () {{ sporeHide({eid}); }}, 300);")
-        else:
-            lines.append(f"        sporeHide({eid});")
-        lines.append(f"    }}, {seconds * 1000});")
-        lines.append(f"}})();")
-        return lines
+        ov: Dict[str, Any] = {}
+        if anim_in and anim_in != "none":
+            ov["animIn"] = anim_in
+        if anim_out and anim_out != "none":
+            ov["animOut"] = anim_out
+        ov_js = _js_value(ov if ov else None)
+        return [
+            "(function () {",
+            f"    sporeShow({eid}, {ov_js});",
+            f"    setTimeout(function () {{ sporeHide({eid}, {ov_js}); }}, "
+            f"{max(0.0, seconds) * 1000});",
+            "})();",
+        ]
 
     if action == "set_text":
         from_payload = args.get("from_payload") or ""
@@ -623,11 +614,24 @@ def _bindings_need_toggle(elements: List[Dict[str, Any]]) -> bool:
     return False
 
 
+def _element_uses_animations(element: Dict[str, Any]) -> bool:
+    anims = element.get("animations")
+    if not isinstance(anims, dict):
+        return False
+    for key in ("anim_in", "anim_out"):
+        val = str(anims.get(key) or "none").strip()
+        if val and val != "none":
+            return True
+    return False
+
+
 def _bindings_need_preset_css(elements: List[Dict[str, Any]]) -> bool:
     """Keyframe utility classes (.sporeShake, .sporePop) used by flash_class."""
     for element in elements or []:
         if not isinstance(element, dict):
             continue
+        if _element_uses_animations(element):
+            return True
         for binding in element.get("bindings") or []:
             if not isinstance(binding, dict):
                 continue
@@ -642,9 +646,9 @@ function sporeToggle(id) {
     var el = document.getElementById(id);
     if (!el) { return; }
     if (el.hasAttribute('data-spore-hidden')) {
-        el.removeAttribute('data-spore-hidden');
+        sporeShow(id, null);
     } else {
-        el.setAttribute('data-spore-hidden', 'true');
+        sporeHide(id, null);
     }
 }
 """.strip()
@@ -712,6 +716,8 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
             block.append("}")
             by_event.setdefault(event, []).extend(block)
 
+            if _element_uses_animations(element):
+                use_animation = True
             for act, step_args, _delay in steps:
                 if _step_uses_animation(act, step_args):
                     use_animation = True

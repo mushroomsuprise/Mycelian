@@ -268,6 +268,8 @@ def create_template(
                 "width": int(design_width or 800),
                 "height": int(design_height or 200),
             },
+            "duration_seconds": 5,
+            "queued": False,
             "elements": [],
             "advanced_js": "",
             "streamdeck_options": {"description": "", "actions": {}},
@@ -445,6 +447,11 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     model = dict(model)
     model["template_name"] = template_name
     model["alert_system"] = alert_system
+
+    if not model.get("legacy"):
+        from .timing import effective_duration_seconds
+
+        model["duration_seconds"] = effective_duration_seconds(model)
 
     if model.get("legacy"):
         return _save_legacy_template(model, template_name)

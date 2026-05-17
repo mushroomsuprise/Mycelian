@@ -333,6 +333,39 @@ html, body {
     outline: 2px solid var(--ss-accent);
     outline-offset: 1px;
 }
+.ss-element.ss-element--animated::after {
+    content: "anim";
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    font-size: 9px;
+    line-height: 1;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--ss-accent);
+    color: #fff;
+    opacity: 0.85;
+    pointer-events: none;
+    z-index: 5;
+}
+.ss-section-sub {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ss-text-muted);
+    margin: 0;
+}
+.ss-duration-min-hint {
+    font-size: 10px;
+    color: var(--ss-text-muted);
+    margin: 4px 0 8px;
+    line-height: 1.35;
+}
+.ss-duration-reset {
+    margin-bottom: 10px;
+    font-size: 11px;
+}
 .ss-element__handle {
     position: absolute;
     width: 8px;

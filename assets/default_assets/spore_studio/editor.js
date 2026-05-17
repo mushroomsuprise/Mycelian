@@ -102,6 +102,30 @@
         ]
     };
 
+    var DEFAULT_ANIMATIONS = {
+        anim_in: "none",
+        anim_out: "none",
+        anim_in_ms: 300,
+        anim_out_ms: 300,
+        anim_delay_ms: 0,
+        anim_easing: "ease-out"
+    };
+
+    var ANIMATION_SCHEMA = [
+        { key: "anim_in", label: "Entrance", type: "select",
+          options: ["none", "fade", "slideIn", "slideOut", "scaleIn", "scaleOut"] },
+        { key: "anim_out", label: "Exit", type: "select",
+          options: ["none", "fade", "slideIn", "slideOut", "scaleIn", "scaleOut"] },
+        { key: "anim_in_ms", label: "Entrance duration (ms)", type: "number",
+          min: 0, max: 120000 },
+        { key: "anim_out_ms", label: "Exit duration (ms)", type: "number",
+          min: 0, max: 120000 },
+        { key: "anim_delay_ms", label: "Delay before entrance (ms)", type: "number",
+          min: 0, max: 120000 },
+        { key: "anim_easing", label: "Easing", type: "select",
+          options: ["ease", "ease-in", "ease-out", "ease-in-out", "linear"] }
+    ];
+
     var state = window.sporeState = {
         model: null,
         selectedId: null,
@@ -251,6 +275,10 @@
 
     function modelTouch() {
         setDirty(true);
+        if (state.model && !state.model.legacy) {
+            syncDurationWithLayout(state.model);
+            refreshDurationCanvasUi();
+        }
         schedulePreviewDraft();
     }
 
@@ -599,6 +627,138 @@
         return keys;
     }
 
+    function ensureElementAnimations(el) {
+        if (!el) { return; }
+        el.animations = el.animations && typeof el.animations === "object"
+            ? el.animations
+            : {};
+        Object.keys(DEFAULT_ANIMATIONS).forEach(function (k) {
+            if (el.animations[k] === undefined) {
+                el.animations[k] = DEFAULT_ANIMATIONS[k];
+            }
+        });
+    }
+
+    function _animMsForType(animType, durationMs) {
+        if (!animType || animType === "none") { return 0; }
+        var ms = parseInt(String(durationMs), 10);
+        return isNaN(ms) ? 300 : Math.max(0, ms);
+    }
+
+    function _bindingStepMs(action, args) {
+        args = args || {};
+        if (action === "show_for") {
+            var seconds = parseFloat(args.seconds);
+            if (isNaN(seconds)) { seconds = 5; }
+            seconds = Math.max(0, seconds);
+            var animIn = String(args.anim_in || "fade");
+            var animOut = String(args.anim_out || "fade");
+            return Math.round(seconds * 1000)
+                + _animMsForType(animIn, 300)
+                + _animMsForType(animOut, 300);
+        }
+        if (action === "flash_class") {
+            var d = parseInt(String(args.duration_ms), 10);
+            return isNaN(d) ? 500 : Math.max(0, d);
+        }
+        return 0;
+    }
+
+    function _bindingChainMs(binding) {
+        if (!binding || typeof binding !== "object") { return 0; }
+        var total = 0;
+        if (binding.action) {
+            total += _bindingStepMs(binding.action, binding.args || {});
+        }
+        (binding.chain || []).forEach(function (row) {
+            if (!row || typeof row !== "object") { return; }
+            var delay = parseFloat(row.delay_ms);
+            if (!isNaN(delay)) { total += Math.max(0, delay); }
+            if (row.action) {
+                total += _bindingStepMs(row.action, row.args || {});
+            }
+        });
+        return total;
+    }
+
+    function elementTimelineMs(el) {
+        if (!el) { return 0; }
+        var best = 0;
+        var anims = el.animations || {};
+        var delay = parseInt(String(anims.anim_delay_ms), 10);
+        if (isNaN(delay)) { delay = 0; }
+        var inMs = _animMsForType(anims.anim_in, anims.anim_in_ms);
+        var outMs = _animMsForType(anims.anim_out, anims.anim_out_ms);
+        best = Math.max(best, Math.max(0, delay) + inMs + outMs);
+        (el.bindings || []).forEach(function (b) {
+            best = Math.max(best, _bindingChainMs(b));
+        });
+        var props = el.props || {};
+        if (el.type === "audio") {
+            var fin = parseInt(String(props.fade_in_ms), 10);
+            var fout = parseInt(String(props.fade_out_ms), 10);
+            if (isNaN(fin)) { fin = 0; }
+            if (isNaN(fout)) { fout = 0; }
+            best = Math.max(best, Math.max(0, fin) + Math.max(0, fout));
+        }
+        if (el.type === "video") {
+            var vfin = parseInt(String(props.audio_fade_in_ms), 10);
+            var vfout = parseInt(String(props.audio_fade_out_ms), 10);
+            if (isNaN(vfin)) { vfin = 0; }
+            if (isNaN(vfout)) { vfout = 0; }
+            best = Math.max(best, Math.max(0, vfin) + Math.max(0, vfout));
+        }
+        return best;
+    }
+
+    function computeMinDurationSeconds(model) {
+        if (!model) { return 5; }
+        var maxMs = 0;
+        (model.elements || []).forEach(function (el) {
+            maxMs = Math.max(maxMs, elementTimelineMs(el));
+        });
+        if (maxMs <= 0) { return 5; }
+        var seconds = maxMs / 1000;
+        return Math.max(0.1, Math.ceil(seconds * 10) / 10);
+    }
+
+    function syncDurationWithLayout(model) {
+        if (!model || model.legacy) { return; }
+        var minSec = computeMinDurationSeconds(model);
+        var cur = parseFloat(model.duration_seconds);
+        if (isNaN(cur) || model.duration_seconds === undefined || model.duration_seconds === null) {
+            model.duration_seconds = Math.max(minSec, 5);
+        } else if (cur < minSec) {
+            model.duration_seconds = minSec;
+        }
+        return minSec;
+    }
+
+    function refreshDurationCanvasUi() {
+        if (!state.model || isLegacyModel()) { return; }
+        var minSec = syncDurationWithLayout(state.model);
+        var minLbl = $("#ss-duration-min-label");
+        if (minLbl) {
+            minLbl.textContent = "Minimum from layout: " + minSec.toFixed(1) + "s";
+        }
+        var durIn = $("#ss-duration-seconds");
+        if (durIn) {
+            durIn.min = String(minSec);
+            durIn.value = String(
+                Math.max(minSec, parseFloat(state.model.duration_seconds) || minSec)
+            );
+        }
+        var qCb = $("#ss-queued");
+        if (qCb) {
+            qCb.checked = !!state.model.queued;
+        }
+    }
+
+    function onLayoutTimingChanged() {
+        syncDurationWithLayout(state.model);
+        refreshDurationCanvasUi();
+    }
+
     function ensureElementExposeDefaults(el) {
         if (!el || el.legacy_bindings || el.legacy_field) { return; }
         if (isLegacyModel()) { return; }
@@ -696,6 +856,11 @@
             applyPropsToNode(node, el);
             if (el.id === state.selectedId) {
                 node.classList.add("selected");
+            }
+            var an = el.animations || {};
+            if ((an.anim_in && an.anim_in !== "none")
+                || (an.anim_out && an.anim_out !== "none")) {
+                node.classList.add("ss-element--animated");
             }
 
             if (el.type === "text") {
@@ -1383,6 +1548,50 @@
                 modelTouch();
             });
             host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl));
+            if (entry.key === "fade_in_ms" || entry.key === "fade_out_ms"
+                || entry.key === "audio_fade_in_ms" || entry.key === "audio_fade_out_ms") {
+                ctrl.addEventListener("change", onLayoutTimingChanged);
+            }
+        });
+
+        var animHead = document.createElement("h4");
+        animHead.className = "ss-section-sub";
+        animHead.textContent = "Animations";
+        animHead.style.marginTop = "12px";
+        host.appendChild(animHead);
+        ensureElementAnimations(el);
+        ANIMATION_SCHEMA.forEach(function (entry) {
+            var current = el.animations && el.animations[entry.key];
+            var ctrl;
+            if (entry.type === "select") {
+                ctrl = document.createElement("select");
+                (entry.options || []).forEach(function (opt) {
+                    var op = document.createElement("option");
+                    op.value = opt;
+                    op.textContent = opt;
+                    if (String(opt) === String(current)) { op.selected = true; }
+                    ctrl.appendChild(op);
+                });
+            } else {
+                ctrl = document.createElement("input");
+                ctrl.type = "number";
+                if (entry.min != null) { ctrl.min = entry.min; }
+                if (entry.max != null) { ctrl.max = entry.max; }
+                ctrl.value = current == null ? "" : String(current);
+            }
+            ctrl.addEventListener("change", function () {
+                el.animations = el.animations || {};
+                if (entry.type === "number") {
+                    el.animations[entry.key] = ctrl.value === "" ? 0 : Number(ctrl.value);
+                } else {
+                    el.animations[entry.key] = ctrl.value;
+                }
+                onLayoutTimingChanged();
+                renderStage();
+                pushHistory();
+                modelTouch();
+            });
+            host.appendChild(formRow(entry.label, ctrl));
         });
 
         var deleteBtn = document.createElement("button");
@@ -2455,9 +2664,11 @@
                 el.parent_id = pid;
             }
             ensureElementExposeDefaults(el);
+            ensureElementAnimations(el);
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
             normalizeParentLinksAndReorderLive();
+            onLayoutTimingChanged();
             state.selectedId = id;
             pushHistory();
             renderAll();
@@ -2721,6 +2932,7 @@
             el.bindings = el.bindings || [];
             if (!model.legacy) {
                 ensureElementExposeDefaults(el);
+                ensureElementAnimations(el);
             }
             if (model.legacy && el.parent_id) {
                 delete el.parent_id;
@@ -2737,6 +2949,17 @@
         var ax = model.streamdeck_options.actions;
         if (typeof ax !== "object" || ax === null || Array.isArray(ax)) {
             model.streamdeck_options.actions = {};
+        }
+        if (!model.legacy) {
+            if (model.duration_seconds === undefined || model.duration_seconds === null) {
+                model.duration_seconds = 5;
+            } else {
+                model.duration_seconds = Number(model.duration_seconds) || 5;
+            }
+            if (model.queued === undefined) {
+                model.queued = false;
+            }
+            syncDurationWithLayout(model);
         }
         return model;
     }
@@ -3167,6 +3390,7 @@
         $("#ss-alert-system").value = state.model.alert_system;
         $("#ss-template-title").value = state.model.title || "";
         $("#ss-advanced-js").value = state.model.advanced_js || "";
+        refreshDurationCanvasUi();
     }
 
     function setupCanvasPanel() {
@@ -3194,6 +3418,29 @@
             if (!state.model) { return; }
             state.model.title = ev.target.value;
             pushHistoryDebounced();
+            modelTouch();
+        });
+        $("#ss-duration-seconds").addEventListener("change", function (ev) {
+            if (!state.model) { return; }
+            var minSec = computeMinDurationSeconds(state.model);
+            var v = parseFloat(ev.target.value);
+            if (isNaN(v)) { v = minSec; }
+            state.model.duration_seconds = Math.max(minSec, v);
+            refreshDurationCanvasUi();
+            pushHistory();
+            modelTouch();
+        });
+        $("#ss-duration-reset").addEventListener("click", function () {
+            if (!state.model) { return; }
+            state.model.duration_seconds = computeMinDurationSeconds(state.model);
+            refreshDurationCanvasUi();
+            pushHistory();
+            modelTouch();
+        });
+        $("#ss-queued").addEventListener("change", function (ev) {
+            if (!state.model) { return; }
+            state.model.queued = !!ev.target.checked;
+            pushHistory();
             modelTouch();
         });
         $("#ss-advanced-js").addEventListener("input", function (ev) {

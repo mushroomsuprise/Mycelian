@@ -30,6 +30,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .behavior_blocks import compile_bindings
+from .timing import effective_duration_seconds
 from ..path_utils import get_template_path
 
 logger = logging.getLogger(__name__)
@@ -220,6 +221,44 @@ def _fmt_audio_data_attrs(vol: Any, fade_in_ms: Any, fade_out_ms: Any) -> str:
     )
 
 
+def _fmt_anim_data_attrs(element: Dict[str, Any]) -> str:
+    """HTML data attributes for sporeShow / sporeHide entrance and exit animations."""
+    anims = element.get("animations")
+    if not isinstance(anims, dict):
+        anims = {}
+    anim_in = str(anims.get("anim_in") or "none").strip()
+    anim_out = str(anims.get("anim_out") or "none").strip()
+    if anim_in not in (
+        "none", "fade", "slideIn", "slideOut", "scaleIn", "scaleOut",
+    ):
+        anim_in = "none"
+    if anim_out not in (
+        "none", "fade", "slideIn", "slideOut", "scaleIn", "scaleOut",
+    ):
+        anim_out = "none"
+    try:
+        in_ms = max(0, int(float(anims.get("anim_in_ms", 300))))
+    except (TypeError, ValueError):
+        in_ms = 300
+    try:
+        out_ms = max(0, int(float(anims.get("anim_out_ms", 300))))
+    except (TypeError, ValueError):
+        out_ms = 300
+    try:
+        delay_ms = max(0, int(float(anims.get("anim_delay_ms", 0))))
+    except (TypeError, ValueError):
+        delay_ms = 0
+    easing = str(anims.get("anim_easing") or "ease-out").strip() or "ease-out"
+    return (
+        f'data-spore-anim-in="{html.escape(anim_in, quote=True)}" '
+        f'data-spore-anim-out="{html.escape(anim_out, quote=True)}" '
+        f'data-spore-anim-in-ms="{in_ms}" '
+        f'data-spore-anim-out-ms="{out_ms}" '
+        f'data-spore-anim-delay-ms="{delay_ms}" '
+        f'data-spore-anim-easing="{html.escape(easing, quote=True)}"'
+    )
+
+
 def _render_element(
     element: Dict[str, Any], *, children_inner_markup: str = "",
 ) -> str:
@@ -243,6 +282,7 @@ def _render_element(
     hidden_attr = (
         ' data-spore-hidden="true"' if _element_start_hidden(element) else ""
     )
+    anim_attrs = _fmt_anim_data_attrs(element)
 
     if etype == "text":
         text_var = element.get("text_var") or eid + "Text"
@@ -250,6 +290,7 @@ def _render_element(
         return (
             f'<div id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+            f'{anim_attrs} '
             f'data-spore-type="text">'
             f"{{{{ {text_var}|default({json.dumps(text_default)})|safe }}}}"
             f"</div>"
@@ -261,6 +302,7 @@ def _render_element(
         return (
             f'<img id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+            f'{anim_attrs} '
             f'data-spore-type="image" '
             f'src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}" '
             f'alt="" />'
@@ -306,6 +348,7 @@ def _render_element(
         return (
             f'<div id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+            f'{anim_attrs} '
             f'data-spore-type="video" '
             f'data-spore-visual-kind="{html.escape(visual_kind, quote=True)}">'
             f"{inner}{nested_audio}"
@@ -322,6 +365,7 @@ def _render_element(
         )
         return (
             f'<audio id="{html.escape(eid)}" class="{classes}"{hidden_attr} '
+            f'{anim_attrs} '
             f'data-spore-type="audio" preload="auto" {audio_attrs}>'
             f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
             f"</audio>"
@@ -330,6 +374,7 @@ def _render_element(
     return (
         f'<div id="{html.escape(eid)}" class="{classes}" '
         f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+        f'{anim_attrs} '
         f'data-spore-type="container">{children_inner_markup}</div>'
     )
 
@@ -581,6 +626,29 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
             "label": "Title",
             "value": str(model.get("title") or template_name),
             "description": "Browser title for this overlay.",
+        },
+        {
+            "type": "number",
+            "id": "Duration",
+            "label": "Duration",
+            "value": effective_duration_seconds(model),
+            "min": 0.1,
+            "max": 600,
+            "step": 0.1,
+            "description": (
+                "Display/hold duration in seconds for alert queue integration "
+                "(point-reward templates matching this name)."
+            ),
+        },
+        {
+            "type": "checkbox",
+            "id": "Queued",
+            "label": "Queued",
+            "value": bool(model.get("queued")),
+            "description": (
+                "When enabled, point redemptions whose reward title matches "
+                "this template name can hold the main alert queue."
+            ),
         },
     ]
 

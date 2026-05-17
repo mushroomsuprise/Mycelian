@@ -61,6 +61,43 @@ def _hydrate_streamdeck_from_public_config(
     sidecar["streamdeck_options"] = sanitized
 
 
+def _hydrate_canvas_timing_from_public_config(
+    template_name: str, sidecar: Dict[str, Any]
+) -> None:
+    """Copy Duration / Queued from public JSON when absent on the sidecar."""
+    if sidecar.get("duration_seconds") is not None and sidecar.get("queued") is not None:
+        return
+    try:
+        from ..template_config_parser import (
+            TemplateConfigParser,
+            _config_element_value,
+        )
+    except ImportError:  # pragma: no cover
+        return
+    parser = TemplateConfigParser()
+    cfg_path = parser.get_config_path(template_name)
+    if not os.path.isfile(cfg_path):
+        return
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(cfg, dict):
+        return
+    if sidecar.get("duration_seconds") is None:
+        raw = _config_element_value(cfg, "Duration")
+        if raw is not None and raw != "":
+            try:
+                sidecar["duration_seconds"] = float(raw)
+            except (TypeError, ValueError):
+                pass
+    if sidecar.get("queued") is None:
+        q = _config_element_value(cfg, "Queued")
+        if q is not None:
+            sidecar["queued"] = bool(q)
+
+
 # Sidecars used to live next to the public JSON in ``template_configs/`` —
 # the dual ``.json`` extension caused them to leak into the Source Settings
 # dropdown via ``TemplateConfigParser.get_config_files()``. They now live
@@ -163,6 +200,9 @@ def save_sidecar(template_name: str, model: Dict[str, Any]) -> bool:
         except OSError:
             pass
         return False
+
+
+def remove_sidecar(template_name: str) -> None:
     """Delete ``.spore.json`` sidecar(s) for this template if they exist."""
     _migrate_legacy_sidecar(template_name)
     for path in (_spore_sidecar_path(template_name), _legacy_sidecar_path(template_name)):
@@ -279,6 +319,7 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
             sidecar.get("streamdeck_options")
         )
         _hydrate_streamdeck_from_public_config(template_name, sidecar)
+        _hydrate_canvas_timing_from_public_config(template_name, sidecar)
         return sidecar
 
     html_path = get_template_path(f"{template_name}.html")

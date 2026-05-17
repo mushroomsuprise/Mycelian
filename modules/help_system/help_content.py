@@ -2974,6 +2974,11 @@ Open the **Canvas** inspector tab when no element-specific setting applies, or s
 | **Height (px)** | 240–4320 | Design height |
 | **Alert system** | Queue / Instant | Which alert websocket event this template expects |
 | **Title** | Text | Human-readable name in Source Settings |
+| **Duration (seconds)** | ≥ minimum from layout | Written to template config as `Duration` for alert queue holds (point rewards matching this template name) |
+| **Queued** | Checkbox | When on, matching point redemptions without main-overlay media can hold the alert queue using **Duration** |
+| **Reset to minimum** | Button | Sets duration to the computed floor from animations, bindings, and fades |
+
+The **Minimum from layout** label updates live as you edit elements. Duration auto-bumps up when the layout needs more time; you can set it higher manually.
 
 ### Queue vs Instant alert system
 
@@ -3000,6 +3005,17 @@ Select any element to edit:
 | **Delete element** | Remove element and children |
 
 When **Show** bindings exist, the UI may auto-suggest enabling **Start hidden until shown**.
+
+### Animations (all element types)
+
+| Field | Notes |
+|-------|-------|
+| **Entrance / Exit** | `none`, `fade`, `slideIn`, `slideOut`, `scaleIn`, `scaleOut` — applied on every `sporeShow` / `sporeHide` (bindings and Advanced JS) |
+| **Entrance / Exit duration (ms)** | Per-leg timing (default 300 ms when type ≠ `none`) |
+| **Delay before entrance (ms)** | Wait before entrance runs after show |
+| **Easing** | CSS timing function for entrance animation |
+
+Elements with non-`none` animations show a small **anim** badge on the canvas.
 
 ## Properties by Element Type
 
