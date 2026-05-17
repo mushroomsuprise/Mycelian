@@ -366,5 +366,41 @@
         "settings_subtab": "Twitch"
       }
     ]
+  },
+  {
+    "id": "867e7da1-e2bd-440e-baef-a30914aad071",
+    "ts": 1778983823.8722553,
+    "message": "Twitch: Authenticated but Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:twitch:Authenticated but Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "8f8c21c0-e20b-4f53-9f63-b8e6dd4fc97b",
+    "ts": 1778983825.8901012,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "7b507079-9f20-4c3c-a644-0be004df3269",
+    "ts": 1778983832.976676,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
   }
 ]
