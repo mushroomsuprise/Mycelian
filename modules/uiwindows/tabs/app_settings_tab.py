@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from nicegui import ui
+
+from ...ui_buttons import primary_button
+from ...ui_settings_layout import (
+    settings_action_row,
+    settings_form_grid,
+    settings_inner_panel,
+    settings_surface,
+)
 from ...notification_engine import notify
 
 from ... import dataobjects
@@ -137,149 +145,146 @@ class AppSettingsTab:
 
     # ----- building -----
     def build(self, parent_container) -> None:
-        print("DEBUG: AppSettingsTab.build() called")
         self._load_from_state()
 
-        with parent_container:
-            with ui.card().classes("content-section w-full"):
-                ui.label("Application Settings").classes("text-xl font-bold mb-4")
+        with settings_surface(parent_container):
+            ui.label("Application Settings").classes("text-lg font-bold")
 
-                with ui.column().classes("w-full gap-4"):
-                    # Notifications
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Notifications:").classes("w-40")
-                        self.ui_elements["notifications_enabled"] = (
-                            ui.switch(value=self.buffer.notifications_enabled)
-                            .classes("q-switch")
-                            .on_value_change(
-                                lambda e: self._set(
-                                    "notifications_enabled", bool(e.value)
+            with ui.column().classes("w-full gap-3"):
+                with settings_inner_panel():
+                    ui.label("General").classes("text-base font-semibold")
+                    with settings_form_grid(columns=2):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Notifications").classes("text-sm")
+                            self.ui_elements["notifications_enabled"] = (
+                                ui.switch(value=self.buffer.notifications_enabled)
+                                .classes("q-switch")
+                                .on_value_change(
+                                    lambda e: self._set(
+                                        "notifications_enabled", bool(e.value)
+                                    )
                                 )
                             )
-                        )
-
-                    # Auto Update
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Auto Update:").classes("w-40")
-                        self.ui_elements["auto_update"] = (
-                            ui.switch(value=self.buffer.auto_update)
-                            .classes("q-switch")
-                            .on_value_change(
-                                lambda e: self._set("auto_update", bool(e.value))
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Auto update").classes("text-sm")
+                            self.ui_elements["auto_update"] = (
+                                ui.switch(value=self.buffer.auto_update)
+                                .classes("q-switch")
+                                .on_value_change(
+                                    lambda e: self._set("auto_update", bool(e.value))
+                                )
                             )
-                        )
-
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Start maximized:").classes("w-40")
-                        self.ui_elements["start_maximized"] = (
-                            ui.switch(value=self.buffer.start_maximized)
-                            .classes("q-switch")
-                            .on_value_change(
-                                lambda e: self._set("start_maximized", bool(e.value))
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Start maximized").classes("text-sm")
+                            self.ui_elements["start_maximized"] = (
+                                ui.switch(value=self.buffer.start_maximized)
+                                .classes("q-switch")
+                                .on_value_change(
+                                    lambda e: self._set(
+                                        "start_maximized", bool(e.value)
+                                    )
+                                )
                             )
-                        )
                         ui.label("Applies on next launch").classes(
-                            "ml-2 secondary-text text-sm"
+                            "secondary-text text-sm self-center"
                         )
-
-                    # Update interval
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Update Check Interval:").classes("w-40")
-                        self.ui_elements["update_check_interval_minutes"] = (
-                            ui.number(
-                                value=getattr(
-                                    self.buffer, "update_check_interval_minutes", 30
-                                ),
-                                min=5,
-                                max=120,
-                                step=5,
-                            )
-                            .classes("w-28")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "update_check_interval_minutes",
-                                    int(
-                                        getattr(e, "args", [getattr(e, "value", 30)])[0]
-                                        or 30
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Update check").classes("text-sm shrink-0")
+                            self.ui_elements["update_check_interval_minutes"] = (
+                                ui.number(
+                                    value=getattr(
+                                        self.buffer,
+                                        "update_check_interval_minutes",
+                                        30,
                                     ),
-                                ),
-                            )
-                        )
-                        ui.label("minutes (5 - 120)").classes("ml-2 secondary-text")
-
-                    ui.separator().classes("divider")
-
-                    ui.label("Activity Feed Settings").classes("text-lg font-semibold")
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("History Limit:").classes("w-40")
-                        self.ui_elements["activity_feed_limit"] = (
-                            ui.number(
-                                value=self.buffer.activity_feed_limit,
-                                min=5,
-                                max=100,
-                                step=5,
-                            )
-                            .classes("w-24")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "activity_feed_limit",
-                                    int(
-                                        getattr(e, "args", [getattr(e, "value", 5)])[0]
-                                        or 5
+                                    min=5,
+                                    max=120,
+                                    step=5,
+                                )
+                                .classes("w-24")
+                                .on(
+                                    "change",
+                                    lambda e: self._set(
+                                        "update_check_interval_minutes",
+                                        int(
+                                            getattr(
+                                                e, "args", [getattr(e, "value", 30)]
+                                            )[0]
+                                            or 30
+                                        ),
                                     ),
-                                ),
+                                )
                             )
-                        )
-                        ui.label("alerts per page").classes("ml-2 secondary-text")
+                            ui.label("minutes (5–120)").classes(
+                                "secondary-text text-sm"
+                            )
 
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Max Pages:").classes("w-40")
-                        self.ui_elements["activity_feed_max_pages"] = (
-                            ui.number(
-                                value=self.buffer.activity_feed_max_pages,
-                                min=1,
-                                max=50,
-                                step=1,
-                            )
-                            .classes("w-24")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "activity_feed_max_pages",
-                                    int(
-                                        getattr(e, "args", [getattr(e, "value", 1)])[0]
-                                        or 1
+                with settings_inner_panel():
+                    ui.label("Activity feed").classes("text-base font-semibold")
+                    with settings_form_grid(columns=2):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("History limit").classes("text-sm shrink-0")
+                            self.ui_elements["activity_feed_limit"] = (
+                                ui.number(
+                                    value=self.buffer.activity_feed_limit,
+                                    min=5,
+                                    max=100,
+                                    step=5,
+                                )
+                                .classes("w-24")
+                                .on(
+                                    "change",
+                                    lambda e: self._set(
+                                        "activity_feed_limit",
+                                        int(
+                                            getattr(
+                                                e, "args", [getattr(e, "value", 5)]
+                                            )[0]
+                                            or 5
+                                        ),
                                     ),
-                                ),
+                                )
                             )
+                            ui.label("per page").classes("secondary-text text-sm")
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Max pages").classes("text-sm shrink-0")
+                            self.ui_elements["activity_feed_max_pages"] = (
+                                ui.number(
+                                    value=self.buffer.activity_feed_max_pages,
+                                    min=1,
+                                    max=50,
+                                    step=1,
+                                )
+                                .classes("w-24")
+                                .on(
+                                    "change",
+                                    lambda e: self._set(
+                                        "activity_feed_max_pages",
+                                        int(
+                                            getattr(
+                                                e, "args", [getattr(e, "value", 1)]
+                                            )[0]
+                                            or 1
+                                        ),
+                                    ),
+                                )
+                            )
+                            ui.label("to load").classes("secondary-text text-sm")
+
+                with settings_inner_panel():
+                    ui.label("Stream Deck plugin").classes("text-base font-semibold")
+                    with ui.row().classes("w-full items-center gap-3 flex-wrap"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Status").classes("text-sm secondary-text")
+                            self.ui_elements["plugin_status_label"] = ui.label(
+                                self._get_plugin_status_text()
+                            ).classes("font-semibold text-sm")
+                        self.ui_elements["install_plugin_button"] = primary_button(
+                            "Install Plugin",
+                            self._install_streamdeck_plugin,
                         )
-                        ui.label("maximum pages to load").classes("ml-2 secondary-text")
 
-                    ui.separator().classes("divider")
-
-                    ui.label("Stream Deck Plugin").classes("text-lg font-semibold")
-
-                    # Status indicator
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Plugin Status:").classes("w-40")
-                        self.ui_elements["plugin_status_label"] = ui.label(
-                            self._get_plugin_status_text()
-                        ).classes("font-bold")
-
-                    # Install button
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("").classes("w-40")  # Spacer for alignment
-                        self.ui_elements["install_plugin_button"] = ui.button(
-                            "Install Plugin", on_click=self._install_streamdeck_plugin
-                        ).props("color=primary")
-
-                    ui.separator().classes("divider")
-
-                    with ui.row().classes("justify-end gap-2 mt-3"):
-                        ui.button("Discard", on_click=self.discard).props("outline")
-                        ui.button("Save", on_click=self.save).props("color=primary")
+            settings_action_row(discard=self.discard, save=self.save)
 
     # ----- buffer helpers -----
     def _load_from_state(self) -> None:

@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from nicegui import context, run, ui
 from ..notification_engine import notify
+from ..ui_buttons import outline_button, primary_button
 
 
 from .. import (
@@ -523,30 +524,32 @@ def create_connectors_tab():
                         .props("clearable dense")
                     )
 
-                    ui.button(
+                    primary_button(
+                        "New Connector",
+                        show_create_connector_dialog,
                         icon="add",
-                        text="New Connector",
-                        on_click=show_create_connector_dialog,
-                    ).classes(
-                        "control-button btn-primary px-4 py-2"
+                        extra_classes="px-4 py-2",
                     )
 
-                    ui.button(
-                        icon="auto_awesome", text="Examples", on_click=create_examples
-                    ).classes(
-                        "control-button btn-warning px-3 py-2"
+                    outline_button(
+                        "Examples",
+                        create_examples,
+                        icon="auto_awesome",
+                        extra_classes="px-3 py-2",
                     )
 
-                    ui.button(
-                        icon="refresh", text="Refresh", on_click=refresh_connectors
-                    ).classes(
-                        "control-button btn-cancel px-3 py-2"
+                    outline_button(
+                        "Refresh",
+                        refresh_connectors,
+                        icon="refresh",
+                        extra_classes="px-3 py-2",
                     )
 
-                    ui.button(
-                        icon="help", text="Help", on_click=show_help_dialog
-                    ).classes(
-                        "control-button btn-secondary px-3 py-2"
+                    outline_button(
+                        "Help",
+                        show_help_dialog,
+                        icon="help",
+                        extra_classes="px-3 py-2",
                     )
 
         # Main content area - flexible height

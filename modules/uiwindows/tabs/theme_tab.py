@@ -15,6 +15,7 @@ from ...theme_manager import (
 )
 from ..service_brand_icons import SERVICE_BRAND_SVG
 from ...notification_engine import notify
+from ...ui_buttons import outline_button, primary_button
 from .base import TabBase
 
 
@@ -490,7 +491,8 @@ body .theme-preview-container .typography-muted {
     border-radius: 4px;
     cursor: pointer;
 }
-.preview-swatch:hover {
+.theme-preview-container .preview-swatch:hover,
+.theme-editor-panel .preview-swatch:hover {
     outline: 2px solid var(--preview-color-primary);
     outline-offset: 1px;
 }
@@ -536,15 +538,25 @@ body .theme-preview-container .typography-muted {
     gap: 6px;
 }
 
-.theme-palette-panel {
-    background: var(--preview-color-bg-elevated);
-    border-top: 1px solid var(--preview-color-border-subtle);
-    padding: 8px 10px;
+/* Editor chrome below mock preview — uses live app theme, not preview vars */
+.theme-editor-panel {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    margin-top: 12px;
+    padding: 12px 14px;
 }
 
-.theme-palette-panel .typography-secondary,
-.theme-palette-panel .typography-muted {
-    color: var(--preview-color-text-secondary) !important;
+.theme-editor-panel .typography-secondary,
+.theme-editor-panel .typography-muted {
+    color: var(--color-text-secondary) !important;
+}
+
+.theme-editor-panel .editor-section-title {
+    color: var(--color-text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 8px;
 }
 
 .palette-toolbar {
@@ -967,11 +979,11 @@ class ThemeTab:
 
                 with ui.element("div").classes("w-full theme-preview-container"):
                     self.preview_container = ui.element("div").classes("w-full")
-                    self.palette_container = ui.element("div").classes(
-                        "w-full theme-palette-panel"
-                    )
+                    self._build_preview_ui(self.preview_container)
 
-                self._build_preview_ui(self.preview_container)
+                self.palette_container = ui.element("div").classes(
+                    "w-full theme-editor-panel"
+                )
                 self._build_palette_section()
 
     # ------------------------------------------------------------------ #
@@ -1015,6 +1027,10 @@ class ThemeTab:
             return
         self.palette_container.clear()
         with self.palette_container:
+            ui.label("Edit theme colors").classes("editor-section-title")
+            ui.label(
+                "Click a swatch to change a color. Changes preview above until you Apply."
+            ).classes("text-xs typography-secondary mb-2")
             self._build_color_palette(current_theme)
             self._build_palette_toolbar()
 
@@ -1152,7 +1168,7 @@ class ThemeTab:
 
     def _build_color_palette(self, current_theme):
         """Build clickable color palette swatches."""
-        ui.label("Color Palette").classes(
+        ui.label("Color swatches").classes(
             "text-xs font-semibold typography-secondary"
         ).style("margin-bottom: 6px;")
 
@@ -1180,17 +1196,24 @@ class ThemeTab:
     def _build_palette_toolbar(self) -> None:
         """Undo, redo, and discard controls below the color palette."""
         with ui.row().classes("palette-toolbar w-full"):
-            undo_btn = ui.button(
-                "Undo", icon="undo", on_click=self._undo_palette
-            ).props("dense flat size=sm")
-            redo_btn = ui.button(
-                "Redo", icon="redo", on_click=self._redo_palette
-            ).props("dense flat size=sm")
-            discard_btn = ui.button(
+            undo_btn = outline_button(
+                "Undo",
+                self._undo_palette,
+                icon="undo",
+                extra_classes="px-3 py-1",
+            )
+            redo_btn = outline_button(
+                "Redo",
+                self._redo_palette,
+                icon="redo",
+                extra_classes="px-3 py-1",
+            )
+            discard_btn = outline_button(
                 "Discard",
+                self._discard_palette_edits,
                 icon="restore",
-                on_click=self._discard_palette_edits,
-            ).props("dense outline size=sm")
+                extra_classes="px-3 py-1",
+            )
             self.ui_elements["palette_undo_btn"] = undo_btn
             self.ui_elements["palette_redo_btn"] = redo_btn
             self.ui_elements["palette_discard_btn"] = discard_btn

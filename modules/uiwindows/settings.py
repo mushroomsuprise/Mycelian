@@ -140,14 +140,53 @@ CSS = """
 }
 
 .tab-content {
-    padding: 1.5rem;
-    min-height: 400px;
+    padding: 1rem;
+    min-height: unset;
+    width: 100%;
+    max-width: 100%;
     background: var(--color-bg-elevated);
+    box-sizing: border-box;
+}
+
+.settings-tab-surface {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    box-sizing: border-box;
+}
+
+.settings-status-band {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    align-items: center;
+}
+
+.settings-form-grid {
+    width: 100%;
+}
+
+.settings-form-grid > * {
+    min-width: 0;
+}
+
+.settings-section {
+    margin-top: 0.25rem;
+}
+
+.settings-divider {
+    margin: 0.75rem 0;
+}
+
+.settings-toolbar {
+    gap: 0.5rem;
 }
 
 /* Style for the tabs */
 .settings-tabs {
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
 }
 
 .settings-tabs .q-tab__icon {
@@ -2916,7 +2955,7 @@ class SettingsUI:
             notify(f"Error starting database test: {str(e)}", type="negative")
             # Reset button state
             if "test_database_button" in self.ui_elements:
-                self.ui_elements["test_database_button"].set_text("Test Connection")
+                self.ui_elements["test_database_button"].set_text("Test")
                 self.ui_elements["test_database_button"].enable()
 
     def show_migration_dialog(self):
@@ -4383,7 +4422,7 @@ class SettingsUI:
 
             # Reset button state
             if "test_spotify_button" in self.ui_elements:
-                self.ui_elements["test_spotify_button"].set_text("Test Connection")
+                self.ui_elements["test_spotify_button"].set_text("Test")
                 self.ui_elements["test_spotify_button"].enable()
         except Exception as e:
             logger.error(f"Error cleaning up Spotify test: {str(e)}")
@@ -4671,7 +4710,7 @@ class SettingsUI:
 
             # Reset button state
             if "test_youtube_button" in self.ui_elements:
-                self.ui_elements["test_youtube_button"].set_text("Test Connection")
+                self.ui_elements["test_youtube_button"].set_text("Test")
                 self.ui_elements["test_youtube_button"].enable()
         except Exception as e:
             logger.error(f"Error cleaning up YouTube test: {str(e)}")
@@ -5042,45 +5081,43 @@ class SettingsUI:
                     # Create tab panels with lazy loading
                     self._settings_tab_containers = {}
 
+                    # Panel DOM order matches tab strip (for correct slide direction)
+                    settings_panel_order = [
+                        "Twitch",
+                        "OBS",
+                        "PSN",
+                        "Spotify",
+                        "YouTube",
+                        "Game Hooks",
+                        "Database",
+                        "Statistics",
+                        "Theme",
+                        "App Settings",
+                        "About",
+                    ]
+
                     with tab_panels_container:
-                        # App Settings (load immediately since it's the default)
-                        with ui.tab_panel("App Settings").classes("tab-content"):
-                            container = ui.column().classes("w-full gap-4")
-                            self._settings_tab_containers["App Settings"] = container
-                            with StartupTimer("settings_app_settings_tab"):
-                                self._tabs_by_name["App Settings"].build(container)
-                            self._settings_loaded_tabs.add("App Settings")
-
-                        # Other tabs - lazy load
-                        tab_definitions = [
-                            ("Twitch", "settings_twitch_tab"),
-                            ("Theme", "settings_theme_tab"),
-                            ("PSN", "settings_psn_tab"),
-                            ("Spotify", "settings_spotify_tab"),
-                            ("YouTube", "settings_youtube_tab"),
-                            ("OBS", "settings_obs_tab"),
-                            ("Game Hooks", "settings_game_hooks_tab"),
-                            ("Database", "settings_database_tab"),
-                            ("Statistics", "settings_statistics_tab"),
-                            ("About", "settings_about_tab"),
-                        ]
-
-                        for tab_name, timer_name in tab_definitions:
+                        for tab_name in settings_panel_order:
                             with ui.tab_panel(tab_name).classes("tab-content"):
                                 container = ui.column().classes("w-full gap-4")
                                 self._settings_tab_containers[tab_name] = container
-                                # Store references to loading elements for later removal
-                                spinner = (
-                                    ui.spinner("dots")
-                                    .classes("mx-auto")
-                                    .props("size=2rem")
-                                )
-                                label = ui.label("Loading...").classes(
-                                    "text-center muted-text"
-                                )
-                                # Store references so we can clear them explicitly
-                                container._loading_spinner = spinner
-                                container._loading_label = label
+                                if tab_name == "App Settings":
+                                    with StartupTimer("settings_app_settings_tab"):
+                                        self._tabs_by_name["App Settings"].build(
+                                            container
+                                        )
+                                    self._settings_loaded_tabs.add("App Settings")
+                                else:
+                                    spinner = (
+                                        ui.spinner("dots")
+                                        .classes("mx-auto")
+                                        .props("size=2rem")
+                                    )
+                                    label = ui.label("Loading...").classes(
+                                        "text-center muted-text"
+                                    )
+                                    container._loading_spinner = spinner
+                                    container._loading_label = label
 
                     # Add tab change handler for lazy loading
                     def on_settings_tab_change(e):
@@ -5098,6 +5135,17 @@ class SettingsUI:
                         nonlocal previous_settings_tab
                         current_tab = tabs.value
                         if current_tab != previous_settings_tab:
+                            from ..ui_tab_transitions import (
+                                SETTINGS_TAB_ORDER,
+                                apply_tab_slide_direction,
+                            )
+
+                            apply_tab_slide_direction(
+                                tab_panels_container,
+                                previous_settings_tab,
+                                current_tab,
+                                SETTINGS_TAB_ORDER,
+                            )
                             if (
                                 current_tab in self._settings_tab_containers
                                 and current_tab not in self._settings_loaded_tabs

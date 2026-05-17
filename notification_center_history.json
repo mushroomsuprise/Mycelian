@@ -266,5 +266,105 @@
         "settings_subtab": "Twitch"
       }
     ]
+  },
+  {
+    "id": "a942bce1-7cc9-4501-8452-2433078483c5",
+    "ts": 1778977704.9600909,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "07ef42f0-94a3-45fd-ad9f-69625f971a5d",
+    "ts": 1778977758.7520971,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "9817e4ae-38ec-4897-b224-8864d11091a7",
+    "ts": 1778978107.047858,
+    "message": "Disabled 2 connector(s) in \"Test\"",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "4a2db732-d372-41f7-a6e5-3b643fcefd78",
+    "ts": 1778978107.973547,
+    "message": "Enabled 2 connector(s) in \"Test\"",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "ab7c2076-4348-4233-a05f-a347eedd5c96",
+    "ts": 1778979567.066823,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "c25ca49a-17d7-46c7-9dba-bd644317400e",
+    "ts": 1778979941.064397,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "8fede0ed-c54d-4f9b-9763-d49ff8b845b0",
+    "ts": 1778980265.909628,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "41c774c8-c98e-4ecc-bcac-8619e9e3fcf0",
+    "ts": 1778980377.8230028,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
   }
 ]

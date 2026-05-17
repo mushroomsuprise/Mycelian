@@ -10,9 +10,6 @@ FF7 Hook
 Template Previewer:
     [] - When data is changed, it currently refreshes the entire previewer, i would prefer it does not refresh the entire thing, just modify what changed.
 
-Template Creator:
-    [] - Add ability to set animations to elements
-
 Chat Improvements:
     [] - Create a .spore.json sidecar file for the Spore Studio module
 

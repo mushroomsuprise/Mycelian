@@ -28,6 +28,7 @@ import time
 
 from nicegui import ui
 from ..notification_engine import notify
+from ..ui_buttons import outline_button, primary_button, destructive_button
 
 from ..help_system.contextual_help import set_alerts_ui_references
 
@@ -203,15 +204,22 @@ def update_tts_custom_message_visibility(alert_type: str):
     return
 
 
+_ALERT_EXPANSION_CLASSES = "content-card mb-1 w-full"
+_ALERT_FIELD_GROUP_CLASSES = "w-full gap-px form-group py-2 px-1 rounded"
+
+
+def _alert_expansion(title: str, *, icon: str | None = None):
+    """Section expansion matching Source Settings category style."""
+    if icon:
+        return ui.expansion(title, icon=icon).classes(_ALERT_EXPANSION_CLASSES)
+    return ui.expansion(title).classes(_ALERT_EXPANSION_CLASSES)
+
+
 def create_tts_settings_section(alert_type: str):
     """Create the text-to-speech settings section for alerts."""
-    with ui.expansion("TTS", icon="record_voice_over").classes(
-        "w-full bg-theme-base rounded-lg overflow-hidden"
-    ).style("border: 1px solid var(--color-border-default);"):
-        with ui.grid(columns=1).classes("w-full gap-2 p-2"):
-            with ui.card().classes("w-full p-3 rounded-lg").style(
-                "background-color: var(--color-bg-surface);"
-            ):
+    with _alert_expansion("TTS", icon="record_voice_over"):
+        with ui.grid(columns=1).classes("w-full gap-x-2 gap-y-px"):
+            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("Speech Playback").classes("font-medium mb-2 text-sm")
                 alert_settings_state.get_elements(alert_type)["tts_enabled_switch"] = (
                     ui.switch("Enable Text-to-Speech", value=False).classes(
@@ -231,9 +239,7 @@ def create_tts_settings_section(alert_type: str):
                     "Speak this alert using the browser text-to-speech system"
                 ).classes("bg-theme-surface")
 
-            with ui.card().classes("w-full p-3 rounded-lg").style(
-                "background-color: var(--color-bg-surface);"
-            ):
+            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("Speech Source").classes("font-medium mb-2 text-sm")
                 alert_settings_state.get_elements(alert_type)["tts_source_select"] = (
                     ui.select(
@@ -711,21 +717,18 @@ def create_alert_type_panel(alert_type: str):
                             "that don't match any configured month alert"
                         ).classes("bg-theme-surface")
 
-            # Settings sections in a scrollable container with improved styling
-            with ui.element("div").classes("content-card"):
-                # Create a more compact layout with a grid of settings
-                with ui.grid(columns=2).classes("w-full gap-4"):
-                    # Left column - General and Audio settings
+            with ui.grid(columns=2).classes("w-full gap-4"):
                     with ui.column().classes("w-full gap-2"):
-                        # General Settings
-                        with ui.expansion("General", icon="settings").classes(
-                            "w-full bg-theme-base rounded-lg overflow-hidden"
-                        ).style("border: 1px solid var(--color-border-default);"):
-                            with ui.grid(columns=2).classes("w-full gap-2 p-2"):
+                        with _alert_expansion("General", icon="settings"):
+                            with ui.grid(columns=2).classes("w-full gap-x-2 gap-y-px"):
                                 # For points tab, add enable alert toggle
                                 if alert_type == "points":
-                                    with ui.card().classes("w-full p-3 rounded-lg col-span-2").style("background-color: var(--color-bg-surface);"):
-                                        ui.label("Alert Configuration").classes("font-medium mb-2 text-sm")
+                                    with ui.column().classes(
+                                        f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"
+                                    ):
+                                        ui.label("Alert Configuration").classes(
+                                            "font-medium mb-2 text-sm"
+                                        )
                                         alert_settings_state.get_elements(alert_type)[
                                             "enable_alert_switch"
                                         ] = ui.switch("Enable as Alert").classes(
@@ -748,7 +751,7 @@ def create_alert_type_panel(alert_type: str):
                                             "Enable this point reward as an alert in the app"
                                         ).classes("bg-theme-surface")
 
-                                with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
+                                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                                     ui.label("Timing").classes("font-medium mb-2 text-sm")
                                     alert_settings_state.get_elements(alert_type)[
                                         "duration_input"
@@ -772,7 +775,7 @@ def create_alert_type_panel(alert_type: str):
                                         "How long the alert will display (seconds)"
                                     ).classes("bg-theme-surface")
 
-                                with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
+                                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                                     ui.label("Behavior").classes("font-medium mb-2 text-sm")
                                     alert_settings_state.get_elements(alert_type)[
                                         "stackable_switch"
@@ -801,93 +804,20 @@ def create_alert_type_panel(alert_type: str):
                         create_audio_settings_section(alert_type)
                         create_tts_settings_section(alert_type)
 
-                    # Right column - Visual settings and Preview
                     with ui.column().classes("w-full gap-2"):
-                        # Visual Settings
-                        with ui.expansion("Visual", icon="image").classes(
-                            "w-full bg-theme-base rounded-lg overflow-hidden"
-                        ).style("border: 1px solid var(--color-border-default);"):
-                            with ui.grid(columns=1).classes("w-full gap-2 p-2"):
-                                with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
-                                    ui.label("GIF Directory").classes("font-medium mb-2 text-sm")
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "gif_dir_input"
-                                    ] = ui.input("GIF Directory").classes(
-                                        "w-full bg-theme-base rounded-md text-sm"
-                                    )
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "gif_dir_input"
-                                    ].on(
-                                        "change",
-                                        lambda e, at=alert_type: track_field_change(
-                                            "gif_dir_input",
-                                            alert_settings_state.get_elements(at)[
-                                                "gif_dir_input"
-                                            ],
-                                            e,
-                                            at,
-                                        ),
-                                    )
-                                    ui.tooltip(
-                                        "Directory containing the GIF file"
-                                    ).classes("bg-theme-surface")
-
-                                with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
-                                    ui.label("GIF File").classes("font-medium mb-2 text-sm")
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "gif_file_input"
-                                    ] = ui.input("GIF File").classes(
-                                        "w-full bg-theme-base rounded-md text-sm"
-                                    )
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "gif_file_input"
-                                    ].on(
-                                        "change",
-                                        lambda e, at=alert_type: track_field_change(
-                                            "gif_file_input",
-                                            alert_settings_state.get_elements(at)[
-                                                "gif_file_input"
-                                            ],
-                                            e,
-                                            at,
-                                        ),
-                                    )
-                                    ui.tooltip("Name of the GIF file").classes(
-                                        "bg-theme-surface"
-                                    )
-
-                                with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
-                                    ui.label("File Selection").classes("font-medium mb-2 text-sm")
-                                    gif_browse_btn = ui.button(
-                                        "Browse",
-                                        icon="folder",
-                                        on_click=lambda: handle_browse("gif"),
-                                    ).classes(
-                                        "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
-                                    )
-                                    ui.tooltip("Browse for the GIF file").classes(
-                                        "bg-theme-surface"
-                                    )
-
-                        # Randomizer Settings
+                        create_visual_settings_section(alert_type)
                         create_randomizer_settings_section(alert_type)
-
-                        # Twitch Options (only for points tab)
                         if alert_type == "points":
-                            with ui.expansion("Twitch Options", icon="api").classes(
-                                "w-full bg-theme-base rounded-lg overflow-hidden"
-                            ).style("border: 1px solid var(--color-border-default);"):
-                                create_twitch_options_section(alert_type)
+                            create_twitch_options_section(alert_type)
 
             # Save and Test buttons at the bottom
             with ui.row().classes("w-full justify-end mt-2 gap-2"):
                 with ui.row().classes("items-center"):
-                    test_btn = ui.button(
+                    test_btn = outline_button(
                         "Test Alert",
+                        lambda: test_alert(alert_type),
                         icon="play_arrow",
-                        on_click=lambda: test_alert(alert_type),
-                    ).classes(
-                        "btn-secondary transition-colors duration-200 text-sm"
+                        extra_classes="text-sm",
                     )
                     ui.tooltip("Test the current alert settings").classes(
                         "bg-theme-surface"
@@ -3123,19 +3053,13 @@ def create_points_alert_panel():
                 "channel_points_locked_banner"
             ] = channel_points_banner
 
-            # Settings sections in a scrollable container
-            with ui.element("div").classes("content-card"):
-                # Create a layout similar to other alert types but with Twitch integration
-                with ui.grid(columns=2).classes("w-full gap-4"):
-                    # Left column - General and Audio settings
+            with ui.grid(columns=2).classes("w-full gap-4"):
                     with ui.column().classes("w-full gap-2"):
-                        # General Settings
-                        with ui.expansion("General", icon="settings").classes(
-                            "w-full bg-theme-base rounded-lg overflow-hidden"
-                        ):
-                            with ui.grid(columns=2).classes("w-full gap-2 p-2"):
-                                # Enable as alert toggle
-                                with ui.row().classes("w-full items-center col-span-2"):
+                        with _alert_expansion("General", icon="settings"):
+                            with ui.grid(columns=2).classes("w-full gap-x-2 gap-y-px"):
+                                with ui.column().classes(
+                                    f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"
+                                ):
                                     alert_settings_state.get_elements(alert_type)[
                                         "enable_alert_switch"
                                     ] = ui.switch("Enable as Alert").classes(
@@ -3158,7 +3082,8 @@ def create_points_alert_panel():
                                         "Enable this point reward as an alert in the app"
                                     ).classes("bg-theme-surface")
 
-                                with ui.row().classes("w-full items-center"):
+                                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
+                                    ui.label("Timing").classes("font-medium mb-2 text-sm")
                                     alert_settings_state.get_elements(alert_type)[
                                         "duration_input"
                                     ] = ui.number(
@@ -3181,7 +3106,8 @@ def create_points_alert_panel():
                                         "How long the alert will display (seconds)"
                                     ).classes("bg-theme-surface")
 
-                                with ui.row().classes("w-full items-center"):
+                                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
+                                    ui.label("Behavior").classes("font-medium mb-2 text-sm")
                                     alert_settings_state.get_elements(alert_type)[
                                         "stackable_switch"
                                     ] = ui.switch("Stackable").classes(
@@ -3204,30 +3130,22 @@ def create_points_alert_panel():
                                         "Allow multiple alerts of this type to stack"
                                     ).classes("bg-theme-surface")
 
-                        # Audio Settings (same as other alert types)
                         create_audio_settings_section(alert_type)
                         create_tts_settings_section(alert_type)
 
-                    # Right column - Visual and Twitch settings
                     with ui.column().classes("w-full gap-2"):
-                        # Visual Settings (same as other alert types)
                         create_visual_settings_section(alert_type)
-
-                        # Randomizer Settings
                         create_randomizer_settings_section(alert_type)
-
-                        # Twitch Options (unique to points)
                         create_twitch_options_section(alert_type)
 
             # Save and Test buttons at the bottom
             with ui.row().classes("w-full justify-end mt-2 gap-2"):
                 with ui.row().classes("items-center"):
-                    test_btn = ui.button(
+                    test_btn = outline_button(
                         "Test Alert",
+                        lambda: test_alert(alert_type),
                         icon="play_arrow",
-                        on_click=lambda: test_alert(alert_type),
-                    ).classes(
-                        "btn-secondary transition-colors duration-200 text-sm"
+                        extra_classes="text-sm",
                     )
                     ui.tooltip("Test the current alert settings").classes(
                         "bg-theme-surface"
@@ -3278,12 +3196,9 @@ def create_points_alert_panel():
 
 def create_audio_settings_section(alert_type: str):
     """Create the audio settings section for alerts"""
-    with ui.expansion("Audio", icon="volume_up").classes(
-        "w-full bg-theme-base rounded-lg overflow-hidden"
-    ).style("border: 1px solid var(--color-border-default);"):
-        with ui.column().classes("w-full gap-2 p-2"):
-            # Fade In, Fade Out, and Volume all on the same card
-            with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
+    with _alert_expansion("Audio", icon="volume_up"):
+        with ui.column().classes("w-full gap-x-2 gap-y-px"):
+            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("Audio Controls").classes("font-medium mb-3 text-sm")
                 with ui.row().classes("w-full items-center gap-4"):
                     # Fade In
@@ -3365,7 +3280,7 @@ def create_audio_settings_section(alert_type: str):
 
             # Only show audio_only toggle for points alerts
             if alert_type == "points":
-                with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
+                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                     ui.label("Playback Mode").classes("font-medium mb-2 text-sm")
                     alert_settings_state.get_elements(alert_type)[
                         "audio_only_switch"
@@ -3386,7 +3301,7 @@ def create_audio_settings_section(alert_type: str):
                     ).classes("bg-theme-surface")
 
             # Primary Sound
-            with ui.card().classes("w-full p-2 bg-theme-surface rounded-lg col-span-2"):
+            with ui.column().classes(f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"):
                 ui.label("Primary Sound").classes("font-medium mb-1 text-sm")
                 with ui.row().classes("w-full items-center"):
                     alert_settings_state.get_elements(alert_type)[
@@ -3445,12 +3360,9 @@ def create_audio_settings_section(alert_type: str):
 
 def create_randomizer_settings_section(alert_type: str):
     """Create the randomizer settings section for random and extra random sounds"""
-    with ui.expansion("Randomizer", icon="shuffle").classes(
-        "w-full bg-theme-base rounded-lg overflow-hidden"
-    ).style("border: 1px solid var(--color-border-default);"):
-        with ui.grid(columns=1).classes("w-full gap-2 p-2"):
-            # Random Sound
-            with ui.card().classes("w-full p-2 bg-theme-surface rounded-lg"):
+    with _alert_expansion("Randomizer", icon="shuffle"):
+        with ui.grid(columns=1).classes("w-full gap-x-2 gap-y-px"):
+            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("Random Sound").classes("font-medium mb-1 text-sm")
                 with ui.row().classes("w-full items-center"):
                     alert_settings_state.get_elements(alert_type)[
@@ -3527,8 +3439,7 @@ def create_randomizer_settings_section(alert_type: str):
                         "Browse for directory containing random sound files"
                     ).classes("bg-theme-surface")
 
-            # Extra Random Sound
-            with ui.card().classes("w-full p-2 bg-theme-surface rounded-lg"):
+            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("Extra Random Sound").classes("font-medium mb-1 text-sm")
                 with ui.row().classes("w-full items-center"):
                     alert_settings_state.get_elements(alert_type)[
@@ -3606,11 +3517,9 @@ def create_randomizer_settings_section(alert_type: str):
 
 def create_visual_settings_section(alert_type: str):
     """Create the visual settings section for alerts"""
-    with ui.expansion("Visual", icon="image").classes(
-        "w-full bg-theme-base rounded-lg overflow-hidden"
-    ).style("border: 1px solid var(--color-border-default);"):
-        with ui.grid(columns=1).classes("w-full gap-2 p-2"):
-            with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
+    with _alert_expansion("Visual", icon="image"):
+        with ui.grid(columns=1).classes("w-full gap-x-2 gap-y-px"):
+            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("GIF Directory").classes("font-medium mb-2 text-sm")
                 alert_settings_state.get_elements(alert_type)["gif_dir_input"] = (
                     ui.input(
@@ -3630,7 +3539,7 @@ def create_visual_settings_section(alert_type: str):
                     "bg-theme-surface"
                 )
 
-            with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
+            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("GIF File").classes("font-medium mb-2 text-sm")
                 alert_settings_state.get_elements(alert_type)["gif_file_input"] = (
                     ui.input(
@@ -3648,7 +3557,7 @@ def create_visual_settings_section(alert_type: str):
                 )
                 ui.tooltip("Name of the GIF file").classes("bg-theme-surface")
 
-            with ui.card().classes("w-full p-3 rounded-lg").style("background-color: var(--color-bg-surface);"):
+            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("File Selection").classes("font-medium mb-2 text-sm")
                 gif_browse_btn = ui.button(
                     "Browse", icon="folder", on_click=lambda: handle_browse("gif")
@@ -3662,9 +3571,7 @@ def create_visual_settings_section(alert_type: str):
 
 def create_twitch_options_section(alert_type: str):
     """Create the Twitch options section for point rewards"""
-    with ui.expansion("Twitch Options", icon="api").classes(
-        "w-full bg-theme-base rounded-lg overflow-hidden"
-    ).style("border: 1px solid var(--color-border-default);"):
+    with _alert_expansion("Twitch Options", icon="api"):
         with ui.grid(columns=2).classes("w-full gap-2 p-2"):
             # Basic reward info
             with ui.row().classes("w-full items-center"):

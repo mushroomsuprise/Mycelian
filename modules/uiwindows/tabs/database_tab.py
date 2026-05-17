@@ -8,6 +8,13 @@ from typing import Dict, Any, Optional, List
 
 from nicegui import ui
 from ...notification_engine import notify
+from ...ui_buttons import outline_button, primary_button
+from ...ui_settings_layout import (
+    settings_form_grid,
+    settings_section,
+    settings_status_band,
+    settings_surface,
+)
 
 from ... import dataobjects
 from ...config_manager import config_manager
@@ -44,7 +51,9 @@ class DatabaseViewer:
             with (
                 ui.card()
                 .classes("w-full h-full flex flex-col")
-                .style("max-width: 100vw; max-height: 100vh; background: var(--color-bg-base);")
+                .style(
+                    "max-width: 100vw; max-height: 100vh; background: var(--color-bg-base);"
+                )
             ):
                 # Header
                 self._build_header()
@@ -82,7 +91,9 @@ class DatabaseViewer:
         with (
             ui.row()
             .classes("w-full items-center justify-between p-4")
-            .style("background: var(--color-bg-elevated); border-bottom: 1px solid var(--color-border-default);")
+            .style(
+                "background: var(--color-bg-elevated); border-bottom: 1px solid var(--color-border-default);"
+            )
         ):
             with ui.row().classes("items-center gap-3"):
                 ui.icon("storage", size="md").classes("text-theme-primary")
@@ -265,7 +276,9 @@ class DatabaseViewer:
             with (
                 ui.row()
                 .classes("w-full p-3 items-center gap-2")
-                .style("background: var(--color-bg-elevated); border-bottom: 1px solid var(--color-border-default);")
+                .style(
+                    "background: var(--color-bg-elevated); border-bottom: 1px solid var(--color-border-default);"
+                )
             ):
                 ui.icon("folder_open", size="sm").classes("secondary-text")
                 self._breadcrumb_container = ui.row().classes(
@@ -288,7 +301,9 @@ class DatabaseViewer:
         with self._content_container:
             with ui.column().classes("w-full items-center justify-center py-12"):
                 ui.icon("storage", size="xl").classes("muted-text mb-4")
-                ui.label("Select a path from the tree").classes("text-lg secondary-text")
+                ui.label("Select a path from the tree").classes(
+                    "text-lg secondary-text"
+                )
                 ui.label(f"{len(self.all_paths)} paths available in database").classes(
                     "text-sm muted-text mt-2"
                 )
@@ -325,7 +340,9 @@ class DatabaseViewer:
                         ui.button(
                             part,
                             on_click=lambda p=path_copy: self._select_path(p),
-                        ).props("flat dense").classes("text-theme-primary-light text-xs")
+                        ).props("flat dense").classes(
+                            "text-theme-primary-light text-xs"
+                        )
 
     def _select_path(self, path: str) -> None:
         """Select and display a path"""
@@ -370,7 +387,9 @@ class DatabaseViewer:
             with (
                 ui.card()
                 .classes("w-full")
-                .style("background: var(--color-bg-base); border: 1px solid var(--color-border-default);")
+                .style(
+                    "background: var(--color-bg-base); border: 1px solid var(--color-border-default);"
+                )
             ):
                 with (
                     ui.row()
@@ -516,13 +535,13 @@ class DatabaseViewer:
     def _confirm_delete(self, path: str) -> None:
         """Show delete confirmation dialog"""
         with ui.dialog() as confirm_dialog:
-            with ui.card().style("background: var(--color-bg-base); border: 1px solid var(--color-error);"):
+            with ui.card().style(
+                "background: var(--color-bg-base); border: 1px solid var(--color-error);"
+            ):
                 with ui.column().classes("p-4 gap-4"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("warning", size="md").classes("text-red-400")
-                        ui.label("Confirm Delete").classes(
-                            "text-lg font-bold"
-                        )
+                        ui.label("Confirm Delete").classes("text-lg font-bold")
 
                     ui.label(f"Delete path: {path}?").classes("secondary-text")
                     ui.label("This action cannot be undone.").classes(
@@ -653,7 +672,9 @@ class DatabaseViewer:
         with (
             ui.row()
             .classes("w-full items-center justify-between p-2 px-4")
-            .style("background: var(--color-bg-elevated); border-top: 1px solid var(--color-border-default);")
+            .style(
+                "background: var(--color-bg-elevated); border-top: 1px solid var(--color-border-default);"
+            )
         ):
             self._status_label = ui.label(
                 f"{len(self.all_paths)} paths loaded"
@@ -738,7 +759,10 @@ class DatabaseTab:
             ):
                 firebase_issues = status_info.get("config_issues", [])
                 signature = "|".join(firebase_issues) if firebase_issues else ""
-                if firebase_issues and signature != self._last_firebase_issues_signature:
+                if (
+                    firebase_issues
+                    and signature != self._last_firebase_issues_signature
+                ):
                     issue_text = "Firebase Configuration Issues:\n" + "\n".join(
                         f"• {issue}"
                         for issue in firebase_issues[:3]  # Limit to 3 issues
@@ -766,9 +790,7 @@ class DatabaseTab:
             notify("Testing database connection...", type="info")
 
             if database_manager.test_connection():
-                notify(
-                    "Database connection successful!", type="positive", timeout=3000
-                )
+                notify("Database connection successful!", type="positive", timeout=3000)
             else:
                 notify(
                     "Database connection failed. Check configuration and logs.",
@@ -802,8 +824,12 @@ class DatabaseTab:
                 return
 
             with ui.dialog() as migration_dialog:
-                with ui.card().classes("w-full max-w-lg").style(
-                    "background: var(--color-bg-base); border: 1px solid var(--color-border-default);"
+                with (
+                    ui.card()
+                    .classes("w-full max-w-lg")
+                    .style(
+                        "background: var(--color-bg-base); border: 1px solid var(--color-border-default);"
+                    )
                 ):
                     ui.label("Migrate database").classes("text-xl font-bold mb-2")
                     ui.label(
@@ -813,17 +839,15 @@ class DatabaseTab:
 
                     with ui.row().classes("w-full items-center mb-2"):
                         ui.label("From:").classes("w-20")
-                        source_select = (
-                            ui.select(
-                                options=available_dbs,
-                                value=(
-                                    database_manager.get_config().database_type
-                                    if database_manager.get_config().database_type
-                                    in available_dbs
-                                    else available_dbs[0]
-                                ),
-                            ).classes("flex-1")
-                        )
+                        source_select = ui.select(
+                            options=available_dbs,
+                            value=(
+                                database_manager.get_config().database_type
+                                if database_manager.get_config().database_type
+                                in available_dbs
+                                else available_dbs[0]
+                            ),
+                        ).classes("flex-1")
 
                     with ui.row().classes("w-full items-center mb-4"):
                         ui.label("To:").classes("w-20")
@@ -838,7 +862,7 @@ class DatabaseTab:
 
                     ui.label(
                         "Existing data at the same paths on the target may be overwritten."
-                    ).classes("text-orange-600 mb-4")
+                    ).classes("text-theme-warning mb-4")
 
                     with ui.row().classes("w-full justify-end gap-2"):
                         ui.button("Cancel", on_click=migration_dialog.close).props(
@@ -939,7 +963,9 @@ class DatabaseTab:
                         )
                         if database_manager.update_config(**switch_cfg.__dict__):
                             buf.database_type = target_type
-                            if not config_manager.update_database_config(**buf.__dict__):
+                            if not config_manager.update_database_config(
+                                **buf.__dict__
+                            ):
                                 logger.error(
                                     "Migration OK but failed to write config.json"
                                 )
@@ -1052,218 +1078,191 @@ class DatabaseTab:
 
     def build(self, parent_container) -> None:
         self._load_from_config()
-        with parent_container:
-            with ui.card().classes("content-section w-full"):
-                ui.label("Database Configuration").classes("text-xl font-bold mb-4")
+        with settings_surface(parent_container):
+            ui.label("Database Configuration").classes("text-lg font-bold")
 
-                with ui.column().classes("w-full gap-4"):
-                    ui.label("Connection Status").classes("text-lg font-semibold")
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Status:").classes("w-40")
-                        self.ui_elements["status_label"] = ui.label(
-                            "Loading..."
-                        ).classes("font-semibold")
+            with settings_status_band():
+                with ui.column().classes("gap-0"):
+                    ui.label("Status").classes("text-xs secondary-text")
+                    self.ui_elements["status_label"] = ui.label(
+                        "Loading..."
+                    ).classes("font-semibold text-sm")
+                with ui.column().classes("gap-0"):
+                    ui.label("Type").classes("text-xs secondary-text")
+                    self.ui_elements["type_label"] = ui.label("N/A").classes(
+                        "font-semibold text-sm"
+                    )
+                with ui.column().classes("gap-0"):
+                    ui.label("Last check").classes("text-xs secondary-text")
+                    self.ui_elements["last_check_label"] = ui.label(
+                        "Never"
+                    ).classes("secondary-text text-sm")
 
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Database Type:").classes("w-40")
-                        self.ui_elements["type_label"] = ui.label("N/A").classes(
-                            "font-semibold"
+            with settings_section("Configuration"):
+                with settings_form_grid(columns=3):
+                    self.ui_elements["database_type"] = (
+                        ui.select(
+                            label="Database type",
+                            options=["sql", "firebase", "mongodb"],
+                            value=self.buffer.database_type,
                         )
-
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Last Check:").classes("w-40")
-                        self.ui_elements["last_check_label"] = ui.label(
-                            "Never"
-                        ).classes("secondary-text")
-
-                    ui.separator().classes("divider")
-
-                    # Connection controls
-                    ui.label("Connection Controls").classes("text-lg font-semibold")
-                    with ui.row().classes("w-full gap-2"):
-                        self.ui_elements["test_button"] = ui.button(
-                            "Test Connection",
-                            on_click=self._test_connection,
-                        ).props("icon=wifi_tethering outline")
-
-                        self.ui_elements["migrate_button"] = ui.button(
-                            "Migrate Database",
-                            on_click=self._show_migration_dialog,
-                        ).props("icon=sync_alt outline")
-
-                        self.ui_elements["refresh_button"] = ui.button(
-                            "Refresh Status",
-                            on_click=self._refresh_status,
-                        ).props("icon=refresh outline")
-
-                        self.ui_elements["view_data_button"] = ui.button(
-                            "View Data",
-                            on_click=self._show_data_viewer_dialog,
-                        ).props("icon=visibility outline")
-
-                    ui.separator().classes("divider")
-
-                    # Configuration
-                    ui.label("Configuration").classes("text-lg font-semibold")
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Database Type:").classes("w-40")
-                        self.ui_elements["database_type"] = (
-                            ui.select(
-                                options=["sql", "firebase", "mongodb"],
-                                value=self.buffer.database_type,
-                            )
-                            .classes("w-48")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "database_type",
-                                    self._event_select_value(e)
-                                    or self.ui_elements["database_type"].value,
+                        .classes("w-full")
+                        .on(
+                            "change",
+                            lambda e: self._set(
+                                "database_type",
+                                self._event_select_value(e)
+                                or self.ui_elements["database_type"].value,
+                            ),
+                        )
+                    )
+                    self.ui_elements["sql_database_path"] = (
+                        ui.input(
+                            label="SQLite path",
+                            value=self.buffer.sql_database_path,
+                            placeholder="mycelian.db",
+                        )
+                        .classes("w-full")
+                        .on(
+                            "change",
+                            lambda e: self._set(
+                                "sql_database_path",
+                                getattr(e, "args", [getattr(e, "value", "")])[0]
+                                or "mycelian.db",
+                            ),
+                        )
+                    )
+                    self.ui_elements["firebase_service_account_path"] = (
+                        ui.input(
+                            label="Firebase key file",
+                            value=self.buffer.firebase_service_account_path,
+                            placeholder="ServiceAccountKey.json",
+                        )
+                        .classes("w-full")
+                        .on(
+                            "change",
+                            lambda e: self._set(
+                                "firebase_service_account_path",
+                                getattr(e, "args", [getattr(e, "value", "")])[0]
+                                or "",
+                            ),
+                        )
+                    )
+                    self.ui_elements["firebase_database_url"] = (
+                        ui.input(
+                            label="Firebase URL",
+                            value=self.buffer.firebase_database_url,
+                            placeholder="https://...firebaseio.com/",
+                        )
+                        .classes("w-full")
+                        .on(
+                            "change",
+                            lambda e: self._set(
+                                "firebase_database_url",
+                                getattr(e, "args", [getattr(e, "value", "")])[0]
+                                or "",
+                            ),
+                        )
+                    )
+                    self.ui_elements["mongodb_connection_string"] = (
+                        ui.input(
+                            label="Mongo URI",
+                            value=self.buffer.mongodb_connection_string,
+                            placeholder="mongodb://localhost:27017/",
+                        )
+                        .classes("w-full")
+                        .on(
+                            "change",
+                            lambda e: self._set(
+                                "mongodb_connection_string",
+                                getattr(e, "args", [getattr(e, "value", "")])[0]
+                                or "",
+                            ),
+                        )
+                    )
+                    self.ui_elements["mongodb_database_name"] = (
+                        ui.input(
+                            label="Mongo DB name",
+                            value=self.buffer.mongodb_database_name,
+                            placeholder="mycelian",
+                        )
+                        .classes("w-full")
+                        .on(
+                            "change",
+                            lambda e: self._set(
+                                "mongodb_database_name",
+                                getattr(e, "args", [getattr(e, "value", "")])[0]
+                                or "mycelian",
+                            ),
+                        )
+                    )
+                    self.ui_elements["connection_timeout"] = (
+                        ui.number(
+                            label="Timeout (s)",
+                            value=self.buffer.connection_timeout,
+                            min=5,
+                            max=300,
+                            step=5,
+                        )
+                        .classes("w-full")
+                        .on(
+                            "change",
+                            lambda e: self._set(
+                                "connection_timeout",
+                                int(
+                                    getattr(e, "args", [getattr(e, "value", 30)])[0]
+                                    or 30
                                 ),
-                            )
+                            ),
                         )
+                    )
+                    self.ui_elements["retry_attempts"] = (
+                        ui.number(
+                            label="Retry attempts",
+                            value=self.buffer.retry_attempts,
+                            min=1,
+                            max=10,
+                            step=1,
+                        )
+                        .classes("w-full")
+                        .on(
+                            "change",
+                            lambda e: self._set(
+                                "retry_attempts",
+                                int(
+                                    getattr(e, "args", [getattr(e, "value", 3)])[0]
+                                    or 3
+                                ),
+                            ),
+                        )
+                    )
 
-                    # SQL path
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("SQLite Path:").classes("w-40")
-                        self.ui_elements["sql_database_path"] = (
-                            ui.input(
-                                value=self.buffer.sql_database_path,
-                                placeholder="mycelian.db",
-                            )
-                            .classes("flex-1")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "sql_database_path",
-                                    getattr(e, "args", [getattr(e, "value", "")])[0]
-                                    or "mycelian.db",
-                                ),
-                            )
-                        )
-
-                    # Firebase
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Firebase Key:").classes("w-40")
-                        self.ui_elements["firebase_service_account_path"] = (
-                            ui.input(
-                                value=self.buffer.firebase_service_account_path,
-                                placeholder="ServiceAccountKey.json",
-                            )
-                            .classes("flex-1")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "firebase_service_account_path",
-                                    getattr(e, "args", [getattr(e, "value", "")])[0]
-                                    or "",
-                                ),
-                            )
-                        )
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Firebase URL:").classes("w-40")
-                        self.ui_elements["firebase_database_url"] = (
-                            ui.input(
-                                value=self.buffer.firebase_database_url,
-                                placeholder="https://...firebaseio.com/",
-                            )
-                            .classes("flex-1")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "firebase_database_url",
-                                    getattr(e, "args", [getattr(e, "value", "")])[0]
-                                    or "",
-                                ),
-                            )
-                        )
-
-                    # Mongo
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Mongo URI:").classes("w-40")
-                        self.ui_elements["mongodb_connection_string"] = (
-                            ui.input(
-                                value=self.buffer.mongodb_connection_string,
-                                placeholder="mongodb://localhost:27017/",
-                            )
-                            .classes("flex-1")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "mongodb_connection_string",
-                                    getattr(e, "args", [getattr(e, "value", "")])[0]
-                                    or "",
-                                ),
-                            )
-                        )
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Mongo DB Name:").classes("w-40")
-                        self.ui_elements["mongodb_database_name"] = (
-                            ui.input(
-                                value=self.buffer.mongodb_database_name,
-                                placeholder="mycelian",
-                            )
-                            .classes("w-48")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "mongodb_database_name",
-                                    getattr(e, "args", [getattr(e, "value", "")])[0]
-                                    or "mycelian",
-                                ),
-                            )
-                        )
-
-                    # Common
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Timeout (s):").classes("w-40")
-                        self.ui_elements["connection_timeout"] = (
-                            ui.number(
-                                value=self.buffer.connection_timeout,
-                                min=5,
-                                max=300,
-                                step=5,
-                            )
-                            .classes("w-24")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "connection_timeout",
-                                    int(
-                                        getattr(e, "args", [getattr(e, "value", 30)])[0]
-                                        or 30
-                                    ),
-                                ),
-                            )
-                        )
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Retry Attempts:").classes("w-40")
-                        self.ui_elements["retry_attempts"] = (
-                            ui.number(
-                                value=self.buffer.retry_attempts, min=1, max=10, step=1
-                            )
-                            .classes("w-24")
-                            .on(
-                                "change",
-                                lambda e: self._set(
-                                    "retry_attempts",
-                                    int(
-                                        getattr(e, "args", [getattr(e, "value", 3)])[0]
-                                        or 3
-                                    ),
-                                ),
-                            )
-                        )
-
-                    with ui.row().classes("justify-end gap-2 mt-3"):
-                        ui.button("Discard", on_click=self.discard).props("outline")
-                        ui.button("Save", on_click=self.save).props("color=primary")
-
-                # Live status polling: active=True so updates run even if on_enter
-                # ran before this lazy build() executed.
-                self._status_timer = ui.timer(
-                    3.0, self._refresh_status, active=True
+            with ui.row().classes(
+                "button-row w-full justify-end gap-2 mt-1 flex-wrap"
+            ):
+                self.ui_elements["test_button"] = outline_button(
+                    "Test",
+                    self._test_connection,
+                    icon="wifi_tethering",
                 )
+                self.ui_elements["migrate_button"] = outline_button(
+                    "Migrate",
+                    self._show_migration_dialog,
+                    icon="sync_alt",
+                )
+                self.ui_elements["refresh_button"] = outline_button(
+                    "Refresh",
+                    self._refresh_status,
+                    icon="refresh",
+                )
+                self.ui_elements["view_data_button"] = outline_button(
+                    "View Data",
+                    self._show_data_viewer_dialog,
+                    icon="visibility",
+                )
+                outline_button("Discard", self.discard)
+                primary_button("Save", self.save)
+            self._status_timer = ui.timer(3.0, self._refresh_status, active=True)
 
     def _load_from_config(self) -> None:
         cfg = config_manager.get_database_config()

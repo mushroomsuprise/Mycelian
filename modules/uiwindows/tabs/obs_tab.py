@@ -5,6 +5,12 @@ from typing import Any, Dict, Optional
 from nicegui import run, ui
 
 from ... import dataobjects
+from ...ui_settings_layout import (
+    settings_action_row,
+    settings_form_grid,
+    settings_status_band,
+    settings_surface,
+)
 from ...dataobjects import OBSData, state_manager
 from ...notification_engine import notify
 from ...obs_service import obs_service
@@ -56,7 +62,10 @@ class ObsTab:
     def _load_from_state(self) -> None:
         raw = state_manager.get_obs_data()
         self.buffer = OBSData(
-            **{f.name: getattr(raw, f.name) for f in OBSData.__dataclass_fields__.values()}
+            **{
+                f.name: getattr(raw, f.name)
+                for f in OBSData.__dataclass_fields__.values()
+            }
         )
         self.dirty = False
 
@@ -93,84 +102,78 @@ class ObsTab:
 
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with parent_container:
-            with ui.card().classes("content-section w-full"):
-                ui.label("OBS Studio (WebSocket)").classes("text-xl font-bold mb-4")
+        with settings_surface(parent_container):
+            ui.label("OBS Studio (WebSocket)").classes("text-lg font-bold")
 
-                with ui.column().classes("w-full gap-4"):
-                    with ui.row().classes("w-full gap-4 items-start"):
-                        with ui.column().classes("flex-1 gap-2"):
-                            ui.label("Live status").classes("text-sm font-medium")
-                            self.ui_elements["status_label"] = ui.label(
-                                "…"
-                            ).classes("font-semibold")
+            with settings_status_band():
+                with ui.row().classes("items-center gap-2"):
+                    ui.label("Live status").classes("text-xs secondary-text")
+                    self.ui_elements["status_label"] = ui.label("…").classes(
+                        "font-semibold"
+                    )
+                self.ui_elements["enabled"] = ui.switch(
+                    "Enable OBS integration",
+                    value=bool(getattr(self.buffer, "enabled", True)),
+                    on_change=lambda e: self._set("enabled", bool(e.value)),
+                )
 
-                        with ui.column().classes("flex-1 gap-2"):
-                            self.ui_elements["enabled"] = ui.switch(
-                                "Enable OBS integration",
-                                value=bool(getattr(self.buffer, "enabled", True)),
-                                on_change=lambda e: self._set("enabled", bool(e.value)),
-                            )
-                            self.ui_elements["host"] = (
-                                ui.input(
-                                    label="Host",
-                                    value=getattr(self.buffer, "host", ""),
-                                    placeholder="localhost",
-                                )
-                                .classes("w-full")
-                                .on_value_change(
-                                    lambda e: self._set(
-                                        "host",
-                                        ("" if e.value is None else str(e.value)).strip(),
-                                    ),
-                                )
-                            )
-                            self.ui_elements["port"] = (
-                                ui.number(
-                                    label="Port",
-                                    value=float(getattr(self.buffer, "port", 4455)),
-                                    min=1,
-                                    max=65535,
-                                    precision=0,
-                                )
-                                .classes("w-full")
-                                .on_value_change(
-                                    lambda e: self._set(
-                                        "port",
-                                        int(
-                                            float(e.value if e.value is not None else 4455),
-                                        ),
-                                    ),
-                                )
-                            )
-                            self.ui_elements["password"] = (
-                                ui.input(
-                                    label="WebSocket password",
-                                    value=getattr(self.buffer, "password", ""),
-                                    password=True,
-                                    password_toggle_button=True,
-                                )
-                                .classes("w-full")
-                                .on_value_change(
-                                    lambda e: self._set(
-                                        "password",
-                                        "" if e.value is None else str(e.value),
-                                    ),
-                                )
-                            )
+            with settings_form_grid(columns=2):
+                self.ui_elements["host"] = (
+                    ui.input(
+                        label="Host",
+                        value=getattr(self.buffer, "host", ""),
+                        placeholder="localhost",
+                    )
+                    .classes("w-full")
+                    .on_value_change(
+                        lambda e: self._set(
+                            "host",
+                            ("" if e.value is None else str(e.value)).strip(),
+                        ),
+                    )
+                )
+                self.ui_elements["port"] = (
+                    ui.number(
+                        label="Port",
+                        value=float(getattr(self.buffer, "port", 4455)),
+                        min=1,
+                        max=65535,
+                        precision=0,
+                    )
+                    .classes("w-full")
+                    .on_value_change(
+                        lambda e: self._set(
+                            "port",
+                            int(
+                                float(e.value if e.value is not None else 4455),
+                            ),
+                        ),
+                    )
+                )
+            self.ui_elements["password"] = (
+                ui.input(
+                    label="WebSocket password",
+                    value=getattr(self.buffer, "password", ""),
+                    password=True,
+                    password_toggle_button=True,
+                )
+                .classes("w-full")
+                .on_value_change(
+                    lambda e: self._set(
+                        "password",
+                        "" if e.value is None else str(e.value),
+                    ),
+                )
+            )
 
-                        with ui.column().classes("gap-2"):
-                            ui.button(
-                                "Test connection",
-                                on_click=self._test_connection,
-                                icon="wifi_tethering",
-                            ).classes("w-40")
-
-                    with ui.row().classes("justify-end gap-2 mt-3"):
-                        ui.button("Discard", on_click=self.discard).props("outline")
-                        ui.button("Save", on_click=self.save).props("color=primary")
-
-                self._status_timer = ui.timer(5.0, self._refresh_status, active=True)
+            settings_action_row(
+                discard=self.discard,
+                save=self.save,
+                before_discard=[
+                    ("Test", self._test_connection, "wifi_tethering", False),
+                ],
+            )
+            self._status_timer = ui.timer(5.0, self._refresh_status, active=True)
 
         self._refresh_status()
 

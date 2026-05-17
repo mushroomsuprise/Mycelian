@@ -4,6 +4,15 @@ from typing import Any, Dict, Optional
 
 from nicegui import ui
 from ...notification_engine import notify
+from ...ui_buttons import outline_button, primary_button
+from ...ui_settings_layout import (
+    settings_footer,
+    settings_form_grid,
+    settings_inner_panel,
+    settings_status_band,
+    settings_surface,
+    settings_toolbar,
+)
 
 from ... import dataobjects
 from ...api_credentials_manager import api_credentials_manager
@@ -130,187 +139,106 @@ class TwitchTab:
         if self._status_timer is not None:
             self._status_timer.active = False
 
+    def _build_account_panel(
+        self,
+        title: str,
+        prefix: str,
+        *,
+        connect_handler,
+        refresh_handler,
+        client_id_key: str,
+        client_secret_key: str,
+        client_id_placeholder: str,
+        client_secret_placeholder: str,
+    ) -> None:
+        with settings_inner_panel():
+            ui.label(title).classes("text-base font-semibold")
+            with settings_toolbar():
+                self.ui_elements[f"{prefix}_connect_button"] = primary_button(
+                    "Connect",
+                    connect_handler,
+                    icon="login",
+                )
+                self.ui_elements[f"{prefix}_refresh_button"] = outline_button(
+                    "Refresh",
+                    refresh_handler,
+                    icon="refresh",
+                )
+            with settings_status_band():
+                with ui.column().classes("gap-0"):
+                    ui.label("Status").classes("text-xs secondary-text")
+                    self.ui_elements[f"{prefix}_status_label"] = ui.label(
+                        "Loading..."
+                    ).classes("font-semibold text-sm")
+                with ui.column().classes("gap-0"):
+                    ui.label("User").classes("text-xs secondary-text")
+                    self.ui_elements[f"{prefix}_user_name_label"] = ui.label(
+                        "N/A"
+                    ).classes("font-semibold text-sm")
+                with ui.column().classes("gap-0"):
+                    ui.label("Updated").classes("text-xs secondary-text")
+                    self.ui_elements[f"{prefix}_last_update_label"] = ui.label(
+                        "Never"
+                    ).classes("secondary-text text-sm")
+            with settings_form_grid(columns=2):
+                self.ui_elements[client_id_key] = (
+                    ui.input(
+                        label="Client ID",
+                        value=self._creds.get(client_id_key, ""),
+                        placeholder=client_id_placeholder,
+                    )
+                    .classes("w-full")
+                    .on(
+                        "change",
+                        lambda e, k=client_id_key: self._set_cred(k, e.args or ""),
+                    )
+                )
+                self.ui_elements[client_secret_key] = (
+                    ui.input(
+                        label="Client Secret",
+                        value=self._creds.get(client_secret_key, ""),
+                        password=True,
+                        password_toggle_button=True,
+                        placeholder=client_secret_placeholder,
+                    )
+                    .classes("w-full")
+                    .on(
+                        "change",
+                        lambda e, k=client_secret_key: self._set_cred(
+                            k, e.args or ""
+                        ),
+                    )
+                )
+
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with parent_container:
-            with ui.card().classes("content-section w-full"):
-                with ui.row().classes("w-full justify-between items-center mb-4"):
-                    ui.label("Twitch Integration").classes("text-xl font-bold")
+        with settings_surface(parent_container):
+            ui.label("Twitch Integration").classes("text-lg font-bold")
 
-                with ui.column().classes("w-full gap-4"):
-                    # Main Account Section
-                    ui.label("Main Account").classes("text-lg font-semibold")
-                    with ui.card().classes("w-full"):
-                        with ui.row().classes("w-full gap-4 items-start"):
-                            # Column 1: Status information
-                            with ui.column().classes("flex-1 gap-2"):
-                                ui.label("Status:").classes("text-sm font-medium")
-                                self.ui_elements["main_status_label"] = ui.label(
-                                    "Loading..."
-                                ).classes("font-semibold")
-
-                                ui.label("Connected User:").classes(
-                                    "text-sm font-medium"
-                                )
-                                self.ui_elements["main_user_name_label"] = ui.label(
-                                    "N/A"
-                                ).classes("font-semibold")
-
-                                ui.label("Last Update:").classes("text-sm font-medium")
-                                self.ui_elements["main_last_update_label"] = ui.label(
-                                    "Never"
-                                ).classes("secondary-text text-sm")
-
-                            # Column 2: Credentials
-                            with ui.column().classes("flex-1 gap-2"):
-                                ui.label("Client ID:").classes("text-sm font-medium")
-                                self.ui_elements["client_id"] = (
-                                    ui.input(
-                                        value=self._creds.get("client_id", ""),
-                                        placeholder="Twitch API Client ID",
-                                    )
-                                    .classes("w-full")
-                                    .on(
-                                        "change",
-                                        lambda e: self._set_cred(
-                                            "client_id",
-                                            e.args or "",
-                                        ),
-                                    )
-                                )
-
-                                ui.label("Client Secret:").classes(
-                                    "text-sm font-medium"
-                                )
-                                self.ui_elements["client_secret"] = (
-                                    ui.input(
-                                        value=self._creds.get("client_secret", ""),
-                                        password=True,
-                                        password_toggle_button=True,
-                                        placeholder="Twitch API Client Secret",
-                                    )
-                                    .classes("w-full")
-                                    .on(
-                                        "change",
-                                        lambda e: self._set_cred(
-                                            "client_secret",
-                                            e.args or "",
-                                        ),
-                                    )
-                                )
-
-                            # Column 3: Connection buttons (stacked vertically)
-                            with ui.column().classes("gap-2"):
-                                self.ui_elements["main_connect_button"] = (
-                                    ui.button(
-                                        "Connect",
-                                        on_click=self._handle_main_oauth_connection,
-                                    )
-                                    .props("icon=login color=primary")
-                                    .classes("w-32")
-                                )
-
-                                self.ui_elements["main_refresh_button"] = (
-                                    ui.button(
-                                        "Refresh",
-                                        on_click=self._refresh_main_status,
-                                    )
-                                    .props("icon=refresh outline")
-                                    .classes("w-32")
-                                )
-
-                    # Chatbot Section
-                    ui.label("Chatbot Account").classes("text-lg font-semibold")
-                    with ui.card().classes("w-full"):
-                        with ui.row().classes("w-full gap-4 items-start"):
-                            # Column 1: Status information
-                            with ui.column().classes("flex-1 gap-2"):
-                                ui.label("Status:").classes("text-sm font-medium")
-                                self.ui_elements["chatbot_status_label"] = ui.label(
-                                    "Loading..."
-                                ).classes("font-semibold")
-
-                                ui.label("Connected User:").classes(
-                                    "text-sm font-medium"
-                                )
-                                self.ui_elements["chatbot_user_name_label"] = ui.label(
-                                    "N/A"
-                                ).classes("font-semibold")
-
-                                ui.label("Last Update:").classes("text-sm font-medium")
-                                self.ui_elements["chatbot_last_update_label"] = (
-                                    ui.label("Never").classes("secondary-text text-sm")
-                                )
-
-                            # Column 2: Credentials
-                            with ui.column().classes("flex-1 gap-2"):
-                                ui.label("Client ID:").classes("text-sm font-medium")
-                                self.ui_elements["chatbot_client_id"] = (
-                                    ui.input(
-                                        value=self._creds.get("chatbot_client_id", ""),
-                                        placeholder="Chatbot Twitch API Client ID",
-                                    )
-                                    .classes("w-full")
-                                    .on(
-                                        "change",
-                                        lambda e: self._set_cred(
-                                            "chatbot_client_id",
-                                            e.args or "",
-                                        ),
-                                    )
-                                )
-
-                                ui.label("Client Secret:").classes(
-                                    "text-sm font-medium"
-                                )
-                                self.ui_elements["chatbot_client_secret"] = (
-                                    ui.input(
-                                        value=self._creds.get(
-                                            "chatbot_client_secret", ""
-                                        ),
-                                        password=True,
-                                        password_toggle_button=True,
-                                        placeholder="Chatbot Twitch API Client Secret",
-                                    )
-                                    .classes("w-full")
-                                    .on(
-                                        "change",
-                                        lambda e: self._set_cred(
-                                            "chatbot_client_secret",
-                                            e.args or "",
-                                        ),
-                                    )
-                                )
-
-                            # Column 3: Connection buttons (stacked vertically)
-                            with ui.column().classes("gap-2"):
-                                self.ui_elements["chatbot_connect_button"] = (
-                                    ui.button(
-                                        "Connect",
-                                        on_click=self._handle_chatbot_oauth_connection,
-                                    )
-                                    .props("icon=login color=primary")
-                                    .classes("w-32")
-                                )
-
-                                self.ui_elements["chatbot_refresh_button"] = (
-                                    ui.button(
-                                        "Refresh",
-                                        on_click=self._refresh_chatbot_status,
-                                    )
-                                    .props("icon=refresh outline")
-                                    .classes("w-32")
-                                )
-
-                    with ui.row().classes("justify-end gap-2 mt-3"):
-                        ui.button("Discard", on_click=self.discard).props("outline")
-                        ui.button("Save", on_click=self.save).props("color=primary")
-
-                # Live status polling: active=True keeps it running even if on_enter
-                # ran before this lazy build() executed.
-                self._status_timer = ui.timer(
-                    3.0, self._refresh_status, active=True
+            with ui.grid(columns=2).classes("w-full gap-3"):
+                self._build_account_panel(
+                    "Main Account",
+                    "main",
+                    connect_handler=self._handle_main_oauth_connection,
+                    refresh_handler=self._refresh_main_status,
+                    client_id_key="client_id",
+                    client_secret_key="client_secret",
+                    client_id_placeholder="Twitch API Client ID",
+                    client_secret_placeholder="Twitch API Client Secret",
                 )
+                self._build_account_panel(
+                    "Chatbot Account",
+                    "chatbot",
+                    connect_handler=self._handle_chatbot_oauth_connection,
+                    refresh_handler=self._refresh_chatbot_status,
+                    client_id_key="chatbot_client_id",
+                    client_secret_key="chatbot_client_secret",
+                    client_id_placeholder="Chatbot Twitch API Client ID",
+                    client_secret_placeholder="Chatbot Twitch API Client Secret",
+                )
+
+            settings_footer(self.discard, self.save)
+            self._status_timer = ui.timer(3.0, self._refresh_status, active=True)
 
     # ----- helpers -----
     def _load_from_state(self) -> None:

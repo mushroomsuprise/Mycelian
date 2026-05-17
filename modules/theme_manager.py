@@ -120,7 +120,8 @@ def generate_css_variables(theme: ThemeColors) -> str:
 def generate_preview_css_variables(theme: ThemeColors) -> str:
     """Generate CSS custom properties specifically for theme preview (separate from applied theme)"""
     return f"""
-.theme-preview-container {{
+.theme-preview-container,
+.theme-editor-panel {{
     /* Meta */
     --preview-theme-name: {theme.name};
     --preview-theme-type: {theme.theme_type or 'dark'};

@@ -4,6 +4,13 @@ from typing import Dict, Any, Optional
 
 from nicegui import ui
 from ...notification_engine import notify
+from ...ui_buttons import outline_button, primary_button
+from ...ui_settings_layout import (
+    settings_action_row,
+    settings_form_grid,
+    settings_status_band,
+    settings_surface,
+)
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -120,114 +127,91 @@ class SpotifyTab:
 
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with parent_container:
-            with ui.card().classes("content-section w-full"):
-                ui.label("Spotify Integration").classes("text-xl font-bold mb-4")
+        with settings_surface(parent_container):
+            ui.label("Spotify Integration").classes("text-lg font-bold")
 
-                with ui.column().classes("w-full gap-4"):
-                    with ui.row().classes("w-full gap-4 items-start"):
-                        # Column 1: Status information
-                        with ui.column().classes("flex-1 gap-2"):
-                            ui.label("Status:").classes("text-sm font-medium")
-                            self.ui_elements["status_label"] = ui.label(
-                                "Loading..."
-                            ).classes("font-semibold")
+            with settings_status_band():
+                with ui.column().classes("gap-0"):
+                    ui.label("Status").classes("text-xs secondary-text")
+                    self.ui_elements["status_label"] = ui.label(
+                        "Loading..."
+                    ).classes("font-semibold text-sm")
+                with ui.column().classes("gap-0 flex-1 min-w-[12rem]"):
+                    ui.label("Current track").classes("text-xs secondary-text")
+                    self.ui_elements["track_label"] = ui.label("N/A").classes(
+                        "font-semibold text-sm"
+                    )
 
-                            ui.label("Current Track:").classes("text-sm font-medium")
-                            self.ui_elements["track_label"] = ui.label("N/A").classes(
-                                "font-semibold"
-                            )
-
-                        # Column 2: Credentials and settings
-                        with ui.column().classes("flex-1 gap-2"):
-                            ui.label("Client ID:").classes("text-sm font-medium")
-                            self.ui_elements["client_id"] = (
-                                ui.input(
-                                    value=self._creds.get("client_id", ""),
-                                    placeholder="Spotify API Client ID",
-                                )
-                                .classes("w-full")
-                                .on_value_change(
-                                    lambda e: self._set_cred(
-                                        "client_id", self._str_from_value_event(e)
-                                    )
-                                )
-                            )
-
-                            ui.label("Client Secret:").classes("text-sm font-medium")
-                            self.ui_elements["client_secret"] = (
-                                ui.input(
-                                    value=self._creds.get("client_secret", ""),
-                                    password=True,
-                                    password_toggle_button=True,
-                                    placeholder="Spotify API Client Secret",
-                                )
-                                .classes("w-full")
-                                .on_value_change(
-                                    lambda e: self._set_cred(
-                                        "client_secret", self._str_from_value_event(e)
-                                    )
-                                )
-                            )
-
-                            ui.label("Market Country:").classes("text-sm font-medium")
-                            markets = {
-                                "": "Auto (from account)",
-                                "US": "US",
-                                "GB": "GB",
-                                "CA": "CA",
-                            }
-                            self.ui_elements["market_country"] = (
-                                ui.select(
-                                    options=markets,
-                                    value=getattr(self.buffer, "market_country", ""),
-                                )
-                                .classes("w-full")
-                                .on_value_change(
-                                    lambda e: self._set(
-                                        "market_country", self._str_from_value_event(e)
-                                    )
-                                )
-                            )
-
-                        # Column 3: Connection buttons (stacked vertically)
-                        with ui.column().classes("gap-2"):
-                            self.ui_elements["connect_button"] = (
-                                ui.button(
-                                    "Connect",
-                                    on_click=self._handle_oauth_connection,
-                                )
-                                .props("icon=login color=primary")
-                                .classes("w-32")
-                            )
-
-                            self.ui_elements["test_button"] = (
-                                ui.button(
-                                    "Test",
-                                    on_click=self._test_connection,
-                                )
-                                .props("icon=wifi_tethering outline")
-                                .classes("w-32")
-                            )
-
-                            self.ui_elements["refresh_button"] = (
-                                ui.button(
-                                    "Refresh",
-                                    on_click=self._refresh_status,
-                                )
-                                .props("icon=refresh outline")
-                                .classes("w-32")
-                            )
-
-                    with ui.row().classes("justify-end gap-2 mt-3"):
-                        ui.button("Discard", on_click=self.discard).props("outline")
-                        ui.button("Save", on_click=self.save).props("color=primary")
-
-                # Live status polling: active=True so updates run even if on_enter
-                # ran before this lazy build() executed.
-                self._status_timer = ui.timer(
-                    5.0, self._refresh_status, active=True
+            markets = {
+                "": "Auto (from account)",
+                "US": "US",
+                "GB": "GB",
+                "CA": "CA",
+            }
+            with settings_form_grid(columns=3):
+                self.ui_elements["client_id"] = (
+                    ui.input(
+                        label="Client ID",
+                        value=self._creds.get("client_id", ""),
+                        placeholder="Spotify API Client ID",
+                    )
+                    .classes("w-full")
+                    .on_value_change(
+                        lambda e: self._set_cred(
+                            "client_id", self._str_from_value_event(e)
+                        )
+                    )
                 )
+                self.ui_elements["client_secret"] = (
+                    ui.input(
+                        label="Client Secret",
+                        value=self._creds.get("client_secret", ""),
+                        password=True,
+                        password_toggle_button=True,
+                        placeholder="Spotify API Client Secret",
+                    )
+                    .classes("w-full")
+                    .on_value_change(
+                        lambda e: self._set_cred(
+                            "client_secret", self._str_from_value_event(e)
+                        )
+                    )
+                )
+                self.ui_elements["market_country"] = (
+                    ui.select(
+                        label="Market country",
+                        options=markets,
+                        value=getattr(self.buffer, "market_country", ""),
+                    )
+                    .classes("w-full")
+                    .on_value_change(
+                        lambda e: self._set(
+                            "market_country", self._str_from_value_event(e)
+                        )
+                    )
+                )
+
+            with ui.row().classes(
+                "button-row w-full justify-end gap-2 mt-1 flex-wrap"
+            ):
+                self.ui_elements["refresh_button"] = outline_button(
+                    "Refresh",
+                    self._refresh_status,
+                    icon="refresh",
+                )
+                self.ui_elements["test_button"] = outline_button(
+                    "Test",
+                    self._test_connection,
+                    icon="wifi_tethering",
+                )
+                outline_button("Discard", self.discard)
+                primary_button("Save", self.save)
+                self.ui_elements["connect_button"] = primary_button(
+                    "Connect",
+                    self._handle_oauth_connection,
+                    icon="login",
+                )
+            self._status_timer = ui.timer(5.0, self._refresh_status, active=True)
 
     def _load_from_state(self) -> None:
         sp = state_manager.get_spotify_data()
@@ -557,7 +541,7 @@ class SpotifyTab:
 
             # Reset button state
             if "test_button" in self.ui_elements:
-                self.ui_elements["test_button"].set_text("Test Connection")
+                self.ui_elements["test_button"].set_text("Test")
                 self.ui_elements["test_button"].enable()
         except Exception as e:
             import logging

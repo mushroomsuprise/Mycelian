@@ -8,6 +8,16 @@ from typing import Dict, Any, Optional, List
 
 from nicegui import ui
 from ...notification_engine import notify
+from ...ui_buttons import outline_button, primary_button
+from ...ui_settings_layout import (
+    THEME_CHIP_CLASSES,
+    settings_divider,
+    settings_form_grid,
+    settings_section,
+    settings_status_band,
+    settings_surface,
+    theme_chip_row,
+)
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -83,122 +93,97 @@ class PSNTab:
 
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with parent_container:
-            with ui.card().classes("content-section w-full"):
-                with ui.row().classes("w-full justify-between items-center mb-4"):
-                    ui.label("PlayStation Network Integration").classes(
-                        "text-xl font-bold"
+        with settings_surface(parent_container):
+            ui.label("PlayStation Network Integration").classes("text-lg font-bold")
+
+            with settings_status_band():
+                with ui.column().classes("gap-0"):
+                    ui.label("Status").classes("text-xs secondary-text")
+                    self.ui_elements["status_label"] = ui.label(
+                        "Not Connected"
+                    ).classes("font-semibold text-sm")
+                with ui.column().classes("gap-0"):
+                    ui.label("Tracking").classes("text-xs secondary-text")
+                    self.ui_elements["user_label"] = ui.label("N/A").classes(
+                        "font-semibold text-sm"
                     )
-                    ui.button(
-                        "Help", icon="help_outline", on_click=self._show_help_dialog
-                    ).props("flat")
 
-                with ui.column().classes("w-full gap-4"):
-                    ui.label("Connection Status").classes("text-lg font-semibold")
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Status:").classes("w-40")
-                        self.ui_elements["status_label"] = ui.label(
-                            "Not Connected"
-                        ).classes("font-semibold")
-
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Tracking:").classes("w-40")
-                        self.ui_elements["user_label"] = ui.label("N/A").classes(
-                            "font-semibold"
+            self.ui_elements["mismatch_banner"] = ui.card().classes(
+                "w-full hint-warning p-2"
+            )
+            self.ui_elements["mismatch_banner"].set_visibility(False)
+            with self.ui_elements["mismatch_banner"]:
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.icon("warning").classes("text-xl text-theme-warning")
+                    with ui.column().classes("flex-grow gap-0"):
+                        ui.label("Game Mismatch Detected").classes(
+                            "font-semibold text-theme-warning"
                         )
-
-                    # Mismatch notification banner (hidden by default)
-                    self.ui_elements["mismatch_banner"] = ui.card().classes(
-                        "w-full hint-warning p-3"
+                        self.ui_elements["mismatch_game_name"] = ui.label("").classes(
+                            "text-sm text-theme-warning"
+                        )
+                    ui.label("Edit in Game Cache below").classes(
+                        "text-sm text-theme-warning shrink-0"
                     )
-                    self.ui_elements["mismatch_banner"].set_visibility(False)
-                    with self.ui_elements["mismatch_banner"]:
-                        with ui.row().classes("w-full items-center gap-2"):
-                            ui.icon("warning", color="orange").classes("text-2xl")
-                            with ui.column().classes("flex-grow gap-0"):
-                                ui.label("Game Mismatch Detected").classes(
-                                    "font-semibold text-theme-warning"
-                                )
-                                self.ui_elements["mismatch_game_name"] = ui.label(
-                                    ""
-                                ).classes(
-                                    "text-sm text-theme-warning"
-                                )
-                            ui.label("Edit in Game Cache section below").classes(
-                                "text-sm text-theme-warning"
-                            )
 
-                    ui.separator().classes("divider")
-
-                    ui.label("Configuration").classes("text-lg font-semibold")
-
-                    # Connection section with Connect button
-                    with ui.row().classes("w-full items-center gap-2 mb-4"):
-                        self.connect_button = ui.button(
-                            "Connect to PSN",
-                            icon="login",
-                            on_click=self._start_npsso_auth,
-                        ).classes("btn-primary")
-
-                        ui.label("Get your NPSSO token automatically").classes(
-                            "text-muted text-sm"
+            with settings_section(
+                "Configuration",
+                subtitle="Use Connect for automatic NPSSO, or enter credentials below.",
+            ):
+                with settings_form_grid(columns=2):
+                    self.ui_elements["npsso_code"] = (
+                        ui.input(
+                            label="NPSSO code",
+                            value=self.buffer.npsso_code or "",
+                            password=True,
+                            password_toggle_button=True,
+                            placeholder="Required for PSN API access",
                         )
-
-                    # Manual NPSSO input
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("NPSSO Code:").classes("w-40")
-                        self.ui_elements["npsso_code"] = (
-                            ui.input(
-                                value=self.buffer.npsso_code or "",
-                                password=True,
-                                password_toggle_button=True,
-                                placeholder="Required for PSN API access",
-                            )
-                            .classes("w-96")
-                            .on_value_change(
-                                lambda e: self._set(
-                                    "npsso_code", self._str_from_value_event(e)
-                                )
+                        .classes("w-full")
+                        .on_value_change(
+                            lambda e: self._set(
+                                "npsso_code", self._str_from_value_event(e)
                             )
                         )
-
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("PSN Username:").classes("w-40")
-                        self.ui_elements["psn_username"] = (
-                            ui.input(
-                                value=self.buffer.psn_username or "",
-                                placeholder="Optional: Username to track (leave empty for your own)",
-                            )
-                            .classes("w-96")
-                            .on_value_change(
-                                lambda e: self._set(
-                                    "psn_username", self._str_from_value_event(e)
-                                )
+                    )
+                    self.ui_elements["psn_username"] = (
+                        ui.input(
+                            label="PSN username",
+                            value=self.buffer.psn_username or "",
+                            placeholder="Optional — leave empty for your own account",
+                        )
+                        .classes("w-full")
+                        .on_value_change(
+                            lambda e: self._set(
+                                "psn_username", self._str_from_value_event(e)
                             )
                         )
-
-                    with ui.row().classes("justify-end gap-2 mt-3"):
-                        ui.button("Discard", on_click=self.discard).props("outline")
-                        ui.button("Save", on_click=self.save).props("color=primary")
-
-                    ui.separator().classes("divider")
-
-                    # Game Cache Editor Section
-                    self._build_game_cache_section()
-
-                    # Status: first tick can run before PSN service writes live data
-                    ui.timer(0.1, self._refresh_status, once=True)
-                    ui.timer(0.8, self._refresh_status, once=True)
-                    ui.timer(0.5, self._check_mismatch, once=True)
-                    # Live polling: stored on self so on_enter/on_exit can pause
-                    # them when the tab is not visible. active=True keeps them
-                    # running even if on_enter ran before this lazy build().
-                    self._status_timer = ui.timer(
-                        3.0, self._refresh_status, active=True
                     )
-                    self._mismatch_timer = ui.timer(
-                        10.0, self._check_mismatch, active=True
-                    )
+
+            with ui.row().classes(
+                "button-row w-full justify-end gap-2 mt-1 flex-wrap"
+            ):
+                outline_button(
+                    "How to Connect",
+                    self._show_help_dialog,
+                    icon="help_outline",
+                )
+                outline_button("Discard", self.discard)
+                primary_button("Save", self.save)
+                self.connect_button = primary_button(
+                    "Connect to PSN",
+                    self._start_npsso_auth,
+                    icon="login",
+                )
+
+            settings_divider()
+            self._build_game_cache_section()
+
+            ui.timer(0.1, self._refresh_status, once=True)
+            ui.timer(0.8, self._refresh_status, once=True)
+            ui.timer(0.5, self._check_mismatch, once=True)
+            self._status_timer = ui.timer(3.0, self._refresh_status, active=True)
+            self._mismatch_timer = ui.timer(10.0, self._check_mismatch, active=True)
 
     def _start_npsso_auth(self) -> None:
         """Start the NPSSO authentication flow"""
@@ -650,103 +635,81 @@ class PSNTab:
 
     def _build_game_cache_section(self) -> None:
         """Build the Game Cache Editor section."""
-        ui.label("Game Cache").classes("text-lg font-semibold")
-        ui.label(
-            "View and edit cached game data. Use this to fix game name mismatches between presence and trophy APIs."
-        ).classes("text-sm secondary-text mb-1")
+        with settings_section(
+            "Game Cache",
+            subtitle=(
+                "Edit cached game data to fix name mismatches. Remove chips to "
+                "clear entries (re-cached on next play)."
+            ),
+        ):
+            self._cache_chip_container = theme_chip_row()
+            self._rebuild_cache_chips()
 
-        ui.label(
-            "Cached games — use remove on a cell to clear that entry; the game can be re-cached on next play."
-        ).classes("text-sm secondary-text mb-2")
+            with ui.row().classes("w-full items-end gap-2"):
+                ui.label("Search game").classes("text-sm secondary-text shrink-0 pb-2")
+                self._game_select_container = ui.column().classes("flex-1 min-w-0")
+            with self._game_select_container:
+                self._rebuild_game_select()
 
-        self._cache_chip_container = ui.row().classes(
-            "w-full flex-wrap gap-1 items-center mt-1 mb-2"
-        )
-
-        with ui.row().classes("w-full items-center gap-2"):
-            ui.label("Search Game:").classes("w-40")
-            self._game_select_container = ui.column().classes("w-96 flex-none")
-            self._rebuild_game_select()
-
-        self._rebuild_cache_chips()
-
-        # Game details container (hidden until game selected)
-        self.ui_elements["game_details_container"] = ui.column().classes(
-            "w-full gap-3 mt-4"
-        )
-
-        with self.ui_elements["game_details_container"]:
-            ui.label("Selected Game Details").classes("font-semibold text-base")
-
-            # Read-only fields
-            with ui.row().classes("w-full items-center"):
-                ui.label("Trophy Name:").classes(
-                    "w-48 secondary-text"
-                )
-                self.ui_elements["cache_trophy_name"] = ui.label("--").classes(
-                    "font-medium"
-                )
-
-            with ui.row().classes("w-full items-center"):
-                ui.label("NP Communication ID:").classes(
-                    "w-48 secondary-text"
-                )
-                self.ui_elements["cache_np_comm_id"] = ui.label("--").classes(
-                    "font-mono text-sm"
-                )
-
-            with ui.row().classes("w-full items-center"):
-                ui.label("Platform:").classes("w-48 secondary-text")
-                self.ui_elements["cache_platform"] = ui.label("--")
-
-            with ui.row().classes("w-full items-center"):
-                ui.label("Cover Art URL:").classes(
-                    "w-48 secondary-text"
-                )
-                self.ui_elements["cache_cover_url"] = ui.label("--").classes(
-                    "text-sm truncate max-w-md"
-                )
-
-            with ui.row().classes("w-full items-center"):
-                ui.label("Last Updated:").classes(
-                    "w-48 secondary-text"
-                )
-                self.ui_elements["cache_last_updated"] = ui.label("--").classes(
-                    "text-sm"
-                )
-
-            ui.separator().classes("my-2")
-
-            # Editable fields
-            ui.label("Editable Fields").classes("font-semibold text-base")
-            ui.label("Update these fields to fix game name mismatches.").classes(
-                "text-sm muted-text mb-2"
+            self.ui_elements["game_details_container"] = ui.column().classes(
+                "w-full gap-2 mt-2"
             )
 
-            with ui.row().classes("w-full items-center"):
-                ui.label("Presence Name:").classes("w-48")
-                self.ui_elements["cache_presence_name"] = (
-                    ui.input(placeholder="Name from presence/social API")
-                    .classes("w-96")
-                    .on("change", lambda e: self._on_cache_field_changed())
-                )
+            with self.ui_elements["game_details_container"]:
+                ui.label("Selected game").classes("font-semibold text-sm")
+                with settings_form_grid(columns=2):
+                    with ui.column().classes("gap-0"):
+                        ui.label("Trophy name").classes("text-xs secondary-text")
+                        self.ui_elements["cache_trophy_name"] = ui.label("--").classes(
+                            "font-medium text-sm"
+                        )
+                    with ui.column().classes("gap-0"):
+                        ui.label("Platform").classes("text-xs secondary-text")
+                        self.ui_elements["cache_platform"] = ui.label("--").classes(
+                            "text-sm"
+                        )
+                    with ui.column().classes("gap-0 col-span-2"):
+                        ui.label("NP Communication ID").classes(
+                            "text-xs secondary-text"
+                        )
+                        self.ui_elements["cache_np_comm_id"] = ui.label("--").classes(
+                            "font-mono text-sm"
+                        )
+                    with ui.column().classes("gap-0 col-span-2"):
+                        ui.label("Cover art URL").classes("text-xs secondary-text")
+                        self.ui_elements["cache_cover_url"] = ui.label("--").classes(
+                            "text-sm truncate"
+                        )
+                    with ui.column().classes("gap-0"):
+                        ui.label("Last updated").classes("text-xs secondary-text")
+                        self.ui_elements["cache_last_updated"] = ui.label(
+                            "--"
+                        ).classes("text-sm")
 
-            with ui.row().classes("w-full items-center"):
-                ui.label("NP Title ID:").classes("w-48")
-                self.ui_elements["cache_np_title_id"] = (
-                    ui.input(placeholder="ID from presence data (e.g., PPSA01234_00)")
-                    .classes("w-96")
-                    .on("change", lambda e: self._on_cache_field_changed())
-                )
+                with settings_form_grid(columns=2):
+                    self.ui_elements["cache_presence_name"] = (
+                        ui.input(
+                            label="Presence name",
+                            placeholder="Name from presence/social API",
+                        )
+                        .classes("w-full")
+                        .on("change", lambda e: self._on_cache_field_changed())
+                    )
+                    self.ui_elements["cache_np_title_id"] = (
+                        ui.input(
+                            label="NP Title ID",
+                            placeholder="e.g. PPSA01234_00",
+                        )
+                        .classes("w-full")
+                        .on("change", lambda e: self._on_cache_field_changed())
+                    )
 
-            # Save button
-            with ui.row().classes("justify-end gap-2 mt-3"):
-                self.ui_elements["cache_save_btn"] = ui.button(
-                    "Save Changes", on_click=self._save_game_cache
-                ).props("color=primary")
-                self.ui_elements["cache_save_btn"].disable()
+                with ui.row().classes("justify-end gap-2 mt-1"):
+                    self.ui_elements["cache_save_btn"] = ui.button(
+                        "Save Changes", on_click=self._save_game_cache
+                    ).props("color=primary")
+                    self.ui_elements["cache_save_btn"].disable()
 
-        # Hide details initially
         self.ui_elements["game_details_container"].set_visibility(False)
 
     def _rebuild_game_select(self) -> None:
@@ -764,7 +727,7 @@ class PSNTab:
                         with_input=True,
                         on_change=lambda e: self._on_game_selected(e.value),
                     )
-                    .classes("w-96")
+                    .classes("w-full")
                     .props('use-input input-debounce="300" clearable')
                 )
             else:
@@ -792,9 +755,8 @@ class PSNTab:
             title = f"{title} ({platform})"
         with self._cache_chip_container:
             with ui.element("div").classes(
-                "flex items-center gap-1 px-3 py-1 rounded-full"
-                " bg-blue-500/20 border border-blue-500/40"
-            ).style("flex-shrink: 0; white-space: nowrap; max-width: 100%;"):
+                f"{THEME_CHIP_CLASSES} max-w-full"
+            ).style("white-space: nowrap;"):
                 ui.label(title).classes("text-sm truncate").style("max-width: 14rem;")
                 ui.button(
                     icon="close",

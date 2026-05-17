@@ -9,6 +9,7 @@ from typing import Any, Dict, FrozenSet, Optional, Tuple
 
 from nicegui import ui
 from ...notification_engine import notify
+from ...ui_buttons import outline_button, primary_button
 
 from ...database_manager import database_manager
 from ..os_brand_icons import OS_BRAND_ROW
@@ -215,8 +216,8 @@ class GameHooksTab:
                 )
 
             with ui.row().classes("justify-end gap-2 mt-4 w-full"):
-                ui.button("Discard", on_click=self.discard).props("outline")
-                ui.button("Save", on_click=self.save).props("color=primary")
+                outline_button("Discard", self.discard)
+                primary_button("Save", self.save)
 
     def _on_ff7_toggle(self, value: bool) -> None:
         if not self._ff7_hook_supported:

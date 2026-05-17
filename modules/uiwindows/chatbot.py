@@ -33,6 +33,7 @@ from typing import Any, Dict, Optional
 
 from nicegui import ui
 from ..notification_engine import notify
+from ..ui_buttons import outline_button, primary_button
 
 from ..help_system.contextual_help import set_chatbot_ui_references
 
@@ -1072,45 +1073,6 @@ CUSTOM_CSS = """
     color: var(--color-info);
 }
 
-/* Tab button styles with high specificity */
-.command-tab,
-.event-tab,
-.quotes-tab,
-.greetings-tab {
-    background: rgba(55, 55, 75, 0.8) !important;
-    border: 1px solid rgba(110, 110, 110, 0.6) !important;
-    color: var(--color-text-primary) !important;
-    transition: all 0.2s ease !important;
-}
-
-.command-tab.active,
-.event-tab.active,
-.quotes-tab.active,
-.greetings-tab.active {
-    background: rgba(110, 110, 110, 0.9) !important;
-    border-color: rgba(140, 140, 140, 0.8) !important;
-    color: var(--color-text-primary) !important;
-}
-
-/* Force override Quasar button styles */
-.command-tab.q-btn,
-.event-tab.q-btn,
-.quotes-tab.q-btn,
-.greetings-tab.q-btn {
-    background: rgba(55, 55, 75, 0.8) !important;
-    border: 1px solid rgba(110, 110, 110, 0.6) !important;
-    color: var(--color-text-primary) !important;
-}
-
-.command-tab.q-btn.active,
-.event-tab.q-btn.active,
-.quotes-tab.q-btn.active,
-.greetings-tab.q-btn.active {
-    background: rgba(110, 110, 110, 0.9) !important;
-    border-color: rgba(140, 140, 140, 0.8) !important;
-    color: var(--color-text-primary) !important;
-}
-
 /* Search field styling - matching connectors theme */
 .search-container {
     background: transparent;
@@ -1393,28 +1355,18 @@ def create_chatbot_tab():
                 ):
                     # Left side - tab-specific action buttons
                     with ui.row().classes("items-center gap-2"):
-                        ui.button(
+                        primary_button(
+                            "New Command",
+                            lambda: show_create_chatbot_dialog("command"),
                             icon="add",
-                            text="New Command",
-                            on_click=lambda: show_create_chatbot_dialog("command"),
-                        ).classes(
-                            "control-button btn-success px-4 py-2"
+                            extra_classes="px-4 py-2",
                         )
 
-                        ui.button(
+                        outline_button(
+                            "Refresh",
+                            lambda: refresh_tab_content("commands"),
                             icon="refresh",
-                            text="Refresh",
-                            on_click=lambda: refresh_tab_content("commands"),
-                        ).classes(
-                            "control-button btn-cancel px-3 py-2"
-                        )
-
-                        ui.button(
-                            icon="help",
-                            text="Help",
-                            on_click=lambda: show_help_dialog("commands"),
-                        ).classes(
-                            "control-button btn-secondary px-3 py-2"
+                            extra_classes="px-3 py-2",
                         )
 
                     # Right side - Tab-specific search box
@@ -1454,28 +1406,18 @@ def create_chatbot_tab():
                 ):
                     # Left side - tab-specific action buttons
                     with ui.row().classes("items-center gap-2"):
-                        ui.button(
+                        primary_button(
+                            "New Event",
+                            lambda: show_create_chatbot_dialog("event"),
                             icon="celebration",
-                            text="New Event",
-                            on_click=lambda: show_create_chatbot_dialog("event"),
-                        ).classes(
-                            "control-button btn-danger px-4 py-2"
+                            extra_classes="px-4 py-2",
                         )
 
-                        ui.button(
+                        outline_button(
+                            "Refresh",
+                            lambda: refresh_tab_content("events"),
                             icon="refresh",
-                            text="Refresh",
-                            on_click=lambda: refresh_tab_content("events"),
-                        ).classes(
-                            "control-button btn-cancel px-3 py-2"
-                        )
-
-                        ui.button(
-                            icon="help",
-                            text="Help",
-                            on_click=lambda: show_help_dialog("events"),
-                        ).classes(
-                            "control-button btn-secondary px-3 py-2"
+                            extra_classes="px-3 py-2",
                         )
 
                     # Right side - Tab-specific search box
@@ -1515,36 +1457,25 @@ def create_chatbot_tab():
                 ):
                     # Left side - tab-specific action buttons
                     with ui.row().classes("items-center gap-2"):
-                        ui.button(
+                        primary_button(
+                            "New Quote",
+                            lambda: show_create_chatbot_dialog("quote"),
                             icon="format_quote",
-                            text="New Quote",
-                            on_click=lambda: show_create_chatbot_dialog("quote"),
-                        ).classes(
-                            "control-button btn-primary px-4 py-2"
+                            extra_classes="px-4 py-2",
                         )
 
-                        ui.button(
+                        outline_button(
+                            "Refresh",
+                            lambda: refresh_tab_content("quotes"),
                             icon="refresh",
-                            text="Refresh",
-                            on_click=lambda: refresh_tab_content("quotes"),
-                        ).classes(
-                            "control-button btn-cancel px-3 py-2"
+                            extra_classes="px-3 py-2",
                         )
 
-                        ui.button(
+                        outline_button(
+                            "Settings",
+                            show_quote_settings_dialog,
                             icon="settings",
-                            text="Settings",
-                            on_click=show_quote_settings_dialog,
-                        ).classes(
-                            "control-button btn-success px-3 py-2"
-                        )
-
-                        ui.button(
-                            icon="help",
-                            text="Help",
-                            on_click=lambda: show_help_dialog("quotes"),
-                        ).classes(
-                            "control-button btn-secondary px-3 py-2"
+                            extra_classes="px-3 py-2",
                         )
 
                     # Right side - Tab-specific search box
@@ -1584,36 +1515,25 @@ def create_chatbot_tab():
                 ):
                     # Left side - tab-specific action buttons
                     with ui.row().classes("items-center gap-2"):
-                        ui.button(
+                        primary_button(
+                            "New Greeting",
+                            lambda: show_create_greeting_dialog(),
                             icon="waving_hand",
-                            text="New Greeting",
-                            on_click=lambda: show_create_greeting_dialog(),
-                        ).classes(
-                            "control-button btn-secondary px-4 py-2"
+                            extra_classes="px-4 py-2",
                         )
 
-                        ui.button(
-                            icon="settings",
-                            text="Greeting Settings",
-                            on_click=show_greeting_settings_dialog,
-                        ).classes(
-                            "control-button btn-secondary px-3 py-2"
-                        )
-
-                        ui.button(
+                        outline_button(
+                            "Refresh",
+                            lambda: refresh_tab_content("greetings"),
                             icon="refresh",
-                            text="Refresh",
-                            on_click=lambda: refresh_tab_content("greetings"),
-                        ).classes(
-                            "control-button btn-cancel px-3 py-2"
+                            extra_classes="px-3 py-2",
                         )
 
-                        ui.button(
-                            icon="help",
-                            text="Help",
-                            on_click=lambda: show_help_dialog("greetings"),
-                        ).classes(
-                            "control-button btn-secondary px-3 py-2"
+                        outline_button(
+                            "Settings",
+                            show_greeting_settings_dialog,
+                            icon="settings",
+                            extra_classes="px-3 py-2",
                         )
 
                     # Right side - Tab-specific search box
@@ -1653,11 +1573,12 @@ def create_chatbot_tab():
                     "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
                 ):
                     with ui.row().classes("items-center gap-2"):
-                        ui.button(
+                        outline_button(
+                            "Refresh",
+                            lambda: refresh_tab_content("giveaways"),
                             icon="refresh",
-                            text="Refresh",
-                            on_click=lambda: refresh_tab_content("giveaways"),
-                        ).classes("control-button btn-cancel px-3 py-2")
+                            extra_classes="px-3 py-2",
+                        )
 
                 with ui.scroll_area().classes("w-full flex-grow"):
                     giveaways_container = ui.element("div").classes("w-full p-4")
@@ -1803,7 +1724,10 @@ def render_giveaways_tab(container_el) -> None:
                 def save_blocked(_=None):
                     raw = blocked_in.value or ""
                     parts = re.split(r"[\n,]+", raw)
-                    gm.set_config_field("blocked_usernames", [p.strip().lower() for p in parts if p.strip()])
+                    gm.set_config_field(
+                        "blocked_usernames",
+                        [p.strip().lower() for p in parts if p.strip()],
+                    )
                     reload_giveaways()
 
                 blocked_in.on("blur", save_blocked)
@@ -1884,18 +1808,26 @@ def render_giveaways_tab(container_el) -> None:
                 ui.separator()
                 ui.label("Statistics").classes("text-lg font-medium")
                 try:
-                    st = get_statistics_manager().get_all_statistics().get("giveaways", {})
+                    st = (
+                        get_statistics_manager()
+                        .get_all_statistics()
+                        .get("giveaways", {})
+                    )
                     done = int(st.get("giveaways_completed", 0) or 0)
                     entries = int(st.get("total_entry_events", 0) or 0)
                     avg = float(st.get("average_entries_per_giveaway", 0) or 0)
                     ui.label(f"Giveaways completed: {done:,}").classes("text-sm")
                     ui.label(f"Total giveaway entries: {entries:,}").classes("text-sm")
-                    ui.label(f"Average entries per giveaway: {avg:.2f}").classes("text-sm")
+                    ui.label(f"Average entries per giveaway: {avg:.2f}").classes(
+                        "text-sm"
+                    )
                     top = get_statistics_manager().get_top_users_by_statistic(
                         "giveaway_wins", 8
                     )
                     if top:
-                        ui.label("Top giveaway wins").classes("text-sm font-medium mt-2")
+                        ui.label("Top giveaway wins").classes(
+                            "text-sm font-medium mt-2"
+                        )
                         for row in top:
                             ui.label(
                                 f"{row.get('username', '?')}: {row.get('value', 0):,}"
@@ -1925,11 +1857,15 @@ def render_giveaways_tab(container_el) -> None:
                     entrants_container.clear()
                     names = get_giveaway_manager().get_pool_entries()
                     with entrants_container:
-                        with ui.scroll_area().classes("w-full").style(
-                            "height: 100%; "
-                            "background: var(--color-bg-sunken, #0d1117); "
-                            "border-bottom-left-radius: 0.5rem; "
-                            "border-bottom-right-radius: 0.5rem;"
+                        with (
+                            ui.scroll_area()
+                            .classes("w-full")
+                            .style(
+                                "height: 100%; "
+                                "background: var(--color-bg-sunken, #0d1117); "
+                                "border-bottom-left-radius: 0.5rem; "
+                                "border-bottom-right-radius: 0.5rem;"
+                            )
                         ):
                             with ui.column().classes("w-full gap-0 p-2"):
                                 if not names:
@@ -2077,9 +2013,7 @@ def refresh_tab_content(tab_type: str):
                         on_click=lambda: show_create_chatbot_dialog(
                             tab_type[:-1]
                         ),  # Remove 's'
-                    ).classes(
-                        "control-button btn-secondary px-6 py-3 mt-4"
-                    )
+                    ).classes("control-button btn-secondary px-6 py-3 mt-4")
             else:
                 # Display items in a grid
                 with ui.element("div").classes(
@@ -2149,9 +2083,7 @@ def load_chatbot_items():
                             icon="add",
                             text="Create First Command",
                             on_click=lambda: show_create_chatbot_dialog("command"),
-                        ).classes(
-                            "control-button btn-secondary px-6 py-3 mt-4"
-                        )
+                        ).classes("control-button btn-secondary px-6 py-3 mt-4")
                 else:
                     # Display items in a grid
                     with ui.element("div").classes(
@@ -2190,9 +2122,7 @@ def load_chatbot_items():
                             icon="add",
                             text="Create First Event",
                             on_click=lambda: show_create_chatbot_dialog("event"),
-                        ).classes(
-                            "control-button btn-secondary px-6 py-3 mt-4"
-                        )
+                        ).classes("control-button btn-secondary px-6 py-3 mt-4")
                 else:
                     # Display items in a grid
                     with ui.element("div").classes(
@@ -2231,9 +2161,7 @@ def load_chatbot_items():
                             icon="add",
                             text="Create First Quote",
                             on_click=lambda: show_create_chatbot_dialog("quote"),
-                        ).classes(
-                            "control-button btn-secondary px-6 py-3 mt-4"
-                        )
+                        ).classes("control-button btn-secondary px-6 py-3 mt-4")
                 else:
                     # Display items in a grid
                     with ui.element("div").classes(
@@ -2278,9 +2206,7 @@ def load_chatbot_items():
                             icon="add",
                             text="Create First Greeting",
                             on_click=lambda: show_create_greeting_dialog(),
-                        ).classes(
-                            "control-button btn-secondary px-6 py-3 mt-4"
-                        )
+                        ).classes("control-button btn-secondary px-6 py-3 mt-4")
                 else:
                     # Display items in a grid
                     with ui.element("div").classes(
@@ -2418,34 +2344,26 @@ def create_command_card(command_id: str, command: ChatCommand):
                 on_click=lambda cid=command_id: show_edit_chatbot_dialog(
                     cid, "command"
                 ),
-            ).classes(
-                "control-button btn-secondary text-xs px-3 py-1 flex-grow"
-            )
+            ).classes("control-button btn-secondary text-xs px-3 py-1 flex-grow")
 
             if command.command_type == CommandType.COUNTER:
                 ui.button(
                     icon="replay",
                     text="Reset",
                     on_click=lambda cid=command_id: reset_command_counter(cid),
-                ).classes(
-                    "control-button btn-warning text-xs px-3 py-1 flex-grow"
-                )
+                ).classes("control-button btn-warning text-xs px-3 py-1 flex-grow")
 
             ui.button(
                 icon="play_arrow",
                 text="Test",
                 on_click=lambda cid=command_id: test_chatbot_item(cid, "command"),
-            ).classes(
-                "control-button btn-success text-xs px-3 py-1 flex-grow"
-            )
+            ).classes("control-button btn-success text-xs px-3 py-1 flex-grow")
 
             ui.button(
                 icon="delete",
                 text="Delete",
                 on_click=lambda cid=command_id: delete_chatbot_item(cid, "command"),
-            ).classes(
-                "control-button btn-danger text-xs px-3 py-1 flex-grow"
-            )
+            ).classes("control-button btn-danger text-xs px-3 py-1 flex-grow")
 
 
 def create_event_card(event_id: str, event: ChatEvent):
@@ -2525,25 +2443,19 @@ def create_event_card(event_id: str, event: ChatEvent):
                 icon="edit",
                 text="Edit",
                 on_click=lambda eid=event_id: show_edit_chatbot_dialog(eid, "event"),
-            ).classes(
-                "control-button btn-secondary text-xs px-3 py-1 flex-grow"
-            )
+            ).classes("control-button btn-secondary text-xs px-3 py-1 flex-grow")
 
             ui.button(
                 icon="play_arrow",
                 text="Test",
                 on_click=lambda eid=event_id: test_chatbot_item(eid, "event"),
-            ).classes(
-                "control-button btn-warning text-xs px-3 py-1 flex-grow"
-            )
+            ).classes("control-button btn-warning text-xs px-3 py-1 flex-grow")
 
             ui.button(
                 icon="delete",
                 text="Delete",
                 on_click=lambda eid=event_id: delete_chatbot_item(eid, "event"),
-            ).classes(
-                "control-button btn-danger text-xs px-3 py-1 flex-grow"
-            )
+            ).classes("control-button btn-danger text-xs px-3 py-1 flex-grow")
 
 
 def create_quote_card(quote_id: str, quote):
@@ -2568,17 +2480,13 @@ def create_quote_card(quote_id: str, quote):
                     icon="edit",
                     text="Edit",
                     on_click=lambda qid=quote_id: show_edit_quote_dialog(qid),
-                ).classes(
-                    "control-button btn-secondary text-xs px-3 py-1"
-                )
+                ).classes("control-button btn-secondary text-xs px-3 py-1")
 
                 ui.button(
                     icon="delete",
                     text="Delete",
                     on_click=lambda qid=quote_id: delete_quote_item(qid),
-                ).classes(
-                    "control-button btn-danger text-xs px-3 py-1"
-                )
+                ).classes("control-button btn-danger text-xs px-3 py-1")
 
         # Quote text
         with ui.column().classes("w-full mb-3"):
@@ -2616,9 +2524,7 @@ def create_greeting_card(greeting_id: str, greeting):
         # Header row with username and status
         with ui.row().classes("w-full items-center justify-between mb-3"):
             with ui.column().classes("gap-1 flex-grow"):
-                ui.label(f"@{greeting.username}").classes(
-                    "text-base font-semibold"
-                )
+                ui.label(f"@{greeting.username}").classes("text-base font-semibold")
                 if greeting.user_id:
                     ui.label(f"ID: {greeting.user_id}").classes("text-xs text-cyan-300")
 
@@ -2680,17 +2586,13 @@ def create_greeting_card(greeting_id: str, greeting):
                 icon="edit",
                 text="Edit",
                 on_click=lambda gid=greeting_id: show_edit_greeting_dialog(gid),
-            ).classes(
-                "control-button btn-secondary text-xs px-3 py-1 flex-grow"
-            )
+            ).classes("control-button btn-secondary text-xs px-3 py-1 flex-grow")
 
             ui.button(
                 icon="delete",
                 text="Delete",
                 on_click=lambda gid=greeting_id: delete_greeting(gid),
-            ).classes(
-                "control-button btn-danger text-xs px-3 py-1 flex-grow"
-            )
+            ).classes("control-button btn-danger text-xs px-3 py-1 flex-grow")
 
 
 def format_interval_human_readable(seconds: int) -> str:
@@ -2797,9 +2699,7 @@ def show_create_quote_dialog():
                             on_click=lambda: save_new_quote(
                                 quote_text.value, author_input.value
                             ),
-                        ).classes(
-                            "control-button btn-primary px-4 py-2"
-                        )
+                        ).classes("control-button btn-primary px-4 py-2")
 
     create_dialog.open()
 
@@ -3387,9 +3287,7 @@ def create_variable_processing_section(form_data: dict) -> ui.element:
                 ui.button(
                     icon="delete",
                     on_click=lambda: remove_processing_expression(expression_input),
-                ).classes(
-                    "control-button btn-danger text-xs px-2 py-1 flex-shrink-0"
-                )
+                ).classes("control-button btn-danger text-xs px-2 py-1 flex-shrink-0")
 
                 expression_input.on_value_change(lambda e: update_processing())
 
@@ -3947,9 +3845,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                                         new_pos_input.set_value("1"),
                                         update_argument_mappings(),
                                     ],
-                                ).classes(
-                                    "btn-success text-xs px-3 py-2"
-                                )
+                                ).classes("btn-success text-xs px-3 py-2")
 
         # Event-specific options - Event Settings section is now handled dynamically above
 
@@ -4085,9 +3981,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                                 form_data,
                                 lambda: update_custom_variables_display(form_data),
                             ),
-                        ).classes(
-                            "control-button btn-primary text-xs px-2 py-1"
-                        )
+                        ).classes("control-button btn-primary text-xs px-2 py-1")
 
                     # Variables list container with scroll
                     with ui.element("div").classes("max-h-96 overflow-y-auto"):
@@ -4649,9 +4543,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                 icon="save",
                 text=button_text,
                 on_click=lambda: save_chatbot_item(form_data),
-            ).classes(
-                "control-button btn-secondary px-6 py-2"
-            )
+            ).classes("control-button btn-secondary px-6 py-2")
 
 
 def update_event_settings_fields(event_type: str, form_data: dict, existing_item=None):
@@ -5167,9 +5059,7 @@ def show_custom_variable_dialog(
                                     edit_mode=edit_mode,
                                     edit_var_name=edit_var_name,
                                 ),
-                            ).classes(
-                                "control-button btn-primary px-4 py-2"
-                            )
+                            ).classes("control-button btn-primary px-4 py-2")
 
                     # Right column - Variables panel (matching command dialog style)
                     with ui.element("div").classes("w-96 flex-shrink-0"):
@@ -6413,7 +6303,9 @@ def show_custom_variable_help_dialog():
                                     "PDT - Pacific Daylight Time (-7)",
                                 ]
                                 for tz in timezones:
-                                    ui.label(f"• {tz}").classes("text-xs secondary-text")
+                                    ui.label(f"• {tz}").classes(
+                                        "text-xs secondary-text"
+                                    )
 
                             # Hour formats
                             with ui.column().classes("ml-4 space-y-1"):
@@ -6503,7 +6395,9 @@ def show_custom_variable_help_dialog():
                                     "% - Modulo",
                                 ]
                                 for op in operators:
-                                    ui.label(f"• {op}").classes("text-xs secondary-text")
+                                    ui.label(f"• {op}").classes(
+                                        "text-xs secondary-text"
+                                    )
 
                             # Examples
                             with ui.column().classes("ml-4 space-y-1 mt-3"):
@@ -6547,7 +6441,9 @@ def show_custom_variable_help_dialog():
                                     "<= - Less than or equal",
                                 ]
                                 for op in operators:
-                                    ui.label(f"• {op}").classes("text-xs secondary-text")
+                                    ui.label(f"• {op}").classes(
+                                        "text-xs secondary-text"
+                                    )
 
                             # Examples
                             with ui.column().classes("ml-4 space-y-1 mt-3"):
@@ -6754,9 +6650,7 @@ def show_custom_variable_help_dialog():
                                     )
 
                     # Command & Event Variables Section
-                    with ui.card().classes(
-                        "hint-warning"
-                    ):
+                    with ui.card().classes("hint-warning"):
                         with ui.column().classes("p-4 space-y-3"):
                             ui.label("🎯 Command & Event Variables").classes(
                                 "text-lg font-semibold text-orange-400"
@@ -7098,9 +6992,7 @@ def save_chatbot_command(form_data: dict):
             action = "created"
 
         if success:
-            notify(
-                f"Command '{command.name}' {action} successfully", type="positive"
-            )
+            notify(f"Command '{command.name}' {action} successfully", type="positive")
             close_dialog_and_refresh()
         else:
             notify(f"Failed to {action} command", type="negative")
@@ -7533,9 +7425,7 @@ def show_create_greeting_dialog():
                                 greeting_text_input.value,
                                 enabled_toggle.value,
                             ),
-                        ).classes(
-                            "control-button btn-secondary px-4 py-2"
-                        )
+                        ).classes("control-button btn-secondary px-4 py-2")
 
     create_dialog.open()
 
@@ -7719,9 +7609,7 @@ def show_edit_greeting_dialog(greeting_id: str):
                                 greeting_text_input.value,
                                 enabled_toggle.value,
                             ),
-                        ).classes(
-                            "control-button btn-secondary px-4 py-2"
-                        )
+                        ).classes("control-button btn-secondary px-4 py-2")
 
     edit_dialog.open()
 
@@ -7874,9 +7762,7 @@ def show_greeting_settings_dialog():
                 with ui.column().classes("p-4 gap-4"):
                     # Greeting toggles
                     with ui.row().classes("w-full items-center justify-between"):
-                        ui.label("Greeting Types").classes(
-                            "text-sm font-medium"
-                        )
+                        ui.label("Greeting Types").classes("text-sm font-medium")
                         with ui.row().classes("gap-4"):
                             # Default greeting toggle
                             with ui.column().classes("items-center gap-1"):
@@ -7942,9 +7828,7 @@ def show_greeting_settings_dialog():
                                 reset_interval_input.value,
                                 greeting_settings_dialog,
                             ),
-                        ).classes(
-                            "control-button btn-secondary px-4 py-2"
-                        )
+                        ).classes("control-button btn-secondary px-4 py-2")
 
     greeting_settings_dialog.open()
 
@@ -8054,9 +7938,7 @@ def show_quote_settings_dialog():
                 with ui.column().classes("p-4 gap-4"):
                     # Quotes enabled toggle
                     with ui.row().classes("w-full items-center justify-between"):
-                        ui.label("Enable Quote System").classes(
-                            "text-sm font-medium"
-                        )
+                        ui.label("Enable Quote System").classes("text-sm font-medium")
                         ui.switch(
                             value=quotes_enabled,
                             on_change=lambda e: toggle_quote_system(e.value),
@@ -8093,9 +7975,7 @@ def show_quote_settings_dialog():
                             on_click=lambda: save_quote_settings(
                                 quote_cooldown_input.value,
                             ),
-                        ).classes(
-                            "control-button btn-secondary px-4 py-2"
-                        )
+                        ).classes("control-button btn-secondary px-4 py-2")
 
     edit_dialog.open()
 
@@ -8128,713 +8008,3 @@ def save_quote_settings(quote_cooldown_str: str):
     except Exception as e:
         logger.error(f"Error saving quote settings: {e}", exc_info=True)
         notify(f"Error saving quote settings: {str(e)}", type="negative")
-
-
-def _create_commands_help_content():
-    """Create the help content for the Commands tab"""
-    # Overall description
-    with ui.element("div").classes("form-section"):
-        ui.label("Commands Overview").classes(
-            "text-lg font-semibold text-green-400 mb-3"
-        )
-        ui.label("""
-Commands are interactive chat features that viewers can trigger by typing specific text starting with '!'.
-They allow you to create automated responses, counters, and interactive elements for your stream chat.
-Commands can be simple text responses or complex systems that track usage, have cooldowns, and integrate with variables.
-        """).classes("text-sm secondary-text mb-4")
-
-    # Command Types
-    with ui.element("div").classes("form-section"):
-        ui.label("Command Types").classes("text-lg font-semibold text-green-400 mb-3")
-        with ui.column().classes("gap-4"):
-            # Basic Commands
-            with ui.element("div").classes(
-                "bg-theme-surface p-3 rounded border-l-4 border-green-500"
-            ):
-                ui.label("Basic Commands").classes(
-                    "text-sm font-medium text-green-400 mb-2"
-                )
-                ui.label("""
-Simple text responses that viewers can trigger. Perfect for FAQs, social links, or quick information.
-Examples: !discord, !twitter, !schedule
-                """).classes("text-xs secondary-text")
-
-            # Counter Commands
-            with ui.element("div").classes(
-                "bg-theme-surface p-3 rounded border-l-4 border-blue-500"
-            ):
-                ui.label("Counter Commands").classes(
-                    "text-sm font-medium text-blue-400 mb-2"
-                )
-                ui.label("""
-Track how many times viewers use the command. Great for death counters, win streaks, or usage statistics.
-The counter automatically increments each time the command is used.
-                """).classes("text-xs secondary-text")
-
-            # Reset Commands
-            with ui.element("div").classes(
-                "bg-theme-surface p-3 rounded border-l-4 border-orange-500"
-            ):
-                ui.label("Reset Commands").classes(
-                    "text-sm font-medium text-orange-400 mb-2"
-                )
-                ui.label("""
-Commands that reset the counters of other commands. Useful for resetting death counters or win streaks.
-These commands reference another command to reset its counter value.
-                """).classes("text-xs secondary-text")
-
-    # How to Create Commands
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Create a New Command").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Click the 'New Command' button in the Commands tab").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("2. Choose your command type (Basic, Counter, or Reset)").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("3. Fill in the required information:").classes(
-                "text-sm secondary-text"
-            )
-            with ui.element("div").classes("ml-4 text-xs secondary-text"):
-                ui.label("• Name: Display name for the command (for your reference)")
-                ui.label("• Command: The trigger word (without the !)")
-                ui.label("• Response: What the bot will say when triggered")
-                ui.label("• Description: Optional description for organization")
-            ui.label("4. Configure optional settings:").classes("text-sm secondary-text")
-            with ui.element("div").classes("ml-4 text-xs secondary-text"):
-                ui.label("• Aliases: Alternative trigger words")
-                ui.label("• Mod Only: Restrict to moderators only")
-                ui.label("• Cooldown: Prevent spam (seconds between uses)")
-                ui.label("• Usage Limit: Maximum total uses")
-                ui.label("• For Counter commands: Starting count value")
-                ui.label("• For Reset commands: Which command to reset")
-            ui.label("5. Test the command using the Test button").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("6. Enable the command and save").classes("text-sm secondary-text")
-
-    # How to Edit Commands
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Edit Existing Commands").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Find the command card you want to edit").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("2. Click the 'Edit' button on the command card").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("3. Modify any settings as needed").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("4. Test your changes with the Test button").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("5. Save your changes").classes("text-sm secondary-text")
-            ui.label("Note: Command type cannot be changed after creation").classes(
-                "text-xs text-yellow-400"
-            )
-
-    # UI Card Example
-    with ui.element("div").classes("form-section"):
-        ui.label("Command Card Example").classes(
-            "text-lg font-semibold text-theme-primary mb-3"
-        )
-        ui.label(
-            "Here's what a command card looks like and what each element tells you:"
-        ).classes("text-sm secondary-text mb-4")
-
-        # Mock command card
-        with ui.element("div").classes(
-            "chatbot-card command p-4 rounded-lg bg-theme-surface border border-gray-600"
-        ):
-            # Header row
-            with ui.row().classes("w-full items-center justify-between mb-3"):
-                with ui.column().classes("gap-1 flex-grow"):
-                    ui.label("Death Counter").classes(
-                        "text-base font-semibold"
-                    )
-                    ui.label("!death (Aliases: !rip, !ded)").classes(
-                        "text-xs text-blue-300"
-                    )
-                    ui.label("Tracks how many times the streamer has died").classes(
-                        "text-xs secondary-text"
-                    )
-
-                # Status and toggle
-                with ui.column().classes("items-end gap-1"):
-                    ui.label("Enabled").classes("status-badge status-enabled")
-                    ui.label("Toggle").classes("text-xs secondary-text")
-
-            # Badges row
-            with ui.row().classes("w-full items-center gap-2 mb-3"):
-                ui.label("Counter").classes("counter-badge")
-                ui.label("Mod Only").classes("mod-only-badge")
-
-            # Response preview
-            with ui.column().classes("w-full mb-3"):
-                ui.label("Response:").classes("text-xs secondary-text mb-1")
-                ui.label('"@username has died! Death count: 47"').classes(
-                    "text-xs secondary-text"
-                )
-
-            # Statistics
-            with ui.row().classes(
-                "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
-            ):
-                ui.label("Count: 47")
-                ui.label("Last: 12/25 14:30")
-
-            # Action buttons
-            with ui.row().classes("w-full items-center gap-2 mt-3"):
-                ui.label("Edit").classes(
-                    "control-button btn-secondary text-xs px-3 py-1"
-                )
-                ui.label("Reset").classes(
-                    "control-button btn-warning text-xs px-3 py-1"
-                )
-                ui.label("Test").classes(
-                    "control-button btn-success text-xs px-3 py-1"
-                )
-                ui.label("Delete").classes(
-                    "control-button btn-danger text-xs px-3 py-1"
-                )
-
-        # Card element explanations
-        with ui.column().classes("mt-4 gap-2 text-xs secondary-text"):
-            ui.label("├── Command Name (display name for organization)")
-            ui.label("├── Command Trigger (what viewers type, with aliases)")
-            ui.label("├── Description (optional notes)")
-            ui.label("├── Status Badge (Enabled/Disabled)")
-            ui.label("├── Toggle Switch (quick enable/disable)")
-            ui.label("├── Type Badges (Counter, Mod Only, etc.)")
-            ui.label("├── Response Preview (shows what bot will say)")
-            ui.label("├── Statistics (usage count, last used time)")
-            ui.label("└── Action Buttons (Edit, Reset, Test, Delete)")
-
-
-def _create_events_help_content():
-    """Create the help content for the Events tab"""
-    # Overall description
-    with ui.element("div").classes("form-section"):
-        ui.label("Events Overview").classes("text-lg font-semibold text-red-400 mb-3")
-        ui.label("""
-Events are automatic chat responses triggered by stream activity. When someone follows, subscribes,
-donates, or other stream events occur, your bot can automatically respond with customized messages.
-Events help create an engaging, responsive chat experience without manual intervention.
-        """).classes("text-sm secondary-text mb-4")
-
-    # Event Types
-    with ui.element("div").classes("form-section"):
-        ui.label("Available Event Types").classes(
-            "text-lg font-semibold text-red-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            event_types = [
-                ("New Follower", "When someone follows your channel", "👤"),
-                ("Subscription", "When someone subscribes (includes gifts)", "⭐"),
-                ("Bits/Donation", "When bits are cheered or donations received", "💎"),
-                ("Raid", "When another channel raids yours", "⚔️"),
-                ("Hype Train", "When a hype train starts or levels up", "🚂"),
-                (
-                    "Channel Point Redemption",
-                    "When viewers redeem channel points",
-                    "🎯",
-                ),
-                ("Interval", "Automatic messages at set time intervals", "⏰"),
-            ]
-            for name, desc, icon in event_types:
-                with ui.element("div").classes(
-                    "bg-theme-surface p-3 rounded border-l-4 border-red-500"
-                ):
-                    ui.label(f"{icon} {name}").classes(
-                        "text-sm font-medium text-red-400 mb-1"
-                    )
-                    ui.label(desc).classes("text-xs secondary-text")
-
-    # How to Create Events
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Create a New Event").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Click the 'New Event' button in the Events tab").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("2. Select the event type you want to respond to").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("3. Fill in the required information:").classes(
-                "text-sm secondary-text"
-            )
-            with ui.element("div").classes("ml-4 text-xs secondary-text"):
-                ui.label("• Name: Display name for the event (for your reference)")
-                ui.label("• Response: What the bot will say when the event occurs")
-                ui.label("• Description: Optional description for organization")
-            ui.label("4. Configure event-specific settings:").classes(
-                "text-sm secondary-text"
-            )
-            with ui.element("div").classes("ml-4 text-xs secondary-text"):
-                ui.label(
-                    "• For Interval events: Set the time interval (e.g., every 30 minutes)"
-                )
-                ui.label("• Minimum values: Set minimum amounts for subscriptions/bits")
-                ui.label("• Custom conditions: Advanced filtering options")
-            ui.label("5. Test the event using the Test button").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("6. Enable the event and save").classes("text-sm secondary-text")
-
-    # How to Edit Events
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Edit Existing Events").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Find the event card you want to edit").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("2. Click the 'Edit' button on the event card").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("3. Modify the response text or settings as needed").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("4. Test your changes with the Test button").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("5. Save your changes").classes("text-sm secondary-text")
-            ui.label("Note: Event type cannot be changed after creation").classes(
-                "text-xs text-yellow-400"
-            )
-
-    # UI Card Example
-    with ui.element("div").classes("form-section"):
-        ui.label("Event Card Example").classes(
-            "text-lg font-semibold text-theme-primary mb-3"
-        )
-        ui.label(
-            "Here's what an event card looks like and what each element tells you:"
-        ).classes("text-sm secondary-text mb-4")
-
-        # Mock event card
-        with ui.element("div").classes(
-            "chatbot-card event p-4 rounded-lg bg-theme-surface border border-gray-600"
-        ):
-            # Header row
-            with ui.row().classes("w-full items-center justify-between mb-3"):
-                with ui.column().classes("gap-1 flex-grow"):
-                    ui.label("New Follower Welcome").classes(
-                        "text-base font-semibold"
-                    )
-                    ui.label("New Follower").classes("text-xs text-red-300")
-                    ui.label("Welcome new followers to the stream").classes(
-                        "text-xs secondary-text"
-                    )
-
-                # Status and toggle
-                with ui.column().classes("items-end gap-1"):
-                    ui.label("Enabled").classes("status-badge status-enabled")
-                    ui.label("Toggle").classes("text-xs secondary-text")
-
-            # Response preview
-            with ui.column().classes("w-full mb-3"):
-                ui.label("Response:").classes("text-xs secondary-text mb-1")
-                ui.label(
-                    '"Welcome to the stream, @username! Thank you for following! 🎉"'
-                ).classes("text-xs secondary-text")
-
-            # Statistics
-            with ui.row().classes(
-                "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
-            ):
-                ui.label("Triggered: 42x")
-                ui.label("Last: 12/25 15:45")
-
-            # Action buttons
-            with ui.row().classes("w-full items-center gap-2 mt-3"):
-                ui.label("Edit").classes(
-                    "control-button btn-secondary text-xs px-3 py-1"
-                )
-                ui.label("Test").classes(
-                    "control-button btn-warning text-xs px-3 py-1"
-                )
-                ui.label("Delete").classes(
-                    "control-button btn-danger text-xs px-3 py-1"
-                )
-
-        # Card element explanations
-        with ui.column().classes("mt-4 gap-2 text-xs secondary-text"):
-            ui.label("├── Event Name (display name for organization)")
-            ui.label("├── Event Type (what triggers this response)")
-            ui.label("├── Description (optional notes)")
-            ui.label("├── Status Badge (Enabled/Disabled)")
-            ui.label("├── Toggle Switch (quick enable/disable)")
-            ui.label("├── Response Preview (shows what bot will say)")
-            ui.label("├── Statistics (trigger count, last triggered time)")
-            ui.label("└── Action Buttons (Edit, Test, Delete)")
-
-
-def _create_quotes_help_content():
-    """Create the help content for the Quotes tab"""
-    # Overall description
-    with ui.element("div").classes("form-section"):
-        ui.label("Quotes Overview").classes(
-            "text-lg font-semibold text-theme-primary mb-3"
-        )
-        ui.label("""
-Quotes are memorable moments, funny sayings, or important statements from your stream that you want to preserve.
-The quote system allows you to save and organize these moments with attribution, making it easy to reference
-them later or share them with viewers. Quotes can be triggered by commands or displayed randomly.
-        """).classes("text-sm secondary-text mb-4")
-
-    # Quote Features
-    with ui.element("div").classes("form-section"):
-        ui.label("Quote System Features").classes(
-            "text-lg font-semibold text-theme-primary mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            features = [
-                (
-                    "Automatic Numbering",
-                    "Each quote gets a unique sequential number",
-                    "🔢",
-                ),
-                ("Author Attribution", "Track who said the memorable line", "👤"),
-                ("Date Tracking", "Record when the quote was added", "📅"),
-                ("Search & Filter", "Find quotes by text, author, or number", "🔍"),
-                ("Command Integration", "Access quotes through !quote commands", "💬"),
-            ]
-            for name, desc, icon in features:
-                with ui.element("div").classes(
-                    "bg-theme-surface p-3 rounded border-l-4 border-theme-primary"
-                ):
-                    ui.label(f"{icon} {name}").classes(
-                        "text-sm font-medium text-theme-primary mb-1"
-                    )
-                    ui.label(desc).classes("text-xs secondary-text")
-
-    # How to Create Quotes
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Add a New Quote").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Click the 'New Quote' button in the Quotes tab").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("2. Enter the quote text exactly as it was said").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("3. Specify who said it (the author)").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("4. The system will automatically assign a quote number").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("5. Save the quote").classes("text-sm secondary-text")
-            ui.label("Tip: Quotes are automatically timestamped when created").classes(
-                "text-xs text-blue-400"
-            )
-
-    # How to Edit Quotes
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Edit Existing Quotes").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Find the quote card you want to edit").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("2. Click the 'Edit' button on the quote card").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("3. Modify the quote text or author as needed").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("4. Save your changes").classes("text-sm secondary-text")
-            ui.label("Note: Quote numbers cannot be changed once assigned").classes(
-                "text-xs text-yellow-400"
-            )
-
-    # UI Card Example
-    with ui.element("div").classes("form-section"):
-        ui.label("Quote Card Example").classes(
-            "text-lg font-semibold text-theme-primary mb-3"
-        )
-        ui.label(
-            "Here's what a quote card looks like and what each element tells you:"
-        ).classes("text-sm secondary-text mb-4")
-
-        # Mock quote card
-        with ui.element("div").classes(
-            "chatbot-card quote p-4 rounded-lg bg-theme-surface border border-gray-600"
-        ):
-            # Header row
-            with ui.row().classes("w-full items-center justify-between mb-3"):
-                with ui.column().classes("gap-1 flex-grow"):
-                    ui.label("Quote #47").classes("text-base font-semibold")
-                    ui.label("by StreamUser123").classes("text-xs secondary-text")
-
-                # Action buttons
-                with ui.column().classes("items-end gap-2"):
-                    ui.label("Edit").classes(
-                        "control-button btn-secondary text-xs px-3 py-1"
-                    )
-                    ui.label("Delete").classes(
-                        "control-button btn-danger text-xs px-3 py-1"
-                    )
-
-            # Quote text
-            with ui.column().classes("w-full mb-3"):
-                ui.label("Quote:").classes("text-xs secondary-text mb-1")
-                ui.label(
-                    '"I\'m not addicted to the stream, I just spend 8 hours a day here because I care about the community"'
-                ).classes(
-                    "text-sm secondary-text italic p-3 bg-theme-surface rounded border-l-4 border-theme-primary"
-                )
-
-            # Statistics
-            with ui.row().classes(
-                "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
-            ):
-                ui.label("Added by: ModUser")
-                ui.label("Added: 12/25 16:20")
-
-        # Card element explanations
-        with ui.column().classes("mt-4 gap-2 text-xs secondary-text"):
-            ui.label("├── Quote Number (unique identifier)")
-            ui.label("├── Author (who said the quote)")
-            ui.label("├── Action Buttons (Edit, Delete)")
-            ui.label("├── Quote Text (the actual quote content)")
-            ui.label("├── Added By (who added this quote to the system)")
-            ui.label("└── Date Added (when the quote was saved)")
-
-
-def _create_greetings_help_content():
-    """Create the help content for the Greetings tab"""
-    # Overall description
-    with ui.element("div").classes("form-section"):
-        ui.label("Greetings Overview").classes(
-            "text-lg font-semibold text-cyan-400 mb-3"
-        )
-        ui.label("""
-Greetings automatically welcome viewers when they join your chat. You can create personalized messages
-for specific users or set up a default greeting that works for everyone. The system uses unique user IDs
-to track people even when they change their usernames, and includes a 24-hour cooldown to prevent spam.
-        """).classes("text-sm secondary-text mb-4")
-
-    # Greeting Types
-    with ui.element("div").classes("form-section"):
-        ui.label("Greeting System Features").classes(
-            "text-lg font-semibold text-cyan-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            greeting_types = [
-                ("Custom Greetings", "Personalized messages for specific users", "👤"),
-                (
-                    "Default Greeting",
-                    "Fallback message for users without custom greetings",
-                    "💬",
-                ),
-                (
-                    "User ID Tracking",
-                    "Follows users even when they change usernames",
-                    "🔄",
-                ),
-                (
-                    "24-Hour Cooldown",
-                    "Prevents greeting spam by limiting to once per day",
-                    "⏰",
-                ),
-                ("Username Updates", "Automatically updates stored usernames", "📝"),
-                ("Greeting Settings", "Configure system-wide greeting behavior", "⚙️"),
-            ]
-            for name, desc, icon in greeting_types:
-                with ui.element("div").classes(
-                    "bg-theme-surface p-3 rounded border-l-4 border-cyan-500"
-                ):
-                    ui.label(f"{icon} {name}").classes(
-                        "text-sm font-medium text-cyan-400 mb-1"
-                    )
-                    ui.label(desc).classes("text-xs secondary-text")
-
-    # How to Create Custom Greetings
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Create Custom Greetings").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Click the 'New Greeting' button in the Greetings tab").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("2. Enter the Twitch username of the person to greet").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("3. Type your personalized greeting message").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("4. Choose whether to enable this greeting immediately").classes(
-                "text-sm secondary-text"
-            )
-            ui.label(
-                "5. The system will look up and store their user ID automatically"
-            ).classes("text-sm secondary-text")
-            ui.label("6. Save the custom greeting").classes("text-sm secondary-text")
-
-    # How to Configure Default Greeting
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Set Up Default Greeting").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Click the 'Greeting Settings' button").classes(
-                "text-sm secondary-text"
-            )
-            ui.label(
-                "2. Enable the default greeting system if not already enabled"
-            ).classes("text-sm secondary-text")
-            ui.label("3. Enter your default greeting message").classes(
-                "text-sm secondary-text"
-            )
-            ui.label(
-                "4. Set the reset interval (how often users can be greeted again)"
-            ).classes("text-sm secondary-text")
-            ui.label("5. Save the settings").classes("text-sm secondary-text")
-            ui.label(
-                "Note: Default greetings are used for any user without a custom greeting"
-            ).classes("text-xs text-blue-400")
-
-    # How to Edit Greetings
-    with ui.element("div").classes("form-section"):
-        ui.label("How to Edit Existing Greetings").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        with ui.column().classes("gap-3"):
-            ui.label("1. Find the greeting card you want to edit").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("2. Click the 'Edit' button on the greeting card").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("3. Modify the greeting text as needed").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("4. Toggle enable/disable if needed").classes(
-                "text-sm secondary-text"
-            )
-            ui.label("5. Save your changes").classes("text-sm secondary-text")
-
-    # UI Card Example
-    with ui.element("div").classes("form-section"):
-        ui.label("Greeting Card Example").classes(
-            "text-lg font-semibold text-theme-primary mb-3"
-        )
-        ui.label(
-            "Here's what a greeting card looks like and what each element tells you:"
-        ).classes("text-sm secondary-text mb-4")
-
-        # Mock greeting card
-        with ui.element("div").classes(
-            "chatbot-card greeting p-4 rounded-lg bg-theme-surface border border-gray-600"
-        ):
-            # Header row
-            with ui.row().classes("w-full items-center justify-between mb-3"):
-                with ui.column().classes("gap-1 flex-grow"):
-                    ui.label("@StreamUser123").classes(
-                        "text-base font-semibold"
-                    )
-                    ui.label("ID: 123456789").classes("text-xs text-cyan-300")
-
-                # Status and toggle
-                with ui.column().classes("items-end gap-1"):
-                    ui.label("Enabled").classes("status-badge status-enabled")
-                    ui.label("Toggle").classes("text-xs secondary-text")
-
-            # Greeting text
-            with ui.column().classes("w-full mb-3"):
-                ui.label("Greeting:").classes("text-xs secondary-text mb-1")
-                ui.label(
-                    '"@StreamUser123 Welcome back to the stream! Great to see you! 🎮"'
-                ).classes(
-                    "text-sm secondary-text p-3 bg-theme-surface rounded border-l-4 border-cyan-500"
-                )
-
-            # Statistics
-            with ui.row().classes(
-                "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
-            ):
-                ui.label("Last greeted: 12/25 10:15")
-
-        # Card element explanations
-        with ui.column().classes("mt-4 gap-2 text-xs secondary-text"):
-            ui.label("├── Username (current display name)")
-            ui.label("├── User ID (unique identifier)")
-            ui.label("├── Status Badge (Enabled/Disabled)")
-            ui.label("├── Toggle Switch (quick enable/disable)")
-            ui.label("├── Greeting Text (what bot will say)")
-            ui.label("└── Last Greeted (when they were last welcomed)")
-
-
-def _create_general_help_content():
-    """Create general help content as fallback"""
-    with ui.element("div").classes("form-section"):
-        ui.label("Chatbot Help & Guide").classes(
-            "text-lg font-semibold text-blue-400 mb-3"
-        )
-        ui.label("""
-Welcome to the Mycelian Chatbot system! This powerful tool allows you to create automated chat commands,
-event responses, memorable quotes, and personalized greetings for your stream.
-
-Use the tabs above to access specific help for each feature:
-• Commands - Interactive chat triggers
-• Events - Automatic responses to stream activity
-• Quotes - Save and share memorable moments
-• Greetings - Welcome viewers to your chat
-
-Click the help button in any tab to get detailed guidance for that specific feature.
-        """).classes("text-sm secondary-text mb-4")
-
-
-def show_help_dialog(tab_type: str = "commands"):
-    """Show tab-specific help information about the chatbot system"""
-    with ui.dialog().classes("w-11/12 max-w-6xl").props("persistent") as help_dialog:
-        with ui.card().classes("w-full h-[75vh]"):
-            with ui.column().classes("w-full h-full"):
-                # Header
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
-                ):
-                    tab_titles = {
-                        "commands": "Commands Help & Guide",
-                        "events": "Events Help & Guide",
-                        "quotes": "Quotes Help & Guide",
-                        "greetings": "Greetings Help & Guide",
-                    }
-                    ui.label(tab_titles.get(tab_type, "Chatbot Help & Guide")).classes(
-                        "text-xl font-semibold text-blue-400"
-                    )
-                    ui.button(icon="close", on_click=help_dialog.close).props(
-                        "flat round"
-                    ).classes("secondary-text")
-
-                # Content
-                with ui.scroll_area().classes("flex-grow p-6"):
-                    with ui.column().classes("w-full gap-6"):
-                        if tab_type == "commands":
-                            _create_commands_help_content()
-                        elif tab_type == "events":
-                            _create_events_help_content()
-                        elif tab_type == "quotes":
-                            _create_quotes_help_content()
-                        elif tab_type == "greetings":
-                            _create_greetings_help_content()
-                        else:
-                            # Fallback to general help
-                            _create_general_help_content()
-
-    help_dialog.open()

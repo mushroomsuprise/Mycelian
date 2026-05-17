@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from nicegui import ui
 from ..notification_engine import notify
+from ..ui_buttons import destructive_button, outline_button, primary_button
 from ..path_utils import get_assets_path, get_template_path
 
 # Use proper relative import for template_config_parser
@@ -196,31 +197,6 @@ CUSTOM_CSS = """
     border: 1px solid var(--color-border-default);
 }
 
-.form-group {
-    transition: all 0.2s ease;
-}
-
-.form-group:hover {
-    /* transform: translateX(4px); Removed for grid layout */
-    background-color: var(--color-hover-overlay); /* Subtle hover for grid cells */
-}
-
-.control-button {
-    transition: all 0.2s ease;
-}
-
-.control-button:hover {
-    transform: translateY(-2px);
-    opacity: 0.9;
-}
-
-.description-text {
-    transition: opacity 0.2s ease;
-}
-
-.form-group:hover .description-text {
-    opacity: 1 !important;
-}
 """
 
 
@@ -817,13 +793,14 @@ def create_custom_sources_tab():
                         ),
                     ).classes("w-48 bg-theme-base")
 
-                    ui.button(
-                        icon="refresh",
-                        text="",
-                        on_click=lambda: load_config_files(
+                    outline_button(
+                        "",
+                        lambda: load_config_files(
                             config_parser, config_select, config_container
                         ),
-                    ).classes("control-button p-2 bg-theme-base")
+                        icon="refresh",
+                        extra_classes="p-2",
+                    )
 
             # Search input
             with ui.row().classes("w-full items-center gap-2"):
@@ -843,40 +820,40 @@ def create_custom_sources_tab():
             # Action buttons
             with ui.row().classes("w-full items-center gap-2"):
                 with ui.row().classes("gap-2"):
-                    ui.button(
+                    primary_button(
+                        "New",
+                        lambda: create_new_config(
+                            config_parser, config_select, config_container
+                        ),
                         icon="add",
-                        text="New",
-                        on_click=lambda: create_new_config(
-                            config_parser, config_select, config_container
-                        ),
-                    ).classes("control-button btn-primary")
+                    )
 
-                    ui.button(
-                        icon="delete",
-                        text="Delete",
-                        on_click=lambda: delete_config(
+                    destructive_button(
+                        "Delete",
+                        lambda: delete_config(
                             config_parser, config_select, config_container
                         ),
-                    ).classes("control-button btn-danger")
+                        icon="delete",
+                    )
 
                 ui.element("div").classes("flex-grow")
 
                 with ui.row().classes("gap-2"):
-                    ui.button(
+                    outline_button(
+                        "Reset",
+                        lambda: reset_config(
+                            config_parser, config_select, config_container
+                        ),
                         icon="restart_alt",
-                        text="Reset",
-                        on_click=lambda: reset_config(
-                            config_parser, config_select, config_container
-                        ),
-                    ).classes("control-button bg-theme-base")
+                    )
 
-                    ui.button(
-                        icon="save",
-                        text="Save",
-                        on_click=lambda: save_config(
+                    primary_button(
+                        "Save",
+                        lambda: save_config(
                             config_parser, config_select, config_container
                         ),
-                    ).classes("control-button btn-success")
+                        icon="save",
+                    )
 
         # Adjustable split: editor (left) vs preview (right)
         preview_outer_id = "mycelian-cs-pe-" + uuid.uuid4().hex[:12]
@@ -921,19 +898,6 @@ def create_custom_sources_tab():
                 config_container = ui.element("div").classes(
                     "flex-1 min-h-0 overflow-auto w-full"
                 )
-                with (
-                    ui.expansion("Help")
-                    .classes("shrink-0 opacity-75")
-                    .props("dense default-opened=false")
-                ):
-                    help_text = (
-                        "This tab allows you to manage template configurations. Each configuration is stored as a "
-                        "JSON file in the templates/template_configs directory. You can create, edit, and delete "
-                        "configuration files. Note: Templates marked as 'hidden' will not appear here but can still "
-                        "be controlled through the Source Controls tab."
-                    )
-                    ui.label(help_text).classes("text-sm p-2")
-
             _pst_initial = load_template_preview_settings()
             with ui.dialog() as preview_settings_dialog, ui.card():
                 ui.label("Preview settings").classes("text-lg font-medium mb-2")

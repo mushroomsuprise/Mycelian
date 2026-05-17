@@ -3,6 +3,16 @@ from __future__ import annotations
 from typing import Dict, Any, List, Optional
 
 from nicegui import ui
+
+from ...ui_buttons import outline_button, primary_button
+from ...ui_settings_layout import (
+    THEME_CHIP_CLASSES,
+    settings_form_grid,
+    settings_section,
+    settings_status_band,
+    settings_surface,
+    theme_chip_row,
+)
 from ...notification_engine import notify
 
 from ... import dataobjects
@@ -218,7 +228,7 @@ class YouTubeTab:
 
             # Reset button state
             if "test_button" in self.ui_elements:
-                self.ui_elements["test_button"].set_text("Test Connection")
+                self.ui_elements["test_button"].set_text("Test")
                 self.ui_elements["test_button"].enable()
         except Exception as e:
             import logging
@@ -265,10 +275,11 @@ class YouTubeTab:
         if not self._playlist_chip_container:
             return
         with self._playlist_chip_container:
-            with ui.element("div").classes(
-                "flex items-center gap-1 px-3 py-1 rounded-full"
-                " bg-blue-500/20 border border-blue-500/40"
-            ).style("flex-shrink: 0; white-space: nowrap;"):
+            with (
+                ui.element("div")
+                .classes(THEME_CHIP_CLASSES)
+                .style("white-space: nowrap;")
+            ):
                 ui.label(name).classes("text-sm").style("white-space: nowrap;")
                 ui.button(
                     icon="close",
@@ -280,123 +291,97 @@ class YouTubeTab:
         if not self._playlist_chip_container:
             return
         self._playlist_chip_container.clear()
-        current_list: List[str] = (
-            self.buffer.playlist_filter if self.buffer else []
-        )
+        current_list: List[str] = self.buffer.playlist_filter if self.buffer else []
         for name in current_list:
             self._create_chip(name)
 
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with parent_container:
-            with ui.card().classes("content-section w-full"):
-                ui.label("YouTube Integration").classes("text-xl font-bold mb-4")
+        with settings_surface(parent_container):
+            ui.label("YouTube Integration").classes("text-lg font-bold")
 
-                with ui.column().classes("w-full gap-4"):
-                    with ui.row().classes("w-full gap-4 items-start"):
-                        # Column 1: Status information
-                        with ui.column().classes("flex-1 gap-2"):
-                            ui.label("Status:").classes("text-sm font-medium")
-                            self.ui_elements["status_label"] = ui.label(
-                                "Loading..."
-                            ).classes("font-semibold")
+            with settings_status_band():
+                with ui.column().classes("gap-0"):
+                    ui.label("Status").classes("text-xs secondary-text")
+                    self.ui_elements["status_label"] = ui.label(
+                        "Loading..."
+                    ).classes("font-semibold text-sm")
+                with ui.column().classes("gap-0 flex-1 min-w-[10rem]"):
+                    ui.label("Channel").classes("text-xs secondary-text")
+                    self.ui_elements["channel_label"] = ui.label("N/A").classes(
+                        "font-semibold text-sm"
+                    )
+                with ui.column().classes("gap-0 flex-1 min-w-[10rem]"):
+                    ui.label("Latest video").classes("text-xs secondary-text")
+                    self.ui_elements["video_label"] = ui.label("N/A").classes(
+                        "font-semibold text-sm"
+                    )
 
-                            ui.label("Channel:").classes("text-sm font-medium")
-                            self.ui_elements["channel_label"] = ui.label("N/A").classes(
-                                "font-semibold"
-                            )
+            with settings_form_grid(columns=2):
+                self.ui_elements["api_key"] = (
+                    ui.input(
+                        label="API key",
+                        value=getattr(self.buffer, "api_key", ""),
+                        password=True,
+                        password_toggle_button=True,
+                        placeholder="YouTube Data API v3 Key",
+                    )
+                    .classes("w-full")
+                    .on(
+                        "change",
+                        lambda e: self._set(
+                            "api_key",
+                            getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                        ),
+                    )
+                )
+            self.ui_elements["channel_urls"] = (
+                ui.input(
+                    label="Channel URLs",
+                    value=getattr(self.buffer, "channel_urls", ""),
+                    placeholder="https://youtube.com/@Channel|https://...",
+                )
+                .classes("w-full")
+                .on(
+                    "change",
+                    lambda e: self._set(
+                        "channel_urls",
+                        getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                    ),
+                )
+            )
 
-                            ui.label("Latest Video:").classes("text-sm font-medium")
-                            self.ui_elements["video_label"] = ui.label("N/A").classes(
-                                "font-semibold"
-                            )
-
-                        # Column 2: Configuration
-                        with ui.column().classes("flex-1 gap-2"):
-                            ui.label("API Key:").classes("text-sm font-medium")
-                            self.ui_elements["api_key"] = (
-                                ui.input(
-                                    value=getattr(self.buffer, "api_key", ""),
-                                    password=True,
-                                    password_toggle_button=True,
-                                    placeholder="YouTube Data API v3 Key",
-                                )
-                                .classes("w-full")
-                                .on(
-                                    "change",
-                                    lambda e: self._set(
-                                        "api_key",
-                                        getattr(e, "args", [getattr(e, "value", "")])[0]
-                                        or "",
-                                    ),
-                                )
-                            )
-
-                            ui.label("Channel URLs:").classes("text-sm font-medium")
-                            self.ui_elements["channel_urls"] = (
-                                ui.input(
-                                    value=getattr(self.buffer, "channel_urls", ""),
-                                    placeholder="https://youtube.com/@Channel|https://...",
-                                )
-                                .classes("w-full")
-                                .on(
-                                    "change",
-                                    lambda e: self._set(
-                                        "channel_urls",
-                                        getattr(e, "args", [getattr(e, "value", "")])[0]
-                                        or "",
-                                    ),
-                                )
-                            )
-
-                            ui.label("Playlist Filter (Exclude):").classes(
-                                "text-sm font-medium"
-                            )
-                            with ui.column().classes("w-full gap-1"):
-                                self._playlist_chip_container = ui.row().classes(
-                                    "w-full flex-wrap gap-1 items-center min-h-[32px]"
-                                )
-                                self._rebuild_playlist_chips()
-                                self._playlist_input = (
-                                    ui.input(placeholder="Type playlist name, press Enter")
-                                    .classes("w-full")
-                                    .on(
-                                        "keydown.enter",
-                                        self._on_playlist_input_enter,
-                                    )
-                                )
-
-                        # Column 3: Connection buttons (stacked vertically)
-                        with ui.column().classes("gap-2"):
-                            self.ui_elements["test_button"] = (
-                                ui.button(
-                                    "Test",
-                                    on_click=self._test_connection,
-                                )
-                                .props("icon=wifi_tethering outline")
-                                .classes("w-32")
-                            )
-
-                            self.ui_elements["refresh_button"] = (
-                                ui.button(
-                                    "Refresh",
-                                    on_click=self._refresh_status,
-                                )
-                                .props("icon=refresh outline")
-                                .classes("w-32")
-                            )
-
-                    with ui.row().classes("justify-end gap-2 mt-3"):
-                        ui.button("Discard", on_click=self.discard).props("outline")
-                        ui.button("Save", on_click=self.save).props("color=primary")
-
-                # Live status polling: active=True so updates run even if on_enter
-                # ran before this lazy build() executed.
-                self._status_timer = ui.timer(
-                    5.0, self._refresh_status, active=True
+            with settings_section(
+                "Playlist filter (exclude)",
+                subtitle="Press Enter to add a playlist name",
+            ):
+                self._playlist_chip_container = theme_chip_row()
+                self._rebuild_playlist_chips()
+                self._playlist_input = (
+                    ui.input(
+                        placeholder="Playlist name",
+                    )
+                    .classes("w-full")
+                    .on("keydown.enter", self._on_playlist_input_enter)
                 )
 
-        # Initial population while the timer interval has not elapsed yet.
+            with ui.row().classes(
+                "button-row w-full justify-end gap-2 mt-1 flex-wrap"
+            ):
+                self.ui_elements["refresh_button"] = outline_button(
+                    "Refresh",
+                    self._refresh_status,
+                    icon="refresh",
+                )
+                self.ui_elements["test_button"] = outline_button(
+                    "Test",
+                    self._test_connection,
+                    icon="wifi_tethering",
+                )
+                outline_button("Discard", self.discard)
+                primary_button("Save", self.save)
+            self._status_timer = ui.timer(5.0, self._refresh_status, active=True)
+
         self._refresh_status()
 
     def _load_from_state(self) -> None:

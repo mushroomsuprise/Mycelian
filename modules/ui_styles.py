@@ -304,6 +304,31 @@ body:not(.body--dark) .text-grey {
     background-color: var(--color-active-overlay) !important;
 }
 
+/*
+ * NiceGUI buttons are Quasar .q-btn elements. Legacy .control-button chrome
+ * must not override .props("color=...") / outline — use .mycelian-btn for
+ * shared hover only, or .btn-* for custom-filled non-Quasar styling.
+ */
+.q-btn.control-button:not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel) {
+    background-color: unset !important;
+    border: unset !important;
+    color: unset !important;
+    padding: unset !important;
+    font-size: unset !important;
+    font-weight: unset !important;
+    display: inline-flex !important;
+    gap: unset !important;
+}
+
+.mycelian-btn {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.mycelian-btn:hover {
+    transform: translateY(-1px);
+    opacity: 0.95;
+}
+
 /* Scrollbars */
 ::-webkit-scrollbar {
     width: 8px;
@@ -775,10 +800,16 @@ body:not(.body--dark) .q-btn--flat {
     color: var(--color-text-primary) !important;
 }
 
-body:not(.body--dark) .control-button {
+body:not(.body--dark) .control-button:not(.q-btn):not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel) {
     color: var(--color-text-primary) !important;
     background: var(--color-bg-surface) !important;
     border: 1px solid var(--color-border-default) !important;
+}
+
+body:not(.body--dark) .q-btn.control-button:not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel) {
+    background-color: unset !important;
+    border: unset !important;
+    color: unset !important;
 }
 
 /* Scrollbars in light mode */
@@ -884,6 +915,33 @@ COMPONENT_CSS = """
     font-size: 11px;
     font-weight: 500;
     width: fit-content;
+}
+
+/* Form field groups (Source Settings, Alerts, etc.) */
+.form-group {
+    transition: all 0.2s ease;
+}
+
+.form-group:hover {
+    background-color: var(--color-hover-overlay);
+}
+
+.form-group:hover .description-text {
+    opacity: 1 !important;
+}
+
+.description-text {
+    transition: opacity 0.2s ease;
+}
+
+/* Shared interactive button hover (legacy non-Quasar controls) */
+.control-button:not(.q-btn) {
+    transition: all 0.2s ease;
+}
+
+.control-button:not(.q-btn):hover {
+    transform: translateY(-2px);
+    opacity: 0.9;
 }
 
 /* Search input styling */
@@ -1009,6 +1067,14 @@ button.alert-save-btn:hover,
 /* =========================================
    Theme-Aware Button Classes
    ========================================= */
+
+/*
+ * Button roles (use modules.ui_buttons factories when possible):
+ *   btn-primary  — connect, new, save
+ *   btn-cancel   — refresh, test, cancel (outline style via outline_button)
+ *   btn-danger   — delete / destructive
+ *   btn-success  — explicit enable/confirm only
+ */
 
 /* Primary action buttons - replaces hardcoded bg-purple-600 */
 .btn-primary {
@@ -1191,6 +1257,22 @@ button.alert-save-btn:hover,
     background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.05)) !important;
     border: 1px solid rgba(239, 68, 68, 0.3) !important;
     border-radius: 8px;
+}
+
+/* Removable filter/cache chips (settings integration tabs) */
+.theme-chip {
+    background-color: var(--color-primary-light);
+    border: 1px solid var(--color-border-accent);
+    color: var(--color-text-primary);
+}
+
+.content-section.settings-tab-surface {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: none;
+    box-sizing: border-box;
 }
 """
 

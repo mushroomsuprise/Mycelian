@@ -1282,8 +1282,8 @@ def create_ui_elements():
                     ("Source Controls", build_source_controls_tab, source_controls_tab),
                     ("Connectors", build_connectors_tab, connectors_tab),
                     ("Chatbot", build_chatbot_tab, chatbot_tab),
-                    ("Settings", build_settings_tab, settings_tab),
                     ("Spore Studio", build_spore_studio_tab, spore_studio_tab),
+                    ("Settings", build_settings_tab, settings_tab),
                 ]
 
                 for tab_name, build_func, tab_obj in tab_definitions:
@@ -1355,6 +1355,14 @@ def create_ui_elements():
                 nonlocal previous_tab
                 current_tab = tabs.value
                 if current_tab != previous_tab:
+                    from .ui_tab_transitions import (
+                        MAIN_TAB_ORDER,
+                        apply_tab_slide_direction,
+                    )
+
+                    apply_tab_slide_direction(
+                        tab_panels, previous_tab, current_tab, MAIN_TAB_ORDER
+                    )
                     # The tab already changed, but we need to check if it should be allowed
                     # Temporarily set tabs.value back to the old tab for the handler
                     old_current = previous_tab
