@@ -1243,6 +1243,48 @@
             return 0;
         }
 
+        function formatRaidActivityMessage(username, raiderCount, gameName) {
+            var name = username || 'Someone';
+            var count = parseInt(raiderCount, 10);
+            if (isNaN(count)) {
+                count = 0;
+            }
+            var countStr = count.toLocaleString();
+            var base = name + ' raided with ' + countStr + ' viewers';
+            if (gameName) {
+                return base + ', they were last playing ' + gameName + '.';
+            }
+            return base + '!';
+        }
+
+        function resolveRaidRaiderCount(alertData) {
+            if (alertData.raider_count != null) {
+                return alertData.raider_count;
+            }
+            var stored = alertData.stored_alert_data || {};
+            if (stored.raider_count != null) {
+                return stored.raider_count;
+            }
+            var message = alertData.message || '';
+            var raidMatch = message.match(/(\d+)\s*viewers?/i);
+            return raidMatch ? parseInt(raidMatch[1], 10) : 0;
+        }
+
+        function resolveRaidGameName(alertData) {
+            if (alertData.game_name) {
+                return alertData.game_name;
+            }
+            var stored = alertData.stored_alert_data || {};
+            return stored.game_name || null;
+        }
+
+        function raidCategorySuffix(gameName) {
+            if (gameName) {
+                return ', they were last playing ' + gameName + '.';
+            }
+            return '!';
+        }
+
         // Function to generate appropriate message for alert types
         function generateAlertMessage(alertData) {
             var username = alertData.username || extractUsernameFromMessage(alertData.message || '');
@@ -1255,6 +1297,14 @@
 
             if (alertType === 'streak') {
                 return formatWatchStreakMessage(username, resolveWatchStreakCount(alertData), true);
+            }
+
+            if (alertType === 'raid') {
+                var raiderCount = resolveRaidRaiderCount(alertData);
+                var gameName = resolveRaidGameName(alertData);
+                if (raiderCount || gameName) {
+                    return formatRaidActivityMessage(username, raiderCount, gameName);
+                }
             }
 
             // Return original message for other types
@@ -2153,8 +2203,15 @@
                         }
                     }
                     // Keep the largest raid for this user
+                    var raidGame = alertData.game_name;
+                    if (!raidGame && storedData) {
+                        raidGame = storedData.game_name;
+                    }
                     if (viewers > userAlerts[username][groupingKey].totalAmount) {
                         userAlerts[username][groupingKey].totalAmount = viewers;
+                        if (raidGame) {
+                            userAlerts[username][groupingKey].gameName = raidGame;
+                        }
                     }
                 } else if (alertType === 'streak') {
                     var streakCountVal = alertData.streak_count;
@@ -2285,11 +2342,11 @@
                 } else if (groupingKey === 'raid') {
                     // For raids, show the largest raid
                     var formattedViewers = totalAmount.toLocaleString();
+                    var suffix = raidCategorySuffix(data.gameName);
                     if (count > 1) {
-                        return 'Raided ' + count + ' times (largest: ' + formattedViewers + ' viewers)!';
-                    } else {
-                        return 'Raided with ' + formattedViewers + ' viewers!';
+                        return 'Raided ' + count + ' times (largest: ' + formattedViewers + ' viewers)' + suffix;
                     }
+                    return 'Raided with ' + formattedViewers + ' viewers' + suffix;
                 } else if (groupingKey === 'streak') {
                     var streakTotal = parseInt(totalAmount, 10);
                     if (isNaN(streakTotal) || streakTotal < 1) {
@@ -2349,17 +2406,22 @@
                     var amount = donationMatch ? donationMatch[1] : '?';
                     return 'Donated $' + amount + '!';
                 } else if (alertType === 'raid') {
-                    // Extract viewer count from message
-                    var raidMatch = message.match(/(\d+)\s*viewers?/i);
-                    var viewers = raidMatch ? raidMatch[1] : '?';
-                    // Format with commas for readability
-                    try {
-                        var viewersInt = parseInt(viewers);
-                        viewers = viewersInt.toLocaleString();
-                    } catch (e) {
-                        // Keep original viewers if parsing fails
+                    var storedData = alertData.stored_alert_data || {};
+                    var raiderCount = alertData.raider_count != null ? alertData.raider_count : storedData.raider_count;
+                    var gameName = resolveRaidGameName(alertData);
+                    var viewers;
+                    if (raiderCount != null) {
+                        viewers = parseInt(raiderCount, 10).toLocaleString();
+                    } else {
+                        var raidMatch = message.match(/(\d+)\s*viewers?/i);
+                        viewers = raidMatch ? raidMatch[1] : '?';
+                        try {
+                            viewers = parseInt(viewers, 10).toLocaleString();
+                        } catch (e) {
+                            // Keep original viewers if parsing fails
+                        }
                     }
-                    return 'Raided with ' + viewers + ' viewers!';
+                    return 'Raided with ' + viewers + ' viewers' + raidCategorySuffix(gameName);
                 } else {
                     return alertType.charAt(0).toUpperCase() + alertType.slice(1) + '!';
                 }

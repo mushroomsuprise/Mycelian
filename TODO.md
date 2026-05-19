@@ -14,8 +14,6 @@ Chat Improvements:
     [] - Create a .spore.json sidecar file for the Spore Studio module
 
 Alerts Improvements:
-    [x] - Add emote parsing to alert messages (see chat template for the emote parser). Note: Alert messages have different payloads for emotes than chat messages for Twitch emotes specifically, 3rd party emotes can be parsed the same way.
-    [x] - Migrate default "text" options (see formatTextAlert function for some, there might be more elsewhere in the file) to be setup in the JSON config file instead, this way the user can adjust these as desired. Lets put these onto their own category in the JSON file.
     [] - Create a .spore.json sidecar file for the Spore Studio module
 
 Other Standard Templates:

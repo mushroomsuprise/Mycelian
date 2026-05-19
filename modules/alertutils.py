@@ -1658,6 +1658,7 @@ class AlertObj:
 
     # Raid options:
     raider_count: int = 0
+    game_name: str = None  # raider's Twitch category at raid time
 
     # Watch streak options:
     streak_count: int = 0

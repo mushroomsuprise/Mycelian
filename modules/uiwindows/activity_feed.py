@@ -456,6 +456,7 @@ def replay_alert(alert_data):
             "point_cost",
             "enable_alert",
             "raider_count",
+            "game_name",
             "donation_amount",
             "currency",
             "hype_train_level",
@@ -591,6 +592,32 @@ def format_watch_streak_message(
     return f"Watched for {count} consecutive streams!"
 
 
+def format_raid_activity_message(
+    username: str, raider_count: int, game_name: Optional[str] = None
+) -> str:
+    """Format raid text for activity feed, chat events, and condensed view."""
+    name = username or "Someone"
+    try:
+        count = int(raider_count)
+    except (TypeError, ValueError):
+        count = 0
+    try:
+        count_str = f"{count:,}"
+    except (ValueError, TypeError):
+        count_str = str(count)
+    base = f"{name} raided with {count_str} viewers"
+    if game_name:
+        return f"{base}, they were last playing {game_name}."
+    return f"{base}!"
+
+
+def _raid_category_suffix(game_name: Optional[str]) -> str:
+    """Suffix for condensed raid lines when category is known."""
+    if game_name:
+        return f", they were last playing {game_name}."
+    return "!"
+
+
 def build_activity_feed_alert_payload(
     alert_type,
     message,
@@ -643,6 +670,9 @@ def build_activity_feed_alert_payload(
                             alert_data["streak_count"] = int(streak_count)
                         except (TypeError, ValueError):
                             pass
+                    game_name = stored_alert_data.get("game_name")
+                    if game_name:
+                        alert_data["game_name"] = game_name
             else:
                 logger.debug(f"No stored alert data found for alert_id {alert_id}")
 
@@ -718,9 +748,17 @@ def iter_activity_feed_preview_payloads():
 
     raid_user = pick()
     raid_count = random.randint(5, 250)
+    raid_games = (
+        "Just Chatting",
+        "Final Fantasy VII",
+        "Hollow Knight: Silksong",
+        "League of Legends",
+    )
     yield build_activity_feed_alert_payload(
         "Raid",
-        f"{raid_user} raided with {raid_count} viewers!",
+        format_raid_activity_message(
+            raid_user, raid_count, random.choice(raid_games)
+        ),
         "raid",
         timestamp=ts,
     )
@@ -2036,7 +2074,11 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             message = f"{username} redeemed '{alert_name}'!"
         elif original_type == "raid":
             raider_count = stored_alert_data.get("raider_count", 0)
-            message = f"{username} raided with {raider_count} viewers!"
+            message = format_raid_activity_message(
+                username,
+                raider_count,
+                stored_alert_data.get("game_name"),
+            )
         elif original_type == "donation":
             donation_amount = stored_alert_data.get("donation_amount", 0)
             message = f"{username} donated ${donation_amount}!"
@@ -2649,8 +2691,13 @@ def create_condensed_view():
                     else:
                         viewers = 0
                 # Keep the largest raid for this user
+                raid_game = alert_data.get("game_name")
+                if not raid_game and stored_data:
+                    raid_game = stored_data.get("game_name")
                 if viewers > user_alerts[username][grouping_key]["total_amount"]:
                     user_alerts[username][grouping_key]["total_amount"] = viewers
+                    if raid_game:
+                        user_alerts[username][grouping_key]["game_name"] = raid_game
             elif alert_type == "streak":
                 streak_count_val = alert_data.get("streak_count")
                 if streak_count_val is None and stored_data:
@@ -2775,10 +2822,14 @@ def create_aggregated_alert_text(grouping_key, data):
                 formatted_viewers = f"{int(total_amount):,}"
             except (ValueError, TypeError):
                 formatted_viewers = str(total_amount)
+            game_name = data.get("game_name")
+            suffix = _raid_category_suffix(game_name)
             if count > 1:
-                return f"Raided {count} times (largest: {formatted_viewers} viewers)!"
-            else:
-                return f"Raided with {formatted_viewers} viewers!"
+                return (
+                    f"Raided {count} times (largest: {formatted_viewers} viewers)"
+                    f"{suffix}"
+                )
+            return f"Raided with {formatted_viewers} viewers{suffix}"
         elif grouping_key == "streak":
             sc = int(total_amount) if total_amount else 0
             if sc < 1:
@@ -2849,19 +2900,29 @@ def create_condensed_alert_text(alert_data):
             amount = donation_match.group(1) if donation_match else "?"
             return f"Donated ${amount}!"
         elif alert_type == "raid":
-            # Extract viewer count from message
-            message = alert_data.get("message", "")
-            import re
+            stored_data = alert_data.get("stored_alert_data") or {}
+            raider_count = alert_data.get("raider_count") or stored_data.get(
+                "raider_count"
+            )
+            game_name = alert_data.get("game_name") or stored_data.get("game_name")
+            if raider_count is not None:
+                try:
+                    viewers_int = int(raider_count)
+                    viewers = f"{viewers_int:,}"
+                except (ValueError, TypeError):
+                    viewers = str(raider_count)
+            else:
+                message = alert_data.get("message", "")
+                import re
 
-            raid_match = re.search(r"(\d+)\s*viewers?", message, re.IGNORECASE)
-            viewers = raid_match.group(1) if raid_match else "?"
-            # Format with commas for readability
-            try:
-                viewers_int = int(viewers)
-                viewers = f"{viewers_int:,}"
-            except (ValueError, TypeError):
-                pass
-            return f"Raided with {viewers} viewers!"
+                raid_match = re.search(r"(\d+)\s*viewers?", message, re.IGNORECASE)
+                viewers = raid_match.group(1) if raid_match else "?"
+                try:
+                    viewers_int = int(viewers)
+                    viewers = f"{viewers_int:,}"
+                except (ValueError, TypeError):
+                    pass
+            return f"Raided with {viewers} viewers{_raid_category_suffix(game_name)}"
         else:
             return f"{alert_type.title()}!"
 

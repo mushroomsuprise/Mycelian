@@ -3839,6 +3839,7 @@ class WebEngine:
                     "point_cost",
                     "enable_alert",
                     "raider_count",
+                    "game_name",
                     "donation_amount",
                     "currency",
                     "hype_train_level",

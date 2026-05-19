@@ -67,7 +67,11 @@ from .chatbot_core import EventType
 from .chatbot_manager import get_manager as get_chatbot_manager
 from .template_config_parser import match_point_reward_dedicated_template
 from .twitch_eventsub_patch import ensure_channel_chat_notification_watch_streak_patch
-from .uiwindows.activity_feed import add_alert_to_feed, format_watch_streak_message
+from .uiwindows.activity_feed import (
+    add_alert_to_feed,
+    format_raid_activity_message,
+    format_watch_streak_message,
+)
 
 ensure_channel_chat_notification_watch_streak_patch()
 
@@ -1965,6 +1969,20 @@ class Twitch_API:
         alert.raider_count = int(str(data.event.viewers))
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
+
+        game_name = None
+        try:
+            channel_infos = await self.twitch.get_channel_information(
+                data.event.from_broadcaster_user_id
+            )
+            if channel_infos and channel_infos[0].game_name:
+                game_name = channel_infos[0].game_name
+                alert.game_name = game_name
+        except Exception as e:
+            logger.warning(
+                f"Could not fetch channel info for raider {alert.username}: {e}"
+            )
+
         alert_processor.ALERT_QUEUE.append(alert)
         # Store completed alert using AlertStateManager
         alertutils.alert_state_manager.store_completed_alert(
@@ -2006,22 +2024,10 @@ class Twitch_API:
         # Send shoutout to the raider
         try:
             await self.send_shoutout(data.event.from_broadcaster_user_id)
-            channel_infos = await self.twitch.get_channel_information(
-                data.event.from_broadcaster_user_id
-            )
-            if channel_infos:
-                game_name = (
-                    channel_infos[0].game_name
-                    if channel_infos[0].game_name
-                    else "Unknown"
-                )
-                shoutout_message = f"HEY CHAT! Check out @{data.event.from_broadcaster_user_name} 's channel: https://twitch.tv/{data.event.from_broadcaster_user_name} . How was {game_name}?"
-                await self.send_chat_message(shoutout_message)
-                logger.debug(f"Sent shoutout to {alert.username}")
-            else:
-                logger.error(
-                    f"No channel information found for {data.event.from_broadcaster_user_name}"
-                )
+            shoutout_game = game_name or "Unknown"
+            shoutout_message = f"HEY CHAT! Check out @{data.event.from_broadcaster_user_name} 's channel: https://twitch.tv/{data.event.from_broadcaster_user_name} . How was {shoutout_game}?"
+            await self.send_chat_message(shoutout_message)
+            logger.debug(f"Sent shoutout to {alert.username}")
         except Exception as e:
             logger.error(
                 f"Failed to send shoutout to {alert.username}: {str(e)}", exc_info=True
@@ -2059,7 +2065,9 @@ class Twitch_API:
         # Add to activity feed
         add_alert_to_feed(
             alert_type="Raid",
-            message=f"{alert.username} raided with {alert.raider_count} viewers!",
+            message=format_raid_activity_message(
+                alert.username, alert.raider_count, game_name
+            ),
             badge_type="raid",
             timestamp=str(int(alert.timestamp)),
             alert_id=alert.alert_id,
