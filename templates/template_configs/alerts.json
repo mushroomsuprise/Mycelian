@@ -148,6 +148,182 @@
         },
         {
             "type": "separator",
+            "label": "Alert Header Text"
+        },
+        {
+            "type": "text",
+            "id": "TextFollow",
+            "label": "Follow header text",
+            "value": "thanks for the follow!",
+            "description": "Header line shown after the username on follow alerts."
+        },
+        {
+            "type": "text",
+            "id": "TextSub",
+            "label": "Sub header text",
+            "value": "thanks for subscribing!",
+            "description": "Header line for tier 1 subscriptions."
+        },
+        {
+            "type": "text",
+            "id": "TextSubTier",
+            "label": "Sub header text (higher tier)",
+            "value": "thanks for the Tier {tier} sub!",
+            "description": "Header line when tier is above 1. Use {tier} for the tier number."
+        },
+        {
+            "type": "text",
+            "id": "TextResub",
+            "label": "Resub header text",
+            "value": "{resub_month} month subscriber!",
+            "description": "Header line for resubscriptions. Use {resub_month} for cumulative months."
+        },
+        {
+            "type": "text",
+            "id": "TextStreakSingular",
+            "label": "Watch streak header (1 stream)",
+            "value": "1 stream watch streak!",
+            "description": "Header line when streak count is 1."
+        },
+        {
+            "type": "text",
+            "id": "TextStreakPlural",
+            "label": "Watch streak header (multiple)",
+            "value": "{streak_count} stream watch streak!",
+            "description": "Header line when streak count is greater than 1. Use {streak_count}."
+        },
+        {
+            "type": "text",
+            "id": "TextGiftsub",
+            "label": "Gift sub header text",
+            "value": "gifted {gift_qty} sub(s)!",
+            "description": "Header line for gift subs. Use {gift_qty} for the number gifted."
+        },
+        {
+            "type": "text",
+            "id": "TextGiftsubTier",
+            "label": "Gift sub header text (higher tier)",
+            "value": "gifted {gift_qty} Tier {tier} sub(s)!",
+            "description": "Header line for tier 2+ gift subs. Use {gift_qty} and {tier}."
+        },
+        {
+            "type": "text",
+            "id": "TextBit",
+            "label": "Bits header text",
+            "value": "cheered {amt_cheered} bit(s)!",
+            "description": "Header line for bit alerts. Use {amt_cheered} for the amount."
+        },
+        {
+            "type": "text",
+            "id": "TextRaid",
+            "label": "Raid header text",
+            "value": "raided with {raider_count} viewers!",
+            "description": "Header line for raids. Use {raider_count}."
+        },
+        {
+            "type": "text",
+            "id": "TextPoint",
+            "label": "Channel points header text",
+            "value": "redeemed: {title}!",
+            "description": "Header line for channel point redemptions. Use {title} for the reward name."
+        },
+        {
+            "type": "text",
+            "id": "TextPointWithCost",
+            "label": "Channel points header text (with cost)",
+            "value": "redeemed: {title} ({point_cost} points)!",
+            "description": "Header line when point cost is shown. Use {title} and {point_cost}."
+        },
+        {
+            "type": "text",
+            "id": "TextDonation",
+            "label": "Donation header text",
+            "value": "donated ${amount}!",
+            "description": "Header line for donations. Use {amount} for the formatted dollar amount."
+        },
+        {
+            "type": "text",
+            "id": "TextHypeTrainStart",
+            "label": "Hype train start header text",
+            "value": "Hype Train started!",
+            "description": "Header line when a hype train starts."
+        },
+        {
+            "type": "text",
+            "id": "TextHypeTrainProgress",
+            "label": "Hype train progress header text",
+            "value": "Hype Train Level {hype_train_level}!",
+            "description": "Header line for hype train level progress. Use {hype_train_level}."
+        },
+        {
+            "type": "text",
+            "id": "TextHypeTrainEnd",
+            "label": "Hype train end header text",
+            "value": "Hype Train ended at Level {hype_train_level}!",
+            "description": "Header line when a hype train ends. Use {hype_train_level}."
+        },
+        {
+            "type": "text",
+            "id": "TextDefault",
+            "label": "Default header text",
+            "value": "triggered an alert!",
+            "description": "Header line for unknown alert types."
+        },
+        {
+            "type": "text",
+            "id": "TextAnonymous",
+            "label": "Anonymous username label",
+            "value": "Anonymous",
+            "description": "Displayed username when the cheerer is anonymous."
+        },
+        {
+            "type": "text",
+            "id": "TextUnknownUser",
+            "label": "Unknown username label",
+            "value": "Unknown User",
+            "description": "Displayed username when no username is provided."
+        },
+        {
+            "type": "separator",
+            "label": "Emote Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableEmotes",
+            "label": "Enable emotes in alert messages",
+            "value": true,
+            "description": "Parse and display Twitch, cheermote, and third-party emotes in the user message area."
+        },
+        {
+            "type": "number",
+            "id": "EmoteScale",
+            "label": "Emote scale",
+            "value": 1.4,
+            "min": 0.3,
+            "max": 3.0,
+            "step": 0.1,
+            "description": "Uniform scale for emote images in alert messages."
+        },
+        {
+            "type": "number",
+            "id": "EmoteMargin",
+            "label": "Emote margin",
+            "value": 2,
+            "min": 0,
+            "max": 8,
+            "description": "Horizontal margin around emotes in pixels."
+        },
+        {
+            "type": "number",
+            "id": "EmoteRadius",
+            "label": "Emote border radius",
+            "value": 0,
+            "min": 0,
+            "max": 10,
+            "description": "Border radius for emotes in pixels."
+        },
+        {
+            "type": "separator",
             "label": "Text To Speech Settings"
         },
         {

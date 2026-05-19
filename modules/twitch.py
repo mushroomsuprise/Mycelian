@@ -31,7 +31,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 import aiohttp
 from twitchAPI.eventsub.websocket import EventSubWebsocket
@@ -79,6 +79,136 @@ _init_lock = threading.Lock()
 
 # Global flag to track Twitch API connection status
 twitch_connected = False
+
+_CHEER_BITS_CACHE_TTL = 10.0
+_cheer_bits_cache: dict[str, dict[str, Any]] = {}
+
+
+def subscription_emotes_to_json(emotes) -> Optional[list]:
+    """Convert EventSub subscription message.emotes to JSON-serializable list."""
+    if not emotes:
+        return None
+    out = []
+    for emote in emotes:
+        if isinstance(emote, dict):
+            begin = emote.get("begin")
+            end = emote.get("end")
+            emote_id = emote.get("id")
+        else:
+            begin = getattr(emote, "begin", None)
+            end = getattr(emote, "end", None)
+            emote_id = getattr(emote, "id", None)
+        if begin is None or end is None or emote_id is None:
+            continue
+        out.append({"begin": int(begin), "end": int(end), "id": str(emote_id)})
+    return out if out else None
+
+
+def serialize_bits_message_fragments(fragments) -> list:
+    """Serialize channel.bits.use message fragments for alert overlay rendering."""
+    if not fragments:
+        return []
+    result = []
+    for fragment in fragments:
+        frag_type = getattr(fragment, "type", None) or "text"
+        text = getattr(fragment, "text", "") or ""
+        entry: dict[str, Any] = {"type": frag_type, "text": text}
+
+        if frag_type == "cheermote" or (
+            hasattr(fragment, "cheermote") and fragment.cheermote
+        ):
+            entry["type"] = "cheermote"
+            cm = fragment.cheermote
+            entry["prefix"] = str(getattr(cm, "prefix", "") or "") if cm else ""
+            entry["bits"] = int(getattr(cm, "bits", 0) or 0) if cm else 0
+            entry["tier"] = int(getattr(cm, "tier", 1) or 1) if cm else 1
+        elif frag_type == "emote" or (hasattr(fragment, "emote") and fragment.emote):
+            entry["type"] = "emote"
+            em = fragment.emote
+            entry["emote_id"] = str(getattr(em, "id", "") or "") if em else ""
+            if em and hasattr(em, "emote_set_id"):
+                entry["emote_set_id"] = str(getattr(em, "emote_set_id", "") or "")
+        result.append(entry)
+    return result
+
+
+def extract_emotes_positions_from_fragments(
+    message_text: str, fragments
+) -> Optional[list]:
+    """Build subscription-style emote position list from bits message fragments."""
+    if not fragments or not message_text:
+        return None
+    emotes = []
+    char_pos = 0
+    for fragment in fragments:
+        text = getattr(fragment, "text", "") or ""
+        length = len(text)
+        frag_type = getattr(fragment, "type", None) or "text"
+        if frag_type == "emote" or (hasattr(fragment, "emote") and fragment.emote):
+            em = fragment.emote
+            emote_id = getattr(em, "id", None) if em else None
+            if emote_id is not None:
+                emotes.append(
+                    {
+                        "begin": char_pos,
+                        "end": char_pos + length - 1,
+                        "id": str(emote_id),
+                    }
+                )
+        char_pos += length
+    return emotes if emotes else None
+
+
+def _cheer_cache_key(user_id: str, bits: int) -> str:
+    return f"{user_id}:{bits}"
+
+
+def _prune_cheer_bits_cache() -> None:
+    now = time.time()
+    expired = [k for k, v in _cheer_bits_cache.items() if v.get("expires", 0) < now]
+    for key in expired:
+        _cheer_bits_cache.pop(key, None)
+
+
+def _store_cheer_bits_message(
+    user_id: str,
+    bits: int,
+    text: str,
+    fragments: Optional[list],
+    emotes: Optional[list],
+) -> None:
+    _prune_cheer_bits_cache()
+    _cheer_bits_cache[_cheer_cache_key(user_id, bits)] = {
+        "text": text,
+        "fragments": fragments,
+        "emotes": emotes,
+        "expires": time.time() + _CHEER_BITS_CACHE_TTL,
+    }
+
+
+def _pop_cheer_bits_message(user_id: str, bits: int) -> Optional[dict]:
+    _prune_cheer_bits_cache()
+    return _cheer_bits_cache.pop(_cheer_cache_key(user_id, bits), None)
+
+
+def _subscription_message_emotes(message) -> Optional[list]:
+    if not message:
+        return None
+    return subscription_emotes_to_json(getattr(message, "emotes", None))
+
+
+def _apply_bits_message_to_alert(alert, message_obj) -> None:
+    if not message_obj:
+        return
+    text = getattr(message_obj, "text", None) or ""
+    fragments = getattr(message_obj, "fragments", None)
+    alert.message = text
+    if fragments:
+        alert.fragments = serialize_bits_message_fragments(fragments)
+        alert.emotes = extract_emotes_positions_from_fragments(text, fragments)
+    else:
+        alert.fragments = None
+        alert.emotes = None
 
 
 class Twitch_API:
@@ -1194,6 +1324,9 @@ class Twitch_API:
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
         alert.message = user_msg or ""  # Use empty string if None
+        alert.emotes = _subscription_message_emotes(
+            data.event.message if data.event.message else None
+        )
 
         alert_processor.ALERT_QUEUE.append(alert)
         # Store completed alert using AlertStateManager
@@ -1220,6 +1353,7 @@ class Twitch_API:
                     "username": username,
                     "tier": tier,
                     "message": user_msg,
+                    "emotes": alert.emotes,
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
@@ -1294,11 +1428,9 @@ class Twitch_API:
         alert.alert_type = "resub"
         alert.tier = tier
         alert.message = user_msg or ""  # Use empty string if None
-        alert.emotes = (
-            str(data.event.message.emotes)
-            if data.event.message and data.event.message.emotes
-            else ""
-        )  # Use empty string if None
+        alert.emotes = _subscription_message_emotes(
+            data.event.message if data.event.message else None
+        )
         alert.months_prepaid = data.event.duration_months
         alert.resub_month = cumulative_months
         alert.alert_id = f"Alert{round(current_timestamp)}"
@@ -1329,6 +1461,7 @@ class Twitch_API:
                     "username": username,
                     "tier": tier,
                     "message": user_msg,
+                    "emotes": alert.emotes,
                     "cumulative_months": cumulative_months,
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
@@ -1404,6 +1537,9 @@ class Twitch_API:
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
         alert.message = user_msg or ""  # Use empty string if None
+        alert.emotes = _subscription_message_emotes(
+            data.event.message if data.event.message else None
+        )
 
         alert_processor.ALERT_QUEUE.append(alert)
         # Store completed alert using AlertStateManager
@@ -1430,6 +1566,7 @@ class Twitch_API:
                     "username": username,
                     "tier": tier,
                     "message": user_msg,
+                    "emotes": alert.emotes,
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
@@ -1585,12 +1722,34 @@ class Twitch_API:
 
     async def on_bits_use(self, data: ChannelBitsUseEvent):
         logger.debug(f"Bits cheered by {data.event.user_name}: {data.event.bits}")
+        event_type = str(getattr(data.event, "type", "") or "").lower()
+        bits_amount = int(str(data.event.bits))
+
+        if event_type == "cheer" and hasattr(data.event, "message") and data.event.message:
+            user_id = str(getattr(data.event, "user_id", "") or "anonymous")
+            msg = data.event.message
+            text = getattr(msg, "text", "") or ""
+            fragments = getattr(msg, "fragments", None)
+            serialized_fragments = (
+                serialize_bits_message_fragments(fragments) if fragments else None
+            )
+            emote_positions = extract_emotes_positions_from_fragments(text, fragments)
+            _store_cheer_bits_message(
+                user_id, bits_amount, text, serialized_fragments, emote_positions
+            )
+            logger.debug(
+                f"Cached cheer bits message for {user_id} ({bits_amount} bits)"
+            )
+            return
+
         alert = alertutils.fetch_cheer_alert(data.event.bits)
         alert.username = data.event.user_name
         alert.alert_type = "bit"
-        alert.amt_cheered = int(str(data.event.bits))
+        alert.amt_cheered = bits_amount
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
+        if hasattr(data.event, "message") and data.event.message:
+            _apply_bits_message_to_alert(alert, data.event.message)
         if (
             hasattr(data.event, "power_up")
             and data.event.power_up
@@ -1614,6 +1773,9 @@ class Twitch_API:
                         "type": "bits_use",
                         "username": alert.username,
                         "amt_cheered": alert.amt_cheered,
+                        "message": alert.message,
+                        "fragments": alert.fragments,
+                        "emotes": alert.emotes,
                         "power_up_type": power_up_type,
                         "alert_id": alert.alert_id,
                         "timestamp": alert.timestamp,
@@ -1692,9 +1854,20 @@ class Twitch_API:
         alert.username = username_display or "Anonymous"  # Ensure not None
         alert.alert_type = "bit"
         alert.amt_cheered = int(str(data.event.bits))
-        alert.message = (
-            data.event.message
-        )  # Cheer message is directly data.event.message
+        cache_user_id = (
+            "anonymous"
+            if data.event.is_anonymous
+            else str(getattr(data.event, "user_id", "") or "anonymous")
+        )
+        cached = _pop_cheer_bits_message(cache_user_id, alert.amt_cheered)
+        if cached:
+            alert.message = cached.get("text") or data.event.message or ""
+            alert.fragments = cached.get("fragments")
+            alert.emotes = cached.get("emotes")
+        else:
+            alert.message = data.event.message or ""
+            alert.fragments = None
+            alert.emotes = None
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
         alert_processor.ALERT_QUEUE.append(alert)
@@ -1714,6 +1887,8 @@ class Twitch_API:
                     "username": username_display,
                     "amt_cheered": alert.amt_cheered,
                     "message": alert.message,
+                    "fragments": alert.fragments,
+                    "emotes": alert.emotes,
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }

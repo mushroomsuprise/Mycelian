@@ -175,6 +175,63 @@
             opacity: 0;
         }
 
+        .alert-message .emote-img,
+        .alert-message .emote-base,
+        .alert-message .emote-zw {
+            height: calc(28px * {{ EmoteScale | default(1.4) }});
+            width: auto;
+            object-fit: contain;
+            vertical-align: middle;
+            border-radius: {{ EmoteRadius | default(0) }}px;
+            box-sizing: border-box;
+        }
+
+        .alert-message .emote-img {
+            margin: 0 {{ EmoteMargin | default(2) }}px;
+        }
+
+        .alert-message .emote-container {
+            position: relative;
+            display: inline-block;
+            margin: 0 {{ EmoteMargin | default(2) }}px;
+            vertical-align: middle;
+        }
+
+        .alert-message .emote-base {
+            display: block;
+        }
+
+        .alert-message .emote-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: {{ EmoteRadius | default(0) }}px;
+            pointer-events: none;
+            z-index: 1;
+            box-sizing: border-box;
+        }
+
+        .alert-message .cheermote-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            vertical-align: middle;
+        }
+
+        .alert-message .cheermote-img {
+            height: calc(28px * {{ EmoteScale | default(1.4) }});
+            width: auto;
+            vertical-align: middle;
+        }
+
+        .alert-message .cheermote-amount {
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
         /* Hidden audio element for playing alert sounds */
         #alertAudio {
             display: none;
@@ -599,6 +656,37 @@
         var showUsernameText = {{ EnableUsernameText | default(true) | tojson }};
         var showHeaderLineText = {{ EnableHeaderText | default(true) | tojson }};
         var showMessageText = {{ EnableMessageText | default(true) | tojson }};
+        var enableEmotes = {{ EnableEmotes | default(true) | tojson }};
+        var streamerID = null;
+        var alertEmoteFetchInProgress = false;
+        var alertEmoteCache = {
+            bttv: { global: [], user: [] },
+            seventv: { global: [], user: [] },
+            ffz: { global: [], user: [] },
+            twitch: { global: [], user: [] },
+            cheermotes: {}
+        };
+        var alertTextTemplates = {
+            follow: {{ TextFollow | default('thanks for the follow!') | tojson }},
+            sub: {{ TextSub | default('thanks for subscribing!') | tojson }},
+            subTier: {{ TextSubTier | default('thanks for the Tier {tier} sub!') | tojson }},
+            resub: {{ TextResub | default('{resub_month} month subscriber!') | tojson }},
+            streakSingular: {{ TextStreakSingular | default('1 stream watch streak!') | tojson }},
+            streakPlural: {{ TextStreakPlural | default('{streak_count} stream watch streak!') | tojson }},
+            giftsub: {{ TextGiftsub | default('gifted {gift_qty} sub(s)!') | tojson }},
+            giftsubTier: {{ TextGiftsubTier | default('gifted {gift_qty} Tier {tier} sub(s)!') | tojson }},
+            bit: {{ TextBit | default('cheered {amt_cheered} bit(s)!') | tojson }},
+            raid: {{ TextRaid | default('raided with {raider_count} viewers!') | tojson }},
+            point: {{ TextPoint | default('redeemed: {title}!') | tojson }},
+            pointWithCost: {{ TextPointWithCost | default('redeemed: {title} ({point_cost} points)!') | tojson }},
+            donation: {{ TextDonation | default('donated ${amount}!') | tojson }},
+            hypeTrainStart: {{ TextHypeTrainStart | default('Hype Train started!') | tojson }},
+            hypeTrainProgress: {{ TextHypeTrainProgress | default('Hype Train Level {hype_train_level}!') | tojson }},
+            hypeTrainEnd: {{ TextHypeTrainEnd | default('Hype Train ended at Level {hype_train_level}!') | tojson }},
+            default: {{ TextDefault | default('triggered an alert!') | tojson }},
+            anonymous: {{ TextAnonymous | default('Anonymous') | tojson }},
+            unknownUser: {{ TextUnknownUser | default('Unknown User') | tojson }}
+        };
 
         function clearPendingCompletionTimer() {
             if (pendingCompleteTimeout) {
@@ -670,6 +758,39 @@
         // Add socket connection debugging
         socket.on('connect', function () {
             console.log('Socket connected successfully');
+            socket.emit('get-streamer-info');
+        });
+
+        socket.on('streamer-info', function (data) {
+            if (data && data.user_id) {
+                streamerID = data.user_id;
+                fetchAlertEmotesAndCheermotes();
+            }
+        });
+
+        socket.on('twitch-api-response', function (data) {
+            if (!data || !data.requestId) {
+                return;
+            }
+            if (!data.success) {
+                console.error('Alert emote API request failed:', data.error, data.requestId);
+                return;
+            }
+            switch (data.requestId) {
+                case 'alerts-twitch-global-emotes':
+                    if (data.data && data.data.data) {
+                        alertEmoteCache.twitch.global = data.data.data;
+                    }
+                    break;
+                case 'alerts-twitch-cheermotes':
+                    if (data.data && data.data.data) {
+                        processAlertCheermotes(data.data.data);
+                    }
+                    break;
+            }
+            setTimeout(function () {
+                alertEmoteFetchInProgress = false;
+            }, 1000);
         });
 
         socket.on('disconnect', function () {
@@ -1808,78 +1929,493 @@
             });
         }
 
+        function escapeAlertHtml(text) {
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function findInAlertEmoteArray(array, name, property) {
+            if (!array || !Array.isArray(array)) {
+                return null;
+            }
+            for (var i = 0; i < array.length; i++) {
+                if (array[i][property] === name) {
+                    return array[i];
+                }
+            }
+            return null;
+        }
+
+        function processAlertCheermotes(cheermoteData) {
+            alertEmoteCache.cheermotes = {};
+            cheermoteData.forEach(function (cheermote) {
+                var prefix = cheermote.prefix.toLowerCase();
+                alertEmoteCache.cheermotes[prefix] = {};
+                cheermote.tiers.forEach(function (tier) {
+                    var minBits = tier.min_bits;
+                    var images = tier.images;
+                    var imageUrl = '';
+                    var color = tier.color || '#ffffff';
+                    if (images.dark && images.dark.animated && images.dark.animated['1']) {
+                        imageUrl = images.dark.animated['1'];
+                    } else if (images.dark && images.dark.static && images.dark.static['1']) {
+                        imageUrl = images.dark.static['1'];
+                    } else if (images.light && images.light.animated && images.light.animated['1']) {
+                        imageUrl = images.light.animated['1'];
+                    } else if (images.light && images.light.static && images.light.static['1']) {
+                        imageUrl = images.light.static['1'];
+                    }
+                    if (imageUrl) {
+                        alertEmoteCache.cheermotes[prefix][minBits] = {};
+                        alertEmoteCache.cheermotes[prefix][minBits][imageUrl] = color;
+                    }
+                });
+            });
+        }
+
+        function fetchAlertBTTVEmotes() {
+            fetch('https://api.betterttv.net/3/cached/emotes/global')
+                .then(function (response) { return response.json(); })
+                .then(function (data) { alertEmoteCache.bttv.global = data; })
+                .catch(function (error) { console.error('Alert BTTV global fetch failed:', error); });
+            if (streamerID) {
+                fetch('https://api.betterttv.net/3/cached/users/twitch/' + streamerID)
+                    .then(function (response) { return response.json(); })
+                    .then(function (data) {
+                        alertEmoteCache.bttv.user = (data.channelEmotes || []).concat(data.sharedEmotes || []);
+                    })
+                    .catch(function (error) { console.error('Alert BTTV user fetch failed:', error); });
+            }
+        }
+
+        function fetchAlertSevenTVEmotes() {
+            fetch('https://7tv.io/v3/emote-sets/global')
+                .then(function (response) { return response.json(); })
+                .then(function (data) { alertEmoteCache.seventv.global = data.emotes || []; })
+                .catch(function (error) { console.error('Alert 7TV global fetch failed:', error); });
+            if (streamerID) {
+                fetch('https://7tv.io/v3/users/twitch/' + streamerID)
+                    .then(function (response) { return response.json(); })
+                    .then(function (data) {
+                        alertEmoteCache.seventv.user = (data.emote_set && data.emote_set.emotes) || [];
+                    })
+                    .catch(function (error) { console.error('Alert 7TV user fetch failed:', error); });
+            }
+        }
+
+        function fetchAlertFFZEmotes() {
+            fetch('https://api.frankerfacez.com/v1/set/global')
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    alertEmoteCache.ffz.global = (data.sets && data.sets['3'] && data.sets['3'].emoticons) || [];
+                })
+                .catch(function (error) { console.error('Alert FFZ global fetch failed:', error); });
+            if (streamerID) {
+                fetch('https://api.frankerfacez.com/v1/room/id/' + streamerID)
+                    .then(function (response) { return response.json(); })
+                    .then(function (data) {
+                        if (data.room && data.room.set && data.sets && data.sets[data.room.set]) {
+                            alertEmoteCache.ffz.user = data.sets[data.room.set].emoticons || [];
+                        }
+                    })
+                    .catch(function (error) { console.error('Alert FFZ user fetch failed:', error); });
+            }
+        }
+
+        function fetchAlertTwitchEmotes() {
+            socket.emit('twitch-api-request', {
+                endpoint: 'https://api.twitch.tv/helix/chat/emotes/global',
+                method: 'GET',
+                requestId: 'alerts-twitch-global-emotes'
+            });
+        }
+
+        function fetchAlertCheermotes() {
+            if (!streamerID) {
+                return;
+            }
+            socket.emit('twitch-api-request', {
+                endpoint: 'https://api.twitch.tv/helix/bits/cheermotes?broadcaster_id=' + streamerID,
+                method: 'GET',
+                requestId: 'alerts-twitch-cheermotes'
+            });
+        }
+
+        function fetchAlertEmotesAndCheermotes() {
+            if (!streamerID || alertEmoteFetchInProgress) {
+                return;
+            }
+            alertEmoteFetchInProgress = true;
+            fetchAlertBTTVEmotes();
+            fetchAlertSevenTVEmotes();
+            fetchAlertFFZEmotes();
+            fetchAlertTwitchEmotes();
+            fetchAlertCheermotes();
+        }
+
+        function findAlertEmoteWithMetadata(emoteName) {
+            var bttvEmote = findInAlertEmoteArray(alertEmoteCache.bttv.global, emoteName, 'code') ||
+                findInAlertEmoteArray(alertEmoteCache.bttv.user, emoteName, 'code');
+            if (bttvEmote) {
+                return {
+                    url: 'https://cdn.betterttv.net/emote/' + bttvEmote.id + '/1x',
+                    name: emoteName,
+                    isZeroWidth: false
+                };
+            }
+
+            var seventvEmote = findInAlertEmoteArray(alertEmoteCache.seventv.global, emoteName, 'name') ||
+                findInAlertEmoteArray(alertEmoteCache.seventv.user, emoteName, 'name');
+            if (seventvEmote) {
+                var isZeroWidth = false;
+                if (seventvEmote.data && seventvEmote.data.flags !== undefined) {
+                    isZeroWidth = (seventvEmote.data.flags & 256) !== 0;
+                } else if (seventvEmote.flags !== undefined) {
+                    isZeroWidth = (seventvEmote.flags & 256) !== 0;
+                }
+                var emoteUrl = null;
+                if (seventvEmote.data && seventvEmote.data.host && seventvEmote.data.host.url && seventvEmote.data.host.files) {
+                    var files = seventvEmote.data.host.files;
+                    var file1x = files.find(function (file) {
+                        return file.name === '1x.webp' || file.name === '1x.avif' || file.name === '1x.png' || file.name.indexOf('1x.') === 0;
+                    });
+                    if (file1x) {
+                        emoteUrl = 'https:' + seventvEmote.data.host.url + '/' + file1x.name;
+                    }
+                }
+                if (!emoteUrl) {
+                    emoteUrl = 'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x.webp';
+                }
+                return { url: emoteUrl, name: emoteName, isZeroWidth: isZeroWidth };
+            }
+
+            var ffzEmote = findInAlertEmoteArray(alertEmoteCache.ffz.global, emoteName, 'name') ||
+                findInAlertEmoteArray(alertEmoteCache.ffz.user, emoteName, 'name');
+            if (ffzEmote) {
+                var ffzUrl = null;
+                if (ffzEmote.urls) {
+                    ffzUrl = ffzEmote.urls['1'] || ffzEmote.urls['2'] || ffzEmote.urls['4'];
+                    if (ffzUrl && ffzUrl.indexOf('http') !== 0) {
+                        ffzUrl = 'https:' + ffzUrl;
+                    }
+                }
+                return { url: ffzUrl, name: emoteName, isZeroWidth: false };
+            }
+
+            var twitchEmote = findInAlertEmoteArray(alertEmoteCache.twitch.global, emoteName, 'name');
+            if (twitchEmote) {
+                return {
+                    url: 'https://static-cdn.jtvnw.net/emoticons/v2/' + twitchEmote.id + '/default/light/1.0',
+                    name: emoteName,
+                    isZeroWidth: false
+                };
+            }
+            return null;
+        }
+
+        function createAlertEmoteOverlay(baseEmoteHtml, overlayUrl, overlayName) {
+            var srcMatch = baseEmoteHtml.match(/src="([^"]*)"/);
+            var altMatch = baseEmoteHtml.match(/alt="([^"]*)"/);
+            if (!srcMatch) {
+                return baseEmoteHtml;
+            }
+            var baseSrc = srcMatch[1];
+            var baseAlt = altMatch ? altMatch[1] : 'emote';
+            return '<span class="emote-container">' +
+                '<img src="' + baseSrc + '" class="emote-base" alt="' + escapeAlertHtml(baseAlt) + '">' +
+                '<img src="' + overlayUrl + '" class="emote-overlay" alt="' + escapeAlertHtml(overlayName) + '">' +
+                '</span>';
+        }
+
+        function parseAlertCheerMoteWord(word) {
+            var match = word.match(/^([a-zA-Z]+)(\d+)$/);
+            if (!match) {
+                return null;
+            }
+            var prefix = match[1].toLowerCase();
+            var amount = parseInt(match[2], 10);
+            if (!alertEmoteCache.cheermotes[prefix]) {
+                return null;
+            }
+            var tiers = Object.keys(alertEmoteCache.cheermotes[prefix]).map(Number).sort(function (a, b) { return b - a; });
+            var tier = null;
+            for (var i = 0; i < tiers.length; i++) {
+                if (amount >= tiers[i]) {
+                    tier = tiers[i];
+                    break;
+                }
+            }
+            if (tier === null) {
+                return null;
+            }
+            var cheermoteData = alertEmoteCache.cheermotes[prefix][tier];
+            var emoteUrl = Object.keys(cheermoteData)[0];
+            var color = cheermoteData[emoteUrl];
+            return '<span class="cheermote-container">' +
+                '<img src="' + emoteUrl + '" class="cheermote-img" alt="' + escapeAlertHtml(prefix) + '">' +
+                '<span class="cheermote-amount" style="color: ' + color + '">' + amount + '</span>' +
+                '</span>';
+        }
+
+        function renderAlertCheermoteFragment(frag) {
+            var prefix = String(frag.prefix || '').toLowerCase();
+            var amount = parseInt(frag.bits, 10) || 0;
+            if (!prefix || !alertEmoteCache.cheermotes[prefix]) {
+                return escapeAlertHtml(frag.text || '');
+            }
+            var tiers = Object.keys(alertEmoteCache.cheermotes[prefix]).map(Number).sort(function (a, b) { return b - a; });
+            var tier = null;
+            for (var i = 0; i < tiers.length; i++) {
+                if (amount >= tiers[i]) {
+                    tier = tiers[i];
+                    break;
+                }
+            }
+            if (tier === null) {
+                return escapeAlertHtml(frag.text || '');
+            }
+            var cheermoteData = alertEmoteCache.cheermotes[prefix][tier];
+            var emoteUrl = Object.keys(cheermoteData)[0];
+            var color = cheermoteData[emoteUrl];
+            return '<span class="cheermote-container">' +
+                '<img src="' + emoteUrl + '" class="cheermote-img" alt="' + escapeAlertHtml(prefix) + '">' +
+                '<span class="cheermote-amount" style="color: ' + color + '">' + amount + '</span>' +
+                '</span>';
+        }
+
+        function renderAlertTwitchEmoteImg(emoteId) {
+            var url = 'https://static-cdn.jtvnw.net/emoticons/v2/' + emoteId + '/default/light/1.0';
+            return '<img src="' + url + '" class="emote-img" alt="emote" onerror="this.style.display=\'none\';">';
+        }
+
+        function normalizeAlertEmotesList(emotes) {
+            if (!emotes) {
+                return null;
+            }
+            if (typeof emotes === 'string') {
+                try {
+                    emotes = JSON.parse(emotes);
+                } catch (e) {
+                    return null;
+                }
+            }
+            return Array.isArray(emotes) && emotes.length ? emotes : null;
+        }
+
+        function normalizeAlertFragmentsList(fragments) {
+            if (!fragments) {
+                return null;
+            }
+            if (typeof fragments === 'string') {
+                try {
+                    fragments = JSON.parse(fragments);
+                } catch (e) {
+                    return null;
+                }
+            }
+            return Array.isArray(fragments) && fragments.length ? fragments : null;
+        }
+
+        function processAlertTextForEmotes(text) {
+            var words = text.split(' ');
+            var parsedWords = [];
+            for (var i = 0; i < words.length; i++) {
+                var word = words[i];
+                if (!word.trim()) {
+                    parsedWords.push(word);
+                    continue;
+                }
+                var cheermoteResult = parseAlertCheerMoteWord(word);
+                if (cheermoteResult) {
+                    parsedWords.push(cheermoteResult);
+                    continue;
+                }
+                var emoteResult = findAlertEmoteWithMetadata(word);
+                if (emoteResult) {
+                    if (emoteResult.isZeroWidth && i > 0) {
+                        var previousWord = words[i - 1];
+                        var prevEmote = findAlertEmoteWithMetadata(previousWord);
+                        var prevIsCheer = parseAlertCheerMoteWord(previousWord) !== null;
+                        if (prevEmote && !prevIsCheer && emoteResult.url) {
+                            var baseHtml = '<img src="' + prevEmote.url + '" class="emote-img" alt="' + escapeAlertHtml(prevEmote.name) + '">';
+                            parsedWords[parsedWords.length - 1] = createAlertEmoteOverlay(baseHtml, emoteResult.url, emoteResult.name);
+                            continue;
+                        }
+                    }
+                    if (emoteResult.url) {
+                        var cls = emoteResult.isZeroWidth ? 'emote-img emote-zw' : 'emote-img';
+                        parsedWords.push('<img src="' + emoteResult.url + '" class="' + cls + '" alt="' + escapeAlertHtml(emoteResult.name) + '" onerror="this.style.display=\'none\';">');
+                    } else {
+                        parsedWords.push(escapeAlertHtml(word));
+                    }
+                    continue;
+                }
+                parsedWords.push(escapeAlertHtml(word));
+            }
+            return parsedWords.join(' ');
+        }
+
+        function parseAlertSubscriptionMessage(text, emotes) {
+            var list = normalizeAlertEmotesList(emotes);
+            if (!list) {
+                return processAlertTextForEmotes(text);
+            }
+            var replacements = [];
+            list.forEach(function (emote) {
+                replacements.push({
+                    start: parseInt(emote.begin, 10),
+                    end: parseInt(emote.end, 10),
+                    emoteId: String(emote.id)
+                });
+            });
+            replacements.sort(function (a, b) { return b.start - a.start; });
+            var processed = text;
+            replacements.forEach(function (replacement) {
+                var before = processed.substring(0, replacement.start);
+                var after = processed.substring(replacement.end + 1);
+                processed = before + renderAlertTwitchEmoteImg(replacement.emoteId) + after;
+            });
+            if (processed.indexOf('<img') !== -1 && processed.indexOf('emote-img') !== -1) {
+                var parts = processed.split(/(<img[^>]*>)/);
+                return parts.map(function (part) {
+                    if (part.startsWith('<img') && part.indexOf('emote-img') !== -1) {
+                        return part;
+                    }
+                    return part ? processAlertTextForEmotes(part) : part;
+                }).join('');
+            }
+            return processAlertTextForEmotes(processed);
+        }
+
+        function parseAlertBitsMessage(text, fragments) {
+            var frags = normalizeAlertFragmentsList(fragments);
+            if (!frags) {
+                return processAlertTextForEmotes(text);
+            }
+            var html = '';
+            frags.forEach(function (frag) {
+                var type = frag.type || 'text';
+                if (type === 'cheermote') {
+                    html += renderAlertCheermoteFragment(frag);
+                } else if (type === 'emote' && frag.emote_id) {
+                    html += renderAlertTwitchEmoteImg(frag.emote_id);
+                } else {
+                    html += processAlertTextForEmotes(frag.text || '');
+                }
+            });
+            return html;
+        }
+
+        function parseAlertMessage(alertData) {
+            var raw = (alertData.message || '').trim();
+            if (!raw) {
+                return '';
+            }
+            if (!enableEmotes) {
+                return escapeAlertHtml(raw);
+            }
+            var fragments = normalizeAlertFragmentsList(alertData.fragments);
+            if (fragments) {
+                return parseAlertBitsMessage(raw, fragments);
+            }
+            var emotes = normalizeAlertEmotesList(alertData.emotes);
+            if (emotes) {
+                return parseAlertSubscriptionMessage(raw, emotes);
+            }
+            return processAlertTextForEmotes(raw);
+        }
+
+        function applyAlertTextTemplate(template, alertData) {
+            if (!template) {
+                return '';
+            }
+            var amount = alertData.amount != null ? alertData.amount : alertData.donation_amount;
+            if (amount == null) {
+                amount = 0;
+            }
+            var title = alertData.title || 'Channel Points';
+            var giftQty = alertData.gift_qty != null ? alertData.gift_qty : 0;
+            var subsLabel = giftQty === 1 ? 'sub' : 'subs';
+            var bitsLabel = alertData.amt_cheered === 1 ? 'bit' : 'bits';
+            return String(template)
+                .replace(/\{tier\}/g, String(alertData.tier != null ? alertData.tier : ''))
+                .replace(/\{resub_month\}/g, String(alertData.resub_month != null ? alertData.resub_month : ''))
+                .replace(/\{streak_count\}/g, String(alertData.streak_count != null ? alertData.streak_count : ''))
+                .replace(/\{gift_qty\}/g, String(giftQty))
+                .replace(/\{subs\}/g, subsLabel)
+                .replace(/\{amt_cheered\}/g, String(alertData.amt_cheered != null ? alertData.amt_cheered : ''))
+                .replace(/\{bits\}/g, bitsLabel)
+                .replace(/\{raider_count\}/g, String(alertData.raider_count != null ? alertData.raider_count : ''))
+                .replace(/\{title\}/g, String(title))
+                .replace(/\{point_cost\}/g, String(alertData.point_cost != null ? alertData.point_cost : ''))
+                .replace(/\{amount\}/g, Number(amount).toFixed(2))
+                .replace(/\{hype_train_level\}/g, String(alertData.hype_train_level != null ? alertData.hype_train_level : ''));
+        }
+
         function formatUsername(alertData) {
             if (alertData.anonymous) {
-                return 'Anonymous';
+                return alertTextTemplates.anonymous;
             }
-            return alertData.username || 'Unknown User';
+            return alertData.username || alertTextTemplates.unknownUser;
         }
 
         function formatAlertText(alertData) {
-            let text = '';
-
+            var template = alertTextTemplates.default;
             switch (alertData.alert_type) {
                 case 'follow':
-                    text = `thanks for the follow!`;
+                    template = alertTextTemplates.follow;
                     break;
                 case 'sub':
-                    text = `thanks for subscribing!`;
-                    if (alertData.tier && alertData.tier > 1) {
-                        text = `thanks for the Tier ${alertData.tier} sub!`;
-                    }
+                    template = (alertData.tier && alertData.tier > 1)
+                        ? alertTextTemplates.subTier
+                        : alertTextTemplates.sub;
                     break;
                 case 'resub':
-                    text = `${alertData.resub_month} month subscriber!`;
+                    template = alertTextTemplates.resub;
                     break;
                 case 'streak':
                     {
-                        const sc = alertData.streak_count != null ? alertData.streak_count : 0;
-                        text = sc === 1 ? `1 stream watch streak!` : `${sc} stream watch streak!`;
+                        var sc = alertData.streak_count != null ? alertData.streak_count : 0;
+                        template = sc === 1 ? alertTextTemplates.streakSingular : alertTextTemplates.streakPlural;
                     }
                     break;
                 case 'giftsub':
-                    text = `gifted ${alertData.gift_qty} sub${alertData.gift_qty > 1 ? 's' : ''}!`;
-                    if (alertData.tier && alertData.tier > 1) {
-                        text = `gifted ${alertData.gift_qty} Tier ${alertData.tier} sub${alertData.gift_qty > 1 ? 's' : ''}!`;
-                    }
+                    template = (alertData.tier && alertData.tier > 1)
+                        ? alertTextTemplates.giftsubTier
+                        : alertTextTemplates.giftsub;
                     break;
                 case 'bit':
-                    text = `cheered ${alertData.amt_cheered} bit${alertData.amt_cheered > 1 ? 's' : ''}!`;
+                    template = alertTextTemplates.bit;
                     break;
                 case 'raid':
-                    text = `raided with ${alertData.raider_count} viewers!`;
+                    template = alertTextTemplates.raid;
                     break;
                 case 'point':
-                    text = `redeemed: ${alertData.title || 'Channel Points'}!`;
-                    if (alertData.point_cost > 0) {
-                        text = `redeemed: ${alertData.title || 'Channel Points'} (${alertData.point_cost} points)!`;
-                    }
+                    template = (alertData.point_cost > 0)
+                        ? alertTextTemplates.pointWithCost
+                        : alertTextTemplates.point;
                     break;
                 case 'donation':
-                    const amount = alertData.amount || alertData.donation_amount || 0;
-                    text = `donated $${amount.toFixed(2)}!`;
+                    template = alertTextTemplates.donation;
                     break;
                 case 'hype_train_start':
-                    text = `hype Train started!`;
+                    template = alertTextTemplates.hypeTrainStart;
                     break;
                 case 'hype_train_progress':
-                    text = `hype Train Level ${alertData.hype_train_level}!`;
+                    template = alertTextTemplates.hypeTrainProgress;
                     break;
                 case 'hype_train_end':
-                    text = `hype Train ended at Level ${alertData.hype_train_level}!`;
+                    template = alertTextTemplates.hypeTrainEnd;
                     break;
                 default:
-                    text = `triggered an alert!`;
+                    template = alertTextTemplates.default;
             }
-
-            return text;
+            return applyAlertTextTemplate(template, alertData);
         }
 
         function formatAlertMessage(alertData) {
-            if (alertData.message && alertData.message.trim() !== '') {
-                return alertData.message;
-            }
-            return '';
+            return parseAlertMessage(alertData);
         }
 
         // Load template config directly from API
@@ -2039,6 +2575,42 @@
             if (config.EnableMessageText !== undefined) {
                 showMessageText = Boolean(config.EnableMessageText);
             }
+            if (config.EnableEmotes !== undefined) {
+                enableEmotes = Boolean(config.EnableEmotes);
+            }
+            var textTemplateKeys = [
+                'TextFollow', 'TextSub', 'TextSubTier', 'TextResub', 'TextStreakSingular',
+                'TextStreakPlural', 'TextGiftsub', 'TextGiftsubTier', 'TextBit', 'TextRaid',
+                'TextPoint', 'TextPointWithCost', 'TextDonation', 'TextHypeTrainStart',
+                'TextHypeTrainProgress', 'TextHypeTrainEnd', 'TextDefault', 'TextAnonymous',
+                'TextUnknownUser'
+            ];
+            var templateMap = {
+                TextFollow: 'follow',
+                TextSub: 'sub',
+                TextSubTier: 'subTier',
+                TextResub: 'resub',
+                TextStreakSingular: 'streakSingular',
+                TextStreakPlural: 'streakPlural',
+                TextGiftsub: 'giftsub',
+                TextGiftsubTier: 'giftsubTier',
+                TextBit: 'bit',
+                TextRaid: 'raid',
+                TextPoint: 'point',
+                TextPointWithCost: 'pointWithCost',
+                TextDonation: 'donation',
+                TextHypeTrainStart: 'hypeTrainStart',
+                TextHypeTrainProgress: 'hypeTrainProgress',
+                TextHypeTrainEnd: 'hypeTrainEnd',
+                TextDefault: 'default',
+                TextAnonymous: 'anonymous',
+                TextUnknownUser: 'unknownUser'
+            };
+            textTemplateKeys.forEach(function (key) {
+                if (config[key] !== undefined) {
+                    alertTextTemplates[templateMap[key]] = config[key];
+                }
+            });
             applyTextVisibilityStyles();
         }
 

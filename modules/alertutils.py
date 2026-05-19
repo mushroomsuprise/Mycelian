@@ -1012,7 +1012,8 @@ class AlertStateManager:
                 "alert_id": "",
                 "alert_name": "",
                 "message": "",
-                "emotes": "",
+                "emotes": None,
+                "fragments": None,
                 "title": "",
                 "single_audio_dir": "",
                 "single_audio_name": "",
@@ -1637,7 +1638,8 @@ class AlertObj:
     username: str = ""
     anonymous: bool = False
     message: str = None
-    emotes: str = None
+    emotes: list = None
+    fragments: list = None
     title: str = None
 
     # Sub/resub/giftsub options:
