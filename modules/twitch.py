@@ -67,7 +67,7 @@ from .chatbot_core import EventType
 from .chatbot_manager import get_manager as get_chatbot_manager
 from .template_config_parser import match_point_reward_dedicated_template
 from .twitch_eventsub_patch import ensure_channel_chat_notification_watch_streak_patch
-from .uiwindows.activity_feed import add_alert_to_feed
+from .uiwindows.activity_feed import add_alert_to_feed, format_watch_streak_message
 
 ensure_channel_chat_notification_watch_streak_patch()
 
@@ -909,10 +909,10 @@ class Twitch_API:
 
         add_alert_to_feed(
             alert_type="Streak",
-            message=user_msg or f"{username} reached a {streak_count} stream streak!",
+            message=format_watch_streak_message(username, streak_count),
             badge_type="streak",
             timestamp=str(int(current_timestamp)),
-            user_message=user_msg,
+            user_message=user_msg or None,
             alert_id=alert_id,
         )
 

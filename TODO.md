@@ -10,11 +10,16 @@ FF7 Hook
 Template Previewer:
     [] - When data is changed, it currently refreshes the entire previewer, i would prefer it does not refresh the entire thing, just modify what changed.
 
+Stream Streaks
+    [] - Fix chat.html event messages for stream streaks. It should only display a message about the cumulative monthly total. It is currently displaying something like these unless there is a message present, then it displays only the message. Here is the format i am looking for: "{username} has watched for {streak_count} consecutively!
+    [] - Fix "condensed" alert view message. it just says "Streak!" when it should say the cumulative monthly total, similar to the chat event message.
+
 Chat Improvements:
     [] - Create a .spore.json sidecar file for the Spore Studio module
 
 Alerts Improvements:
     [] - Add emote parsing to alert messages (see chat template for the emote parser). Note: Alert messages have different payloads for emotes than chat messages for Twitch emotes specifically, 3rd party emotes can be parsed the same way.
+    [] - Migrate default "text" options (see formatTextAlert function for some, there might be more elsewhere in the file) to be setup in the JSON config file instead, this way the user can adjust these as desired.
     [] - Create a .spore.json sidecar file for the Spore Studio module
 
 Other Standard Templates:

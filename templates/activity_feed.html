@@ -1216,8 +1216,32 @@
             'Points': 'points',
             'Donation': 'donations',
             'Raid': 'raids',
+            'Streak': 'streaks',
             'Hype Train': 'hype_train'
         };
+
+        function formatWatchStreakMessage(username, streakCount, includeUsername) {
+            var name = username || 'Someone';
+            var count = parseInt(streakCount, 10);
+            if (isNaN(count)) {
+                count = 0;
+            }
+            if (includeUsername !== false) {
+                return name + ' has watched for ' + count + ' consecutive streams!';
+            }
+            return 'Watched for ' + count + ' consecutive streams!';
+        }
+
+        function resolveWatchStreakCount(alertData) {
+            if (alertData.streak_count != null) {
+                return alertData.streak_count;
+            }
+            var stored = alertData.stored_alert_data || {};
+            if (stored.streak_count != null) {
+                return stored.streak_count;
+            }
+            return 0;
+        }
 
         // Function to generate appropriate message for alert types
         function generateAlertMessage(alertData) {
@@ -1227,6 +1251,10 @@
             if (alertType === 'resub' || (alertType === 'sub' && (alertData.resub_month > 1 || alertData.months > 1))) {
                 var months = alertData.resub_month || alertData.months || alertData.total_months || 1;
                 return username + ' has resubscribed for ' + months + ' months!';
+            }
+
+            if (alertType === 'streak') {
+                return formatWatchStreakMessage(username, resolveWatchStreakCount(alertData), true);
             }
 
             // Return original message for other types
@@ -2128,6 +2156,21 @@
                     if (viewers > userAlerts[username][groupingKey].totalAmount) {
                         userAlerts[username][groupingKey].totalAmount = viewers;
                     }
+                } else if (alertType === 'streak') {
+                    var streakCountVal = alertData.streak_count;
+                    if (streakCountVal == null && storedData) {
+                        streakCountVal = storedData.streak_count;
+                    }
+                    var sc;
+                    if (streakCountVal != null) {
+                        sc = parseInt(streakCountVal, 10);
+                    } else {
+                        var streakMatch = message.match(/(\d+)\s*consecutive streams/i);
+                        sc = streakMatch ? parseInt(streakMatch[1], 10) : 0;
+                    }
+                    if (sc > userAlerts[username][groupingKey].totalAmount) {
+                        userAlerts[username][groupingKey].totalAmount = sc;
+                    }
                 }
             });
 
@@ -2247,6 +2290,12 @@
                     } else {
                         return 'Raided with ' + formattedViewers + ' viewers!';
                     }
+                } else if (groupingKey === 'streak') {
+                    var streakTotal = parseInt(totalAmount, 10);
+                    if (isNaN(streakTotal) || streakTotal < 1) {
+                        return 'Watch streak!';
+                    }
+                    return formatWatchStreakMessage('', streakTotal, false);
                 } else {
                     // Fallback for any other alert types
                     var displayName = groupingKey.replace(/_/g, ' ').replace(/\b\w/g, function(l){ return l.toUpperCase(); });

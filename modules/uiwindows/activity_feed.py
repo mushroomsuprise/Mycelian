@@ -577,6 +577,20 @@ def skip_alert(alert_data):
         logger.error(f"Error skipping alert: {str(e)}", exc_info=True)
 
 
+def format_watch_streak_message(
+    username: str, streak_count: int, *, include_username: bool = True
+) -> str:
+    """Format watch streak text for activity feed, chat events, and condensed view."""
+    name = username or "Someone"
+    try:
+        count = int(streak_count)
+    except (TypeError, ValueError):
+        count = 0
+    if include_username:
+        return f"{name} has watched for {count} consecutive streams!"
+    return f"Watched for {count} consecutive streams!"
+
+
 def build_activity_feed_alert_payload(
     alert_type,
     message,
@@ -623,6 +637,12 @@ def build_activity_feed_alert_payload(
                         and stored_alert_data["username"]
                     ):
                         alert_data["username"] = stored_alert_data["username"]
+                    streak_count = stored_alert_data.get("streak_count")
+                    if streak_count is not None:
+                        try:
+                            alert_data["streak_count"] = int(streak_count)
+                        except (TypeError, ValueError):
+                            pass
             else:
                 logger.debug(f"No stored alert data found for alert_id {alert_id}")
 
@@ -735,7 +755,7 @@ def iter_activity_feed_preview_payloads():
     streak_count = random.randint(2, 50)
     yield build_activity_feed_alert_payload(
         "Streak",
-        f"{streak_user} reached a {streak_count} stream streak!",
+        format_watch_streak_message(streak_user, streak_count),
         "streak",
         timestamp=ts,
         user_message=f"{streak_count} streams in a row!",
@@ -2631,6 +2651,19 @@ def create_condensed_view():
                 # Keep the largest raid for this user
                 if viewers > user_alerts[username][grouping_key]["total_amount"]:
                     user_alerts[username][grouping_key]["total_amount"] = viewers
+            elif alert_type == "streak":
+                streak_count_val = alert_data.get("streak_count")
+                if streak_count_val is None and stored_data:
+                    streak_count_val = stored_data.get("streak_count")
+                if streak_count_val is not None:
+                    sc = int(streak_count_val)
+                else:
+                    streak_match = re.search(
+                        r"(\d+)\s*consecutive streams", message, re.IGNORECASE
+                    )
+                    sc = int(streak_match.group(1)) if streak_match else 0
+                if sc > user_alerts[username][grouping_key]["total_amount"]:
+                    user_alerts[username][grouping_key]["total_amount"] = sc
 
         # Debug summary
         logger.debug(f"Condensed view processing complete:")
@@ -2746,6 +2779,11 @@ def create_aggregated_alert_text(grouping_key, data):
                 return f"Raided {count} times (largest: {formatted_viewers} viewers)!"
             else:
                 return f"Raided with {formatted_viewers} viewers!"
+        elif grouping_key == "streak":
+            sc = int(total_amount) if total_amount else 0
+            if sc < 1:
+                return "Watch streak!"
+            return format_watch_streak_message("", sc, include_username=False)
         else:
             # Fallback for any other alert types
             display_name = grouping_key.replace("_", " ").title()

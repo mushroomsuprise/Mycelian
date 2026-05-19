@@ -866,6 +866,29 @@
             });
         }
 
+        function formatWatchStreakMessage(username, streakCount, includeUsername) {
+            var name = username || 'Someone';
+            var count = parseInt(streakCount, 10);
+            if (isNaN(count)) {
+                count = 0;
+            }
+            if (includeUsername !== false) {
+                return name + ' has watched for ' + count + ' consecutive streams!';
+            }
+            return 'Watched for ' + count + ' consecutive streams!';
+        }
+
+        function resolveWatchStreakCount(alertData) {
+            if (alertData.streak_count != null) {
+                return alertData.streak_count;
+            }
+            var stored = alertData.stored_alert_data || {};
+            if (stored.streak_count != null) {
+                return stored.streak_count;
+            }
+            return 0;
+        }
+
         // Add an activity feed event message to chat
         function addActivityEventMessage(alertData) {
             console.log('Adding activity event message:', alertData);
@@ -877,13 +900,24 @@
 
             // Use the message directly from the activity feed data format
             var eventText = '';
+            var alertType = (alertData.type || alertData.alert_type || '').toLowerCase();
 
-            // The activity feed already formats the message, so we can use it directly
-            if (alertData.message) {
+            if (alertType === 'streak') {
+                var streakUsername = alertData.username ||
+                    (alertData.stored_alert_data && alertData.stored_alert_data.username) ||
+                    extractUsernameFromMessage(alertData) ||
+                    'Someone';
+                eventText = formatWatchStreakMessage(
+                    streakUsername,
+                    resolveWatchStreakCount(alertData),
+                    true
+                );
+            } else if (alertData.message) {
+                // The activity feed already formats the message, so we can use it directly
                 eventText = alertData.message;
             } else {
                 // Fallback: Extract info and format manually if message is missing
-                var alertType = alertData.type || 'Unknown';
+                alertType = alertData.type || 'Unknown';
                 var username = extractUsernameFromMessage(alertData) || 'Someone';
 
                 switch (alertType.toLowerCase()) {
@@ -910,9 +944,6 @@
                         break;
                     case 'points':
                         eventText = username + ' redeemed channel points!';
-                        break;
-                    case 'streak':
-                        eventText = username + ' hit a watch streak milestone!';
                         break;
                     case 'hype train':
                         eventText = 'Hype Train activated!';
