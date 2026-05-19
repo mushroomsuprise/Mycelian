@@ -166,6 +166,19 @@ class AppSettingsTab:
                                 )
                             )
                         with ui.row().classes("items-center gap-2"):
+                            ui.label("Show connection status footer").classes(
+                                "text-sm"
+                            )
+                            self.ui_elements["status_footer_enabled"] = (
+                                ui.switch(value=self.buffer.status_footer_enabled)
+                                .classes("q-switch")
+                                .on_value_change(
+                                    lambda e: self._set(
+                                        "status_footer_enabled", bool(e.value)
+                                    )
+                                )
+                            )
+                        with ui.row().classes("items-center gap-2"):
                             ui.label("Auto update").classes("text-sm")
                             self.ui_elements["auto_update"] = (
                                 ui.switch(value=self.buffer.auto_update)

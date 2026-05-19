@@ -1,1 +1,96 @@
-[]
+[
+  {
+    "id": "ef032d03-ecfa-4e45-a5f7-218d3bb5a51c",
+    "ts": 1779230833.4504929,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "3cf487e5-efcb-4f24-a314-d8ac23d1a009",
+    "ts": 1779230860.313869,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "49574a91-42d6-4715-876b-6c45c3291cf6",
+    "ts": 1779230885.244718,
+    "message": "Settings saved",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "b93753d7-afd1-4a1c-9716-9fbd151e7bb5",
+    "ts": 1779230900.0170848,
+    "message": "Settings saved",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "bbe43d4f-37de-4c5a-a125-e98a0527d6ed",
+    "ts": 1779230998.3985121,
+    "message": "Settings saved",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "9349fdb6-74d4-4f31-b8ae-a67402f17a32",
+    "ts": 1779231197.749602,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "cb871178-3fba-4732-9531-76f55b7d00a4",
+    "ts": 1779231421.833498,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "06e762a4-b539-4ade-ac61-990499d78f7b",
+    "ts": 1779231439.84201,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  }
+]

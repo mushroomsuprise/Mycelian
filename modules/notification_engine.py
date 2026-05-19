@@ -13,10 +13,12 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, cast
 
 from nicegui import ui
 
+from .connection_status_tracker import service_configured as _service_configured
 from .path_utils import get_data_path
 
 logger = logging.getLogger(__name__)
@@ -398,137 +400,10 @@ def maybe_suggest_game_hook_for_category(category: Optional[str]) -> None:
     )
 
 
-def _twitch_configured() -> bool:
-    try:
-        from .api_credentials_manager import api_credentials_manager
-
-        c = api_credentials_manager.get_twitch_credentials()
-        return bool(
-            (c.get("client_id") or "").strip()
-            and (c.get("client_secret") or "").strip()
-        )
-    except Exception:
-        return False
-
-
-def _spotify_configured() -> bool:
-    try:
-        from .api_credentials_manager import api_credentials_manager
-
-        c = api_credentials_manager.get_spotify_credentials()
-        return bool(
-            (c.get("client_id") or "").strip()
-            and (c.get("client_secret") or "").strip()
-        )
-    except Exception:
-        return False
-
-
-def _youtube_configured() -> bool:
-    try:
-        from .dataobjects import state_manager
-
-        y = state_manager.get_youtube_data()
-        if not y:
-            return False
-        return bool((getattr(y, "api_key", "") or "").strip())
-    except Exception:
-        return False
-
-
-def _psn_configured() -> bool:
-    """NPSSO present in settings or live snapshot (PSN tab semantics)."""
-    try:
-        from .dataobjects import state_manager
-
-        live = state_manager.get_live_psn_data()
-        settings = state_manager.get_psn_settings_data()
-        token_in_settings = (
-            (settings.npsso_code or "").strip() if settings else ""
-        )
-        token_in_live = ""
-        if live and getattr(live, "npsso_code", None):
-            token_in_live = str(live.npsso_code or "").strip()
-        return bool(token_in_settings or token_in_live)
-    except Exception:
-        return False
-
-
-def _obs_configured() -> bool:
-    try:
-        from .dataobjects import state_manager
-
-        o = state_manager.get_obs_data()
-        if not o:
-            return False
-        return bool(getattr(o, "enabled", True))
-    except Exception:
-        return False
-
-
-def _service_configured(key: str) -> bool:
-    if key == "twitch":
-        return _twitch_configured()
-    if key == "spotify":
-        return _spotify_configured()
-    if key == "youtube":
-        return _youtube_configured()
-    if key == "psn":
-        return _psn_configured()
-    if key == "obs":
-        return _obs_configured()
-    return False
-
-
 def _service_status_label(key: str) -> str:
-    if key == "twitch":
-        from . import twitch
+    from .connection_status_tracker import get_connection_status
 
-        info = twitch.get_twitch_connection_status()
-        st = info.get("status")
-        return str(st).strip() if st is not None else "Unknown"
-
-    if key == "spotify":
-        from . import spotify
-        from .dataobjects import state_manager
-
-        s = state_manager.get_spotify_data()
-        if s and (getattr(s, "connection_status", "") or "").strip():
-            return (getattr(s, "connection_status", "") or "").strip()
-        st = spotify.get_spotify_status()
-        return str(st.get("status", "Unknown") or "Unknown").strip()
-
-    if key == "youtube":
-        from .dataobjects import state_manager
-
-        y = state_manager.get_youtube_data()
-        if not y:
-            return "Unknown"
-        return (getattr(y, "connection_status", "") or "Unknown").strip()
-
-    if key == "psn":
-        from .dataobjects import state_manager
-
-        live = state_manager.get_live_psn_data()
-        settings = state_manager.get_psn_settings_data()
-        token_in_settings = (
-            (settings.npsso_code or "").strip() if settings else ""
-        )
-        token_in_live = ""
-        if live and getattr(live, "npsso_code", None):
-            token_in_live = str(live.npsso_code or "").strip()
-        if not (token_in_settings or token_in_live):
-            return "Not Connected"
-        if live and getattr(live, "is_online", False):
-            return "Connected"
-        return "Configured but Offline"
-
-    if key == "obs":
-        from .obs_service import obs_service
-
-        return "Connected" if obs_service.is_connected() else "Disconnected"
-
-    return "Unknown"
+    return get_connection_status(key)
 
 
 def _service_status_notify_type(service_key: str, status: str) -> str:
@@ -584,48 +459,266 @@ _service_last: Dict[str, str] = {}
 _SERVICE_STATUS_DEDUPE_COOLDOWN_SEC = 45.0
 
 
-def poll_service_status_changes() -> None:
-    """Call from a UI timer; notify when a configured integration's status label changes."""
-    if not _notifications_enabled():
+def _status_footer_enabled() -> bool:
+    try:
+        from .dataobjects import state_manager
+
+        s = state_manager.get_app_settings()
+        if s is None:
+            return True
+        return bool(getattr(s, "status_footer_enabled", True))
+    except Exception:
+        return True
+
+
+def footer_status_display(service_key: str, status_raw: str) -> str:
+    """Short label for the status footer badge."""
+    s = (status_raw or "").strip().lower()
+    if not s:
+        return "Unknown"
+    if s == "connected" or s.startswith("connected") or s.startswith("partial"):
+        return "Connected"
+    if any(
+        x in s
+        for x in (
+            "disconnected",
+            "not connected",
+            "not configured",
+            "not initialized",
+        )
+    ):
+        return "Disconnected"
+    if any(
+        x in s
+        for x in (
+            "configured but",
+            "authenticated but",
+            "authorization",
+            "awaiting",
+            "opening browser",
+            "offline",
+            "token refresh",
+        )
+    ):
+        return "Idle"
+    if "error" in s or "fail" in s:
+        return "Error"
+    if len(status_raw) <= 12:
+        return status_raw.strip()
+    return status_raw.strip()[:12].rstrip() + "…"
+
+
+def footer_status_tier(service_key: str, status_raw: str) -> str:
+    """Map status to footer badge CSS tier: success, warning, error, info."""
+    display = footer_status_display(service_key, status_raw).lower()
+    if display == "connected":
+        return "success"
+    if display == "idle":
+        return "warning"
+    if display in ("disconnected", "error"):
+        return "error"
+    return "info"
+
+
+@dataclass
+class ServiceFooterEntry:
+    key: str
+    label: str
+    status_raw: str
+    display: str
+    tier: str
+    visible: bool
+
+
+def iter_service_footer_entries() -> List[ServiceFooterEntry]:
+    """Build footer row entries for all integration services."""
+    entries: List[ServiceFooterEntry] = []
+    for key in _SERVICE_KEYS:
+        if key == "twitch":
+            visible = True
+        else:
+            visible = _service_configured(key)
+        if not visible:
+            continue
+        try:
+            status_raw = _service_status_label(key)
+        except Exception:
+            logger.debug("footer status failed for %s", key, exc_info=True)
+            status_raw = "Unknown"
+        entries.append(
+            ServiceFooterEntry(
+                key=key,
+                label=_SERVICE_LABELS[key],
+                status_raw=status_raw,
+                display=footer_status_display(key, status_raw),
+                tier=footer_status_tier(key, status_raw),
+                visible=True,
+            )
+        )
+    return entries
+
+
+_footer_container: Optional[Any] = None
+_footer_item_refs: Dict[str, Dict[str, Any]] = {}
+
+
+def create_service_status_footer() -> None:
+    """Mount the global connection status footer below main tab content."""
+    global _footer_container, _footer_item_refs
+
+    from .uiwindows.service_brand_icons import SERVICE_BRAND_SVG
+
+    with ui.element("div").classes(
+        "service-status-footer w-full shrink-0 flex-none"
+    ) as footer:
+        _footer_container = footer
+        with ui.element("div").classes("service-status-footer-inner w-full"):
+            for key in _SERVICE_KEYS:
+                svg = SERVICE_BRAND_SVG.get(key, "")
+                with ui.element("div").classes(
+                    "service-status-item cursor-pointer select-none"
+                ).style("display: none;") as item:
+                    item.on(
+                        "click",
+                        lambda _e, k=key: _on_footer_item_click(k),
+                    )
+                    if svg:
+                        ui.html(
+                            f'<span class="service-status-brand-icon">{svg}</span>'
+                        )
+                    ui.label(_SERVICE_LABELS[key]).classes(
+                        "service-status-name text-xs"
+                    )
+                    with ui.element("div").classes(
+                        "service-status-status-cluster"
+                    ):
+                        dot = ui.element("span").classes("service-status-dot muted")
+                        badge_wrap = ui.element("span").classes(
+                            "service-status-badge info"
+                        )
+                        with badge_wrap:
+                            badge_label = ui.label("…").classes("text-xs")
+                    _footer_item_refs[key] = {
+                        "container": item,
+                        "dot": dot,
+                        "badge": badge_label,
+                        "badge_wrap": badge_wrap,
+                    }
+
+    from .connection_status_tracker import probe_configured_services
+
+    probe_configured_services(force=True)
+    refresh_service_status_footer()
+
+
+def _on_footer_item_click(service_key: str) -> None:
+    try:
+        from .help_system.contextual_help import navigate_to_settings_subtab
+
+        sub = _SERVICE_SUBTABS.get(service_key)
+        if sub:
+            navigate_to_settings_subtab(sub, main_tab="Settings")
+    except Exception:
+        logger.debug("footer navigate failed for %s", service_key, exc_info=True)
+
+
+def refresh_service_status_footer() -> None:
+    """Update footer visibility and per-service badges (called from status poll)."""
+    if _footer_container is None:
         return
 
-    for key in _SERVICE_KEYS:
-        if not _service_configured(key):
-            _service_last.pop(key, None)
-            continue
-
-        try:
-            status = _service_status_label(key)
-        except Exception:
-            logger.debug("service status poll failed for %s", key, exc_info=True)
-            continue
-
-        prev = _service_last.get(key)
-        if prev is None:
-            _service_last[key] = status
-            continue
-        if prev == status:
-            continue
-
-        _service_last[key] = status
-        label = _SERVICE_LABELS[key]
-        sub = _SERVICE_SUBTABS[key]
-        msg = f"{label}: {status}"
-        ntype = _service_status_notify_type(key, status)
-        dk = f"svc:{key}:{status}"
-        notify(
-            msg,
-            type=ntype,
-            dedupe_key=dk,
-            dedupe_cooldown_sec=_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC,
-            actions=[
-                {
-                    "kind": "navigate",
-                    "main_tab": "Settings",
-                    "settings_subtab": sub,
-                }
-            ],
+    enabled = _status_footer_enabled()
+    try:
+        _footer_container.style(
+            replace=f"display: {'flex' if enabled else 'none'};"
         )
+    except Exception:
+        pass
+
+    if not enabled:
+        return
+
+    entries = {e.key: e for e in iter_service_footer_entries()}
+    for key in _SERVICE_KEYS:
+        refs = _footer_item_refs.get(key)
+        if not refs:
+            continue
+        entry = entries.get(key)
+        container = refs["container"]
+        if entry is None:
+            try:
+                container.style(replace="display: none;")
+            except Exception:
+                pass
+            continue
+        try:
+            container.style(replace="display: inline-flex;")
+        except Exception:
+            pass
+        dot = refs["dot"]
+        badge = refs["badge"]
+        tier = entry.tier
+        try:
+            dot.classes(replace=f"service-status-dot {tier}")
+        except Exception:
+            pass
+        try:
+            badge.set_text(entry.display)
+            badge_wrap = refs.get("badge_wrap")
+            if badge_wrap is not None:
+                badge_wrap.classes(replace=f"service-status-badge {tier}")
+        except Exception:
+            pass
+
+
+def poll_service_status_changes() -> None:
+    """Call from a UI timer; notify when a configured integration's status label changes."""
+    from .connection_status_tracker import probe_configured_services
+
+    probe_configured_services()
+
+    if _notifications_enabled():
+        for key in _SERVICE_KEYS:
+            if not _service_configured(key):
+                _service_last.pop(key, None)
+                continue
+
+            try:
+                status = _service_status_label(key)
+            except Exception:
+                logger.debug(
+                    "service status poll failed for %s", key, exc_info=True
+                )
+                continue
+
+            prev = _service_last.get(key)
+            if prev is None:
+                _service_last[key] = status
+                continue
+            if prev == status:
+                continue
+
+            _service_last[key] = status
+            label = _SERVICE_LABELS[key]
+            sub = _SERVICE_SUBTABS[key]
+            msg = f"{label}: {status}"
+            ntype = _service_status_notify_type(key, status)
+            dk = f"svc:{key}:{status}"
+            notify(
+                msg,
+                type=ntype,
+                dedupe_key=dk,
+                dedupe_cooldown_sec=_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC,
+                actions=[
+                    {
+                        "kind": "navigate",
+                        "main_tab": "Settings",
+                        "settings_subtab": sub,
+                    }
+                ],
+            )
+
+    refresh_service_status_footer()
 
 
 def poll_service_connection_changes() -> None:

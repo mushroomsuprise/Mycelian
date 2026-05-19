@@ -145,6 +145,14 @@ body:not(.body--dark) .text-grey {
     height: 100dvh;
     max-height: 100vh;
     max-height: 100dvh;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Keep status footer inside the shell padding (avoids bottom-edge clipping) */
+.mycelian-main-shell > .service-status-footer {
+    margin-bottom: 0;
+    max-width: 100%;
 }
 
 /* Main content area styling */
@@ -1273,6 +1281,177 @@ button.alert-save-btn:hover,
     height: auto;
     max-height: none;
     box-sizing: border-box;
+}
+
+/* Global connection status footer (main shell) */
+.service-status-footer {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    background: var(--color-bg-surface);
+    border-top: 1px solid var(--color-border-subtle);
+    padding: 7px 12px 8px;
+    margin-top: 4px;
+    margin-bottom: 0;
+    border-radius: 6px;
+    overflow: visible;
+    min-height: 0;
+}
+
+.service-status-footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px 16px;
+    min-height: 0;
+    line-height: 1;
+}
+
+.service-status-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1;
+    min-height: 0;
+    border-radius: 4px;
+    padding: 2px 4px;
+    box-sizing: border-box;
+    transition: background 0.15s ease;
+}
+
+.service-status-item:hover {
+    background: var(--color-hover-overlay);
+}
+
+.service-status-status-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    line-height: 1;
+    min-height: 0;
+}
+
+.service-status-brand-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    line-height: 0;
+}
+
+.service-status-brand-icon svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    vertical-align: middle;
+}
+
+.service-status-name {
+    color: var(--color-text-primary);
+    font-weight: 500;
+    font-size: 12px;
+    line-height: 1.2 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    align-self: center;
+}
+
+.service-status-dot {
+    display: block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    align-self: center;
+    margin: 0;
+}
+
+.service-status-dot.success {
+    background: var(--color-success);
+}
+
+.service-status-dot.warning {
+    background: var(--color-warning);
+}
+
+.service-status-dot.error {
+    background: var(--color-error);
+}
+
+.service-status-dot.info {
+    background: var(--color-info);
+}
+
+.service-status-dot.muted {
+    background: var(--color-text-muted);
+}
+
+.service-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 1;
+    box-sizing: border-box;
+    min-height: 0;
+}
+
+.service-status-badge.success {
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
+    color: var(--color-success);
+    border: 1px solid color-mix(in srgb, var(--color-success) 25%, transparent);
+}
+
+.service-status-badge.warning {
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+    color: var(--color-warning);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 25%, transparent);
+}
+
+.service-status-badge.error {
+    background: color-mix(in srgb, var(--color-error) 15%, transparent);
+    color: var(--color-error);
+    border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+}
+
+.service-status-badge.info {
+    background: color-mix(in srgb, var(--color-info) 15%, transparent);
+    color: var(--color-info);
+    border: 1px solid color-mix(in srgb, var(--color-info) 25%, transparent);
+}
+
+.service-status-badge .text-xs,
+.service-status-footer .service-status-badge > *,
+.service-status-footer .service-status-name {
+    color: inherit !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    line-height: 1.2 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+}
+
+.service-status-footer .service-status-name.text-xs {
+    font-size: 12px !important;
+    color: var(--color-text-primary) !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
 }
 """
 

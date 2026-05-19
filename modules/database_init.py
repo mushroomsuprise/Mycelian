@@ -59,6 +59,7 @@ def _create_default_data():
                 "auto_reconnect": True,
                 "current_theme": "dark",
                 "notifications_enabled": True,
+                "status_footer_enabled": True,
                 "auto_update": True,
                 "activity_feed_limit": 25,
                 "activity_feed_max_pages": 10,

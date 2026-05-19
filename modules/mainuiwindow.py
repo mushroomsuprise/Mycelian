@@ -1208,6 +1208,7 @@ def create_ui_elements():
             from .help_system.contextual_help import help_button, register_main_tabs
             from .notification_engine import (
                 create_notification_tray_button,
+                create_service_status_footer,
                 start_service_watcher_timer,
             )
 
@@ -1407,6 +1408,8 @@ def create_ui_elements():
                         )
 
                     dialog.open()  # Explicitly open the dialog
+
+        create_service_status_footer()
 
     # Mark UI elements as created
     _ui_elements_created = True
