@@ -2526,6 +2526,173 @@
             }
         }, 30 * 60 * 1000);
 
+        // ── Custom Sources preview: hot config (no iframe reload) ──
+        function _chatCfg(config, key, fallback) {
+            var v = config[key];
+            return (v !== undefined && v !== null && v !== '') ? v : fallback;
+        }
+
+        function buildChatPreviewCss(config) {
+            var fontName = _chatCfg(config, 'FontName', 'Renogare.ttf');
+            var eventFontName = _chatCfg(config, 'EventFontName', 'Roboto-Italic.ttf');
+            var bgColor = _chatCfg(config, 'BGColor', 'transparent');
+            var bgOpacity = _chatCfg(config, 'BGOpacity', 1);
+            var chatPadding = _chatCfg(config, 'ChatPadding', 10);
+            var messageBG = _chatCfg(config, 'MessageBG', 'transparent');
+            var messagePadding = _chatCfg(config, 'MessagePadding', 3);
+            var messageMargin = _chatCfg(config, 'MessageMargin', 2);
+            var fontSize = _chatCfg(config, 'FontSize', 16);
+            var fontColor = _chatCfg(config, 'FontColor', '#ffffff');
+            var messageRadius = _chatCfg(config, 'MessageRadius', 4);
+            var messageBorder = _chatCfg(config, 'MessageBorder', 0);
+            var messageBorderColor = _chatCfg(config, 'MessageBorderColor', 'transparent');
+            var messageAnimation = _chatCfg(config, 'MessageAnimation', 'slideIn');
+            var animationDuration = _chatCfg(config, 'AnimationDuration', 0.5);
+            var animationEasing = _chatCfg(config, 'AnimationEasing', 'ease');
+            var minMessageHeight = _chatCfg(config, 'MinMessageHeight', 0);
+            var lineHeight = _chatCfg(config, 'LineHeight', 1.4);
+            var eventBG = _chatCfg(config, 'EventBG', 'rgba(0,0,0,0.3)');
+            var eventColor = _chatCfg(config, 'EventColor', '#cccccc');
+            var eventBorderWidth = _chatCfg(config, 'EventBorderWidth', 3);
+            var eventBorderColor = _chatCfg(config, 'EventBorderColor', '#888888');
+            var badgeGap = _chatCfg(config, 'BadgeGap', 4);
+            var badgeSize = _chatCfg(config, 'BadgeSize', 18);
+            var badgeRadius = _chatCfg(config, 'BadgeRadius', 2);
+            var usernameFontSize = _chatCfg(config, 'UsernameFontSize', 14);
+            var usernameFontWeight = _chatCfg(config, 'UsernameFontWeight', 'bold');
+            var usernameColor = _chatCfg(config, 'UsernameColor', '#ffffff');
+            var usernameMargin = _chatCfg(config, 'UsernameMargin', 4);
+            var usernameTextShadow = _chatCfg(config, 'UsernameTextShadow', 'none');
+            var emoteScale = _chatCfg(config, 'EmoteScale', 1);
+            var emoteRadius = _chatCfg(config, 'EmoteRadius', 0);
+            var emoteMargin = _chatCfg(config, 'EmoteMargin', 2);
+            var gigScale = _chatCfg(config, 'GigantifiedTwitchDisplayScale', 2);
+            var timestampSize = _chatCfg(config, 'TimestampSize', 11);
+            var timestampColor = _chatCfg(config, 'TimestampColor', '#888888');
+            var timestampMargin = _chatCfg(config, 'TimestampMargin', 4);
+            var timestampOpacity = _chatCfg(config, 'TimestampOpacity', 0.7);
+            var animRule = (messageAnimation === 'none')
+                ? 'animation: none;'
+                : ('animation: ' + messageAnimation + ' ' + animationDuration + 's ' + animationEasing + ';');
+
+            return (
+                '@font-face { font-family: chat-font; src: url("/assets/default_assets/fonts/' + fontName + '"); }' +
+                '@font-face { font-family: event-font; src: url("/assets/default_assets/fonts/' + eventFontName + '"); }' +
+                'html, body { font-family: chat-font, Arial, sans-serif; }' +
+                '#chat { background-color: ' + bgColor + '; opacity: ' + bgOpacity + '; padding: ' + chatPadding + 'px; }' +
+                '.chat-message { background-color: ' + messageBG + '; padding: ' + messagePadding + 'px; margin: ' + messageMargin + 'px 0; ' +
+                'font-size: ' + fontSize + 'px; color: ' + fontColor + '; border-radius: ' + messageRadius + 'px; ' +
+                'border: ' + messageBorder + 'px solid ' + messageBorderColor + '; ' + animRule +
+                ' min-height: ' + minMessageHeight + 'px; line-height: ' + lineHeight + '; }' +
+                '.chat-message.event-message { font-family: event-font, chat-font, Arial, sans-serif; background-color: ' + eventBG + '; ' +
+                'color: ' + eventColor + '; border-left: ' + eventBorderWidth + 'px solid ' + eventBorderColor + '; }' +
+                '.chat-message.activity-event { font-size: calc(' + fontSize + 'px * 0.85); margin: calc(' + messageMargin + 'px * 0.3) 0; ' +
+                'padding: calc(' + messagePadding + 'px * 0.4) calc(' + messagePadding + 'px * 0.6); }' +
+                '.message-badges { margin-right: ' + badgeGap + 'px; }' +
+                '.badge-img { width: ' + badgeSize + 'px; height: ' + badgeSize + 'px; border-radius: ' + badgeRadius + 'px; margin-right: ' + badgeGap + 'px; }' +
+                '.message-username { font-size: ' + usernameFontSize + 'px; font-weight: ' + usernameFontWeight + '; color: ' + usernameColor + '; ' +
+                'margin-right: ' + usernameMargin + 'px; text-shadow: ' + usernameTextShadow + '; }' +
+                '.emote-img, .emote-base, .emote-zw { height: calc(28px * ' + emoteScale + '); border-radius: ' + emoteRadius + 'px; }' +
+                '.emote-img { margin: 0 ' + emoteMargin + 'px; }' +
+                '.emote-container { margin: 0 ' + emoteMargin + 'px; }' +
+                '.emote-overlay { border-radius: ' + emoteRadius + 'px; }' +
+                '.emote-zw { margin: 0 ' + emoteMargin + 'px; }' +
+                '.gigantified-emote { height: calc(28px * ' + emoteScale + ' * ' + gigScale + ') !important; }' +
+                '.emote-img.gigantified-emote { margin: 0 ' + emoteMargin + 'px !important; }' +
+                '.chat-message.gigantified-message { line-height: calc(' + lineHeight + ' * (0.55 + ' + gigScale + ' * 0.35)); ' +
+                'padding: calc(' + messagePadding + 'px * (1 + ' + gigScale + ' * 0.2)) ' + messagePadding + 'px; }' +
+                '.cheermote-container { margin: 0 ' + emoteMargin + 'px; }' +
+                '.cheermote-img { height: calc(28px * ' + emoteScale + '); }' +
+                '.timestamp { font-size: ' + timestampSize + 'px; color: ' + timestampColor + '; margin-right: ' + timestampMargin + 'px; opacity: ' + timestampOpacity + '; }' +
+                '@media (max-width: 768px) { .chat-message { font-size: calc(' + fontSize + 'px * 0.9); padding: calc(' + messagePadding + 'px * 0.8); } ' +
+                '.chat-message.activity-event { font-size: calc(' + fontSize + 'px * 0.75); padding: calc(' + messagePadding + 'px * 0.3) calc(' + messagePadding + 'px * 0.5); ' +
+                'margin: calc(' + messageMargin + 'px * 0.2) 0; } ' +
+                '.emote-img:not(.gigantified-emote), .emote-base:not(.gigantified-emote), .emote-zw:not(.gigantified-emote) { height: calc(28px * ' + emoteScale + ' * 0.8); } ' +
+                '.emote-img.gigantified-emote, .emote-base.gigantified-emote, .emote-zw.gigantified-emote { height: calc(28px * ' + emoteScale + ' * ' + gigScale + ' * 0.8) !important; } ' +
+                '.cheermote-img { height: calc(28px * ' + emoteScale + ' * 0.8); } ' +
+                '.emote-container, .cheermote-container { margin: 0 calc(' + emoteMargin + 'px * 0.8); } }'
+            );
+        }
+
+        function applyChatConfigGlobals(config) {
+            if (config.MaxMessages !== undefined) { maxMessages = Number(config.MaxMessages); }
+            if (config.ShowTimestamps !== undefined) { showTimestamps = !!config.ShowTimestamps; }
+            if (config.TimestampFormat !== undefined) { timestampFormat = config.TimestampFormat; }
+            if (config.EnableEmotes !== undefined) { enableEmotes = !!config.EnableEmotes; }
+            if (config.EnableBadges !== undefined) { enableBadges = !!config.EnableBadges; }
+            if (config.EnableMessageFontRandomization !== undefined) {
+                enableMessageFontRandomization = !!config.EnableMessageFontRandomization;
+            }
+            if (config.EnableUsernameFontRandomization !== undefined) {
+                enableUsernameFontRandomization = !!config.EnableUsernameFontRandomization;
+            }
+            if (config.RandomFontList !== undefined) {
+                randomFontList = String(config.RandomFontList).split('\n').map(function (f) {
+                    return f.trim();
+                }).filter(function (f) { return f.length > 0; });
+            }
+            updateChatSettings({
+                maxMessages: maxMessages,
+                showTimestamps: showTimestamps,
+                timestampFormat: timestampFormat,
+                enableEmotes: enableEmotes,
+                enableBadges: enableBadges,
+                enableMessageFontRandomization: enableMessageFontRandomization,
+                enableUsernameFontRandomization: enableUsernameFontRandomization,
+                randomFontList: config.RandomFontList,
+                enableUsernameFiltering: config.EnableUsernameFiltering,
+                filteredUsernames: config.FilteredUsernames
+            });
+            if (config.DisableModerator !== undefined) { disabledBadges.moderator = !!config.DisableModerator; }
+            if (config.DisableVIP !== undefined) { disabledBadges.vip = !!config.DisableVIP; }
+            if (config.DisableSubscriber !== undefined) { disabledBadges.subscriber = !!config.DisableSubscriber; }
+            if (config.DisableFounder !== undefined) { disabledBadges.founder = !!config.DisableFounder; }
+            if (config.DisableBroadcaster !== undefined) { disabledBadges.broadcaster = !!config.DisableBroadcaster; }
+            if (config.DisableTurbo !== undefined) { disabledBadges.turbo = !!config.DisableTurbo; }
+            if (config.DisableStaff !== undefined) { disabledBadges.staff = !!config.DisableStaff; }
+            if (config.DisableBits !== undefined) { disabledBadges.bits = !!config.DisableBits; }
+            if (config.DisableAdmin !== undefined) { disabledBadges.admin = !!config.DisableAdmin; }
+            if (config.DisablePartner !== undefined) { disabledBadges.partner = !!config.DisablePartner; }
+        }
+
+        function applyTemplateConfig(config) {
+            var styleEl = document.getElementById('mycelian-chat-preview-dynamic');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'mycelian-chat-preview-dynamic';
+                document.head.appendChild(styleEl);
+            }
+            styleEl.textContent = buildChatPreviewCss(config);
+            applyChatConfigGlobals(config);
+        }
+
+        async function loadTemplateConfig() {
+            try {
+                var response = await fetch('/api/all-template-configs', { credentials: 'same-origin' });
+                if (!response.ok) {
+                    console.error('Failed to load template configs:', response.status);
+                    return;
+                }
+                var allConfigs = await response.json();
+                var chatConfigData = allConfigs.chat;
+                if (!chatConfigData || !chatConfigData.elements) {
+                    console.warn('No chat config found in response');
+                    return;
+                }
+                var config = {};
+                chatConfigData.elements.forEach(function (element) {
+                    if (element && element.id && element.type !== 'separator') {
+                        config[element.id] = element.value;
+                    }
+                });
+                applyTemplateConfig(config);
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        loadTemplateConfig();
+
         // Initialize
         console.log('Mycelian Chat initialized');
 

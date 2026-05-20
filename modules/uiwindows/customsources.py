@@ -100,20 +100,6 @@ _custom_sources_ctx: Dict[str, Any] = {}
 # Maps config file stem -> overlay HTML route (JSON ``template_name``).
 _preview_route_cache: Dict[str, str] = {}
 
-_PREVIEW_HOT_CONFIG_TEMPLATES = frozenset(
-    {
-        "alerts",
-        "pausedalerts",
-        "bitbar",
-        "bitboss",
-        "counter",
-        "subbar",
-        "activity_feed",
-        "ff7",
-    }
-)
-# roulette, title, chat, giveaway: full iframe reload on edit (no hot config API).
-
 # Add custom CSS for animations and styling (removed pulsing animations)
 CUSTOM_CSS = """
 .fade-in {
@@ -603,12 +589,12 @@ def _effective_preview_route(config_name: str) -> str:
     return route
 
 
-def _template_preview_supports_hot_config(config_name: str) -> bool:
-    return _effective_preview_route(config_name) in _PREVIEW_HOT_CONFIG_TEMPLATES
-
-
 def _push_hot_preview_overrides() -> None:
-    """Push form values and ping iframe ``loadTemplateConfig`` (no iframe reload)."""
+    """Push form values and refresh preview in-place (no iframe reload).
+
+    Every template uses this path on setting edits. Templates may define their own
+    ``loadTemplateConfig``; others rely on the preview helper's generic style sync.
+    """
     ctx = _custom_sources_ctx
     sel = ctx.get("config_select")
     if not sel or not sel.value:
@@ -743,11 +729,7 @@ def _schedule_template_preview_refresh() -> None:
         if not sel or not sel.value:
             _flush_template_preview()
             return
-        name = sel.value
-        if _template_preview_supports_hot_config(name):
-            _push_hot_preview_overrides()
-        else:
-            _flush_template_preview()
+        _push_hot_preview_overrides()
 
     ui.timer(0.32, _tick, once=True)
 

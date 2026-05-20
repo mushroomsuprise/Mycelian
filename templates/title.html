@@ -723,6 +723,112 @@
             });
         }
 
+        // ── Custom Sources preview: hot config (no iframe reload) ──
+        function _titleCfg(config, key, fallback) {
+            var v = config[key];
+            return (v !== undefined && v !== null && v !== '') ? v : fallback;
+        }
+
+        function buildTitlePreviewCss(config) {
+            var fontName = _titleCfg(config, 'FontName', 'Renogare.ttf');
+            var titleTop = _titleCfg(config, 'TitleTop', 0);
+            var titleLeft = _titleCfg(config, 'TitleLeft', 0);
+            var titleWidth = _titleCfg(config, 'TitleWidth', 800);
+            var titleHeight = _titleCfg(config, 'TitleHeight', 80);
+            var titleAlign = _titleCfg(config, 'TitleAlign', 'center');
+            var containerBG = _titleCfg(config, 'ContainerBG', 'transparent');
+            var containerRadius = _titleCfg(config, 'ContainerRadius', 0);
+            var containerBorder = _titleCfg(config, 'ContainerBorder', 0);
+            var containerBorderColor = _titleCfg(config, 'ContainerBorderColor', 'transparent');
+            var containerShadow = _titleCfg(config, 'ContainerShadow', 'none');
+            var containerPadding = _titleCfg(config, 'ContainerPadding', 10);
+            var fontSize = _titleCfg(config, 'FontSize', 32);
+            var fontWeight = _titleCfg(config, 'FontWeight', 'bold');
+            var fontColor = _titleCfg(config, 'FontColor', '#ffffff');
+            var textShadow = _titleCfg(config, 'TextShadow', 'none');
+            var lineHeight = _titleCfg(config, 'LineHeight', 1.2);
+            var transitionDuration = _titleCfg(config, 'TransitionDuration', 0.5);
+            var wipeEasing = _titleCfg(config, 'WipeEasing', '0.25');
+            var pulseOpacity = _titleCfg(config, 'PulseOpacity', 0.7);
+            var pulseSpeed = _titleCfg(config, 'PulseSpeed', 2);
+            var glowColor = _titleCfg(config, 'GlowColor', '#ffffff');
+
+            return (
+                '@font-face { font-family: title-font; src: url("/assets/default_assets/fonts/' + fontName + '"); }' +
+                'body { font-family: title-font, Arial, sans-serif; }' +
+                '.title-container { top: ' + titleTop + 'px; left: ' + titleLeft + 'px; width: ' + titleWidth + 'px; height: ' + titleHeight + 'px; ' +
+                'justify-content: ' + titleAlign + '; background: ' + containerBG + '; border-radius: ' + containerRadius + 'px; ' +
+                'border: ' + containerBorder + 'px solid ' + containerBorderColor + '; box-shadow: ' + containerShadow + '; padding: ' + containerPadding + 'px; }' +
+                '.title-text { font-size: ' + fontSize + 'px; font-weight: ' + fontWeight + '; color: ' + fontColor + '; text-shadow: ' + textShadow + '; ' +
+                'text-align: ' + titleAlign + '; line-height: ' + lineHeight + '; }' +
+                '.title-text.updating, .title-text.updated { transition: opacity ' + transitionDuration + 's ease; }' +
+                '.wipe-old-text, .wipe-new-text { justify-content: ' + titleAlign + '; }' +
+                '.wipe-new-text { transition: transform ' + transitionDuration + 's cubic-bezier(' + wipeEasing + ', 0.46, 0.45, 0.94); }' +
+                '.wipe-old-text { transition: transform ' + transitionDuration + 's cubic-bezier(' + wipeEasing + ', 0.46, 0.45, 0.94); }' +
+                '@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: ' + pulseOpacity + '; } }' +
+                '.title-text.pulse { animation: pulse ' + pulseSpeed + 's infinite; }' +
+                '.title-text.glow { text-shadow: ' + textShadow + ', 0 0 10px ' + glowColor + ', 0 0 20px ' + glowColor + '; }' +
+                '@media (max-width: 768px) { .title-container { width: calc(' + titleWidth + 'px * 0.9); height: calc(' + titleHeight + 'px * 0.9); ' +
+                'padding: calc(' + containerPadding + 'px * 0.8); } }'
+            );
+        }
+
+        function applyTemplateConfig(config) {
+            var styleEl = document.getElementById('mycelian-title-preview-dynamic');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'mycelian-title-preview-dynamic';
+                document.head.appendChild(styleEl);
+            }
+            styleEl.textContent = buildTitlePreviewCss(config);
+
+            if (config.ShowCategory !== undefined) { titleData.showCategory = !!config.ShowCategory; }
+            if (config.CategoryPrefix !== undefined) { titleData.categoryPrefix = config.CategoryPrefix; }
+            if (config.CategorySuffix !== undefined) { titleData.categorySuffix = String(config.CategorySuffix); }
+            if (config.EnableAnimations !== undefined) { settings.enableAnimations = !!config.EnableAnimations; }
+            if (config.EnablePulse !== undefined) { settings.enablePulse = !!config.EnablePulse; }
+            if (config.EnableGlow !== undefined) { settings.enableGlow = !!config.EnableGlow; }
+            if (config.EnableWipe !== undefined) { settings.enableWipe = !!config.EnableWipe; }
+            if (config.WipeDirection !== undefined) { settings.wipeDirection = config.WipeDirection; }
+            if (config.WipeEasing !== undefined) { settings.wipeEasing = config.WipeEasing; }
+            if (config.FontSize !== undefined) { baseFontSize = Number(config.FontSize); minFontSize = Math.max(12, baseFontSize * 0.3); }
+
+            var titleEl = document.getElementById('titleText');
+            if (titleEl) {
+                titleEl.classList.remove('pulse', 'glow');
+                if (settings.enablePulse) { titleEl.classList.add('pulse'); }
+                if (settings.enableGlow) { titleEl.classList.add('glow'); }
+                adjustFontSize(titleEl);
+            }
+        }
+
+        async function loadTemplateConfig() {
+            try {
+                var response = await fetch('/api/all-template-configs', { credentials: 'same-origin' });
+                if (!response.ok) {
+                    console.error('Failed to load template configs:', response.status);
+                    return;
+                }
+                var allConfigs = await response.json();
+                var titleConfigData = allConfigs.title;
+                if (!titleConfigData || !titleConfigData.elements) {
+                    console.warn('No title config found in response');
+                    return;
+                }
+                var config = {};
+                titleConfigData.elements.forEach(function (element) {
+                    if (element && element.id && element.type !== 'separator') {
+                        config[element.id] = element.value;
+                    }
+                });
+                applyTemplateConfig(config);
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        loadTemplateConfig();
+
         // Initialize
         console.log('Mycelian Title Display initialized');
         console.log('Wipe animation enabled:', settings.enableWipe);

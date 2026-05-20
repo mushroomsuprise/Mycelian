@@ -734,6 +734,22 @@
         modernEffects: {{ ModernEffects | tojson }}
         };
 
+        var rouletteDrawParams = {
+            canvasSize: {{ CanvasSize | tojson }},
+            outsideRadius: {{ OutsideRadius | tojson }},
+            textRadius: {{ TextRadius | tojson }},
+            insideRadius: {{ InsideRadius | tojson }},
+            segmentBorderColor: {{ SegmentBorderColor | tojson }},
+            segmentBorderWidth: {{ SegmentBorderWidth | tojson }},
+            centerDotBorderWidth: {{ CenterDotBorderWidth | tojson }},
+            centerDotBorderColor: {{ CenterDotBorderColor | tojson }},
+            arrowSize: {{ ArrowSize | tojson }},
+            arrowColor: {{ ArrowColor | tojson }},
+            arrowOffset: {{ ArrowOffset | tojson }},
+            arrowBorderWidth: {{ ArrowBorderWidth | tojson }},
+            arrowBorderColor: {{ ArrowBorderColor | tojson }}
+        };
+
         // Wheel drawing variables
         var startAngle = 0;
         var arc = Math.PI / (rouletteData.options.length / 2);
@@ -965,10 +981,10 @@
             var canvas = document.getElementById("canvas");
             if (!canvas.getContext) return;
 
-            var canvasSize = {{ CanvasSize| tojson }};
-        var outsideRadius = {{ OutsideRadius| tojson }};
-        var textRadius = {{ TextRadius| tojson }};
-        var insideRadius = {{ InsideRadius| tojson }};
+            var canvasSize = rouletteDrawParams.canvasSize;
+        var outsideRadius = rouletteDrawParams.outsideRadius;
+        var textRadius = rouletteDrawParams.textRadius;
+        var insideRadius = rouletteDrawParams.insideRadius;
 
         ctx = canvas.getContext("2d");
         ctx.clearRect(0, 0, canvasSize, canvasSize);
@@ -1010,8 +1026,8 @@
             }
 
             ctx.fillStyle = segmentGradient;
-            ctx.strokeStyle = isWinning ? '#9333ea' : {{ SegmentBorderColor | tojson }};
-        ctx.lineWidth = isWinning ? {{ SegmentBorderWidth | tojson }} + 2 : {{ SegmentBorderWidth | tojson }};
+            ctx.strokeStyle = isWinning ? '#9333ea' : rouletteDrawParams.segmentBorderColor;
+        ctx.lineWidth = isWinning ? rouletteDrawParams.segmentBorderWidth + 2 : rouletteDrawParams.segmentBorderWidth;
 
         // Add glow effect for winning segment
         if (isWinning) {
@@ -1028,7 +1044,7 @@
         ctx.closePath();
         ctx.fill();
 
-        if ({{ SegmentBorderWidth | tojson }} > 0) {
+        if (rouletteDrawParams.segmentBorderWidth > 0) {
             ctx.stroke();
         }
 
@@ -1125,9 +1141,10 @@
 
         // Enhanced arrow with modern styling
         function drawModernArrow() {
-            var canvasSize = {{ CanvasSize| tojson }};
-        var outsideRadius = {{ OutsideRadius| tojson }};
-        var arrowSize = {{ ArrowSize| tojson}};
+            var canvasSize = rouletteDrawParams.canvasSize;
+        var outsideRadius = rouletteDrawParams.outsideRadius;
+        var arrowSize = rouletteDrawParams.arrowSize;
+        var arrowOffset = rouletteDrawParams.arrowOffset;
 
         // Arrow shadow for depth
         ctx.save();
@@ -1141,27 +1158,26 @@
             canvasSize / 2 + arrowSize, canvasSize / 2 - outsideRadius
         );
         arrowGradient.addColorStop(0, '#2a2a2a');
-        arrowGradient.addColorStop(0.5, {{ ArrowColor| tojson}});
+        arrowGradient.addColorStop(0.5, rouletteDrawParams.arrowColor);
         arrowGradient.addColorStop(1, '#0a0a0a');
 
         ctx.fillStyle = arrowGradient;
         ctx.beginPath();
         // Sharp, narrow geometric arrow shape
-        ctx.moveTo(canvasSize / 2 - arrowSize, canvasSize / 2 - (outsideRadius + {{ ArrowOffset| tojson}}));
-        ctx.lineTo(canvasSize / 2 + arrowSize, canvasSize / 2 - (outsideRadius + {{ ArrowOffset| tojson}}));
-        ctx.lineTo(canvasSize / 2 + arrowSize, canvasSize / 2 - (outsideRadius - arrowSize / 2 + {{ ArrowOffset| tojson}}));
-        ctx.lineTo(canvasSize / 2 + arrowSize + 4, canvasSize / 2 - (outsideRadius - arrowSize / 2 + {{ ArrowOffset| tojson}}));
-        ctx.lineTo(canvasSize / 2, canvasSize / 2 - (outsideRadius - arrowSize - 6 + {{ ArrowOffset| tojson}}));
-        ctx.lineTo(canvasSize / 2 - arrowSize - 4, canvasSize / 2 - (outsideRadius - arrowSize / 2 + {{ ArrowOffset| tojson}}));
-        ctx.lineTo(canvasSize / 2 - arrowSize, canvasSize / 2 - (outsideRadius - arrowSize / 2 + {{ ArrowOffset| tojson}}));
+        ctx.moveTo(canvasSize / 2 - arrowSize, canvasSize / 2 - (outsideRadius + arrowOffset));
+        ctx.lineTo(canvasSize / 2 + arrowSize, canvasSize / 2 - (outsideRadius + arrowOffset));
+        ctx.lineTo(canvasSize / 2 + arrowSize, canvasSize / 2 - (outsideRadius - arrowSize / 2 + arrowOffset));
+        ctx.lineTo(canvasSize / 2 + arrowSize + 4, canvasSize / 2 - (outsideRadius - arrowSize / 2 + arrowOffset));
+        ctx.lineTo(canvasSize / 2, canvasSize / 2 - (outsideRadius - arrowSize - 6 + arrowOffset));
+        ctx.lineTo(canvasSize / 2 - arrowSize - 4, canvasSize / 2 - (outsideRadius - arrowSize / 2 + arrowOffset));
+        ctx.lineTo(canvasSize / 2 - arrowSize, canvasSize / 2 - (outsideRadius - arrowSize / 2 + arrowOffset));
         ctx.closePath();
         ctx.fill();
 
         // Purple pulsing border
-        if ({{ ArrowBorderWidth | tojson }} > 0) {
-            ctx.strokeStyle = {{ ArrowBorderColor | tojson }}
-        };
-        ctx.lineWidth = {{ ArrowBorderWidth | tojson }};
+        if (rouletteDrawParams.arrowBorderWidth > 0) {
+            ctx.strokeStyle = rouletteDrawParams.arrowBorderColor;
+        ctx.lineWidth = rouletteDrawParams.arrowBorderWidth;
         ctx.stroke();
         ctx.restore();
         }
@@ -1412,6 +1428,180 @@
         window.addEventListener('resize', function () {
             setTimeout(drawRouletteWheel, 100);
         });
+
+        // ── Custom Sources preview: hot config (no iframe reload) ──
+        function _rlCfg(config, key, fallback) {
+            var v = config[key];
+            return (v !== undefined && v !== null && v !== '') ? v : fallback;
+        }
+
+        function syncRouletteOptionsFromConfig(config) {
+            for (var i = 0; i < 25; i++) {
+                var n = i + 1;
+                var nameKey = 'Option' + n + 'Name';
+                var colorKey = 'Option' + n + 'Color';
+                var textColorKey = 'Option' + n + 'TextColor';
+                var fontSizeKey = 'Option' + n + 'TextFontSize';
+                var fontWeightKey = 'Option' + n + 'TextFontWeight';
+                var rotationKey = 'Option' + n + 'TextRotation';
+                var enabledKey = 'Option' + n + 'Enabled';
+                if (config[nameKey] !== undefined) { optionNames[i] = config[nameKey]; }
+                if (config[colorKey] !== undefined) { optionColors[i] = config[colorKey]; }
+                if (config[textColorKey] !== undefined) { optionTextColors[i] = config[textColorKey]; }
+                if (config[fontSizeKey] !== undefined) { optionTextFontSizes[i] = Number(config[fontSizeKey]); }
+                if (config[fontWeightKey] !== undefined) { optionTextFontWeights[i] = config[fontWeightKey]; }
+                if (config[rotationKey] !== undefined) { optionTextRotations[i] = Number(config[rotationKey]); }
+                if (config[enabledKey] !== undefined) { optionEnabled[i] = !!config[enabledKey]; }
+            }
+        }
+
+        function buildRoulettePreviewCss(config) {
+            var fontName = _rlCfg(config, 'FontName', 'Renogare.ttf');
+            var bg = _rlCfg(config, 'BackgroundColor', '#1a1a2e');
+            var resultSpacing = _rlCfg(config, 'ResultSpacing', 20);
+            var containerPadding = _rlCfg(config, 'ContainerPadding', 24);
+            var containerRadius = _rlCfg(config, 'ContainerBorderRadius', 16);
+            var containerBg = _rlCfg(config, 'ContainerBackground', 'rgba(255,255,255,0.05)');
+            var containerBackdrop = _rlCfg(config, 'ContainerBackdropFilter', 'blur(10px)');
+            var containerBorderW = _rlCfg(config, 'ContainerBorderWidth', 1);
+            var containerBorderC = _rlCfg(config, 'ContainerBorderColor', 'rgba(255,255,255,0.1)');
+            var containerShadow = _rlCfg(config, 'ContainerShadow', '0 8px 32px rgba(0,0,0,0.3)');
+            var containerHoverTransform = _rlCfg(config, 'ContainerHoverTransform', 'translateY(-2px)');
+            var containerHoverShadow = _rlCfg(config, 'ContainerHoverShadow', '0 12px 40px rgba(0,0,0,0.4)');
+            var canvasSize = _rlCfg(config, 'CanvasSize', rouletteDrawParams.canvasSize);
+            var wheelShadow = _rlCfg(config, 'WheelShadow', '0 0 40px rgba(147,51,234,0.3)');
+            var spinTransition = _rlCfg(config, 'SpinTransitionDuration', 0.3);
+            var spinEasing = _rlCfg(config, 'SpinEasing', 'ease-out');
+            var wheelBg = _rlCfg(config, 'WheelBackground', '#2a2a3e');
+            var wheelOverlay = _rlCfg(config, 'WheelOverlayGradient', 'radial-gradient(circle, transparent 60%, rgba(0,0,0,0.2) 100%)');
+            var wheelOverlayOp = _rlCfg(config, 'WheelOverlayOpacity', 0.5);
+            var resultMinH = _rlCfg(config, 'ResultMinHeight', 60);
+            var resultBg = _rlCfg(config, 'ResultBackground', 'rgba(0,0,0,0.6)');
+            var resultBackdrop = _rlCfg(config, 'ResultBackdropFilter', 'blur(8px)');
+            var resultTextColor = _rlCfg(config, 'ResultTextColor', '#ffffff');
+            var resultPadding = _rlCfg(config, 'ResultPadding', 16);
+            var resultRadius = _rlCfg(config, 'ResultBorderRadius', 12);
+            var resultBorder = _rlCfg(config, 'ResultBorder', 1);
+            var resultBorderColor = _rlCfg(config, 'ResultBorderColor', 'rgba(255,255,255,0.2)');
+            var resultShadow = _rlCfg(config, 'ResultShadow', '0 4px 20px rgba(0,0,0,0.3)');
+            var resultFontSize = _rlCfg(config, 'ResultFontSize', 24);
+            var resultFontWeight = _rlCfg(config, 'ResultFontWeight', '600');
+            var resultTextShadow = _rlCfg(config, 'ResultTextShadow', '2px 2px 4px rgba(0,0,0,0.5)');
+            var resultLetterSpacing = _rlCfg(config, 'ResultLetterSpacing', 0);
+            var resultOpacity = _rlCfg(config, 'ResultOpacity', 1);
+            var resultAnimDur = _rlCfg(config, 'ResultAnimationDuration', 0.6);
+            var resultAnimEase = _rlCfg(config, 'ResultAnimationEasing', 'ease-out');
+
+            return (
+                '@font-face { font-family: roulette-font; src: url("/assets/default_assets/fonts/' + fontName + '"); }' +
+                'body { background: ' + bg + '; font-family: roulette-font, Inter, sans-serif; }' +
+                '#main { gap: ' + resultSpacing + 'px; padding: ' + containerPadding + 'px; border-radius: ' + containerRadius + 'px; ' +
+                'background: ' + containerBg + '; backdrop-filter: ' + containerBackdrop + '; border: ' + containerBorderW + 'px solid ' + containerBorderC + '; ' +
+                'box-shadow: ' + containerShadow + '; max-width: calc(' + canvasSize + 'px + ' + containerPadding + 'px * 2); }' +
+                '#main:hover { transform: ' + containerHoverTransform + '; box-shadow: ' + containerHoverShadow + '; }' +
+                '.wheel-container, #canvas { width: ' + canvasSize + 'px; height: ' + canvasSize + 'px; }' +
+                '#canvas { box-shadow: ' + wheelShadow + '; transition: all ' + spinTransition + 's ' + spinEasing + '; background: ' + wheelBg + '; }' +
+                '#canvas::before { background: ' + wheelOverlay + '; opacity: ' + wheelOverlayOp + '; }' +
+                '.result-display { min-height: ' + resultMinH + 'px; background: ' + resultBg + '; backdrop-filter: ' + resultBackdrop + '; ' +
+                'color: ' + resultTextColor + '; padding: ' + resultPadding + 'px; border-radius: ' + resultRadius + 'px; ' +
+                'border: ' + resultBorder + 'px solid ' + resultBorderColor + '; box-shadow: ' + resultShadow + '; font-size: ' + resultFontSize + 'px; ' +
+                'font-weight: ' + resultFontWeight + '; text-shadow: ' + resultTextShadow + '; letter-spacing: ' + resultLetterSpacing + 'px; ' +
+                'transition: all ' + resultAnimDur + 's ' + resultAnimEase + '; }' +
+                '.result-display.show { opacity: ' + resultOpacity + '; }'
+            );
+        }
+
+        function applyRouletteDrawParamsFromConfig(config) {
+            if (config.CanvasSize !== undefined) { rouletteDrawParams.canvasSize = Number(config.CanvasSize); }
+            if (config.OutsideRadius !== undefined) { rouletteDrawParams.outsideRadius = Number(config.OutsideRadius); }
+            if (config.TextRadius !== undefined) { rouletteDrawParams.textRadius = Number(config.TextRadius); }
+            if (config.InsideRadius !== undefined) { rouletteDrawParams.insideRadius = Number(config.InsideRadius); }
+            if (config.SegmentBorderColor !== undefined) { rouletteDrawParams.segmentBorderColor = config.SegmentBorderColor; }
+            if (config.SegmentBorderWidth !== undefined) { rouletteDrawParams.segmentBorderWidth = Number(config.SegmentBorderWidth); }
+            if (config.ArrowSize !== undefined) { rouletteDrawParams.arrowSize = Number(config.ArrowSize); }
+            if (config.ArrowColor !== undefined) { rouletteDrawParams.arrowColor = config.ArrowColor; }
+            if (config.ArrowOffset !== undefined) { rouletteDrawParams.arrowOffset = Number(config.ArrowOffset); }
+            if (config.ArrowBorderWidth !== undefined) { rouletteDrawParams.arrowBorderWidth = Number(config.ArrowBorderWidth); }
+            if (config.ArrowBorderColor !== undefined) { rouletteDrawParams.arrowBorderColor = config.ArrowBorderColor; }
+        }
+
+        function applyTemplateConfig(config) {
+            var styleEl = document.getElementById('mycelian-roulette-preview-dynamic');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'mycelian-roulette-preview-dynamic';
+                document.head.appendChild(styleEl);
+            }
+            styleEl.textContent = buildRoulettePreviewCss(config);
+
+            if (config.EnableSound !== undefined) { settings.enableSound = !!config.EnableSound; }
+            if (config.ClickSoundVolume !== undefined) { settings.clickSoundVolume = Number(config.ClickSoundVolume); }
+            if (config.ResultSoundVolume !== undefined) { settings.resultSoundVolume = Number(config.ResultSoundVolume); }
+            if (config.EnableGlow !== undefined) { settings.enableGlow = !!config.EnableGlow; }
+            if (config.EnableResultOverlay !== undefined) { settings.enableResultOverlay = !!config.EnableResultOverlay; }
+            if (config.AutoHideResult !== undefined) { settings.autoHideResult = !!config.AutoHideResult; }
+            if (config.ResultDisplayDuration !== undefined) {
+                settings.resultDisplayDuration = Number(config.ResultDisplayDuration) * 1000;
+            }
+            if (config.EnableParticles !== undefined) { settings.enableParticles = !!config.EnableParticles; }
+            if (config.ModernEffects !== undefined) { settings.modernEffects = !!config.ModernEffects; }
+
+            applyRouletteDrawParamsFromConfig(config);
+            syncRouletteOptionsFromConfig(config);
+
+            var canvas = document.getElementById('canvas');
+            var wheelContainer = document.querySelector('.wheel-container');
+            var sz = rouletteDrawParams.canvasSize;
+            if (canvas) {
+                canvas.width = sz;
+                canvas.height = sz;
+                canvas.style.width = sz + 'px';
+                canvas.style.height = sz + 'px';
+            }
+            if (wheelContainer) {
+                wheelContainer.style.width = sz + 'px';
+                wheelContainer.style.height = sz + 'px';
+            }
+
+            var enabledData = getEnabledOptions();
+            rouletteData.options = enabledData.options;
+            rouletteData.colors = enabledData.colors;
+            rouletteData.textColors = enabledData.textColors;
+            rouletteData.textFontSizes = enabledData.textFontSizes;
+            rouletteData.textFontWeights = enabledData.textFontWeights;
+            rouletteData.textRotations = enabledData.textRotations;
+            updateArcSize();
+            if (!rouletteData.isSpinning) {
+                drawRouletteWheel();
+            }
+        }
+
+        async function loadTemplateConfig() {
+            try {
+                var response = await fetch('/api/all-template-configs', { credentials: 'same-origin' });
+                if (!response.ok) {
+                    console.error('Failed to load template configs:', response.status);
+                    return;
+                }
+                var allConfigs = await response.json();
+                var rlConfigData = allConfigs.roulette;
+                if (!rlConfigData || !rlConfigData.elements) {
+                    console.warn('No roulette config found in response');
+                    return;
+                }
+                var config = {};
+                rlConfigData.elements.forEach(function (element) {
+                    if (element && element.id && element.type !== 'separator') {
+                        config[element.id] = element.value;
+                    }
+                });
+                applyTemplateConfig(config);
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        loadTemplateConfig();
 
         // Initialize
         console.log('Mycelian Professional Roulette Wheel initialized');

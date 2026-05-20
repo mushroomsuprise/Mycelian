@@ -526,6 +526,151 @@
             }, settings.fadeOutDuration * 1000);
         });
 
+        // ── Custom Sources preview: hot config (no iframe reload) ──
+        function _gwCfg(config, key, fallback) {
+            var v = config[key];
+            return (v !== undefined && v !== null && v !== '') ? v : fallback;
+        }
+
+        function buildGiveawayPreviewCss(config) {
+            var fontName = _gwCfg(config, 'FontName', 'Renogare.ttf');
+            var fontColor = _gwCfg(config, 'FontColor', '#ffffff');
+            var fontSize = _gwCfg(config, 'FontSize', 16);
+            var fontWeight = _gwCfg(config, 'FontWeight', 'normal');
+            var bgColor = _gwCfg(config, 'BGColor', 'transparent');
+            var borderRadius = _gwCfg(config, 'BorderRadius', 8);
+            var borderWidth = _gwCfg(config, 'BorderWidth', 0);
+            var borderColor = _gwCfg(config, 'BorderColor', 'transparent');
+            var containerPadding = _gwCfg(config, 'ContainerPadding', 12);
+            var bgOpacity = _gwCfg(config, 'BGOpacity', 1);
+            var fadeIn = _gwCfg(config, 'FadeInDuration', 0.5);
+            var fadeOut = _gwCfg(config, 'FadeOutDuration', 0.5);
+            var kwFontSize = _gwCfg(config, 'KeywordFontSize', 18);
+            var kwFontColor = _gwCfg(config, 'KeywordFontColor', '#ffffff');
+            var kwBG = _gwCfg(config, 'KeywordBGColor', 'rgba(0,0,0,0.4)');
+            var kwShadow = _gwCfg(config, 'KeywordTextShadow', 'none');
+            var kwHighlight = _gwCfg(config, 'KeywordHighlightColor', '#ffd700');
+            var entryCountColor = _gwCfg(config, 'EntryCountColor', '#aaaaaa');
+            var closedColor = _gwCfg(config, 'ClosedMessageColor', '#cccccc');
+            var entryMargin = _gwCfg(config, 'EntryMargin', 4);
+            var entryPadding = _gwCfg(config, 'EntryPadding', 8);
+            var entryFontSize = _gwCfg(config, 'EntryFontSize', 14);
+            var entryFontColor = _gwCfg(config, 'EntryFontColor', '#ffffff');
+            var entryBG = _gwCfg(config, 'EntryBGColor', 'rgba(255,255,255,0.08)');
+            var entryRadius = _gwCfg(config, 'EntryRadius', 4);
+            var entryAnimDur = _gwCfg(config, 'EntryAnimationDuration', 0.4);
+            var animEasing = _gwCfg(config, 'AnimationEasing', 'ease');
+            var winnerBG = _gwCfg(config, 'WinnerBGColor', '#000000');
+            var winnerBGOp = _gwCfg(config, 'WinnerBGOpacity', 0.85);
+            var winnerShadow = _gwCfg(config, 'WinnerTextShadow', '2px 2px 4px rgba(0,0,0,0.8)');
+            var winnerFontSize = _gwCfg(config, 'WinnerFontSize', 28);
+            var winnerFontColor = _gwCfg(config, 'WinnerFontColor', '#ffffff');
+            var winnerNameSize = _gwCfg(config, 'WinnerNameFontSize', 36);
+            var winnerNameColor = _gwCfg(config, 'WinnerNameColor', '#ffd700');
+
+            return (
+                '@font-face { font-family: giveaway-font; src: url("/assets/default_assets/fonts/' + fontName + '"); }' +
+                'body { font-family: giveaway-font, "Segoe UI", Arial, sans-serif; color: ' + fontColor + '; font-size: ' + fontSize + 'px; font-weight: ' + fontWeight + '; }' +
+                '.giveaway-container { background: ' + bgColor + '; border-radius: ' + borderRadius + 'px; border: ' + borderWidth + 'px solid ' + borderColor + '; padding: ' + containerPadding + 'px; }' +
+                '.giveaway-container.container-visible { opacity: ' + bgOpacity + '; }' +
+                '@keyframes dissolveIn { 0% { opacity: 0; } 50% { opacity: calc(' + bgOpacity + ' * 0.7); } 100% { opacity: ' + bgOpacity + '; } }' +
+                '@keyframes dissolveOut { 0% { opacity: ' + bgOpacity + '; } 100% { opacity: 0; } }' +
+                '.keyword-header { font-size: ' + kwFontSize + 'px; color: ' + kwFontColor + '; background: ' + kwBG + '; text-shadow: ' + kwShadow + '; }' +
+                '.keyword-header .keyword { color: ' + kwHighlight + '; }' +
+                '.entry-counter { color: ' + entryCountColor + '; }' +
+                '.closed-message { color: ' + closedColor + '; }' +
+                '.entry-list { gap: ' + entryMargin + 'px; }' +
+                '.entry-item { padding: ' + entryPadding + 'px 12px; font-size: ' + entryFontSize + 'px; color: ' + entryFontColor + '; background: ' + entryBG + '; border-radius: ' + entryRadius + 'px; }' +
+                '.anim-fadeIn { animation: fadeIn ' + entryAnimDur + 's ' + animEasing + '; }' +
+                '.anim-slideIn { animation: slideIn ' + entryAnimDur + 's ' + animEasing + '; }' +
+                '.anim-bounceIn { animation: bounceIn ' + entryAnimDur + 's ' + animEasing + '; }' +
+                '.winner-overlay .bg { background: ' + winnerBG + '; opacity: ' + winnerBGOp + '; }' +
+                '.winner-content { text-shadow: ' + winnerShadow + '; }' +
+                '.winner-heading { font-size: ' + winnerFontSize + 'px; color: ' + winnerFontColor + '; }' +
+                '.winner-name { font-size: ' + winnerNameSize + 'px; color: ' + winnerNameColor + '; }'
+            );
+        }
+
+        function applyTemplateConfig(config) {
+            var styleEl = document.getElementById('mycelian-giveaway-preview-dynamic');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'mycelian-giveaway-preview-dynamic';
+                document.head.appendChild(styleEl);
+            }
+            styleEl.textContent = buildGiveawayPreviewCss(config);
+
+            if (config.EnableAnimations !== undefined) { settings.enableAnimations = !!config.EnableAnimations; }
+            if (config.EntryAnimation !== undefined) { settings.entryAnimation = config.EntryAnimation; }
+            if (config.EntryAnimationDuration !== undefined) { settings.animationDuration = config.EntryAnimationDuration; }
+            else if (config.AnimationDuration !== undefined) { settings.animationDuration = config.AnimationDuration; }
+            if (config.MaxEntries !== undefined) { settings.maxEntries = Number(config.MaxEntries); }
+            if (config.ShowKeyword !== undefined) { settings.showKeyword = !!config.ShowKeyword; }
+            if (config.KeywordPrefix !== undefined) { settings.keywordPrefix = config.KeywordPrefix; }
+            if (config.KeywordSuffix !== undefined) { settings.keywordSuffix = config.KeywordSuffix; }
+            if (config.ShowEntryCount !== undefined) { settings.showEntryCount = !!config.ShowEntryCount; }
+            if (config.WinnerMessage !== undefined) { settings.winnerMessage = config.WinnerMessage; }
+            if (config.WinnerDisplayDuration !== undefined) { settings.winnerDisplayDuration = Number(config.WinnerDisplayDuration); }
+            if (config.EnableConfetti !== undefined) { settings.enableConfetti = !!config.EnableConfetti; }
+            if (config.ConfettiParticleCount !== undefined) { settings.confettiParticleCount = Number(config.ConfettiParticleCount); }
+            if (config.ConfettiDuration !== undefined) { settings.confettiDuration = Number(config.ConfettiDuration); }
+            if (config.ConfettiSpread !== undefined) { settings.confettiSpread = Number(config.ConfettiSpread); }
+            if (config.ConfettiColors !== undefined) {
+                settings.confettiColors = String(config.ConfettiColors).split('\n').map(function (c) {
+                    return c.trim();
+                }).filter(Boolean);
+            }
+            if (config.ShowClosedMessage !== undefined) { settings.showClosedMessage = !!config.ShowClosedMessage; }
+            if (config.ClosedMessage !== undefined) {
+                settings.closedMessage = config.ClosedMessage;
+                elClosedMessage.textContent = config.ClosedMessage;
+            }
+            if (config.WinnerFontSize !== undefined) { settings.winnerFontSize = Number(config.WinnerFontSize); }
+            if (config.WinnerFontColor !== undefined) { settings.winnerFontColor = config.WinnerFontColor; }
+            if (config.WinnerNameFontSize !== undefined) { settings.winnerNameFontSize = Number(config.WinnerNameFontSize); }
+            if (config.WinnerNameColor !== undefined) { settings.winnerNameColor = config.WinnerNameColor; }
+            if (config.FadeInDuration !== undefined) { settings.fadeInDuration = Number(config.FadeInDuration); }
+            if (config.FadeOutDuration !== undefined) { settings.fadeOutDuration = Number(config.FadeOutDuration); }
+
+            if (settings.showKeyword && currentKeyword) {
+                setKeyword(currentKeyword);
+            } else if (!settings.showKeyword) {
+                elKeywordHeader.classList.add('hidden');
+            }
+            if (settings.showEntryCount) {
+                updateEntryCount(entryCount);
+            } else {
+                elEntryCounter.classList.add('hidden');
+            }
+        }
+
+        async function loadTemplateConfig() {
+            try {
+                var response = await fetch('/api/all-template-configs', { credentials: 'same-origin' });
+                if (!response.ok) {
+                    console.error('Failed to load template configs:', response.status);
+                    return;
+                }
+                var allConfigs = await response.json();
+                var gwConfigData = allConfigs.giveaway;
+                if (!gwConfigData || !gwConfigData.elements) {
+                    console.warn('No giveaway config found in response');
+                    return;
+                }
+                var config = {};
+                gwConfigData.elements.forEach(function (element) {
+                    if (element && element.id && element.type !== 'separator') {
+                        config[element.id] = element.value;
+                    }
+                });
+                applyTemplateConfig(config);
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        loadTemplateConfig();
+
         console.log('Mycelian Giveaway template initialized');
     </script>
 </body>

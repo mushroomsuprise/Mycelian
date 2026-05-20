@@ -275,6 +275,48 @@ MYCELIAN_PREVIEW_HELPER_HTML = """
     });
     treeObs.observe(document.documentElement, { childList: true, subtree: true });
   }
+  var __mycelianTemplateLoadTemplateConfig =
+    typeof loadTemplateConfig === "function" ? loadTemplateConfig : null;
+  function mycelianSyncStylesFromPreviewHtml(html) {
+    var parsed = new DOMParser().parseFromString(html, "text/html");
+    var head = document.head;
+    if (!head) { return; }
+    var keep = { __mycelian_preview_helper_css: true };
+    head.querySelectorAll("style").forEach(function (node) {
+      var id = node.id || "";
+      if (keep[id]) { return; }
+      if (id.indexOf("mycelian-") === 0 && id.indexOf("-preview-dynamic") !== -1) { return; }
+      node.parentNode.removeChild(node);
+    });
+    parsed.head.querySelectorAll("style").forEach(function (node) {
+      var id = node.id || "";
+      if (id === "__mycelian_preview_helper_css") { return; }
+      head.appendChild(document.importNode(node, true));
+    });
+  }
+  async function mycelianGenericLoadTemplateConfig() {
+    var qs = window.location.search || "";
+    if (qs.indexOf("__preview_token=") === -1) { return; }
+    var cbIdx = qs.indexOf("&_cb=");
+    var baseQs = cbIdx >= 0 ? qs.substring(0, cbIdx) : qs;
+    var url = window.location.pathname + baseQs + "&_cb=" + Date.now();
+    try {
+      var resp = await fetch(url, { credentials: "same-origin" });
+      if (!resp.ok) {
+        console.warn("Generic preview config refresh failed:", resp.status);
+        return;
+      }
+      mycelianSyncStylesFromPreviewHtml(await resp.text());
+    } catch (err) {
+      console.warn("Generic preview config refresh failed:", err);
+    }
+  }
+  window.loadTemplateConfig = async function () {
+    if (__mycelianTemplateLoadTemplateConfig) {
+      return __mycelianTemplateLoadTemplateConfig.apply(this, arguments);
+    }
+    return mycelianGenericLoadTemplateConfig();
+  };
   function attachPreviewSocketHooks() {
     var n = 0;
     var id = setInterval(function () {
@@ -288,8 +330,8 @@ MYCELIAN_PREVIEW_HELPER_HTML = """
       if (sock.__mycelianPreviewHooks) { return; }
       sock.__mycelianPreviewHooks = true;
       sock.on("mycelian_preview_config_refresh", function () {
-        if (typeof loadTemplateConfig === "function") {
-          loadTemplateConfig();
+        if (typeof window.loadTemplateConfig === "function") {
+          window.loadTemplateConfig();
         }
       });
       sock.on("mycelian_preview_settings", function (data) {
