@@ -33,10 +33,16 @@ def build_connector_placeholder_context(
     try:
         from .game_hooks_service import game_hooks_service
 
-        snap = game_hooks_service.get_ff7_ui_snapshot()
-        ff7 = snap.get("ff7")
-        if isinstance(ff7, dict):
-            ctx["hooks"] = {"ff7": ff7}
+        from .game_hooks.registry import registered_hook_ids
+
+        hooks_ctx: Dict[str, Any] = {}
+        for hook_id in registered_hook_ids():
+            info = game_hooks_service.get_hook_ui_snapshot(hook_id)
+            hsnap = info.get(hook_id)
+            if isinstance(hsnap, dict):
+                hooks_ctx[hook_id] = hsnap
+        if hooks_ctx:
+            ctx["hooks"] = hooks_ctx
     except Exception:
         pass
     return ctx

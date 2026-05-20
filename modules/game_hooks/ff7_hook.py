@@ -24,7 +24,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from .base import HookUiMetadata, runtime_os_key
+from .ff7_boss_tracker import Ff7BossTracker, ff7_boss_match_sets_from_config
+from .memory import get_memory_backend
+from .memory.base import AttachedProcess, ProcessMemory, is_process_running
+
 logger = logging.getLogger(__name__)
+
+_FF7_BOSS_LOG_PATH = "GameHooks/ff7_boss_log"
+_FF7_CONNECTOR_OVERRIDES_PATH = "GameHooks/ff7_connector_overrides"
 
 CANON_IMAGE_BASE = 0x00400000
 
@@ -910,102 +918,8 @@ def _records_party_aggregates(
     return avg, materia_total
 
 
-if sys.platform == "win32":
-    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    _OpenProcess = _kernel32.OpenProcess
-    _ReadProcessMemory = _kernel32.ReadProcessMemory
-    _WriteProcessMemory = _kernel32.WriteProcessMemory
-    _CloseHandle = _kernel32.CloseHandle
-    PROCESS_VM_READ = 0x0010
-    PROCESS_VM_WRITE = 0x0020
-    PROCESS_VM_OPERATION = 0x0008
-    PROCESS_QUERY_INFORMATION = 0x0400
-    PROCESS_CREATE_THREAD = 0x0002
-    _PROCESS_ACCESS = (
-        PROCESS_VM_READ
-        | PROCESS_VM_WRITE
-        | PROCESS_VM_OPERATION
-        | PROCESS_QUERY_INFORMATION
-        | PROCESS_CREATE_THREAD
-    )
-else:
-    _kernel32 = None
-
 _PAGE_READWRITE = 0x04
 _PAGE_EXECUTE_READWRITE = 0x40
-_KERNEL32_EXTRA = None
-_VirtualProtect = None
-_VirtualProtectEx = None
-_FlushInstructionCache = None
-_GetCurrentProcess = None
-_VirtualAllocEx = None
-_VirtualFreeEx = None
-_CreateRemoteThread = None
-_WaitForSingleObject = None
-if sys.platform == "win32" and _kernel32 is not None:
-    _KERNEL32_EXTRA = _kernel32
-    _VirtualProtect = _kernel32.VirtualProtect
-    _VirtualProtect.argtypes = [
-        wintypes.LPVOID,
-        ctypes.c_size_t,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-    ]
-    _VirtualProtect.restype = wintypes.BOOL
-    _VirtualProtectEx = _kernel32.VirtualProtectEx
-    _VirtualProtectEx.argtypes = [
-        wintypes.HANDLE,
-        wintypes.LPVOID,
-        ctypes.c_size_t,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-    ]
-    _VirtualProtectEx.restype = wintypes.BOOL
-    _FlushInstructionCache = _kernel32.FlushInstructionCache
-    _FlushInstructionCache.argtypes = [
-        wintypes.HANDLE,
-        wintypes.LPVOID,
-        ctypes.c_size_t,
-    ]
-    _FlushInstructionCache.restype = wintypes.BOOL
-    _GetCurrentProcess = _kernel32.GetCurrentProcess
-    _GetCurrentProcess.argtypes = []
-    _GetCurrentProcess.restype = wintypes.HANDLE
-
-    _VirtualAllocEx = _kernel32.VirtualAllocEx
-    _VirtualAllocEx.argtypes = [
-        wintypes.HANDLE,
-        wintypes.LPVOID,
-        ctypes.c_size_t,
-        wintypes.DWORD,
-        wintypes.DWORD,
-    ]
-    _VirtualAllocEx.restype = wintypes.LPVOID
-
-    _VirtualFreeEx = _kernel32.VirtualFreeEx
-    _VirtualFreeEx.argtypes = [
-        wintypes.HANDLE,
-        wintypes.LPVOID,
-        ctypes.c_size_t,
-        wintypes.DWORD,
-    ]
-    _VirtualFreeEx.restype = wintypes.BOOL
-
-    _CreateRemoteThread = _kernel32.CreateRemoteThread
-    _CreateRemoteThread.argtypes = [
-        wintypes.HANDLE,
-        wintypes.LPVOID,
-        ctypes.c_size_t,
-        wintypes.LPVOID,
-        wintypes.LPVOID,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-    ]
-    _CreateRemoteThread.restype = wintypes.HANDLE
-
-    _WaitForSingleObject = _kernel32.WaitForSingleObject
-    _WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-    _WaitForSingleObject.restype = wintypes.DWORD
 
 
 def _rebase(module_base: int, canon_addr: int) -> int:
@@ -1946,20 +1860,13 @@ def ff7_game_speed_select_options() -> Dict[str, str]:
     return out
 
 
-@dataclass
-class _ProcessHandle:
-    pid: int
-    handle: int
-    module_base: int
-
-
 class FF7Hook:
     """Attach to ff7_en.exe / ff7.exe: read snapshots and optional memory writes."""
 
     _exe_names = ("ff7_en.exe", "ff7.exe")
 
-    def __init__(self) -> None:
-        self._proc: Optional[_ProcessHandle] = None
+    def __init__(self, memory: Optional[ProcessMemory] = None) -> None:
+        self._mem: Optional[ProcessMemory] = memory if memory is not None else get_memory_backend()
         self._last_snapshot: Optional[Dict[str, Any]] = None
         self._speed_backup: Optional[Dict[str, Any]] = None
         self._pending_battle_id: Optional[int] = None
@@ -1988,179 +1895,55 @@ class FF7Hook:
         self._post_success_timed.clear()
         return out
 
+    @property
+    def _proc(self) -> Optional[AttachedProcess]:
+        if self._mem and self._mem.is_attached():
+            return AttachedProcess(
+                pid=int(self._mem.pid or 0),
+                handle=int(self._mem.handle or 0),
+                module_base=int(self._mem.module_base or 0),
+            )
+        return None
+
     def close(self) -> None:
-        if sys.platform != "win32" or _kernel32 is None:
-            self._proc = None
-            return
-        if self._proc and self._proc.handle:
-            try:
-                _CloseHandle(self._proc.handle)
-            except Exception:
-                pass
-        self._proc = None
+        if self._mem:
+            self._mem.close()
         self._battle_ui_latched = False
         self._battle_ui_off_ticks = 0
         self._bl_name_cache = None
 
-    def _find_pid(self) -> Optional[int]:
-        try:
-            import psutil
-        except Exception:
-            return None
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                name = (proc.info.get("name") or "").lower()
-                if name in self._exe_names:
-                    return int(proc.info["pid"])
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        return None
-
-    def _module_base(self, pid: int) -> Optional[int]:
-        try:
-            import psutil
-
-            p = psutil.Process(pid)
-            for m in p.memory_maps(grouped=False):
-                path = (m.path or "").replace("\\", "/").lower()
-                for ex in self._exe_names:
-                    if path.endswith("/" + ex):
-                        addr = (m.addr or "").split("-")[0].strip()
-                        return int(addr, 16)
-        except Exception as e:
-            logger.debug("FF7 module base: %s", e)
-        return None
-
     def _attach(self) -> Tuple[bool, Optional[str]]:
-        if sys.platform != "win32" or _kernel32 is None:
+        if not self._mem or not self._mem.is_available():
             return False, "FF7 memory hook is only supported on Windows"
-        pid = self._find_pid()
-        if pid is None:
-            return False, "FF7 process not found (ff7_en.exe / ff7.exe)"
-        base = self._module_base(pid)
-        if base is None:
-            return False, "Could not resolve FF7 module base address"
-        h = _OpenProcess(_PROCESS_ACCESS, False, pid)
-        if not h:
-            err = ctypes.get_last_error()
-            return False, f"OpenProcess failed (pid={pid}, err={err})"
-        self.close()
-        self._proc = _ProcessHandle(pid=pid, handle=int(h), module_base=base)
+        ok, err = self._mem.attach(
+            self._exe_names, canon_image_base=CANON_IMAGE_BASE
+        )
+        if not ok:
+            return False, err or "FF7 process not found (ff7_en.exe / ff7.exe)"
         return True, None
 
     def ensure_attached(self) -> Tuple[bool, Optional[str]]:
-        if self._proc:
-            try:
-                import psutil
-
-                if not psutil.pid_exists(self._proc.pid):
-                    self.close()
-            except Exception:
-                self.close()
-        if not self._proc:
-            return self._attach()
-        return True, None
+        if not self._mem or not self._mem.is_available():
+            return False, "FF7 memory hook is only supported on Windows"
+        return self._mem.ensure_attached(
+            self._exe_names, canon_image_base=CANON_IMAGE_BASE
+        )
 
     def _read(self, addr: int, size: int) -> Optional[bytes]:
-        if not self._proc or addr <= 0 or size <= 0:
+        if not self._mem:
             return None
-        buf = ctypes.create_string_buffer(size)
-        read = ctypes.c_size_t(0)
-        ok = _ReadProcessMemory(
-            self._proc.handle,
-            ctypes.c_void_p(addr),
-            buf,
-            size,
-            ctypes.byref(read),
-        )
-        if not ok or read.value != size:
-            return None
-        return buf.raw
+        return self._mem.read(addr, size)
 
     def _write(self, addr: int, data: bytes) -> bool:
-        if (
-            sys.platform != "win32"
-            or _kernel32 is None
-            or not self._proc
-            or addr <= 0
-            or not data
-        ):
+        if not self._mem:
             return False
-        written = ctypes.c_size_t(0)
-        ok = _WriteProcessMemory(
-            self._proc.handle,
-            ctypes.c_void_p(addr),
-            data,
-            len(data),
-            ctypes.byref(written),
-        )
-        return bool(ok) and written.value == len(data)
+        return self._mem.write(addr, data)
 
     def _run_remote_shellcode(self, sc: bytes, label: str) -> bool:
-        """Allocate, write, and run ``sc`` as a remote thread in the FF7 process.
-
-        Shared plumbing for :meth:`_call_ff7_party_stat_recalc` and
-        :meth:`_call_ff7_game_fn_one_arg`.
-        """
-        if (
-            sys.platform != "win32"
-            or _kernel32 is None
-            or not self._proc
-            or _VirtualAllocEx is None
-            or _VirtualFreeEx is None
-            or _CreateRemoteThread is None
-            or _WaitForSingleObject is None
-        ):
+        """Allocate, write, and run ``sc`` as a remote thread in the FF7 process."""
+        if not self._mem:
             return False
-        MEM_COMMIT = 0x1000
-        MEM_RESERVE = 0x2000
-        MEM_RELEASE = 0x8000
-        remote = None
-        try:
-            remote = _VirtualAllocEx(
-                self._proc.handle,
-                None,
-                len(sc),
-                MEM_COMMIT | MEM_RESERVE,
-                _PAGE_EXECUTE_READWRITE,
-            )
-            if not remote:
-                logger.debug("%s: VirtualAllocEx failed", label)
-                return False
-            ra = int(ctypes.cast(remote, ctypes.c_void_p).value or 0)
-            if not ra or not self._write(ra, sc):
-                logger.debug("%s: shellcode write failed", label)
-                return False
-            tid = wintypes.DWORD(0)
-            h_thread = _CreateRemoteThread(
-                self._proc.handle,
-                None,
-                0,
-                ctypes.c_void_p(ra),
-                None,
-                0,
-                ctypes.byref(tid),
-            )
-            if not h_thread:
-                logger.debug("%s: CreateRemoteThread failed", label)
-                return False
-            try:
-                w = _WaitForSingleObject(h_thread, 5000)
-                if w != 0:
-                    logger.debug("%s: WaitForSingleObject=%s", label, w)
-                    return False
-            finally:
-                _CloseHandle(h_thread)
-            return True
-        except Exception as e:
-            logger.debug("%s: %s", label, e)
-            return False
-        finally:
-            if remote:
-                try:
-                    _VirtualFreeEx(self._proc.handle, remote, 0, MEM_RELEASE)
-                except Exception:
-                    pass
+        return self._mem.run_remote_shellcode(sc, label)
 
     def _call_ff7_party_stat_recalc(self) -> None:
         """Best-effort: post-equip refresh via remote thread stub."""
@@ -2768,38 +2551,14 @@ class FF7Hook:
         page_protect: int = _PAGE_EXECUTE_READWRITE,
     ) -> bool:
         """Write to memory in the **FF7** process via VirtualProtectEx (not the local process)."""
-        if not self._proc or not data:
+        if not self._mem or not data:
             return False
-        h = self._proc.handle
-        page = addr & ~0xFFF
-        end = addr + len(data)
-        page_end = (end + 0xFFF) & ~0xFFF
-        size = page_end - page
-        if _VirtualProtectEx is None:
-            return self._write(addr, data)
-        old = wintypes.DWORD(0)
-        if not _VirtualProtectEx(
-            h,
-            ctypes.c_void_p(page),
-            ctypes.c_size_t(size),
-            page_protect,
-            ctypes.byref(old),
-        ):
-            return False
-        try:
-            ok = self._write(addr, data)
-        finally:
-            _junk = wintypes.DWORD(0)
-            _VirtualProtectEx(
-                h,
-                ctypes.c_void_p(page),
-                ctypes.c_size_t(size),
-                old.value,
-                ctypes.byref(_junk),
-            )
-        if ok and flush_icache and _FlushInstructionCache:
-            _FlushInstructionCache(h, ctypes.c_void_p(page), ctypes.c_size_t(size))
-        return ok
+        return self._mem.protect_write(
+            addr,
+            data,
+            flush_icache=flush_icache,
+            page_protect=page_protect,
+        )
 
     def _ffnx_trampoline_targets_fps_addrs(self, chk: int) -> Optional[Tuple[int, int]]:
         """Resolve (addr_fps30, addr_fps15) from FFNx hook stub at ``chk``.
@@ -4728,7 +4487,7 @@ class FF7Hook:
         self, op: str, kwargs: Dict[str, Any]
     ) -> Tuple[bool, Optional[str]]:
         """Run a crowd-control style operation. Always returns (ok, error_message)."""
-        if sys.platform != "win32" or _kernel32 is None:
+        if not self._mem or not self._mem.is_available():
             return False, "FF7 writes require Windows"
         ok, err = self.ensure_attached()
         if not ok or not self._proc:
@@ -5067,7 +4826,7 @@ class FF7Hook:
         return False, f"Unknown operation: {op}"
 
     def snapshot(self) -> Dict[str, Any]:
-        if sys.platform != "win32" or _kernel32 is None:
+        if not self._mem or not self._mem.is_available():
             return {
                 "hook": "ff7",
                 "attached": False,
@@ -5530,6 +5289,345 @@ FF7_CONNECTOR_PERSIST_ALLOWLIST = frozenset(
         "set_infinite_items",
     }
 )
+
+
+def _persist_override_key(op: str, kwargs: Dict[str, Any]) -> str:
+    mn = str(kwargs.get("menu_name", "")).strip().lower()
+    if op in ("set_menu_row_access", "set_menu_visibility", "set_menu_lock") and mn:
+        return f"{op}:{mn}"
+    return op
+
+
+def _query_inventory_outputs(
+    iq: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, str]]:
+    if not isinstance(iq, dict):
+        return None
+    return {
+        "item_name": str(iq.get("item_name", "") or ""),
+        "quantity": "" if iq.get("quantity") is None else str(iq["quantity"]),
+        "resolved_name": ""
+        if iq.get("resolved_name") is None
+        else str(iq["resolved_name"]),
+        "kind": "" if iq.get("kind") is None else str(iq["kind"]),
+        "error": "" if iq.get("error") is None else str(iq["error"]),
+    }
+
+
+def _json_safe_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for k, v in kwargs.items():
+        if isinstance(v, (str, int, float, bool)) or v is None:
+            out[k] = v
+        else:
+            out[k] = str(v)
+    return out
+
+
+class Ff7GameHook:
+    """FF7 game hook: composes memory reads/writes, boss tracking, and connector persistence."""
+
+    hook_id = "ff7"
+    ui = HookUiMetadata(
+        hook_id="ff7",
+        title="Final Fantasy VII (PC)",
+        supported_platforms=frozenset({"windows"}),
+    )
+    process_names = ("ff7_en.exe", "ff7.exe")
+
+    def __init__(self) -> None:
+        self._core = FF7Hook()
+        from ..template_config_parser import TemplateConfigParser
+
+        parser = TemplateConfigParser()
+        sub, excl = ff7_boss_match_sets_from_config(parser.load_config("ff7"))
+        self._boss_tracker = Ff7BossTracker(sub, excl)
+        self._timed_jobs: List[Tuple[float, str, Dict[str, Any]]] = []
+        self._paused_timed_jobs: List[Tuple[float, str, Dict[str, Any]]] = []
+        self._last_attached: Optional[bool] = None
+        self._last_inventory_query_ui: Optional[Dict[str, Any]] = None
+        self._enqueue_write: Optional[Any] = None
+        self._load_boss_log()
+
+    def set_write_enqueue(self, enqueue: Any) -> None:
+        """Worker sets callback: ``enqueue(op, kwargs)``."""
+        self._enqueue_write = enqueue
+
+    def is_platform_supported(self) -> bool:
+        return runtime_os_key() in self.ui.supported_platforms
+
+    def is_process_running(self) -> bool:
+        return is_process_running(self.process_names)
+
+    def _load_boss_log(self) -> None:
+        try:
+            from ..database_manager import database_manager
+
+            raw = database_manager.get_data(_FF7_BOSS_LOG_PATH)
+            if not isinstance(raw, dict):
+                return
+            names = raw.get("names")
+            if not isinstance(names, list):
+                return
+            last = raw.get("last") if isinstance(raw.get("last"), str) else ""
+            self._boss_tracker.restore(names, last)
+        except Exception as e:
+            logger.warning("FF7 boss log load failed: %s", e, exc_info=True)
+
+    def _persist_boss_log(self) -> None:
+        try:
+            from ..database_manager import database_manager
+
+            database_manager.set_data(
+                _FF7_BOSS_LOG_PATH, self._boss_tracker.bosses_dict()
+            )
+        except Exception as e:
+            logger.warning("FF7 boss log persist failed: %s", e, exc_info=True)
+
+    def on_config_reloaded(self) -> None:
+        try:
+            from ..template_config_parser import TemplateConfigParser
+
+            cfg = TemplateConfigParser().load_config("ff7")
+            sub, excl = ff7_boss_match_sets_from_config(cfg)
+            self._boss_tracker.set_match_sets(sub, excl)
+        except Exception as e:
+            logger.warning("FF7 boss match set reload failed: %s", e, exc_info=True)
+
+    def handle_command(self, action: str, data: Dict[str, Any]) -> None:
+        if action == "clear_bosses":
+            self._boss_tracker.clear()
+            self._persist_boss_log()
+
+    def idle_snapshot(self, *, disabled: bool = False) -> Dict[str, Any]:
+        base = {
+            "hook": "ff7",
+            "attached": False,
+            "error": None,
+            "battle": False,
+            "current_module": 0,
+            "party": [],
+            "enemies": [],
+            "gil": 0,
+            "playtime_seconds": 0,
+            "playtime_text": "--:--:--",
+            "battle_log": [],
+            "bosses": self._boss_tracker.bosses_dict(),
+        }
+        if disabled:
+            base["disabled"] = True
+            base["debug"] = {"stage": "ff7_disabled_in_settings"}
+        elif not self.is_platform_supported():
+            base["error"] = "FF7 hook requires Windows"
+            base["debug"] = {"stage": "unsupported_os", "platform": sys.platform}
+        else:
+            base["debug"] = {"stage": "process_not_running"}
+        return base
+
+    def close(self) -> None:
+        self._timed_jobs.clear()
+        self._paused_timed_jobs.clear()
+        self._core.close()
+
+    def on_attached(self) -> None:
+        self._resume_timed_jobs()
+        self._replay_persisted_overrides()
+
+    def on_detached(self) -> None:
+        now = time.monotonic()
+        for deadline, op, kw in self._timed_jobs:
+            rem = max(0.0, float(deadline) - now)
+            self._paused_timed_jobs.append((rem, op, dict(kw)))
+        if self._timed_jobs:
+            logger.debug(
+                "FF7 detached: paused %s timed restore(s)", len(self._timed_jobs)
+            )
+        self._timed_jobs.clear()
+
+    def _resume_timed_jobs(self) -> None:
+        if not self._paused_timed_jobs:
+            return
+        base = time.monotonic()
+        n = 0
+        for rem, op, kw in self._paused_timed_jobs:
+            if rem > 0:
+                self._timed_jobs.append((base + rem, op, dict(kw)))
+                n += 1
+        self._paused_timed_jobs.clear()
+        if n:
+            logger.debug("FF7 reattached: resumed %s timed restore(s)", n)
+
+    def _schedule_timed_job(
+        self, delay_sec: int, restore_op: str, restore_kwargs: Dict[str, Any]
+    ) -> None:
+        if delay_sec <= 0:
+            return
+        self._timed_jobs.append(
+            (time.monotonic() + float(delay_sec), restore_op, dict(restore_kwargs))
+        )
+
+    def drain_timed_jobs(self, enqueue_write: Any) -> None:
+        if not self._timed_jobs:
+            return
+        now = time.monotonic()
+        remain: List[Tuple[float, str, Dict[str, Any]]] = []
+        for deadline, op, kw in self._timed_jobs:
+            if now >= deadline:
+                enqueue_write(op, dict(kw))
+                logger.debug("timed hook restore fired: %s", op)
+            else:
+                remain.append((deadline, op, kw))
+        self._timed_jobs = remain
+
+    def _persist_connector_override(self, op: str, kwargs: Dict[str, Any]) -> None:
+        if op not in FF7_CONNECTOR_PERSIST_ALLOWLIST:
+            return
+        try:
+            from ..database_manager import database_manager
+
+            raw = database_manager.get_data(_FF7_CONNECTOR_OVERRIDES_PATH)
+            data: Dict[str, Any] = (
+                dict(raw) if isinstance(raw, dict) else {"version": 1, "entries": []}
+            )
+            entries = data.get("entries")
+            if not isinstance(entries, list):
+                entries = []
+            key = _persist_override_key(op, kwargs)
+            now_ms = int(time.time() * 1000)
+            dur_raw = kwargs.get("duration_sec", 0)
+            try:
+                dur = max(0, int(float(dur_raw)))
+            except (TypeError, ValueError):
+                dur = 0
+            expires_at = (now_ms + dur * 1000) if dur > 0 else None
+            row = {
+                "key": key,
+                "op": op,
+                "kwargs": _json_safe_kwargs(dict(kwargs)),
+                "expires_at_ms": expires_at,
+            }
+            replaced = False
+            for i, ent in enumerate(entries):
+                if isinstance(ent, dict) and ent.get("key") == key:
+                    entries[i] = row
+                    replaced = True
+                    break
+            if not replaced:
+                entries.append(row)
+            data["entries"] = entries
+            database_manager.set_data(_FF7_CONNECTOR_OVERRIDES_PATH, data)
+        except Exception as e:
+            logger.warning("FF7 connector persist failed: %s", e, exc_info=True)
+
+    def _replay_persisted_overrides(self) -> None:
+        if not self._enqueue_write:
+            return
+        try:
+            from ..database_manager import database_manager
+
+            raw = database_manager.get_data(_FF7_CONNECTOR_OVERRIDES_PATH)
+            if not isinstance(raw, dict):
+                return
+            entries = raw.get("entries")
+            if not isinstance(entries, list):
+                return
+            now_ms = int(time.time() * 1000)
+            kept: List[Dict[str, Any]] = []
+            for ent in entries:
+                if not isinstance(ent, dict):
+                    continue
+                op = str(ent.get("op") or "")
+                kw = dict(ent.get("kwargs") or {})
+                exp = ent.get("expires_at_ms")
+                if exp is not None:
+                    try:
+                        exp_i = int(exp)
+                    except (TypeError, ValueError):
+                        continue
+                    if exp_i <= now_ms:
+                        continue
+                    remaining_sec = max(1, (exp_i - now_ms) // 1000)
+                    kw["duration_sec"] = int(remaining_sec)
+                self._enqueue_write(op, dict(kw))
+                kept.append(ent)
+                logger.info("FF7 persist replay: op=%s kwargs=%s", op, kw)
+            database_manager.set_data(
+                _FF7_CONNECTOR_OVERRIDES_PATH, {"version": 1, "entries": kept}
+            )
+        except Exception as e:
+            logger.warning("FF7 connector replay failed: %s", e, exc_info=True)
+
+    def execute_operation(
+        self, op: str, kwargs: Dict[str, Any]
+    ) -> Tuple[bool, Optional[str], Optional[Dict[str, str]]]:
+        result = self._core.execute_operation(op, kwargs)
+        ok = result[0]
+        err = result[1] if len(result) > 1 else None
+        out: Optional[Dict[str, str]] = None
+        if op == "query_inventory":
+            iq = self._core._last_inventory_query
+            if iq is not None:
+                self._last_inventory_query_ui = dict(iq)
+            out = _query_inventory_outputs(iq)
+        if ok:
+            for t_op, t_kw, t_dur in self._core.consume_timed_schedules():
+                self._schedule_timed_job(int(t_dur), t_op, t_kw)
+            self._persist_connector_override(op, kwargs)
+        else:
+            self._core.consume_timed_schedules()
+        return ok, err, out
+
+    def tick(self) -> Dict[str, Any]:
+        if not self.is_platform_supported():
+            return self.idle_snapshot(disabled=False)
+
+        try:
+            snap = self._core.snapshot()
+            if self._boss_tracker.update_from_snapshot(snap):
+                self._persist_boss_log()
+            snap["bosses"] = self._boss_tracker.bosses_dict()
+            if self._last_inventory_query_ui is not None:
+                snap["inventory_query"] = dict(self._last_inventory_query_ui)
+
+            attached_now = bool(snap.get("attached"))
+            if attached_now and self._last_attached is not True:
+                self.on_attached()
+            elif not attached_now and self._last_attached is True:
+                self.on_detached()
+            self._last_attached = attached_now
+
+            try:
+                pending = self._core.consume_pending_battle()
+                if pending is not None:
+                    cm = int(snap.get("current_module") or 0)
+                    if cm in (1, 3):
+                        ok, err = self._core._start_battle_now(int(pending))
+                        if not ok:
+                            self._core._pending_battle_id = int(pending)
+                            logger.debug("queued start_battle deferred: %s", err)
+                    else:
+                        self._core._pending_battle_id = int(pending)
+            except Exception as e:
+                logger.debug("queued start_battle watcher: %s", e)
+
+            return snap
+        except Exception as e:
+            logger.warning("FF7 snapshot error: %s", e, exc_info=True)
+            return {
+                "hook": "ff7",
+                "attached": False,
+                "error": str(e),
+                "battle": False,
+                "current_module": 0,
+                "party": [],
+                "enemies": [],
+                "gil": 0,
+                "playtime_seconds": 0,
+                "playtime_text": "--:--:--",
+                "battle_log": [],
+                "bosses": self._boss_tracker.bosses_dict(),
+                "debug": {"stage": "snapshot_exception", "message": str(e)},
+            }
 
 
 # Backwards compatibility

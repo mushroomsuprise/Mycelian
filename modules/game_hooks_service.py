@@ -9,12 +9,8 @@ Commands from templates (see web_engine ``game_hook_command``)::
 
     { "hook": "ff7", "action": "clear_bosses" }
 
-Boss defeat log for FF7 is persisted under ``GameHooks/ff7_boss_log`` (SQLite via
-``database_manager``). Reset only via template ``clear_bosses`` command.
-
-Connector and template writes are serialized on the hook polling thread via a queue.
-Timed connector restores (game speed, menu words, battle speed, …) share one scheduler
-that pauses remaining delay while the FF7 process is not attached.
+Per-game logic lives under ``modules/game_hooks/``; this module coordinates workers,
+process discovery, and Socket.IO broadcast only.
 """
 
 from __future__ import annotations
@@ -24,66 +20,118 @@ import logging
 import queue
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-from .database_manager import database_manager
-from .game_hooks import Ff7BossTracker, create_hook_instance
-from .game_hooks.ff7_boss_tracker import ff7_boss_match_sets_from_config
-from .game_hooks.ff7_hook import FF7_CONNECTOR_PERSIST_ALLOWLIST, FF7Hook
-from .template_config_parser import TemplateConfigParser
+from .game_hooks.base import GameHook
+from .game_hooks.registry import (
+    create_hook,
+    is_hook_enabled,
+    registered_hook_ids,
+)
 
 logger = logging.getLogger(__name__)
 
-_FF7_DB_PATH = "GameHooks/ff7_enabled"
-_FF7_BOSS_LOG_PATH = "GameHooks/ff7_boss_log"
-_FF7_CONNECTOR_OVERRIDES_PATH = "GameHooks/ff7_connector_overrides"
 _INTERVAL = 0.25
 
 
-def _ff7_enabled() -> bool:
-    try:
-        raw = database_manager.get_data(_FF7_DB_PATH)
-        if isinstance(raw, dict) and "enabled" in raw:
-            return bool(raw["enabled"])
-        if isinstance(raw, bool):
-            return raw
-    except Exception as e:
-        logger.debug("game_hooks ff7 flag: %s", e)
-    return False
+class _HookWorker:
+    """Dedicated thread for one active game hook while its process is running."""
 
+    def __init__(self, hook: GameHook) -> None:
+        self.hook = hook
+        self.hook_id = hook.hook_id
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._snapshot_lock = threading.Lock()
+        self._last_snapshot: Optional[Dict[str, Any]] = None
+        self._write_queue: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, Dict[str, Any]]]" = (
+            queue.Queue()
+        )
 
-def _persist_override_key(op: str, kwargs: Dict[str, Any]) -> str:
-    mn = str(kwargs.get("menu_name", "")).strip().lower()
-    if op in ("set_menu_row_access", "set_menu_visibility", "set_menu_lock") and mn:
-        return f"{op}:{mn}"
-    return op
+        def _enqueue(op: str, kwargs: Dict[str, Any]) -> None:
+            self._write_queue.put(
+                (concurrent.futures.Future(), op, dict(kwargs))
+            )
 
+        hook.set_write_enqueue(_enqueue)
 
-def _query_inventory_outputs(
-    iq: Optional[Dict[str, Any]]
-) -> Optional[Dict[str, str]]:
-    """Map FF7 last inventory query snapshot to string keys for connector {actionN.*} placeholders."""
-    if not isinstance(iq, dict):
-        return None
-    return {
-        "item_name": str(iq.get("item_name", "") or ""),
-        "quantity": "" if iq.get("quantity") is None else str(iq["quantity"]),
-        "resolved_name": ""
-        if iq.get("resolved_name") is None
-        else str(iq["resolved_name"]),
-        "kind": "" if iq.get("kind") is None else str(iq["kind"]),
-        "error": "" if iq.get("error") is None else str(iq["error"]),
-    }
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._loop,
+            name=f"GameHook-{self.hook_id}",
+            daemon=True,
+        )
+        self._thread.start()
 
+    def stop(self, timeout: float = 2.0) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=timeout)
+            self._thread = None
+        try:
+            self.hook.close()
+        except Exception:
+            pass
 
-def _json_safe_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    for k, v in kwargs.items():
-        if isinstance(v, (str, int, float, bool)) or v is None:
-            out[k] = v
-        else:
-            out[k] = str(v)
-    return out
+    def is_alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def get_snapshot(self) -> Optional[Dict[str, Any]]:
+        with self._snapshot_lock:
+            return dict(self._last_snapshot) if self._last_snapshot else None
+
+    def enqueue(
+        self, operation: str, arguments: Dict[str, Any]
+    ) -> concurrent.futures.Future:
+        fut: concurrent.futures.Future = concurrent.futures.Future()
+        self._write_queue.put((fut, operation, dict(arguments)))
+        return fut
+
+    def _drain_writes(self) -> None:
+        while True:
+            try:
+                fut, op, kwargs = self._write_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                ok, err, out = self.hook.execute_operation(op, kwargs)
+                fut.set_result((ok, err, out))
+            except Exception as e:
+                logger.warning(
+                    "game hook write failed (%s): %s",
+                    self.hook_id,
+                    e,
+                    exc_info=True,
+                )
+                fut.set_result((False, str(e), None))
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            t0 = time.time()
+            self._drain_writes()
+            self.hook.drain_timed_jobs(
+                lambda op, kw: self._write_queue.put(
+                    (concurrent.futures.Future(), op, dict(kw))
+                )
+            )
+            try:
+                snap = self.hook.tick()
+            except Exception as e:
+                logger.warning(
+                    "%s tick error: %s", self.hook_id, e, exc_info=True
+                )
+                snap = self.hook.idle_snapshot(disabled=False)
+                snap["error"] = str(e)
+            with self._snapshot_lock:
+                self._last_snapshot = snap
+            elapsed = time.time() - t0
+            wait = max(0.0, _INTERVAL - elapsed)
+            if self._stop.wait(wait):
+                break
+        logger.debug("Game hook worker exit: %s", self.hook_id)
 
 
 class GameHooksServiceImpl:
@@ -91,232 +139,61 @@ class GameHooksServiceImpl:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._ui_state_lock = threading.Lock()
-        self._last_ff7_ui: Optional[Dict[str, Any]] = None
-        self._ff7_hook: Optional[FF7Hook] = None
-        self._template_config_parser = TemplateConfigParser()
-        sub, excl = ff7_boss_match_sets_from_config(
-            self._template_config_parser.load_config("ff7")
-        )
-        self._ff7_boss_tracker = Ff7BossTracker(sub, excl)
+        self._ui_snapshots: Dict[str, Optional[Dict[str, Any]]] = {}
+        self._hooks: Dict[str, GameHook] = {}
+        self._workers: Dict[str, _HookWorker] = {}
         self._emit_count = 0
-        self._write_queue: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, str, Dict[str, Any]]]" = (
+        self._orphan_writes: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, str, Dict[str, Any]]]" = (
             queue.Queue()
         )
-        # (deadline_monotonic, restore_operation, kwargs)
-        self._timed_jobs: List[Tuple[float, str, Dict[str, Any]]] = []
-        self._paused_timed_jobs: List[Tuple[float, str, Dict[str, Any]]] = []
-        self._last_ff7_attached: Optional[bool] = None
-        self._load_ff7_boss_log()
 
-    def _load_ff7_boss_log(self) -> None:
-        try:
-            raw = database_manager.get_data(_FF7_BOSS_LOG_PATH)
-            if not isinstance(raw, dict):
-                return
-            names = raw.get("names")
-            if not isinstance(names, list):
-                return
-            last = raw.get("last") if isinstance(raw.get("last"), str) else ""
-            self._ff7_boss_tracker.restore(names, last)
-        except Exception as e:
-            logger.warning("FF7 boss log load failed: %s", e, exc_info=True)
-
-    def _persist_ff7_boss_log(self) -> None:
-        try:
-            database_manager.set_data(
-                _FF7_BOSS_LOG_PATH, self._ff7_boss_tracker.bosses_dict()
-            )
-        except Exception as e:
-            logger.warning("FF7 boss log persist failed: %s", e, exc_info=True)
-
-    def clear_ff7_bosses(self) -> None:
-        self._ff7_boss_tracker.clear()
-        self._persist_ff7_boss_log()
-
-    def reload_ff7_boss_match_sets(self) -> None:
-        """Reload boss substring/exclude sets from the ff7 template config on disk."""
-        try:
-            cfg = self._template_config_parser.load_config("ff7")
-            sub, excl = ff7_boss_match_sets_from_config(cfg)
-            self._ff7_boss_tracker.set_match_sets(sub, excl)
-        except Exception as e:
-            logger.warning("FF7 boss match set reload failed: %s", e, exc_info=True)
+    def _get_hook(self, hook_id: str) -> Optional[GameHook]:
+        hid = str(hook_id or "").strip().lower()
+        if hid not in self._hooks:
+            inst = create_hook(hid)
+            if inst is not None:
+                self._hooks[hid] = inst
+        return self._hooks.get(hid)
 
     def enqueue_game_hook_write(
         self, game_id: str, operation: str, arguments: Optional[Dict[str, Any]] = None
     ) -> concurrent.futures.Future:
-        """Schedule a write on the hook thread. Returns a concurrent.futures.Future."""
+        """Schedule a write on the hook worker thread. Returns a concurrent.futures.Future."""
+        gid = str(game_id or "").strip().lower()
+        worker = self._workers.get(gid)
+        if worker and worker.is_alive():
+            return worker.enqueue(operation, dict(arguments or {}))
         fut: concurrent.futures.Future = concurrent.futures.Future()
-        self._write_queue.put((fut, game_id, operation, dict(arguments or {})))
+        fut.set_result((False, f"No active hook for '{gid}'", None))
         return fut
 
-    def _schedule_timed_job(
-        self, delay_sec: int, restore_op: str, restore_kwargs: Dict[str, Any]
-    ) -> None:
-        if delay_sec <= 0:
-            return
-        self._timed_jobs.append(
-            (
-                time.monotonic() + float(delay_sec),
-                restore_op,
-                dict(restore_kwargs),
-            )
-        )
-        logger.debug(
-            "timed hook restore: %s in %s s kwargs=%s",
-            restore_op,
-            delay_sec,
-            restore_kwargs,
-        )
+    def reload_hook_config(self, hook_id: str) -> None:
+        hook = self._get_hook(hook_id)
+        if hook is not None:
+            hook.on_config_reloaded()
 
-    def _maybe_fire_timed_jobs(self) -> None:
-        if not self._timed_jobs:
-            return
-        now = time.monotonic()
-        remain: List[Tuple[float, str, Dict[str, Any]]] = []
-        for deadline, op, kw in self._timed_jobs:
-            if now >= deadline:
-                self._write_queue.put(
-                    (concurrent.futures.Future(), "ff7", op, dict(kw))
-                )
-                logger.debug("timed hook restore fired: %s", op)
-            else:
-                remain.append((deadline, op, kw))
-        self._timed_jobs = remain
+    def reload_ff7_boss_match_sets(self) -> None:
+        self.reload_hook_config("ff7")
 
-    def _pause_timed_jobs_for_detach(self) -> None:
-        now = time.monotonic()
-        for deadline, op, kw in self._timed_jobs:
-            rem = max(0.0, float(deadline) - now)
-            self._paused_timed_jobs.append((rem, op, dict(kw)))
-        if self._timed_jobs:
-            logger.debug(
-                "FF7 detached: paused %s timed restore(s)",
-                len(self._timed_jobs),
-            )
-        self._timed_jobs.clear()
+    def clear_ff7_bosses(self) -> None:
+        hook = self._get_hook("ff7")
+        if hook is not None:
+            hook.handle_command("clear_bosses", {})
 
-    def _resume_timed_jobs_after_attach(self) -> None:
-        if not self._paused_timed_jobs:
-            return
-        base = time.monotonic()
-        n = 0
-        for rem, op, kw in self._paused_timed_jobs:
-            if rem > 0:
-                self._timed_jobs.append((base + rem, op, dict(kw)))
-                n += 1
-        self._paused_timed_jobs.clear()
-        if n:
-            logger.debug("FF7 reattached: resumed %s timed restore(s)", n)
+    def _stop_worker(self, hook_id: str) -> None:
+        worker = self._workers.pop(hook_id, None)
+        if worker is not None:
+            worker.stop()
 
-    def _persist_connector_override(self, op: str, kwargs: Dict[str, Any]) -> None:
-        if op not in FF7_CONNECTOR_PERSIST_ALLOWLIST:
-            return
-        try:
-            raw = database_manager.get_data(_FF7_CONNECTOR_OVERRIDES_PATH)
-            data: Dict[str, Any] = (
-                dict(raw) if isinstance(raw, dict) else {"version": 1, "entries": []}
-            )
-            entries = data.get("entries")
-            if not isinstance(entries, list):
-                entries = []
-            key = _persist_override_key(op, kwargs)
-            now_ms = int(time.time() * 1000)
-            dur_raw = kwargs.get("duration_sec", 0)
-            try:
-                dur = max(0, int(float(dur_raw)))
-            except (TypeError, ValueError):
-                dur = 0
-            expires_at = (now_ms + dur * 1000) if dur > 0 else None
-            row = {
-                "key": key,
-                "op": op,
-                "kwargs": _json_safe_kwargs(dict(kwargs)),
-                "expires_at_ms": expires_at,
-            }
-            replaced = False
-            for i, ent in enumerate(entries):
-                if isinstance(ent, dict) and ent.get("key") == key:
-                    entries[i] = row
-                    replaced = True
-                    break
-            if not replaced:
-                entries.append(row)
-            data["entries"] = entries
-            database_manager.set_data(_FF7_CONNECTOR_OVERRIDES_PATH, data)
-        except Exception as e:
-            logger.warning("FF7 connector persist failed: %s", e, exc_info=True)
-
-    def _replay_persisted_overrides(self) -> None:
-        try:
-            raw = database_manager.get_data(_FF7_CONNECTOR_OVERRIDES_PATH)
-            if not isinstance(raw, dict):
-                return
-            entries = raw.get("entries")
-            if not isinstance(entries, list):
-                return
-            now_ms = int(time.time() * 1000)
-            kept: List[Dict[str, Any]] = []
-            for ent in entries:
-                if not isinstance(ent, dict):
-                    continue
-                op = str(ent.get("op") or "")
-                kw = dict(ent.get("kwargs") or {})
-                exp = ent.get("expires_at_ms")
-                if exp is not None:
-                    try:
-                        exp_i = int(exp)
-                    except (TypeError, ValueError):
-                        continue
-                    if exp_i <= now_ms:
-                        continue
-                    remaining_sec = max(1, (exp_i - now_ms) // 1000)
-                    kw["duration_sec"] = int(remaining_sec)
-                self._write_queue.put(
-                    (concurrent.futures.Future(), "ff7", op, dict(kw))
-                )
-                kept.append(ent)
-                logger.info("FF7 persist replay: op=%s kwargs=%s", op, kw)
-            database_manager.set_data(
-                _FF7_CONNECTOR_OVERRIDES_PATH, {"version": 1, "entries": kept}
-            )
-        except Exception as e:
-            logger.warning("FF7 connector replay failed: %s", e, exc_info=True)
-
-    def _drain_write_queue(self) -> None:
-        while True:
-            try:
-                fut, game_id, op, kwargs = self._write_queue.get_nowait()
-            except queue.Empty:
-                break
-            try:
-                if game_id != "ff7" or self._ff7_hook is None:
-                    fut.set_result((False, f"No active hook for '{game_id}'", None))
-                    continue
-                result = self._ff7_hook.execute_operation(op, kwargs)
-                out: Optional[Dict[str, str]] = None
-                if op == "query_inventory":
-                    iq = self._ff7_hook._last_inventory_query
-                    if iq is not None:
-                        with self._ui_state_lock:
-                            if isinstance(self._last_ff7_ui, dict):
-                                merged = dict(self._last_ff7_ui)
-                            else:
-                                merged = {}
-                            merged["inventory_query"] = dict(iq)
-                            self._last_ff7_ui = merged
-                    out = _query_inventory_outputs(iq)
-                ok, err = result[0], result[1] if len(result) > 1 else None
-                fut.set_result((ok, err, out))
-                if ok:
-                    for t_op, t_kw, t_dur in self._ff7_hook.consume_timed_schedules():
-                        self._schedule_timed_job(int(t_dur), t_op, t_kw)
-                    self._persist_connector_override(op, kwargs)
-                else:
-                    self._ff7_hook.consume_timed_schedules()
-            except Exception as e:
-                logger.warning("game hook write failed: %s", e, exc_info=True)
-                fut.set_result((False, str(e), None))
+    def _ensure_worker(self, hook: GameHook) -> _HookWorker:
+        worker = self._workers.get(hook.hook_id)
+        if worker is None or not worker.is_alive():
+            if worker is not None:
+                worker.stop()
+            worker = _HookWorker(hook)
+            self._workers[hook.hook_id] = worker
+            worker.start()
+        return worker
 
     def _emit(self, payload: Dict[str, Any]) -> None:
         try:
@@ -337,98 +214,31 @@ class GameHooksServiceImpl:
         except Exception as e:
             logger.warning("game_hook_payload emit failed: %s", e, exc_info=True)
 
-    def _loop(self) -> None:
+    def _coordinator_loop(self) -> None:
         while not self._stop.is_set():
             t0 = time.time()
-            self._maybe_fire_timed_jobs()
-            self._drain_write_queue()
-
             hooks: Dict[str, Any] = {}
-            if _ff7_enabled():
-                if self._ff7_hook is None:
-                    inst = create_hook_instance("ff7")
-                    assert isinstance(inst, FF7Hook)
-                    self._ff7_hook = inst
-                try:
-                    snap = self._ff7_hook.snapshot()
-                    if self._ff7_boss_tracker.update_from_snapshot(snap):
-                        self._persist_ff7_boss_log()
-                    snap["bosses"] = self._ff7_boss_tracker.bosses_dict()
-                    hooks["ff7"] = snap
-                    try:
-                        pending = self._ff7_hook.consume_pending_battle()
-                        if pending is not None:
-                            cm = int(snap.get("current_module") or 0)
-                            if cm in (1, 3):
-                                ok, err = self._ff7_hook._start_battle_now(int(pending))
-                                if not ok:
-                                    self._ff7_hook._pending_battle_id = int(pending)
-                                    logger.debug(
-                                        "queued start_battle deferred: %s", err
-                                    )
-                            else:
-                                self._ff7_hook._pending_battle_id = int(pending)
-                    except Exception as e:
-                        logger.debug("queued start_battle watcher: %s", e)
-                except Exception as e:
-                    logger.warning("FF7 snapshot error: %s", e, exc_info=True)
-                    hooks["ff7"] = {
-                        "hook": "ff7",
-                        "attached": False,
-                        "error": str(e),
-                        "battle": False,
-                        "current_module": 0,
-                        "party": [],
-                        "enemies": [],
-                        "gil": 0,
-                        "playtime_seconds": 0,
-                        "playtime_text": "--:--:--",
-                        "battle_log": [],
-                        "bosses": self._ff7_boss_tracker.bosses_dict(),
-                        "debug": {"stage": "snapshot_exception", "message": str(e)},
-                    }
-            else:
-                self._timed_jobs.clear()
-                self._paused_timed_jobs.clear()
-                if self._ff7_hook is not None:
-                    try:
-                        self._ff7_hook.close()
-                    except Exception:
-                        pass
-                    self._ff7_hook = None
-                hooks["ff7"] = {
-                    "hook": "ff7",
-                    "attached": False,
-                    "error": None,
-                    "disabled": True,
-                    "battle": False,
-                    "current_module": 0,
-                    "party": [],
-                    "enemies": [],
-                    "gil": 0,
-                    "playtime_seconds": 0,
-                    "playtime_text": "--:--:--",
-                    "bosses": self._ff7_boss_tracker.bosses_dict(),
-                    "debug": {"stage": "ff7_disabled_in_settings"},
-                }
 
-            ff7_ui = hooks.get("ff7")
-            attached_now: Optional[bool] = None
-            if isinstance(ff7_ui, dict):
-                attached_now = bool(ff7_ui.get("attached"))
-                if attached_now and self._last_ff7_attached is not True:
-                    self._resume_timed_jobs_after_attach()
-                    self._replay_persisted_overrides()
-                elif not attached_now and self._last_ff7_attached is True:
-                    self._pause_timed_jobs_for_detach()
-                self._last_ff7_attached = attached_now
+            for hook_id in registered_hook_ids():
+                hook = self._get_hook(hook_id)
+                if hook is None:
+                    continue
 
-            if isinstance(ff7_ui, dict):
+                if not is_hook_enabled(hook_id):
+                    self._stop_worker(hook_id)
+                    snap = hook.idle_snapshot(disabled=True)
+                elif not hook.is_process_running():
+                    self._stop_worker(hook_id)
+                    snap = hook.idle_snapshot(disabled=False)
+                else:
+                    worker = self._ensure_worker(hook)
+                    snap = worker.get_snapshot()
+                    if snap is None:
+                        snap = hook.idle_snapshot(disabled=False)
+
+                hooks[hook_id] = snap
                 with self._ui_state_lock:
-                    self._last_ff7_ui = dict(ff7_ui)
-            else:
-                with self._ui_state_lock:
-                    self._last_ff7_ui = None
+                    self._ui_snapshots[hook_id] = dict(snap)
 
             payload = {
                 "v": 1,
@@ -436,21 +246,21 @@ class GameHooksServiceImpl:
                 "hooks": hooks,
             }
             self._emit_count += 1
-            ff = hooks.get("ff7") or {}
             if self._emit_count <= 3 or self._emit_count % 20 == 0:
-                logger.info(
-                    "[GameHooks] emit #%s ts=%s ff7 attached=%s disabled=%s err=%s "
-                    "battle=%s gil=%s party=%s debug=%s",
-                    self._emit_count,
-                    payload["ts"],
-                    ff.get("attached"),
-                    ff.get("disabled"),
-                    ff.get("error"),
-                    ff.get("battle"),
-                    ff.get("gil"),
-                    len(ff.get("party") or []),
-                    ff.get("debug"),
-                )
+                for hid, h in hooks.items():
+                    if isinstance(h, dict):
+                        logger.info(
+                            "[GameHooks] emit #%s ts=%s %s attached=%s disabled=%s "
+                            "err=%s battle=%s",
+                            self._emit_count,
+                            payload["ts"],
+                            hid,
+                            h.get("attached"),
+                            h.get("disabled"),
+                            h.get("error"),
+                            h.get("battle"),
+                        )
+                        break
             self._emit(payload)
 
             elapsed = time.time() - t0
@@ -458,52 +268,56 @@ class GameHooksServiceImpl:
             if self._stop.wait(wait):
                 break
 
-        self._timed_jobs.clear()
-        self._paused_timed_jobs.clear()
-        if self._ff7_hook is not None:
-            try:
-                self._ff7_hook.close()
-            except Exception:
-                pass
-            self._ff7_hook = None
-        logger.debug("Game hooks service thread exit")
+        for hook_id in list(self._workers.keys()):
+            self._stop_worker(hook_id)
+        logger.debug("Game hooks coordinator exit")
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
         self._thread = threading.Thread(
-            target=self._loop, name="GameHooksService", daemon=True
+            target=self._coordinator_loop,
+            name="GameHooksCoordinator",
+            daemon=True,
         )
         self._thread.start()
         logger.info("Game hooks service started")
 
-    def get_ff7_ui_snapshot(self) -> Dict[str, Any]:
-        """Thread-safe last FF7 hook payload for settings UI (shallow copy)."""
+    def get_hook_ui_snapshot(self, hook_id: str) -> Dict[str, Any]:
+        """Thread-safe last hook payload for settings UI (shallow copy)."""
+        hid = str(hook_id or "").strip().lower()
         running = self._thread is not None and self._thread.is_alive()
         with self._ui_state_lock:
-            snap = dict(self._last_ff7_ui) if self._last_ff7_ui is not None else None
-        return {"service_running": running, "ff7": snap}
+            snap = (
+                dict(self._ui_snapshots[hid])
+                if isinstance(self._ui_snapshots.get(hid), dict)
+                else None
+            )
+        return {"service_running": running, hid: snap}
+
+    def get_ff7_ui_snapshot(self) -> Dict[str, Any]:
+        return self.get_hook_ui_snapshot("ff7")
 
     def is_game_hook_ready(self, game_id: str) -> bool:
-        """True when settings enable this hook and the service reports attached to the game."""
+        """True when settings enable this hook and the service reports attached."""
         gid = str(game_id or "").strip().lower()
-        if gid == "ff7":
-            if not _ff7_enabled():
-                return False
-            info = self.get_ff7_ui_snapshot()
-            if not info.get("service_running"):
-                return False
-            snap = info.get("ff7")
-            if not isinstance(snap, dict):
-                return False
-            if bool(snap.get("disabled")):
-                return False
-            return bool(snap.get("attached"))
-        return False
+        if not is_hook_enabled(gid):
+            return False
+        if self._thread is None or not self._thread.is_alive():
+            return False
+        info = self.get_hook_ui_snapshot(gid)
+        snap = info.get(gid)
+        if not isinstance(snap, dict):
+            return False
+        if bool(snap.get("disabled")):
+            return False
+        return bool(snap.get("attached"))
 
     def stop(self) -> None:
         self._stop.set()
+        for hook_id in list(self._workers.keys()):
+            self._stop_worker(hook_id)
         if self._thread:
             self._thread.join(timeout=3.0)
             self._thread = None
@@ -517,7 +331,10 @@ def handle_game_hook_command(data: Any) -> None:
     """Handle client command dict."""
     if not isinstance(data, dict):
         return
-    hook = data.get("hook")
-    action = data.get("action")
-    if hook == "ff7" and action == "clear_bosses":
-        game_hooks_service.clear_ff7_bosses()
+    hook_id = str(data.get("hook") or "").strip().lower()
+    action = str(data.get("action") or "").strip()
+    if not hook_id or not action:
+        return
+    hook = game_hooks_service._get_hook(hook_id)
+    if hook is not None:
+        hook.handle_command(action, data)

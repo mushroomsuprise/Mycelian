@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 
 class HelpCategory(Enum):
     """Categories for help topics"""
+
     GETTING_STARTED = "getting_started"
     ALERTS = "alerts"
     TEMPLATES = "templates"
@@ -24,6 +25,7 @@ class HelpCategory(Enum):
 @dataclass
 class HelpSection:
     """Section within a help topic"""
+
     title: str
     content: str
     code_examples: List[str] = field(default_factory=list)
@@ -35,6 +37,7 @@ class HelpSection:
 @dataclass
 class HelpTopic:
     """Single help topic/article"""
+
     id: str
     title: str
     category: HelpCategory
@@ -88,9 +91,13 @@ multiple platforms.
 - Check the [Troubleshooting](help:troubleshooting_alerts) section for common issues
         """,
         keywords=["start", "begin", "intro", "overview", "basics"],
-        related_topics=["twitch_setup", "first_alert_setup", "alerts_overview", "templates_intro"]
+        related_topics=[
+            "twitch_setup",
+            "first_alert_setup",
+            "alerts_overview",
+            "templates_intro",
+        ],
     ),
-
     "twitch_setup": HelpTopic(
         id="twitch_setup",
         title="Connecting Your Twitch Account",
@@ -149,10 +156,13 @@ If you prefer to use your own Twitch application:
 - Tokens are automatically refreshed when possible
         """,
         keywords=["twitch", "connect", "oauth", "authentication", "api"],
-        related_topics=["getting_started_intro", "alerts_overview", "first_alert_setup"],
-        ui_context="settings.twitch"
+        related_topics=[
+            "getting_started_intro",
+            "alerts_overview",
+            "first_alert_setup",
+        ],
+        ui_context="settings.twitch",
     ),
-
     "first_alert_setup": HelpTopic(
         id="first_alert_setup",
         title="Setting Up Your First Alert",
@@ -244,9 +254,8 @@ Once comfortable with basic alerts:
 > **Tip:** Use the Test button to preview each change before going live.
         """,
         keywords=["first", "setup", "beginner", "start", "create", "alert"],
-        related_topics=["alerts_overview", "twitch_setup", "obs_setup"]
+        related_topics=["alerts_overview", "twitch_setup", "obs_setup"],
     ),
-
     "obs_setup": HelpTopic(
         id="obs_setup",
         title="Setting Up Browser Sources in OBS",
@@ -335,9 +344,8 @@ Mycelian serves templates at `http://localhost:5000/`:
         """,
         keywords=["obs", "browser source", "overlay", "stream", "setup"],
         related_topics=["getting_started_intro", "templates_intro"],
-        ui_context="templates"
+        ui_context="templates",
     ),
-
     # =========================================
     # Alerts
     # =========================================
@@ -403,9 +411,13 @@ Alerts are matched in this order:
 > **Tip:** Start with simple alerts and gradually add [advanced configurations](help:alert_configuration) as you get comfortable.
         """,
         keywords=["alerts", "notifications", "follow", "sub", "bits", "raid"],
-        related_topics=["first_alert_setup", "alert_configuration", "alert_media", "alert_testing"]
+        related_topics=[
+            "first_alert_setup",
+            "alert_configuration",
+            "alert_media",
+            "alert_testing",
+        ],
     ),
-
     "alert_configuration": HelpTopic(
         id="alert_configuration",
         title="Configuring Alert Settings",
@@ -511,9 +523,8 @@ assets/
 > **Warning:** Overlapping amount ranges can cause unexpected alert behavior. Always test range boundaries.
         """,
         keywords=["alert", "configuration", "setup", "settings", "range", "tier"],
-        related_topics=["alerts_overview", "alert_media"]
+        related_topics=["alerts_overview", "alert_media"],
     ),
-
     "alert_media": HelpTopic(
         id="alert_media",
         title="Alert Media Configuration",
@@ -586,9 +597,8 @@ This means:
 > **Tip:** If audio isn't playing, check the [Audio Troubleshooting](help:troubleshooting_audio) guide.
         """,
         keywords=["gif", "audio", "sound", "media", "randomization", "animation"],
-        related_topics=["alerts_overview", "alert_configuration"]
+        related_topics=["alerts_overview", "alert_configuration"],
     ),
-
     "alert_testing": HelpTopic(
         id="alert_testing",
         title="Testing Your Alerts",
@@ -678,9 +688,8 @@ Each [alert configuration](help:alert_configuration) has a **"Test"** button:
 - Verify system stability under load
         """,
         keywords=["test", "testing", "preview", "verify", "check", "debug"],
-        related_topics=["alerts_overview", "alert_configuration"]
+        related_topics=["alerts_overview", "alert_configuration"],
     ),
-
     # =========================================
     # Chatbot
     # =========================================
@@ -768,9 +777,8 @@ Response: 🎱 {random:Yes!,No way,Ask again,Maybe,Definitely}
             "chatbot_greetings",
             "chatbot_giveaways",
             "chatbot_variables",
-        ]
+        ],
     ),
-
     "chatbot_events": HelpTopic(
         id="chatbot_events",
         title="Chatbot Events and Automation",
@@ -882,9 +890,8 @@ Set up different responses based on conditions:
 > **Note:** Use [chatbot variables](help:chatbot_variables) like `{username}` and `{months}` to personalize event messages. You can also set up [greetings](help:chatbot_greetings) for first-time chatters.
         """,
         keywords=["events", "automation", "welcome", "messages", "responses"],
-        related_topics=["chatbot_commands", "chatbot_quotes"]
+        related_topics=["chatbot_commands", "chatbot_quotes"],
     ),
-
     "chatbot_quotes": HelpTopic(
         id="chatbot_quotes",
         title="Managing Quotes and Highlights",
@@ -1000,9 +1007,8 @@ Response: Quote of the stream: "{quote:qots}"
 ```
         """,
         keywords=["quotes", "highlights", "memorable", "moments", "save"],
-        related_topics=["chatbot_commands", "chatbot_events"]
+        related_topics=["chatbot_commands", "chatbot_events"],
     ),
-
     "chatbot_greetings": HelpTopic(
         id="chatbot_greetings",
         title="Chatbot Greetings",
@@ -1092,9 +1098,8 @@ Prevent spam with cooldowns:
 - Limit to first message only
         """,
         keywords=["greetings", "welcome", "hello", "chat", "viewers", "automatic"],
-        related_topics=["chatbot_commands", "chatbot_events", "chatbot_variables"]
+        related_topics=["chatbot_commands", "chatbot_events", "chatbot_variables"],
     ),
-
     "chatbot_giveaways": HelpTopic(
         id="chatbot_giveaways",
         title="Chatbot Giveaways",
@@ -1240,7 +1245,6 @@ as well.
             "integrations_twitch",
         ],
     ),
-
     "chatbot_variables": HelpTopic(
         id="chatbot_variables",
         title="Chatbot Variables",
@@ -1355,10 +1359,16 @@ Then use `{mood}` in other commands.
 
 > **Note:** Variables available in [greetings](help:chatbot_greetings) and [events](help:chatbot_events) differ from those in [commands](help:chatbot_commands). Check the variable table for each context.
         """,
-        keywords=["variables", "placeholders", "dynamic", "text", "formatting", "custom"],
-        related_topics=["chatbot_commands", "chatbot_greetings", "chatbot_events"]
+        keywords=[
+            "variables",
+            "placeholders",
+            "dynamic",
+            "text",
+            "formatting",
+            "custom",
+        ],
+        related_topics=["chatbot_commands", "chatbot_greetings", "chatbot_events"],
     ),
-
     # =========================================
     # Connectors
     # =========================================
@@ -1437,9 +1447,13 @@ Actions:
 > **Tip:** Browse [Connector Examples](help:connector_examples) for inspiration and ready-to-use workflow templates.
         """,
         keywords=["connectors", "automation", "triggers", "actions", "workflow"],
-        related_topics=["connector_triggers", "connector_conditions", "connector_actions", "connector_examples"]
+        related_topics=[
+            "connector_triggers",
+            "connector_conditions",
+            "connector_actions",
+            "connector_examples",
+        ],
     ),
-
     "connector_triggers": HelpTopic(
         id="connector_triggers",
         title="Connector Triggers",
@@ -1535,9 +1549,8 @@ Each trigger provides context variables for use in actions.
 - Test edge cases and error conditions
         """,
         keywords=["triggers", "events", "twitch", "chat", "timer", "hotkey"],
-        related_topics=["connectors_intro", "connector_actions"]
+        related_topics=["connectors_intro", "connector_actions"],
     ),
-
     "connector_actions": HelpTopic(
         id="connector_actions",
         title="Connector Actions",
@@ -1683,9 +1696,8 @@ Message: "Thanks {username} for {amount} bits!"
 - See [Performance Optimization](help:troubleshooting_performance) if actions cause lag
         """,
         keywords=["actions", "responses", "automation", "effects", "controls"],
-        related_topics=["connectors_intro", "connector_triggers", "game_hooks"]
+        related_topics=["connectors_intro", "connector_triggers", "game_hooks"],
     ),
-
     "connector_conditions": HelpTopic(
         id="connector_conditions",
         title="Connector Conditions",
@@ -1805,9 +1817,8 @@ Action: Send evening greeting
 - Ensure condition is enabled
         """,
         keywords=["conditions", "logic", "filter", "if", "when", "compare"],
-        related_topics=["connectors_intro", "connector_triggers", "connector_actions"]
+        related_topics=["connectors_intro", "connector_triggers", "connector_actions"],
     ),
-
     "connector_examples": HelpTopic(
         id="connector_examples",
         title="Connector Examples",
@@ -1966,10 +1977,21 @@ Actions:
 
 > **Tip:** Start with the simpler examples above and combine [triggers](help:connector_triggers), [conditions](help:connector_conditions), and [actions](help:connector_actions) as you gain confidence.
         """,
-        keywords=["examples", "templates", "recipes", "ideas", "use cases", "workflows"],
-        related_topics=["connectors_intro", "connector_triggers", "connector_actions", "connector_conditions"]
+        keywords=[
+            "examples",
+            "templates",
+            "recipes",
+            "ideas",
+            "use cases",
+            "workflows",
+        ],
+        related_topics=[
+            "connectors_intro",
+            "connector_triggers",
+            "connector_actions",
+            "connector_conditions",
+        ],
     ),
-
     # =========================================
     # Templates
     # =========================================
@@ -2081,13 +2103,22 @@ socket.on('alert', (data) => {
 
 > **Tip:** Learn about [WebSocket events](help:template_websocket) to understand how templates receive live data, use [Source Controls](help:source_controls) during your stream, and build new overlays in [Spore Studio](help:spore_studio_overview).
         """,
-        keywords=["templates", "browser sources", "overlays", "obs", "customization", "spore studio"],
+        keywords=[
+            "templates",
+            "browser sources",
+            "overlays",
+            "obs",
+            "customization",
+            "spore studio",
+        ],
         related_topics=[
-            "template_configuration", "template_custom_css", "template_websocket",
-            "source_controls", "spore_studio_overview",
-        ]
+            "template_configuration",
+            "template_custom_css",
+            "template_websocket",
+            "source_controls",
+            "spore_studio_overview",
+        ],
     ),
-
     "template_configuration": HelpTopic(
         id="template_configuration",
         title="Configuring Template Settings",
@@ -2266,12 +2297,21 @@ Create reusable themes:
 
 > **Tip:** For advanced CSS customization, see [Custom CSS for Templates](help:template_custom_css). For live adjustments during your stream, use [Source Controls](help:source_controls).
         """,
-        keywords=["configuration", "settings", "customization", "json", "css", "spore studio"],
+        keywords=[
+            "configuration",
+            "settings",
+            "customization",
+            "json",
+            "css",
+            "spore studio",
+        ],
         related_topics=[
-            "templates_intro", "source_controls", "template_custom_css", "spore_studio_design",
-        ]
+            "templates_intro",
+            "source_controls",
+            "template_custom_css",
+            "spore_studio_design",
+        ],
     ),
-
     "template_custom_css": HelpTopic(
         id="template_custom_css",
         title="Custom CSS for Templates",
@@ -2433,9 +2473,8 @@ Note: This applies to ALL content in that source.
 > **Note:** CSS changes in the [template configuration](help:template_configuration) override OBS Browser Source CSS. Use `!important` if your styles aren't being applied.
         """,
         keywords=["css", "styling", "custom", "design", "colors", "fonts", "animation"],
-        related_topics=["templates_intro", "template_configuration"]
+        related_topics=["templates_intro", "template_configuration"],
     ),
-
     "template_websocket": HelpTopic(
         id="template_websocket",
         title="WebSocket Events",
@@ -2597,12 +2636,22 @@ socket.on('new_alert', (data) => {
 });
 ```
         """,
-        keywords=["websocket", "events", "real-time", "socket", "javascript", "api", "spore studio"],
+        keywords=[
+            "websocket",
+            "events",
+            "real-time",
+            "socket",
+            "javascript",
+            "api",
+            "spore studio",
+        ],
         related_topics=[
-            "templates_intro", "template_configuration", "source_controls", "spore_studio_bindings",
-        ]
+            "templates_intro",
+            "template_configuration",
+            "source_controls",
+            "spore_studio_bindings",
+        ],
     ),
-
     "source_controls": HelpTopic(
         id="source_controls",
         title="Real-time Source Controls",
@@ -2701,9 +2750,8 @@ Controls that only work under certain conditions:
 - Monitor browser source performance
         """,
         keywords=["controls", "real-time", "live", "stream", "interactive"],
-        related_topics=["templates_intro", "template_configuration"]
+        related_topics=["templates_intro", "template_configuration"],
     ),
-
     "spore_studio_overview": HelpTopic(
         id="spore_studio_overview",
         title="Spore Studio Overview",
@@ -2870,15 +2918,22 @@ The canvas uses a **transparent** background by design so overlays composite cle
 | Step-by-step builds | [Spore Studio Examples & Recipes](help:spore_studio_examples) |
         """,
         keywords=[
-            "spore studio", "visual editor", "template editor", "overlay designer",
-            "canvas", "blocks", "browser source",
+            "spore studio",
+            "visual editor",
+            "template editor",
+            "overlay designer",
+            "canvas",
+            "blocks",
+            "browser source",
         ],
         related_topics=[
-            "templates_intro", "spore_studio_design", "template_configuration", "obs_setup",
+            "templates_intro",
+            "spore_studio_design",
+            "template_configuration",
+            "obs_setup",
         ],
         ui_context="spore_studio",
     ),
-
     "spore_studio_design": HelpTopic(
         id="spore_studio_design",
         title="Designing Templates in Spore Studio",
@@ -3103,15 +3158,25 @@ After layout and styling, open the **Bindings** tab — covered in
 [Spore Studio Examples & Recipes](help:spore_studio_examples).
         """,
         keywords=[
-            "spore studio", "blocks", "canvas", "assets", "properties", "container",
-            "text", "image", "video", "expose", "source settings",
+            "spore studio",
+            "blocks",
+            "canvas",
+            "assets",
+            "properties",
+            "container",
+            "text",
+            "image",
+            "video",
+            "expose",
+            "source settings",
         ],
         related_topics=[
-            "spore_studio_overview", "spore_studio_bindings",
-            "template_configuration", "source_controls",
+            "spore_studio_overview",
+            "spore_studio_bindings",
+            "template_configuration",
+            "source_controls",
         ],
     ),
-
     "spore_studio_bindings": HelpTopic(
         id="spore_studio_bindings",
         title="Event Bindings & Actions",
@@ -3306,15 +3371,24 @@ Enable **Start hidden until shown** on the element (Properties tab) when using *
 - [Connector Examples](help:connector_examples) — automate `chat_add_message` and more
         """,
         keywords=[
-            "bindings", "websocket", "events", "actions", "filters", "chain",
-            "next_alert", "instant_alert", "stream deck", "twitch api",
+            "bindings",
+            "websocket",
+            "events",
+            "actions",
+            "filters",
+            "chain",
+            "next_alert",
+            "instant_alert",
+            "stream deck",
+            "twitch api",
         ],
         related_topics=[
-            "spore_studio_design", "spore_studio_advanced",
-            "template_websocket", "connector_examples",
+            "spore_studio_design",
+            "spore_studio_advanced",
+            "template_websocket",
+            "connector_examples",
         ],
     ),
-
     "spore_studio_advanced": HelpTopic(
         id="spore_studio_advanced",
         title="Advanced JS, Preview & Legacy Templates",
@@ -3481,15 +3555,22 @@ Legacy templates **cannot** receive new blocks from the palette — toast: *Lega
 - [Spore Studio Examples & Recipes](help:spore_studio_examples)
         """,
         keywords=[
-            "advanced js", "preview", "legacy", "stream deck", "alert_complete",
-            "queue", "sporeShow", "mock",
+            "advanced js",
+            "preview",
+            "legacy",
+            "stream deck",
+            "alert_complete",
+            "queue",
+            "sporeShow",
+            "mock",
         ],
         related_topics=[
-            "spore_studio_bindings", "spore_studio_examples",
-            "template_websocket", "alerts_overview",
+            "spore_studio_bindings",
+            "spore_studio_examples",
+            "template_websocket",
+            "alerts_overview",
         ],
     ),
-
     "spore_studio_examples": HelpTopic(
         id="spore_studio_examples",
         title="Spore Studio Examples & Recipes",
@@ -3639,15 +3720,20 @@ On `next_alert` (any type), primary **Show**, then chain:
 - [First Alert Setup](help:first_alert_setup)
         """,
         keywords=[
-            "examples", "recipes", "tutorial", "follow alert", "walkthrough",
+            "examples",
+            "recipes",
+            "tutorial",
+            "follow alert",
+            "walkthrough",
             "spore studio",
         ],
         related_topics=[
-            "spore_studio_overview", "spore_studio_bindings",
-            "first_alert_setup", "source_controls",
+            "spore_studio_overview",
+            "spore_studio_bindings",
+            "first_alert_setup",
+            "source_controls",
         ],
     ),
-
     # =========================================
     # Integrations
     # =========================================
@@ -3771,9 +3857,8 @@ Mycelian requests these scopes:
 - Revoke access when needed
         """,
         keywords=["twitch", "integration", "oauth", "events", "webhooks"],
-        related_topics=["getting_started_intro", "alerts_overview"]
+        related_topics=["getting_started_intro", "alerts_overview"],
     ),
-
     # =========================================
     # Settings
     # =========================================
@@ -3856,9 +3941,8 @@ Settings are stored in:
 > **Tip:** If you're just getting started, follow the [Welcome to Mycelian](help:getting_started_intro) guide which walks through essential settings step by step.
         """,
         keywords=["settings", "configuration", "preferences", "setup"],
-        related_topics=["integrations_twitch", "settings_backup", "game_hooks"]
+        related_topics=["integrations_twitch", "settings_backup", "game_hooks"],
     ),
-
     "game_hooks": HelpTopic(
         id="game_hooks",
         title="Game Hooks (live game data)",
@@ -3918,10 +4002,17 @@ Huge shoutouts to **m4v3k** for all of their work and contributions to the FF7 c
 - [Connector Actions](help:connector_actions) — trigger wiring
 - [Settings overview](help:settings_overview)
         """,
-        keywords=["ff7", "memory", "overlay", "battle", "gil", "crowd control", "connectors"],
+        keywords=[
+            "ff7",
+            "memory",
+            "overlay",
+            "battle",
+            "gil",
+            "crowd control",
+            "connectors",
+        ],
         related_topics=["settings_overview", "connector_actions", "templates_intro"],
     ),
-
     # =========================================
     # Troubleshooting
     # =========================================
@@ -4004,9 +4095,8 @@ Modern browsers block autoplay. Solutions:
 4. Restart the app if persistent
         """,
         keywords=["troubleshoot", "fix", "problem", "not working", "issue", "error"],
-        related_topics=["alerts_overview", "obs_setup"]
+        related_topics=["alerts_overview", "obs_setup"],
     ),
-
     "troubleshooting_connections": HelpTopic(
         id="troubleshooting_connections",
         title="Connection and Integration Issues",
@@ -4144,10 +4234,16 @@ Use diagnostic tools:
 - Confirm webhook URLs
 - Validate JSON configurations
         """,
-        keywords=["connection", "network", "integration", "webhook", "websocket", "api"],
-        related_topics=["integrations_twitch", "alerts_overview"]
+        keywords=[
+            "connection",
+            "network",
+            "integration",
+            "webhook",
+            "websocket",
+            "api",
+        ],
+        related_topics=["integrations_twitch", "alerts_overview"],
     ),
-
     "troubleshooting_audio": HelpTopic(
         id="troubleshooting_audio",
         title="Audio Troubleshooting",
@@ -4306,10 +4402,18 @@ comes from Spotify app:
 3. Check for duplicate alerts
 4. Test with different alert type
         """,
-        keywords=["audio", "sound", "volume", "music", "mute", "quiet", "loud", "crackling"],
-        related_topics=["alert_media", "troubleshooting_alerts", "obs_setup"]
+        keywords=[
+            "audio",
+            "sound",
+            "volume",
+            "music",
+            "mute",
+            "quiet",
+            "loud",
+            "crackling",
+        ],
+        related_topics=["alert_media", "troubleshooting_alerts", "obs_setup"],
     ),
-
     "troubleshooting_performance": HelpTopic(
         id="troubleshooting_performance",
         title="Performance Issues and Optimization",
@@ -4493,9 +4597,8 @@ comes from Spotify app:
 - [ ] Check network performance
         """,
         keywords=["performance", "lag", "cpu", "memory", "optimization", "speed"],
-        related_topics=["obs_setup", "template_configuration"]
+        related_topics=["obs_setup", "template_configuration"],
     ),
-
     # =========================================
     # Additional Integrations
     # =========================================
@@ -4611,9 +4714,8 @@ Use these steps when Mycelian should use **your** Spotify application credential
         """,
         keywords=["spotify", "music", "now playing", "song", "audio", "integration"],
         related_topics=["templates_intro", "obs_setup"],
-        ui_context="settings.spotify"
+        ui_context="settings.spotify",
     ),
-
     "integrations_psn": HelpTopic(
         id="integrations_psn",
         title="PlayStation Network Integration",
@@ -4723,11 +4825,18 @@ On your PlayStation console:
 
 > **Warning:** NPSSO tokens expire after approximately 60 days. You'll need to re-authenticate when this happens.
         """,
-        keywords=["psn", "playstation", "trophy", "achievements", "gaming", "ps4", "ps5"],
+        keywords=[
+            "psn",
+            "playstation",
+            "trophy",
+            "achievements",
+            "gaming",
+            "ps4",
+            "ps5",
+        ],
         related_topics=["alerts_overview", "templates_intro"],
-        ui_context="settings.psn"
+        ui_context="settings.psn",
     ),
-
     "integrations_youtube": HelpTopic(
         id="integrations_youtube",
         title="YouTube Integration",
@@ -4849,9 +4958,19 @@ characters removed):
 
 > **Tip:** Use YouTube [chatbot variables](help:chatbot_variables) like `{youtube.latest_video_url}` in custom [commands](help:chatbot_commands) to automatically share your latest uploads with viewers.
         """,
-        keywords=["youtube", "videos", "channel", "google", "uploads", "content",
-                   "playlist", "filter", "exclude", "api key"],
+        keywords=[
+            "youtube",
+            "videos",
+            "channel",
+            "google",
+            "uploads",
+            "content",
+            "playlist",
+            "filter",
+            "exclude",
+            "api key",
+        ],
         related_topics=["templates_intro", "obs_setup"],
-        ui_context="settings.youtube"
+        ui_context="settings.youtube",
     ),
 }

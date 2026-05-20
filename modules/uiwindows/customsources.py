@@ -1994,7 +1994,7 @@ def save_config(config_parser, config_select, config_container):
                 try:
                     from ..game_hooks_service import game_hooks_service
 
-                    game_hooks_service.reload_ff7_boss_match_sets()
+                    game_hooks_service.reload_hook_config("ff7")
                 except Exception as e:
                     logger.warning(
                         "FF7 boss match sets refresh after save failed: %s",

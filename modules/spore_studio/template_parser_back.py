@@ -65,7 +65,10 @@ def _hydrate_canvas_timing_from_public_config(
     template_name: str, sidecar: Dict[str, Any]
 ) -> None:
     """Copy Duration / Queued from public JSON when absent on the sidecar."""
-    if sidecar.get("duration_seconds") is not None and sidecar.get("queued") is not None:
+    if (
+        sidecar.get("duration_seconds") is not None
+        and sidecar.get("queued") is not None
+    ):
         return
     try:
         from ..template_config_parser import (
@@ -134,13 +137,13 @@ def _migrate_legacy_sidecar(template_name: str) -> None:
     try:
         os.makedirs(os.path.dirname(new_path), exist_ok=True)
         os.replace(old_path, new_path)
-        logger.info(
-            "Spore sidecar migrated: %s -> %s", old_path, new_path
-        )
+        logger.info("Spore sidecar migrated: %s -> %s", old_path, new_path)
     except OSError as e:
         logger.warning(
             "Could not migrate spore sidecar %s -> %s: %s",
-            old_path, new_path, e,
+            old_path,
+            new_path,
+            e,
         )
 
 
@@ -157,7 +160,7 @@ def migrate_all_sidecars() -> int:
     pattern = os.path.join(legacy_dir, f"*{_SIDECAR_SUFFIX}")
     migrated = 0
     for old_path in glob.glob(pattern):
-        stem = os.path.basename(old_path)[:-len(_SIDECAR_SUFFIX)]
+        stem = os.path.basename(old_path)[: -len(_SIDECAR_SUFFIX)]
         if not stem:
             continue
         before = os.path.isfile(_spore_sidecar_path(stem))
@@ -205,7 +208,10 @@ def save_sidecar(template_name: str, model: Dict[str, Any]) -> bool:
 def remove_sidecar(template_name: str) -> None:
     """Delete ``.spore.json`` sidecar(s) for this template if they exist."""
     _migrate_legacy_sidecar(template_name)
-    for path in (_spore_sidecar_path(template_name), _legacy_sidecar_path(template_name)):
+    for path in (
+        _spore_sidecar_path(template_name),
+        _legacy_sidecar_path(template_name),
+    ):
         try:
             if os.path.isfile(path):
                 os.remove(path)
@@ -274,16 +280,18 @@ def _synthesize_legacy_elements(template_name: str) -> list:
         eid = entry.get("id")
         if not eid:
             continue
-        out.append({
-            "id": str(eid),
-            "type": _LEGACY_TYPE_MAP.get(entry_type, "text"),
-            "category": current_category,
-            "props": {"value": entry.get("value")},
-            "legacy_field": entry,
-            "position": None,
-            "size": None,
-            "bindings": [],
-        })
+        out.append(
+            {
+                "id": str(eid),
+                "type": _LEGACY_TYPE_MAP.get(entry_type, "text"),
+                "category": current_category,
+                "props": {"value": entry.get("value")},
+                "legacy_field": entry,
+                "position": None,
+                "size": None,
+                "bindings": [],
+            }
+        )
     return out
 
 
@@ -336,7 +344,9 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
         positioned = reverse_parse_legacy(template_name)
     except Exception as e:  # pragma: no cover - parser is best-effort
         logger.warning(
-            "Reverse parser failed for %s: %s", template_name, e,
+            "Reverse parser failed for %s: %s",
+            template_name,
+            e,
         )
         positioned = None
 
