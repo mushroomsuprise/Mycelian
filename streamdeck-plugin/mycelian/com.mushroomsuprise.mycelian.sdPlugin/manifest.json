@@ -1,6 +1,6 @@
 {
 	"Name": "Mycelian",
-	"Version": "0.1.0.0",
+	"Version": "0.2.0.0",
 	"Author": "mushroomsuprise",
 	"Actions": [
 		{
@@ -15,6 +15,22 @@
 			"States": [
 				{
 					"Image": "imgs/actions/togglealerts/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Connector",
+			"UUID": "com.mushroomsuprise.mycelian.connector",
+			"Icon": "imgs/actions/connector/icon",
+			"Tooltip": "Runs a Mycelian connector configured with a Stream Deck trigger.",
+			"PropertyInspectorPath": "ui/connector-action.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/connector/key",
 					"TitleAlignment": "middle"
 				}
 			]

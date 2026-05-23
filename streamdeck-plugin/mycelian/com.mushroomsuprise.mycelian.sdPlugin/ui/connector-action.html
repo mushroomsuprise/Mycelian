@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <title>Connector Settings</title>
+    <meta charset="utf-8" />
+    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <style>
+        .section {
+            margin-bottom: 16px;
+        }
+
+        .config-field {
+            margin-bottom: 10px;
+        }
+
+        .config-field label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 3px;
+            font-weight: bold;
+        }
+
+        .config-field select {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .refresh-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-left: 10px;
+        }
+
+        .refresh-button:hover {
+            background: #0056b3;
+        }
+
+        .refresh-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .status-message {
+            font-size: 12px;
+            margin-top: 6px;
+        }
+
+        .status-message.info {
+            color: #6c757d;
+        }
+
+        .status-message.success {
+            color: #28a745;
+        }
+
+        .status-message.error {
+            color: #dc3545;
+        }
+
+        .help-text {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+
+<body>
+    <sdpi-item style="display: none;">
+        <sdpi-textfield setting="connectorId" id="connectorIdSetting"></sdpi-textfield>
+        <sdpi-textfield setting="connectorName" id="connectorNameSetting"></sdpi-textfield>
+    </sdpi-item>
+
+    <sdpi-item label="Connection" class="section">
+        <sdpi-textfield setting="serverUrl" label="Mycelian server" placeholder="127.0.0.1:5000" default="127.0.0.1:5000"></sdpi-textfield>
+        <button type="button" class="refresh-button" id="test-connection">Test</button>
+        <div id="connection-status" class="status-message"></div>
+    </sdpi-item>
+
+    <sdpi-item label="Connector" class="section">
+        <div class="config-field">
+            <label for="connector-select">Select connector</label>
+            <select id="connector-select" disabled>
+                <option value="">Loading connectors...</option>
+            </select>
+            <button type="button" class="refresh-button" id="refresh-connectors">Refresh</button>
+        </div>
+        <div id="connector-error" class="status-message error" style="display: none;"></div>
+        <p class="help-text">
+            Create a connector in Mycelian with the <strong>Stream Deck</strong> trigger, then refresh this list.
+        </p>
+    </sdpi-item>
+
+    <sdpi-item label="About" class="section">
+        <sdpi-text>
+            Press the button to run the selected connector's actions. The key label shows the connector name.
+        </sdpi-text>
+    </sdpi-item>
+
+    <script>
+        let currentSettings = { serverUrl: '127.0.0.1:5000' };
+        let availableConnectors = [];
+
+        const connectorSelect = document.getElementById('connector-select');
+        const connectionStatus = document.getElementById('connection-status');
+        const connectorError = document.getElementById('connector-error');
+        const refreshConnectorsBtn = document.getElementById('refresh-connectors');
+        const testConnectionBtn = document.getElementById('test-connection');
+
+        document.addEventListener('DOMContentLoaded', function () {
+            setupEventListeners();
+            readSettingsFromComponents();
+            loadConnectors();
+        });
+
+        function setupEventListeners() {
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            if (serverUrlField) {
+                serverUrlField.addEventListener('change', function () {
+                    currentSettings.serverUrl = this.value;
+                    saveSettings();
+                    loadConnectors();
+                });
+            }
+
+            connectorSelect.addEventListener('change', function () {
+                const option = this.options[this.selectedIndex];
+                currentSettings.connectorId = this.value || '';
+                currentSettings.connectorName = option && option.dataset.name
+                    ? option.dataset.name
+                    : (option ? option.textContent : '');
+                saveSettings();
+            });
+
+            refreshConnectorsBtn.addEventListener('click', loadConnectors);
+            testConnectionBtn.addEventListener('click', testServerConnection);
+        }
+
+        function readSettingsFromComponents() {
+            const connectorIdSetting = document.getElementById('connectorIdSetting');
+            const connectorNameSetting = document.getElementById('connectorNameSetting');
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+
+            if (serverUrlField && serverUrlField.value) {
+                currentSettings.serverUrl = serverUrlField.value;
+            }
+            if (connectorIdSetting && connectorIdSetting.value) {
+                currentSettings.connectorId = connectorIdSetting.value;
+            }
+            if (connectorNameSetting && connectorNameSetting.value) {
+                currentSettings.connectorName = connectorNameSetting.value;
+            }
+        }
+
+        function saveSettings() {
+            const connectorIdSetting = document.getElementById('connectorIdSetting');
+            const connectorNameSetting = document.getElementById('connectorNameSetting');
+            if (connectorIdSetting) {
+                connectorIdSetting.value = currentSettings.connectorId || '';
+            }
+            if (connectorNameSetting) {
+                connectorNameSetting.value = currentSettings.connectorName || '';
+            }
+        }
+
+        function parseServerUrl(serverUrl) {
+            const parts = serverUrl.split(':');
+            if (parts.length === 2) {
+                return { host: parts[0], port: parseInt(parts[1], 10) };
+            }
+            return { host: parts[0], port: 5000 };
+        }
+
+        function showConnectionStatus(message, type) {
+            connectionStatus.textContent = message;
+            connectionStatus.className = 'status-message ' + type;
+        }
+
+        function showConnectorError(message) {
+            connectorError.textContent = message;
+            connectorError.style.display = 'block';
+        }
+
+        function hideConnectorError() {
+            connectorError.style.display = 'none';
+        }
+
+        async function testServerConnection() {
+            const serverUrl = currentSettings.serverUrl || '127.0.0.1:5000';
+            const { host, port } = parseServerUrl(serverUrl);
+            showConnectionStatus('Testing connection...', 'info');
+
+            try {
+                const response = await fetch(`http://${host}:${port}/api/streamdeck/check_connection`);
+                const result = await response.json();
+                if (result.success) {
+                    showConnectionStatus('Connected to Mycelian', 'success');
+                    loadConnectors();
+                } else {
+                    showConnectionStatus('Connection failed', 'error');
+                }
+            } catch (error) {
+                showConnectionStatus('Connection failed — is Mycelian running?', 'error');
+            }
+        }
+
+        async function loadConnectors() {
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            const serverUrl = (serverUrlField && serverUrlField.value) || currentSettings.serverUrl || '127.0.0.1:5000';
+            const { host, port } = parseServerUrl(serverUrl);
+
+            connectorSelect.disabled = true;
+            refreshConnectorsBtn.disabled = true;
+
+            try {
+                const response = await fetch(`http://${host}:${port}/api/streamdeck/get_connectors`);
+                const result = await response.json();
+
+                if (result.success && Array.isArray(result.connectors)) {
+                    availableConnectors = result.connectors;
+                    populateConnectorSelect();
+                    hideConnectorError();
+                } else {
+                    showConnectorError('Failed to load connectors from server');
+                    connectorSelect.innerHTML = '<option value="">No connectors found</option>';
+                }
+            } catch (error) {
+                showConnectorError('Failed to load connectors — check server connection');
+                connectorSelect.innerHTML = '<option value="">Connection failed</option>';
+            } finally {
+                connectorSelect.disabled = false;
+                refreshConnectorsBtn.disabled = false;
+            }
+        }
+
+        function populateConnectorSelect() {
+            connectorSelect.innerHTML = '<option value="">Select a connector...</option>';
+
+            availableConnectors.forEach(function (connector) {
+                const option = document.createElement('option');
+                option.value = connector.connector_id;
+                option.textContent = connector.name;
+                option.dataset.name = connector.name;
+                if (connector.description) {
+                    option.title = connector.description;
+                }
+                connectorSelect.appendChild(option);
+            });
+
+            if (currentSettings.connectorId) {
+                const exists = availableConnectors.some(function (c) {
+                    return c.connector_id === currentSettings.connectorId;
+                });
+                if (exists) {
+                    connectorSelect.value = currentSettings.connectorId;
+                }
+            }
+        }
+
+        if (typeof $SD !== 'undefined' && typeof $SD.on === 'function') {
+            $SD.on('didReceiveSettings', function (settings) {
+                const newSettings = settings || {};
+                if (!newSettings.serverUrl) {
+                    newSettings.serverUrl = '127.0.0.1:5000';
+                }
+                currentSettings = newSettings;
+                readSettingsFromComponents();
+                if (availableConnectors.length === 0) {
+                    loadConnectors();
+                } else {
+                    populateConnectorSelect();
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

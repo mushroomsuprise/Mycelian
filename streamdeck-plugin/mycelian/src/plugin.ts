@@ -1,5 +1,6 @@
 import streamDeck, { LogLevel } from "@elgato/streamdeck";
 
+import { ConnectorAction } from "./actions/connector-action";
 import { TemplateAction } from "./actions/template-action";
 import { ToggleAlerts } from "./actions/toggle-alerts";
 
@@ -11,6 +12,9 @@ streamDeck.actions.registerAction(new ToggleAlerts());
 
 // Register the template action.
 streamDeck.actions.registerAction(new TemplateAction());
+
+// Register the connector action.
+streamDeck.actions.registerAction(new ConnectorAction());
 
 // Finally, connect to the Stream Deck.
 streamDeck.connect();

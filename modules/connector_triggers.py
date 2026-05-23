@@ -315,6 +315,25 @@ class HotkeyTrigger(BaseTrigger):
 
 
 @dataclass
+class StreamdeckTrigger(BaseTrigger):
+    """Trigger for Stream Deck button activation via the Mycelian plugin."""
+
+    connector_id: str = ""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.STREAMDECK
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "streamdeck":
+            return False
+        if not self.connector_id:
+            return False
+        if event_data.get("connector_id") != self.connector_id:
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
 class WebhookTrigger(BaseTrigger):
     """Trigger for webhook events"""
 
@@ -405,6 +424,7 @@ def create_trigger(
         TriggerType.TIMER: TimerTrigger,
         TriggerType.SCHEDULE: ScheduleTrigger,
         TriggerType.HOTKEY: HotkeyTrigger,
+        TriggerType.STREAMDECK: StreamdeckTrigger,
         TriggerType.WEBHOOK: WebhookTrigger,
         TriggerType.OBS_SCENE_CHANGED: ObsSceneChangedTrigger,
         TriggerType.OBS_STREAM_STATE: ObsStreamStateTrigger,

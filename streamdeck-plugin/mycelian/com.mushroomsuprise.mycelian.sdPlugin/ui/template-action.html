@@ -111,15 +111,15 @@
         <sdpi-textfield setting="actionData" id="actionDataSetting"></sdpi-textfield>
     </sdpi-item>
 
-    <sdpi-item label="Server Configuration" class="template-section">
-        <sdpi-textfield setting="serverUrl" label="Server URL" placeholder="127.0.0.1:5000" default="127.0.0.1:5000"></sdpi-textfield>
-        <button class="refresh-button" id="test-connection">Test Connection</button>
+    <sdpi-item label="Connection" class="template-section">
+        <sdpi-textfield setting="serverUrl" label="Mycelian server" placeholder="127.0.0.1:5000" default="127.0.0.1:5000"></sdpi-textfield>
+        <button type="button" class="refresh-button" id="test-connection">Test</button>
         <div id="connection-status"></div>
     </sdpi-item>
 
-    <sdpi-item label="Template Selection" class="template-section">
+    <sdpi-item label="Template" class="template-section">
         <div class="config-field">
-            <label for="template-select">Select Template:</label>
+            <label for="template-select">Template</label>
             <select id="template-select" disabled>
                 <option value="">Select a template...</option>
             </select>
@@ -128,9 +128,9 @@
         <div id="template-error" class="error-message" style="display: none;"></div>
     </sdpi-item>
 
-    <sdpi-item label="Action Selection" class="action-section">
+    <sdpi-item label="Action" class="action-section">
         <div class="config-field">
-            <label for="action-select">Select Action:</label>
+            <label for="action-select">Action</label>
             <select id="action-select" disabled>
                 <option value="">Select a template first</option>
             </select>
@@ -140,7 +140,7 @@
         <div id="action-error" class="error-message" style="display: none;"></div>
     </sdpi-item>
 
-    <sdpi-item label="Action Configuration" class="config-section">
+    <sdpi-item label="Parameters" class="config-section">
         <div id="action-config" style="display: none;">
             <!-- Dynamic configuration fields will be added here -->
         </div>
@@ -149,17 +149,8 @@
 
     <sdpi-item label="About">
         <sdpi-text>
-            This action executes configurable template actions from your Mycelian web server.
-            <br><br>
-            Features:
-            <br>• Select from available templates with controls
-            <br>• Choose specific actions from the selected template
-            <br>• Configure action parameters (values, text, toggles, etc.)
-            <br>• Each button can be configured for different templates/actions
-            <br><br>
-            The button will display the selected template and action name.
-            <br><br>
-            Make sure your Mycelian web server is running before configuring this action.
+            Run a Spore Studio template action from Stream Deck. Pick a template, action, and optional parameters.
+            The key label shows your selection. Ensure Mycelian is running before configuring.
         </sdpi-text>
     </sdpi-item>
 

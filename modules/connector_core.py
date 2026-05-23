@@ -73,6 +73,7 @@ class TriggerType(Enum):
 
     # Manual/Custom Triggers
     HOTKEY = "hotkey"
+    STREAMDECK = "streamdeck"
     WEBHOOK = "webhook"
 
     # OBS Studio (WebSocket) triggers

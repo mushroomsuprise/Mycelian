@@ -5,30 +5,100 @@
     <title>Toggle Alerts Settings</title>
     <meta charset="utf-8" />
     <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <style>
+        .status-message {
+            font-size: 12px;
+            margin-top: 6px;
+        }
+
+        .status-message.info {
+            color: #6c757d;
+        }
+
+        .status-message.success {
+            color: #28a745;
+        }
+
+        .status-message.error {
+            color: #dc3545;
+        }
+
+        .refresh-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-left: 10px;
+        }
+
+        .refresh-button:hover {
+            background: #0056b3;
+        }
+
+        .help-text {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.4;
+        }
+    </style>
 </head>
 
 <body>
-    <!--
-        Learn more about property inspector components at https://sdpi-components.dev/docs/components
-    -->
-    <sdpi-item label="Server Configuration">
-        <sdpi-textfield setting="serverUrl" label="Server URL" placeholder="127.0.0.1:5000" default="127.0.0.1:5000"></sdpi-textfield>
+    <sdpi-item label="Connection">
+        <sdpi-textfield setting="serverUrl" label="Mycelian server" placeholder="127.0.0.1:5000" default="127.0.0.1:5000"></sdpi-textfield>
+        <button type="button" class="refresh-button" id="test-connection">Test</button>
+        <div id="connection-status" class="status-message"></div>
     </sdpi-item>
 
     <sdpi-item label="About">
         <sdpi-text>
-            This action connects to your Mycelian web server to toggle alert playback.
-            <br><br>
-            Default settings:
-            <br>• Server URL: 127.0.0.1:5000 (host:port format)
-            <br><br>
-            The button will show "TOGGLE ALERTS" with "ACTIVE" below when alerts are playing,
-            and "PAUSED" below when alerts are paused.
-            <br><br>
-            The button automatically syncs with your app - it will update if alerts are paused/resumed
-            from within the Mycelian interface.
+            <span class="help-text">
+                Toggles alert playback in Mycelian. The key shows ACTIVE or PAUSED and stays in sync with the app.
+                Default server: 127.0.0.1:5000
+            </span>
         </sdpi-text>
     </sdpi-item>
+
+    <script>
+        const testConnectionBtn = document.getElementById('test-connection');
+        const connectionStatus = document.getElementById('connection-status');
+
+        function parseServerUrl(serverUrl) {
+            const parts = serverUrl.split(':');
+            if (parts.length === 2) {
+                return { host: parts[0], port: parseInt(parts[1], 10) };
+            }
+            return { host: parts[0], port: 5000 };
+        }
+
+        function showConnectionStatus(message, type) {
+            connectionStatus.textContent = message;
+            connectionStatus.className = 'status-message ' + type;
+        }
+
+        testConnectionBtn.addEventListener('click', async function () {
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            const serverUrl = (serverUrlField && serverUrlField.value) || '127.0.0.1:5000';
+            const { host, port } = parseServerUrl(serverUrl);
+            showConnectionStatus('Testing connection...', 'info');
+
+            try {
+                const response = await fetch(`http://${host}:${port}/api/streamdeck/check_connection`);
+                const result = await response.json();
+                if (result.success) {
+                    const paused = result.alerts_paused ? 'paused' : 'active';
+                    showConnectionStatus('Connected — alerts are ' + paused, 'success');
+                } else {
+                    showConnectionStatus('Connection failed', 'error');
+                }
+            } catch (error) {
+                showConnectionStatus('Connection failed — is Mycelian running?', 'error');
+            }
+        });
+    </script>
 </body>
 
 </html>

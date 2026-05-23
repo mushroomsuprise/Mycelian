@@ -1,4 +1,5 @@
 import { action, DidReceiveSettingsEvent, KeyDownEvent, SingletonAction, WillAppearEvent, WillDisappearEvent } from "@elgato/streamdeck";
+import { apiUrl, DEFAULT_SERVER_URL, parseServerConfig } from "../lib/server-config";
 
 /**
  * Settings for {@link TemplateAction}.
@@ -15,36 +16,8 @@ type TemplateActionSettings = {
  */
 @action({ UUID: "com.mushroomsuprise.mycelian.templateaction" })
 export class TemplateAction extends SingletonAction<TemplateActionSettings> {
-	private readonly DEFAULT_SERVER_URL = "127.0.0.1:5000";
 	private pollingTimer: NodeJS.Timeout | null = null;
 	private readonly POLLING_INTERVAL = 5000; // Poll every 5 seconds for configuration updates
-
-	/**
-	 * Parse server URL string into host and port components
-	 */
-	private parseServerConfig(serverUrl: string): { host: string; port: number } {
-		// Handle formats like "127.0.0.1:5000" or just "127.0.0.1"
-		const parts = serverUrl.split(':');
-		if (parts.length === 2) {
-			return {
-				host: parts[0],
-				port: parseInt(parts[1], 10)
-			};
-		} else if (parts.length === 1) {
-			// Default port if not specified
-			return {
-				host: parts[0],
-				port: 5000
-			};
-		} else {
-			// Invalid format, return defaults
-			console.warn(`Invalid server URL format: ${serverUrl}, using defaults`);
-			return {
-				host: "127.0.0.1",
-				port: 5000
-			};
-		}
-	}
 
 	/**
 	 * Start polling the server for template actions updates
@@ -77,7 +50,7 @@ export class TemplateAction extends SingletonAction<TemplateActionSettings> {
 	 */
 	private async pollTemplateActions(serverConfig: { host: string; port: number }, action: any): Promise<void> {
 		try {
-			const response = await fetch(`http://${serverConfig.host}:${serverConfig.port}/api/streamdeck/get_template_actions`);
+			const response = await fetch(apiUrl(serverConfig, "/api/streamdeck/get_template_actions"));
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 			}
@@ -97,7 +70,7 @@ export class TemplateAction extends SingletonAction<TemplateActionSettings> {
 	 */
 	private async getAvailableTemplateActions(serverConfig: { host: string; port: number }): Promise<any[]> {
 		try {
-			const response = await fetch(`http://${serverConfig.host}:${serverConfig.port}/api/streamdeck/get_template_actions`);
+			const response = await fetch(apiUrl(serverConfig, "/api/streamdeck/get_template_actions"));
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 			}
@@ -115,8 +88,8 @@ export class TemplateAction extends SingletonAction<TemplateActionSettings> {
 	 */
 	override async onWillAppear(ev: WillAppearEvent<TemplateActionSettings>): Promise<void> {
 		const { settings } = ev.payload;
-		const serverUrl = settings.serverUrl || this.DEFAULT_SERVER_URL;
-		const serverConfig = this.parseServerConfig(serverUrl);
+		const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
+		const serverConfig = parseServerConfig(serverUrl);
 
 		// Update button title initially
 		await this.updateButtonTitle(ev.action, settings);
@@ -148,8 +121,8 @@ export class TemplateAction extends SingletonAction<TemplateActionSettings> {
 				return;
 			}
 
-			const serverUrl = settings.serverUrl || this.DEFAULT_SERVER_URL;
-			const serverConfig = this.parseServerConfig(serverUrl);
+			const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
+			const serverConfig = parseServerConfig(serverUrl);
 			console.log('Using server config:', serverConfig);
 
 			// Prepare the template action request
@@ -162,7 +135,7 @@ export class TemplateAction extends SingletonAction<TemplateActionSettings> {
 			console.log(`Executing template action: ${settings.selectedTemplate}.${settings.selectedAction}`, requestData);
 
 			// Send the request to execute the template action
-			const requestUrl = `http://${serverConfig.host}:${serverConfig.port}/api/streamdeck/template_action`;
+			const requestUrl = apiUrl(serverConfig, "/api/streamdeck/template_action");
 			console.log('Making HTTP request to:', requestUrl);
 
 			const response = await fetch(requestUrl, {
@@ -214,8 +187,8 @@ export class TemplateAction extends SingletonAction<TemplateActionSettings> {
 		const { settings } = ev.payload;
 		console.log('Template Action received settings:', JSON.stringify(settings, null, 2));
 
-		const serverUrl = settings.serverUrl || this.DEFAULT_SERVER_URL;
-		const serverConfig = this.parseServerConfig(serverUrl);
+		const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
+		const serverConfig = parseServerConfig(serverUrl);
 
 		// Update button title with new settings
 		await this.updateButtonTitle(ev.action, settings);

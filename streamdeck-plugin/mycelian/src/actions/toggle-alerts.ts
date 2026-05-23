@@ -1,4 +1,5 @@
 import { action, DidReceiveSettingsEvent, KeyDownEvent, SingletonAction, WillAppearEvent, WillDisappearEvent } from "@elgato/streamdeck";
+import { apiUrl, DEFAULT_SERVER_URL, parseServerConfig } from "../lib/server-config";
 
 /**
  * Settings for {@link ToggleAlerts}.
@@ -12,37 +13,9 @@ type ToggleAlertsSettings = {
  */
 @action({ UUID: "com.mushroomsuprise.mycelian.togglealerts" })
 export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
-	private readonly DEFAULT_SERVER_URL = "127.0.0.1:5000";
 	private pollingTimer: NodeJS.Timeout | null = null;
 	private readonly POLLING_INTERVAL = 2000; // Poll every 2 seconds
 	private lastKnownStatus: 'ACTIVE' | 'PAUSED' | 'ERROR' | null = null;
-
-	/**
-	 * Parse server URL string into host and port components
-	 */
-	private parseServerConfig(serverUrl: string): { host: string; port: number } {
-		// Handle formats like "127.0.0.1:5000" or just "127.0.0.1"
-		const parts = serverUrl.split(':');
-		if (parts.length === 2) {
-			return {
-				host: parts[0],
-				port: parseInt(parts[1], 10)
-			};
-		} else if (parts.length === 1) {
-			// Default port if not specified
-			return {
-				host: parts[0],
-				port: 5000
-			};
-		} else {
-			// Invalid format, return defaults
-			console.warn(`Invalid server URL format: ${serverUrl}, using defaults`);
-			return {
-				host: "127.0.0.1",
-				port: 5000
-			};
-		}
-	}
 
 	/**
 	 * Start polling the server for status updates
@@ -82,7 +55,7 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 
 			// Race between fetch and timeout
 			const response = await Promise.race([
-				fetch(`http://${serverConfig.host}:${serverConfig.port}/api/streamdeck/get_pause_status`),
+				fetch(apiUrl(serverConfig, "/api/streamdeck/get_pause_status")),
 				timeoutPromise
 			]) as Response;
 
@@ -127,8 +100,8 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 	 */
 	override async onWillAppear(ev: WillAppearEvent<ToggleAlertsSettings>): Promise<void> {
 		const { settings } = ev.payload;
-		const serverUrl = settings.serverUrl || this.DEFAULT_SERVER_URL;
-		const serverConfig = this.parseServerConfig(serverUrl);
+		const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
+		const serverConfig = parseServerConfig(serverUrl);
 
 		// Update button title initially
 		await this.updateButtonTitle(ev);
@@ -152,11 +125,11 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 	override async onKeyDown(ev: KeyDownEvent<ToggleAlertsSettings>): Promise<void> {
 		try {
 			const { settings } = ev.payload;
-			const serverUrl = settings.serverUrl || this.DEFAULT_SERVER_URL;
-			const serverConfig = this.parseServerConfig(serverUrl);
+			const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
+			const serverConfig = parseServerConfig(serverUrl);
 
 			// Send toggle request to the Mycelian web server
-			const response = await fetch(`http://${serverConfig.host}:${serverConfig.port}/api/streamdeck/toggle_alerts`, {
+			const response = await fetch(apiUrl(serverConfig, "/api/streamdeck/toggle_alerts"), {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -191,8 +164,8 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 	 */
 	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<ToggleAlertsSettings>): Promise<void> {
 		const { settings } = ev.payload;
-		const serverUrl = settings.serverUrl || this.DEFAULT_SERVER_URL;
-		const serverConfig = this.parseServerConfig(serverUrl);
+		const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
+		const serverConfig = parseServerConfig(serverUrl);
 
 		// Restart polling with new server configuration
 		this.startPolling(serverConfig, ev.action);
@@ -207,8 +180,8 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 	private async updateButtonTitle(ev: KeyDownEvent<ToggleAlertsSettings> | WillAppearEvent<ToggleAlertsSettings> | DidReceiveSettingsEvent<ToggleAlertsSettings>, forcePaused?: boolean): Promise<void> {
 		try {
 			const { settings } = ev.payload;
-			const serverUrl = settings.serverUrl || this.DEFAULT_SERVER_URL;
-			const serverConfig = this.parseServerConfig(serverUrl);
+			const serverUrl = settings.serverUrl || DEFAULT_SERVER_URL;
+			const serverConfig = parseServerConfig(serverUrl);
 
 			let status: 'ACTIVE' | 'PAUSED' | 'ERROR';
 

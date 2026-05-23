@@ -1361,6 +1361,7 @@ def format_trigger_name(trigger_type: TriggerType) -> str:
         TriggerType.TIMER: "Timer",
         TriggerType.SCHEDULE: "Schedule",
         TriggerType.HOTKEY: "Hotkey",
+        TriggerType.STREAMDECK: "Stream Deck",
         TriggerType.WEBHOOK: "Webhook",
         TriggerType.OBS_SCENE_CHANGED: "OBS Scene",
         TriggerType.OBS_STREAM_STATE: "OBS Stream",
@@ -1557,6 +1558,19 @@ def create_connector_form(connector_id: str = None):
             "is_global": getattr(existing_connector.trigger, "is_global", True),
         }
 
+    if (
+        existing_connector
+        and existing_connector.trigger
+        and existing_connector.trigger.trigger_type.value == "streamdeck"
+    ):
+        form_data["trigger_config"] = {
+            "connector_id": getattr(
+                existing_connector.trigger,
+                "connector_id",
+                existing_connector.connector_id,
+            ),
+        }
+
     # Populate existing actions
     if existing_connector and existing_connector.actions:
         for action in existing_connector.actions:
@@ -1663,6 +1677,7 @@ def create_connector_form(connector_id: str = None):
                         "twitch_chat_message": "Chat Message",
                         "donation": "Donation",
                         "hotkey": "Hotkey Trigger",
+                        "streamdeck": "Stream Deck",
                         "obs_scene_changed": "OBS — Program scene changed",
                         "obs_stream_state": "OBS — Stream status",
                         "obs_record_state": "OBS — Recording status",
@@ -1791,6 +1806,16 @@ def handle_trigger_type_change(
                     {"is_global": e.value}
                 ),
             ).classes("mb-3")
+
+    elif trigger_type == "streamdeck":
+        with trigger_config_container:
+            ui.label("Stream Deck Configuration").classes(
+                "text-sm font-medium secondary-text mb-2"
+            )
+            ui.label(
+                "Assign this connector on a Stream Deck button using the "
+                "Connector action in the Mycelian Stream Deck plugin."
+            ).classes("text-xs muted-text mb-3")
 
     with conditions_container:
         ui.label("Conditions (optional)").classes(
@@ -4756,6 +4781,7 @@ def save_new_connector(form_data: dict):
         logger.info(f"Creating trigger of type: {form_data['trigger_type']}")
         trigger_type = TriggerType(form_data["trigger_type"])
         trigger_id = str(uuid.uuid4())
+        connector_id = str(uuid.uuid4())
         logger.info(f"Generated trigger_id: {trigger_id}")
 
         # Create conditions
@@ -4791,6 +4817,8 @@ def save_new_connector(form_data: dict):
                     "is_global": trigger_config.get("is_global", True),
                 }
             )
+        elif trigger_type == TriggerType.STREAMDECK:
+            trigger_params["connector_id"] = connector_id
 
         trigger = connector_triggers.create_trigger(**trigger_params)
         logger.info(f"Successfully created trigger: {trigger}")
@@ -4863,7 +4891,7 @@ def save_new_connector(form_data: dict):
         # Create connector
         logger.info("Creating final Connector object")
         connector = Connector(
-            connector_id=str(uuid.uuid4()),
+            connector_id=connector_id,
             name=form_data["name"],
             description=form_data.get("description", ""),
             trigger=trigger,
@@ -4963,6 +4991,8 @@ def save_updated_connector(form_data: dict):
                     "is_global": trigger_config.get("is_global", True),
                 }
             )
+        elif trigger_type == TriggerType.STREAMDECK:
+            trigger_params["connector_id"] = connector_id
 
         trigger = connector_triggers.create_trigger(**trigger_params)
 
@@ -5073,6 +5103,8 @@ def test_connector(connector_id: str):
 
         # Create sample test data based on trigger type
         test_data = create_test_data_for_trigger(connector.trigger.trigger_type)
+        if connector.trigger.trigger_type == TriggerType.STREAMDECK:
+            test_data["connector_id"] = connector.connector_id
 
         # Test the connector
         async def run_test():
@@ -5144,6 +5176,13 @@ def create_test_data_for_trigger(trigger_type: TriggerType) -> Dict[str, Any]:
             "key_code": "f12",
             "modifiers": ["ctrl"],
             "is_global": True,
+        }
+    elif trigger_type == TriggerType.STREAMDECK:
+        return {
+            **base_data,
+            "event_type": "streamdeck",
+            "connector_id": "",
+            "source": "streamdeck",
         }
     elif trigger_type == TriggerType.OBS_SCENE_CHANGED:
         return {

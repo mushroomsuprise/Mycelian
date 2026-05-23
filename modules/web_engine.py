@@ -1756,6 +1756,143 @@ class WebEngine:
                     {"Content-Type": "application/json"},
                 )
 
+        @self.app.route("/api/streamdeck/get_connectors", methods=["GET"])
+        def streamdeck_get_connectors():
+            """List enabled connectors with Stream Deck trigger for plugin dropdown."""
+            try:
+                from .connector_core import TriggerType
+                from .connector_manager import get_manager
+
+                manager = get_manager()
+                connectors = manager.get_connectors_by_trigger_type(
+                    TriggerType.STREAMDECK
+                )
+                payload = [
+                    {
+                        "connector_id": c.connector_id,
+                        "name": c.name,
+                        "description": c.description or "",
+                    }
+                    for c in connectors
+                    if c.enabled
+                ]
+                payload.sort(key=lambda item: item["name"].lower())
+                return (
+                    {
+                        "success": True,
+                        "connectors": payload,
+                        "count": len(payload),
+                    },
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    f"Stream Deck: Error loading connectors: {e}", exc_info=True
+                )
+                return (
+                    {
+                        "success": False,
+                        "connectors": [],
+                        "count": 0,
+                        "error": str(e),
+                        "message": "Failed to load connectors",
+                    },
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route("/api/streamdeck/trigger_connector", methods=["POST"])
+        def streamdeck_trigger_connector():
+            """Queue a Stream Deck connector trigger (returns after enqueue)."""
+            try:
+                from .connector_core import TriggerType
+                from .connector_integration import get_integration
+                from .connector_manager import get_manager
+
+                data = request.get_json(silent=True) or {}
+                connector_id = data.get("connectorId") or data.get("connector_id")
+                if not connector_id:
+                    return (
+                        {
+                            "success": False,
+                            "message": "connectorId is required",
+                        },
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+
+                manager = get_manager()
+                connector = manager.get_connector(connector_id)
+                if not connector:
+                    return (
+                        {
+                            "success": False,
+                            "message": "Connector not found",
+                        },
+                        404,
+                        {"Content-Type": "application/json"},
+                    )
+                if not connector.enabled:
+                    return (
+                        {
+                            "success": False,
+                            "message": "Connector is disabled",
+                        },
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                if (
+                    not connector.trigger
+                    or connector.trigger.trigger_type != TriggerType.STREAMDECK
+                ):
+                    return (
+                        {
+                            "success": False,
+                            "message": "Connector is not a Stream Deck trigger",
+                        },
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+
+                event_data = {
+                    "event_type": "streamdeck",
+                    "connector_id": connector_id,
+                    "source": "streamdeck",
+                    "timestamp": time.time(),
+                }
+                integration = get_integration()
+                try:
+                    loop = asyncio.get_event_loop()
+                    asyncio.run_coroutine_threadsafe(
+                        integration.manager.add_event(event_data), loop
+                    )
+                except RuntimeError:
+                    asyncio.run(integration.manager.add_event(event_data))
+
+                return (
+                    {
+                        "success": True,
+                        "connector_id": connector_id,
+                        "message": f"Queued connector '{connector.name}'",
+                    },
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    f"Stream Deck: Error triggering connector: {e}", exc_info=True
+                )
+                return (
+                    {
+                        "success": False,
+                        "error": str(e),
+                        "message": "Failed to trigger connector",
+                    },
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
         @self.app.route("/api/streamdeck/check_connection", methods=["GET"])
         def streamdeck_check_connection():
             """Stream Deck endpoint to check server connection and status"""
