@@ -5330,7 +5330,7 @@ class Ff7GameHook:
     hook_id = "ff7"
     ui = HookUiMetadata(
         hook_id="ff7",
-        title="Final Fantasy VII (PC)",
+        title="Final Fantasy VII (2013)",
         supported_platforms=frozenset({"windows"}),
     )
     process_names = ("ff7_en.exe", "ff7.exe")

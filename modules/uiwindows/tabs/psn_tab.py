@@ -178,6 +178,7 @@ class PSNTab:
 
             settings_divider()
             self._build_game_cache_section()
+            self.refresh_game_cache()
 
             ui.timer(0.1, self._refresh_status, once=True)
             ui.timer(0.8, self._refresh_status, once=True)
@@ -642,6 +643,7 @@ class PSNTab:
                 "clear entries (re-cached on next play)."
             ),
         ):
+            self._load_cached_games()
             self._cache_chip_container = theme_chip_row()
             self._rebuild_cache_chips()
 
@@ -734,6 +736,7 @@ class PSNTab:
                 self.ui_elements["game_select"] = ui.label(
                     "No cached games yet. Play a game to populate the cache."
                 ).classes("muted-text italic")
+        self._rebuild_cache_chips()
 
     def _rebuild_cache_chips(self) -> None:
         """Recreate cache chips (same style as YouTube playlist filter)."""
@@ -754,9 +757,11 @@ class PSNTab:
         if platform:
             title = f"{title} ({platform})"
         with self._cache_chip_container:
-            with ui.element("div").classes(
-                f"{THEME_CHIP_CLASSES} max-w-full"
-            ).style("white-space: nowrap;"):
+            with (
+                ui.element("div")
+                .classes(f"{THEME_CHIP_CLASSES} max-w-full")
+                .style("white-space: nowrap;")
+            ):
                 ui.label(title).classes("text-sm truncate").style("max-width: 14rem;")
                 ui.button(
                     icon="close",
@@ -927,8 +932,10 @@ class PSNTab:
 
     def refresh_game_cache(self) -> None:
         """Reload list from the database and rebuild selector, chips, and details sync."""
-        if not self._game_select_container or not self._cache_chip_container:
-            self._load_cached_games()
+        self._load_cached_games()
+        if self._cache_chip_container:
+            self._rebuild_cache_chips()
+        if not self._game_select_container:
             return
         prev_id = None
         if self._selected_game:

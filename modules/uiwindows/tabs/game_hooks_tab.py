@@ -16,6 +16,8 @@ from ..os_brand_icons import OS_BRAND_ROW
 
 logger = logging.getLogger(__name__)
 
+_STATUS_LABEL_LAYOUT = "text-right shrink-0 max-w-[50%] truncate"
+
 
 class GameHooksTab:
     name = "Game Hooks"
@@ -109,23 +111,29 @@ class GameHooksTab:
         except Exception as e:
             logger.debug("%s runtime status: %s", hook_id, e)
             lbl.set_text("Status unavailable")
-            lbl.classes(replace="text-sm font-medium text-theme-error")
+            lbl.classes(
+                replace=f"text-sm font-medium text-theme-error {_STATUS_LABEL_LAYOUT}"
+            )
             return
 
         if not info.get("service_running"):
             lbl.set_text("Hooks service not running")
-            lbl.classes(replace="text-sm font-medium text-theme-warning")
+            lbl.classes(
+                replace=f"text-sm font-medium text-theme-warning {_STATUS_LABEL_LAYOUT}"
+            )
             return
 
         snap = info.get(hook_id)
         if not isinstance(snap, dict):
             lbl.set_text("Starting…")
-            lbl.classes(replace="text-sm font-medium secondary-text")
+            lbl.classes(
+                replace=f"text-sm font-medium secondary-text {_STATUS_LABEL_LAYOUT}"
+            )
             return
 
         text, classes = self._status_from_snapshot(snap)
         lbl.set_text(text)
-        lbl.classes(replace=classes)
+        lbl.classes(replace=f"{classes} {_STATUS_LABEL_LAYOUT}")
 
     def _refresh_all_runtime_status(self) -> None:
         for meta in list_hooks_for_ui():
@@ -143,38 +151,46 @@ class GameHooksTab:
                     "and broadcasts it to browser templates. "
                 ).classes("settings-description mb-4")
 
-                cols = min(2, max(1, len(hook_metas)))
-                with ui.grid(columns=cols).classes("w-full gap-4"):
+                with ui.grid(columns=2).classes("w-full gap-4"):
                     for meta in hook_metas:
                         hid = meta.hook_id
                         with ui.column().classes("content-card w-full min-w-0"):
                             with ui.row().classes(
-                                "w-full items-center justify-between gap-4 flex-wrap"
+                                "w-full items-center justify-between gap-3 min-w-0"
                             ):
-                                self._render_os_strip(meta.supported_platforms)
-                                hook_supported = self._hook_supported.get(hid, True)
-                                sw = (
-                                    ui.switch(
-                                        meta.title,
-                                        value=(
-                                            self._buffer_enabled.get(hid, False)
-                                            if hook_supported
-                                            else False
-                                        ),
+                                with ui.row().classes(
+                                    "items-center gap-3 shrink-0 min-w-0"
+                                ):
+                                    ui.label(meta.title).classes(
+                                        "font-semibold text-sm shrink-0"
                                     )
-                                    .props("left-label")
-                                    .classes("min-w-0 grow")
-                                    .on(
-                                        "update:model-value",
-                                        lambda e, h=hid: self._on_toggle(h, bool(e.args)),
+                                    self._render_os_strip(meta.supported_platforms)
+                                    hook_supported = self._hook_supported.get(
+                                        hid, True
                                     )
-                                )
-                                if not hook_supported:
-                                    sw.disable()
-                                self.ui_elements[f"{hid}_toggle"] = sw
+                                    sw = (
+                                        ui.switch(
+                                            value=(
+                                                self._buffer_enabled.get(hid, False)
+                                                if hook_supported
+                                                else False
+                                            ),
+                                        )
+                                        .classes("shrink-0")
+                                        .on(
+                                            "update:model-value",
+                                            lambda e, h=hid: self._on_toggle(
+                                                h, bool(e.args)
+                                            ),
+                                        )
+                                    )
+                                    if not hook_supported:
+                                        sw.disable()
+                                    self.ui_elements[f"{hid}_toggle"] = sw
                                 self.ui_elements[f"{hid}_runtime_status_label"] = (
                                     ui.label("").classes(
-                                        "text-sm font-medium secondary-text"
+                                        f"text-sm font-medium secondary-text "
+                                        f"{_STATUS_LABEL_LAYOUT}"
                                     )
                                 )
 

@@ -3956,7 +3956,7 @@ Game Hooks let Mycelian attach to a supported PC game (currently **Final Fantasy
 ## Enabling FF7
 
 1. Open **Settings** → **Game Hooks**
-2. Turn on **Final Fantasy VII (PC)**
+2. Turn on **Final Fantasy VII (2013)**
 3. Click **Save**
 4. Start the game on the same machine as Mycelian (Windows only for memory access)
 

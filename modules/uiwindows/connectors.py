@@ -2321,7 +2321,7 @@ def create_game_hook_config(
     )
 
     ui.select(
-        options={"ff7": "Final Fantasy VII (PC)"},
+        options={"ff7": "Final Fantasy VII (2013)"},
         label="Game",
         value=initial_config.get("game_id", "ff7"),
         on_change=lambda e: update_action_config(
