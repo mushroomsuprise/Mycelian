@@ -100,5 +100,49 @@
     "type": "negative",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "00b2ea24-26db-4b22-8ad2-a73857bef7ff",
+    "ts": 1779568683.7093155,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "02250f74-d60e-4126-9c20-aaf79c09fc30",
+    "ts": 1779568684.2105308,
+    "message": "A new Stream Deck plugin version (v0.2.1.0) is available. Reinstall from Settings \u2192 App Settings, then restart Stream Deck. Click this in the notification center to open App Settings.",
+    "type": "warning",
+    "dedupe_key": "streamdeck:plugin_outdated",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "App Settings"
+      }
+    ]
+  },
+  {
+    "id": "e84955f0-ba28-4d11-a3b9-1e8024e8665b",
+    "ts": 1779568693.6289284,
+    "message": "Quit the Stream Deck app completely (macOS: Stream Deck \u2192 Quit Stream Deck), then click Reinstall Plugin again. Stream Deck locks plugin files while it is running.",
+    "type": "negative",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "a677cd6d-0676-481d-a942-182af76cadec",
+    "ts": 1779568699.3584504,
+    "message": "Plugin reinstalled successfully! Quit and reopen Stream Deck (or restart it) so the update loads.",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
   }
 ]

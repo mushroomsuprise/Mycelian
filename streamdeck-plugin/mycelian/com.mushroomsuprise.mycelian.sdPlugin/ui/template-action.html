@@ -108,6 +108,7 @@
     <sdpi-item style="display: none;">
         <sdpi-textfield setting="selectedTemplate" id="selectedTemplateSetting"></sdpi-textfield>
         <sdpi-textfield setting="selectedAction" id="selectedActionSetting"></sdpi-textfield>
+        <sdpi-textfield setting="resolvedEvent" id="resolvedEventSetting"></sdpi-textfield>
         <sdpi-textfield setting="actionData" id="actionDataSetting"></sdpi-textfield>
     </sdpi-item>
 
@@ -234,6 +235,7 @@
         function readSettingsFromComponents() {
             const selectedTemplateSetting = document.getElementById('selectedTemplateSetting');
             const selectedActionSetting = document.getElementById('selectedActionSetting');
+            const resolvedEventSetting = document.getElementById('resolvedEventSetting');
             const actionDataSetting = document.getElementById('actionDataSetting');
 
             if (selectedTemplateSetting && selectedTemplateSetting.value) {
@@ -241,6 +243,9 @@
             }
             if (selectedActionSetting && selectedActionSetting.value) {
                 currentSettings.selectedAction = selectedActionSetting.value;
+            }
+            if (resolvedEventSetting && resolvedEventSetting.value) {
+                currentSettings.resolvedEvent = resolvedEventSetting.value;
             }
             if (actionDataSetting && actionDataSetting.value) {
                 try {
@@ -456,6 +461,7 @@
                         key: action.action_key,
                         name: action.action_name,
                         description: action.description,
+                        event: action.event || '',
                         defaultData: action.default_data || {},
                         elementType: action.element_type,
                         category: action.category
@@ -519,8 +525,8 @@
             // Generate configuration UI based on action type and default data
             generateActionConfiguration(action);
 
-            // Store the selected action in settings
             currentSettings.selectedAction = actionKey;
+            currentSettings.resolvedEvent = action.event || '';
             saveSettings();
         }
 
@@ -621,6 +627,7 @@
             actionConfig.innerHTML = '';
             actionConfig.style.display = 'none';
             currentSettings.selectedAction = null;
+            currentSettings.resolvedEvent = '';
             currentSettings.actionData = {};
             saveSettings();
         }
@@ -644,10 +651,12 @@
             // Update hidden SDPI components - they will automatically save the settings
             const selectedTemplateSetting = document.getElementById('selectedTemplateSetting');
             const selectedActionSetting = document.getElementById('selectedActionSetting');
+            const resolvedEventSetting = document.getElementById('resolvedEventSetting');
             const actionDataSetting = document.getElementById('actionDataSetting');
 
             if (selectedTemplateSetting) selectedTemplateSetting.value = currentSettings.selectedTemplate || '';
             if (selectedActionSetting) selectedActionSetting.value = currentSettings.selectedAction || '';
+            if (resolvedEventSetting) resolvedEventSetting.value = currentSettings.resolvedEvent || '';
             if (actionDataSetting) actionDataSetting.value = JSON.stringify(currentSettings.actionData || {});
         }
 

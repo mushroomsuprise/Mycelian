@@ -2,6 +2,7 @@
     "scripts": {
         "build": "rollup -c",
         "build:deploy": "rollup -c && rsync -a --delete com.mushroomsuprise.mycelian.sdPlugin/ ../../sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/",
+        "build:deploy:win": "rollup -c && node scripts/deploy-win.mjs",
         "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.mushroomsuprise.mycelian\""
     },
     "type": "module",

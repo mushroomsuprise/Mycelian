@@ -68,6 +68,7 @@ from .path_utils import (
     get_template_path,
 )
 from .psnapi import PSNData  # For type hinting if needed, and default object
+from .streamdeck_plugin_utils import enqueue_streamdeck_connector_event
 from .template_config_parser import (
     TemplateConfigParser,
     resolve_dynamic_control_values_from_elements,
@@ -425,6 +426,8 @@ class WebEngine:
         # O(1) without scanning the dict.
         self._preview_iframe_sids: Dict[str, str] = {}
         self._preview_iframe_tokens: Dict[str, str] = {}
+        # template_name -> {mtime, cfg} for Stream Deck hot-path config resolution
+        self._streamdeck_config_cache: Dict[str, Dict[str, Any]] = {}
 
         # Log template directory info
         logger.debug(f"Template directory: {template_dir}")
@@ -1084,7 +1087,7 @@ class WebEngine:
         def streamdeck_toggle_alerts():
             """Stream Deck endpoint to toggle alert pause/resume status"""
             try:
-                logger.info("Stream Deck: Toggle alerts requested")
+                logger.debug("Stream Deck: Toggle alerts requested")
 
                 # Toggle the pause status
                 global ALERTS_PAUSED
@@ -1178,7 +1181,16 @@ class WebEngine:
 
                         template_name = data.get("templateName", "")
                         action_name = data.get("actionName", "")
-                        event_name = data.get("eventName", action_name)
+                        raw_event_name = data.get("eventName")
+                        use_client_event = (
+                            raw_event_name is not None
+                            and str(raw_event_name).strip() != ""
+                        )
+                        event_name = (
+                            str(raw_event_name).strip()
+                            if use_client_event
+                            else action_name
+                        )
                         action_data = data.get("actionData", {})
 
                         if not template_name or not action_name:
@@ -1198,22 +1210,17 @@ class WebEngine:
                                 action_name,
                                 event_name,
                                 action_data,
+                                use_client_event_name=use_client_event,
                             )
                         )
 
-                        logger.info(
+                        logger.debug(
                             "Stream Deck: Template action requested - %s.%s "
                             "(resolved key: %s, event: %s)",
                             template_name,
                             action_name,
                             compat_key,
                             resolved_event,
-                        )
-
-                        logger.debug(
-                            "Stream Deck: Emitted template action events for %s.%s",
-                            template_name,
-                            compat_key,
                         )
 
                         return (
@@ -1534,7 +1541,16 @@ class WebEngine:
 
                 template_name = data.get("templateName", "")
                 action_name = data.get("actionName", "")
-                event_name = data.get("eventName", action_name)
+                raw_event_name = data.get("eventName")
+                use_client_event = (
+                    raw_event_name is not None
+                    and str(raw_event_name).strip() != ""
+                )
+                event_name = (
+                    str(raw_event_name).strip()
+                    if use_client_event
+                    else action_name
+                )
                 action_data = data.get("actionData", {})
 
                 if not template_name or not action_name:
@@ -1553,9 +1569,10 @@ class WebEngine:
                     action_name,
                     event_name,
                     action_data,
+                    use_client_event_name=use_client_event,
                 )
 
-                logger.info(
+                logger.debug(
                     "Stream Deck: Template action requested - %s.%s "
                     "(resolved key: %s, event: %s)",
                     template_name,
@@ -1807,7 +1824,6 @@ class WebEngine:
             """Queue a Stream Deck connector trigger (returns after enqueue)."""
             try:
                 from .connector_core import TriggerType
-                from .connector_integration import get_integration
                 from .connector_manager import get_manager
 
                 data = request.get_json(silent=True) or {}
@@ -1861,14 +1877,18 @@ class WebEngine:
                     "source": "streamdeck",
                     "timestamp": time.time(),
                 }
-                integration = get_integration()
-                try:
-                    loop = asyncio.get_event_loop()
-                    asyncio.run_coroutine_threadsafe(
-                        integration.manager.add_event(event_data), loop
+                if not enqueue_streamdeck_connector_event(event_data):
+                    return (
+                        {
+                            "success": False,
+                            "message": (
+                                "Connector system is not ready yet. "
+                                "Wait for Mycelian to finish starting, then try again."
+                            ),
+                        },
+                        503,
+                        {"Content-Type": "application/json"},
                     )
-                except RuntimeError:
-                    asyncio.run(integration.manager.add_event(event_data))
 
                 return (
                     {
@@ -4900,30 +4920,80 @@ class WebEngine:
                         to=client_sid,
                     )
 
+    def _load_streamdeck_template_config(self, template_name: str) -> Dict[str, Any]:
+        """Load template config with mtime-keyed cache for Stream Deck presses."""
+        config_path = self.template_config_parser.get_config_path(template_name)
+        try:
+            mtime = (
+                os.path.getmtime(config_path)
+                if os.path.exists(config_path)
+                else 0.0
+            )
+        except OSError:
+            mtime = 0.0
+        cached = self._streamdeck_config_cache.get(template_name)
+        if cached and cached.get("mtime") == mtime:
+            cfg = cached.get("cfg")
+            return cfg if isinstance(cfg, dict) else {}
+        cfg = self.template_config_parser.load_config(
+            template_name,
+            include_dynamic_controls=True,
+            include_streamdeck_options=True,
+        )
+        self._streamdeck_config_cache[template_name] = {
+            "mtime": mtime,
+            "cfg": cfg if isinstance(cfg, dict) else {},
+        }
+        return self._streamdeck_config_cache[template_name]["cfg"]
+
+    def _emit_streamdeck_template_events(
+        self,
+        template_name: str,
+        compat_key: str,
+        resolved_event: str,
+        merged_ad: Any,
+    ) -> None:
+        """Emit primary socket event plus legacy streamdeck_template_action."""
+        self.socketio.emit(resolved_event, merged_ad)
+        self.socketio.emit(
+            "streamdeck_template_action",
+            {
+                "templateName": template_name,
+                "actionName": compat_key,
+                "eventName": resolved_event,
+                "actionData": merged_ad,
+            },
+        )
+        compat_emit = f"{template_name}_{compat_key}"
+        if compat_emit != resolved_event:
+            self.socketio.emit(compat_emit, merged_ad)
+
     def _streamdeck_http_dispatch_emits(
         self,
         template_name: str,
         action_name: str,
         event_name_req: str,
         action_data_raw: Any,
+        *,
+        use_client_event_name: bool = False,
     ) -> Tuple[str, str]:
         """
         Shared logic for HTTP ``/api/streamdeck/template_action`` and deeplink
         ``template_action``: coerce payload, resolve ``streamdeck_options``,
-        emit named event via :meth:`_execute_streamdeck_action` when applicable,
-        then emit ``streamdeck_template_action`` and template-prefixed compat
-        events with merged ``actionData``.
+        emit named event(s) with merged ``actionData``.
         """
         coerced = _coerce_streamdeck_action_data(action_data_raw)
         compat_key = action_name
         merged_ad = coerced
         resolved_event = event_name_req if event_name_req else action_name
 
-        cfg = self.template_config_parser.load_config(
-            template_name,
-            include_dynamic_controls=True,
-            include_streamdeck_options=True,
-        )
+        if use_client_event_name:
+            self._emit_streamdeck_template_events(
+                template_name, compat_key, resolved_event, merged_ad
+            )
+            return compat_key, resolved_event
+
+        cfg = self._load_streamdeck_template_config(template_name)
         if cfg:
             sdo = cfg.get("streamdeck_options")
             if isinstance(sdo, dict):
@@ -4939,22 +5009,10 @@ class WebEngine:
                             acfg.get("event")
                             or f"{template_name}_{compat_key}"
                         )
-                        self._execute_streamdeck_action(
-                            template_name, compat_key, acfg, coerced
-                        )
 
-        self.socketio.emit(
-            "streamdeck_template_action",
-            {
-                "templateName": template_name,
-                "actionName": compat_key,
-                "eventName": resolved_event,
-                "actionData": merged_ad,
-            },
+        self._emit_streamdeck_template_events(
+            template_name, compat_key, resolved_event, merged_ad
         )
-        self.socketio.emit(f"{template_name}_{compat_key}", merged_ad)
-        if resolved_event != compat_key:
-            self.socketio.emit(f"{template_name}_{resolved_event}", merged_ad)
         return compat_key, resolved_event
 
     def _resolve_streamdeck_options_action(

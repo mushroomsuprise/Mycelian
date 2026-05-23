@@ -11,6 +11,8 @@ import {
 	parseServerConfig,
 } from "../lib/server-config";
 
+const SUCCESS_TITLE_RESET_MS = 150;
+
 type ConnectorActionSettings = {
 	serverUrl?: string;
 	connectorId?: string;
@@ -64,11 +66,11 @@ export class ConnectorAction extends SingletonAction<ConnectorActionSettings> {
 			const name = settings.connectorName || "Connector";
 			const shortName =
 				name.length > 14 ? `${name.substring(0, 12)}...` : name;
-			await ev.action.setTitle(`${shortName}\n✓`);
+			void ev.action.setTitle(`${shortName}\n✓`);
 
-			setTimeout(async () => {
-				await this.updateButtonTitle(ev.action, settings);
-			}, 800);
+			setTimeout(() => {
+				void this.updateButtonTitle(ev.action, settings);
+			}, SUCCESS_TITLE_RESET_MS);
 		} catch (error) {
 			console.error("Failed to trigger connector:", error);
 			await ev.action.setTitle("ERROR");

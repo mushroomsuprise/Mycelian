@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import errno
 import json
 import logging
@@ -13,7 +14,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from packaging.version import InvalidVersion, Version, parse as parse_version
 
@@ -23,6 +24,34 @@ from .path_utils import get_data_path
 logger = logging.getLogger(__name__)
 
 PLUGIN_BUNDLE_NAME = "com.mushroomsuprise.mycelian.sdPlugin"
+
+
+def enqueue_streamdeck_connector_event(event_data: Dict[str, Any]) -> bool:
+    """
+    Schedule a connector event on the ConnectorProcessor asyncio loop.
+
+    Stream Deck HTTP handlers run on the Flask/gevent thread; connector
+    queue processing lives on a dedicated thread (see ConnectorManager).
+    """
+    from .connector_integration import get_integration
+    from .obs_service import obs_service
+
+    loop = obs_service._connector_loop
+    if loop is None or not loop.is_running():
+        logger.debug(
+            "Stream Deck connector enqueue skipped: connector loop not ready"
+        )
+        return False
+    try:
+        asyncio.run_coroutine_threadsafe(
+            get_integration().manager.add_event(event_data), loop
+        )
+        return True
+    except Exception as e:
+        logger.debug("Stream Deck connector enqueue failed: %s", e)
+        return False
+
+
 OUTDATED_NOTIFY_DEDUPE_KEY = "streamdeck:plugin_outdated"
 OUTDATED_NOTIFY_COOLDOWN_SEC = 86400.0
 _STREAMDECK_QUIT_HINT = (

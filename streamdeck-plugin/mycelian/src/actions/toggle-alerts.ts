@@ -14,7 +14,7 @@ type ToggleAlertsSettings = {
 @action({ UUID: "com.mushroomsuprise.mycelian.togglealerts" })
 export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 	private pollingTimer: NodeJS.Timeout | null = null;
-	private readonly POLLING_INTERVAL = 2000; // Poll every 2 seconds
+	private readonly POLLING_INTERVAL = 12000; // Poll for external pause changes
 	private lastKnownStatus: 'ACTIVE' | 'PAUSED' | 'ERROR' | null = null;
 
 	/**
@@ -48,16 +48,7 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 	 */
 	private async pollStatus(serverConfig: { host: string; port: number }, action: any): Promise<void> {
 		try {
-			// Create a timeout promise
-			const timeoutPromise = new Promise((_, reject) => {
-				setTimeout(() => reject(new Error('Request timeout')), 3000);
-			});
-
-			// Race between fetch and timeout
-			const response = await Promise.race([
-				fetch(apiUrl(serverConfig, "/api/streamdeck/get_pause_status")),
-				timeoutPromise
-			]) as Response;
+			const response = await fetch(apiUrl(serverConfig, "/api/streamdeck/get_pause_status"));
 
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
