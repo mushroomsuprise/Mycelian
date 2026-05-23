@@ -959,8 +959,9 @@ def start_ui():
             # Register cleanup handler
             app.on_shutdown(cleanup_resources)
 
-            # main.py calls start_ui(), not initialize_ui(); updater must be scheduled here too.
+            # main.py calls start_ui(), not initialize_ui(); schedule UI timers here too.
             _schedule_update_manager_init()
+            _schedule_streamdeck_plugin_version_check()
 
         # Configure WebView2 data directory for administrator privileges
         _configure_webview2_for_admin()

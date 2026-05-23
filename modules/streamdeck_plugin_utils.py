@@ -170,20 +170,47 @@ def get_plugin_status() -> PluginStatus:
     )
 
 
-def format_plugin_status_text(status: PluginStatus) -> str:
+@dataclass(frozen=True)
+class PluginStatusDisplay:
+    """Structured labels for the App Settings Stream Deck section."""
+
+    status_text: str
+    installed_version: Optional[str] = None
+    new_version_available: Optional[str] = None
+
+
+def get_plugin_status_display(status: PluginStatus) -> PluginStatusDisplay:
     if status.state == PluginInstallState.UNAVAILABLE:
-        return "Stream Deck not detected"
+        return PluginStatusDisplay(status_text="Stream Deck not detected")
     if status.state == PluginInstallState.NOT_INSTALLED:
-        return "Not installed"
+        return PluginStatusDisplay(status_text="Not installed")
+    installed = status.installed_version or status.bundled_version
     if status.state == PluginInstallState.OUTDATED:
-        installed = status.installed_version or "?"
-        bundled = status.bundled_version or "?"
-        return f"Out of date — installed v{installed}, bundled v{bundled}"
+        return PluginStatusDisplay(
+            status_text="Installed",
+            installed_version=installed,
+            new_version_available=status.bundled_version,
+        )
     if status.state == PluginInstallState.UP_TO_DATE:
-        version = status.installed_version or status.bundled_version or "?"
-        return f"Up to date (v{version})"
-    installed = status.installed_version or "?"
-    return f"Installed (v{installed}, version check inconclusive)"
+        return PluginStatusDisplay(
+            status_text="Installed",
+            installed_version=installed,
+        )
+    return PluginStatusDisplay(
+        status_text="Installed",
+        installed_version=installed,
+    )
+
+
+def format_plugin_status_text(status: PluginStatus) -> str:
+    """Single-line summary (legacy); prefer get_plugin_status_display for UI."""
+    display = get_plugin_status_display(status)
+    parts = [display.status_text]
+    if display.installed_version:
+        parts.append(f"v{display.installed_version}")
+    if display.new_version_available:
+        parts.append(f"(update available: v{display.new_version_available})")
+    return " · ".join(parts)
 
 
 def get_install_button_label(status: PluginStatus) -> str:
@@ -194,18 +221,30 @@ def get_install_button_label(status: PluginStatus) -> str:
     return "Install Plugin"
 
 
-def maybe_notify_streamdeck_plugin_outdated() -> None:
-    """Warn once per dedupe window when the installed plugin is older than bundled."""
+def maybe_notify_streamdeck_plugin_outdated() -> bool:
+    """
+    Warn when the installed plugin is older than bundled.
+
+    Returns True if a notification was shown (not deduped or skipped).
+    """
     status = get_plugin_status()
     if status.state != PluginInstallState.OUTDATED:
-        return
-    notify(
-        "Stream Deck plugin is out of date. Reinstall it from App Settings "
-        "(Settings → App Settings), then restart Stream Deck. "
-        "Open the notification center to jump there.",
+        return False
+    bundled = status.bundled_version or "?"
+    entry_id = notify(
+        f"A new Stream Deck plugin version (v{bundled}) is available. "
+        "Reinstall from Settings → App Settings, then restart Stream Deck. "
+        "Click this in the notification center to open App Settings.",
         type="warning",
         dedupe_key=OUTDATED_NOTIFY_DEDUPE_KEY,
         dedupe_cooldown_sec=OUTDATED_NOTIFY_COOLDOWN_SEC,
         actions=nav_actions_settings("App Settings"),
         timeout=12,
     )
+    if entry_id:
+        logger.info(
+            "Stream Deck plugin update notification shown (installed=%s, bundled=%s)",
+            status.installed_version,
+            status.bundled_version,
+        )
+    return entry_id is not None

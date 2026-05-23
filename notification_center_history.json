@@ -92,5 +92,13 @@
         "settings_subtab": "OBS"
       }
     ]
+  },
+  {
+    "id": "0667b8e6-dea5-4a96-b6bb-ec073a9146ee",
+    "ts": 1779567337.732998,
+    "message": "Stream Deck plugins directory not found. Please ensure Stream Deck is installed.",
+    "type": "negative",
+    "dedupe_key": null,
+    "actions": []
   }
 ]

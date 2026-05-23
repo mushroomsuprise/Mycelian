@@ -15,11 +15,11 @@ from ...ui_settings_layout import (
 from ...notification_engine import notify
 from ...streamdeck_plugin_utils import (
     PluginInstallState,
-    format_plugin_status_text,
     get_bundled_plugin_dir,
     get_install_button_label,
     get_installed_plugin_dir,
     get_plugin_status,
+    get_plugin_status_display,
     get_streamdeck_plugins_dir,
     maybe_notify_streamdeck_plugin_outdated,
 )
@@ -36,14 +36,37 @@ class AppSettingsTab:
         self.buffer: Optional[dataobjects.AppSettings] = None
         self.ui_elements: Dict[str, Any] = {}
 
+    def _apply_plugin_status_display(self, status) -> None:
+        display = get_plugin_status_display(status)
+
+        primary = self.ui_elements.get("plugin_status_primary")
+        if primary is not None:
+            primary.set_text(display.status_text)
+
+        version_label = self.ui_elements.get("plugin_installed_version")
+        if version_label is not None:
+            if display.installed_version:
+                version_label.set_text(f"Installed version: v{display.installed_version}")
+                version_label.visible = True
+            else:
+                version_label.visible = False
+
+        update_label = self.ui_elements.get("plugin_new_version")
+        if update_label is not None:
+            if display.new_version_available:
+                update_label.set_text(
+                    f"New version available: v{display.new_version_available}"
+                )
+                update_label.visible = True
+            else:
+                update_label.visible = False
+
     def _refresh_plugin_ui(self, *, notify_if_outdated: bool = False) -> None:
         status = get_plugin_status()
         if notify_if_outdated:
             maybe_notify_streamdeck_plugin_outdated()
 
-        label = self.ui_elements.get("plugin_status_label")
-        if label is not None:
-            label.set_text(format_plugin_status_text(status))
+        self._apply_plugin_status_display(status)
 
         button = self.ui_elements.get("install_plugin_button")
         if button is not None:
@@ -257,16 +280,26 @@ class AppSettingsTab:
 
                 with settings_inner_panel():
                     ui.label("Stream Deck plugin").classes("text-base font-semibold")
-                    with ui.row().classes("w-full items-center gap-3 flex-wrap"):
-                        with ui.row().classes("items-center gap-2"):
-                            ui.label("Status").classes("text-sm secondary-text")
-                            self.ui_elements["plugin_status_label"] = ui.label(
-                                format_plugin_status_text(initial_status)
-                            ).classes("font-semibold text-sm")
+                    with ui.row().classes(
+                        "w-full items-start justify-between gap-3 flex-wrap"
+                    ):
+                        with ui.column().classes("gap-1 min-w-0"):
+                            with ui.row().classes("items-center gap-2 flex-wrap"):
+                                ui.label("Status").classes("text-sm secondary-text")
+                                self.ui_elements["plugin_status_primary"] = ui.label(
+                                    get_plugin_status_display(initial_status).status_text
+                                ).classes("font-semibold text-sm")
+                            self.ui_elements["plugin_installed_version"] = ui.label(
+                                ""
+                            ).classes("text-sm secondary-text")
+                            self.ui_elements["plugin_new_version"] = ui.label(
+                                ""
+                            ).classes("text-sm text-amber-400 font-medium")
                         self.ui_elements["install_plugin_button"] = primary_button(
                             get_install_button_label(initial_status),
                             self._install_streamdeck_plugin,
                         )
+                    self._apply_plugin_status_display(initial_status)
 
             settings_action_row(discard=self.discard, save=self.save)
 
