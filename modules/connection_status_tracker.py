@@ -107,7 +107,7 @@ _PROBE_INTERVAL_SEC: Dict[str, float] = {
 
 _last_probe_mono: Dict[str, float] = {}
 _last_spotify_auth_mono: float = 0.0
-_SPOTIFY_AUTH_INTERVAL_SEC = 30.0
+_SPOTIFY_AUTH_INTERVAL_SEC = 10.0
 
 
 def _configured(key: str) -> bool:
@@ -172,7 +172,21 @@ def _probe_spotify() -> None:
         and now - _last_spotify_auth_mono >= _SPOTIFY_AUTH_INTERVAL_SEC
     ):
         _last_spotify_auth_mono = now
-        client.authenticate()
+        has_creds = bool(
+            (getattr(data, "client_id", "") or "").strip()
+            and (getattr(data, "client_secret", "") or "").strip()
+        )
+        client.reload_and_sync(persist=True)
+        ok = client.authenticate()
+        logger.info(
+            "Spotify background auth retry: success=%s creds=%s tokens=%s status=%s",
+            ok,
+            has_creds or bool(
+                client.spotify_data.client_id and client.spotify_data.client_secret
+            ),
+            has_tokens,
+            client.spotify_data.connection_status,
+        )
 
 
 def _probe_youtube() -> None:

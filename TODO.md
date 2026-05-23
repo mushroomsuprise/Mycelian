@@ -1,5 +1,2 @@
-Template Previewer:
-    [x] - When data is changed, it currently refreshes the entire previewer, i would prefer it does not refresh the entire thing, just modify what changed. (Hot config for chat, roulette, title, giveaway — iframe reload only on config switch / save / reset.)
-
 General Items:
     [] - Expose Connectors system to the Streamdeck plugin. Make it so created Connectors can be assigned to Streamdeck buttons, and trigger actions when the button is pressed. We should create a trigger called "Streamdeck" that can be set inside Connectors. This trigger should add the Connector to the Streamdeck plugin dynamically. The Streamdeck plugin will need a new option called "Connector" that will have a dropdown list of all Connectors using the "Streamdeck" trigger. The streamdeck button should have a label that displays the Connector name. We will need to recompile the Streamdeck plugin to add this functionality, and place the compiled plugin in the same directory as the Mycelian desktop application for it to be installable via the app.

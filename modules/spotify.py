@@ -237,6 +237,7 @@ class SpotifyClient:
         self.update_interval = 1.0
         self.running = False
         self._last_api_success = False
+        self._refresh_lock = threading.Lock()
 
         # Load existing data from state manager
         self.load_spotify_data()
@@ -278,9 +279,61 @@ class SpotifyClient:
             else:
                 logger.debug("Spotify data loaded - no credentials or tokens found")
 
+            self._sync_client_credentials(persist=True)
+
         except Exception as e:
             logger.error(f"Error loading Spotify data: {str(e)}", exc_info=True)
             self.spotify_data = SpotifyData()
+
+    def reload_and_sync(self, persist: bool = True) -> None:
+        """Reload Spotify data from state manager and merge api_credentials."""
+        self.load_spotify_data()
+        if persist:
+            self._sync_client_credentials(persist=True)
+
+    def _sync_client_credentials(self, persist: bool = False) -> bool:
+        """Merge client id/secret from api_credentials_manager into spotify_data."""
+        try:
+            from .api_credentials_manager import api_credentials_manager
+
+            creds = api_credentials_manager.get_spotify_credentials()
+            cid = (creds.get("client_id") or "").strip()
+            secret = (creds.get("client_secret") or "").strip()
+            if not cid and not secret:
+                return bool(
+                    self.spotify_data.client_id and self.spotify_data.client_secret
+                )
+
+            changed = False
+            if cid and cid != self.spotify_data.client_id:
+                self.update_field("client_id", cid)
+                changed = True
+            if secret and secret != self.spotify_data.client_secret:
+                self.update_field("client_secret", secret)
+                changed = True
+
+            if persist and changed:
+                state_manager.save_changes()
+                logger.info(
+                    "Synced Spotify client credentials from api_credentials into SpotifyData"
+                )
+
+            return bool(
+                self.spotify_data.client_id and self.spotify_data.client_secret
+            )
+        except Exception as e:
+            logger.error(
+                f"Error syncing Spotify client credentials: {str(e)}", exc_info=True
+            )
+            return bool(
+                self.spotify_data.client_id and self.spotify_data.client_secret
+            )
+
+    def _has_auth_tokens(self) -> bool:
+        return bool(
+            (self.spotify_data.refresh_token or "").strip()
+            or (self.spotify_data.access_token or "").strip()
+        )
 
     def save_spotify_data(self):
         """Save current Spotify data to state manager"""
@@ -322,9 +375,32 @@ class SpotifyClient:
         refresh). When force is True (e.g. after HTTP 401), always performs the
         refresh grant if a refresh_token is present.
         """
+        if not self._refresh_lock.acquire(blocking=False):
+            logger.debug("Spotify token refresh already in progress, waiting...")
+            with self._refresh_lock:
+                if not force and self.spotify_data.access_token:
+                    exp = self._token_expiry_epoch(self.spotify_data.token_expiry)
+                    if exp is not None and time.time() < exp - 30:
+                        return True
+                return bool((self.spotify_data.access_token or "").strip())
+
         try:
+            return self._refresh_token_locked(force)
+        finally:
+            self._refresh_lock.release()
+
+    def _refresh_token_locked(self, force: bool = False) -> bool:
+        try:
+            self._sync_client_credentials()
+
             if not self.spotify_data.refresh_token:
                 logger.warning("No refresh token available")
+                return False
+
+            if not self.spotify_data.client_id or not self.spotify_data.client_secret:
+                logger.warning(
+                    "Spotify client ID or secret missing — cannot refresh token"
+                )
                 return False
 
             if not force and self.spotify_data.access_token:
@@ -446,6 +522,8 @@ class SpotifyClient:
     def authenticate(self) -> bool:
         """Test current authentication status and attempt token refresh if needed"""
         try:
+            self._sync_client_credentials()
+
             if not self.spotify_data.client_id or not self.spotify_data.client_secret:
                 logger.warning("Spotify client ID or secret not configured")
                 self.update_field("connection_status", "Not Configured")
@@ -600,8 +678,12 @@ class SpotifyClient:
         while self.running:
             start_time = time.time()
             try:
-                if self.is_authenticated:
+                if self._has_auth_tokens():
                     self.update_playback_data()
+                    if self._last_api_success:
+                        if not self.is_authenticated:
+                            self.is_authenticated = True
+                            self.update_field("connection_status", "Connected")
                     self.send_websocket_data()
                 else:
                     self.set_empty_track_data()
@@ -825,6 +907,25 @@ def should_auto_initialize() -> bool:
         return False
 
 
+def _authenticate_with_retry(
+    client: SpotifyClient, delays: tuple = (0.0, 1.0, 3.0)
+) -> bool:
+    """Run authenticate() with backoff for startup reliability."""
+    for attempt, delay in enumerate(delays, start=1):
+        if delay > 0:
+            time.sleep(delay)
+        client.reload_and_sync(persist=True)
+        if client.authenticate():
+            logger.info("Spotify startup authentication succeeded on attempt %s", attempt)
+            return True
+        logger.info(
+            "Spotify startup authentication failed on attempt %s (status=%s)",
+            attempt,
+            client.spotify_data.connection_status,
+        )
+    return False
+
+
 def start_spotify_service():
     """Start the Spotify service in a background thread"""
     global spotify_thread, is_running, spotify_client
@@ -843,7 +944,7 @@ def start_spotify_service():
             logger.info(
                 "Auto-initializing Spotify service with existing credentials/tokens"
             )
-            spotify_client.authenticate()
+            _authenticate_with_retry(spotify_client)
 
         # Start monitoring thread
         spotify_thread = threading.Thread(
@@ -946,6 +1047,8 @@ def update_spotify_settings(
             spotify_client.update_field("client_secret", client_secret)
         if market_country is not None:
             spotify_client.update_field("market_country", market_country)
+
+        spotify_client._sync_client_credentials(persist=True)
 
         # If we now have credentials and aren't authenticated, try to authenticate
         if should_auto_initialize() and not spotify_client.is_authenticated:

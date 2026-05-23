@@ -231,15 +231,26 @@ class SpotifyTab:
             self._creds[field] = value
             self.dirty = True
 
+    def _persist_credentials_to_state(self) -> None:
+        """Write UI credentials to SpotifyData and api_credentials.json."""
+        client_id = self._creds.get("client_id", "")
+        client_secret = self._creds.get("client_secret", "")
+        if self.buffer:
+            self.buffer.client_id = client_id
+            self.buffer.client_secret = client_secret
+        state_manager.update_spotify_field("client_id", client_id)
+        state_manager.update_spotify_field("client_secret", client_secret)
+        api_credentials_manager.update_spotify_credentials(
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+
     def save(self) -> None:
         if not self.buffer:
             return
+        self._persist_credentials_to_state()
         for field in self.buffer.__dataclass_fields__.keys():
             state_manager.update_spotify_field(field, getattr(self.buffer, field))
-        api_credentials_manager.update_spotify_credentials(
-            client_id=self._creds.get("client_id", ""),
-            client_secret=self._creds.get("client_secret", ""),
-        )
         if state_manager.save_changes():
             notify("Spotify saved", type="positive")
             self.dirty = False
@@ -550,15 +561,10 @@ class SpotifyTab:
             logger.error(f"Error cleaning up Spotify test: {str(e)}")
 
     def _save_settings_only(self) -> None:
-        """Save only Spotify credentials without triggering full save"""
+        """Save Spotify credentials to DB and api_credentials.json."""
         try:
-            # Persist credentials only
-            from ... import api_credentials_manager
-
-            api_credentials_manager.update_spotify_credentials(
-                client_id=self._creds.get("client_id", ""),
-                client_secret=self._creds.get("client_secret", ""),
-            )
+            self._persist_credentials_to_state()
+            state_manager.save_changes()
         except Exception as e:
             import logging
 
