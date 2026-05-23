@@ -756,6 +756,30 @@ ui.add_head_html(
 )
 
 _update_manager_ui_scheduled = False
+_streamdeck_plugin_check_scheduled = False
+
+
+def _schedule_streamdeck_plugin_version_check() -> None:
+    """One-shot check after UI is ready; notify if bundled plugin is newer than installed."""
+    global _streamdeck_plugin_check_scheduled
+    if _streamdeck_plugin_check_scheduled:
+        return
+    _streamdeck_plugin_check_scheduled = True
+
+    def check_streamdeck_plugin():
+        try:
+            from .streamdeck_plugin_utils import maybe_notify_streamdeck_plugin_outdated
+
+            maybe_notify_streamdeck_plugin_outdated()
+            logger.debug("Stream Deck plugin version check completed")
+        except Exception as e:
+            logger.error(
+                "Stream Deck plugin version check failed: %s",
+                e,
+                exc_info=True,
+            )
+
+    ui.timer(2.5, check_streamdeck_plugin, once=True)
 
 
 def _schedule_update_manager_init() -> None:
@@ -834,6 +858,7 @@ def initialize_ui() -> None:
         logger.info("Alert processor already initialized in main.py startup sequence")
 
         _schedule_update_manager_init()
+        _schedule_streamdeck_plugin_version_check()
 
         logger.info("UI initialization completed, ready to start NiceGUI server.")
 
