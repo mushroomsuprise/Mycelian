@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
 import platform
+import shutil
+import stat
+import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from packaging.version import InvalidVersion, Version, parse as parse_version
 
@@ -21,6 +25,18 @@ logger = logging.getLogger(__name__)
 PLUGIN_BUNDLE_NAME = "com.mushroomsuprise.mycelian.sdPlugin"
 OUTDATED_NOTIFY_DEDUPE_KEY = "streamdeck:plugin_outdated"
 OUTDATED_NOTIFY_COOLDOWN_SEC = 86400.0
+_STREAMDECK_QUIT_HINT = (
+    "Quit the Stream Deck app completely (macOS: Stream Deck → Quit Stream Deck), "
+    "then click Reinstall Plugin again. Stream Deck locks plugin files while it is running."
+)
+
+
+class PluginInstallError(Exception):
+    """Install failed; ``user_message`` is safe to show in the UI."""
+
+    def __init__(self, message: str, *, user_message: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.user_message = user_message or message
 
 
 class PluginInstallState(str, Enum):
@@ -46,8 +62,8 @@ class PluginStatus:
         )
 
 
-def get_streamdeck_plugins_dir() -> Optional[Path]:
-    """OS-specific Elgato Stream Deck plugins directory, if it exists."""
+def resolve_streamdeck_plugins_dir(*, create: bool = False) -> Optional[Path]:
+    """OS-specific Elgato Stream Deck plugins directory path."""
     system = platform.system()
     if system == "Darwin":
         plugins_dir = (
@@ -62,7 +78,157 @@ def get_streamdeck_plugins_dir() -> Optional[Path]:
         plugins_dir = Path(appdata) / "Elgato" / "StreamDeck" / "Plugins"
     else:
         return None
-    return plugins_dir if plugins_dir.exists() else None
+    if create:
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+    return plugins_dir
+
+
+def get_streamdeck_plugins_dir() -> Optional[Path]:
+    """Stream Deck plugins directory if Elgato has created it."""
+    plugins_dir = resolve_streamdeck_plugins_dir(create=False)
+    if plugins_dir is None or not plugins_dir.exists():
+        return None
+    return plugins_dir
+
+
+def _is_permission_denied(exc: BaseException) -> bool:
+    if isinstance(exc, PermissionError):
+        return True
+    if isinstance(exc, OSError) and exc.errno in (errno.EACCES, errno.EPERM):
+        return True
+    return False
+
+
+def _chmod_writable(path: str) -> None:
+    try:
+        mode = os.stat(path).st_mode
+        os.chmod(path, mode | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+    except OSError:
+        pass
+
+
+def _rmtree_onerror(func: Callable[..., None], path: str, exc_info) -> None:
+    """Retry tree removal after clearing read-only flags (Windows / locked files)."""
+    exc = exc_info[1]
+    if exc is not None and _is_permission_denied(exc):
+        _chmod_writable(path)
+        try:
+            func(path)
+            return
+        except Exception:
+            pass
+    raise exc  # type: ignore[misc]
+
+
+def _remove_tree(path: Path) -> None:
+    if not path.exists():
+        return
+    shutil.rmtree(path, onerror=_rmtree_onerror)
+
+
+def _remove_plugin_directory(plugin_dir: Path) -> None:
+    """
+    Remove an existing .sdPlugin bundle.
+
+    Stream Deck often locks ``bin/plugin.js`` while running; try rmtree with
+    chmod retry, then rename-aside so a fresh copy can land in place.
+    """
+    if not plugin_dir.exists():
+        return
+
+    try:
+        _remove_tree(plugin_dir)
+        return
+    except (PermissionError, OSError) as e:
+        if not _is_permission_denied(e):
+            raise
+        logger.warning(
+            "Could not delete Stream Deck plugin folder (likely in use): %s",
+            plugin_dir,
+            exc_info=True,
+        )
+
+    backup = plugin_dir.parent / f"{plugin_dir.name}.mycelian-old-{int(time.time())}"
+    try:
+        plugin_dir.rename(backup)
+    except (PermissionError, OSError) as e:
+        raise PluginInstallError(
+            f"Could not replace locked plugin directory: {plugin_dir}",
+            user_message=_STREAMDECK_QUIT_HINT,
+        ) from e
+
+    try:
+        _remove_tree(backup)
+    except (PermissionError, OSError):
+        logger.info(
+            "Previous plugin copy left at %s (remove manually after quitting Stream Deck)",
+            backup,
+        )
+
+
+def _cleanup_stale_plugin_backups(plugins_dir: Path) -> None:
+    prefix = f"{PLUGIN_BUNDLE_NAME}.mycelian-old-"
+    for entry in plugins_dir.iterdir():
+        if entry.is_dir() and entry.name.startswith(prefix):
+            try:
+                _remove_tree(entry)
+            except (PermissionError, OSError):
+                pass
+
+
+@dataclass(frozen=True)
+class PluginInstallResult:
+    destination: Path
+    replaced_existing: bool
+
+
+def install_bundled_plugin() -> PluginInstallResult:
+    """
+    Copy the bundled Mycelian Stream Deck plugin into Elgato's plugins folder.
+
+    Raises PluginInstallError on failure.
+    """
+    source_dir = get_bundled_plugin_dir()
+    if not source_dir.is_dir():
+        raise PluginInstallError(
+            f"Bundled plugin missing: {source_dir}",
+            user_message=(
+                "Plugin source files not found. Reinstall Mycelian or restore the "
+                "sd_plugin folder."
+            ),
+        )
+
+    plugins_dir = resolve_streamdeck_plugins_dir(create=True)
+    if plugins_dir is None:
+        raise PluginInstallError(
+            "Stream Deck plugins path is not supported on this OS",
+            user_message="Stream Deck plugin install is only supported on macOS and Windows.",
+        )
+
+    destination_dir = plugins_dir / PLUGIN_BUNDLE_NAME
+    replaced_existing = destination_dir.exists()
+
+    _cleanup_stale_plugin_backups(plugins_dir)
+    if replaced_existing:
+        _remove_plugin_directory(destination_dir)
+
+    try:
+        shutil.copytree(source_dir, destination_dir)
+    except (PermissionError, OSError) as e:
+        if _is_permission_denied(e):
+            raise PluginInstallError(
+                f"Permission denied copying plugin to {destination_dir}",
+                user_message=_STREAMDECK_QUIT_HINT,
+            ) from e
+        raise PluginInstallError(
+            f"Failed to copy plugin: {e}",
+            user_message=f"Could not copy plugin files: {e}",
+        ) from e
+
+    return PluginInstallResult(
+        destination=destination_dir,
+        replaced_existing=replaced_existing,
+    )
 
 
 def get_bundled_plugin_dir() -> Path:

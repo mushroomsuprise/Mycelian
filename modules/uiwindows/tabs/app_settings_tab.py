@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from typing import Dict, Any, Optional
 
 from nicegui import ui
@@ -14,13 +13,12 @@ from ...ui_settings_layout import (
 )
 from ...notification_engine import notify
 from ...streamdeck_plugin_utils import (
+    PluginInstallError,
     PluginInstallState,
-    get_bundled_plugin_dir,
     get_install_button_label,
-    get_installed_plugin_dir,
     get_plugin_status,
     get_plugin_status_display,
-    get_streamdeck_plugins_dir,
+    install_bundled_plugin,
     maybe_notify_streamdeck_plugin_outdated,
 )
 
@@ -76,58 +74,38 @@ class AppSettingsTab:
         """Install or reinstall the Stream Deck plugin from the bundled copy."""
         was_installed = get_plugin_status().is_installed
         try:
-            source_dir = get_bundled_plugin_dir()
-            if not source_dir.exists():
-                notify(
-                    "Plugin source files not found. Please ensure sd_plugin directory exists.",
-                    type="negative",
-                )
-                return
-
-            plugins_dir = get_streamdeck_plugins_dir()
-            if not plugins_dir:
-                notify(
-                    "Stream Deck plugins directory not found. Please ensure Stream Deck is installed.",
-                    type="negative",
-                )
-                return
-
-            plugins_dir.mkdir(parents=True, exist_ok=True)
-            destination_dir = get_installed_plugin_dir() or (
-                plugins_dir / source_dir.name
-            )
-
-            if destination_dir.exists():
-                shutil.rmtree(destination_dir)
-
-            shutil.copytree(source_dir, destination_dir)
+            result = install_bundled_plugin()
 
             status = get_plugin_status()
             if status.state in (
                 PluginInstallState.UP_TO_DATE,
                 PluginInstallState.UNKNOWN,
             ):
-                verb = "reinstalled" if was_installed else "installed"
+                verb = (
+                    "reinstalled"
+                    if was_installed or result.replaced_existing
+                    else "installed"
+                )
                 notify(
-                    f"Plugin {verb} successfully! Please restart Stream Deck for changes to take effect.",
+                    f"Plugin {verb} successfully! "
+                    "Quit and reopen Stream Deck (or restart it) so the update loads.",
                     type="positive",
-                    timeout=5000,
+                    timeout=6000,
                 )
                 self._refresh_plugin_ui()
             else:
                 notify(
-                    "Plugin installation verification failed. Please try again.",
-                    type="negative",
+                    "Plugin files were copied but version check failed. "
+                    "Restart Stream Deck, then open App Settings to verify.",
+                    type="warning",
+                    timeout=6000,
                 )
                 self._refresh_plugin_ui()
 
-        except PermissionError:
-            notify(
-                "Permission denied. Please ensure you have write access to the Stream Deck plugins directory.",
-                type="negative",
-            )
+        except PluginInstallError as e:
+            notify(e.user_message, type="negative", timeout=8000)
         except Exception as e:
-            notify(f"Error installing plugin: {str(e)}", type="negative")
+            notify(f"Error installing plugin: {e}", type="negative")
 
     # ----- lifecycle -----
     def on_enter(self) -> None:
