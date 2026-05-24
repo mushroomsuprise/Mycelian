@@ -794,10 +794,7 @@ def create_custom_sources_tab():
                     label="Search properties",
                     placeholder="Type to search by property label...",
                     classes="flex-grow bg-theme-base",
-                )
-                search_input.on(
-                    "change",
-                    lambda e: on_search_changed(
+                    on_change=lambda e: on_search_changed(
                         e, config_parser, config_select, config_container
                     ),
                 )
@@ -1449,11 +1446,8 @@ def render_form_element(
                 input_element = form_input(
                     tooltip=tip,
                     value=element_value,
-                )
-                input_element.on(
-                    "change",
-                    lambda _, id=element_id: update_form_data(
-                        form_data, id, input_element.value
+                    on_change=lambda e, id=element_id: update_form_data(
+                        form_data, id, e.value
                     ),
                 )
                 element_ui_map[element_id] = input_element
@@ -1463,11 +1457,8 @@ def render_form_element(
                     value=element_value,
                     classes="w-full h-24",
                     rows=4,
-                )
-                input_element.on(
-                    "change",
-                    lambda _, id=element_id: update_form_data(
-                        form_data, id, input_element.value
+                    on_change=lambda e, id=element_id: update_form_data(
+                        form_data, id, e.value
                     ),
                 )
                 element_ui_map[element_id] = input_element
@@ -1563,11 +1554,8 @@ def render_form_element(
                         tooltip=tip,
                         options=options,
                         value=element_value,
-                    )
-                    input_element.on(
-                        "change",
-                        lambda _, id=element_id: update_form_data(
-                            form_data, id, input_element.value
+                        on_change=lambda e, id=element_id: update_form_data(
+                            form_data, id, e.value
                         ),
                     )
                     element_ui_map[element_id] = input_element
@@ -1580,10 +1568,9 @@ def render_form_element(
                     min=min_val,
                     max=max_val,
                     classes="w-full",
-                )
-                input_element.on(
-                    "change",
-                    lambda e, id=element_id: handle_number_change(e, id, form_data),
+                    on_change=lambda e, id=element_id: handle_number_change(
+                        e, id, form_data
+                    ),
                 )
                 element_ui_map[element_id] = input_element
             elif element_type == "slider":

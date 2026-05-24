@@ -832,11 +832,11 @@
                             <span class="slabel stats-r-label">Materia Count</span><span class="sval stats-r-val" id="materiaCountVal">0</span>
                         </div>
                     </div>
-                    <div class="stats-sync-row" id="rowBattleAtb">
-                        <div class="stats-pair stats-pair--contents">
+                    <div class="stats-sync-row">
+                        <div id="rowBattleAtb" class="stats-pair stats-pair--contents">
                             <span class="slabel stats-l-label">ATB mode</span><span class="sval stats-l-val" id="battleAtbVal">—</span>
                         </div>
-                        <div class="stats-pair stats-pair--contents">
+                        <div id="rowRecentItem" class="stats-pair stats-pair--contents">
                             <span class="slabel stats-r-label">Rec item</span><span class="sval stats-r-val" id="recentItemVal">—</span>
                         </div>
                     </div>
@@ -1440,6 +1440,93 @@
             return gil || tm || fd || md || av || mc || ba || ri;
         }
 
+        var FF7_RECORDS_PAIR_ORDER = [
+            'rowGil', 'rowField', 'rowTime', 'rowModule',
+            'rowAvgLevel', 'rowMateriaCount', 'rowBattleAtb', 'rowRecentItem'
+        ];
+
+        function ff7RecordsStagingEl() {
+            var st = document.getElementById('ff7RecordsStaging');
+            if (!st) {
+                st = document.createElement('div');
+                st.id = 'ff7RecordsStaging';
+                st.className = 'hidden';
+                st.setAttribute('aria-hidden', 'true');
+                document.getElementById('panelStats').appendChild(st);
+            }
+            return st;
+        }
+
+        function ff7RecordsPairVisible(pairId, c) {
+            switch (pairId) {
+                case 'rowGil':
+                    return c.ShowGil !== undefined ? asBool(c.ShowGil, true) : asBool(c.ShowStats, true);
+                case 'rowField':
+                    return asBool(c.ShowFieldName, true);
+                case 'rowTime':
+                    return c.ShowPlaytime !== undefined ? asBool(c.ShowPlaytime, true) : asBool(c.ShowStats, true);
+                case 'rowModule':
+                    return asBool(c.ShowModuleName, true);
+                case 'rowAvgLevel':
+                    return asBool(c.ShowAvgPartyLevel, true);
+                case 'rowMateriaCount':
+                    return asBool(c.ShowMateriaCount, true);
+                case 'rowBattleAtb':
+                    return asBool(c.ShowBattleAtbMode, true);
+                case 'rowRecentItem':
+                    return asBool(c.ShowRecentItem, true);
+                default:
+                    return false;
+            }
+        }
+
+        function ff7RecordsPairSetSide(pairEl, side) {
+            var lab = pairEl.querySelector('.slabel');
+            var val = pairEl.querySelector('.sval');
+            if (!lab || !val) return;
+            var mod = val.classList.contains('module-val');
+            if (side === 'l') {
+                lab.className = 'slabel stats-l-label';
+                val.className = 'sval stats-l-val' + (mod ? ' module-val' : '');
+            } else {
+                lab.className = 'slabel stats-r-label';
+                val.className = 'sval stats-r-val' + (mod ? ' module-val' : '');
+            }
+        }
+
+        function ff7LayoutRecordsPanel(c) {
+            var cols = document.querySelector('#panelStats .stats-columns');
+            if (!cols) return;
+            var staging = ff7RecordsStagingEl();
+            staging.innerHTML = '';
+            var visible = [];
+            for (var i = 0; i < FF7_RECORDS_PAIR_ORDER.length; i++) {
+                var id = FF7_RECORDS_PAIR_ORDER[i];
+                var el = document.getElementById(id);
+                if (!el) continue;
+                if (el.parentNode) el.parentNode.removeChild(el);
+                el.classList.remove('hidden');
+                if (ff7RecordsPairVisible(id, c)) {
+                    visible.push(el);
+                } else {
+                    el.classList.add('hidden');
+                    staging.appendChild(el);
+                }
+            }
+            cols.innerHTML = '';
+            for (var r = 0; r < visible.length; r += 2) {
+                var row = document.createElement('div');
+                row.className = 'stats-sync-row';
+                ff7RecordsPairSetSide(visible[r], 'l');
+                row.appendChild(visible[r]);
+                if (r + 1 < visible.length) {
+                    ff7RecordsPairSetSide(visible[r + 1], 'r');
+                    row.appendChild(visible[r + 1]);
+                }
+                cols.appendChild(row);
+            }
+        }
+
         function applyTemplateConfig(c) {
             cfg = Object.assign({
                 ShowParty: true, ShowEnemies: true, ShowStats: true, ShowBosses: true,
@@ -1554,16 +1641,7 @@
                 bossTitleEl.classList.toggle('hidden', !showBossTitle || !bossTitleStr.trim());
             }
 
-            document.getElementById('rowGil').classList.toggle('hidden', !(cfg.ShowGil !== undefined ? asBool(cfg.ShowGil, true) : asBool(cfg.ShowStats, true)));
-            document.getElementById('rowTime').classList.toggle('hidden', !(cfg.ShowPlaytime !== undefined ? asBool(cfg.ShowPlaytime, true) : asBool(cfg.ShowStats, true)));
-            document.getElementById('rowField').classList.toggle('hidden', !asBool(cfg.ShowFieldName, true));
-            document.getElementById('rowModule').classList.toggle('hidden', !asBool(cfg.ShowModuleName, true));
-            document.getElementById('rowAvgLevel').classList.toggle('hidden', !asBool(cfg.ShowAvgPartyLevel, true));
-            document.getElementById('rowMateriaCount').classList.toggle('hidden', !asBool(cfg.ShowMateriaCount, true));
-            var rba = document.getElementById('rowBattleAtb');
-            if (rba) rba.classList.toggle('hidden', !asBool(cfg.ShowBattleAtbMode, true));
-            var rri = document.getElementById('rowRecentItem');
-            if (rri) rri.classList.toggle('hidden', !asBool(cfg.ShowRecentItem, true));
+            ff7LayoutRecordsPanel(cfg);
 
             ff7EnsureRotorTimer();
         }

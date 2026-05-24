@@ -26,10 +26,14 @@ def form_select(
     on_change: Optional[Callable] = None,
     **kwargs: Any,
 ) -> Any:
-    el = ui.select(options=options, label=label, value=value, **kwargs)
+    el = ui.select(
+        options=options,
+        label=label,
+        value=value,
+        on_change=on_change,
+        **kwargs,
+    )
     el.classes(classes).props(_FIELD_PROPS)
-    if on_change is not None:
-        el.on("change", on_change)
     return _with_tooltip(el, tooltip)
 
 
@@ -42,6 +46,7 @@ def form_input(
     classes: str = _DEFAULT_CLASSES,
     password: bool = False,
     readonly: bool = False,
+    on_change: Optional[Callable] = None,
     **kwargs: Any,
 ) -> Any:
     el = ui.input(
@@ -49,6 +54,7 @@ def form_input(
         value=value,
         placeholder=placeholder,
         password=password,
+        on_change=on_change,
         **kwargs,
     )
     el.classes(classes).props(_FIELD_PROPS)
@@ -66,9 +72,18 @@ def form_number(
     max: Optional[float] = None,
     step: Optional[float] = None,
     classes: str = "",
+    on_change: Optional[Callable] = None,
     **kwargs: Any,
 ) -> Any:
-    el = ui.number(label=label, value=value, min=min, max=max, step=step, **kwargs)
+    el = ui.number(
+        label=label,
+        value=value,
+        min=min,
+        max=max,
+        step=step,
+        on_change=on_change,
+        **kwargs,
+    )
     el.classes(classes or "w-24").props(_FIELD_PROPS)
     return _with_tooltip(el, tooltip)
 
@@ -81,8 +96,15 @@ def form_textarea(
     placeholder: Optional[str] = None,
     classes: str = _DEFAULT_CLASSES,
     rows: int = 3,
+    on_change: Optional[Callable] = None,
     **kwargs: Any,
 ) -> Any:
-    el = ui.textarea(label=label, value=value, placeholder=placeholder, **kwargs)
+    el = ui.textarea(
+        label=label,
+        value=value,
+        placeholder=placeholder,
+        on_change=on_change,
+        **kwargs,
+    )
     el.classes(classes).props(f"{_FIELD_PROPS} rows={rows}")
     return _with_tooltip(el, tooltip)

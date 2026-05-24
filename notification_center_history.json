@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "id": "5e95b548-298c-457f-aabc-eb820e698b63",
+    "ts": 1779586343.713373,
+    "message": "Configuration reset for ff7.",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  }
+]
