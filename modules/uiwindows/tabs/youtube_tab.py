@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 from nicegui import ui
 
 from ...ui_buttons import outline_button, primary_button
+from ...ui_form_controls import form_input
 from ...ui_settings_layout import (
     THEME_CHIP_CLASSES,
     settings_form_grid,
@@ -318,37 +319,33 @@ class YouTubeTab:
                     )
 
             with settings_form_grid(columns=2):
-                self.ui_elements["api_key"] = (
-                    ui.input(
-                        label="API key",
-                        value=getattr(self.buffer, "api_key", ""),
-                        password=True,
-                        password_toggle_button=True,
-                        placeholder="YouTube Data API v3 Key",
-                    )
-                    .classes("w-full")
-                    .on(
-                        "change",
-                        lambda e: self._set(
-                            "api_key",
-                            getattr(e, "args", [getattr(e, "value", "")])[0] or "",
-                        ),
-                    )
+                self.ui_elements["api_key"] = form_input(
+                    tooltip="YouTube Data API v3 key for channel and video lookups",
+                    label="API key",
+                    value=getattr(self.buffer, "api_key", ""),
+                    password=True,
+                    placeholder="YouTube Data API v3 Key",
                 )
-            self.ui_elements["channel_urls"] = (
-                ui.input(
-                    label="Channel URLs",
-                    value=getattr(self.buffer, "channel_urls", ""),
-                    placeholder="https://youtube.com/@Channel|https://...",
-                )
-                .classes("w-full")
-                .on(
+                self.ui_elements["api_key"].props("password-toggle-button")
+                self.ui_elements["api_key"].on(
                     "change",
                     lambda e: self._set(
-                        "channel_urls",
+                        "api_key",
                         getattr(e, "args", [getattr(e, "value", "")])[0] or "",
                     ),
                 )
+            self.ui_elements["channel_urls"] = form_input(
+                tooltip="Pipe-separated YouTube channel URLs to monitor",
+                label="Channel URLs",
+                value=getattr(self.buffer, "channel_urls", ""),
+                placeholder="https://youtube.com/@Channel|https://...",
+            )
+            self.ui_elements["channel_urls"].on(
+                "change",
+                lambda e: self._set(
+                    "channel_urls",
+                    getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                ),
             )
 
             with settings_section(
@@ -357,13 +354,11 @@ class YouTubeTab:
             ):
                 self._playlist_chip_container = theme_chip_row()
                 self._rebuild_playlist_chips()
-                self._playlist_input = (
-                    ui.input(
-                        placeholder="Playlist name",
-                    )
-                    .classes("w-full")
-                    .on("keydown.enter", self._on_playlist_input_enter)
+                self._playlist_input = form_input(
+                    tooltip="Playlist title to exclude from latest-video selection; press Enter to add",
+                    placeholder="Playlist name",
                 )
+                self._playlist_input.on("keydown.enter", self._on_playlist_input_enter)
 
             with ui.row().classes(
                 "button-row w-full justify-end gap-2 mt-1 flex-wrap"

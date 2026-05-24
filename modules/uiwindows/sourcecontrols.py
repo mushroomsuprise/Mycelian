@@ -29,6 +29,7 @@ import os
 
 from nicegui import ui
 from ..notification_engine import notify
+from ..ui_form_controls import form_input, form_number
 
 from .. import template_config_parser, web_engine
 
@@ -446,9 +447,11 @@ def create_text_input_control(template_name, element):
     def handle_text_change(e):
         send_websocket_event(template_name, action, {"text": e.value})
 
-    ui.input(placeholder=placeholder, on_change=handle_text_change).classes(
-        "w-full text-xs"
-    )
+    form_input(
+        tooltip=placeholder or "Send text to the template control",
+        placeholder=placeholder,
+        classes="w-full text-xs",
+    ).on("change", handle_text_change)
 
 
 def create_number_input_control(template_name, element):
@@ -461,9 +464,13 @@ def create_number_input_control(template_name, element):
     def handle_number_change(e):
         send_websocket_event(template_name, action, {"value": e.value})
 
-    ui.number(
-        value=value, min=min_val, max=max_val, on_change=handle_number_change
-    ).classes("w-full text-xs")
+    form_number(
+        tooltip="Numeric value sent to the template control",
+        value=value,
+        min=min_val,
+        max=max_val,
+        classes="w-full text-xs",
+    ).on("change", handle_number_change)
 
 
 def send_websocket_event(template_name, action, data):

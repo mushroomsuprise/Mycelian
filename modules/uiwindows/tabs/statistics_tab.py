@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from nicegui import ui
 from ...notification_engine import notify
+from ...ui_form_controls import form_input
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -108,6 +110,41 @@ class StatisticsTab:
         """Statistics tab doesn't have discard functionality."""
         pass
 
+    @contextmanager
+    def _stat_card(self, title: str) -> Generator[None, None, None]:
+        """Compact metric card with title top-left and horizontal metrics row."""
+        with ui.card().classes("settings-card statistics-metric-card w-full"):
+            ui.label(title).classes(
+                "font-semibold text-sm mb-1 w-full text-left shrink-0"
+            )
+            with ui.row().classes(
+                "w-full gap-3 justify-start items-start flex-wrap"
+            ):
+                yield
+
+    def _stat_value(
+        self, text: str, caption: str, value_class: str = "text-theme-primary"
+    ) -> Any:
+        with ui.column().classes("items-start gap-0 shrink-0 min-w-[4.5rem]"):
+            lbl = ui.label(text).classes(f"text-lg font-bold leading-tight {value_class}")
+            ui.label(caption).classes("text-xs secondary-text text-left leading-tight")
+            return lbl
+
+    def _stat_footer(self, *lines: str) -> None:
+        if not lines:
+            return
+        with ui.column().classes(
+            "w-full items-start gap-0 mt-2 pt-2 "
+            "border-t border-[var(--color-border-default)]"
+        ):
+            for i, line in enumerate(lines):
+                cls = (
+                    "text-xs secondary-text text-left"
+                    if i
+                    else "text-xs text-theme-primary-light text-left"
+                )
+                ui.label(line).classes(cls)
+
     # ----- building -----
     def build(self, parent_container) -> None:
         """Build the statistics tab UI inside parent_container."""
@@ -121,7 +158,9 @@ class StatisticsTab:
             self._cleanup_live_updates()
 
             # Store reference to the container for refresh functionality
-            self.statistics_container = ui.column().classes("w-full gap-4")
+            self.statistics_container = ui.column().classes(
+                "w-full statistics-dashboard"
+            )
 
             with self.statistics_container:
                 # Build the actual content
@@ -533,29 +572,6 @@ class StatisticsTab:
             except Exception as e:
                 print(f"Could not update last save time: {e}")
 
-            # Update status display
-            try:
-                if hasattr(self, "_saving_status_label") and self._saving_status_label:
-                    status = stats_manager.get_saving_status()
-                    new_status = f"Periodic Saving: {'Enabled' if status['is_running'] else 'Disabled'}"
-                    self._saving_status_label.set_text(new_status)
-                    # print(f"Updated saving status to: {new_status}")
-                else:
-                    print("Saving status label not found")
-            except Exception as e:
-                print(f"Could not update saving status: {e}")
-
-            # Update live updates status
-            try:
-                if hasattr(self, "_live_status_label") and self._live_status_label:
-                    new_live_status = f"Live Updates: {'Enabled' if self.live_updates_enabled else 'Disabled'}"
-                    self._live_status_label.set_text(new_live_status)
-                    # print(f"Updated live status to: {new_live_status}")
-                else:
-                    print("Live status label not found")
-            except Exception as e:
-                print(f"Could not update live status: {e}")
-
             # Update individual statistic labels if they exist
             try:
                 self._update_statistic_labels(stats_data)
@@ -848,96 +864,81 @@ class StatisticsTab:
             stats_manager = get_statistics_manager()
             stats_data = stats_manager.get_all_statistics()
 
-            # Header section
-            with ui.card().classes("content-section w-full"):
-                ui.label(" Application Statistics").classes(
-                    "text-2xl font-bold mb-4 text-center"
-                )
-                ui.label(
-                    "Real-time statistics from your Mycelian streaming setup"
-                ).classes("secondary-text text-center mb-6")
-
             # Alert Statistics Section
-            with ui.card().classes("content-section w-full"):
-                ui.label("🎯 Alert Statistics").classes("text-xl font-bold mb-4")
+            with ui.card().classes("content-section statistics-section w-full"):
+                ui.label("🎯 Alert Statistics").classes("text-base font-bold mb-2")
 
-                with ui.grid(columns=4).classes("w-full gap-4"):
-                    # Bit alerts
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("⚡ Bits").classes("font-semibold mb-2")
-                        self._bit_alerts_label = ui.label(
-                            f"{stats_data['alerts']['bit_alerts_played']:,}"
-                        ).classes("text-xl font-bold text-theme-primary")
-                        ui.label("Alerts played").classes("text-xs secondary-text mb-1")
-                        self._total_bits_label = ui.label(
-                            f"{stats_data['alerts']['total_bits']:,}"
-                        ).classes("text-lg font-semibold text-theme-primary-light")
-                        ui.label("Total bits given").classes("text-xs secondary-text")
+                with ui.grid(columns=4).classes("w-full gap-2"):
+                    with self._stat_card("⚡ Bits"):
+                        self._bit_alerts_label = self._stat_value(
+                            f"{stats_data['alerts']['bit_alerts_played']:,}",
+                            "Alerts played",
+                            "text-theme-primary",
+                        )
+                        self._total_bits_label = self._stat_value(
+                            f"{stats_data['alerts']['total_bits']:,}",
+                            "Total bits",
+                            "text-theme-primary-light",
+                        )
 
-                    # Resub alerts
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🔄 Resubs").classes("font-semibold mb-2")
-                        self._resubs_label = ui.label(
-                            f"{stats_data['alerts']['resubs_played']:,}"
-                        ).classes("text-2xl font-bold text-blue-400")
-                        ui.label("Total played").classes("text-xs secondary-text")
+                    with self._stat_card("🔄 Resubs"):
+                        self._resubs_label = self._stat_value(
+                            f"{stats_data['alerts']['resubs_played']:,}",
+                            "Total played",
+                            "text-blue-400",
+                        )
 
-                    # New subs
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🆕 New Subs").classes("font-semibold mb-2")
-                        self._new_subs_label = ui.label(
-                            f"{stats_data['alerts']['new_subs_played']:,}"
-                        ).classes("text-2xl font-bold text-green-400")
-                        ui.label("Total played").classes("text-xs secondary-text")
+                    with self._stat_card("🆕 New Subs"):
+                        self._new_subs_label = self._stat_value(
+                            f"{stats_data['alerts']['new_subs_played']:,}",
+                            "Total played",
+                            "text-green-400",
+                        )
 
-                    # Gift subs
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🎁 Gift Subs").classes("font-semibold mb-2")
-                        self._gift_subs_label = ui.label(
-                            f"{stats_data['alerts']['gift_subs_played']:,}"
-                        ).classes("text-xl font-bold text-pink-400")
-                        ui.label("Alerts played").classes("text-xs secondary-text mb-1")
-                        self._total_gift_subs_label = ui.label(
-                            f"{stats_data['alerts']['total_gift_subs']:,}"
-                        ).classes("text-lg font-semibold text-pink-300")
-                        ui.label("Total subs given").classes("text-xs secondary-text")
+                    with self._stat_card("🎁 Gift Subs"):
+                        self._gift_subs_label = self._stat_value(
+                            f"{stats_data['alerts']['gift_subs_played']:,}",
+                            "Alerts played",
+                            "text-pink-400",
+                        )
+                        self._total_gift_subs_label = self._stat_value(
+                            f"{stats_data['alerts']['total_gift_subs']:,}",
+                            "Total subs",
+                            "text-pink-300",
+                        )
 
             # Follow & Point Statistics Section
-            with ui.card().classes("content-section w-full"):
+            with ui.card().classes("content-section statistics-section w-full"):
                 ui.label("👥 Social & Interaction Statistics").classes(
-                    "text-xl font-bold mb-4"
+                    "text-base font-bold mb-2"
                 )
 
-                with ui.grid(columns=3).classes("w-full gap-4"):
-                    # Follow alerts
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("👤 Follow Alerts").classes("font-semibold mb-2")
-                        self._follow_alerts_label = ui.label(
-                            f"{stats_data['alerts']['follow_alerts_played']:,}"
-                        ).classes("text-2xl font-bold text-cyan-400")
-                        ui.label("Total played").classes("text-xs secondary-text")
-
-                    # Point alerts
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🎯 Point Alerts").classes("font-semibold mb-2")
-                        self._point_alerts_label = ui.label(
-                            f"{stats_data['alerts']['point_alerts_redeemed']:,}"
-                        ).classes("text-xl font-bold text-orange-400")
-                        ui.label("Alerts redeemed").classes(
-                            "text-xs secondary-text mb-1"
+                with ui.grid(columns=3).classes("w-full gap-2"):
+                    with self._stat_card("👤 Follow Alerts"):
+                        self._follow_alerts_label = self._stat_value(
+                            f"{stats_data['alerts']['follow_alerts_played']:,}",
+                            "Total played",
+                            "text-cyan-400",
                         )
-                        self._total_channel_points_label = ui.label(
-                            f"{stats_data['alerts']['total_channel_points_redeemed']:,}"
-                        ).classes("text-lg font-semibold text-orange-300")
-                        ui.label("Total points spent").classes("text-xs secondary-text")
 
-                    # Twitch messages
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("💬 Chat Messages").classes("font-semibold mb-2")
-                        self._twitch_messages_label = ui.label(
-                            f"{stats_data['chat']['twitch_messages_received']:,}"
-                        ).classes("text-2xl font-bold text-indigo-400")
-                        ui.label("Total received").classes("text-xs secondary-text")
+                    with self._stat_card("🎯 Point Alerts"):
+                        self._point_alerts_label = self._stat_value(
+                            f"{stats_data['alerts']['point_alerts_redeemed']:,}",
+                            "Redeemed",
+                            "text-orange-400",
+                        )
+                        self._total_channel_points_label = self._stat_value(
+                            f"{stats_data['alerts']['total_channel_points_redeemed']:,}",
+                            "Points spent",
+                            "text-orange-300",
+                        )
+
+                    with self._stat_card("💬 Chat Messages"):
+                        self._twitch_messages_label = self._stat_value(
+                            f"{stats_data['chat']['twitch_messages_received']:,}",
+                            "Total received",
+                            "text-indigo-400",
+                        )
 
             # Hype Train Statistics Section
             # Check for new format first, fallback to old format for backwards compatibility
@@ -974,23 +975,22 @@ class StatisticsTab:
             }
 
             # Always show the hype train section
-            with ui.card().classes("content-section w-full"):
-                ui.label("🚂 Hype Train Statistics").classes("text-xl font-bold mb-4")
+            with ui.card().classes("content-section statistics-section w-full"):
+                ui.label("🚂 Hype Train Statistics").classes("text-base font-bold mb-2")
 
-                # Fixed 5 columns, with rows as needed for additional levels
-                with ui.grid(columns=5).classes("w-full gap-4"):
+                with ui.grid(columns=5).classes("w-full gap-2"):
                     for level in sorted(all_levels.keys()):
                         count = all_levels[level]
-                        with ui.card().classes("settings-card text-center p-4"):
-                            ui.label(f"Level {level}").classes("font-semibold mb-2")
-                            self._hype_train_labels[level] = ui.label(
-                                f"{count:,}"
-                            ).classes("text-2xl font-bold text-yellow-400")
-                            ui.label("Completed").classes("text-xs secondary-text")
+                        with self._stat_card(f"Level {level}"):
+                            self._hype_train_labels[level] = self._stat_value(
+                                f"{count:,}",
+                                "Completed",
+                                "text-yellow-400",
+                            )
 
             # Connector Statistics Section
-            with ui.card().classes("content-section w-full"):
-                ui.label("🔗 Connector Statistics").classes("text-xl font-bold mb-4")
+            with ui.card().classes("content-section statistics-section w-full"):
+                ui.label("🔗 Connector Statistics").classes("text-base font-bold mb-2")
 
                 # Get connector insights
                 top_connector = stats_manager.get_top_connectors(limit=1)
@@ -998,60 +998,45 @@ class StatisticsTab:
                     "connector_triggers", limit=1
                 )
 
-                with ui.grid(columns=3).classes("w-full gap-4"):
-                    # Total connectors
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("📦 Total Connectors").classes("font-semibold mb-2")
-                        self._connectors_created_label = ui.label(
-                            f"{stats_data['connectors']['connectors_created']:,}"
-                        ).classes("text-2xl font-bold text-emerald-400")
-                        ui.label("Created").classes("text-xs secondary-text")
-
-                        # Most used connector
+                with ui.grid(columns=3).classes("w-full gap-2"):
+                    with self._stat_card("📦 Total Connectors"):
+                        self._connectors_created_label = self._stat_value(
+                            f"{stats_data['connectors']['connectors_created']:,}",
+                            "Created",
+                            "text-emerald-400",
+                        )
                         if top_connector:
-                            connector_name = top_connector[0]["connector_name"]
-                            connector_count = top_connector[0]["trigger_count"]
-                            ui.label(f"Most Used: {connector_name}").classes(
-                                "text-xs text-blue-300 mt-2"
-                            )
-                            ui.label(f"({connector_count:,} triggers)").classes(
-                                "text-xs secondary-text"
+                            cn = top_connector[0]["connector_name"]
+                            cc = top_connector[0]["trigger_count"]
+                            self._stat_footer(
+                                f"Most used: {cn}",
+                                f"({cc:,} triggers)",
                             )
 
-                    # Total triggers
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("⚡ Total Connector Triggers").classes(
-                            "font-semibold mb-2"
+                    with self._stat_card("⚡ Total Triggers"):
+                        self._total_triggers_label = self._stat_value(
+                            f"{stats_data['connectors']['total_triggers']:,}",
+                            "All executions",
+                            "text-green-400",
                         )
-                        self._total_triggers_label = ui.label(
-                            f"{stats_data['connectors']['total_triggers']:,}"
-                        ).classes("text-2xl font-bold text-green-400")
-                        ui.label("All executions").classes("text-xs secondary-text")
-
-                        # Top user for connector triggers
                         if top_connector_user:
-                            user_name = top_connector_user[0]["username"]
-                            user_count = top_connector_user[0]["value"]
-                            ui.label(f"Top User: {user_name}").classes(
-                                "text-xs text-theme-primary-light mt-2"
-                            )
-                            ui.label(f"({user_count:,} triggers)").classes(
-                                "text-xs secondary-text"
+                            un = top_connector_user[0]["username"]
+                            uc = top_connector_user[0]["value"]
+                            self._stat_footer(
+                                f"Top user: {un}",
+                                f"({uc:,} triggers)",
                             )
 
-                    # Connectors triggered
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🔗 Unique Connectors Triggered").classes(
-                            "font-semibold mb-2"
+                    with self._stat_card("🔗 Unique Triggered"):
+                        self._connectors_triggered_label = self._stat_value(
+                            f"{stats_data['connectors']['connectors_triggered']:,}",
+                            "Unique runs",
+                            "text-red-400",
                         )
-                        self._connectors_triggered_label = ui.label(
-                            f"{stats_data['connectors']['connectors_triggered']:,}"
-                        ).classes("text-2xl font-bold text-red-400")
-                        ui.label("Unique executions").classes("text-xs secondary-text")
 
             # Chatbot Statistics Section
-            with ui.card().classes("content-section w-full"):
-                ui.label("🤖 Chatbot Statistics").classes("text-xl font-bold mb-4")
+            with ui.card().classes("content-section statistics-section w-full"):
+                ui.label("🤖 Chatbot Statistics").classes("text-base font-bold mb-2")
 
                 # Get chatbot insights
                 top_command = stats_manager.get_top_commands(limit=1)
@@ -1060,158 +1045,127 @@ class StatisticsTab:
                     "chatbot_interactions", limit=1
                 )
 
-                with ui.grid(columns=4).classes("w-full gap-4"):
-                    # Commands
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("📝 Commands").classes("font-semibold mb-2")
-                        self._commands_created_label = ui.label(
-                            f"{stats_data['chatbot']['commands_created']:,}"
-                        ).classes("text-2xl font-bold text-theme-primary")
-                        ui.label("Total created").classes("text-xs secondary-text")
-
-                        # Most used command
+                with ui.grid(columns=4).classes("w-full gap-2"):
+                    with self._stat_card("📝 Commands"):
+                        self._commands_created_label = self._stat_value(
+                            f"{stats_data['chatbot']['commands_created']:,}",
+                            "Created",
+                            "text-theme-primary",
+                        )
                         if top_command:
                             command_name = top_command[0]["command_name"]
                             command_count = top_command[0]["usage_count"]
-                            ui.label(f"Most Used: {command_name}").classes(
-                                "text-xs text-blue-300 mt-2"
-                            )
-                            ui.label(f"({command_count:,} uses)").classes(
-                                "text-xs secondary-text"
+                            self._stat_footer(
+                                f"Most used: {command_name}",
+                                f"({command_count:,} uses)",
                             )
 
-                    # Events
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🎪 Events").classes("font-semibold mb-2")
-                        self._events_created_label = ui.label(
-                            f"{stats_data['chatbot']['events_created']:,}"
-                        ).classes("text-2xl font-bold text-blue-400")
-                        ui.label("Total created").classes("text-xs secondary-text")
-
-                        # Most triggered event
+                    with self._stat_card("🎪 Events"):
+                        self._events_created_label = self._stat_value(
+                            f"{stats_data['chatbot']['events_created']:,}",
+                            "Created",
+                            "text-blue-400",
+                        )
                         if top_event:
                             event_name = top_event[0]["event_name"]
                             event_count = top_event[0]["trigger_count"]
-                            ui.label(f"Most Used: {event_name}").classes(
-                                "text-xs text-cyan-300 mt-2"
-                            )
-                            ui.label(f"({event_count:,} triggers)").classes(
-                                "text-xs secondary-text"
+                            self._stat_footer(
+                                f"Most used: {event_name}",
+                                f"({event_count:,} triggers)",
                             )
 
-                    # Commands triggered
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("⚡ Commands Used").classes("font-semibold mb-2")
-                        self._commands_triggered_label = ui.label(
-                            f"{stats_data['chatbot']['commands_triggered']:,}"
-                        ).classes("text-2xl font-bold text-green-400")
-                        ui.label("Total executions").classes("text-xs secondary-text")
-
-                        # Top user for chatbot interactions
+                    with self._stat_card("⚡ Commands Used"):
+                        self._commands_triggered_label = self._stat_value(
+                            f"{stats_data['chatbot']['commands_triggered']:,}",
+                            "Executions",
+                            "text-green-400",
+                        )
                         if top_command_user:
                             user_name = top_command_user[0]["username"]
                             user_count = top_command_user[0]["value"]
-                            ui.label(f"Top User: {user_name}").classes(
-                                "text-xs text-theme-primary-light mt-2"
-                            )
-                            ui.label(f"({user_count:,} interactions)").classes(
-                                "text-xs secondary-text"
+                            self._stat_footer(
+                                f"Top user: {user_name}",
+                                f"({user_count:,} interactions)",
                             )
 
-                    # Events triggered
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🎯 Events Triggered").classes("font-semibold mb-2")
-                        self._events_triggered_label = ui.label(
-                            f"{stats_data['chatbot']['events_triggered']:,}"
-                        ).classes("text-2xl font-bold text-orange-400")
-                        ui.label("Total executions").classes("text-xs secondary-text")
+                    with self._stat_card("🎯 Events Triggered"):
+                        self._events_triggered_label = self._stat_value(
+                            f"{stats_data['chatbot']['events_triggered']:,}",
+                            "Executions",
+                            "text-orange-400",
+                        )
 
                 gw = stats_data.get("giveaways", {}) or {}
-                ui.label("🎁 Giveaways").classes("text-lg font-semibold mb-2 mt-4")
-                with ui.grid(columns=3).classes("w-full gap-4"):
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("Draws completed").classes("font-semibold mb-2")
-                        self._giveaways_completed_label = ui.label(
-                            f"{int(gw.get('giveaways_completed', 0) or 0):,}"
-                        ).classes("text-2xl font-bold text-pink-400")
-                        ui.label("Draw winners clicks").classes(
-                            "text-xs secondary-text"
+                ui.label("🎁 Giveaways").classes("text-sm font-semibold mb-1 mt-2")
+                with ui.grid(columns=3).classes("w-full gap-2"):
+                    with self._stat_card("Draws completed"):
+                        self._giveaways_completed_label = self._stat_value(
+                            f"{int(gw.get('giveaways_completed', 0) or 0):,}",
+                            "Draw clicks",
+                            "text-pink-400",
                         )
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("Total entries").classes("font-semibold mb-2")
-                        self._giveaways_entries_label = ui.label(
-                            f"{int(gw.get('total_entry_events', 0) or 0):,}"
-                        ).classes("text-2xl font-bold text-rose-400")
-                        ui.label("Chat keyword matches").classes(
-                            "text-xs secondary-text"
+                    with self._stat_card("Total entries"):
+                        self._giveaways_entries_label = self._stat_value(
+                            f"{int(gw.get('total_entry_events', 0) or 0):,}",
+                            "Keyword matches",
+                            "text-rose-400",
                         )
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("Avg entries / giveaway").classes("font-semibold mb-2")
-                        avg_gw = float(gw.get("average_entries_per_giveaway", 0) or 0)
-                        self._giveaways_avg_label = ui.label(f"{avg_gw:.2f}").classes(
-                            "text-2xl font-bold text-fuchsia-400"
-                        )
-                        ui.label("When at least one draw ran").classes(
-                            "text-xs secondary-text"
+                    avg_gw = float(gw.get("average_entries_per_giveaway", 0) or 0)
+                    with self._stat_card("Avg / giveaway"):
+                        self._giveaways_avg_label = self._stat_value(
+                            f"{avg_gw:.2f}",
+                            "Per draw",
+                            "text-fuchsia-400",
                         )
 
             # Quote Statistics Section
-            with ui.card().classes("content-section w-full"):
-                ui.label("💬 Quote Statistics").classes("text-xl font-bold mb-4")
+            with ui.card().classes("content-section statistics-section w-full"):
+                ui.label("💬 Quote Statistics").classes("text-base font-bold mb-2")
 
                 # Get quote insights
                 top_quote_user = stats_manager.get_top_users_by_statistic(
                     "quotes_redeemed", limit=1
                 )
 
-                with ui.grid(columns=2).classes("w-full gap-4"):
-                    # Total quotes
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("📚 Total Quotes").classes("font-semibold mb-2")
-                        self._quotes_created_label = ui.label(
-                            f"{stats_data['quotes']['quotes_created']:,}"
-                        ).classes("text-2xl font-bold text-indigo-400")
-                        ui.label("In database").classes("text-xs secondary-text")
-
-                        # Get most redeemed quote
+                with ui.grid(columns=2).classes("w-full gap-2"):
+                    with self._stat_card("📚 Total Quotes"):
+                        self._quotes_created_label = self._stat_value(
+                            f"{stats_data['quotes']['quotes_created']:,}",
+                            "In database",
+                            "text-indigo-400",
+                        )
                         individual_quote_usage = stats_data["quotes"].get(
                             "individual_quote_usage", {}
                         )
                         if individual_quote_usage:
-                            most_redeemed_quote = max(
+                            quote_id, quote_count = max(
                                 individual_quote_usage.items(), key=lambda x: x[1]
                             )
-                            quote_id, quote_count = most_redeemed_quote
-                            ui.label(f"Most Redeemed: {quote_id}").classes(
-                                "text-xs text-blue-300 mt-2"
-                            )
-                            ui.label(f"({quote_count:,} redemptions)").classes(
-                                "text-xs secondary-text"
+                            self._stat_footer(
+                                f"Most redeemed: {quote_id}",
+                                f"({quote_count:,} redemptions)",
                             )
 
-                    # Quotes redeemed
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🎯 Quotes Redeemed").classes("font-semibold mb-2")
-                        self._quotes_redeemed_label = ui.label(
-                            f"{stats_data['quotes']['total_quotes_redeemed']:,}"
-                        ).classes("text-2xl font-bold text-pink-400")
-                        ui.label("Total uses").classes("text-xs secondary-text")
-
-                        # Top user for quote redemptions
+                    with self._stat_card("🎯 Quotes Redeemed"):
+                        self._quotes_redeemed_label = self._stat_value(
+                            f"{stats_data['quotes']['total_quotes_redeemed']:,}",
+                            "Total uses",
+                            "text-pink-400",
+                        )
                         if top_quote_user:
                             user_name = top_quote_user[0]["username"]
                             user_count = top_quote_user[0]["value"]
-                            ui.label(f"Top User: {user_name}").classes(
-                                "text-xs text-theme-primary-light mt-2"
-                            )
-                            ui.label(f"({user_count:,} redemptions)").classes(
-                                "text-xs secondary-text"
+                            self._stat_footer(
+                                f"Top user: {user_name}",
+                                f"({user_count:,} redemptions)",
                             )
 
             # Template Statistics Section (if any templates have stats)
             if stats_data["templates"]:
-                with ui.card().classes("content-section w-full"):
-                    ui.label("🎨 Template Statistics").classes("text-xl font-bold mb-4")
+                with ui.card().classes("content-section statistics-section w-full"):
+                    ui.label("🎨 Template Statistics").classes(
+                        "text-base font-bold mb-2"
+                    )
 
                     for template_name, template_stats in stats_data[
                         "templates"
@@ -1226,12 +1180,12 @@ class StatisticsTab:
                                 if template_name not in self._template_stat_labels:
                                     self._template_stat_labels[template_name] = {}
 
-                                with ui.grid(columns=3).classes("w-full gap-4"):
+                                with ui.grid(columns=3).classes("w-full gap-2"):
                                     for stat_name, stat_value in template_stats[
                                         "custom_stats"
                                     ].items():
                                         with ui.card().classes(
-                                            "text-center p-3 bg-theme-surface rounded"
+                                            "text-center p-2 bg-theme-surface rounded"
                                         ):
                                             ui.label(
                                                 stat_name.replace("_", " ").title()
@@ -1253,92 +1207,54 @@ class StatisticsTab:
             self._build_export_section()
 
             # Session Information Section
-            with ui.card().classes("content-section w-full"):
-                ui.label("⏱️ Session Information").classes("text-xl font-bold mb-4")
+            with ui.card().classes("content-section statistics-section w-full"):
+                ui.label("⏱️ Session Information").classes("text-base font-bold mb-2")
 
                 session_duration = time.time() - stats_data["session"]["start_time"]
                 hours = int(session_duration // 3600)
                 minutes = int((session_duration % 3600) // 60)
                 seconds = int(session_duration % 60)
 
-                with ui.grid(columns=3).classes("w-full gap-4"):
-                    # Session duration
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("🕐 Session Duration").classes("font-semibold mb-2")
-                        self._session_duration_label = ui.label(
-                            f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                        ).classes("text-2xl font-bold text-teal-400")
-                        ui.label("Hours:Minutes:Seconds").classes(
-                            "text-xs secondary-text"
+                with ui.grid(columns=3).classes("w-full gap-2"):
+                    with self._stat_card("🕐 Session"):
+                        self._session_duration_label = self._stat_value(
+                            f"{hours:02d}:{minutes:02d}:{seconds:02d}",
+                            "H:M:S",
+                            "text-teal-400",
                         )
 
-                    # Last save
-                    with ui.card().classes("settings-card text-center p-4"):
-                        ui.label("💾 Last Saved").classes("font-semibold mb-2")
+                    with self._stat_card("💾 Last Saved"):
                         if stats_data["session"]["last_save_time"]:
                             last_save = datetime.fromtimestamp(
                                 stats_data["session"]["last_save_time"]
                             )
-                            self._last_save_label = ui.label(
-                                last_save.strftime("%H:%M:%S")
-                            ).classes("text-2xl font-bold muted-text")
-                            ui.label("Today").classes("text-xs secondary-text")
-                        else:
-                            self._last_save_label = ui.label("Never").classes(
-                                "text-2xl font-bold muted-text"
+                            self._last_save_label = self._stat_value(
+                                last_save.strftime("%H:%M:%S"),
+                                "Today",
+                                "text-theme-muted",
                             )
-                            ui.label("No saves yet").classes("text-xs secondary-text")
+                        else:
+                            self._last_save_label = self._stat_value(
+                                "Never",
+                                "No saves yet",
+                                "text-theme-muted",
+                            )
 
-                    # Control buttons
-                    with ui.card().classes("settings-card p-4"):
-                        ui.label("⚙️ Controls").classes("font-semibold mb-3")
-
-                        # Status displays
-                        with ui.column().classes("w-full mb-3 gap-2"):
-                            # Periodic saving status
-                            with ui.row().classes("w-full justify-center"):
-                                status = stats_manager.get_saving_status()
-                                self._saving_status_label = ui.label(
-                                    f"🟢 Periodic Saving: {'Enabled' if status['is_running'] else 'Disabled'}"
-                                ).classes("text-sm font-semibold")
-
-                            # Live updates status
-                            with ui.row().classes("w-full justify-center"):
-                                self._live_status_label = ui.label(
-                                    " Live Updates: Enabled"
-                                ).classes("text-sm font-semibold")
-
-                        # Control buttons - organized in rows
-                        with ui.column().classes("w-full gap-2"):
-                            # First row: Live updates and refresh
-                            with ui.row().classes("w-full gap-2"):
-                                self._live_toggle_button = ui.button(
-                                    "⏸️ Stop Live",  # Live updates are enabled by default
-                                    on_click=lambda: self._toggle_live_updates(),
-                                ).classes(
-                                    "btn-secondary px-3 py-2 rounded-lg font-semibold flex-1"
-                                )
-                                ui.button(
-                                    "🔄 Refresh",
-                                    on_click=lambda: self._refresh_statistics(),
-                                ).classes(
-                                    "btn-primary px-3 py-2 rounded-lg font-semibold flex-1"
-                                )
-
-                            # Second row: Force save and debug
-                            with ui.row().classes("w-full gap-2"):
-                                ui.button(
-                                    "💾 Force Save",
-                                    on_click=lambda: self._force_save_statistics(),
-                                ).classes(
-                                    "btn-success px-3 py-2 rounded-lg font-semibold"
-                                )
-                                ui.button(
-                                    "🔍 Debug Counts",
-                                    on_click=lambda: self._debug_counts(),
-                                ).classes(
-                                    "btn-secondary text-white px-3 py-2 rounded-lg font-semibold"
-                                )
+                    with ui.card().classes("settings-card statistics-metric-card p-2"):
+                        ui.label("⚙️ Controls").classes("font-semibold mb-2")
+                        with ui.row().classes("w-full gap-2"):
+                            ui.button(
+                                "🔄 Refresh",
+                                on_click=lambda: self._refresh_statistics(),
+                            ).classes(
+                                "btn-primary px-3 py-2 rounded-lg font-semibold flex-1"
+                            )
+                            ui.button(
+                                "💾 Force Save",
+                                on_click=lambda: self._force_save_statistics(),
+                            ).classes(
+                                "btn-success px-3 py-2 rounded-lg font-semibold flex-1"
+                            )
 
         except Exception as e:
             print(f"Error rebuilding statistics content: {str(e)}", exc_info=True)
@@ -1364,31 +1280,32 @@ class StatisticsTab:
             with ui.row().classes("w-full gap-4 items-end mb-4"):
                 # Username search with autocomplete
                 known_users = stats_manager.get_all_tracked_usernames()
-                self._user_search_input = (
-                    ui.input(
-                        label="Username",
-                        placeholder="Type a username...",
-                        autocomplete=known_users,
-                    )
-                    .classes("flex-1")
-                    .props("outlined dense")
+                self._user_search_input = form_input(
+                    tooltip="Twitch username to look up in saved statistics",
+                    label="Username",
+                    placeholder="Type a username...",
+                    classes="flex-1",
+                    autocomplete=known_users,
                 )
 
-                # Date range pickers
                 today = datetime.now()
                 thirty_days_ago = today - timedelta(days=30)
 
-                with ui.column().classes("gap-1"):
-                    ui.label("Start Date").classes("text-xs secondary-text")
-                    self._user_start_date = ui.input(
-                        value=thirty_days_ago.strftime("%Y-%m-%d"),
-                    ).classes("w-40").props("outlined dense type=date")
+                self._user_start_date = form_input(
+                    tooltip="Start of the date range for per-user event statistics",
+                    label="Start date",
+                    value=thirty_days_ago.strftime("%Y-%m-%d"),
+                    classes="w-40",
+                )
+                self._user_start_date.props("type=date")
 
-                with ui.column().classes("gap-1"):
-                    ui.label("End Date").classes("text-xs secondary-text")
-                    self._user_end_date = ui.input(
-                        value=today.strftime("%Y-%m-%d"),
-                    ).classes("w-40").props("outlined dense type=date")
+                self._user_end_date = form_input(
+                    tooltip="End of the date range for per-user event statistics",
+                    label="End date",
+                    value=today.strftime("%Y-%m-%d"),
+                    classes="w-40",
+                )
+                self._user_end_date.props("type=date")
 
                 ui.button(
                     "Search",
@@ -1745,17 +1662,21 @@ class StatisticsTab:
                 today = datetime.now()
                 thirty_days_ago = today - timedelta(days=30)
 
-                with ui.column().classes("gap-1"):
-                    ui.label("Start Date").classes("text-xs secondary-text")
-                    self._export_start_date = ui.input(
-                        value=thirty_days_ago.strftime("%Y-%m-%d"),
-                    ).classes("w-40").props("outlined dense type=date")
+                self._export_start_date = form_input(
+                    tooltip="Start date for the highlights export image",
+                    label="Start date",
+                    value=thirty_days_ago.strftime("%Y-%m-%d"),
+                    classes="w-40",
+                )
+                self._export_start_date.props("type=date")
 
-                with ui.column().classes("gap-1"):
-                    ui.label("End Date").classes("text-xs secondary-text")
-                    self._export_end_date = ui.input(
-                        value=today.strftime("%Y-%m-%d"),
-                    ).classes("w-40").props("outlined dense type=date")
+                self._export_end_date = form_input(
+                    tooltip="End date for the highlights export image",
+                    label="End date",
+                    value=today.strftime("%Y-%m-%d"),
+                    classes="w-40",
+                )
+                self._export_end_date.props("type=date")
 
                 ui.button(
                     "📸 Export Image",

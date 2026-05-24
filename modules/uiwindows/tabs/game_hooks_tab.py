@@ -16,7 +16,13 @@ from ..os_brand_icons import OS_BRAND_ROW
 
 logger = logging.getLogger(__name__)
 
-_STATUS_LABEL_LAYOUT = "text-right shrink-0 max-w-[50%] truncate"
+_CARD_BASE = (
+    "content-card w-full min-w-0 p-3 border-2 border-solid transition-colors"
+)
+_BORDER_NEUTRAL = "border-transparent"
+_BORDER_SUCCESS = "border-theme-success"
+_BORDER_WARNING = "border-theme-warning"
+_BORDER_ERROR = "border-theme-error"
 
 
 class GameHooksTab:
@@ -29,6 +35,7 @@ class GameHooksTab:
         self._loaded_enabled: Dict[str, bool] = {}
         self._status_timer: Optional[Any] = None
         self._hook_supported: Dict[str, bool] = {}
+        self._last_error_notified: Dict[str, str] = {}
 
     def _load_from_db(self) -> None:
         for meta in list_hooks_for_ui():
@@ -64,76 +71,82 @@ class GameHooksTab:
                     ui.html(svg, tag="span")
 
     @staticmethod
-    def _truncate(msg: str, max_len: int = 72) -> str:
+    def _truncate(msg: str, max_len: int = 120) -> str:
         msg = msg.strip()
         if len(msg) <= max_len:
             return msg
         return msg[: max_len - 1] + "…"
 
     @staticmethod
-    def _status_from_snapshot(snap: Dict[str, Any]) -> Tuple[str, str]:
-        """Return (label text, tailwind/theme classes for the status label)."""
+    def _border_from_snapshot(snap: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+        """Return (border_class, optional_error_message_for_notify)."""
         disabled = bool(snap.get("disabled"))
         attached = bool(snap.get("attached"))
         err_raw = snap.get("error")
         err = err_raw if isinstance(err_raw, str) else (str(err_raw) if err_raw else "")
 
         if disabled:
-            return "Disabled", "text-sm font-medium secondary-text"
+            return _BORDER_NEUTRAL, None
 
         err_l = err.lower()
         if "requires windows" in err_l or "only supported on windows" in err_l:
-            return (
-                "Unsupported on this platform",
-                "text-sm font-medium text-theme-warning",
-            )
+            return _BORDER_WARNING, None
 
         if attached and not err:
-            return "Enabled — connected", "text-sm font-medium text-theme-success"
+            return _BORDER_SUCCESS, None
 
         if not err or not err.strip():
-            return "Enabled — not connected", "text-sm font-medium text-theme-warning"
+            return _BORDER_WARNING, None
 
         if "not attached" in err_l or "not found" in err_l:
-            return "Enabled — not connected", "text-sm font-medium text-theme-warning"
+            return _BORDER_WARNING, None
 
-        detail = GameHooksTab._truncate(err)
-        return f"Error: {detail}", "text-sm font-medium text-theme-error"
+        return _BORDER_ERROR, GameHooksTab._truncate(err)
+
+    def _apply_card_border(self, hook_id: str, border_class: str) -> None:
+        card = self.ui_elements.get(f"{hook_id}_card")
+        if card is None:
+            return
+        card.classes(
+            replace=f"{_CARD_BASE} {border_class}",
+        )
+
+    def _maybe_notify_error(self, hook_id: str, err_msg: Optional[str], title: str) -> None:
+        prev = self._last_error_notified.get(hook_id, "")
+        if err_msg:
+            if err_msg != prev:
+                self._last_error_notified[hook_id] = err_msg
+                notify(f"{title}: {err_msg}", type="negative", timeout=8000)
+        elif prev:
+            self._last_error_notified[hook_id] = ""
 
     def _refresh_runtime_status(self, hook_id: str) -> None:
-        lbl = self.ui_elements.get(f"{hook_id}_runtime_status_label")
-        if not lbl:
-            return
+        meta_by_id = {m.hook_id: m for m in list_hooks_for_ui()}
+        title = meta_by_id.get(hook_id).title if hook_id in meta_by_id else hook_id
+
         try:
             from ...game_hooks_service import game_hooks_service
 
             info = game_hooks_service.get_hook_ui_snapshot(hook_id)
         except Exception as e:
             logger.debug("%s runtime status: %s", hook_id, e)
-            lbl.set_text("Status unavailable")
-            lbl.classes(
-                replace=f"text-sm font-medium text-theme-error {_STATUS_LABEL_LAYOUT}"
-            )
+            self._apply_card_border(hook_id, _BORDER_ERROR)
+            self._maybe_notify_error(hook_id, "Status unavailable", title)
             return
 
         if not info.get("service_running"):
-            lbl.set_text("Hooks service not running")
-            lbl.classes(
-                replace=f"text-sm font-medium text-theme-warning {_STATUS_LABEL_LAYOUT}"
-            )
+            self._apply_card_border(hook_id, _BORDER_WARNING)
+            self._last_error_notified.pop(hook_id, None)
             return
 
         snap = info.get(hook_id)
         if not isinstance(snap, dict):
-            lbl.set_text("Starting…")
-            lbl.classes(
-                replace=f"text-sm font-medium secondary-text {_STATUS_LABEL_LAYOUT}"
-            )
+            self._apply_card_border(hook_id, _BORDER_NEUTRAL)
             return
 
-        text, classes = self._status_from_snapshot(snap)
-        lbl.set_text(text)
-        lbl.classes(replace=f"{classes} {_STATUS_LABEL_LAYOUT}")
+        border_class, err_msg = self._border_from_snapshot(snap)
+        self._apply_card_border(hook_id, border_class)
+        self._maybe_notify_error(hook_id, err_msg, title)
 
     def _refresh_all_runtime_status(self) -> None:
         for meta in list_hooks_for_ui():
@@ -148,51 +161,46 @@ class GameHooksTab:
                     ui.label("Game Hooks").classes("text-xl font-bold")
                 ui.label(
                     "When enabled, Mycelian reads live data from supported PC games "
-                    "and broadcasts it to browser templates. "
+                    "and broadcasts it to browser templates."
                 ).classes("settings-description mb-4")
 
-                with ui.grid(columns=2).classes("w-full gap-4"):
+                with ui.grid(columns=3).classes("w-full gap-4"):
                     for meta in hook_metas:
                         hid = meta.hook_id
-                        with ui.column().classes("content-card w-full min-w-0"):
+                        hook_supported = self._hook_supported.get(hid, True)
+                        with ui.column().classes(
+                            f"{_CARD_BASE} {_BORDER_NEUTRAL}"
+                        ) as card_col:
+                            self.ui_elements[f"{hid}_card"] = card_col
                             with ui.row().classes(
-                                "w-full items-center justify-between gap-3 min-w-0"
+                                "w-full items-center justify-between gap-2 min-w-0"
                             ):
                                 with ui.row().classes(
-                                    "items-center gap-3 shrink-0 min-w-0"
+                                    "items-center gap-2 min-w-0 flex-1"
                                 ):
                                     ui.label(meta.title).classes(
                                         "font-semibold text-sm shrink-0"
                                     )
                                     self._render_os_strip(meta.supported_platforms)
-                                    hook_supported = self._hook_supported.get(
-                                        hid, True
+                                sw = (
+                                    ui.switch(
+                                        value=(
+                                            self._buffer_enabled.get(hid, False)
+                                            if hook_supported
+                                            else False
+                                        ),
                                     )
-                                    sw = (
-                                        ui.switch(
-                                            value=(
-                                                self._buffer_enabled.get(hid, False)
-                                                if hook_supported
-                                                else False
-                                            ),
-                                        )
-                                        .classes("shrink-0")
-                                        .on(
-                                            "update:model-value",
-                                            lambda e, h=hid: self._on_toggle(
-                                                h, bool(e.args)
-                                            ),
-                                        )
-                                    )
-                                    if not hook_supported:
-                                        sw.disable()
-                                    self.ui_elements[f"{hid}_toggle"] = sw
-                                self.ui_elements[f"{hid}_runtime_status_label"] = (
-                                    ui.label("").classes(
-                                        f"text-sm font-medium secondary-text "
-                                        f"{_STATUS_LABEL_LAYOUT}"
+                                    .classes("shrink-0 ml-auto")
+                                    .on(
+                                        "update:model-value",
+                                        lambda e, h=hid: self._on_toggle(
+                                            h, bool(e.args)
+                                        ),
                                     )
                                 )
+                                if not hook_supported:
+                                    sw.disable()
+                                self.ui_elements[f"{hid}_toggle"] = sw
 
                 self._status_timer = ui.timer(
                     0.5, self._refresh_all_runtime_status, active=True
@@ -201,6 +209,8 @@ class GameHooksTab:
             with ui.row().classes("justify-end gap-2 mt-4 w-full"):
                 outline_button("Discard", self.discard)
                 primary_button("Save", self.save)
+
+        ui.timer(0.05, self._refresh_all_runtime_status, once=True)
 
     def _on_toggle(self, hook_id: str, value: bool) -> None:
         if not self._hook_supported.get(hook_id, True):

@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
+from ...ui_form_controls import form_input, form_select
 from ...ui_settings_layout import (
     settings_action_row,
     settings_form_grid,
@@ -149,45 +150,39 @@ class SpotifyTab:
                 "CA": "CA",
             }
             with settings_form_grid(columns=3):
-                self.ui_elements["client_id"] = (
-                    ui.input(
-                        label="Client ID",
-                        value=self._creds.get("client_id", ""),
-                        placeholder="Spotify API Client ID",
-                    )
-                    .classes("w-full")
-                    .on_value_change(
-                        lambda e: self._set_cred(
-                            "client_id", self._str_from_value_event(e)
-                        )
+                self.ui_elements["client_id"] = form_input(
+                    tooltip="Spotify application Client ID from the developer dashboard",
+                    label="Client ID",
+                    value=self._creds.get("client_id", ""),
+                    placeholder="Spotify API Client ID",
+                )
+                self.ui_elements["client_id"].on_value_change(
+                    lambda e: self._set_cred(
+                        "client_id", self._str_from_value_event(e)
                     )
                 )
-                self.ui_elements["client_secret"] = (
-                    ui.input(
-                        label="Client Secret",
-                        value=self._creds.get("client_secret", ""),
-                        password=True,
-                        password_toggle_button=True,
-                        placeholder="Spotify API Client Secret",
-                    )
-                    .classes("w-full")
-                    .on_value_change(
-                        lambda e: self._set_cred(
-                            "client_secret", self._str_from_value_event(e)
-                        )
+                self.ui_elements["client_secret"] = form_input(
+                    tooltip="Spotify application Client Secret",
+                    label="Client Secret",
+                    value=self._creds.get("client_secret", ""),
+                    password=True,
+                    placeholder="Spotify API Client Secret",
+                )
+                self.ui_elements["client_secret"].props("password-toggle-button")
+                self.ui_elements["client_secret"].on_value_change(
+                    lambda e: self._set_cred(
+                        "client_secret", self._str_from_value_event(e)
                     )
                 )
-                self.ui_elements["market_country"] = (
-                    ui.select(
-                        label="Market country",
-                        options=markets,
-                        value=getattr(self.buffer, "market_country", ""),
-                    )
-                    .classes("w-full")
-                    .on_value_change(
-                        lambda e: self._set(
-                            "market_country", self._str_from_value_event(e)
-                        )
+                self.ui_elements["market_country"] = form_select(
+                    tooltip="Market used for Spotify API requests (Auto uses your account region)",
+                    label="Market country",
+                    options=markets,
+                    value=getattr(self.buffer, "market_country", ""),
+                )
+                self.ui_elements["market_country"].on_value_change(
+                    lambda e: self._set(
+                        "market_country", self._str_from_value_event(e)
                     )
                 )
 

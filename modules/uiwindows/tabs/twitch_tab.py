@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
+from ...ui_form_controls import form_input
 from ...ui_settings_layout import (
     settings_footer,
     settings_form_grid,
@@ -181,33 +182,27 @@ class TwitchTab:
                         "Never"
                     ).classes("secondary-text text-sm")
             with settings_form_grid(columns=2):
-                self.ui_elements[client_id_key] = (
-                    ui.input(
-                        label="Client ID",
-                        value=self._creds.get(client_id_key, ""),
-                        placeholder=client_id_placeholder,
-                    )
-                    .classes("w-full")
-                    .on(
-                        "change",
-                        lambda e, k=client_id_key: self._set_cred(k, e.args or ""),
-                    )
+                self.ui_elements[client_id_key] = form_input(
+                    tooltip="Twitch application Client ID from the developer console",
+                    label="Client ID",
+                    value=self._creds.get(client_id_key, ""),
+                    placeholder=client_id_placeholder,
                 )
-                self.ui_elements[client_secret_key] = (
-                    ui.input(
-                        label="Client Secret",
-                        value=self._creds.get(client_secret_key, ""),
-                        password=True,
-                        password_toggle_button=True,
-                        placeholder=client_secret_placeholder,
-                    )
-                    .classes("w-full")
-                    .on(
-                        "change",
-                        lambda e, k=client_secret_key: self._set_cred(
-                            k, e.args or ""
-                        ),
-                    )
+                self.ui_elements[client_id_key].on(
+                    "change",
+                    lambda e, k=client_id_key: self._set_cred(k, e.args or ""),
+                )
+                self.ui_elements[client_secret_key] = form_input(
+                    tooltip="Twitch application Client Secret (keep private)",
+                    label="Client Secret",
+                    value=self._creds.get(client_secret_key, ""),
+                    password=True,
+                    placeholder=client_secret_placeholder,
+                )
+                self.ui_elements[client_secret_key].props("password-toggle-button")
+                self.ui_elements[client_secret_key].on(
+                    "change",
+                    lambda e, k=client_secret_key: self._set_cred(k, e.args or ""),
                 )
 
     def build(self, parent_container) -> None:

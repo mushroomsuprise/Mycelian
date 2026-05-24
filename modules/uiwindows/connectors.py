@@ -1645,14 +1645,16 @@ def create_connector_form(connector_id: str = None):
             ui.label("Basic Information").classes("form-section-title")
 
             with ui.grid(columns=2).classes("gap-4 w-full"):
-                ui.input(
+                form_input(
+        tooltip="Connector Name",
                     label="Connector Name",
                     placeholder="e.g., High Bits Counter",
                     value=form_data["name"],
                     on_change=lambda e: form_data.update({"name": e.value}),
                 ).classes("w-full")
 
-                ui.input(
+                form_input(
+        tooltip="Description (optional)",
                     label="Description (optional)",
                     placeholder="What does this connector do?",
                     value=form_data["description"],
@@ -1684,7 +1686,8 @@ def create_connector_form(connector_id: str = None):
                         "obs_input_mute": "OBS — Input mute changed",
                     }
 
-                    ui.select(
+                    form_select(
+        tooltip="Trigger Type",
                         options=trigger_options,
                         label="Trigger Type",
                         value=form_data["trigger_type"],
@@ -1787,7 +1790,8 @@ def handle_trigger_type_change(
             )
 
             # Key combination input
-            ui.input(
+            form_input(
+        tooltip="Key Combination",
                 label="Key Combination",
                 placeholder="e.g., ctrl+shift+f, f12, alt+tab",
                 value=form_data["trigger_config"]["key_combination"],
@@ -1920,7 +1924,8 @@ def add_condition_to_trigger_with_data_and_index(
         with ui.row().classes(
             "w-full items-center gap-2 p-2 condition-container rounded"
         ):
-            ui.select(
+            form_select(
+        tooltip="Field",
                 options=available_fields,
                 label="Field",
                 value=initial_field,
@@ -1947,7 +1952,8 @@ def add_condition_to_trigger_with_data_and_index(
                 ),
             ).classes("w-32 condition-select")
 
-            ui.input(
+            form_input(
+        tooltip="Value",
                 label="Value",
                 value=initial_value,
                 on_change=lambda e, idx=condition_index: update_condition_value(
@@ -2202,7 +2208,8 @@ def add_action_to_form_with_data_and_index(
                     ),
                 ).props("flat round").classes("text-red-400")
 
-            ui.select(
+            form_select(
+        tooltip="Action Type",
                 options=available_actions,
                 label="Action Type",
                 value=initial_type,
@@ -2320,7 +2327,8 @@ def create_game_hook_config(
         ff7_game_speed_select_options,
     )
 
-    ui.select(
+    form_select(
+        tooltip="Game",
         options={"ff7": "Final Fantasy VII (2013)"},
         label="Game",
         value=initial_config.get("game_id", "ff7"),
@@ -2365,7 +2373,8 @@ def create_game_hook_config(
                 for k in sorted(cfg_now.keys()):
                     if not k.startswith("arg_"):
                         continue
-                    ui.input(
+                    form_input(
+                        tooltip=k,
                         label=k,
                         value=str(cfg_now.get(k, "")),
                         on_change=lambda e, kk=k: update_action_config(
@@ -2386,9 +2395,11 @@ def create_game_hook_config(
                     if val and val not in sel_opts:
                         sel_opts = dict(sel_opts)
                         sel_opts[val] = val
-                    ui.select(
+                    _arg_label = arg.get("label", aname)
+                    form_select(
+                        tooltip=_arg_label,
                         options=sel_opts,
-                        label=arg.get("label", aname),
+                        label=_arg_label,
                         value=val if val in sel_opts else next(iter(sel_opts.keys()), val),
                         on_change=lambda e, k=key: update_action_config(
                             action_index, k, e.value, form_data
@@ -2399,8 +2410,10 @@ def create_game_hook_config(
                         form_data, arg.get("hint_tags"), action_index
                     )
                     hint_text = "  ".join(hint_lines) if hint_lines else ""
-                    ui.input(
-                        label=arg.get("label", aname),
+                    _arg_label = arg.get("label", aname)
+                    form_input(
+                        tooltip=_arg_label,
+                        label=_arg_label,
                         value=val,
                         on_change=lambda e, k=key: update_action_config(
                             action_index, k, e.value, form_data
@@ -2422,7 +2435,8 @@ def create_game_hook_config(
 
     form_data["_game_hook_hint_refresh"] = refresh_args_from_form
 
-    ui.select(
+    form_select(
+        tooltip="Operation",
         options=op_options,
         label="Operation",
         value=cur_op if cur_op in op_options else next(iter(op_options.keys()), cur_op),
@@ -2528,15 +2542,19 @@ def create_obs_control_config(
                         update_action_config(action_index, k, e.value, form_data)
                         refresh_op_args()
 
-                    ui.select(
+                    _arg_label = arg.get("label", aname)
+                    form_select(
+                        tooltip=_arg_label,
                         options=opts,
-                        label=arg.get("label", aname),
+                        label=_arg_label,
                         value=first_val,
                         on_change=_sel_change,
                     ).classes("w-full mb-2 action-select")
                 else:
-                    ui.input(
-                        label=arg.get("label", aname),
+                    _arg_label = arg.get("label", aname)
+                    form_input(
+                        tooltip=_arg_label,
+                        label=_arg_label,
                         value=default_v,
                         on_change=lambda e, k=key: update_action_config(
                             action_index, k, e.value, form_data
@@ -2558,7 +2576,8 @@ def create_obs_control_config(
         "mb-2"
     )
 
-    ui.select(
+    form_select(
+        tooltip="OBS operation",
         options=op_labels,
         label="OBS operation",
         value=cur_op if cur_op in op_labels else next(iter(op_labels.keys())),
@@ -2593,7 +2612,8 @@ def create_key_press_config(
         initial_config = {}
 
     # Input Type Selection
-    ui.select(
+    form_select(
+        tooltip="Input Type",
         options={"key": "Keyboard", "mouse": "Mouse", "macro": "Macro Sequence"},
         label="Input Type",
         value=initial_config.get("input_type", "key"),
@@ -2642,7 +2662,8 @@ def create_keyboard_config(action_index: int, form_data: dict, initial_config: d
     ).classes("w-full mb-2 action-select")
 
     # Key Sequence Input
-    ui.input(
+    form_input(
+        tooltip="Key Sequence",
         label="Key Sequence",
         placeholder="e.g., ctrl+c, alt+tab, up, arrow_down, shift+left, f1, enter",
         value=initial_config.get("key_sequence", ""),
@@ -2665,7 +2686,8 @@ def create_keyboard_config(action_index: int, form_data: dict, initial_config: d
 
         with mode_options_container:
             if mode == "hold":
-                ui.input(
+                form_input(
+        tooltip="Hold Duration (seconds)",
                     label="Hold Duration (seconds)",
                     placeholder="0.5",
                     value=str(initial_config.get("hold_duration", 0.5)),
@@ -2678,7 +2700,8 @@ def create_keyboard_config(action_index: int, form_data: dict, initial_config: d
                 ).classes("w-full mb-2 action-input")
             elif mode == "repeat":
                 with ui.row().classes("w-full gap-4"):
-                    ui.input(
+                    form_input(
+        tooltip="Repeat Count",
                         label="Repeat Count",
                         placeholder="3",
                         value=str(initial_config.get("repeat_count", 1)),
@@ -2689,7 +2712,8 @@ def create_keyboard_config(action_index: int, form_data: dict, initial_config: d
                             form_data,
                         ),
                     ).classes("flex-1 action-input")
-                    ui.input(
+                    form_input(
+        tooltip="Interval (seconds)",
                         label="Interval (seconds)",
                         placeholder="0.1",
                         value=str(initial_config.get("repeat_interval", 0.1)),
@@ -2747,7 +2771,8 @@ def create_mouse_config(action_index: int, form_data: dict, initial_config: dict
 
         with mouse_mode_options_container:
             if mode == "hold":
-                ui.input(
+                form_input(
+        tooltip="Hold Duration (seconds)",
                     label="Hold Duration (seconds)",
                     placeholder="0.5",
                     value=str(initial_config.get("hold_duration", 0.5)),
@@ -2760,7 +2785,8 @@ def create_mouse_config(action_index: int, form_data: dict, initial_config: dict
                 ).classes("w-full mb-2 action-input")
             elif mode == "repeat":
                 with ui.row().classes("w-full gap-4"):
-                    ui.input(
+                    form_input(
+        tooltip="Click Count",
                         label="Click Count",
                         placeholder="3",
                         value=str(initial_config.get("repeat_count", 1)),
@@ -2771,7 +2797,8 @@ def create_mouse_config(action_index: int, form_data: dict, initial_config: dict
                             form_data,
                         ),
                     ).classes("flex-1 action-input")
-                    ui.input(
+                    form_input(
+        tooltip="Interval (seconds)",
                         label="Interval (seconds)",
                         placeholder="0.1",
                         value=str(initial_config.get("repeat_interval", 0.1)),
@@ -2969,7 +2996,8 @@ def create_audio_control_config(
     ).classes("w-full mb-2 action-select")
 
     # Duration input (shown for all control types)
-    ui.input(
+    form_input(
+        tooltip="Duration (seconds)",
         label="Duration (seconds)",
         placeholder="0",
         value=str(initial_config.get("duration", 0.0)),
@@ -3087,7 +3115,8 @@ def create_system_volume_config(
 
         with volume_options_container:
             if mode == "set":
-                ui.input(
+                form_input(
+        tooltip="Volume Level (%)",
                     label="Volume Level (%)",
                     placeholder="50",
                     value=str(initial_config.get("volume_level", 50.0)),
@@ -3100,7 +3129,8 @@ def create_system_volume_config(
                 ).classes("w-full mb-2 action-input")
                 ui.label("Volume level from 0-100%").classes("text-xs muted-text")
             elif mode in ["increase", "decrease"]:
-                ui.input(
+                form_input(
+        tooltip="Volume Step (%)",
                     label="Volume Step (%)",
                     placeholder="10",
                     value=str(initial_config.get("volume_step", 10.0)),
@@ -3148,7 +3178,8 @@ def create_microphone_config(action_index: int, form_data: dict, initial_config:
 
         with mic_options_container:
             if mode == "set":
-                ui.input(
+                form_input(
+        tooltip="Microphone Level (%)",
                     label="Microphone Level (%)",
                     placeholder="50",
                     value=str(initial_config.get("volume_level", 50.0)),
@@ -3179,7 +3210,8 @@ def create_application_volume_config(
     """Create application volume configuration"""
 
     # Application Name Input
-    ui.input(
+    form_input(
+        tooltip="Application Name",
         label="Application Name",
         placeholder="e.g., discord.exe, spotify.exe, chrome.exe",
         value=initial_config.get("target_application", ""),
@@ -3217,7 +3249,8 @@ def create_application_volume_config(
 
         with app_volume_options_container:
             if mode == "set":
-                ui.input(
+                form_input(
+        tooltip="Volume Level (%)",
                     label="Volume Level (%)",
                     placeholder="50",
                     value=str(initial_config.get("volume_level", 50.0)),
@@ -3256,7 +3289,8 @@ def create_device_config(action_index: int, form_data: dict, initial_config: dic
             next(iter(device_options.keys())) if device_options else "default"
         )
 
-    ui.select(
+    form_select(
+        tooltip="Audio Device",
         options=device_options,
         label="Audio Device",
         value=initial_device,
@@ -3286,7 +3320,8 @@ def create_application_config(action_index: int, form_data: dict, initial_config
     if not initial_app or initial_app not in app_options:
         initial_app = next(iter(app_options.keys())) if app_options else "default"
 
-    ui.select(
+    form_select(
+        tooltip="Application",
         options=app_options,
         label="Application",
         value=initial_app,
@@ -3327,7 +3362,8 @@ def create_application_config(action_index: int, form_data: dict, initial_config
 
         with app_action_options_container:
             if mode == "set":
-                ui.input(
+                form_input(
+        tooltip="Volume Level (%)",
                     label="Volume Level (%)",
                     placeholder="50",
                     value=str(initial_config.get("volume_level", 50.0)),
@@ -4038,7 +4074,8 @@ def create_template_control_config(
         initial_template = initial_config.get("template_name") or None
         initial_action = initial_config.get("control_action") or None
 
-        ui.select(
+        form_select(
+        tooltip="Template",
             options=template_options,
             label="Template",
             value=initial_template,
@@ -4064,7 +4101,8 @@ def create_template_control_config(
                 f"No initial template or template '{initial_template}' not found in template_actions"
             )
 
-        action_select = ui.select(
+        action_select = form_select(
+        tooltip="Action",
             options=initial_action_options,
             label="Action",
             value=initial_action,
@@ -4229,7 +4267,8 @@ def create_element_from_config(
     value = initial_config.get(element_id, element_config.get("value"))
 
     if element_type == "text":
-        ui.input(
+        form_input(
+        tooltip=label,
             label=label,
             placeholder=element_config.get("placeholder", ""),
             value=str(value) if value is not None else "",
@@ -4241,7 +4280,8 @@ def create_element_from_config(
     elif element_type == "number":
         min_val = element_config.get("min", 0)
         max_val = element_config.get("max", 1000)
-        ui.input(
+        form_input(
+        tooltip=label,
             label=label,
             placeholder=str(value) if value is not None else "",
             value=str(value) if value is not None else "",
@@ -4264,7 +4304,8 @@ def create_element_from_config(
         else:
             option_dict = options
 
-        ui.select(
+        form_select(
+        tooltip=label,
             options=option_dict,
             label=label,
             value=str(value) if value is not None else "",
@@ -4303,7 +4344,8 @@ def create_websocket_emit_config(
     if initial_config is None:
         initial_config = {}
 
-    ui.input(
+    form_input(
+        tooltip="Event Name",
         label="Event Name",
         placeholder="custom_event",
         value=initial_config.get("event_name", ""),
@@ -4360,7 +4402,8 @@ def create_write_file_config(
     if initial_config is None:
         initial_config = {}
 
-    ui.input(
+    form_input(
+        tooltip="File Path",
         label="File Path",
         placeholder="logs/{{event_type}}.log",
         value=initial_config.get("file_path", ""),
@@ -4394,7 +4437,8 @@ def create_add_greeting_config(
     if initial_config is None:
         initial_config = {}
 
-    ui.input(
+    form_input(
+        tooltip="User ID",
         label="User ID",
         placeholder="{{user_id}}",
         value=initial_config.get("user_id", ""),
@@ -4403,7 +4447,8 @@ def create_add_greeting_config(
         ),
     ).classes("w-full mb-2 action-input")
 
-    ui.input(
+    form_input(
+        tooltip="Username",
         label="Username",
         placeholder="{{username}}",
         value=initial_config.get("username", ""),
@@ -4441,7 +4486,8 @@ def create_update_greeting_config(
     if initial_config is None:
         initial_config = {}
 
-    ui.input(
+    form_input(
+        tooltip="Greeting ID",
         label="Greeting ID",
         placeholder="{{greeting_id}}",
         value=initial_config.get("greeting_id", ""),
@@ -4479,7 +4525,8 @@ def create_send_greeting_config(
     if initial_config is None:
         initial_config = {}
 
-    ui.input(
+    form_input(
+        tooltip="User ID",
         label="User ID",
         placeholder="{{user_id}}",
         value=initial_config.get("user_id", ""),
@@ -4488,7 +4535,8 @@ def create_send_greeting_config(
         ),
     ).classes("w-full mb-2 action-input")
 
-    ui.input(
+    form_input(
+        tooltip="Username",
         label="Username",
         placeholder="{{username}}",
         value=initial_config.get("username", ""),
@@ -4528,7 +4576,8 @@ def create_trigger_alert_config(
         "custom": "Custom Alert",
     }
 
-    ui.select(
+    form_select(
+        tooltip="Alert Type",
         options=alert_types,
         label="Alert Type",
         value=initial_config.get("alert_type")
@@ -4540,7 +4589,8 @@ def create_trigger_alert_config(
     ).classes("w-full mb-2 action-select")
 
     # Quantity/amount
-    ui.input(
+    form_input(
+        tooltip="Amount/Quantity",
         label="Amount/Quantity",
         placeholder="e.g., 100 (for bits), 1 (for follows)",
         value=str(
@@ -4554,7 +4604,8 @@ def create_trigger_alert_config(
     ).classes("w-full mb-2 action-input")
 
     # Optional custom message
-    ui.input(
+    form_input(
+        tooltip="Custom Message (optional)",
         label="Custom Message (optional)",
         placeholder="Custom alert message",
         value=initial_config.get("message", ""),
@@ -4584,7 +4635,8 @@ def create_api_call_config(
         "PATCH": "PATCH",
     }
 
-    ui.select(
+    form_select(
+        tooltip="HTTP Method",
         options=http_methods,
         label="HTTP Method",
         value=initial_config.get("method") or "GET",
@@ -4594,7 +4646,8 @@ def create_api_call_config(
     ).classes("w-full mb-2 action-select")
 
     # URL
-    ui.input(
+    form_input(
+        tooltip="URL",
         label="URL",
         placeholder="https://api.example.com/endpoint",
         value=initial_config.get("url", ""),
@@ -4636,7 +4689,8 @@ def create_execute_command_config(
         initial_config = {}
 
     # Command to execute
-    ui.input(
+    form_input(
+        tooltip="Command",
         label="Command",
         placeholder="echo 'Hello {{username}}!'",
         value=initial_config.get("command", ""),
@@ -4646,7 +4700,8 @@ def create_execute_command_config(
     ).classes("w-full mb-2 action-input")
 
     # Working directory (optional)
-    ui.input(
+    form_input(
+        tooltip="Working Directory (optional)",
         label="Working Directory (optional)",
         placeholder="/path/to/directory",
         value=initial_config.get("working_directory", ""),
@@ -4656,7 +4711,8 @@ def create_execute_command_config(
     ).classes("w-full mb-2 action-input")
 
     # Timeout
-    ui.input(
+    form_input(
+        tooltip="Timeout (seconds)",
         label="Timeout (seconds)",
         placeholder="30",
         value=str(initial_config.get("timeout", 30)),

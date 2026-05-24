@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, List
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
+from ...ui_form_controls import form_input, form_select
 from ...ui_settings_layout import (
     THEME_CHIP_CLASSES,
     settings_divider,
@@ -131,32 +132,28 @@ class PSNTab:
                 subtitle="Use Connect for automatic NPSSO, or enter credentials below.",
             ):
                 with settings_form_grid(columns=2):
-                    self.ui_elements["npsso_code"] = (
-                        ui.input(
-                            label="NPSSO code",
-                            value=self.buffer.npsso_code or "",
-                            password=True,
-                            password_toggle_button=True,
-                            placeholder="Required for PSN API access",
-                        )
-                        .classes("w-full")
-                        .on_value_change(
-                            lambda e: self._set(
-                                "npsso_code", self._str_from_value_event(e)
-                            )
+                    self.ui_elements["npsso_code"] = form_input(
+                        tooltip="Sony NPSSO token for PlayStation Network API access",
+                        label="NPSSO code",
+                        value=self.buffer.npsso_code or "",
+                        password=True,
+                        placeholder="Required for PSN API access",
+                    )
+                    self.ui_elements["npsso_code"].props("password-toggle-button")
+                    self.ui_elements["npsso_code"].on_value_change(
+                        lambda e: self._set(
+                            "npsso_code", self._str_from_value_event(e)
                         )
                     )
-                    self.ui_elements["psn_username"] = (
-                        ui.input(
-                            label="PSN username",
-                            value=self.buffer.psn_username or "",
-                            placeholder="Optional — leave empty for your own account",
-                        )
-                        .classes("w-full")
-                        .on_value_change(
-                            lambda e: self._set(
-                                "psn_username", self._str_from_value_event(e)
-                            )
+                    self.ui_elements["psn_username"] = form_input(
+                        tooltip="PSN online ID to query; leave empty to use your own account",
+                        label="PSN username",
+                        value=self.buffer.psn_username or "",
+                        placeholder="Optional — leave empty for your own account",
+                    )
+                    self.ui_elements["psn_username"].on_value_change(
+                        lambda e: self._set(
+                            "psn_username", self._str_from_value_event(e)
                         )
                     )
 
@@ -689,21 +686,21 @@ class PSNTab:
                         ).classes("text-sm")
 
                 with settings_form_grid(columns=2):
-                    self.ui_elements["cache_presence_name"] = (
-                        ui.input(
-                            label="Presence name",
-                            placeholder="Name from presence/social API",
-                        )
-                        .classes("w-full")
-                        .on("change", lambda e: self._on_cache_field_changed())
+                    self.ui_elements["cache_presence_name"] = form_input(
+                        tooltip="Display name shown for this game in presence/social APIs",
+                        label="Presence name",
+                        placeholder="Name from presence/social API",
                     )
-                    self.ui_elements["cache_np_title_id"] = (
-                        ui.input(
-                            label="NP Title ID",
-                            placeholder="e.g. PPSA01234_00",
-                        )
-                        .classes("w-full")
-                        .on("change", lambda e: self._on_cache_field_changed())
+                    self.ui_elements["cache_presence_name"].on(
+                        "change", lambda e: self._on_cache_field_changed()
+                    )
+                    self.ui_elements["cache_np_title_id"] = form_input(
+                        tooltip="PlayStation NP Title ID for this cached game",
+                        label="NP Title ID",
+                        placeholder="e.g. PPSA01234_00",
+                    )
+                    self.ui_elements["cache_np_title_id"].on(
+                        "change", lambda e: self._on_cache_field_changed()
                     )
 
                 with ui.row().classes("justify-end gap-2 mt-1"):
@@ -723,14 +720,14 @@ class PSNTab:
         game_options = self._get_game_options()
         with self._game_select_container:
             if game_options:
-                self.ui_elements["game_select"] = (
-                    ui.select(
-                        options=game_options,
-                        with_input=True,
-                        on_change=lambda e: self._on_game_selected(e.value),
-                    )
-                    .classes("w-full")
-                    .props('use-input input-debounce="300" clearable')
+                self.ui_elements["game_select"] = form_select(
+                    tooltip="Select a cached PlayStation game to view or edit details",
+                    options=game_options,
+                    classes="w-full",
+                    on_change=lambda e: self._on_game_selected(e.value),
+                )
+                self.ui_elements["game_select"].props(
+                    'use-input input-debounce="300" clearable with-input'
                 )
             else:
                 self.ui_elements["game_select"] = ui.label(

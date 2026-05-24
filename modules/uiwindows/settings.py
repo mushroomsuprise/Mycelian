@@ -224,7 +224,7 @@ class SettingsUI:
 
         # Modular per-tab components
         self._tabs_by_name = {}
-        self._active_tab_name = "App Settings"
+        self._active_tab_name = "Twitch"
 
     def _load_database_settings_from_config(self) -> dataobjects.DatabaseSettings:
         """Load database settings from the external config manager"""
@@ -3432,35 +3432,41 @@ class SettingsUI:
                 urls = engine_instance.get_available_source_urls()
 
                 if urls:
+                    display_urls = [
+                        u
+                        for u in urls
+                        if u.get("type") != "system_info"
+                        and not str(u.get("name", "")).startswith("_")
+                    ]
                     with container:
-                        # Create a grid layout with dynamic columns (max 3)
-                        num_urls = len(urls)
+                        # Create a grid layout with dynamic columns (max 4)
+                        num_urls = len(display_urls)
                         num_columns = min(
-                            3, max(1, num_urls)
-                        )  # 1-3 columns based on number of URLs
+                            4, max(1, num_urls)
+                        )  # 1-4 columns based on number of URLs
 
                         # Split URLs into columns
                         urls_per_column = (
                             num_urls + num_columns - 1
                         ) // num_columns  # Ceiling division
                         url_columns = [
-                            urls[i : i + urls_per_column]
+                            display_urls[i : i + urls_per_column]
                             for i in range(0, num_urls, urls_per_column)
                         ]
 
-                        with ui.row().classes("w-full gap-4"):
+                        with ui.row().classes("w-full gap-3"):
                             for column_urls in url_columns:
                                 with ui.column().classes("flex-1 gap-2"):
                                     for url_info in column_urls:
                                         with ui.card().classes(
-                                            "w-full p-3 bg-theme-surface transition-colors"
+                                            "w-full p-2 bg-theme-surface transition-colors"
                                         ):
                                             # Template name and type
                                             with ui.row().classes(
-                                                "items-center gap-2 mb-2"
+                                                "items-center gap-2 mb-1"
                                             ):
                                                 ui.label(url_info["name"]).classes(
-                                                    "text-lg font-semibold"
+                                                    "text-base font-semibold"
                                                 )
 
                                                 # Type badge
@@ -3486,6 +3492,9 @@ class SettingsUI:
                                                 url_input.props(
                                                     "outlined dense readonly"
                                                 )
+                                                url_input.tooltip(
+                                                    "Browser source URL for OBS"
+                                                ).classes("bg-theme-surface")
 
                                                 # Copy button with improved functionality
                                                 copy_btn = ui.button(
@@ -5158,6 +5167,18 @@ class SettingsUI:
                     # Check for tab changes every 200ms
                     ui.timer(0.2, check_settings_tab_changes, active=True)
 
+                    # Lazy-loaded default tab never fires a change event on first open
+                    initial_settings_tab = tabs.value or self._active_tab_name
+                    if (
+                        initial_settings_tab
+                        and initial_settings_tab not in self._settings_loaded_tabs
+                    ):
+                        ui.timer(
+                            0.05,
+                            lambda t=initial_settings_tab: load_tab_content(t),
+                            once=True,
+                        )
+
                 # Unsaved-changes guard
                 def on_tab_change(e):
                     new_name = e.value
@@ -5198,32 +5219,36 @@ class SettingsUI:
     def _build_about_tab(self, container):
         """Build the About tab content"""
         with container:
-            with ui.card().classes("content-section w-full"):
-                ui.label("Application Information").classes("text-xl font-bold mb-4")
-                with ui.row().classes("w-full"):
-                    ui.label(f"Version: {self.app_settings.version}").classes(
-                        "secondary-text"
-                    )
-                with ui.row().classes("w-full"):
-                    ui.label(f"Build Date: {self.app_settings.build_date}").classes(
-                        "secondary-text"
-                    )
-                ui.separator().classes("divider")
-                ui.label("Update Management").classes("text-lg font-semibold")
-                with ui.row().classes("w-full gap-2 mt-2"):
-                    ui.button(
-                        "Check for Updates",
-                        on_click=self.check_for_updates_manual,
-                    ).props("icon=system_update color=primary")
-                    ui.button(
-                        "Open Documentation",
-                        on_click=self.open_documentation,
-                    ).props("icon=help_outline color=secondary")
-                    ui.button(
-                        "View Changelog", on_click=self.show_changelog_modal
-                    ).props("icon=history color=secondary")
+            with ui.card().classes(
+                "content-section w-full header-section !mb-2"
+            ):
+                with ui.row().classes(
+                    "w-full items-center justify-between gap-4 flex-wrap"
+                ):
+                    with ui.column().classes("gap-0 min-w-0"):
+                        ui.label("Mycelian").classes("text-xl font-bold")
+                        with ui.row().classes("gap-4 flex-wrap"):
+                            ui.label(
+                                f"Version {self.app_settings.version}"
+                            ).classes("secondary-text text-sm")
+                            ui.label(
+                                f"Build {self.app_settings.build_date}"
+                            ).classes("secondary-text text-sm")
+                    with ui.row().classes("gap-2 shrink-0 flex-wrap"):
+                        ui.button(
+                            "Check for Updates",
+                            on_click=self.check_for_updates_manual,
+                        ).props("icon=system_update color=primary dense")
+                        ui.button(
+                            "Open Documentation",
+                            on_click=self.open_documentation,
+                        ).props("icon=help_outline color=secondary dense")
+                        ui.button(
+                            "View Changelog",
+                            on_click=self.show_changelog_modal,
+                        ).props("icon=history color=secondary dense")
 
-            with ui.card().classes("content-section w-full mt-4"):
+            with ui.card().classes("content-section w-full mt-2"):
                 ui.label("Available Source URLs").classes("text-xl font-bold mb-4")
                 ui.label(
                     "Copy these URLs to use as Browser Sources in OBS or other streaming software."

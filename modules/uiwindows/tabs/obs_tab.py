@@ -14,6 +14,7 @@ from ...ui_settings_layout import (
 from ...dataobjects import OBSData, state_manager
 from ...notification_engine import notify
 from ...obs_service import obs_service
+from ...ui_form_controls import form_input, form_number
 
 
 class ObsTab:
@@ -118,52 +119,44 @@ class ObsTab:
                 )
 
             with settings_form_grid(columns=2):
-                self.ui_elements["host"] = (
-                    ui.input(
-                        label="Host",
-                        value=getattr(self.buffer, "host", ""),
-                        placeholder="localhost",
-                    )
-                    .classes("w-full")
-                    .on_value_change(
-                        lambda e: self._set(
-                            "host",
-                            ("" if e.value is None else str(e.value)).strip(),
-                        ),
-                    )
+                self.ui_elements["host"] = form_input(
+                    tooltip="Hostname or IP where OBS WebSocket server listens",
+                    label="Host",
+                    value=getattr(self.buffer, "host", ""),
+                    placeholder="localhost",
                 )
-                self.ui_elements["port"] = (
-                    ui.number(
-                        label="Port",
-                        value=float(getattr(self.buffer, "port", 4455)),
-                        min=1,
-                        max=65535,
-                        precision=0,
-                    )
-                    .classes("w-full")
-                    .on_value_change(
-                        lambda e: self._set(
-                            "port",
-                            int(
-                                float(e.value if e.value is not None else 4455),
-                            ),
-                        ),
-                    )
-                )
-            self.ui_elements["password"] = (
-                ui.input(
-                    label="WebSocket password",
-                    value=getattr(self.buffer, "password", ""),
-                    password=True,
-                    password_toggle_button=True,
-                )
-                .classes("w-full")
-                .on_value_change(
+                self.ui_elements["host"].on_value_change(
                     lambda e: self._set(
-                        "password",
-                        "" if e.value is None else str(e.value),
+                        "host",
+                        ("" if e.value is None else str(e.value)).strip(),
                     ),
                 )
+                self.ui_elements["port"] = form_number(
+                    tooltip="OBS WebSocket server port (default 4455)",
+                    label="Port",
+                    value=float(getattr(self.buffer, "port", 4455)),
+                    min=1,
+                    max=65535,
+                    classes="w-full",
+                )
+                self.ui_elements["port"].on_value_change(
+                    lambda e: self._set(
+                        "port",
+                        int(float(e.value if e.value is not None else 4455)),
+                    ),
+                )
+            self.ui_elements["password"] = form_input(
+                tooltip="Password configured in OBS WebSocket server settings",
+                label="WebSocket password",
+                value=getattr(self.buffer, "password", ""),
+                password=True,
+            )
+            self.ui_elements["password"].props("password-toggle-button")
+            self.ui_elements["password"].on_value_change(
+                lambda e: self._set(
+                    "password",
+                    "" if e.value is None else str(e.value),
+                ),
             )
 
             settings_action_row(

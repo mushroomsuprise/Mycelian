@@ -16,6 +16,7 @@ from ...theme_manager import (
 from ..service_brand_icons import SERVICE_BRAND_SVG
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
+from ...ui_form_controls import form_input, form_select
 from .base import TabBase
 
 
@@ -921,11 +922,13 @@ class ThemeTab:
                             self.buffer = valid_value
 
                         # Theme selector
-                        self.ui_elements["theme_select"] = ui.select(
+                        self.ui_elements["theme_select"] = form_select(
+                            tooltip="Color theme applied across the Mycelian interface",
                             options=select_options,
                             value=valid_value,
+                            classes="flex-1",
                             on_change=lambda e: self._on_theme_change(e.value),
-                        ).classes("flex-1").props("dense")
+                        )
 
                         # Theme type badge (inline)
                         current_theme = self._get_current_theme()
@@ -1400,14 +1403,16 @@ class ThemeTab:
 
             with ui.column().classes("w-full gap-3"):
                 ui.label("Theme Name *").classes("text-sm font-medium")
-                dialog_ui["name"] = ui.input(
-                    placeholder="my_custom_theme"
-                ).props("outlined dense")
+                dialog_ui["name"] = form_input(
+                    tooltip="Internal theme file name (no spaces)",
+                    placeholder="my_custom_theme",
+                )
 
                 ui.label("Display Name *").classes("text-sm font-medium")
-                dialog_ui["display_name"] = ui.input(
-                    placeholder="My Custom Theme"
-                ).props("outlined dense")
+                dialog_ui["display_name"] = form_input(
+                    tooltip="Friendly name shown in the theme picker",
+                    placeholder="My Custom Theme",
+                )
 
                 ui.label("Type *").classes("text-sm font-medium")
                 default_type = self._working_theme.theme_type or "dark"

@@ -112,6 +112,7 @@ class AppSettings:
     activity_feed_limit: int = 20
     activity_feed_max_pages: int = 5
     start_maximized: bool = True
+    ui_font_family: str = ""
 
     def __post_init__(self):
         """Log when a new AppSettings instance is created"""

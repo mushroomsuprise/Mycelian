@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, List
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
+from ...ui_form_controls import form_input, form_number, form_select
 from ...ui_settings_layout import (
     settings_form_grid,
     settings_section,
@@ -839,7 +840,8 @@ class DatabaseTab:
 
                     with ui.row().classes("w-full items-center mb-2"):
                         ui.label("From:").classes("w-20")
-                        source_select = ui.select(
+                        source_select = form_select(
+                            tooltip="Source database to copy data from",
                             options=available_dbs,
                             value=(
                                 database_manager.get_config().database_type
@@ -847,18 +849,21 @@ class DatabaseTab:
                                 in available_dbs
                                 else available_dbs[0]
                             ),
-                        ).classes("flex-1")
+                            classes="flex-1",
+                        )
 
                     with ui.row().classes("w-full items-center mb-4"):
                         ui.label("To:").classes("w-20")
-                        target_select = ui.select(
+                        target_select = form_select(
+                            tooltip="Target database to receive migrated data",
                             options=available_dbs,
                             value=(
                                 available_dbs[1]
                                 if len(available_dbs) > 1
                                 else available_dbs[0]
                             ),
-                        ).classes("flex-1")
+                            classes="flex-1",
+                        )
 
                     ui.label(
                         "Existing data at the same paths on the target may be overwritten."
@@ -1076,6 +1081,32 @@ class DatabaseTab:
         if self._status_timer is not None:
             self._status_timer.active = False
 
+    def _update_config_visibility(self) -> None:
+        if not self.buffer:
+            return
+        db_type = self.buffer.database_type
+        sql_keys = ("sql_database_path",)
+        firebase_keys = (
+            "firebase_service_account_path",
+            "firebase_database_url",
+        )
+        mongo_keys = ("mongodb_connection_string", "mongodb_database_name")
+        for key, visible in (
+            *[(k, db_type == "sql") for k in sql_keys],
+            *[(k, db_type == "firebase") for k in firebase_keys],
+            *[(k, db_type == "mongodb") for k in mongo_keys],
+        ):
+            el = self.ui_elements.get(key)
+            if el is not None:
+                el.visible = visible
+
+    def _on_database_type_change(self, e) -> None:
+        self._set(
+            "database_type",
+            self._event_select_value(e) or self.ui_elements["database_type"].value,
+        )
+        self._update_config_visibility()
+
     def build(self, parent_container) -> None:
         self._load_from_config()
         with settings_surface(parent_container):
@@ -1097,145 +1128,121 @@ class DatabaseTab:
                     self.ui_elements["last_check_label"] = ui.label(
                         "Never"
                     ).classes("secondary-text text-sm")
+                with ui.column().classes("gap-0 min-w-[10rem] flex-1"):
+                    self.ui_elements["database_type"] = form_select(
+                        tooltip="Storage backend for Mycelian settings and data",
+                        label="Database type",
+                        options=["sql", "firebase", "mongodb"],
+                        value=self.buffer.database_type,
+                        classes="w-full min-w-[10rem]",
+                        on_change=self._on_database_type_change,
+                    )
 
             with settings_section("Configuration"):
                 with settings_form_grid(columns=3):
-                    self.ui_elements["database_type"] = (
-                        ui.select(
-                            label="Database type",
-                            options=["sql", "firebase", "mongodb"],
-                            value=self.buffer.database_type,
-                        )
-                        .classes("w-full")
-                        .on(
-                            "change",
-                            lambda e: self._set(
-                                "database_type",
-                                self._event_select_value(e)
-                                or self.ui_elements["database_type"].value,
-                            ),
-                        )
+                    self.ui_elements["sql_database_path"] = form_input(
+                        tooltip="Path to the SQLite database file",
+                        label="SQLite path",
+                        value=self.buffer.sql_database_path,
+                        placeholder="mycelian.db",
                     )
-                    self.ui_elements["sql_database_path"] = (
-                        ui.input(
-                            label="SQLite path",
-                            value=self.buffer.sql_database_path,
-                            placeholder="mycelian.db",
-                        )
-                        .classes("w-full")
-                        .on(
-                            "change",
-                            lambda e: self._set(
-                                "sql_database_path",
-                                getattr(e, "args", [getattr(e, "value", "")])[0]
-                                or "mycelian.db",
-                            ),
-                        )
+                    self.ui_elements["sql_database_path"].on(
+                        "change",
+                        lambda e: self._set(
+                            "sql_database_path",
+                            getattr(e, "args", [getattr(e, "value", "")])[0]
+                            or "mycelian.db",
+                        ),
                     )
-                    self.ui_elements["firebase_service_account_path"] = (
-                        ui.input(
-                            label="Firebase key file",
-                            value=self.buffer.firebase_service_account_path,
-                            placeholder="ServiceAccountKey.json",
-                        )
-                        .classes("w-full")
-                        .on(
-                            "change",
-                            lambda e: self._set(
-                                "firebase_service_account_path",
-                                getattr(e, "args", [getattr(e, "value", "")])[0]
-                                or "",
-                            ),
-                        )
+                    self.ui_elements["firebase_service_account_path"] = form_input(
+                        tooltip="Path to Firebase service account JSON key file",
+                        label="Firebase key file",
+                        value=self.buffer.firebase_service_account_path,
+                        placeholder="ServiceAccountKey.json",
                     )
-                    self.ui_elements["firebase_database_url"] = (
-                        ui.input(
-                            label="Firebase URL",
-                            value=self.buffer.firebase_database_url,
-                            placeholder="https://...firebaseio.com/",
-                        )
-                        .classes("w-full")
-                        .on(
-                            "change",
-                            lambda e: self._set(
-                                "firebase_database_url",
-                                getattr(e, "args", [getattr(e, "value", "")])[0]
-                                or "",
-                            ),
-                        )
+                    self.ui_elements["firebase_service_account_path"].on(
+                        "change",
+                        lambda e: self._set(
+                            "firebase_service_account_path",
+                            getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                        ),
                     )
-                    self.ui_elements["mongodb_connection_string"] = (
-                        ui.input(
-                            label="Mongo URI",
-                            value=self.buffer.mongodb_connection_string,
-                            placeholder="mongodb://localhost:27017/",
-                        )
-                        .classes("w-full")
-                        .on(
-                            "change",
-                            lambda e: self._set(
-                                "mongodb_connection_string",
-                                getattr(e, "args", [getattr(e, "value", "")])[0]
-                                or "",
-                            ),
-                        )
+                    self.ui_elements["firebase_database_url"] = form_input(
+                        tooltip="Firebase Realtime Database URL",
+                        label="Firebase URL",
+                        value=self.buffer.firebase_database_url,
+                        placeholder="https://...firebaseio.com/",
                     )
-                    self.ui_elements["mongodb_database_name"] = (
-                        ui.input(
-                            label="Mongo DB name",
-                            value=self.buffer.mongodb_database_name,
-                            placeholder="mycelian",
-                        )
-                        .classes("w-full")
-                        .on(
-                            "change",
-                            lambda e: self._set(
-                                "mongodb_database_name",
-                                getattr(e, "args", [getattr(e, "value", "")])[0]
-                                or "mycelian",
-                            ),
-                        )
+                    self.ui_elements["firebase_database_url"].on(
+                        "change",
+                        lambda e: self._set(
+                            "firebase_database_url",
+                            getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                        ),
                     )
-                    self.ui_elements["connection_timeout"] = (
-                        ui.number(
-                            label="Timeout (s)",
-                            value=self.buffer.connection_timeout,
-                            min=5,
-                            max=300,
-                            step=5,
-                        )
-                        .classes("w-full")
-                        .on(
-                            "change",
-                            lambda e: self._set(
-                                "connection_timeout",
-                                int(
-                                    getattr(e, "args", [getattr(e, "value", 30)])[0]
-                                    or 30
-                                ),
-                            ),
-                        )
+                    self.ui_elements["mongodb_connection_string"] = form_input(
+                        tooltip="MongoDB connection URI",
+                        label="Mongo URI",
+                        value=self.buffer.mongodb_connection_string,
+                        placeholder="mongodb://localhost:27017/",
                     )
-                    self.ui_elements["retry_attempts"] = (
-                        ui.number(
-                            label="Retry attempts",
-                            value=self.buffer.retry_attempts,
-                            min=1,
-                            max=10,
-                            step=1,
-                        )
-                        .classes("w-full")
-                        .on(
-                            "change",
-                            lambda e: self._set(
-                                "retry_attempts",
-                                int(
-                                    getattr(e, "args", [getattr(e, "value", 3)])[0]
-                                    or 3
-                                ),
-                            ),
-                        )
+                    self.ui_elements["mongodb_connection_string"].on(
+                        "change",
+                        lambda e: self._set(
+                            "mongodb_connection_string",
+                            getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                        ),
                     )
+                    self.ui_elements["mongodb_database_name"] = form_input(
+                        tooltip="MongoDB database name",
+                        label="Mongo DB name",
+                        value=self.buffer.mongodb_database_name,
+                        placeholder="mycelian",
+                    )
+                    self.ui_elements["mongodb_database_name"].on(
+                        "change",
+                        lambda e: self._set(
+                            "mongodb_database_name",
+                            getattr(e, "args", [getattr(e, "value", "")])[0]
+                            or "mycelian",
+                        ),
+                    )
+                    self.ui_elements["connection_timeout"] = form_number(
+                        tooltip="Seconds to wait before a connection attempt times out",
+                        label="Timeout (s)",
+                        value=self.buffer.connection_timeout,
+                        min=5,
+                        max=300,
+                        step=5,
+                        classes="w-full",
+                    )
+                    self.ui_elements["connection_timeout"].on(
+                        "change",
+                        lambda e: self._set(
+                            "connection_timeout",
+                            int(
+                                getattr(e, "args", [getattr(e, "value", 30)])[0] or 30
+                            ),
+                        ),
+                    )
+                    self.ui_elements["retry_attempts"] = form_number(
+                        tooltip="Number of times to retry a failed connection",
+                        label="Retry attempts",
+                        value=self.buffer.retry_attempts,
+                        min=1,
+                        max=10,
+                        step=1,
+                        classes="w-full",
+                    )
+                    self.ui_elements["retry_attempts"].on(
+                        "change",
+                        lambda e: self._set(
+                            "retry_attempts",
+                            int(getattr(e, "args", [getattr(e, "value", 3)])[0] or 3),
+                        ),
+                    )
+
+            self._update_config_visibility()
 
             with ui.row().classes(
                 "button-row w-full justify-end gap-2 mt-1 flex-wrap"
@@ -1315,4 +1322,5 @@ class DatabaseTab:
         for key, element in self.ui_elements.items():
             if hasattr(element, "value") and hasattr(self.buffer, key):
                 element.value = getattr(self.buffer, key)
+        self._update_config_visibility()
         self.dirty = False

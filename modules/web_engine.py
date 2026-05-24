@@ -6548,21 +6548,8 @@ class WebEngine:
                             f"Found dynamic handlers for template not in routes: {template_name}"
                         )
 
-            # Add template auto-reload status to the response
-            reload_status = {
-                "name": "_template_auto_reload_status",
-                "url": None,
-                "type": "system_info",
-                "description": f'Template auto-reload: {"Enabled" if self.app.config.get("TEMPLATES_AUTO_RELOAD", False) else "Disabled"}',
-                "auto_reload_enabled": self.app.config.get(
-                    "TEMPLATES_AUTO_RELOAD", False
-                ),
-                "template_dir": str(self.template_dir),
-            }
-            urls.append(reload_status)
-
             logger.debug(
-                f"Found {len(urls)-1} available source URLs (hidden templates excluded)"
+                f"Found {len(urls)} available source URLs (hidden templates excluded)"
             )
             return urls
 

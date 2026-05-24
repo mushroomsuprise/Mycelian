@@ -36,7 +36,7 @@ body {
     background-color: var(--color-bg-base) !important;
     color: var(--color-text-primary) !important;
     overflow: hidden !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: var(--font-family-app, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
 }
 
 /* NiceGUI root container - very specific selectors */
@@ -421,7 +421,13 @@ body:not(.body--dark) .text-grey {
 }
 
 /* Input fields */
+:root {
+    --input-border-radius: 10px;
+}
+
+.q-field--outlined .q-field__control,
 .q-field__control {
+    border-radius: var(--input-border-radius) !important;
     background: var(--color-bg-surface) !important;
     color: var(--color-text-primary) !important;
 }
@@ -1237,6 +1243,41 @@ button.alert-save-btn:hover,
 
 .border-theme-accent {
     border-color: var(--color-border-accent) !important;
+}
+
+.border-theme-error {
+    border-color: var(--color-error) !important;
+}
+
+.border-theme-warning {
+    border-color: var(--color-warning) !important;
+}
+
+.border-theme-success {
+    border-color: var(--color-success) !important;
+}
+
+.statistics-metric-card {
+    padding: 0.5rem 0.75rem !important;
+    min-height: 0 !important;
+}
+
+.statistics-metric-card .text-2xl {
+    font-size: 1.125rem !important;
+    line-height: 1.5rem !important;
+}
+
+.statistics-metric-card .font-semibold.mb-2 {
+    margin-bottom: 0.25rem !important;
+}
+
+.statistics-section.content-section {
+    padding: 0.75rem 1rem !important;
+    margin: 0.25rem 0 !important;
+}
+
+.statistics-dashboard {
+    gap: 0.5rem !important;
 }
 
 /* =========================================

@@ -76,6 +76,7 @@ from modules.uiwindows.customsources import create_custom_sources_tab
 
 from . import alertutils, database_manager, dataobjects, web_engine
 from .theme_manager import get_theme_manager, generate_css_variables
+from .ui_font import apply_app_font, get_app_font_css_block
 from .ui_styles import get_full_theme_css
 
 logger = logging.getLogger(__name__)
@@ -210,13 +211,18 @@ def apply_theme(theme_name: str):
         ui.add_head_html(
             f"<style id='mycelian-quasar-brand'>{quasar_css}</style>", shared=True
         )
+        ui.add_head_html(
+            f"<style id='mycelian-font-override'>{get_app_font_css_block()}</style>",
+            shared=True,
+        )
 
         _base_css_injected = True
-
         logger.info(
             f"Initial theme CSS injected for theme: {theme_name} ({theme_type})"
         )
         return
+
+    apply_app_font()
 
     # Update the CSS variables via JavaScript for theme switches
     # This allows hot-swapping without page reload
@@ -1436,6 +1442,9 @@ def create_ui_elements():
                     dialog.open()  # Explicitly open the dialog
 
         create_service_status_footer()
+
+        # Re-apply saved font once the native client is connected (head CSS is static at theme inject)
+        ui.timer(0.5, lambda: apply_app_font(), once=True)
 
     # Mark UI elements as created
     _ui_elements_created = True

@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from nicegui import ui
 from ..notification_engine import notify
+from ..ui_form_controls import form_input, form_number, form_select, form_textarea
 from ..ui_buttons import destructive_button, outline_button, primary_button
 from ..path_utils import get_assets_path, get_template_path
 
@@ -767,13 +768,15 @@ def create_custom_sources_tab():
 
                 # Configuration selector and refresh button
                 with ui.row().classes("items-center gap-2 slide-in"):
-                    config_select = ui.select(
+                    config_select = form_select(
+                        tooltip="Choose which template configuration to edit",
                         options=[],
                         label="Select Configuration",
+                        classes="w-48 bg-theme-base",
                         on_change=lambda e: on_config_selected(
                             e, config_parser, config_container
                         ),
-                    ).classes("w-48 bg-theme-base")
+                    )
 
                     outline_button(
                         "",
@@ -786,18 +789,19 @@ def create_custom_sources_tab():
 
             # Search input
             with ui.row().classes("w-full items-center gap-2"):
-                search_input = (
-                    ui.input(
-                        label="Search properties",
-                        placeholder="Type to search by property label...",
-                        on_change=lambda e: on_search_changed(
-                            e, config_parser, config_select, config_container
-                        ),
-                    )
-                    .classes("flex-grow bg-theme-base")
-                    .props("clearable")
+                search_input = form_input(
+                    tooltip="Filter configuration properties by label",
+                    label="Search properties",
+                    placeholder="Type to search by property label...",
+                    classes="flex-grow bg-theme-base",
                 )
-                search_input.props('prepend-icon="search"')
+                search_input.on(
+                    "change",
+                    lambda e: on_search_changed(
+                        e, config_parser, config_select, config_container
+                    ),
+                )
+                search_input.props('clearable prepend-icon="search"')
 
             # Action buttons
             with ui.row().classes("w-full items-center gap-2"):
@@ -1440,21 +1444,32 @@ def render_form_element(
                     "text-xs opacity-50 mb-1 description-text"
                 )
 
+            tip = element_description or element_label or "Template setting"
             if element_type == "text":
-                input_element = ui.input(
+                input_element = form_input(
+                    tooltip=tip,
                     value=element_value,
-                    on_change=lambda _, id=element_id: update_form_data(
+                )
+                input_element.on(
+                    "change",
+                    lambda _, id=element_id: update_form_data(
                         form_data, id, input_element.value
                     ),
-                ).classes("w-full")
+                )
                 element_ui_map[element_id] = input_element
             elif element_type == "textarea":
-                input_element = ui.textarea(
+                input_element = form_textarea(
+                    tooltip=tip,
                     value=element_value,
-                    on_change=lambda _, id=element_id: update_form_data(
+                    classes="w-full h-24",
+                    rows=4,
+                )
+                input_element.on(
+                    "change",
+                    lambda _, id=element_id: update_form_data(
                         form_data, id, input_element.value
                     ),
-                ).classes("w-full h-24")
+                )
                 element_ui_map[element_id] = input_element
             elif element_type == "select":
                 options: List[str] = list(element.get("options", []))
@@ -1544,25 +1559,32 @@ def render_form_element(
                                     swatch.tooltip(color_option)
                 else:
                     # Render as normal dropdown
-                    input_element = ui.select(
+                    input_element = form_select(
+                        tooltip=tip,
                         options=options,
                         value=element_value,
-                        on_change=lambda _, id=element_id: update_form_data(
+                    )
+                    input_element.on(
+                        "change",
+                        lambda _, id=element_id: update_form_data(
                             form_data, id, input_element.value
                         ),
-                    ).classes("w-full")
+                    )
                     element_ui_map[element_id] = input_element
             elif element_type == "number":
                 min_val = element.get("min", None)
                 max_val = element.get("max", None)
-                input_element = ui.number(
+                input_element = form_number(
+                    tooltip=tip,
                     value=element_value,
                     min=min_val,
                     max=max_val,
-                    on_change=lambda e, id=element_id: handle_number_change(
-                        e, id, form_data
-                    ),
-                ).classes("w-full")
+                    classes="w-full",
+                )
+                input_element.on(
+                    "change",
+                    lambda e, id=element_id: handle_number_change(e, id, form_data),
+                )
                 element_ui_map[element_id] = input_element
             elif element_type == "slider":
                 min_val = element.get("min", 0)
@@ -2020,7 +2042,10 @@ def create_new_config(config_parser, config_select, config_container):
     with ui.dialog() as dialog, ui.card():
         ui.label("New Configuration").classes("text-lg font-medium mb-4")
 
-        name_input = ui.input(label="Configuration Name")
+        name_input = form_input(
+            tooltip="Name for the new template configuration file",
+            label="Configuration Name",
+        )
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):
             ui.button("Cancel", on_click=dialog.close).classes("control-button")

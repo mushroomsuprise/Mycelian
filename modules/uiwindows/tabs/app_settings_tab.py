@@ -4,7 +4,10 @@ from typing import Dict, Any, Optional
 
 from nicegui import ui
 
+from ...font_utils import SYSTEM_DEFAULT_LABEL, get_available_font_families
 from ...ui_buttons import primary_button
+from ...ui_font import apply_app_font
+from ...ui_form_controls import form_number, form_select
 from ...ui_settings_layout import (
     settings_action_row,
     settings_form_grid,
@@ -125,7 +128,23 @@ class AppSettingsTab:
             with ui.column().classes("w-full gap-3"):
                 with settings_inner_panel():
                     ui.label("General").classes("text-base font-semibold")
-                    with settings_form_grid(columns=2):
+                    with settings_form_grid(columns=3):
+                        font_display = (
+                            self.buffer.ui_font_family or SYSTEM_DEFAULT_LABEL
+                        )
+                        self.ui_elements["ui_font_family"] = form_select(
+                            tooltip="Font used across the Mycelian interface",
+                            label="App font",
+                            options=get_available_font_families(),
+                            value=font_display,
+                            classes="w-full",
+                        )
+                        self.ui_elements["ui_font_family"].on_value_change(
+                            lambda e: self._set(
+                                "ui_font_family",
+                                self._font_from_value(e.value),
+                            )
+                        )
                         with ui.row().classes("items-center gap-2"):
                             ui.label("Notifications").classes("text-sm")
                             self.ui_elements["notifications_enabled"] = (
@@ -173,10 +192,11 @@ class AppSettingsTab:
                         ui.label("Applies on next launch").classes(
                             "secondary-text text-sm self-center"
                         )
-                        with ui.row().classes("items-center gap-2"):
+                        with ui.row().classes("items-center gap-2 col-span-2"):
                             ui.label("Update check").classes("text-sm shrink-0")
                             self.ui_elements["update_check_interval_minutes"] = (
-                                ui.number(
+                                form_number(
+                                    tooltip="How often Mycelian checks for application updates (minutes)",
                                     value=getattr(
                                         self.buffer,
                                         "update_check_interval_minutes",
@@ -185,20 +205,20 @@ class AppSettingsTab:
                                     min=5,
                                     max=120,
                                     step=5,
+                                    classes="w-24",
                                 )
-                                .classes("w-24")
-                                .on(
-                                    "change",
-                                    lambda e: self._set(
-                                        "update_check_interval_minutes",
-                                        int(
-                                            getattr(
-                                                e, "args", [getattr(e, "value", 30)]
-                                            )[0]
-                                            or 30
-                                        ),
+                            )
+                            self.ui_elements["update_check_interval_minutes"].on(
+                                "change",
+                                lambda e: self._set(
+                                    "update_check_interval_minutes",
+                                    int(
+                                        getattr(
+                                            e, "args", [getattr(e, "value", 30)]
+                                        )[0]
+                                        or 30
                                     ),
-                                )
+                                ),
                             )
                             ui.label("minutes (5–120)").classes(
                                 "secondary-text text-sm"
@@ -206,53 +226,51 @@ class AppSettingsTab:
 
                 with settings_inner_panel():
                     ui.label("Activity feed").classes("text-base font-semibold")
-                    with settings_form_grid(columns=2):
+                    with settings_form_grid(columns=3):
                         with ui.row().classes("items-center gap-2"):
                             ui.label("History limit").classes("text-sm shrink-0")
-                            self.ui_elements["activity_feed_limit"] = (
-                                ui.number(
-                                    value=self.buffer.activity_feed_limit,
-                                    min=5,
-                                    max=100,
-                                    step=5,
-                                )
-                                .classes("w-24")
-                                .on(
-                                    "change",
-                                    lambda e: self._set(
-                                        "activity_feed_limit",
-                                        int(
-                                            getattr(
-                                                e, "args", [getattr(e, "value", 5)]
-                                            )[0]
-                                            or 5
-                                        ),
+                            self.ui_elements["activity_feed_limit"] = form_number(
+                                tooltip="Number of activity items shown per page",
+                                value=self.buffer.activity_feed_limit,
+                                min=5,
+                                max=100,
+                                step=5,
+                                classes="w-24",
+                            )
+                            self.ui_elements["activity_feed_limit"].on(
+                                "change",
+                                lambda e: self._set(
+                                    "activity_feed_limit",
+                                    int(
+                                        getattr(
+                                            e, "args", [getattr(e, "value", 5)]
+                                        )[0]
+                                        or 5
                                     ),
-                                )
+                                ),
                             )
                             ui.label("per page").classes("secondary-text text-sm")
                         with ui.row().classes("items-center gap-2"):
                             ui.label("Max pages").classes("text-sm shrink-0")
-                            self.ui_elements["activity_feed_max_pages"] = (
-                                ui.number(
-                                    value=self.buffer.activity_feed_max_pages,
-                                    min=1,
-                                    max=50,
-                                    step=1,
-                                )
-                                .classes("w-24")
-                                .on(
-                                    "change",
-                                    lambda e: self._set(
-                                        "activity_feed_max_pages",
-                                        int(
-                                            getattr(
-                                                e, "args", [getattr(e, "value", 1)]
-                                            )[0]
-                                            or 1
-                                        ),
+                            self.ui_elements["activity_feed_max_pages"] = form_number(
+                                tooltip="Maximum pages of history kept in the activity feed",
+                                value=self.buffer.activity_feed_max_pages,
+                                min=1,
+                                max=50,
+                                step=1,
+                                classes="w-24",
+                            )
+                            self.ui_elements["activity_feed_max_pages"].on(
+                                "change",
+                                lambda e: self._set(
+                                    "activity_feed_max_pages",
+                                    int(
+                                        getattr(
+                                            e, "args", [getattr(e, "value", 1)]
+                                        )[0]
+                                        or 1
                                     ),
-                                )
+                                ),
                             )
                             ui.label("to load").classes("secondary-text text-sm")
 
@@ -293,6 +311,17 @@ class AppSettingsTab:
         )
         self.dirty = False
 
+    @staticmethod
+    def _font_from_value(raw) -> str:
+        if raw is None or raw == "" or raw == SYSTEM_DEFAULT_LABEL:
+            return ""
+        return str(raw)
+
+    def _sync_font_from_ui(self) -> None:
+        el = self.ui_elements.get("ui_font_family")
+        if el is not None:
+            self.buffer.ui_font_family = self._font_from_value(el.value)
+
     def _set(self, field: str, value) -> None:
         current_value = getattr(self.buffer, field)
         if current_value != value:
@@ -303,6 +332,7 @@ class AppSettingsTab:
     def save(self) -> None:
         if not self.buffer:
             return
+        self._sync_font_from_ui()
         # persist buffered values to state_manager (skip hardcoded metadata fields)
         _skip_save = frozenset({"version", "build_date"})
         for field in self.buffer.__dataclass_fields__.keys():
@@ -310,6 +340,7 @@ class AppSettingsTab:
                 continue
             state_manager.update_app_setting(field, getattr(self.buffer, field))
         if state_manager.save_changes():
+            apply_app_font(self.buffer.ui_font_family)
             notify("Settings saved", type="positive")
             self.dirty = False
         else:
@@ -320,5 +351,8 @@ class AppSettingsTab:
         self._load_from_state()
         for key, element in self.ui_elements.items():
             if hasattr(element, "value") and hasattr(self.buffer, key):
-                element.value = getattr(self.buffer, key)
+                if key == "ui_font_family":
+                    element.value = self.buffer.ui_font_family or SYSTEM_DEFAULT_LABEL
+                else:
+                    element.value = getattr(self.buffer, key)
         self.dirty = False
