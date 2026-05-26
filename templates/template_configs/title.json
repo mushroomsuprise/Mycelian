@@ -322,25 +322,18 @@
             "label": "Display Settings"
         },
         {
-            "type": "checkbox",
-            "id": "ShowCategory",
-            "label": "Show Category",
-            "value": true,
-            "description": "Show current stream category instead of default title"
-        },
-        {
             "type": "text",
             "id": "CategoryPrefix",
             "label": "Category Prefix",
             "value": "",
-            "description": "Text to show before the category name"
+            "description": "Text placed before the category name when Show Category is on"
         },
         {
             "type": "text",
             "id": "CategorySuffix",
             "label": "Category Suffix",
             "value": "",
-            "description": "Text to show after the category name"
+            "description": "Text placed after the category name when Show Category is on"
         },
 
         {
@@ -498,17 +491,17 @@
         "elements": [
             {
                 "type": "toggle",
-                "id": "auto_update_toggle",
-                "label": "Auto Update",
-                "description": "Toggle automatic title updates on/off",
-                "action": "toggle_auto_update",
+                "id": "show_category_toggle",
+                "label": "Show Category",
+                "description": "Display your live Twitch category on stream. Turn off to show a custom title instead.",
+                "action": "toggle_show_category",
                 "value": true
             },
             {
                 "type": "text_input",
                 "id": "manual_title_input",
-                "label": "Manual Title",
-                "description": "Enter a custom title to override automatic updates",
+                "label": "Custom Title",
+                "description": "Text shown while Show Category is off. Leave empty for a blank overlay.",
                 "placeholder": "Enter custom title...",
                 "action": "set_manual_title",
                 "max_length": 100
@@ -516,8 +509,8 @@
             {
                 "type": "button",
                 "id": "clear_manual_title",
-                "label": "Clear Manual Title",
-                "description": "Clear manual title and revert to automatic updates",
+                "label": "Clear Custom Title",
+                "description": "Clear the custom title and turn Show Category back on.",
                 "button_text": "Clear",
                 "action": "clear_manual_title",
                 "data": {}
@@ -525,8 +518,8 @@
             {
                 "type": "button",
                 "id": "refresh_title",
-                "label": "Refresh Title",
-                "description": "Force refresh the title from current category",
+                "label": "Refresh Category",
+                "description": "Fetch the current category from Twitch now (only when Show Category is on).",
                 "button_text": "Refresh",
                 "action": "refresh_title",
                 "data": {}

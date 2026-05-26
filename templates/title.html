@@ -204,9 +204,9 @@
         var socket = io.connect('http://' + document.domain + ':' + location.port);
         var titleData = {
             currentTitle: "Stream Title",
-        showCategory: {{ ShowCategory | tojson }},
-        categoryPrefix: {{ CategoryPrefix | tojson }},
-        categorySuffix: "{{CategorySuffix}}"
+            showCategory: {{ ShowCategory | default(true) | tojson }},
+            categoryPrefix: {{ CategoryPrefix | tojson }},
+            categorySuffix: "{{CategorySuffix}}"
         };
 
         var settings = {
@@ -223,16 +223,17 @@
         var minFontSize = Math.max(12, baseFontSize * 0.3); // Minimum 12px or 30% of base
 
         var currentCategory = "";
-        var isManualMode = false;
         var manualTitle = "";
         var retryTimeout = null;
         var isRetryingCategory = false;
         var currentStreamerName = "";
+        var connectorRevertTimeout = null;
 
         // Local storage keys
         var STORAGE_KEYS = {
-            MANUAL_MODE: 'mycelian_title_manual_mode',
-            MANUAL_TITLE: 'mycelian_title_manual_title'
+            SHOW_CATEGORY: 'mycelian_title_show_category',
+            MANUAL_TITLE: 'mycelian_title_manual_title',
+            MANUAL_MODE_LEGACY: 'mycelian_title_manual_mode'
         };
 
         // Socket event listeners
@@ -318,22 +319,21 @@
         socket.on('twitch_data_update', function (data) {
             console.log('[DEBUG] twitch_data_update event received:', JSON.stringify(data));
             console.log('[DEBUG] Current state:', {
-                isManualMode: isManualMode,
+                showCategory: titleData.showCategory,
                 currentCategory: currentCategory,
-                manualTitle: manualTitle,
-                showCategory: titleData.showCategory
+                manualTitle: manualTitle
             });
-            
+
             if (data && data.current_category !== undefined) {
-                console.log('[INFO] Category update received:', data.current_category, 'isManualMode:', isManualMode);
-                if (!isManualMode) {
+                console.log('[INFO] Category update received:', data.current_category, 'showCategory:', titleData.showCategory);
+                if (titleData.showCategory) {
                     console.log('[INFO] Processing category update - setting currentCategory to:', data.current_category);
                     currentCategory = data.current_category || "";
                     stopCategoryRetry(); // Stop retrying since EventSub is now providing updates
                     updateTitle();
                     console.log('[SUCCESS] Category update processed successfully');
                 } else {
-                    console.log('[IGNORED] Category update ignored - manual mode is active');
+                    console.log('[IGNORED] Category update ignored - Show Category is off');
                 }
             } else {
                 console.log('[WARNING] Invalid or empty twitch_data_update received:', data);
@@ -341,32 +341,21 @@
         });
 
         // Dynamic control event handlers
-        socket.on('title_toggle_auto_update', function (data) {
-            console.log('[DEBUG] Auto update toggle received:', JSON.stringify(data));
-            console.log('[DEBUG] Current isManualMode before toggle:', isManualMode, 'manualTitle:', manualTitle);
-            
+        socket.on('title_toggle_show_category', function (data) {
+            console.log('[DEBUG] Show category toggle received:', JSON.stringify(data));
+
             if (data && typeof data.enabled === 'boolean') {
-                var oldMode = isManualMode;
-                isManualMode = !data.enabled;
-                console.log('[INFO] Manual mode toggle:', oldMode, '->', isManualMode, '(enabled =', data.enabled, ')');
-                saveManualTitleSettings(); // Save the mode change
-                
-                if (!isManualMode) {
-                    // Switching back to auto mode - fetch fresh category data
-                    console.log('[INFO] Switched to auto mode - fetching fresh category data');
-                    console.log('[DEBUG] Current state before fetching:', {
-                        currentCategory: currentCategory,
-                        currentStreamerName: currentStreamerName
-                    });
-                    // Trigger fresh API call to get current category
+                titleData.showCategory = data.enabled;
+                console.log('[INFO] Show category:', titleData.showCategory);
+                saveManualTitleSettings();
+
+                if (titleData.showCategory) {
                     if (currentStreamerName) {
                         makeInitialTwitchApiCall(currentStreamerName);
                     } else {
-                        console.log('[ERROR] Cannot fetch fresh data - no streamer name available');
+                        requestStreamerInfo();
                     }
                 } else {
-                    console.log('[INFO] Switched to manual mode');
-                    // Always update when switching to manual mode to show manual title (if any)
                     updateTitle();
                 }
             } else {
@@ -375,28 +364,30 @@
         });
 
         socket.on('title_set_manual_title', function (data) {
-            console.log('Manual title input received:', data);
+            console.log('Custom title input received:', data);
             if (data && typeof data.text === 'string') {
                 manualTitle = data.text.trim();
-                saveManualTitleSettings(); // Save the title change
-                // Just store the manual title, don't automatically switch modes
-                // Only update title if we're currently in manual mode
-                if (isManualMode) {
-                    updateTitle();
-                    console.log('Updated manual title:', manualTitle);
-                } else {
-                    console.log('Manual title stored (not in manual mode):', manualTitle);
+                if (manualTitle.length > 0) {
+                    titleData.showCategory = false;
                 }
+                saveManualTitleSettings();
+                updateTitle();
+                console.log('Updated custom title:', manualTitle);
             }
         });
 
         socket.on('title_clear_manual_title', function (data) {
-            console.log('Clear manual title triggered');
-            isManualMode = false;
+            console.log('Clear custom title triggered');
             manualTitle = "";
-            saveManualTitleSettings(); // Save the cleared state
+            titleData.showCategory = true;
+            saveManualTitleSettings();
+            if (currentStreamerName) {
+                makeInitialTwitchApiCall(currentStreamerName);
+            } else {
+                requestStreamerInfo();
+            }
             updateTitle();
-            console.log('Cleared manual title, reverted to auto mode');
+            console.log('Cleared custom title, Show Category restored');
         });
 
         socket.on('title_set_wipe_direction', function (data) {
@@ -419,23 +410,67 @@
         });
 
         socket.on('title_refresh_title', function (data) {
-            console.log('Title refresh triggered');
-            if (!isManualMode) {
-                requestStreamerInfo(); // This will trigger a fresh API call
+            console.log('Category refresh triggered');
+            if (titleData.showCategory) {
+                requestStreamerInfo();
             }
-            console.log('Title refresh triggered via dynamic control');
         });
 
         // Connector action event listeners
         socket.on('title_change_title', function (data) {
             console.log('Connector action: change title', data);
-            if (data && data.title) {
-                // Set manual title and switch to manual mode
-                manualTitle = data.title;
-                isManualMode = true;
-                updateTitle();
-                console.log('Title changed via connector to:', data.title);
+            if (!data) {
+                return;
             }
+
+            var text = '';
+            if (typeof data.title_text === 'string') {
+                text = data.title_text.trim();
+            } else if (typeof data.title === 'string') {
+                text = data.title.trim();
+            }
+
+            if (connectorRevertTimeout) {
+                clearTimeout(connectorRevertTimeout);
+                connectorRevertTimeout = null;
+            }
+
+            var duration = Number(data.display_duration);
+            if (isNaN(duration) || duration < 0) {
+                duration = 0;
+            }
+
+            var setCustom = data.set_custom === true || data.set_custom === 'true';
+            var revertSnapshot = null;
+            if (duration > 0) {
+                revertSnapshot = {
+                    showCategory: titleData.showCategory,
+                    manualTitle: manualTitle
+                };
+            }
+
+            manualTitle = text;
+            if (setCustom || duration > 0 || (duration === 0 && text.length > 0)) {
+                titleData.showCategory = false;
+            }
+
+            saveManualTitleSettings();
+            updateTitle();
+
+            if (duration > 0 && revertSnapshot) {
+                connectorRevertTimeout = setTimeout(function () {
+                    titleData.showCategory = revertSnapshot.showCategory;
+                    manualTitle = revertSnapshot.manualTitle;
+                    saveManualTitleSettings();
+                    updateTitle();
+                    if (titleData.showCategory && currentStreamerName) {
+                        makeInitialTwitchApiCall(currentStreamerName);
+                    }
+                    connectorRevertTimeout = null;
+                }, duration * 1000);
+            }
+
+            console.log('Title changed via connector to:', text);
         });
 
         // Request streamer info from server
@@ -482,43 +517,49 @@
             }
         }
 
-        // Local storage functions for manual title persistence
+        // Local storage functions for custom title persistence
         function saveManualTitleSettings() {
             try {
-                localStorage.setItem(STORAGE_KEYS.MANUAL_MODE, isManualMode.toString());
+                localStorage.setItem(STORAGE_KEYS.SHOW_CATEGORY, titleData.showCategory.toString());
                 localStorage.setItem(STORAGE_KEYS.MANUAL_TITLE, manualTitle);
-                console.log('Saved manual title settings to localStorage');
+                localStorage.removeItem(STORAGE_KEYS.MANUAL_MODE_LEGACY);
+                console.log('Saved title settings to localStorage');
             } catch (e) {
-                console.warn('Failed to save manual title settings:', e);
+                console.warn('Failed to save title settings:', e);
             }
         }
 
         function loadManualTitleSettings() {
             try {
-                var savedMode = localStorage.getItem(STORAGE_KEYS.MANUAL_MODE);
+                var savedShowCategory = localStorage.getItem(STORAGE_KEYS.SHOW_CATEGORY);
                 var savedTitle = localStorage.getItem(STORAGE_KEYS.MANUAL_TITLE);
+                var legacyMode = localStorage.getItem(STORAGE_KEYS.MANUAL_MODE_LEGACY);
 
-                if (savedMode !== null) {
-                    isManualMode = savedMode === 'true';
-                    console.log('Loaded manual mode from localStorage:', isManualMode);
+                if (savedShowCategory !== null) {
+                    titleData.showCategory = savedShowCategory === 'true';
+                    console.log('Loaded show category from localStorage:', titleData.showCategory);
+                } else if (legacyMode === 'true') {
+                    titleData.showCategory = false;
+                    console.log('Migrated legacy manual mode to showCategory=false');
                 }
 
                 if (savedTitle !== null) {
                     manualTitle = savedTitle;
-                    console.log('Loaded manual title from localStorage:', manualTitle);
+                    console.log('Loaded custom title from localStorage:', manualTitle);
                 }
             } catch (e) {
-                console.warn('Failed to load manual title settings:', e);
+                console.warn('Failed to load title settings:', e);
             }
         }
 
         function clearManualTitleSettings() {
             try {
-                localStorage.removeItem(STORAGE_KEYS.MANUAL_MODE);
+                localStorage.removeItem(STORAGE_KEYS.SHOW_CATEGORY);
                 localStorage.removeItem(STORAGE_KEYS.MANUAL_TITLE);
-                console.log('Cleared manual title settings from localStorage');
+                localStorage.removeItem(STORAGE_KEYS.MANUAL_MODE_LEGACY);
+                console.log('Cleared title settings from localStorage');
             } catch (e) {
-                console.warn('Failed to clear manual title settings:', e);
+                console.warn('Failed to clear title settings:', e);
             }
         }
 
@@ -528,35 +569,29 @@
             var newTitle = "";
 
             console.log('[DEBUG] updateTitle() called with state:', {
-                isManualMode: isManualMode,
-                manualTitle: manualTitle,
-                displayMode: titleData.displayMode,
                 showCategory: titleData.showCategory,
+                manualTitle: manualTitle,
                 currentCategory: currentCategory,
                 categoryPrefix: titleData.categoryPrefix,
                 categorySuffix: titleData.categorySuffix
             });
 
-            // If in manual mode and have manual title, use manual title
-            if (isManualMode && manualTitle && manualTitle.trim().length > 0) {
-                newTitle = manualTitle;
-                console.log('[INFO] Using manual title:', newTitle);
+            if (!titleData.showCategory) {
+                newTitle = manualTitle.trim();
+                console.log('[INFO] Using custom title:', newTitle || '(blank)');
+            } else if (currentCategory) {
+                newTitle = titleData.categoryPrefix + currentCategory + titleData.categorySuffix;
+                console.log('[INFO] Using category title:', newTitle, '(category:', currentCategory, ')');
             } else {
-                // Show category if enabled and available
-                if (titleData.showCategory && currentCategory) {
-                    newTitle = titleData.categoryPrefix + currentCategory + titleData.categorySuffix;
-                    console.log('[INFO] Using category title:', newTitle, '(category:', currentCategory, ')');
-                } else {
-                    newTitle = titleData.currentTitle;
-                    console.log('[INFO] Using default title:', newTitle, '(showCategory:', titleData.showCategory, ', currentCategory:', currentCategory, ')');
-                }
+                newTitle = titleData.currentTitle;
+                console.log('[INFO] Using default title:', newTitle);
             }
 
             console.log('[DEBUG] Final title decision:', newTitle);
             console.log('[DEBUG] Title element exists:', !!titleElement, 'Current content:', titleElement ? titleElement.textContent : 'N/A');
 
-            // Update title if it has changed or if we need to force update
-            if (titleElement && (newTitle !== titleElement.textContent || newTitle.length > 0)) {
+            // Update title when display text changes (including clearing to blank)
+            if (titleElement && newTitle !== titleElement.textContent) {
                 console.log('[INFO] Updating title from "' + (titleElement ? titleElement.textContent : 'null') + '" to "' + newTitle + '"');
                 if (settings.enableAnimations && newTitle !== titleElement.textContent) {
                     animateTextChange(titleElement, newTitle);
@@ -782,7 +817,6 @@
             }
             styleEl.textContent = buildTitlePreviewCss(config);
 
-            if (config.ShowCategory !== undefined) { titleData.showCategory = !!config.ShowCategory; }
             if (config.CategoryPrefix !== undefined) { titleData.categoryPrefix = config.CategoryPrefix; }
             if (config.CategorySuffix !== undefined) { titleData.categorySuffix = String(config.CategorySuffix); }
             if (config.EnableAnimations !== undefined) { settings.enableAnimations = !!config.EnableAnimations; }
@@ -866,8 +900,9 @@
             }, 100); // Debounce resize events
         });
 
-        // Load saved manual title settings on page load
+        // Load saved title settings on page load and apply display immediately
         loadManualTitleSettings();
+        updateTitle();
     </script>
 </body>
 
