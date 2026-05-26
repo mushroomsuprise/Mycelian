@@ -264,6 +264,13 @@ def get_connection_status(key: str) -> str:
     if key == "obs":
         from .obs_service import obs_service
 
-        return "Connected" if obs_service.is_connected() else "Disconnected"
+        phase = obs_service.get_connection_phase()
+        if phase == "connected":
+            return "Connected"
+        if phase == "connecting":
+            return "Connecting"
+        if phase == "disconnecting":
+            return "Disconnecting"
+        return "Disconnected"
 
     return "Unknown"

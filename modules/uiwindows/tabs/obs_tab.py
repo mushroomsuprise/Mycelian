@@ -37,26 +37,42 @@ class ObsTab:
 
     def _refresh_status(self) -> None:
         try:
+            phase = obs_service.get_connection_phase()
             ok, plug, rpc = obs_service.connection_details()
-            txt = (
-                "Connected"
-                if ok
-                else (self.buffer.connection_status if self.buffer else "Disconnected")
-            )
-            if ok and plug:
-                extra = plug
-                if rpc:
-                    extra = f"{plug} · ws {rpc}"
-                txt = f"Connected — {extra}"
+            if phase == "connecting":
+                txt = "Connecting…"
+                success = False
+                pending = True
+            elif phase == "disconnecting":
+                txt = "Disconnecting…"
+                success = False
+                pending = True
+            elif ok:
+                txt = "Connected"
+                if plug:
+                    extra = plug
+                    if rpc:
+                        extra = f"{plug} · ws {rpc}"
+                    txt = f"Connected — {extra}"
+                success = True
+                pending = False
+            else:
+                txt = (
+                    self.buffer.connection_status
+                    if self.buffer
+                    else "Disconnected"
+                )
+                success = False
+                pending = False
             if "status_label" in self.ui_elements:
                 self.ui_elements["status_label"].set_text(txt)
-                self.ui_elements["status_label"].classes(
-                    replace=(
-                        "font-semibold text-theme-success"
-                        if ok
-                        else "font-semibold text-theme-error"
-                    )
-                )
+                if pending:
+                    css = "font-semibold text-theme-warning"
+                elif success:
+                    css = "font-semibold text-theme-success"
+                else:
+                    css = "font-semibold text-theme-error"
+                self.ui_elements["status_label"].classes(replace=css)
         except Exception:
             pass
 

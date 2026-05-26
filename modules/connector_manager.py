@@ -49,6 +49,7 @@ class ConnectorManager:
         self.event_queue = asyncio.Queue()
         self.processing_task = None
         self.connector_thread = None
+        self.connector_loop: Optional[asyncio.AbstractEventLoop] = None
         self.is_running = False
         self._lock = threading.RLock()
         self.hotkey_listener = get_listener()
@@ -94,6 +95,7 @@ class ConnectorManager:
                 # Create a new event loop for this thread
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
+                self.connector_loop = loop
 
                 try:
                     from .obs_service import obs_service as _obs_svc
@@ -890,3 +892,8 @@ async def cleanup():
 def get_manager() -> ConnectorManager:
     """Get the global connector manager instance"""
     return connector_manager
+
+
+def get_connector_loop() -> Optional[asyncio.AbstractEventLoop]:
+    """Asyncio loop used by ConnectorProcessor (None until thread starts)."""
+    return connector_manager.connector_loop

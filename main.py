@@ -326,7 +326,7 @@ if __name__ == "__main__":
 
         from modules.obs_service import start_obs_service as _start_obs_ws
 
-        service_manager.register("obs", _start_obs_ws, priority=8)
+        service_manager.register("obs", _start_obs_ws, priority=5)
 
         # Start deferred init after UI is responsive
         service_manager.start_deferred_init(delay_seconds=1.0)

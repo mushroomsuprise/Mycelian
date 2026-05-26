@@ -1,7 +1,9 @@
 """OBS Studio integration (WebSocket).
 
-Runtime behavior lives in :mod:`modules.obs_service` (daemon thread).
-This module preserves the legacy import path ``modules.obs``.
+All socket I/O runs on :mod:`modules.obs_service`'s ``ObsWebSocket`` daemon thread;
+callers enqueue work via :func:`obs_service.enqueue_obs_request` or
+:func:`obs_service.enqueue_refresh_snapshot`. This module preserves the legacy import
+path ``modules.obs``.
 """
 
 from __future__ import annotations

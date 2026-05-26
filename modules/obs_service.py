@@ -26,7 +26,13 @@ _DISABLED_POLL_INTERVAL_SEC = 15.0
 # After unexpected thread errors, pause before restarting the outer loop.
 _THREAD_ERROR_COOLDOWN_SEC = 10.0
 # Consecutive idle health-check failures (~queue_empty interval) → drop stale socket.
-_IDLE_HEALTH_DROP_AFTER_FAILS = 12
+_IDLE_HEALTH_DROP_AFTER_FAILS = 4
+# Socket timeouts (seconds) — keep connect/health probes short so the UI stays responsive.
+_CONNECT_TIMEOUT_SEC = 3.0
+_RPC_TIMEOUT_SEC = 5.0
+_HEALTH_TIMEOUT_SEC = 2.0
+_EVENT_DISCONNECT_JOIN_TIMEOUT_SEC = 2.0
+_SNAPSHOT_YIELD_EVERY_N_SCENES = 3
 
 _CONNECTOR_OPS = frozenset(
     {
@@ -151,6 +157,9 @@ class ObsServiceImpl:
         self._last_connect_attempt: float = 0.0
         self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
         self._idle_health_failures = 0
+        self._phase_lock = threading.Lock()
+        self._phase = "disconnected"
+        self._connect_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
     # --- Public API ---
     def set_connector_loop(self, loop: Optional[asyncio.AbstractEventLoop]) -> None:
@@ -175,6 +184,11 @@ class ObsServiceImpl:
         if th is not None:
             th.join(timeout=8.0)
         self._thread = None
+        pool = self._connect_executor
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
+            self._connect_executor = None
+        self._set_phase("disconnected")
 
     def enqueue_obs_request(
         self, operation: str, obs_arguments: Optional[Dict[str, Any]] = None
@@ -194,9 +208,13 @@ class ObsServiceImpl:
         except queue.Full:
             logger.warning("OBS reconnect signal dropped — queue full")
 
+    def enqueue_refresh_snapshot(self) -> concurrent.futures.Future[Any]:
+        """Queue a snapshot rebuild on the OBS worker thread (preferred for UI)."""
+        return self.enqueue_obs_request("__refresh_snapshot__", {})
+
     def refresh_snapshot_blocking(self, timeout_s: float = 12.0) -> Tuple[bool, str]:
-        """Synchronously rebuild scene/input snapshot using a temp future (mostly for tests)."""
-        fut = self.enqueue_obs_request("__refresh_snapshot__", {})
+        """Wait for a snapshot rebuild. Do not call from the NiceGUI main thread."""
+        fut = self.enqueue_refresh_snapshot()
         try:
             raw = fut.result(timeout=timeout_s)
             if isinstance(raw, tuple) and raw[0]:
@@ -224,12 +242,22 @@ class ObsServiceImpl:
                 "record_output_state": str(self._snapshot.get("record_output_state") or ""),
             }
 
+    def get_connection_phase(self) -> str:
+        """``disconnected`` | ``connecting`` | ``connected`` | ``disconnecting``."""
+        with self._phase_lock:
+            return self._phase
+
     def is_connected(self) -> bool:
-        return self._req_client is not None
+        return self.get_connection_phase() == "connected" and self._req_client is not None
 
     def get_status_line(self) -> str:
-        if self.is_connected():
+        phase = self.get_connection_phase()
+        if phase == "connected":
             return f"{self._obs_version or 'Connected'}"
+        if phase == "connecting":
+            return "Connecting"
+        if phase == "disconnecting":
+            return "Disconnecting"
         return "Disconnected"
 
     def connection_details(self) -> Tuple[bool, str, str]:
@@ -239,6 +267,22 @@ class ObsServiceImpl:
             self._obs_version or "",
             self._websocket_version or "",
         )
+
+    def _set_phase(self, phase: str) -> None:
+        with self._phase_lock:
+            self._phase = phase
+
+    def _should_abort_connect(self) -> bool:
+        return self._stop.is_set() or self._reconnect_wakeup.is_set()
+
+    def _get_connect_executor(self) -> concurrent.futures.ThreadPoolExecutor:
+        pool = self._connect_executor
+        if pool is None:
+            pool = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="ObsConnect"
+            )
+            self._connect_executor = pool
+        return pool
 
     # --- Worker loop ---
     def _thread_main(self) -> None:
@@ -330,7 +374,7 @@ class ObsServiceImpl:
                 # Keep snapshot fresh lightly (stream/record state)
                 if self._req_client:
                     try:
-                        self._update_output_flags_only()
+                        self._update_output_flags_only(use_health_timeout=True)
                         self._idle_health_failures = 0
                     except Exception:
                         self._idle_health_failures += 1
@@ -384,8 +428,15 @@ class ObsServiceImpl:
             logger.debug("OBS settings load: %s", e)
             return False
 
-    def _connection_kwargs(self) -> Dict[str, Any]:
+    def _connection_kwargs(self, mode: str = "rpc") -> Dict[str, Any]:
         from . import dataobjects
+
+        if mode == "connect":
+            timeout = _CONNECT_TIMEOUT_SEC
+        elif mode == "health":
+            timeout = _HEALTH_TIMEOUT_SEC
+        else:
+            timeout = _RPC_TIMEOUT_SEC
 
         obs = dataobjects.state_manager.get_obs_data()
         port = int(obs.port or 4455)
@@ -394,76 +445,171 @@ class ObsServiceImpl:
             "host": (obs.host or "localhost").strip() or "localhost",
             "port": port,
             "password": pwd,
-            "timeout": 12,
+            "timeout": timeout,
         }
         return kwargs
 
-    def _connect_blocking(self) -> None:
-        from obsws_python import ReqClient, EventClient
+    @staticmethod
+    def _establish_req_session(
+        kw: Dict[str, Any],
+    ) -> Tuple[Any, str, str]:
+        """Run on ObsConnect pool thread — blocking ReqClient connect + identify."""
+        from obsws_python import ReqClient
+
+        rc = ReqClient(**kw)
+        resp = rc.get_version()
+        plug = getattr(resp, "obs_version", getattr(resp, "obsVersion", "") or "") or ""
+        ws_v = getattr(
+            resp,
+            "obs_web_socket_version",
+            getattr(resp, "obsWebSocketVersion", "") or "",
+        ) or ""
+        return rc, str(plug), str(ws_v)
+
+    def _run_connect_with_timeout(
+        self, kw: Dict[str, Any]
+    ) -> Optional[Tuple[Any, str, str]]:
+        pool = self._get_connect_executor()
+        fut = pool.submit(self._establish_req_session, kw)
+        try:
+            return fut.result(timeout=_CONNECT_TIMEOUT_SEC + 0.5)
+        except concurrent.futures.TimeoutError:
+            logger.debug("OBS ReqClient connect timed out")
+            return None
+        except Exception as e:
+            if _is_transient_connect_error(e):
+                logger.debug("OBS unreachable: %s", e)
+            else:
+                logger.info("OBS connect failed: %s", e)
+            return None
+
+    def _connect_event_client(self, base_kw: Dict[str, Any]) -> None:
+        from obsws_python import EventClient
         from obsws_python.subs import Subs
 
-        self._disconnect_clients()
-        kw = self._connection_kwargs()
+        ev_kw = dict(base_kw)
+        ev_kw["timeout"] = _CONNECT_TIMEOUT_SEC
+        ev_kw["subs"] = Subs.LOW_VOLUME
+
+        def _open_events() -> Any:
+            return EventClient(**ev_kw)
+
+        pool = self._get_connect_executor()
+        fut = pool.submit(_open_events)
         try:
-            self._last_connect_attempt = time.monotonic()
-            self._req_client = ReqClient(**kw)
-
-            resp = self._req_client.get_version()
-            plug = getattr(resp, "obs_version", getattr(resp, "obsVersion", "") or "") or ""
-            ws_v = getattr(
-                resp,
-                "obs_web_socket_version",
-                getattr(resp, "obsWebSocketVersion", "") or "",
-            ) or ""
-            self._obs_version = plug
-            self._websocket_version = ws_v
-
-            logger.info(
-                "OBS WebSocket connected (%s)",
-                self._obs_version or self._websocket_version or "?",
-            )
-
-            self._refresh_snapshot_locked()
-            self._update_output_flags_only()
-
-            ev_kw = dict(kw)
-            ev_kw.pop("timeout", None)
-            ev_kw["subs"] = Subs.LOW_VOLUME
-            ev_kw.setdefault("timeout", 12)
-
-            try:
-                self._ev_client = EventClient(**ev_kw)
-                self._register_callbacks()
-            except Exception as e:
-                logger.warning("OBS EventClient unavailable (triggers disabled): %s", e)
-
+            ev = fut.result(timeout=_CONNECT_TIMEOUT_SEC + 0.5)
+            if self._should_abort_connect():
+                self._disconnect_event_client_bounded(ev)
+                return
+            self._ev_client = ev
+            self._register_callbacks()
+        except concurrent.futures.TimeoutError:
+            logger.warning("OBS EventClient connect timed out (triggers disabled)")
         except Exception as e:
-            self._disconnect_clients()
-            msg = str(e)
-            if _is_transient_connect_error(e):
-                logger.debug("OBS unreachable: %s", msg)
-            else:
-                logger.info("OBS connect failed: %s", msg)
+            logger.warning("OBS EventClient unavailable (triggers disabled): %s", e)
 
-    def _disconnect_clients(self) -> None:
-        if self._ev_client is not None:
-            ev = self._ev_client
-            self._ev_client = None
+    def _connect_blocking(self) -> None:
+        if self._should_abort_connect():
+            return
+
+        self._set_phase("connecting")
+        self._disconnect_clients()
+        self._set_phase("connecting")
+
+        if self._should_abort_connect():
+            return
+
+        kw = self._connection_kwargs("connect")
+        self._last_connect_attempt = time.monotonic()
+        session = self._run_connect_with_timeout(kw)
+        if session is None:
+            self._disconnect_clients()
+            return
+
+        req_client, plug, ws_v = session
+        if self._should_abort_connect():
             try:
+                req_client.disconnect()
+            except Exception:
+                pass
+            self._disconnect_clients()
+            return
+
+        self._req_client = req_client
+        self._apply_ws_timeout(self._req_client, _RPC_TIMEOUT_SEC)
+        self._obs_version = plug
+        self._websocket_version = ws_v
+        self._set_phase("connected")
+
+        logger.info(
+            "OBS WebSocket connected (%s)",
+            self._obs_version or self._websocket_version or "?",
+        )
+
+        try:
+            self._update_output_flags_only(use_health_timeout=True)
+        except Exception:
+            pass
+
+        try:
+            self._req_queue.put_nowait((None, "__refresh_snapshot__", {}))
+        except queue.Full:
+            logger.debug("OBS post-connect snapshot enqueue dropped — queue full")
+
+        if not self._should_abort_connect():
+            self._connect_event_client(kw)
+
+    def _disconnect_event_client_bounded(self, ev: Any) -> None:
+        try:
+            cb = getattr(ev, "callback", None)
+            if cb is not None:
                 try:
-                    ev.callback.clear()
+                    cb.clear()
                 except Exception:
                     pass
-                ev.disconnect()
+        except Exception:
+            pass
+        base = getattr(ev, "base_client", None)
+        ws = getattr(base, "ws", None) if base is not None else None
+        if ws is not None:
+            try:
+                ws.close()
+            except Exception as e:
+                logger.debug("OBS EventClient ws close: %s", e)
+        worker = getattr(ev, "worker", None)
+        if worker is not None and worker.is_alive():
+            worker.join(timeout=_EVENT_DISCONNECT_JOIN_TIMEOUT_SEC)
+
+    def _disconnect_clients(self) -> None:
+        self._set_phase("disconnecting")
+        ev = self._ev_client
+        rc = self._req_client
+        self._ev_client = None
+        self._req_client = None
+
+        if ev is not None:
+            try:
+                self._disconnect_event_client_bounded(ev)
             except Exception as e:
                 logger.debug("OBS EventClient disconnect: %s", e)
-        if self._req_client is not None:
-            rc = self._req_client
-            self._req_client = None
+        if rc is not None:
             try:
                 rc.disconnect()
             except Exception as e:
                 logger.debug("OBS ReqClient disconnect: %s", e)
+        self._set_phase("disconnected")
+
+    def _apply_ws_timeout(self, cl: Any, timeout: float) -> None:
+        base = getattr(cl, "base_client", None)
+        if base is None:
+            return
+        base.timeout = timeout
+        ws = getattr(base, "ws", None)
+        if ws is not None:
+            try:
+                ws.settimeout(timeout)
+            except Exception:
+                pass
 
     def _enqueue_connector_event(self, event_data: Dict[str, Any]) -> None:
         loop = self._connector_loop
@@ -568,10 +714,12 @@ class ObsServiceImpl:
             ]
         )
 
-    def _update_output_flags_only(self) -> None:
+    def _update_output_flags_only(self, *, use_health_timeout: bool = False) -> None:
         cl = self._req_client
         if cl is None:
             return
+        timeout = _HEALTH_TIMEOUT_SEC if use_health_timeout else _RPC_TIMEOUT_SEC
+        self._apply_ws_timeout(cl, timeout)
         ss = cl.get_stream_status()
         rs = cl.get_record_status()
         sav = bool(_attr(ss, "output_active", "outputActive") or False)
@@ -639,13 +787,17 @@ class ObsServiceImpl:
                 if nm:
                     input_names.append(str(nm))
         by_scene: Dict[str, Dict[str, str]] = {}
-        for sn in scene_names:
+        for idx, sn in enumerate(scene_names):
+            if self._should_abort_connect():
+                return
             mapped = self._sources_for_scene(sn)
             if mapped:
                 by_scene[sn] = mapped
+            if idx % _SNAPSHOT_YIELD_EVERY_N_SCENES == _SNAPSHOT_YIELD_EVERY_N_SCENES - 1:
+                time.sleep(0)
 
         try:
-            self._update_output_flags_only()
+            self._update_output_flags_only(use_health_timeout=True)
         except Exception:
             pass
 

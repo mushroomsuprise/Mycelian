@@ -478,6 +478,8 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
         return "Unknown"
     if s == "connected" or s.startswith("connected") or s.startswith("partial"):
         return "Connected"
+    if s in ("connecting", "disconnecting"):
+        return status_raw.strip().title() or "Connecting"
     if any(
         x in s
         for x in (
@@ -513,6 +515,8 @@ def footer_status_tier(service_key: str, status_raw: str) -> str:
     display = footer_status_display(service_key, status_raw).lower()
     if display == "connected":
         return "success"
+    if display in ("connecting", "disconnecting"):
+        return "warning"
     if display == "idle":
         return "warning"
     if display in ("disconnected", "error"):

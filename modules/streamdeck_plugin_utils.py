@@ -34,9 +34,9 @@ def enqueue_streamdeck_connector_event(event_data: Dict[str, Any]) -> bool:
     queue processing lives on a dedicated thread (see ConnectorManager).
     """
     from .connector_integration import get_integration
-    from .obs_service import obs_service
+    from .connector_manager import get_connector_loop
 
-    loop = obs_service._connector_loop
+    loop = get_connector_loop()
     if loop is None or not loop.is_running():
         logger.debug(
             "Stream Deck connector enqueue skipped: connector loop not ready"

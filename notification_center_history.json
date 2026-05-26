@@ -202,5 +202,75 @@
         "settings_subtab": "OBS"
       }
     ]
+  },
+  {
+    "id": "d7dee077-3d8e-459b-8f90-d2d7f6daaa96",
+    "ts": 1779837355.175912,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "42221e63-310c-43a3-b6a9-03e9d0631907",
+    "ts": 1779837366.952833,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "37803c84-b001-4dd2-84f7-cf3cd1608739",
+    "ts": 1779837402.5272052,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "248095d1-5df9-42e5-b155-efaca877bd8e",
+    "ts": 1779837420.1078138,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "2646deb1-7746-4bb6-a266-43c70d8dc167",
+    "ts": 1779837420.532759,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
   }
 ]
