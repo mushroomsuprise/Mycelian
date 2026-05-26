@@ -443,15 +443,33 @@ def create_text_input_control(template_name, element):
     """Create text input control"""
     placeholder = element.get("placeholder", "")
     action = element.get("action", "")
+    emit_timer: dict = {"timer": None}
 
-    def handle_text_change(e):
-        send_websocket_event(template_name, action, {"text": e.value})
+    def schedule_emit_current_text(_e=None):
+        """Emit on next UI tick so text_input.value matches the latest keystroke."""
+        existing = emit_timer["timer"]
+        if existing is not None:
+            existing.active = False
 
-    form_input(
+        def emit_now():
+            emit_timer["timer"] = None
+            value = text_input.value
+            text_payload = "" if value is None else str(value)
+            send_websocket_event(
+                template_name,
+                action,
+                {"text": text_payload},
+            )
+
+        emit_timer["timer"] = ui.timer(0.0, emit_now, once=True)
+
+    text_input = form_input(
         tooltip=placeholder or "Send text to the template control",
         placeholder=placeholder,
         classes="w-full text-xs",
-    ).on("change", handle_text_change)
+        on_change=schedule_emit_current_text,
+    )
+    text_input.props("debounce=0")
 
 
 def create_number_input_control(template_name, element):
@@ -470,22 +488,20 @@ def create_number_input_control(template_name, element):
         min=min_val,
         max=max_val,
         classes="w-full text-xs",
-    ).on("change", handle_number_change)
+        on_change=handle_number_change,
+    )
 
 
 def send_websocket_event(template_name, action, data):
-    """Send websocket event to the web engine"""
+    """Send websocket event to overlay clients (same delivery path as OBS dock relay)."""
+    event_name = f"{template_name}_{action}"
     try:
-        if web_engine.web_engine_instance and web_engine.web_engine_instance.socketio:
-            event_name = f"{template_name}_{action}"
-            web_engine.web_engine_instance.socketio.emit(event_name, data)
-            logger.debug(f"Sent websocket event: {event_name} with data: {data}")
-            if template_name == "title":
-                logger.info(
-                    f"Title template control event sent: {event_name} with data: {data}"
-                )
-        else:
+        engine = web_engine.web_engine_instance
+        if not engine:
             logger.error("Web engine not available for sending websocket events")
+            return
+        engine.emit_template_control_event(template_name, action, data)
+        logger.debug("Sent websocket event: %s with data: %s", event_name, data)
     except Exception as e:
         logger.error(
             f"Error sending websocket event {action} for {template_name}: {str(e)}",

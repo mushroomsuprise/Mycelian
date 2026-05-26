@@ -62,7 +62,9 @@
             line-height: {{LineHeight}};
             white-space: nowrap;
             max-width: 100%;
+            min-width: 0;
             max-height: 100%;
+            box-sizing: border-box;
             overflow: hidden;
         }
 
@@ -94,10 +96,13 @@
             left: 0;
             width: 100%;
             height: 100%;
+            min-width: 0;
+            box-sizing: border-box;
             display: flex;
             align-items: center;
 
             justify-content: {{TitleAlign}};
+            overflow: hidden;
         }
 
         .wipe-new-text {
@@ -181,13 +186,9 @@
         @media (max-width: 768px) {
             .title-container {
                 width: calc({{TitleWidth}}px * 0.9);
-
-            height: calc({{TitleHeight}}px * 0.9);
-
-        padding: calc({{ContainerPadding}}px * 0.8);
-        }
-
-        /* Font size is now handled dynamically by JavaScript */
+                height: calc({{TitleHeight}}px * 0.9);
+                padding: calc({{ContainerPadding}}px * 0.8);
+            }
         }
     </style>
 </head>
@@ -218,16 +219,15 @@
         wipeEasing: {{ WipeEasing | tojson }}
         };
 
-        // Font sizing settings
-        var baseFontSize = {{ FontSize }};
-        var minFontSize = Math.max(12, baseFontSize * 0.3); // Minimum 12px or 30% of base
-
         var currentCategory = "";
         var manualTitle = "";
         var retryTimeout = null;
         var isRetryingCategory = false;
         var currentStreamerName = "";
         var connectorRevertTimeout = null;
+        var titleAnimationGeneration = 0;
+        var titleAnimationTimeouts = [];
+        var manualTitleSaveTimeout = null;
 
         // Local storage keys
         var STORAGE_KEYS = {
@@ -238,10 +238,6 @@
 
         // Socket event listeners
         socket.on('connect', function () {
-            console.log('Connected to title server');
-            console.log('Title socket ID:', socket.id);
-            console.log('Title socket connected:', socket.connected);
-            // Request streamer info and then make initial API call
             requestStreamerInfo();
         });
 
@@ -342,11 +338,8 @@
 
         // Dynamic control event handlers
         socket.on('title_toggle_show_category', function (data) {
-            console.log('[DEBUG] Show category toggle received:', JSON.stringify(data));
-
             if (data && typeof data.enabled === 'boolean') {
                 titleData.showCategory = data.enabled;
-                console.log('[INFO] Show category:', titleData.showCategory);
                 saveManualTitleSettings();
 
                 if (titleData.showCategory) {
@@ -364,15 +357,13 @@
         });
 
         socket.on('title_set_manual_title', function (data) {
-            console.log('Custom title input received:', data);
-            if (data && typeof data.text === 'string') {
-                manualTitle = data.text.trim();
-                if (manualTitle.length > 0) {
+            if (data && data.text !== undefined && data.text !== null) {
+                manualTitle = String(data.text);
+                if (manualTitle.trim().length > 0) {
                     titleData.showCategory = false;
                 }
-                saveManualTitleSettings();
+                scheduleManualTitleSave();
                 updateTitle();
-                console.log('Updated custom title:', manualTitle);
             }
         });
 
@@ -517,6 +508,99 @@
             }
         }
 
+        function scheduleManualTitleSave() {
+            if (manualTitleSaveTimeout) {
+                clearTimeout(manualTitleSaveTimeout);
+            }
+            manualTitleSaveTimeout = setTimeout(function () {
+                manualTitleSaveTimeout = null;
+                saveManualTitleSettings();
+            }, 250);
+        }
+
+        function cancelPendingTitleAnimation() {
+            titleAnimationGeneration += 1;
+            titleAnimationTimeouts.forEach(function (id) {
+                clearTimeout(id);
+            });
+            titleAnimationTimeouts = [];
+        }
+
+        function scheduleTitleAnimation(callback, delayMs) {
+            var generation = titleAnimationGeneration;
+            var timeoutId = setTimeout(function () {
+                titleAnimationTimeouts = titleAnimationTimeouts.filter(function (id) {
+                    return id !== timeoutId;
+                });
+                if (generation === titleAnimationGeneration) {
+                    callback();
+                }
+            }, delayMs);
+            titleAnimationTimeouts.push(timeoutId);
+        }
+
+        function getTitleContainer() {
+            return document.getElementById('titleContainer');
+        }
+
+        function ensureTitleElement(text) {
+            var container = getTitleContainer();
+            if (!container) {
+                return null;
+            }
+
+            var existing = document.getElementById('titleText');
+            if (existing) {
+                if (text !== undefined) {
+                    existing.textContent = text;
+                }
+                return existing;
+            }
+
+            var wipeContainer = container.querySelector('.wipe-container');
+            if (wipeContainer) {
+                container.removeChild(wipeContainer);
+            }
+
+            var element = document.createElement('div');
+            element.className = 'title-text';
+            element.id = 'titleText';
+            if (text !== undefined) {
+                element.textContent = text;
+            }
+            container.appendChild(element);
+            return element;
+        }
+
+        function getDisplayedTitleText() {
+            var titleElement = document.getElementById('titleText');
+            if (titleElement) {
+                return titleElement.textContent;
+            }
+
+            var wipeNew = document.querySelector('#titleContainer .wipe-new-text');
+            if (wipeNew) {
+                return wipeNew.textContent;
+            }
+
+            var wipeOld = document.querySelector('#titleContainer .wipe-old-text');
+            return wipeOld ? wipeOld.textContent : '';
+        }
+
+        function setTitleTextImmediate(newText) {
+            cancelPendingTitleAnimation();
+            var titleElement = ensureTitleElement(newText);
+            if (!titleElement) {
+                return;
+            }
+            titleElement.textContent = newText;
+            applyEffects(titleElement);
+        }
+
+        function shouldAnimateTitleChange() {
+            return titleData.showCategory && settings.enableAnimations;
+        }
+
         // Local storage functions for custom title persistence
         function saveManualTitleSettings() {
             try {
@@ -565,72 +649,70 @@
 
         // Update the displayed title based on current settings
         function updateTitle() {
-            var titleElement = document.getElementById('titleText');
             var newTitle = "";
-
-            console.log('[DEBUG] updateTitle() called with state:', {
-                showCategory: titleData.showCategory,
-                manualTitle: manualTitle,
-                currentCategory: currentCategory,
-                categoryPrefix: titleData.categoryPrefix,
-                categorySuffix: titleData.categorySuffix
-            });
+            var displayedTitle = getDisplayedTitleText();
 
             if (!titleData.showCategory) {
-                newTitle = manualTitle.trim();
-                console.log('[INFO] Using custom title:', newTitle || '(blank)');
+                newTitle = manualTitle.trim().length === 0 ? '' : manualTitle;
             } else if (currentCategory) {
                 newTitle = titleData.categoryPrefix + currentCategory + titleData.categorySuffix;
-                console.log('[INFO] Using category title:', newTitle, '(category:', currentCategory, ')');
             } else {
                 newTitle = titleData.currentTitle;
-                console.log('[INFO] Using default title:', newTitle);
             }
 
-            console.log('[DEBUG] Final title decision:', newTitle);
-            console.log('[DEBUG] Title element exists:', !!titleElement, 'Current content:', titleElement ? titleElement.textContent : 'N/A');
+            if (newTitle === displayedTitle) {
+                return;
+            }
 
-            // Update title when display text changes (including clearing to blank)
-            if (titleElement && newTitle !== titleElement.textContent) {
-                console.log('[INFO] Updating title from "' + (titleElement ? titleElement.textContent : 'null') + '" to "' + newTitle + '"');
-                if (settings.enableAnimations && newTitle !== titleElement.textContent) {
-                    animateTextChange(titleElement, newTitle);
-                } else {
-                    titleElement.textContent = newTitle;
-                    // Adjust font size after setting text
-                    adjustFontSize(titleElement);
-                }
+            // Custom titles update instantly (no wipe/opacity) so fast typing never misses characters
+            if (!titleData.showCategory) {
+                setTitleTextImmediate(newTitle);
+                return;
+            }
 
-                // Apply effects
+            var titleElement = ensureTitleElement();
+            if (!titleElement) {
+                return;
+            }
+
+            if (shouldAnimateTitleChange()) {
+                animateTextChange(titleElement, newTitle);
+            } else {
+                titleElement.textContent = newTitle;
                 applyEffects(titleElement);
             }
         }
 
-        // Animate text changes
+        // Animate text changes (category mode only; custom titles use setTitleTextImmediate)
         function animateTextChange(element, newText) {
+            cancelPendingTitleAnimation();
+            var generation = titleAnimationGeneration;
+
             if (settings.enableWipe) {
-                animateWipeTransition(element, newText);
+                animateWipeTransition(element, newText, generation);
             } else {
-                // Fallback to original opacity animation
                 element.classList.add('updating');
 
-                setTimeout(function () {
-                    element.textContent = newText;
-                    element.classList.remove('updating');
-                    element.classList.add('updated');
+                scheduleTitleAnimation(function () {
+                    var liveElement = ensureTitleElement();
+                    if (!liveElement) {
+                        return;
+                    }
+                    liveElement.textContent = newText;
+                    liveElement.classList.remove('updating');
+                    liveElement.classList.add('updated');
+                    applyEffects(liveElement);
 
-                    // Adjust font size after setting text
-                    adjustFontSize(element);
-
-                    setTimeout(function () {
-                        element.classList.remove('updated');
+                    scheduleTitleAnimation(function () {
+                        liveElement.classList.remove('updated');
                     }, {{ TransitionDuration| tojson }} * 1000);
-        }, {{ TransitionDuration }} * 500);
+                }, {{ TransitionDuration }} * 500);
             }
         }
 
         // Wipe animation transition
-        function animateWipeTransition(element, newText) {
+        function animateWipeTransition(element, newText, generation) {
+            generation = generation || titleAnimationGeneration;
             var container = element.parentElement;
             var oldText = element.textContent;
 
@@ -651,8 +733,6 @@
             var oldTextElement = document.createElement('div');
             oldTextElement.className = 'wipe-old-text title-text';
             oldTextElement.textContent = oldText;
-            // Copy the current font size from the original element
-            oldTextElement.style.fontSize = getComputedStyle(element).fontSize;
 
             // Create new text element
             var newTextElement = document.createElement('div');
@@ -665,36 +745,32 @@
 
             // Replace original element with wipe container
             container.replaceChild(wipeContainer, element);
-
-            // Adjust font size for the new text element
-            adjustFontSize(newTextElement);
+            applyEffects(newTextElement);
 
             // Force reflow to ensure initial positions are set
             wipeContainer.offsetHeight;
 
             // Start wipe animation
-            setTimeout(function () {
+            scheduleTitleAnimation(function () {
+                if (generation !== titleAnimationGeneration) {
+                    return;
+                }
                 oldTextElement.classList.add('wipe-active');
                 newTextElement.classList.add('wipe-active');
 
-                // After animation completes, clean up
-                setTimeout(function () {
-                    // Create new simple text element
+                scheduleTitleAnimation(function () {
+                    if (generation !== titleAnimationGeneration) {
+                        return;
+                    }
                     var finalElement = document.createElement('div');
                     finalElement.className = 'title-text';
                     finalElement.id = 'titleText';
                     finalElement.textContent = newText;
 
-                    // Replace wipe container with final element
                     container.replaceChild(finalElement, wipeContainer);
-
-                    // Adjust font size after setting text
-                    adjustFontSize(finalElement);
-
-                    // Apply effects to the final element
                     applyEffects(finalElement);
                 }, {{ TransitionDuration| tojson }} * 1000);
-            }, 50); // Small delay to ensure DOM is ready
+            }, 50);
         }
 
         // Apply visual effects
@@ -711,51 +787,6 @@
             if (settings.enableGlow) {
                 element.classList.add('glow');
             }
-        }
-
-        // Dynamic font sizing function
-        function adjustFontSize(element) {
-            if (!element || !element.textContent || element.textContent.trim() === '') {
-                return;
-            }
-
-            var container = element.parentElement;
-            var availableWidth = container.offsetWidth - (parseFloat(getComputedStyle(container).paddingLeft) || 0) - (parseFloat(getComputedStyle(container).paddingRight) || 0);
-
-            // Start with base font size
-            var currentFontSize = baseFontSize;
-            element.style.fontSize = currentFontSize + 'px';
-
-            // Create a temporary element to measure text width
-            var tempElement = document.createElement('span');
-            tempElement.style.visibility = 'hidden';
-            tempElement.style.position = 'absolute';
-            tempElement.style.whiteSpace = 'nowrap';
-            tempElement.style.fontFamily = getComputedStyle(element).fontFamily;
-            tempElement.style.fontWeight = getComputedStyle(element).fontWeight;
-            tempElement.style.fontSize = currentFontSize + 'px';
-            tempElement.textContent = element.textContent;
-            document.body.appendChild(tempElement);
-
-            // Reduce font size until text fits or we reach minimum
-            while (tempElement.offsetWidth > availableWidth && currentFontSize > minFontSize) {
-                currentFontSize = Math.max(minFontSize, currentFontSize - 1);
-                tempElement.style.fontSize = currentFontSize + 'px';
-            }
-
-            // Apply the final font size
-            element.style.fontSize = currentFontSize + 'px';
-
-            // Clean up temporary element
-            document.body.removeChild(tempElement);
-
-            console.log('Font size adjusted:', {
-                baseFontSize: baseFontSize,
-                finalFontSize: currentFontSize,
-                availableWidth: availableWidth,
-                textWidth: tempElement.offsetWidth,
-                text: element.textContent
-            });
         }
 
         // ── Custom Sources preview: hot config (no iframe reload) ──
@@ -795,7 +826,7 @@
                 'justify-content: ' + titleAlign + '; background: ' + containerBG + '; border-radius: ' + containerRadius + 'px; ' +
                 'border: ' + containerBorder + 'px solid ' + containerBorderColor + '; box-shadow: ' + containerShadow + '; padding: ' + containerPadding + 'px; }' +
                 '.title-text { font-size: ' + fontSize + 'px; font-weight: ' + fontWeight + '; color: ' + fontColor + '; text-shadow: ' + textShadow + '; ' +
-                'text-align: ' + titleAlign + '; line-height: ' + lineHeight + '; }' +
+                'text-align: ' + titleAlign + '; line-height: ' + lineHeight + '; max-width: 100%; overflow: hidden; white-space: nowrap; }' +
                 '.title-text.updating, .title-text.updated { transition: opacity ' + transitionDuration + 's ease; }' +
                 '.wipe-old-text, .wipe-new-text { justify-content: ' + titleAlign + '; }' +
                 '.wipe-new-text { transition: transform ' + transitionDuration + 's cubic-bezier(' + wipeEasing + ', 0.46, 0.45, 0.94); }' +
@@ -825,14 +856,13 @@
             if (config.EnableWipe !== undefined) { settings.enableWipe = !!config.EnableWipe; }
             if (config.WipeDirection !== undefined) { settings.wipeDirection = config.WipeDirection; }
             if (config.WipeEasing !== undefined) { settings.wipeEasing = config.WipeEasing; }
-            if (config.FontSize !== undefined) { baseFontSize = Number(config.FontSize); minFontSize = Math.max(12, baseFontSize * 0.3); }
 
             var titleEl = document.getElementById('titleText');
             if (titleEl) {
+                titleEl.style.fontSize = '';
                 titleEl.classList.remove('pulse', 'glow');
                 if (settings.enablePulse) { titleEl.classList.add('pulse'); }
                 if (settings.enableGlow) { titleEl.classList.add('glow'); }
-                adjustFontSize(titleEl);
             }
         }
 
@@ -856,53 +886,16 @@
                     }
                 });
                 applyTemplateConfig(config);
+                loadManualTitleSettings();
+                updateTitle();
             } catch (error) {
                 console.error('Error loading template config:', error);
+                loadManualTitleSettings();
+                updateTitle();
             }
         }
 
         loadTemplateConfig();
-
-        // Initialize
-        console.log('Mycelian Title Display initialized');
-        console.log('Wipe animation enabled:', settings.enableWipe);
-        console.log('Wipe direction:', settings.wipeDirection);
-        console.log('Dynamic controls available via template interface');
-
-        // Adjust font size for initial title on page load
-        document.addEventListener('DOMContentLoaded', function () {
-            var titleElement = document.getElementById('titleText');
-            if (titleElement) {
-                adjustFontSize(titleElement);
-            }
-        });
-
-        // Also adjust immediately if DOM is already loaded
-        if (document.readyState === 'loading') {
-            // DOM is still loading, event listener above will handle it
-        } else {
-            // DOM is already loaded
-            var titleElement = document.getElementById('titleText');
-            if (titleElement) {
-                adjustFontSize(titleElement);
-            }
-        }
-
-        // Handle window resize to readjust font size if container size changes
-        var resizeTimeout;
-        window.addEventListener('resize', function () {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(function () {
-                var titleElement = document.getElementById('titleText');
-                if (titleElement) {
-                    adjustFontSize(titleElement);
-                }
-            }, 100); // Debounce resize events
-        });
-
-        // Load saved title settings on page load and apply display immediately
-        loadManualTitleSettings();
-        updateTitle();
     </script>
 </body>
 

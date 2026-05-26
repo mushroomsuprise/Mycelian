@@ -899,10 +899,12 @@
         function createTextInputControl(templateName, element) {
             const placeholder = element.placeholder || '';
             const action = element.action || '';
-            
+            const inputId = `sc-text-${templateName}-${element.id || action}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+
             return `
-                <input type="text" class="control-input" placeholder="${placeholder}"
-                       oninput="sendWebSocketEvent('${templateName}', '${action}', {text: this.value})">
+                <input type="text" id="${inputId}" class="control-input" placeholder="${placeholder}"
+                       autocomplete="off" spellcheck="false"
+                       oninput="sendTextInputEvent('${templateName}', '${action}', '${inputId}')">
             `;
         }
 
@@ -924,61 +926,75 @@
             // This function can be used for additional setup if needed
         }
 
-        function sendWebSocketEvent(templateName, action, data) {
-            const eventName = `${templateName}_${action}`;
-            
-            // Always log the event for debugging
-            console.log(`Broadcasting event: ${eventName}`, data);
-            console.log(`Broadcast socket status: ${broadcastStatus}`);
-            console.log(`Broadcast socket connected: ${broadcastSocket && broadcastSocket.connected}`);
-            
-            // Ensure we have a valid socket connection
-            if (!broadcastSocket) {
-                console.error('No broadcast socket available');
-                showNotification(`Failed to send ${action} to ${templateName} - No socket`, 'error');
+        // High-frequency actions (per-keystroke) must not show success toasts — they block the UI and drop input.
+        var SILENT_RELAY_ACTIONS = {
+            set_manual_title: true
+        };
+
+        function sendTextInputEvent(templateName, action, inputId) {
+            var inputEl = document.getElementById(inputId);
+            if (!inputEl) {
                 return;
             }
-            
-            // Check if socket is connected, if not try to connect
+            sendWebSocketEvent(templateName, action, { text: inputEl.value }, { silent: true });
+        }
+
+        function sendWebSocketEvent(templateName, action, data, options) {
+            options = options || {};
+            var silent = !!options.silent || !!SILENT_RELAY_ACTIONS[action];
+            const eventName = `${templateName}_${action}`;
+
+            console.log(`Broadcasting event: ${eventName}`, data);
+
+            if (!broadcastSocket) {
+                console.error('No broadcast socket available');
+                if (!silent) {
+                    showNotification(`Failed to send ${action} to ${templateName} - No socket`, 'error');
+                }
+                return;
+            }
+
             if (!broadcastSocket.connected) {
                 console.log('Socket not connected, attempting to reconnect...');
                 try {
                     broadcastSocket.connect();
-                    // Give it a moment to connect
-                    setTimeout(function() {
+                    setTimeout(function () {
                         if (broadcastSocket.connected) {
-                            sendRelayEvent(templateName, action, eventName, data);
-                        } else {
+                            sendRelayEvent(templateName, action, eventName, data, silent);
+                        } else if (!silent) {
                             showNotification(`Failed to connect for ${action} to ${templateName}`, 'error');
                         }
                     }, 100);
                     return;
                 } catch (error) {
                     console.error('Error reconnecting socket:', error);
-                    showNotification(`Connection failed for ${action} to ${templateName}`, 'error');
+                    if (!silent) {
+                        showNotification(`Connection failed for ${action} to ${templateName}`, 'error');
+                    }
                     return;
                 }
             }
-            
-            // Socket is connected, send via relay
-            sendRelayEvent(templateName, action, eventName, data);
+
+            sendRelayEvent(templateName, action, eventName, data, silent);
         }
 
-        function sendRelayEvent(templateName, action, eventName, data) {
+        function sendRelayEvent(templateName, action, eventName, data, silent) {
             try {
-                // Use the generic relay system instead of direct event emission
                 const relayData = {
                     event_name: eventName,
                     target_template: templateName,
                     event_data: data
                 };
-                
-                console.log(`Sending relay event:`, relayData);
+
                 broadcastSocket.emit('source_controls_relay', relayData);
-                showNotification(`Relayed ${action} to ${templateName}`, 'success');
+                if (!silent) {
+                    showNotification(`Relayed ${action} to ${templateName}`, 'success');
+                }
             } catch (error) {
                 console.error(`Error sending relay event ${action} for ${templateName}:`, error);
-                showNotification(`Error relaying ${action} to ${templateName}`, 'error');
+                if (!silent) {
+                    showNotification(`Error relaying ${action} to ${templateName}`, 'error');
+                }
             }
         }
 

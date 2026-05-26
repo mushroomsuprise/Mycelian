@@ -30,6 +30,7 @@ import glob
 import json
 import logging
 import os
+import queue
 import random
 import sys
 import threading
@@ -451,6 +452,11 @@ class WebEngine:
 
         # Configure SocketIO with increased limits to prevent "Too many packets in payload" errors
         # This can happen during startup when there are rapid bursts of Socket.IO events
+        # Cross-thread template control emits (NiceGUI -> Web Engine gevent loop)
+        self._template_control_queue: queue.Queue = queue.Queue()
+        self._template_control_emit_worker_started = False
+        self._template_control_emit_worker_lock = threading.Lock()
+
         self.socketio = SocketIO(
             self.app,
             cors_allowed_origins="*",
@@ -2686,6 +2692,11 @@ class WebEngine:
                 _ss_aw.ensure_background_poller(self.socketio)
             except Exception as e:
                 logger.debug("Spore Studio assets poller hook failed: %s", e)
+
+            try:
+                self.ensure_template_control_emit_worker()
+            except Exception as e:
+                logger.debug("template control emit worker hook failed: %s", e)
 
             try:
                 self._maybe_start_preview_demo(request.sid)
@@ -5467,6 +5478,82 @@ class WebEngine:
                 self.socketio.emit(f"combobar_{action}", data or {})
         else:
             self.socketio.emit(f"{template_name}_{action}", data or {})
+
+    def _broadcast_template_control_event(
+        self, event_name: str, event_data: Dict[str, Any]
+    ) -> None:
+        """Emit on the Web Engine Socket.IO stack (same path as source_controls_relay)."""
+        with self.app.app_context():
+            self.socketio.emit(event_name, event_data)
+
+    def ensure_template_control_emit_worker(self) -> None:
+        """Start the gevent worker that drains cross-thread template control emits."""
+        with self._template_control_emit_worker_lock:
+            if self._template_control_emit_worker_started:
+                return
+            self._template_control_emit_worker_started = True
+        try:
+            self.socketio.start_background_task(self._template_control_emit_loop)
+        except Exception as exc:
+            with self._template_control_emit_worker_lock:
+                self._template_control_emit_worker_started = False
+            logger.warning(
+                "Could not start template control emit worker: %s", exc, exc_info=True
+            )
+
+    def _template_control_emit_loop(self) -> None:
+        """Drain NiceGUI-thread enqueues and broadcast on the Socket.IO/gevent stack."""
+        q = self._template_control_queue
+        while self.is_running:
+            batch: List[Tuple[str, Dict[str, Any]]] = []
+            try:
+                while True:
+                    batch.append(q.get_nowait())
+            except queue.Empty:
+                pass
+
+            if batch:
+                # Preserve order across event names; coalesce rapid duplicates (typing).
+                order: List[str] = []
+                latest: Dict[str, Dict[str, Any]] = {}
+                for event_name, event_data in batch:
+                    if event_name not in latest:
+                        order.append(event_name)
+                    latest[event_name] = event_data
+                for event_name in order:
+                    event_data = latest[event_name]
+                    try:
+                        self._broadcast_template_control_event(event_name, event_data)
+                    except Exception as e:
+                        logger.error(
+                            "emit_template_control_event failed for %s: %s",
+                            event_name,
+                            e,
+                            exc_info=True,
+                        )
+
+            try:
+                self.socketio.sleep(0.016)
+            except Exception:
+                break
+
+    def emit_template_control_event(
+        self,
+        template_name: str,
+        action: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Broadcast a template control event to all Socket.IO clients (overlays).
+
+        Enqueues from any thread; a Socket.IO background task on the Web Engine
+        gevent loop drains the queue (same delivery stack as source_controls_relay).
+        """
+        if not template_name or not action:
+            return
+        event_name = f"{template_name}_{action}"
+        event_data = data if isinstance(data, dict) else ({} if data is None else {})
+        self._template_control_queue.put((event_name, event_data))
 
     def persist_template_control_change(
         self, template_name: str, action: str, data: Optional[Dict[str, Any]]
