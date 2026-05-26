@@ -272,5 +272,35 @@
         "settings_subtab": "OBS"
       }
     ]
+  },
+  {
+    "id": "7748d427-2a86-4003-9c8e-0a01548c0afc",
+    "ts": 1779837629.467283,
+    "message": "Could not refresh OBS lists: Not connected",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "f60e1400-cf0e-4813-ac51-6cbdb5885fbc",
+    "ts": 1779837631.9316952,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "bed0807d-789c-41ce-9298-8c0cb7fd6cb5",
+    "ts": 1779837633.108225,
+    "message": "OBS lists updated",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
   }
 ]
