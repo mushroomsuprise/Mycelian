@@ -988,7 +988,7 @@ COMPONENT_CSS = """
     transition: all 0.2s ease-in-out;
 }
 
-.connector-card:hover,
+.connector-card:not(.connector-card-enabled):not(.connector-card-disabled):hover,
 .chatbot-card:hover,
 .config-card:hover,
 .control-card:hover {
@@ -997,8 +997,21 @@ COMPONENT_CSS = """
     border-color: var(--color-primary);
 }
 
+.connector-card.connector-card-enabled:hover,
+.connector-card.connector-card-disabled:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--color-bg-overlay);
+}
+
+.connector-card.connector-card-enabled:hover {
+    border-color: var(--color-success);
+}
+
+.connector-card.connector-card-disabled:hover {
+    border-color: var(--color-error);
+}
+
 /* Disabled state */
-.connector-card.disabled,
 .chatbot-card.disabled {
     opacity: 0.6;
     background: var(--color-bg-surface);

@@ -110,16 +110,32 @@ CUSTOM_CSS = """
     border: 1px solid var(--color-border-accent);
 }
 
-.connector-card:hover {
+.connector-card.connector-card-enabled {
+    border-color: var(--color-success);
+}
+
+.connector-card.connector-card-disabled {
+    border-color: var(--color-error);
+}
+
+.connector-card.connector-card-enabled:hover,
+.connector-card.connector-card-disabled:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px var(--color-bg-overlay);
+}
+
+.connector-card.connector-card-enabled:hover {
+    border-color: var(--color-success);
+}
+
+.connector-card.connector-card-disabled:hover {
+    border-color: var(--color-error);
+}
+
+.connector-card:not(.connector-card-enabled):not(.connector-card-disabled):hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 25px var(--color-bg-overlay);
     border-color: var(--color-primary);
-}
-
-.connector-card.disabled {
-    opacity: 0.6;
-    background: var(--color-bg-surface);
-    border-color: var(--color-border-default);
 }
 
 .trigger-badge {
@@ -136,53 +152,41 @@ CUSTOM_CSS = """
     background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.3));
     border: 1px solid rgba(16, 185, 129, 0.4);
     color: var(--color-success);
-    padding: 4px 8px;
+    padding: 2px 8px;
     border-radius: 12px;
     font-size: 11px;
     font-weight: 500;
     width: fit-content;
 }
 
-.action-badge.block {
-    display: block;
-    margin-bottom: 2px;
-}
-
-.status-badge {
-    padding: 4px 8px;
-    border-radius: 8px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.status-enabled {
-    background: rgba(16, 185, 129, 0.2);
-    color: var(--color-success);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
-.status-disabled {
-    background: rgba(239, 68, 68, 0.2);
-    color: var(--color-error);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-}
-
-.condition-chip {
-    background: rgba(147, 51, 234, 0.1);
-    border: 1px solid rgba(147, 51, 234, 0.3);
+.condition-badge {
+    background: linear-gradient(135deg, rgba(147, 51, 234, 0.2), rgba(126, 34, 206, 0.3));
+    border: 1px solid rgba(147, 51, 234, 0.4);
     color: var(--color-primary);
-    padding: 4px 8px;
-    border-radius: 8px;
-    font-size: 10px;
-    margin: 1px 0;
-    display: block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
     width: fit-content;
 }
 
-.condition-chip.block {
-    display: block;
-    margin-bottom: 2px;
+.connector-flow {
+    width: 100%;
+}
+
+.connector-flow-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-text-muted);
+}
+
+.connector-flow-arrow {
+    color: var(--color-text-muted);
+    align-self: center;
+    margin: 2px 0;
+    opacity: 0.7;
 }
 
 .form-section {
@@ -755,7 +759,7 @@ def _open_folder_floating_window(folder_id: str) -> None:
                     "min-height: 0; flex: 1 1 auto;"
                 ):
                     body_grid = ui.element("div").classes(
-                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-1"
+                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-1"
                     )
                     body_grid.on("dragover.prevent", lambda _: None)
                     body_grid.on(
@@ -1200,7 +1204,7 @@ def load_connectors():
                         ).classes("text-center")
 
                     with ui.element("div").classes(
-                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
                     ):
                         for item in layout.get("root_items") or []:
                             kind = item.get("kind")
@@ -1232,9 +1236,12 @@ def create_connector_card(
     """Create a card display for a connector"""
     global connector_parent_folder
 
-    card_classes = "connector-card p-4 rounded-lg"
-    if not connector.enabled:
-        card_classes += " disabled"
+    card_classes = "connector-card p-4 rounded-lg min-w-0"
+    card_classes += (
+        " connector-card-enabled"
+        if connector.enabled
+        else " connector-card-disabled"
+    )
 
     # Create the card element and store reference for search functionality
     card_element = (
@@ -1257,74 +1264,84 @@ def create_connector_card(
     card_element.on("drop.prevent", lambda _: _handle_drop_on_card(connector_id))
 
     with card_element:
-        # Header row with name and status
-        with ui.row().classes("w-full items-center justify-between mb-3"):
-            with ui.column().classes("gap-1 flex-grow"):
-                ui.label(connector.name).classes("text-base font-semibold")
-                if connector.description:
-                    ui.label(connector.description).classes("text-xs secondary-text")
-
-            # Status badge and toggle
-            with ui.column().classes("items-end gap-1"):
-                status_classes = (
-                    "status-badge status-enabled"
-                    if connector.enabled
-                    else "status-badge status-disabled"
+        # Header row with name, controls, and actions
+        with ui.row().classes("w-full items-center justify-between gap-2 mb-3"):
+            with ui.column().classes("gap-1 flex-grow min-w-0"):
+                ui.label(connector.name).classes(
+                    "text-base font-semibold text-theme-primary truncate"
                 )
-                status_text = "Enabled" if connector.enabled else "Disabled"
-                ui.label(status_text).classes(status_classes)
+                if connector.description:
+                    ui.label(connector.description).classes(
+                        "text-xs secondary-text truncate"
+                    )
 
-                # Toggle switch
+            with ui.row().classes("items-center gap-1 flex-shrink-0"):
                 ui.switch(
                     value=connector.enabled,
                     on_change=lambda e, cid=connector_id: toggle_connector(
                         cid, e.value
                     ),
-                ).classes("scale-75")
-
-        # Trigger and Actions flow
-        if connector.trigger:
-            with ui.row().classes("w-full items-start gap-3 mb-3"):
-                # Left side - Trigger
-                with ui.column().classes("gap-2 flex-shrink-0"):
-                    # Trigger badge with icon
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("flash_on", size="16px").classes("text-blue-400")
-                        ui.label("Trigger:").classes("text-xs secondary-text")
-                        ui.label(
-                            format_trigger_name(connector.trigger.trigger_type)
-                        ).classes("trigger-badge")
-
-                    # Conditions (indented)
-                    if connector.trigger.conditions:
-                        with ui.column().classes("ml-6 gap-1"):
-                            ui.icon("filter_list", size="12px").classes(
-                                "text-theme-primary mb-1"
-                            )
-                            for condition in connector.trigger.conditions:
-                                condition_text = f"{condition.field} {condition.operator.value.replace('_', ' ')} {condition.value}"
-                                ui.label(condition_text).classes(
-                                    "condition-chip block mb-1"
-                                )
-
-                # Arrow
-                ui.icon("arrow_forward", size="20px").classes(
-                    "muted-text mt-2 flex-shrink-0"
+                ).props("dense").classes("scale-90").tooltip(
+                    "Enable or disable this connector"
                 )
+                ui.button(
+                    icon="edit",
+                    on_click=lambda cid=connector_id: show_edit_connector_dialog(cid),
+                ).props("flat dense round").tooltip("Edit connector")
+                ui.button(
+                    icon="play_arrow",
+                    on_click=lambda cid=connector_id: test_connector(cid),
+                ).props("flat dense round").tooltip("Test connector")
+                ui.button(
+                    icon="delete",
+                    on_click=lambda cid=connector_id: delete_connector(cid),
+                ).props("flat dense round").tooltip("Delete connector")
 
-                # Right side - Actions
-                if connector.actions:
-                    with ui.column().classes("gap-2 flex-grow"):
-                        # Actions header
-                        with ui.row().classes("items-center gap-2"):
-                            ui.icon("play_arrow", size="16px").classes("text-green-400")
-                            ui.label("Actions:").classes("text-xs secondary-text")
+        # Trigger → Condition → Actions flow (vertical)
+        if connector.trigger:
+            conditions = connector.trigger.conditions or []
+            has_actions = bool(connector.actions)
+            has_filter = bool(conditions)
 
-                        # Action badges (vertical list)
-                        with ui.column().classes("gap-1 ml-6"):
-                            for action in connector.actions:
-                                action_display = get_action_display_name(action)
-                                ui.label(action_display).classes("action-badge block")
+            with ui.column().classes("connector-flow gap-0 mb-3"):
+                with ui.row().classes("items-center gap-2 flex-wrap w-full"):
+                    ui.icon("flash_on", size="16px").classes("text-blue-400 flex-shrink-0")
+                    ui.label("Trigger").classes("connector-flow-label flex-shrink-0")
+                    ui.label(
+                        format_trigger_name(connector.trigger.trigger_type)
+                    ).classes("trigger-badge")
+
+                if has_filter or has_actions:
+                    ui.icon("arrow_downward", size="18px").classes("connector-flow-arrow")
+
+                if has_filter:
+                    with ui.row().classes("items-center gap-2 flex-wrap w-full"):
+                        ui.icon("filter_list", size="16px").classes(
+                            "text-theme-primary flex-shrink-0"
+                        )
+                        ui.label("Condition").classes(
+                            "connector-flow-label flex-shrink-0"
+                        )
+                        for condition in conditions:
+                            chip_text = _format_condition_for_card(
+                                condition, connector.trigger.trigger_type
+                            )
+                            ui.label(chip_text).classes("condition-badge")
+
+                    if has_actions:
+                        ui.icon("arrow_downward", size="18px").classes(
+                            "connector-flow-arrow"
+                        )
+
+                if has_actions:
+                    with ui.row().classes("items-center gap-2 flex-wrap w-full"):
+                        ui.icon("play_arrow", size="16px").classes(
+                            "text-green-400 flex-shrink-0"
+                        )
+                        ui.label("Actions").classes("connector-flow-label flex-shrink-0")
+                        for action in connector.actions:
+                            action_display = get_action_display_name(action)
+                            ui.label(action_display).classes("action-badge")
 
         # Statistics
         with ui.row().classes(
@@ -1340,32 +1357,6 @@ def create_connector_card(
                 ui.label(f"Last: {last_triggered.strftime('%m/%d %H:%M')}")
             else:
                 ui.label("Never triggered")
-
-        # Action buttons
-        with ui.row().classes("w-full items-center gap-2 mt-3"):
-            ui.button(
-                icon="edit",
-                text="Edit",
-                on_click=lambda cid=connector_id: show_edit_connector_dialog(cid),
-            ).classes(
-                "control-button btn-secondary text-xs px-3 py-1 flex-grow"
-            )
-
-            ui.button(
-                icon="play_arrow",
-                text="Test",
-                on_click=lambda cid=connector_id: test_connector(cid),
-            ).classes(
-                "control-button btn-warning text-xs px-3 py-1 flex-grow"
-            )
-
-            ui.button(
-                icon="delete",
-                text="Delete",
-                on_click=lambda cid=connector_id: delete_connector(cid),
-            ).classes(
-                "control-button btn-danger text-xs px-3 py-1 flex-grow"
-            )
 
 
 def format_trigger_name(trigger_type: TriggerType) -> str:
@@ -1789,17 +1780,9 @@ def create_connector_form(connector_id: str = None):
                     conditions_container,
                 )
 
-            # Populate trigger conditions if any
-            if form_data["trigger_type"]:
-                # Add existing conditions
-                for i, condition_data in enumerate(form_data["trigger_conditions"]):
-                    add_condition_to_trigger_with_data_and_index(
-                        form_data["trigger_type"],
-                        form_data,
-                        conditions_container,
-                        condition_data,
-                        i,
-                    )
+            # Render existing conditions into the conditions list (not the outer container)
+            if form_data.get("trigger_conditions"):
+                _rebuild_all_conditions(form_data)
 
             # Populate existing actions
             for i, action_data in enumerate(form_data["actions"]):
@@ -1897,7 +1880,9 @@ def handle_trigger_type_change(
                 "activations."
             ).classes("text-xs text-amber-400 mb-3")
 
-        # Add condition button
+        conditions_list = ui.element("div").classes("w-full space-y-2")
+        form_data["_conditions_list"] = conditions_list
+
         ui.button(
             icon="add",
             text="Add Condition",
@@ -1905,12 +1890,8 @@ def handle_trigger_type_change(
                 trigger_type, form_data, conditions_list
             ),
         ).classes(
-            "control-button btn-secondary text-sm px-3 py-1 mb-3"
+            "control-button btn-secondary text-sm px-3 py-1 mt-2"
         )
-
-        # Conditions list
-        conditions_list = ui.element("div").classes("w-full space-y-2")
-        form_data["_conditions_list"] = conditions_list
 
     _call_game_hook_hint_refresh(form_data)
 
@@ -1929,6 +1910,31 @@ _CONDITION_OPERATOR_META: Dict[str, tuple] = {
 }
 _BOOL_CONDITION_OPERATOR_KEYS = ("equal", "not_equal")
 _BOOL_CONDITION_VALUE_OPTIONS: Dict[str, str] = {"true": "True", "false": "False"}
+
+
+def _format_condition_for_card(condition, trigger_type: TriggerType) -> str:
+    """Human-readable condition text for connector card chips."""
+    field_labels = get_available_fields_for_trigger(trigger_type.value)
+    field_label = field_labels.get(condition.field, condition.field or "")
+    op_key = (
+        condition.operator.value
+        if hasattr(condition.operator, "value")
+        else str(condition.operator)
+    )
+    meta = _CONDITION_OPERATOR_META.get(op_key)
+    op_symbol = meta[0] if meta else op_key.replace("_", " ")
+    raw_value = condition.value
+    if isinstance(raw_value, bool):
+        value_text = "True" if raw_value else "False"
+    else:
+        s = str(raw_value).strip().lower()
+        if s in ("true", "1", "yes", "on"):
+            value_text = "True"
+        elif s in ("false", "0", "no", "off"):
+            value_text = "False"
+        else:
+            value_text = str(raw_value)
+    return f"{field_label} {op_symbol} {value_text}"
 
 
 def _is_boolean_condition_field(field: Optional[str]) -> bool:
@@ -2020,6 +2026,8 @@ def _condition_value_for_display(value: Any) -> Any:
 
 
 def _rebuild_all_conditions(form_data: dict) -> None:
+    if form_data.get("_rebuilding_conditions"):
+        return
     conditions_list = form_data.get("_conditions_list")
     trigger_type = form_data.get("trigger_type")
     if conditions_list is None or not trigger_type:
@@ -2032,12 +2040,16 @@ def _rebuild_all_conditions(form_data: dict) -> None:
         }
         for c in form_data.get("trigger_conditions", [])
     ]
-    conditions_list.clear()
-    form_data["trigger_conditions"] = snapshot
-    for i, condition_data in enumerate(snapshot):
-        add_condition_to_trigger_with_data_and_index(
-            trigger_type, form_data, conditions_list, condition_data, i
-        )
+    form_data["_rebuilding_conditions"] = True
+    try:
+        conditions_list.clear()
+        form_data["trigger_conditions"] = snapshot
+        for i, condition_data in enumerate(snapshot):
+            add_condition_to_trigger_with_data_and_index(
+                trigger_type, form_data, conditions_list, condition_data, i
+            )
+    finally:
+        form_data["_rebuilding_conditions"] = False
     _call_game_hook_hint_refresh(form_data)
 
 
@@ -2102,18 +2114,19 @@ def add_condition_to_trigger_with_data_and_index(
         initial_value = "true"
 
     # If this is a new condition (no condition_data), add it to form_data
-    if condition_data is None:
+    if condition_data is None and not form_data.get("_rebuilding_conditions"):
         if "trigger_conditions" not in form_data:
             form_data["trigger_conditions"] = []
         if condition_index is None:
             condition_index = len(form_data["trigger_conditions"])
-        form_data["trigger_conditions"].append(
-            {
-                "field": None,
-                "operator": None,
-                "value": initial_value,
-            }
-        )
+        if condition_index >= len(form_data["trigger_conditions"]):
+            form_data["trigger_conditions"].append(
+                {
+                    "field": None,
+                    "operator": "equal",
+                    "value": initial_value,
+                }
+            )
 
     # If condition_index is still None, use the current position in the conditions list
     if condition_index is None:
@@ -5037,22 +5050,40 @@ def update_action_delay(index: int, value: Any, form_data: dict):
         form_data["actions"][index]["delay_seconds"] = 0
 
 
+def _condition_operator_key(cond_data: dict) -> Optional[str]:
+    """Operator key for save; UI defaults to equal when unset."""
+    op = cond_data.get("operator")
+    if op in (None, ""):
+        return "equal"
+    return str(op)
+
+
 def update_condition_field(index: int, field: str, form_data: dict):
     """Update condition field"""
-    if "trigger_conditions" in form_data and index < len(
+    if form_data.get("_rebuilding_conditions"):
+        return
+    if "trigger_conditions" not in form_data or index >= len(
         form_data["trigger_conditions"]
     ):
-        form_data["trigger_conditions"][index]["field"] = field
-        if _is_boolean_condition_field(field):
-            form_data["trigger_conditions"][index]["operator"] = "equal"
-            form_data["trigger_conditions"][index]["value"] = "true"
-        _rebuild_all_conditions(form_data)
         return
-    _call_game_hook_hint_refresh(form_data)
+    cond = form_data["trigger_conditions"][index]
+    old_field = cond.get("field")
+    cond["field"] = field
+    if not cond.get("operator"):
+        cond["operator"] = "equal"
+    if _is_boolean_condition_field(field):
+        cond["operator"] = "equal"
+        cond["value"] = "true"
+    if _is_boolean_condition_field(old_field) != _is_boolean_condition_field(field):
+        _rebuild_all_conditions(form_data)
+    else:
+        _call_game_hook_hint_refresh(form_data)
 
 
 def update_condition_operator(index: int, operator: str, form_data: dict):
     """Update condition operator"""
+    if form_data.get("_rebuilding_conditions"):
+        return
     if "trigger_conditions" in form_data and index < len(
         form_data["trigger_conditions"]
     ):
@@ -5062,6 +5093,8 @@ def update_condition_operator(index: int, operator: str, form_data: dict):
 
 def update_condition_value(index: int, value: str, form_data: dict):
     """Update condition value"""
+    if form_data.get("_rebuilding_conditions"):
+        return
     if "trigger_conditions" in form_data and index < len(
         form_data["trigger_conditions"]
     ):
@@ -5228,9 +5261,10 @@ def save_new_connector(form_data: dict):
         # Create conditions
         conditions = []
         for cond_data in form_data.get("trigger_conditions", []):
-            if cond_data.get("field") and cond_data.get("operator"):
+            operator_key = _condition_operator_key(cond_data)
+            if cond_data.get("field") and operator_key:
                 try:
-                    operator = ComparisonOperator(cond_data["operator"])
+                    operator = ComparisonOperator(operator_key)
                     condition = TriggerCondition(
                         field=cond_data["field"],
                         operator=operator,
@@ -5352,9 +5386,10 @@ def save_updated_connector(form_data: dict):
         # Create conditions
         conditions = []
         for cond_data in form_data.get("trigger_conditions", []):
-            if cond_data.get("field") and cond_data.get("operator"):
+            operator_key = _condition_operator_key(cond_data)
+            if cond_data.get("field") and operator_key:
                 try:
-                    operator = ComparisonOperator(cond_data["operator"])
+                    operator = ComparisonOperator(operator_key)
                     condition = TriggerCondition(
                         field=cond_data["field"],
                         operator=operator,
