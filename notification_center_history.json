@@ -1,1 +1,52 @@
-[]
+[
+  {
+    "id": "9fcb8202-0f88-4a46-b769-41de4e0ea294",
+    "ts": 1779843076.3177938,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "fe242c76-e336-47dc-8526-a0ffc6286d42",
+    "ts": 1779843078.3317535,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "e640e6e3-3801-4960-848c-2e41b5f2cc8a",
+    "ts": 1779843078.4932144,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "0aa33548-e3de-4806-9744-c07040c253b0",
+    "ts": 1779843134.5123491,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  }
+]
