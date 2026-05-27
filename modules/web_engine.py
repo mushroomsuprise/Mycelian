@@ -457,6 +457,19 @@ class WebEngine:
         self._template_control_emit_worker_started = False
         self._template_control_emit_worker_lock = threading.Lock()
 
+        # Socket.IO client tracking (observability / heartbeat)
+        self._socket_connected_count = 0
+        self._socket_connected_lock = threading.Lock()
+        self._heartbeat_task_started = False
+        self._heartbeat_lock = threading.Lock()
+
+        # Short-TTL cache for GET /api/all-template-configs (OBS refresh storms)
+        self._all_template_configs_cache: Optional[
+            Tuple[str, float, Dict[str, Any]]
+        ] = None
+        self._all_template_configs_cache_lock = threading.Lock()
+        self._all_template_configs_slow_log_at = 0.0
+
         self.socketio = SocketIO(
             self.app,
             cors_allowed_origins="*",
@@ -656,37 +669,19 @@ class WebEngine:
         @self.app.route("/api/all-template-configs")
         def serve_all_template_configs():
             """Serve ALL template configurations as raw JSON"""
+            t0 = time.time()
             try:
-                configs = {}
-                config_parser = self.template_config_parser
-                preview_tok = request.cookies.get("mycelian_preview_token")
-
-                # Get all config files
-                config_files = config_parser.get_config_files()
-                logger.debug(
-                    f"Loading all template configs for {len(config_files)} templates"
-                )
-
-                for config_name in config_files:
-                    try:
-                        # Load raw config without any filtering
-                        config = config_parser.load_config(
-                            config_name, include_dynamic_controls=False
-                        )
-                        self._merge_preview_session_into_config(
-                            preview_tok, config_name, config
-                        )
-                        configs[config_name] = config
-                        logger.debug(f"Added config for {config_name}")
-                    except Exception as e:
-                        logger.warning(
-                            f"Error loading config for {config_name}: {str(e)}"
-                        )
-                        continue
-
-                logger.debug(
-                    f"Serving all template configs for {len(configs)} templates"
-                )
+                preview_tok = request.cookies.get("mycelian_preview_token") or ""
+                configs = self._get_all_template_configs_cached(preview_tok)
+                elapsed = time.time() - t0
+                if elapsed > 0.5 and time.time() >= self._all_template_configs_slow_log_at:
+                    self._all_template_configs_slow_log_at = time.time() + 30.0
+                    logger.warning(
+                        "serve_all_template_configs slow: %.3fs (%s templates, cache_key=%r)",
+                        elapsed,
+                        len(configs),
+                        preview_tok[:8] if preview_tok else "",
+                    )
                 return configs, 200, {"Content-Type": "application/json"}
 
             except Exception as e:
@@ -695,6 +690,32 @@ class WebEngine:
                 )
                 return (
                     {"error": "Failed to load template configurations"},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route("/api/template-config/<template_name>")
+        def serve_single_template_config(template_name: str):
+            """Serve one template's raw JSON (preview hot-reload without loading all configs)."""
+            try:
+                name = (template_name or "").strip()
+                if not name or "/" in name or "\\" in name:
+                    return {"error": "Invalid template name"}, 400
+                preview_tok = request.cookies.get("mycelian_preview_token")
+                config = self.template_config_parser.load_config(
+                    name, include_dynamic_controls=False
+                )
+                self._merge_preview_session_into_config(preview_tok, name, config)
+                return config, 200, {"Content-Type": "application/json"}
+            except Exception as e:
+                logger.error(
+                    "Error serving template config for %s: %s",
+                    template_name,
+                    e,
+                    exc_info=True,
+                )
+                return (
+                    {"error": "Failed to load template configuration"},
                     500,
                     {"Content-Type": "application/json"},
                 )
@@ -1981,6 +2002,99 @@ class WebEngine:
         self.server_thread = None
         self.is_running = False
 
+    _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 3.0
+
+    def _build_all_template_configs(self, preview_tok: Optional[str]) -> Dict[str, Any]:
+        """Load every template JSON (used by cached all-template-configs route)."""
+        configs: Dict[str, Any] = {}
+        config_parser = self.template_config_parser
+        config_files = config_parser.get_config_files()
+        for config_name in config_files:
+            try:
+                config = config_parser.load_config(
+                    config_name, include_dynamic_controls=False
+                )
+                self._merge_preview_session_into_config(
+                    preview_tok, config_name, config
+                )
+                configs[config_name] = config
+            except Exception as e:
+                logger.warning(
+                    "Error loading config for %s: %s", config_name, e
+                )
+        return configs
+
+    def _get_all_template_configs_cached(
+        self, preview_tok: str
+    ) -> Dict[str, Any]:
+        cache_key = preview_tok or ""
+        now = time.time()
+        with self._all_template_configs_cache_lock:
+            cached = self._all_template_configs_cache
+            if cached is not None:
+                key, expires_at, data = cached
+                if key == cache_key and now < expires_at:
+                    return copy.deepcopy(data)
+        configs = self._build_all_template_configs(
+            preview_tok or None
+        )
+        with self._all_template_configs_cache_lock:
+            self._all_template_configs_cache = (
+                cache_key,
+                now + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
+                copy.deepcopy(configs),
+            )
+        return configs
+
+    def invalidate_all_template_configs_cache(self) -> None:
+        with self._all_template_configs_cache_lock:
+            self._all_template_configs_cache = None
+
+    def _socket_client_connected(self) -> int:
+        with self._socket_connected_lock:
+            self._socket_connected_count += 1
+            return self._socket_connected_count
+
+    def _socket_client_disconnected(self) -> int:
+        with self._socket_connected_lock:
+            self._socket_connected_count = max(
+                0, self._socket_connected_count - 1
+            )
+            return self._socket_connected_count
+
+    def _get_socket_connected_count(self) -> int:
+        with self._socket_connected_lock:
+            return self._socket_connected_count
+
+    def ensure_web_engine_heartbeat(self) -> None:
+        """Log connected client count periodically (diagnostics)."""
+        with self._heartbeat_lock:
+            if self._heartbeat_task_started:
+                return
+            self._heartbeat_task_started = True
+        try:
+            self.socketio.start_background_task(self._web_engine_heartbeat_loop)
+        except Exception as exc:
+            with self._heartbeat_lock:
+                self._heartbeat_task_started = False
+            logger.warning(
+                "Could not start WebEngine heartbeat task: %s", exc, exc_info=True
+            )
+
+    def _web_engine_heartbeat_loop(self) -> None:
+        while self.is_running:
+            try:
+                self.socketio.sleep(10.0)
+            except Exception:
+                break
+            if not self.is_running:
+                break
+            logger.info(
+                "WebEngine heartbeat: connected_clients=%s is_running=%s",
+                self._get_socket_connected_count(),
+                self.is_running,
+            )
+
     def register_routes(self):
         """Register dynamic routes based on HTML templates in the template directory"""
         logger.debug("Registering template routes...")
@@ -2097,12 +2211,14 @@ class WebEngine:
                                 draft_html,
                                 **template_vars,
                                 mycelian_html_stem=str(template),
+                                mycelian_preview_mode=mycelian_preview_mode,
                             )
                         else:
                             html = render_template(
                                 f"{template}.html",
                                 **template_vars,
                                 mycelian_html_stem=str(template),
+                                mycelian_preview_mode=mycelian_preview_mode,
                             )
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
@@ -2234,12 +2350,14 @@ class WebEngine:
                         draft_html,
                         **template_vars,
                         mycelian_html_stem=str(template_name),
+                        mycelian_preview_mode=mycelian_preview_mode,
                     )
                 else:
                     html = render_template(
                         f"{template_name}.html",
                         **template_vars,
                         mycelian_html_stem=str(template_name),
+                        mycelian_preview_mode=mycelian_preview_mode,
                     )
                 if mycelian_preview_mode and preview_token:
                     if "</body>" in html:
@@ -2683,8 +2801,18 @@ class WebEngine:
 
         @self.socketio.on("connect")
         def handle_connect():
+            connected = self._socket_client_connected()
             print(f" WEBSOCKET: Client connected - SID: {request.sid}")
-            logger.debug(f"Client connected: {request.sid}")
+            logger.info(
+                "Socket.IO client connected sid=%s (connected=%s)",
+                request.sid,
+                connected,
+            )
+
+            try:
+                self.ensure_web_engine_heartbeat()
+            except Exception as e:
+                logger.debug("WebEngine heartbeat hook failed: %s", e)
 
             try:
                 from .spore_studio import assets_watcher as _ss_aw
@@ -2835,8 +2963,13 @@ class WebEngine:
 
         @self.socketio.on("disconnect")
         def handle_disconnect():
+            connected = self._socket_client_disconnected()
             print(f" WEBSOCKET: Client disconnected - SID: {request.sid}")
-            logger.debug(f"Client disconnected: {request.sid}")
+            logger.info(
+                "Socket.IO client disconnected sid=%s (connected=%s)",
+                request.sid,
+                connected,
+            )
             self._preview_demo_stop[request.sid] = True
             stale_token = self._preview_iframe_tokens.pop(
                 request.sid, None
@@ -5504,38 +5637,63 @@ class WebEngine:
     def _template_control_emit_loop(self) -> None:
         """Drain NiceGUI-thread enqueues and broadcast on the Socket.IO/gevent stack."""
         q = self._template_control_queue
-        while self.is_running:
-            batch: List[Tuple[str, Dict[str, Any]]] = []
-            try:
-                while True:
-                    batch.append(q.get_nowait())
-            except queue.Empty:
-                pass
+        try:
+            while self.is_running:
+                batch: List[Tuple[str, Dict[str, Any]]] = []
+                try:
+                    while True:
+                        batch.append(q.get_nowait())
+                except queue.Empty:
+                    pass
 
-            if batch:
-                # Preserve order across event names; coalesce rapid duplicates (typing).
-                order: List[str] = []
-                latest: Dict[str, Dict[str, Any]] = {}
-                for event_name, event_data in batch:
-                    if event_name not in latest:
-                        order.append(event_name)
-                    latest[event_name] = event_data
-                for event_name in order:
-                    event_data = latest[event_name]
+                if batch:
+                    # Preserve order across event names; coalesce rapid duplicates (typing).
+                    order: List[str] = []
+                    latest: Dict[str, Dict[str, Any]] = {}
+                    for event_name, event_data in batch:
+                        if event_name not in latest:
+                            order.append(event_name)
+                        latest[event_name] = event_data
+                    for event_name in order:
+                        event_data = latest[event_name]
+                        try:
+                            self._broadcast_template_control_event(
+                                event_name, event_data
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "emit_template_control_event failed for %s: %s",
+                                event_name,
+                                e,
+                                exc_info=True,
+                            )
+
+                try:
+                    self.socketio.sleep(0.05 if not batch else 0.016)
+                except Exception as exc:
+                    if not self.is_running:
+                        break
+                    logger.warning(
+                        "template control emit loop sleep failed: %s", exc
+                    )
                     try:
-                        self._broadcast_template_control_event(event_name, event_data)
-                    except Exception as e:
-                        logger.error(
-                            "emit_template_control_event failed for %s: %s",
-                            event_name,
-                            e,
-                            exc_info=True,
-                        )
-
-            try:
-                self.socketio.sleep(0.016)
-            except Exception:
-                break
+                        self.socketio.sleep(0.1)
+                    except Exception:
+                        break
+        finally:
+            with self._template_control_emit_worker_lock:
+                self._template_control_emit_worker_started = False
+            if self.is_running:
+                logger.warning(
+                    "Template control emit worker exited unexpectedly; restarting"
+                )
+                try:
+                    self.ensure_template_control_emit_worker()
+                except Exception as restart_exc:
+                    logger.warning(
+                        "Could not restart template control emit worker: %s",
+                        restart_exc,
+                    )
 
     def emit_template_control_event(
         self,
@@ -5618,6 +5776,7 @@ class WebEngine:
             if persist.get("sync_dynamic_value", True):
                 ctrl["value"] = coerced
             parser.save_config(template_name, config)
+            self.invalidate_all_template_configs_cache()
             self._emit_source_controls_state_update(
                 reason="persisted_control_change",
                 template_names=[template_name],
@@ -6476,8 +6635,11 @@ class WebEngine:
     def run(self):
         """Run the Flask server"""
         global web_engine_running
+        run_error: Optional[BaseException] = None
         try:
-            logger.debug(f"Starting WebEngine server on {self.host}:{self.port}")
+            logger.info(
+                "Starting WebEngine server on %s:%s", self.host, self.port
+            )
             self.is_running = True
             web_engine_running = True
             # Enable debug mode for template reloading, but disable the reloader to avoid conflicts with our threading
@@ -6489,13 +6651,25 @@ class WebEngine:
                 use_reloader=False,
             )
         except Exception as e:
+            run_error = e
             logger.error(f"Error running WebEngine server: {str(e)}", exc_info=True)
             self.is_running = False
             web_engine_running = False
         finally:
             self.is_running = False
             web_engine_running = False
-            logger.debug("WebEngine server stopped")
+            thread_alive = (
+                self.server_thread is not None and self.server_thread.is_alive()
+            )
+            logger.warning(
+                "WebEngine server stopped (host=%s port=%s connected_clients=%s "
+                "thread_alive=%s error=%s)",
+                self.host,
+                self.port,
+                self._get_socket_connected_count(),
+                thread_alive,
+                run_error,
+            )
 
     def start(self):
         """Start the WebEngine server in a separate thread"""

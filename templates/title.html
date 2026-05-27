@@ -202,6 +202,7 @@
 
     <script>
         // Global variables
+        var mycelianPreviewMode = {{ mycelian_preview_mode | default(false) | tojson }};
         var socket = io.connect('http://' + document.domain + ':' + location.port);
         var titleData = {
             currentTitle: "Stream Title",
@@ -228,6 +229,10 @@
         var titleAnimationGeneration = 0;
         var titleAnimationTimeouts = [];
         var manualTitleSaveTimeout = null;
+        var streamerInfoInFlight = false;
+        var twitchApiInFlight = false;
+        var categoryRetryBackoffMs = 5000;
+        var categoryRetryMaxBackoffMs = 60000;
 
         // Local storage keys
         var STORAGE_KEYS = {
@@ -238,7 +243,7 @@
 
         // Socket event listeners
         socket.on('connect', function () {
-            requestStreamerInfo();
+            scheduleStreamerInfoRequest();
         });
 
         socket.on('disconnect', function () {
@@ -251,9 +256,11 @@
 
         // Get streamer info from server
         socket.on('streamer-info', function (data) {
+            streamerInfoInFlight = false;
             if (data && data.streamer_name) {
                 console.log('Received streamer info:', data.streamer_name);
                 currentStreamerName = data.streamer_name;
+                categoryRetryBackoffMs = 5000;
                 makeInitialTwitchApiCall(data.streamer_name);
             } else {
                 console.log(data)
@@ -263,10 +270,13 @@
 
         // Handle Twitch API response for initial call
         socket.on('twitch-api-response', function (data) {
+            if (data && data.requestId && data.requestId.startsWith('initial_stream_info_')) {
+                releaseTwitchApiInFlight();
+            }
             console.log('[DEBUG] twitch-api-response event received:', JSON.stringify(data));
             
             // Check if this is our request by looking at the requestId
-            if (data.requestId && data.requestId.startsWith('initial_stream_info_')) {
+            if (data && data.requestId && data.requestId.startsWith('initial_stream_info_')) {
                 console.log('[INFO] Processing initial stream info response for request:', data.requestId);
                 
                 if (data.success && data.data && data.data.data && data.data.data.length > 0) {
@@ -277,6 +287,7 @@
                         console.log('[SUCCESS] Initial category from API:', streamInfo.game_name);
                         console.log('[DEBUG] Updating currentCategory from "' + currentCategory + '" to "' + streamInfo.game_name + '"');
                         currentCategory = streamInfo.game_name;
+                        categoryRetryBackoffMs = 5000;
                         stopCategoryRetry(); // Stop retrying since we got a successful response
                         updateTitle();
                         console.log('[SUCCESS] Initial API call processed successfully');
@@ -464,9 +475,17 @@
             console.log('Title changed via connector to:', text);
         });
 
-        // Request streamer info from server
-        function requestStreamerInfo() {
+        // Request streamer info from server (single-flight per page load burst)
+        function scheduleStreamerInfoRequest() {
+            if (streamerInfoInFlight) {
+                return;
+            }
+            streamerInfoInFlight = true;
             socket.emit('get-streamer-info');
+        }
+
+        function requestStreamerInfo() {
+            scheduleStreamerInfoRequest();
         }
 
         // Make initial Twitch API call to get current stream info.
@@ -474,6 +493,10 @@
         // `json_data` / `json` (body object) for POST/PATCH; endpoint must be
         // https://api.twitch.tv/...
         function makeInitialTwitchApiCall(streamerName) {
+            if (!streamerName || twitchApiInFlight) {
+                return;
+            }
+            twitchApiInFlight = true;
             var apiRequest = {
                 endpoint: `https://api.twitch.tv/helix/streams?user_login=${streamerName}`,
                 requestId: 'initial_stream_info_' + Date.now()
@@ -483,19 +506,26 @@
             socket.emit('twitch-api-request', apiRequest);
         }
 
-        // Schedule retry for category API call
+        function releaseTwitchApiInFlight() {
+            twitchApiInFlight = false;
+        }
+
+        // Schedule retry for category API call (exponential backoff)
         function scheduleCategoryRetry(streamerName) {
-            // Clear any existing retry to prevent multiple overlapping retries
             stopCategoryRetry();
-            
+
             isRetryingCategory = true;
-            console.log('Scheduling category retry in 5 seconds');
+            console.log('Scheduling category retry in', categoryRetryBackoffMs / 1000, 'seconds');
 
             retryTimeout = setTimeout(function() {
                 console.log('Retrying category API call');
                 makeInitialTwitchApiCall(streamerName);
-                isRetryingCategory = false; // Reset flag so next error can schedule again
-            }, 5000);
+                isRetryingCategory = false;
+                categoryRetryBackoffMs = Math.min(
+                    categoryRetryMaxBackoffMs,
+                    categoryRetryBackoffMs * 2
+                );
+            }, categoryRetryBackoffMs);
         }
 
         // Stop category retrying
@@ -868,15 +898,14 @@
 
         async function loadTemplateConfig() {
             try {
-                var response = await fetch('/api/all-template-configs', { credentials: 'same-origin' });
+                var response = await fetch('/api/template-config/title', { credentials: 'same-origin' });
                 if (!response.ok) {
-                    console.error('Failed to load template configs:', response.status);
+                    console.error('Failed to load title template config:', response.status);
                     return;
                 }
-                var allConfigs = await response.json();
-                var titleConfigData = allConfigs.title;
+                var titleConfigData = await response.json();
                 if (!titleConfigData || !titleConfigData.elements) {
-                    console.warn('No title config found in response');
+                    console.warn('No title config elements in response');
                     return;
                 }
                 var config = {};
@@ -895,7 +924,12 @@
             }
         }
 
-        loadTemplateConfig();
+        if (mycelianPreviewMode) {
+            loadTemplateConfig();
+        } else {
+            loadManualTitleSettings();
+            updateTitle();
+        }
     </script>
 </body>
 
