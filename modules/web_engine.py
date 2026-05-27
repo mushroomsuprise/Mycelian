@@ -4481,24 +4481,15 @@ class WebEngine:
                         to=client_sid,
                     )
                     return
-                if not twitch.is_twitch_api_ready():
-                    if twitch.twitch_api is None:
-                        logger.debug(
-                            "Twitch API not initialized yet for API request "
-                            "(requestId=%s)",
-                            request_id,
-                        )
-                        err_msg = "Twitch API not initialized"
-                    else:
-                        logger.debug(
-                            "Twitch API still starting for API request "
-                            "(requestId=%s)",
-                            request_id,
-                        )
-                        err_msg = "Twitch API not ready yet"
+                if not twitch.twitch_api:
+                    logger.debug(
+                        "Twitch API not initialized yet for API request "
+                        "(requestId=%s)",
+                        request_id,
+                    )
                     response_data = {
                         "success": False,
-                        "error": err_msg,
+                        "error": "Twitch API not initialized",
                         "requestId": request_id,
                     }
                     self.socketio.emit(

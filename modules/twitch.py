@@ -2849,30 +2849,10 @@ class Twitch_API:
                 logger.error("Token refresh failed for API call")
                 raise Exception("Authentication required - token refresh failed")
 
-        # Wait for existing Twitch API instance or check if we need authentication
-        if not self.twitch:
-            # If there's no Twitch instance and we're not connected, this means
-            # the main authentication flow hasn't completed yet
-            if not self.is_connected:
-                logger.warning(
-                    "No authenticated Twitch instance available - main authentication may not be complete"
-                )
-                raise Exception(
-                    "Twitch API not ready - authentication in progress or required"
-                )
-            else:
-                # If we're connected but no twitch instance, something is wrong
-                logger.error("Connected but no Twitch instance - this shouldn't happen")
-                raise Exception("Twitch API instance missing despite connection status")
-
         # Verify we have the basic authentication requirements
         if not self.auth_token:
             logger.warning("No auth token available for API call")
             raise Exception("Authentication token missing - authentication required")
-
-        logger.debug(
-            "Using existing authenticated Twitch API instance for generic call"
-        )
 
         headers = {
             "Client-ID": self.client_id,
@@ -2897,15 +2877,15 @@ class Twitch_API:
                 session_to_use = self.twitch._Twitch__session
                 logger.debug("Using existing authenticated Twitch session for API call")
             else:
-                # Only create a temporary session as a last resort
-                if not is_twitch_api_ready():
-                    logger.debug(
-                        "Twitch HTTP session not ready yet; "
-                        "using temporary session for API call"
-                    )
-                else:
+                # Helix proxy: use a short-lived session when the library client is not up yet
+                if self.twitch:
                     logger.warning(
                         "No existing Twitch session available, creating temporary session"
+                    )
+                else:
+                    logger.debug(
+                        "Twitch library client not ready; "
+                        "using temporary session for Helix API call"
                     )
                 import aiohttp
 
@@ -3575,7 +3555,7 @@ def get_twitch_api():
 
 
 def is_twitch_api_ready() -> bool:
-    """True when the Twitch API can serve Helix/generic HTTP requests."""
+    """True when the Twitch library client has a live HTTP session (EventSub, etc.)."""
     api = twitch_api
     if api is None:
         return False
@@ -3583,6 +3563,19 @@ def is_twitch_api_ready() -> bool:
         return False
     session = getattr(api.twitch, "_Twitch__session", None)
     return session is not None
+
+
+def can_proxy_helix_api_requests() -> bool:
+    """True when Helix HTTP proxy calls can run (tokens required; library session optional)."""
+    api = twitch_api
+    if api is None:
+        return False
+    if api.auth_token and api.client_id:
+        return True
+    try:
+        return bool(api.load_auth_data() and api.auth_token and api.client_id)
+    except Exception:
+        return False
 
 
 def notify_twitch_connect_failed() -> None:

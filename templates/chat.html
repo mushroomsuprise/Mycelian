@@ -774,6 +774,28 @@
 
                 if (!data.success) {
                     console.error('API request failed:', data.error, 'for request:', data.requestId);
+                    var errText = (data.error || '').toLowerCase();
+                    var retryableTwitch =
+                        data.requestId &&
+                        data.requestId.indexOf('twitch-') === 0 &&
+                        (errText.indexOf('not initialized') !== -1 ||
+                            errText.indexOf('not ready') !== -1);
+                    if (retryableTwitch) {
+                        console.log('Scheduling Twitch API retry for', data.requestId);
+                        setTimeout(function () {
+                            emoteFetchInProgress = false;
+                            if (data.requestId === 'twitch-global-badges' ||
+                                data.requestId === 'twitch-user-badges') {
+                                fetchTwitchBadges();
+                            } else if (data.requestId === 'twitch-global-emotes') {
+                                fetchTwitchEmotes();
+                            } else if (data.requestId === 'twitch-cheermotes') {
+                                fetchCheermotes();
+                            } else {
+                                fetchAllEmotesAndBadges();
+                            }
+                        }, 2000);
+                    }
                     return;
                 }
 
