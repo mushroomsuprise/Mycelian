@@ -302,5 +302,21 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "1f5a2c07-e2a8-4584-b2bf-afe8c248dd3d",
+    "ts": 1779840948.672449,
+    "message": "Connector name is required",
+    "type": "negative",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "a184bace-96b8-4b4d-82c5-899ee83b72bc",
+    "ts": 1779840953.380331,
+    "message": "Connector 'Test3' created successfully",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
   }
 ]

@@ -23,6 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -82,6 +83,9 @@ class TriggerType(Enum):
     OBS_RECORD_STATE = "obs_record_state"
     OBS_INPUT_MUTE = "obs_input_mute"
 
+    # Matches any connector-processed event type
+    ANY = "any"
+
 
 class ActionType(Enum):
     """Types of actions available in the connector system"""
@@ -97,6 +101,7 @@ class ActionType(Enum):
 
     # Chat Actions
     SEND_CHAT_MESSAGE = "send_chat_message"
+    SEND_ANNOUNCEMENT = "send_announcement"
 
     # Greeting Actions
     ADD_GREETING = "add_greeting"
@@ -364,6 +369,7 @@ class BaseAction(ABC):
     name: str
     description: str = ""
     enabled: bool = True
+    delay_seconds: float = 0
     parameters: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -442,9 +448,16 @@ class Connector:
             str(event_data.get("message", "")), self.trigger.conditions
         )
         action_results: Dict[str, Dict[str, Any]] = {}
-        for action_index, action in enumerate(self.actions, start=1):
-            if not action.enabled:
-                continue
+        enabled_slots = [
+            (idx + 1, act)
+            for idx, act in enumerate(self.actions)
+            if act.enabled
+        ]
+        for seq_index, (action_index, action) in enumerate(enabled_slots):
+            if seq_index > 0:
+                delay = float(getattr(action, "delay_seconds", 0) or 0)
+                if delay > 0:
+                    await asyncio.sleep(delay)
             try:
                 success = await action.execute(
                     trigger_data={

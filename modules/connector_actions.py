@@ -304,6 +304,58 @@ class SendChatMessageAction(BaseAction):
 
 
 @dataclass
+class SendAnnouncementAction(BaseAction):
+    """Action to send a Twitch chat announcement"""
+
+    message: str = ""
+    color: str = "primary"
+
+    _VALID_COLORS = frozenset({"primary", "blue", "green", "orange", "purple"})
+
+    def __post_init__(self):
+        self.action_type = ActionType.SEND_ANNOUNCEMENT
+
+    async def execute(
+        self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
+    ) -> bool:
+        """Execute send announcement action"""
+        try:
+            from . import chatbot
+            from .connector_placeholders import (
+                build_connector_placeholder_context,
+                substitute_connector_placeholders,
+            )
+
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            message = substitute_connector_placeholders(self.message, ctx)
+            color = str(self.color or "primary").strip().lower()
+            if color not in self._VALID_COLORS:
+                color = "primary"
+
+            success = chatbot.send_chatbot_announcement(message, color)
+            if success:
+                logger.info("Sent chat announcement via chatbot (color=%s)", color)
+                return True
+            logger.error("Failed to send chat announcement via chatbot")
+            return False
+        except Exception as e:
+            logger.error(
+                f"Error executing send announcement action: {e}", exc_info=True
+            )
+            return False
+
+    def validate_parameters(self) -> bool:
+        if not self.message.strip():
+            logger.error("Send announcement action missing message")
+            return False
+        color = str(self.color or "primary").strip().lower()
+        if color not in self._VALID_COLORS:
+            logger.error("Send announcement action has invalid color: %s", color)
+            return False
+        return True
+
+
+@dataclass
 class ApiCallAction(BaseAction):
     """Action to make an HTTP API call"""
 
@@ -2714,6 +2766,7 @@ def create_action(
         ActionType.WEBSOCKET_EMIT: WebSocketEmitAction,
         ActionType.TRIGGER_ALERT: TriggerAlertAction,
         ActionType.SEND_CHAT_MESSAGE: SendChatMessageAction,
+        ActionType.SEND_ANNOUNCEMENT: SendAnnouncementAction,
         ActionType.ADD_GREETING: AddGreetingAction,
         ActionType.UPDATE_GREETING: UpdateGreetingAction,
         ActionType.SEND_GREETING: SendGreetingAction,

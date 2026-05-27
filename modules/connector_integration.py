@@ -268,15 +268,31 @@ class ConnectorIntegration:
             message = data.event.message.text
             is_command = message.startswith("!")
             command = message[1:].split()[0] if is_command and len(message) > 1 else ""
+            user_id = data.event.chatter_user_id
+            badges = getattr(data.event, "badges", [])
+
+            from . import twitch
+            from .twitch_moderators import get_moderator_cache, resolve_is_moderator
+
+            broadcaster_id = (
+                str(twitch.twitch_api.user_id)
+                if twitch.twitch_api and twitch.twitch_api.user_id
+                else None
+            )
+            await get_moderator_cache().refresh()
+            is_moderator = resolve_is_moderator(
+                user_id, badges=badges, broadcaster_id=broadcaster_id
+            )
 
             event_data = EventData.from_twitch_chat(
                 username=data.event.chatter_user_name,
                 message=message,
                 is_command=is_command,
                 command=command,
-                user_id=data.event.chatter_user_id,
-                badges=getattr(data.event, "badges", []),
+                user_id=user_id,
+                badges=badges,
                 emotes=getattr(data.event.message, "emotes", []),
+                is_moderator=is_moderator,
             )
             await self.manager.add_event(event_data)
         except Exception as e:

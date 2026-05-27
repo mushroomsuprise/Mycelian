@@ -28,12 +28,12 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from nicegui import context, run, ui
 from ..notification_engine import notify
 from ..ui_buttons import outline_button, primary_button
-from ..ui_form_controls import form_input, form_select
+from ..ui_form_controls import form_input, form_number, form_select
 
 
 from .. import (
@@ -367,6 +367,29 @@ CUSTOM_CSS = """
 .condition-container {
     background: linear-gradient(135deg, rgba(147, 51, 234, 0.1), rgba(147, 51, 234, 0.05)) !important;
     border: 1px solid rgba(147, 51, 234, 0.2) !important;
+}
+
+.condition-fields-row {
+    flex-wrap: nowrap !important;
+}
+
+.condition-field-cell,
+.condition-operator-cell {
+    flex: 0 1 auto !important;
+    width: auto !important;
+    min-width: 7rem;
+    max-width: 16rem;
+}
+
+.condition-value-cell {
+    flex: 1 1 6rem !important;
+    min-width: 5rem !important;
+    max-width: 100%;
+    width: auto !important;
+}
+
+.condition-value-cell .q-field {
+    width: 100%;
 }
 
 .action-container {
@@ -1368,6 +1391,7 @@ def format_trigger_name(trigger_type: TriggerType) -> str:
         TriggerType.OBS_STREAM_STATE: "OBS Stream",
         TriggerType.OBS_RECORD_STATE: "OBS Record",
         TriggerType.OBS_INPUT_MUTE: "OBS Input Mute",
+        TriggerType.ANY: "Any (all events)",
     }
     return name_mapping.get(trigger_type, trigger_type.value.replace("_", " ").title())
 
@@ -1389,6 +1413,9 @@ def get_action_display_name(action) -> str:
             return f"WebSocket → {event_name}"
         elif action_type == "send_chat_message":
             return "Send Chat Message"
+        elif action_type == "send_announcement":
+            color = getattr(action, "color", "primary") or "primary"
+            return f"Send Announcement ({color})"
         elif action_type == "trigger_alert":
             alert_type = getattr(action, "alert_type", "Alert")
             amount = getattr(action, "amount", "")
@@ -1576,7 +1603,13 @@ def create_connector_form(connector_id: str = None):
     if existing_connector and existing_connector.actions:
         for action in existing_connector.actions:
             try:
-                action_data = {"type": action.action_type.value, "config": {}}
+                action_data = {
+                    "type": action.action_type.value,
+                    "config": {},
+                    "delay_seconds": float(
+                        getattr(action, "delay_seconds", 0) or 0
+                    ),
+                }
 
                 # Extract action configuration based on type
                 if hasattr(action, "template_name"):
@@ -1594,6 +1627,8 @@ def create_connector_form(connector_id: str = None):
                     action_data["config"]["event_data"] = action.event_data
                 if hasattr(action, "message"):
                     action_data["config"]["message"] = action.message
+                if hasattr(action, "color"):
+                    action_data["config"]["color"] = action.color
                 if hasattr(action, "file_path"):
                     action_data["config"]["file_path"] = action.file_path
                 if hasattr(action, "content"):
@@ -1678,6 +1713,7 @@ def create_connector_form(connector_id: str = None):
                         "twitch_raid": "Twitch Raid",
                         "twitch_points": "Channel Points",
                         "twitch_chat_message": "Chat Message",
+                        "any": "Any (all events)",
                         "donation": "Donation",
                         "hotkey": "Hotkey Trigger",
                         "streamdeck": "Stream Deck",
@@ -1854,6 +1890,13 @@ def handle_trigger_type_change(
         if trigger_type in _obs_hint:
             ui.label(_obs_hint[trigger_type]).classes("text-xs muted-text mb-3")
 
+        if trigger_type == TriggerType.ANY.value:
+            ui.label(
+                "Warning: This trigger fires on every connector event type (bits, chat, "
+                "subs, OBS, hotkeys, and more). Use specific conditions to avoid unwanted "
+                "activations."
+            ).classes("text-xs text-amber-400 mb-3")
+
         # Add condition button
         ui.button(
             icon="add",
@@ -1867,8 +1910,153 @@ def handle_trigger_type_change(
 
         # Conditions list
         conditions_list = ui.element("div").classes("w-full space-y-2")
+        form_data["_conditions_list"] = conditions_list
 
     _call_game_hook_hint_refresh(form_data)
+
+
+# (operator_key, symbol, tooltip label)
+_CONDITION_OPERATOR_META: Dict[str, tuple] = {
+    "equal": ("=", "Equals"),
+    "not_equal": ("≠", "Does not equal"),
+    "greater_than_or_equal": ("≥", "Greater than or equal"),
+    "less_than_or_equal": ("≤", "Less than or equal"),
+    "greater_than": (">", "Greater than"),
+    "less_than": ("<", "Less than"),
+    "contains": ("∋", "Contains"),
+    "starts_with": ("^", "Starts with"),
+    "ends_with": ("$", "Ends with"),
+}
+_BOOL_CONDITION_OPERATOR_KEYS = ("equal", "not_equal")
+_BOOL_CONDITION_VALUE_OPTIONS: Dict[str, str] = {"true": "True", "false": "False"}
+
+
+def _is_boolean_condition_field(field: Optional[str]) -> bool:
+    return field == "is_moderator"
+
+
+def _condition_operator_keys_for_field(field: Optional[str]) -> tuple:
+    if _is_boolean_condition_field(field):
+        return _BOOL_CONDITION_OPERATOR_KEYS
+    return tuple(_CONDITION_OPERATOR_META.keys())
+
+
+def _condition_operator_tip(operator_key: Optional[str]) -> str:
+    if not operator_key:
+        return "Comparison operator"
+    meta = _CONDITION_OPERATOR_META.get(str(operator_key))
+    return meta[1] if meta else str(operator_key)
+
+
+def _condition_operator_options_for_field(field: Optional[str]) -> Dict[str, str]:
+    """Map operator keys to 'symbol|tooltip' labels for Quasar select slots."""
+    keys = _condition_operator_keys_for_field(field)
+    return {
+        k: f"{_CONDITION_OPERATOR_META[k][0]}|{_CONDITION_OPERATOR_META[k][1]}"
+        for k in keys
+        if k in _CONDITION_OPERATOR_META
+    }
+
+
+def _condition_operator_select(
+    *,
+    field: Optional[str],
+    value: Any,
+    classes: str,
+    on_change: Callable,
+) -> Any:
+    """Operator select: symbols in UI; full names in tooltips (control + dropdown)."""
+    options = _condition_operator_options_for_field(field)
+    if value and value not in options:
+        sym, tip = _CONDITION_OPERATOR_META.get(str(value), (str(value), str(value)))
+        options[str(value)] = f"{sym}|{tip}"
+
+    def _sync_tip(e) -> None:
+        on_change(e)
+        select_el.tooltip(_condition_operator_tip(e.value)).classes("bg-theme-surface")
+
+    select_el = ui.select(
+        options=options,
+        label="Operator",
+        value=value,
+        on_change=_sync_tip,
+    )
+    select_el.classes(classes).props("outlined dense")
+    select_el.props(
+        ":option-label=\"(opt) => String(opt.label || '').split('|')[0]\""
+    )
+    select_el.tooltip(_condition_operator_tip(value)).classes("bg-theme-surface")
+    select_el.add_slot(
+        "option",
+        r"""
+        <q-item v-bind="props.itemProps">
+            <q-item-section>
+                <span>{{ String(props.opt.label || '').split('|')[0] }}</span>
+                <q-tooltip>{{ String(props.opt.label || '').split('|')[1] }}</q-tooltip>
+            </q-item-section>
+        </q-item>
+        """,
+    )
+    select_el.add_slot(
+        "selected-item",
+        r"""
+        <span class="q-ml-xs">{{ String(props.opt.label || '').split('|')[0] }}</span>
+        """,
+    )
+    return select_el
+
+
+def _condition_value_for_display(value: Any) -> Any:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None or value == "":
+        return None
+    s = str(value).strip().lower()
+    if s in ("true", "1", "yes", "on"):
+        return "true"
+    if s in ("false", "0", "no", "off"):
+        return "false"
+    return value
+
+
+def _rebuild_all_conditions(form_data: dict) -> None:
+    conditions_list = form_data.get("_conditions_list")
+    trigger_type = form_data.get("trigger_type")
+    if conditions_list is None or not trigger_type:
+        return
+    snapshot = [
+        {
+            "field": c.get("field"),
+            "operator": c.get("operator"),
+            "value": c.get("value", ""),
+        }
+        for c in form_data.get("trigger_conditions", [])
+    ]
+    conditions_list.clear()
+    form_data["trigger_conditions"] = snapshot
+    for i, condition_data in enumerate(snapshot):
+        add_condition_to_trigger_with_data_and_index(
+            trigger_type, form_data, conditions_list, condition_data, i
+        )
+    _call_game_hook_hint_refresh(form_data)
+
+
+def _select_display_value(value: Any) -> Any:
+    """NiceGUI select rejects empty string; use None for unset."""
+    if value == "":
+        return None
+    return value
+
+
+def _normalize_form_select_values(form_data: dict) -> None:
+    """Coerce empty select values in form_data for rebuild and save."""
+    for action in form_data.get("actions") or []:
+        if action.get("type") == "":
+            action["type"] = None
+    for cond in form_data.get("trigger_conditions") or []:
+        for key in ("field", "operator"):
+            if cond.get(key) == "":
+                cond[key] = None
 
 
 def add_condition_to_trigger(trigger_type: str, form_data: dict, conditions_list):
@@ -1899,9 +2087,19 @@ def add_condition_to_trigger_with_data_and_index(
     available_fields = get_available_fields_for_trigger(trigger_type)
 
     # Use existing data or defaults
-    initial_field = condition_data.get("field") if condition_data else None
-    initial_operator = condition_data.get("operator") if condition_data else None
+    initial_field = _select_display_value(
+        condition_data.get("field") if condition_data else None
+    )
+    initial_operator = _select_display_value(
+        condition_data.get("operator") if condition_data else None
+    )
     initial_value = condition_data.get("value", "") if condition_data else ""
+    initial_value = _condition_value_for_display(initial_value)
+    is_bool_field = _is_boolean_condition_field(initial_field)
+    if not initial_operator:
+        initial_operator = "equal"
+    if is_bool_field and initial_value is None:
+        initial_value = "true"
 
     # If this is a new condition (no condition_data), add it to form_data
     if condition_data is None:
@@ -1911,8 +2109,8 @@ def add_condition_to_trigger_with_data_and_index(
             condition_index = len(form_data["trigger_conditions"])
         form_data["trigger_conditions"].append(
             {
-                "field": initial_field or "",
-                "operator": initial_operator or "",
+                "field": None,
+                "operator": None,
                 "value": initial_value,
             }
         )
@@ -1922,59 +2120,70 @@ def add_condition_to_trigger_with_data_and_index(
         condition_index = len(form_data.get("trigger_conditions", [])) - 1
 
     with conditions_list:
-        with ui.row().classes(
-            "w-full items-center gap-2 p-2 condition-container rounded"
+        with ui.element("div").classes(
+            "w-full p-3 condition-container rounded mb-2"
         ):
-            form_select(
-        tooltip="Field",
-                options=available_fields,
-                label="Field",
-                value=initial_field,
-                on_change=lambda e, idx=condition_index: update_condition_field(
-                    idx, e.value, form_data
-                ),
-            ).classes("w-32 condition-select")
+            with ui.row().classes("w-full items-center justify-between mb-2"):
+                ui.label(f"Condition #{condition_index + 1}").classes(
+                    "text-base font-medium"
+                )
+                ui.button(
+                    icon="delete",
+                    on_click=lambda idx=condition_index: remove_condition(
+                        idx, form_data, conditions_list
+                    ),
+                ).props("flat round").classes("text-red-400")
 
-            ui.select(
-                options={
-                    "equal": "Equals",
-                    "greater_than_or_equal": "Greater than or equal",
-                    "less_than_or_equal": "Less than or equal",
-                    "greater_than": "Greater than",
-                    "less_than": "Less than",
-                    "contains": "Contains",
-                    "starts_with": "Starts with",
-                    "ends_with": "Ends with",
-                },
-                label="Operator",
-                value=initial_operator,
-                on_change=lambda e, idx=condition_index: update_condition_operator(
-                    idx, e.value, form_data
-                ),
-            ).classes("w-32 condition-select")
+            with ui.row().classes(
+                "w-full items-end gap-2 condition-fields-row"
+            ):
+                form_select(
+                    tooltip="Field to compare on this event",
+                    options=available_fields,
+                    label="Field",
+                    value=initial_field,
+                    on_change=lambda e, idx=condition_index: update_condition_field(
+                        idx, e.value, form_data
+                    ),
+                ).classes("condition-select condition-field-cell")
 
-            form_input(
-        tooltip="Value",
-                label="Value",
-                value=initial_value,
-                on_change=lambda e, idx=condition_index: update_condition_value(
-                    idx, e.value, form_data
-                ),
-            ).classes("flex-grow condition-input")
+                _condition_operator_select(
+                    field=initial_field,
+                    value=initial_operator,
+                    classes="condition-select condition-operator-cell",
+                    on_change=lambda e, idx=condition_index: update_condition_operator(
+                        idx, e.value, form_data
+                    ),
+                )
 
-            ui.button(
-                icon="delete",
-                on_click=lambda idx=condition_index: remove_condition(
-                    idx, form_data, conditions_list
-                ),
-            ).props("flat round").classes("text-red-400")
+                if is_bool_field:
+                    form_select(
+                        tooltip="Expected true or false",
+                        options=_BOOL_CONDITION_VALUE_OPTIONS,
+                        label="Value",
+                        value=initial_value
+                        if initial_value in _BOOL_CONDITION_VALUE_OPTIONS
+                        else "true",
+                        on_change=lambda e, idx=condition_index: update_condition_value(
+                            idx, e.value, form_data
+                        ),
+                    ).classes("condition-select condition-value-cell")
+                else:
+                    form_input(
+                        tooltip="Value to compare against",
+                        label="Value",
+                        value=initial_value if initial_value is not None else "",
+                        on_change=lambda e, idx=condition_index: update_condition_value(
+                            idx, e.value, form_data
+                        ),
+                    ).classes("condition-input condition-value-cell")
 
     _call_game_hook_hint_refresh(form_data)
 
 
-def get_available_fields_for_trigger(trigger_type: str) -> Dict[str, str]:
-    """Get available fields for a trigger type"""
-    field_mappings = {
+def _trigger_field_mappings() -> Dict[str, Dict[str, str]]:
+    """Per-trigger condition fields (internal; use get_available_fields_for_trigger)."""
+    return {
         "twitch_bits": {
             "amount": "Amount",
             "username": "Username",
@@ -2003,6 +2212,7 @@ def get_available_fields_for_trigger(trigger_type: str) -> Dict[str, str]:
         "twitch_chat_message": {
             "username": "Username",
             "message": "Message",
+            "is_moderator": "Is Moderator",
         },
         "donation": {
             "amount": "Amount",
@@ -2033,6 +2243,15 @@ def get_available_fields_for_trigger(trigger_type: str) -> Dict[str, str]:
         },
     }
 
+
+def get_available_fields_for_trigger(trigger_type: str) -> Dict[str, str]:
+    """Get available fields for a trigger type"""
+    field_mappings = _trigger_field_mappings()
+    if trigger_type == TriggerType.ANY.value:
+        merged: Dict[str, str] = {}
+        for fields in field_mappings.values():
+            merged.update(fields)
+        return dict(sorted(merged.items(), key=lambda item: item[1].lower()))
     return field_mappings.get(trigger_type, {"username": "Username"})
 
 
@@ -2179,7 +2398,9 @@ def add_action_to_form_with_data_and_index(
     available_actions = get_available_actions()
 
     # Use existing data or defaults
-    initial_type = action_data.get("type") if action_data else None
+    initial_type = _select_display_value(
+        action_data.get("type") if action_data else None
+    )
     initial_config = action_data.get("config", {}) if action_data else {}
 
     # If this is a new action (no action_data), add it to form_data
@@ -2189,19 +2410,42 @@ def add_action_to_form_with_data_and_index(
         if action_index is None:
             action_index = len(form_data["actions"])
         form_data["actions"].append(
-            {"type": initial_type or "", "config": initial_config}
+            {"type": None, "config": initial_config, "delay_seconds": 0}
         )
 
     # If action_index is still None, use the current position in the actions list
     if action_index is None:
         action_index = len(form_data.get("actions", [])) - 1
 
+    initial_delay = 0.0
+    if action_data is not None:
+        initial_delay = float(action_data.get("delay_seconds", 0) or 0)
+    elif action_index < len(form_data.get("actions", [])):
+        initial_delay = float(
+            form_data["actions"][action_index].get("delay_seconds", 0) or 0
+        )
+
     with actions_container:
         with ui.element("div").classes("w-full p-3 action-container rounded mb-3"):
-            with ui.row().classes("w-full items-center justify-between mb-2"):
+            with ui.row().classes("w-full items-center justify-between mb-2 gap-2"):
                 ui.label(f"Action #{action_index + 1}").classes(
                     "text-base font-medium"
                 )
+                if action_index > 0:
+                    with ui.row().classes("items-center gap-2 flex-grow justify-end"):
+                        form_number(
+                            tooltip=f"Delay in seconds from Action #{action_index}",
+                            label="Delay (s)",
+                            value=initial_delay,
+                            min=0,
+                            step=1,
+                            on_change=lambda e, idx=action_index: update_action_delay(
+                                idx, e.value, form_data
+                            ),
+                        ).classes("w-28")
+                        ui.label(
+                            f"Delay in seconds from Action #{action_index}"
+                        ).classes("text-xs muted-text")
                 ui.button(
                     icon="delete",
                     on_click=lambda idx=action_index: remove_action(
@@ -2239,6 +2483,7 @@ def get_available_actions() -> Dict[str, str]:
         "websocket_emit": "WebSocket Event",
         "trigger_alert": "Trigger Alert",
         "send_chat_message": "Send Chat Message",
+        "send_announcement": "Send Announcement",
         "add_greeting": "Add Greeting",
         "update_greeting": "Update Greeting",
         "send_greeting": "Send Greeting",
@@ -2291,6 +2536,8 @@ def handle_action_type_change_with_data(
             create_websocket_emit_config(action_index, form_data, initial_config)
         elif action_type == "send_chat_message":
             create_chat_message_config(action_index, form_data, initial_config)
+        elif action_type == "send_announcement":
+            create_send_announcement_config(action_index, form_data, initial_config)
         elif action_type == "add_greeting":
             create_add_greeting_config(action_index, form_data, initial_config)
         elif action_type == "update_greeting":
@@ -2328,16 +2575,6 @@ def create_game_hook_config(
         ff7_game_speed_select_options,
     )
 
-    form_select(
-        tooltip="Game",
-        options={"ff7": "Final Fantasy VII (2013)"},
-        label="Game",
-        value=initial_config.get("game_id", "ff7"),
-        on_change=lambda e: update_action_config(
-            action_index, "game_id", e.value, form_data
-        ),
-    ).classes("w-full mb-2 action-select")
-
     speed_select_options = ff7_game_speed_select_options()
     op_options: Dict[str, str] = {}
     for c in FF7_CONNECTOR_CATALOG:
@@ -2354,7 +2591,17 @@ def create_game_hook_config(
             else cur_op + " (legacy)"
         )
 
-    op_container = ui.element("div").classes("w-full")
+    form_select(
+        tooltip="Game",
+        options={"ff7": "Final Fantasy VII (2013)"},
+        label="Game",
+        value=initial_config.get("game_id", "ff7"),
+        on_change=lambda e: update_action_config(
+            action_index, "game_id", e.value, form_data
+        ),
+    ).classes("w-full mb-2 action-select")
+
+    _op_args_slot: List[Any] = [None]
 
     def _live_action_config() -> dict:
         try:
@@ -2363,6 +2610,9 @@ def create_game_hook_config(
             return initial_config
 
     def refresh_args(op_id: str) -> None:
+        op_container = _op_args_slot[0]
+        if op_container is None:
+            return
         op_container.clear()
         spec = next((c for c in FF7_CONNECTOR_CATALOG if c["id"] == op_id), None)
         with op_container:
@@ -2447,6 +2697,7 @@ def create_game_hook_config(
         ],
     ).classes("w-full mb-2 action-select")
 
+    _op_args_slot[0] = ui.element("div").classes("w-full mb-2")
     refresh_args(cur_op)
 
     ui.label(
@@ -4365,6 +4616,43 @@ def create_websocket_emit_config(
     ).classes("w-full action-input")
 
 
+def create_send_announcement_config(
+    action_index: int, form_data: dict, initial_config: dict = None
+):
+    """Create configuration for Twitch chat announcement action."""
+    if initial_config is None:
+        initial_config = {}
+
+    ui.textarea(
+        label="Announcement text",
+        placeholder="Thanks {{username}}!",
+        value=initial_config.get("message", ""),
+        on_change=lambda e: update_action_config(
+            action_index, "message", e.value, form_data
+        ),
+    ).classes("w-full action-input mb-2")
+
+    form_select(
+        tooltip="Announcement color",
+        options={
+            "primary": "Primary",
+            "blue": "Blue",
+            "green": "Green",
+            "orange": "Orange",
+            "purple": "Purple",
+        },
+        label="Color",
+        value=initial_config.get("color", "primary"),
+        on_change=lambda e: update_action_config(
+            action_index, "color", e.value, form_data
+        ),
+    ).classes("w-full mb-2 action-select")
+
+    ui.label("Requires chatbot with moderator:manage:announcements scope.").classes(
+        "text-xs muted-text"
+    )
+
+
 def create_chat_message_config(
     action_index: int, form_data: dict, initial_config: dict = None
 ):
@@ -4739,12 +5027,27 @@ def update_action_config(action_index: int, key: str, value: Any, form_data: dic
     form_data["actions"][action_index]["config"][key] = value
 
 
+def update_action_delay(index: int, value: Any, form_data: dict):
+    """Update per-action delay (seconds after previous enabled action)."""
+    if "actions" not in form_data or index >= len(form_data["actions"]):
+        return
+    try:
+        form_data["actions"][index]["delay_seconds"] = float(value or 0)
+    except (TypeError, ValueError):
+        form_data["actions"][index]["delay_seconds"] = 0
+
+
 def update_condition_field(index: int, field: str, form_data: dict):
     """Update condition field"""
     if "trigger_conditions" in form_data and index < len(
         form_data["trigger_conditions"]
     ):
         form_data["trigger_conditions"][index]["field"] = field
+        if _is_boolean_condition_field(field):
+            form_data["trigger_conditions"][index]["operator"] = "equal"
+            form_data["trigger_conditions"][index]["value"] = "true"
+        _rebuild_all_conditions(form_data)
+        return
     _call_game_hook_hint_refresh(form_data)
 
 
@@ -4768,23 +5071,53 @@ def update_condition_value(index: int, value: str, form_data: dict):
 
 def remove_condition(index: int, form_data: dict, conditions_list):
     """Remove a condition"""
-    if "trigger_conditions" in form_data and index < len(
+    if "trigger_conditions" not in form_data or index >= len(
         form_data["trigger_conditions"]
     ):
-        form_data["trigger_conditions"].pop(index)
-        # Rebuild the conditions list
-        conditions_list.clear()
-        # This would need to be implemented to refresh the display
+        return
+    form_data["trigger_conditions"].pop(index)
+    _normalize_form_select_values(form_data)
+    # Snapshot before clear(); destroyed widgets may fire on_change and wipe form_data.
+    conditions_snapshot = [
+        {
+            "field": c.get("field"),
+            "operator": c.get("operator"),
+            "value": c.get("value", ""),
+        }
+        for c in form_data["trigger_conditions"]
+    ]
+    conditions_list.clear()
+    form_data["trigger_conditions"] = conditions_snapshot
+    trigger_type = form_data.get("trigger_type")
+    if trigger_type:
+        for i, condition_data in enumerate(conditions_snapshot):
+            add_condition_to_trigger_with_data_and_index(
+                trigger_type, form_data, conditions_list, condition_data, i
+            )
     _call_game_hook_hint_refresh(form_data)
 
 
 def remove_action(index: int, form_data: dict, actions_container):
     """Remove an action"""
-    if "actions" in form_data and index < len(form_data["actions"]):
-        form_data["actions"].pop(index)
-        # Rebuild the actions container
-        actions_container.clear()
-        # This would need to be implemented to refresh the display
+    if "actions" not in form_data or index >= len(form_data["actions"]):
+        return
+    form_data["actions"].pop(index)
+    _normalize_form_select_values(form_data)
+    # Snapshot before clear(); destroyed widgets may fire on_change and wipe form_data.
+    actions_snapshot = [
+        {
+            "type": a.get("type"),
+            "config": dict(a.get("config") or {}),
+            "delay_seconds": float(a.get("delay_seconds", 0) or 0),
+        }
+        for a in form_data["actions"]
+    ]
+    actions_container.clear()
+    form_data["actions"] = actions_snapshot
+    for i, action_data in enumerate(actions_snapshot):
+        add_action_to_form_with_data_and_index(
+            form_data, actions_container, action_data, i
+        )
 
 
 def close_dialog_and_refresh():
@@ -4816,6 +5149,57 @@ def save_connector(form_data: dict):
         save_updated_connector(form_data)
     else:
         save_new_connector(form_data)
+
+
+def _create_action_from_form_data(
+    action_data: dict, action_label: str
+):
+    """Build a connector action from form row data."""
+    action_type = ActionType(action_data["type"])
+    action_id = str(uuid.uuid4())
+    action_config = action_data.get("config", {})
+    delay_seconds = float(action_data.get("delay_seconds", 0) or 0)
+    common = {
+        "action_type": action_type,
+        "action_id": action_id,
+        "name": action_label,
+        "delay_seconds": delay_seconds,
+    }
+
+    if action_type == ActionType.TEMPLATE_CONTROL:
+        control_data = {}
+        template_name = action_config.get("template_name", "")
+        control_action = action_config.get("control_action", "")
+        for key, value in action_config.items():
+            if key not in ["template_name", "control_action"]:
+                control_data[key] = value
+        return connector_actions.create_action(
+            **common,
+            template_name=template_name,
+            control_action=control_action,
+            control_data=control_data,
+        )
+    if action_type == ActionType.GAME_HOOK:
+        from ..game_hooks.ff7_hook import ff7_connector_config_to_hook_kwargs
+
+        hook_args = ff7_connector_config_to_hook_kwargs(action_config)
+        return connector_actions.create_action(
+            **common,
+            game_id=action_config.get("game_id", "ff7"),
+            operation=action_config.get("operation", ""),
+            hook_arguments=hook_args,
+        )
+    if action_type == ActionType.OBS_CONTROL:
+        obs_arguments: Dict[str, Any] = {}
+        for k, v in action_config.items():
+            if k.startswith("arg_"):
+                obs_arguments[k[4:]] = v
+        return connector_actions.create_action(
+            **common,
+            operation=str(action_config.get("operation", "") or ""),
+            obs_arguments=obs_arguments,
+        )
+    return connector_actions.create_action(**common, **action_config)
 
 
 def save_new_connector(form_data: dict):
@@ -4885,63 +5269,12 @@ def save_new_connector(form_data: dict):
         actions = []
         for i, action_data in enumerate(form_data.get("actions", [])):
             logger.info(f"Creating action {i+1}: {action_data}")
-            action_type = ActionType(action_data["type"])
-            action_id = str(uuid.uuid4())
-
-            # Create action with configuration
-            action_config = action_data.get("config", {})
-            logger.info(f"Action config for action {i+1}: {action_config}")
-
-            # For template control actions, map template-specific parameters to control_data
-            if action_type == ActionType.TEMPLATE_CONTROL:
-                control_data = {}
-                template_name = action_config.get("template_name", "")
-                control_action = action_config.get("control_action", "")
-
-                # Extract template-specific parameters (everything except template_name and control_action)
-                for key, value in action_config.items():
-                    if key not in ["template_name", "control_action"]:
-                        control_data[key] = value
-
-                action = connector_actions.create_action(
-                    action_type=action_type,
-                    action_id=action_id,
-                    name=f"{form_data['name']} Action {i+1}",
-                    template_name=template_name,
-                    control_action=control_action,
-                    control_data=control_data,
-                )
-            elif action_type == ActionType.GAME_HOOK:
-                from ..game_hooks.ff7_hook import ff7_connector_config_to_hook_kwargs
-
-                hook_args = ff7_connector_config_to_hook_kwargs(action_config)
-                action = connector_actions.create_action(
-                    action_type=action_type,
-                    action_id=action_id,
-                    name=f"{form_data['name']} Action {i+1}",
-                    game_id=action_config.get("game_id", "ff7"),
-                    operation=action_config.get("operation", ""),
-                    hook_arguments=hook_args,
-                )
-            elif action_type == ActionType.OBS_CONTROL:
-                obs_arguments: Dict[str, Any] = {}
-                for k, v in action_config.items():
-                    if k.startswith("arg_"):
-                        obs_arguments[k[4:]] = v
-                action = connector_actions.create_action(
-                    action_type=action_type,
-                    action_id=action_id,
-                    name=f"{form_data['name']} Action {i+1}",
-                    operation=str(action_config.get("operation", "") or ""),
-                    obs_arguments=obs_arguments,
-                )
-            else:
-                action = connector_actions.create_action(
-                    action_type=action_type,
-                    action_id=action_id,
-                    name=f"{form_data['name']} Action {i+1}",
-                    **action_config,
-                )
+            logger.info(
+                f"Action config for action {i+1}: {action_data.get('config', {})}"
+            )
+            action = _create_action_from_form_data(
+                action_data, f"{form_data['name']} Action {i+1}"
+            )
             logger.info(f"Successfully created action {i+1}: {action}")
             actions.append(action)
 
@@ -5056,62 +5389,9 @@ def save_updated_connector(form_data: dict):
         # Create updated actions
         actions = []
         for i, action_data in enumerate(form_data.get("actions", [])):
-            action_type = ActionType(action_data["type"])
-            action_id = str(uuid.uuid4())
-
-            # Create action with configuration
-            action_config = action_data.get("config", {})
-
-            # For template control actions, map template-specific parameters to control_data
-            if action_type == ActionType.TEMPLATE_CONTROL:
-                control_data = {}
-                template_name = action_config.get("template_name", "")
-                control_action = action_config.get("control_action", "")
-
-                # Extract template-specific parameters (everything except template_name and control_action)
-                for key, value in action_config.items():
-                    if key not in ["template_name", "control_action"]:
-                        control_data[key] = value
-
-                action = connector_actions.create_action(
-                    action_type=action_type,
-                    action_id=action_id,
-                    name=f"{form_data['name']} Action {i+1}",
-                    template_name=template_name,
-                    control_action=control_action,
-                    control_data=control_data,
-                )
-            elif action_type == ActionType.GAME_HOOK:
-                from ..game_hooks.ff7_hook import ff7_connector_config_to_hook_kwargs
-
-                hook_args = ff7_connector_config_to_hook_kwargs(action_config)
-                action = connector_actions.create_action(
-                    action_type=action_type,
-                    action_id=action_id,
-                    name=f"{form_data['name']} Action {i+1}",
-                    game_id=action_config.get("game_id", "ff7"),
-                    operation=action_config.get("operation", ""),
-                    hook_arguments=hook_args,
-                )
-            elif action_type == ActionType.OBS_CONTROL:
-                obs_arguments: Dict[str, Any] = {}
-                for k, v in action_config.items():
-                    if k.startswith("arg_"):
-                        obs_arguments[k[4:]] = v
-                action = connector_actions.create_action(
-                    action_type=action_type,
-                    action_id=action_id,
-                    name=f"{form_data['name']} Action {i+1}",
-                    operation=str(action_config.get("operation", "") or ""),
-                    obs_arguments=obs_arguments,
-                )
-            else:
-                action = connector_actions.create_action(
-                    action_type=action_type,
-                    action_id=action_id,
-                    name=f"{form_data['name']} Action {i+1}",
-                    **action_config,
-                )
+            action = _create_action_from_form_data(
+                action_data, f"{form_data['name']} Action {i+1}"
+            )
             actions.append(action)
 
         # Create updated connector
@@ -5216,6 +5496,17 @@ def create_test_data_for_trigger(trigger_type: TriggerType) -> Dict[str, Any]:
             **base_data,
             "event_type": "twitch_chat_message",
             "message": "Hello test!",
+            "user_id": "12345",
+            "is_moderator": False,
+        }
+    elif trigger_type == TriggerType.ANY:
+        return {
+            **base_data,
+            "event_type": "twitch_chat_message",
+            "message": "Hello test!",
+            "username": "TestUser",
+            "amount": 100,
+            "is_moderator": False,
         }
 
     elif trigger_type == TriggerType.DONATION:

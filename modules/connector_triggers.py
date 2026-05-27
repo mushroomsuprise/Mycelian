@@ -404,6 +404,45 @@ class ObsInputMuteTrigger(BaseTrigger):
         return self.evaluate_conditions(event_data)
 
 
+CONNECTOR_EVENT_TYPES = frozenset(
+    {
+        "twitch_bits",
+        "twitch_sub",
+        "twitch_resub",
+        "twitch_giftsub",
+        "twitch_follow",
+        "twitch_raid",
+        "twitch_points",
+        "twitch_chat_message",
+        "twitch_hype_train_start",
+        "twitch_hype_train_end",
+        "donation",
+        "timer",
+        "schedule",
+        "hotkey",
+        "streamdeck",
+        "webhook",
+        "obs_scene_changed",
+        "obs_stream_state",
+        "obs_record_state",
+        "obs_input_mute",
+    }
+)
+
+
+@dataclass
+class AnyTrigger(BaseTrigger):
+    """Fires on any connector-processed event type."""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.ANY
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") not in CONNECTOR_EVENT_TYPES:
+            return False
+        return self.evaluate_conditions(event_data)
+
+
 # Factory function for creating triggers
 def create_trigger(
     trigger_type: TriggerType, trigger_id: str, name: str, **kwargs
@@ -430,6 +469,7 @@ def create_trigger(
         TriggerType.OBS_STREAM_STATE: ObsStreamStateTrigger,
         TriggerType.OBS_RECORD_STATE: ObsRecordStateTrigger,
         TriggerType.OBS_INPUT_MUTE: ObsInputMuteTrigger,
+        TriggerType.ANY: AnyTrigger,
     }
 
     trigger_class = trigger_classes.get(trigger_type)

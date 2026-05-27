@@ -2659,6 +2659,13 @@ class Twitch_API:
             twitch_connected = True
             self.last_health_check = datetime.now()
 
+            try:
+                from .twitch_moderators import get_moderator_cache
+
+                await get_moderator_cache().refresh(force=True)
+            except Exception as mod_err:
+                logger.debug("Moderator cache refresh on connect: %s", mod_err)
+
             # Register event handlers
             try:
                 # Subscribe to channel chat messages
