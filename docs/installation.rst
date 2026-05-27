@@ -511,6 +511,6 @@ Getting Help
 * Review WebSocket event logs for communication issues
 
 **Log Locations:**
-* Application logs: ``logs/mycelian.log``
+* Application logs: ``logs/mycelian.log`` (capped at 50MB; oldest entries are removed when the limit is reached)
 * Database operations: ``logs/database.log``
 * WebSocket events: ``logs/websocket.log`` 

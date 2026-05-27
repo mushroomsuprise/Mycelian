@@ -197,16 +197,21 @@ def initialize_database_system() -> bool:
             config_result, api_result = await asyncio.gather(config_task, api_task)
             return config_result, api_result
 
+        from .startup_profiler import StartupTimer
+
         # Use asyncio to parallelize initialization if event loop is available
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            config_success, api_success = loop.run_until_complete(init_managers())
+            with StartupTimer("database_init.config_and_api_credentials"):
+                config_success, api_success = loop.run_until_complete(init_managers())
             loop.close()
         except RuntimeError:
             # Fall back to sequential initialization if event loop is already running
-            config_success = config_manager.initialize()
-            api_success = initialize_api_credentials()
+            with StartupTimer("database_init.config_manager.initialize"):
+                config_success = config_manager.initialize()
+            with StartupTimer("database_init.initialize_api_credentials"):
+                api_success = initialize_api_credentials()
 
         if not config_success:
             logger.error("Failed to initialize configuration manager")
@@ -253,7 +258,9 @@ def initialize_database_system() -> bool:
         )
 
         # Initialize the database manager with the external configuration
-        if database_manager.initialize(config):
+        with StartupTimer("database_init.database_manager.initialize"):
+            db_init_ok = database_manager.initialize(config)
+        if db_init_ok:
             logger.info(f"Database manager initialized with {config.database_type}")
 
             # Defer migration to background for faster startup

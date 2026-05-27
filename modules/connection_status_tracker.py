@@ -199,11 +199,10 @@ def _probe_youtube() -> None:
 
 
 def _probe_psn() -> None:
+    """Ensure the PSN updater thread is running; do not block on API connect here."""
     from . import psn_service
 
-    if not psn_service.psn_client_instance:
-        psn_service.initialize_psn_module()
-    else:
+    if psn_service.psn_client_instance:
         psn_service.start_psn_data_updater_thread()
 
 

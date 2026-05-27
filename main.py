@@ -25,7 +25,6 @@ SOFTWARE.
 
 import atexit
 import logging
-import logging.handlers
 import multiprocessing
 import os
 import signal
@@ -34,14 +33,44 @@ import threading
 import time
 from pathlib import Path
 
-from modules import native_window_bridge  # noqa: F401 — native webview subprocess window_args
-from modules import chatbot, mainuiwindow, twitch
+# Set True to print [startup] timing lines and summaries to the console.
+ENABLE_STARTUP_PROFILING = False
+
+# Claim profiling for this OS process before other modules import startup_profiler
+if os.environ.get("MYCELIAN_STARTUP_PROFILE_OWNER_PID") is None:
+    os.environ["MYCELIAN_STARTUP_PROFILE_OWNER_PID"] = str(os.getpid())
+
 from modules.startup_profiler import (
-    timed,
     StartupTimer,
+    configure_startup_profiling,
+    get_elapsed_since_baseline,
     log_startup_summary,
+    mark_process_start,
+    print_import_timing,
+    print_startup_message,
     set_total_startup_time,
 )
+
+configure_startup_profiling(ENABLE_STARTUP_PROFILING)
+
+mark_process_start()
+print_import_timing("process start")
+
+from modules import native_window_bridge  # noqa: F401 — native webview subprocess window_args
+
+print_import_timing("after import native_window_bridge")
+
+from modules import chatbot
+
+print_import_timing("after import chatbot")
+
+from modules import mainuiwindow
+
+print_import_timing("after import mainuiwindow")
+
+from modules import twitch
+
+print_import_timing("after import twitch")
 
 
 def get_resource_path(relative_path):
@@ -69,20 +98,95 @@ def get_data_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
+LOG_MAX_BYTES = 50 * 1024 * 1024  # 50 MiB cap for mycelian.log
+
+
+def _trim_log_file(path: Path, max_bytes: int) -> None:
+    """Keep only the newest max_bytes of a log file (line-aligned)."""
+    if not path.is_file():
+        return
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return
+    if size <= max_bytes:
+        return
+
+    slack = 4096
+    read_size = min(size, max_bytes + slack)
+    try:
+        with open(path, "rb") as f:
+            f.seek(size - read_size)
+            chunk = f.read(read_size)
+    except OSError:
+        return
+
+    text = chunk.decode("utf-8", errors="replace")
+    excess = len(text.encode("utf-8")) - max_bytes
+    if excess > 0:
+        cut = excess
+        nl = text.find("\n", cut)
+        if nl != -1:
+            text = text[nl + 1 :]
+        else:
+            text = text[cut:]
+
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8", errors="replace") as out:
+            out.write(text)
+        tmp_path.replace(path)
+    except OSError:
+        if tmp_path.is_file():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
+class CappedFileHandler(logging.FileHandler):
+    """File handler that trims oldest log content when the file exceeds max_bytes."""
+
+    def __init__(self, filename, max_bytes: int = LOG_MAX_BYTES, **kwargs):
+        self.max_bytes = max_bytes
+        path = Path(filename)
+        _trim_log_file(path, max_bytes)
+        super().__init__(filename, mode="a", **kwargs)
+
+    def emit(self, record):
+        if self.baseFilename:
+            try:
+                if os.path.getsize(self.baseFilename) > self.max_bytes:
+                    self.acquire()
+                    try:
+                        if self.stream:
+                            self.stream.close()
+                            self.stream = None
+                        _trim_log_file(Path(self.baseFilename), self.max_bytes)
+                        if not self.delay:
+                            self.stream = self._open()
+                    finally:
+                        self.release()
+            except OSError:
+                pass
+        super().emit(record)
+
+
 # Set up logging configuration
 def setup_logging():
     # Create logs directory if it doesn't exist - use data path for exe
     log_dir = Path(get_data_path("logs"))
     log_dir.mkdir(exist_ok=True)
 
-    # Configure logging with simpler file handling to avoid rotation conflicts
+    # Single log file capped at 50MB; oldest entries trimmed in place on startup and rollover
     logging.basicConfig(
         level=logging.WARNING,  # Changed to WARNING to reduce log noise while keeping errors
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
-            logging.FileHandler(
+            CappedFileHandler(
                 log_dir / "mycelian.log",
-                mode="a",  # Append mode, no rotation to avoid conflicts
+                max_bytes=LOG_MAX_BYTES,
+                encoding="utf-8",
             ),
             logging.StreamHandler(),  # Also log to console
         ],
@@ -101,8 +205,9 @@ def setup_logging():
     logging.getLogger("socketio.server").setLevel(logging.WARNING)
 
 
-# Set up logging first
-setup_logging()
+# Set up logging first (timed for startup diagnosis)
+with StartupTimer("setup_logging"):
+    setup_logging()
 logger = logging.getLogger(__name__)
 
 # Global shutdown flag to prevent multiple shutdown attempts
@@ -197,7 +302,7 @@ if __name__ == "__main__":
     # Enable multiprocessing support for frozen executables
     multiprocessing.freeze_support()
 
-    startup_start = time.time()
+    startup_start = time.perf_counter()
 
     # Set working directory for exe files - important for resource access
     if getattr(sys, "frozen", False):
@@ -269,12 +374,11 @@ if __name__ == "__main__":
     logger.info("Phase 2: Initializing UI shell...")
     try:
         with StartupTimer("mainuiwindow.initialize_ui_shell"):
-            # Create minimal UI shell (tabs without content)
             mainuiwindow.initialize_ui_shell()
 
-            # Load themes from directory
-            from modules.theme_manager import get_theme_manager
+        from modules.theme_manager import get_theme_manager
 
+        with StartupTimer("theme_manager.load_themes_from_directory"):
             theme_manager = get_theme_manager()
             theme_manager.load_themes_from_directory()
             logger.info(
@@ -346,19 +450,28 @@ if __name__ == "__main__":
         logger.error(f"Error setting up deferred services: {str(e)}", exc_info=True)
         # Continue anyway - deferred services are not critical
 
-    # total_startup_time = time.time() - startup_start
-    # set_total_startup_time(total_startup_time)
-    # logger.info(f"Application ready in {total_startup_time:.2f}s")
-
-    # Log detailed startup timing summary
-    # log_startup_summary()
+    total_startup_time = time.perf_counter() - startup_start
+    set_total_startup_time(total_startup_time)
+    print_startup_message(
+        f"critical path (__main__ only) ready in {total_startup_time:.3f}s "
+        "(UI server not started yet)"
+    )
+    print_startup_message(
+        f"total since import baseline: {get_elapsed_since_baseline():.3f}s "
+        "(includes module imports above)"
+    )
+    log_startup_summary()
 
     # =========================================
     # Phase 4: Start UI Server (Blocking)
     # =========================================
     try:
         logger.info("Starting NiceGUI server...")
+        print_startup_message(
+            "starting UI server (ui.run will block until shutdown)..."
+        )
         mainuiwindow.start_ui()
+        print_startup_message("ui.run returned (application shutdown)")
     except Exception as e:
         logger.error(f"Error starting UI server: {str(e)}", exc_info=True)
         sys.exit(1)

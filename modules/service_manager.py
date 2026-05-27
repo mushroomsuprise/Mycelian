@@ -8,6 +8,7 @@ from typing import Callable, Dict
 import logging
 
 from .notification_engine import notify_critical, nav_actions_settings
+from .startup_profiler import StartupTimer, log_startup_summary
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,8 @@ class DeferredServiceManager:
                 if not self.initialized[name]:
                     try:
                         logger.info(f"Deferred init: {name}")
-                        service["init"]()
+                        with StartupTimer(f"deferred:{name}"):
+                            service["init"]()
                         self.initialized[name] = True
                         completed_services += 1
                         logger.info(f"Deferred init completed: {name}")
@@ -99,6 +101,10 @@ class DeferredServiceManager:
                 # Final progress update
                 if self._progress_callback:
                     self._progress_callback(1.0, "Ready!")
+                log_startup_summary(
+                    title="DEFERRED STARTUP TIMING SUMMARY",
+                    prefix="deferred:",
+                )
 
         self._thread = threading.Thread(
             target=init_worker, daemon=True, name="DeferredInit"

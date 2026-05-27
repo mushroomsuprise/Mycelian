@@ -66,86 +66,106 @@ _mismatch_notification_times: dict[
 
 # --- Initialization and Management Functions ---
 
+_psn_init_lock = threading.Lock()
+
+
+def _finalize_psn_client_state(
+    current_psn_username: Optional[str],
+) -> None:
+    """Persist live PSN data and start the updater thread for an existing client."""
+    global psn_client_instance
+    if not psn_client_instance:
+        return
+
+    if psn_client_instance.authenticated:
+        logger.info(
+            "PSNClient connected successfully as %s.",
+            psn_client_instance.psn_data.online_id,
+        )
+        logger.info("Account ID: %s", psn_client_instance.psn_data.account_id)
+        if current_psn_username:
+            logger.info(
+                "PSNClient configured to track PSN username: %s",
+                current_psn_username,
+            )
+    else:
+        logger.error(
+            "Failed to connect PSNClient with the stored NPSSO code during initialization."
+        )
+        logger.error(
+            "PSNClient authenticated status: %s",
+            psn_client_instance.authenticated,
+        )
+
+    state_manager.set_live_psn_data(psn_client_instance.psn_data)
+    if psn_client_instance.authenticated:
+        start_psn_data_updater_thread()
+    else:
+        logger.info(
+            "PSN updater thread not started until client connects successfully"
+        )
+
 
 def initialize_psn_module():
     """Initialize the PSNClient based on stored settings and starts the update thread.
     Should be called after state_manager is initialized.
+    Idempotent: concurrent or repeated calls reuse one client and one connect attempt.
     """
     global psn_client_instance
-    logger.info("=== PSN SERVICE INITIALIZATION STARTING ===")
 
-    # Check if state_manager is available
-    if not hasattr(state_manager, "get_psn_settings_data"):
-        logger.error(
-            "State manager is not properly initialized or missing PSN settings method"
-        )
-        return
+    with _psn_init_lock:
+        if not hasattr(state_manager, "get_psn_settings_data"):
+            logger.error(
+                "State manager is not properly initialized or missing PSN settings method"
+            )
+            return
 
-    try:
-        psn_settings: Optional[PSNSettingsData] = state_manager.get_psn_settings_data()
-        logger.info(f"Retrieved PSN settings from state manager: {psn_settings}")
+        try:
+            psn_settings: Optional[PSNSettingsData] = (
+                state_manager.get_psn_settings_data()
+            )
+            current_npsso_code = psn_settings.npsso_code if psn_settings else None
+            current_psn_username = (
+                psn_settings.psn_username if psn_settings else None
+            )
 
-        current_npsso_code = psn_settings.npsso_code if psn_settings else None
-        current_psn_username = psn_settings.psn_username if psn_settings else None
+            if psn_client_instance is not None:
+                logger.info(
+                    "PSN module already initialized; ensuring connection and updater thread"
+                )
+                if not psn_client_instance.authenticated and current_npsso_code:
+                    logger.info("Retrying PSNClient connect on existing instance...")
+                    psn_client_instance.connect()
+                _finalize_psn_client_state(current_psn_username)
+                return
 
-        logger.info(f"NPSSO code present: {bool(current_npsso_code)}")
-        logger.info(f"PSN username: {current_psn_username}")
+            logger.info("=== PSN SERVICE INITIALIZATION STARTING ===")
+            logger.info(f"Retrieved PSN settings from state manager: {psn_settings}")
+            logger.info(f"NPSSO code present: {bool(current_npsso_code)}")
+            logger.info(f"PSN username: {current_psn_username}")
 
-        if current_npsso_code:
+            if not current_npsso_code:
+                logger.info(
+                    "No NPSSO code found in settings. PSNClient not started by PSN Service."
+                )
+                state_manager.set_live_psn_data(PSNData())
+                logger.info("=== PSN SERVICE INITIALIZATION COMPLETE ===")
+                return
+
             logger.info(
                 "NPSSO code found in settings. Initializing PSNClient for PSN Service."
             )
             psn_client_instance = PSNClient(
                 npsso_code=current_npsso_code, psn_username=current_psn_username
             )
-            logger.info(f"PSNClient instance created: {psn_client_instance}")
-
-            # connect() updates psn_client_instance.psn_data internally
             logger.info("Attempting to connect PSNClient...")
-            connection_result = psn_client_instance.connect()
-            logger.info(f"PSNClient connection result: {connection_result}")
+            psn_client_instance.connect()
+            _finalize_psn_client_state(current_psn_username)
 
-            if connection_result:
-                logger.info(
-                    f"PSNClient connected successfully as {psn_client_instance.psn_data.online_id}."
-                )
-                logger.info(f"Account ID: {psn_client_instance.psn_data.account_id}")
-                if current_psn_username:
-                    logger.info(
-                        f"PSNClient configured to track PSN username: {current_psn_username}"
-                    )
-            else:
-                logger.error(
-                    "Failed to connect PSNClient with the stored NPSSO code during initialization."
-                )
-                logger.error(
-                    f"PSNClient authenticated status: {psn_client_instance.authenticated}"
-                )
+        except Exception as e:
+            logger.exception(f"Exception during PSN service initialization: {e}")
 
-            # Store current state (connected or not, with user details if available)
-            logger.info("Storing PSN data in state manager...")
-            state_manager.set_live_psn_data(psn_client_instance.psn_data)
-            logger.info(
-                f"Stored PSN data: online_id={psn_client_instance.psn_data.online_id}, is_online={psn_client_instance.psn_data.is_online}"
-            )
-
-            logger.info("Starting PSN data updater thread...")
-            start_psn_data_updater_thread()
-        else:
-            logger.info(
-                "No NPSSO code found in settings. PSNClient not started by PSN Service."
-            )
-            # Ensure a default PSNData object is in state_manager reflecting no active client
-            default_psn_data = (
-                PSNData()
-            )  # npsso_code will be None or "" by default in PSNData
-            state_manager.set_live_psn_data(default_psn_data)
-            logger.info("Set default empty PSN data in state manager")
-
-    except Exception as e:
-        logger.exception(f"Exception during PSN service initialization: {e}")
-
-    logger.info("=== PSN SERVICE INITIALIZATION COMPLETE ===")
+        logger.info("=== PSN SERVICE INITIALIZATION COMPLETE ===")
 
 
 def psn_data_update_loop():
@@ -179,7 +199,7 @@ def psn_data_update_loop():
 
             # Check if client is configured with a code from its own data
             if not psn_client_instance.psn_data.npsso_code:
-                logger.exception(
+                logger.debug(
                     "PSNClient has no NPSSO code configured in its data. Update loop pausing activity."
                 )
                 state_manager.set_live_psn_data(psn_client_instance.psn_data)
@@ -190,14 +210,14 @@ def psn_data_update_loop():
 
             # Ensure we're connected
             if not psn_client_instance.is_connected():
-                logger.exception(
+                logger.info(
                     "PSNClient not connected. Attempting to connect in update loop..."
                 )
                 connection_result = psn_client_instance.connect()
                 logger.info(f"Reconnection attempt result: {connection_result}")
 
                 if not connection_result:
-                    logger.exception(
+                    logger.warning(
                         "PSNClient remains disconnected after connection attempt in loop."
                     )
                     state_manager.set_live_psn_data(psn_client_instance.psn_data)
@@ -569,14 +589,20 @@ def start_psn_data_updater_thread():
     logger.info("=== STARTING PSN DATA UPDATER THREAD ===")
 
     if not psn_client_instance:
-        logger.exception(
+        logger.warning(
             "Cannot start PSN update thread (PSN Service): PSNClient not initialized."
+        )
+        return
+
+    if not psn_client_instance.authenticated:
+        logger.debug(
+            "Not starting PSN update thread: PSNClient is not connected yet."
         )
         return
 
     # Only start if there's an NPSSO code, otherwise the loop doesn't do much.
     if not psn_client_instance.psn_data.npsso_code:
-        logger.exception(
+        logger.debug(
             "Not starting PSN update thread: No NPSSO code in PSNClient data."
         )
         return

@@ -71,7 +71,7 @@ class ModeratorCache:
                 if not _scope_warned:
                     _scope_warned = True
                     logger.warning(
-                        "Could not fetch moderators (check moderator:read:moderators scope): %s",
+                        "Could not fetch moderators (check channel:manage:moderators scope): %s",
                         e,
                     )
             else:

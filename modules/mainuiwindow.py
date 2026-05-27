@@ -935,39 +935,42 @@ def _configure_webview2_for_admin():
 def start_ui():
     """Start the NiceGUI server (blocking call)"""
     global _file_browser_qdialog_css_injected
+    from .startup_profiler import StartupTimer
+
     try:
         # Create UI elements if not already created (for phased initialization)
         if not _ui_elements_created:
             logger.info("Creating UI elements before starting server...")
-            create_ui_elements()
+            with StartupTimer("mainuiwindow.create_ui_elements"):
+                create_ui_elements()
 
-            # Start connector processing in a separate thread (not dependent on NiceGUI's event loop)
-            import threading
+                # Start connector processing in a separate thread (not dependent on NiceGUI's event loop)
+                import threading
 
-            def start_connector_processing_thread():
-                try:
-                    from . import connector_manager
+                def start_connector_processing_thread():
+                    try:
+                        from . import connector_manager
 
-                    manager = connector_manager.get_manager()
-                    manager.start_connector_thread()
-                except Exception as e:
-                    logger.error(
-                        f"Error starting connector processing thread: {str(e)}",
-                        exc_info=True,
-                    )
+                        manager = connector_manager.get_manager()
+                        manager.start_connector_thread()
+                    except Exception as e:
+                        logger.error(
+                            f"Error starting connector processing thread: {str(e)}",
+                            exc_info=True,
+                        )
 
-            # Start connector processing in background thread
-            connector_thread = threading.Thread(
-                target=start_connector_processing_thread, daemon=True
-            )
-            connector_thread.start()
+                # Start connector processing in background thread
+                connector_thread = threading.Thread(
+                    target=start_connector_processing_thread, daemon=True
+                )
+                connector_thread.start()
 
-            # Register cleanup handler
-            app.on_shutdown(cleanup_resources)
+                # Register cleanup handler
+                app.on_shutdown(cleanup_resources)
 
-            # main.py calls start_ui(), not initialize_ui(); schedule UI timers here too.
-            _schedule_update_manager_init()
-            _schedule_streamdeck_plugin_version_check()
+                # main.py calls start_ui(), not initialize_ui(); schedule UI timers here too.
+                _schedule_update_manager_init()
+                _schedule_streamdeck_plugin_version_check()
 
         # Configure WebView2 data directory for administrator privileges
         _configure_webview2_for_admin()
@@ -1000,7 +1003,8 @@ def start_ui():
             )
             _file_browser_qdialog_css_injected = True
 
-        ui.run(native=True, dark=True, reload=False)
+        with StartupTimer("mainuiwindow.ui_run_native"):
+            ui.run(native=True, dark=True, reload=False)
         logger.info("NiceGUI app started.")
     except Exception as e:
         logger.error(f"Error starting NiceGUI server: {str(e)}", exc_info=True)
@@ -1216,9 +1220,11 @@ def create_ui_elements():
     if _ui_elements_created:
         return  # Already created
 
+    from .startup_profiler import StartupTimer
+
     # Tabs + panels share one viewport-high flex column so the frame never stacks
     # (tab strip height + calc(100vh) panel height) past the native window edge.
-    with ui.column().classes(
+    with StartupTimer("create_ui_elements.shell"), ui.column().classes(
         "mycelian-main-shell w-full box-border flex flex-col overflow-hidden "
         "gap-0 min-h-0 p-2"
     ):
@@ -1273,10 +1279,11 @@ def create_ui_elements():
 
                 set_main_ui_references(tabs, tab_panels)
                 # Activity Feed Tab - load immediately (it's the default view)
-                with ui.tab_panel(activity_tab).classes(
-                    "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
-                ):
-                    create_activity_feed_tab()
+                with StartupTimer("create_ui_elements.activity_feed"):
+                    with ui.tab_panel(activity_tab).classes(
+                        "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
+                    ):
+                        create_activity_feed_tab()
 
                 # Other tabs - lazy load
                 def build_alerts_tab():
@@ -1319,17 +1326,20 @@ def create_ui_elements():
                     ("Settings", build_settings_tab, settings_tab),
                 ]
 
-                for tab_name, build_func, tab_obj in tab_definitions:
-                    with ui.tab_panel(tab_obj).classes(
-                        "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
-                    ) as panel:
-                        lazy_tabs[tab_name] = LazyTabPanel(tab_name, build_func)
-                        lazy_tabs[tab_name].container = panel
-                        # Create spinner and store reference for later removal
-                        spinner = (
-                            ui.spinner("dots").classes("mx-auto").props("size=3rem")
-                        )
-                        lazy_tabs[tab_name].spinner = spinner
+                with StartupTimer("create_ui_elements.lazy_panels"):
+                    for tab_name, build_func, tab_obj in tab_definitions:
+                        with ui.tab_panel(tab_obj).classes(
+                            "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
+                        ) as panel:
+                            lazy_tabs[tab_name] = LazyTabPanel(tab_name, build_func)
+                            lazy_tabs[tab_name].container = panel
+                            # Create spinner and store reference for later removal
+                            spinner = (
+                                ui.spinner("dots")
+                                .classes("mx-auto")
+                                .props("size=3rem")
+                            )
+                            lazy_tabs[tab_name].spinner = spinner
 
             # Add tab change handler for unsaved changes warning and lazy loading
             def on_main_tab_change(e):
@@ -1441,7 +1451,8 @@ def create_ui_elements():
 
                     dialog.open()  # Explicitly open the dialog
 
-        create_service_status_footer()
+        with StartupTimer("create_ui_elements.service_footer"):
+            create_service_status_footer()
 
         # Re-apply saved font once the native client is connected (head CSS is static at theme inject)
         ui.timer(0.5, lambda: apply_app_font(), once=True)

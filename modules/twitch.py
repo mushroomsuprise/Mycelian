@@ -231,6 +231,7 @@ class Twitch_API:
             AuthScope.CHANNEL_MANAGE_RAIDS,
             AuthScope.CHANNEL_MANAGE_ADS,
             AuthScope.CHANNEL_SUBSCRIPTIONS,
+            AuthScope.CHANNEL_MANAGE_MODERATORS,  # GET /moderation/moderators
             AuthScope.CHAT_EDIT,
             AuthScope.CHAT_READ,
             AuthScope.MODERATOR_READ_FOLLOWERS,
@@ -625,6 +626,7 @@ class Twitch_API:
             # If we don't have valid auth data, trigger OAuth flow
             if not auth_data_loaded or not self.auth_token or not self.refresh_token:
                 logger.info("No valid authentication data, starting OAuth flow")
+                notify_twitch_connect_failed()
                 oauth_success = await self.authenticate_with_oauth()
                 if not oauth_success:
                     logger.error("Failed to authenticate with OAuth")
@@ -652,6 +654,7 @@ class Twitch_API:
                 except Exception as e:
                     logger.warning(f"Existing tokens failed validation: {str(e)}")
                     # Try OAuth flow as fallback
+                    notify_twitch_connect_failed()
                     oauth_success = await self.authenticate_with_oauth()
                     if not oauth_success:
                         logger.error(
@@ -2646,6 +2649,7 @@ class Twitch_API:
                 logger.warning("Failed to stage Twitch API - authentication required")
                 self.is_connected = False
                 twitch_connected = False
+                notify_twitch_connect_failed()
                 return False  # Return False instead of raising exception
 
             # Initialize the EventSub websocket
@@ -2785,6 +2789,7 @@ class Twitch_API:
                 logger.error(f"Error subscribing to events: {str(e)}", exc_info=True)
                 self.is_connected = False
                 twitch_connected = False
+                notify_twitch_connect_failed()
                 return False  # Return False instead of raising exception
 
             # Start the health check thread
@@ -2796,6 +2801,7 @@ class Twitch_API:
             logger.error(f"Failed to initialize Twitch API: {str(e)}", exc_info=True)
             self.is_connected = False
             twitch_connected = False
+            notify_twitch_connect_failed()
             return False  # Return False instead of raising exception
 
     async def generic_api_call(
@@ -2892,9 +2898,15 @@ class Twitch_API:
                 logger.debug("Using existing authenticated Twitch session for API call")
             else:
                 # Only create a temporary session as a last resort
-                logger.warning(
-                    "No existing Twitch session available, creating temporary session"
-                )
+                if not is_twitch_api_ready():
+                    logger.debug(
+                        "Twitch HTTP session not ready yet; "
+                        "using temporary session for API call"
+                    )
+                else:
+                    logger.warning(
+                        "No existing Twitch session available, creating temporary session"
+                    )
                 import aiohttp
 
                 session_to_use = aiohttp.ClientSession()
@@ -3112,15 +3124,18 @@ class Twitch_API:
             oauth_success = await self.authenticate_with_oauth()
             if not oauth_success:
                 logger.error("OAuth authentication failed during reconnect")
+                notify_twitch_connect_failed()
                 return False
 
             # Initialize the connection with new credentials
-            await self.intialize_twitch_api()
+            if not await self.intialize_twitch_api():
+                return False
 
             logger.debug("Reconnect with OAuth completed successfully")
             return True
         except Exception as e:
             logger.error(f"Error during OAuth reconnection: {str(e)}", exc_info=True)
+            notify_twitch_connect_failed()
             return False
 
     def get_token_status(self):
@@ -3557,6 +3572,35 @@ def initialize() -> None:
 def get_twitch_api():
     """Get the global Twitch API instance"""
     return twitch_api
+
+
+def is_twitch_api_ready() -> bool:
+    """True when the Twitch API can serve Helix/generic HTTP requests."""
+    api = twitch_api
+    if api is None:
+        return False
+    if not api.is_connected or not api.twitch:
+        return False
+    session = getattr(api.twitch, "_Twitch__session", None)
+    return session is not None
+
+
+def notify_twitch_connect_failed() -> None:
+    """Prompt user to reconnect Twitch when connection or auth fails."""
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        notify(
+            "Twitch is not connected. If your browser opened for authorization, "
+            "complete that login—or reconnect in Settings → Twitch.",
+            type="warning",
+            dedupe_key="twitch:connect_failed",
+            dedupe_cooldown_sec=3600.0,
+            timeout=12.0,
+            actions=nav_actions_settings("Twitch"),
+        )
+    except Exception as e:
+        logger.warning("Could not show Twitch connect failed notification: %s", e)
 
 
 def trigger_oauth_reconnection():

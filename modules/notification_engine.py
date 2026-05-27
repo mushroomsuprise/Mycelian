@@ -10,6 +10,7 @@ import json
 import logging
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -30,6 +31,8 @@ DEFAULT_DEDUPE_COOLDOWN_SEC = 45.0
 _last_emit_monotonic: Dict[str, float] = {}
 _history: List[Dict[str, Any]] = []
 _history_refresh_callbacks: List[Callable[[], None]] = []
+_pending_toasts: List[tuple[str, Dict[str, Any]]] = []
+_MAX_PENDING_TOASTS = 20
 
 
 def _history_path() -> Path:
@@ -203,6 +206,40 @@ def _mark_dedupe(dedupe_key: str) -> None:
     _last_emit_monotonic[dedupe_key] = time.monotonic()
 
 
+def _deliver_toast(message: str, opts: Dict[str, Any]) -> bool:
+    """Show a toast if the UI is ready. Returns False when delivery should be retried."""
+    try:
+        ui.notify(message, **opts)
+        return True
+    except RuntimeError:
+        pass
+    except Exception as e:
+        logger.error("ui.notify failed: %s", e, exc_info=True)
+        return True
+
+    try:
+        from nicegui import Client
+
+        if not Client.instances:
+            return False
+        _broadcast_notify(message, opts)
+        return True
+    except Exception as e:
+        logger.warning("broadcast notify fallback failed: %s", e, exc_info=True)
+        return False
+
+
+def flush_pending_toasts() -> None:
+    """Retry toasts queued before the NiceGUI client was available."""
+    if not _pending_toasts:
+        return
+    still_pending: List[tuple[str, Dict[str, Any]]] = []
+    for message, opts in _pending_toasts:
+        if not _deliver_toast(message, opts):
+            still_pending.append((message, opts))
+    _pending_toasts[:] = still_pending
+
+
 def notify(
     message: str,
     *,
@@ -251,25 +288,10 @@ def notify(
         if timeout is not None:
             opts["timeout"] = timeout
         opts.update(kwargs)
-        try:
-            ui.notify(message, **opts)
-        except RuntimeError:
-            # No NiceGUI slot context (called from a Flask route, a
-            # background thread, or any other non-UI task). Fall back
-            # to enqueuing the notify message directly into every live
-            # client's outbox — same payload shape ``ui.notify`` would
-            # have produced. This keeps the toast behaviour for
-            # background callers (Spore Studio /notify proxy, service
-            # watchers, etc.) without forcing every site to wrap calls
-            # in a ``with client:`` block.
-            try:
-                _broadcast_notify(message, opts)
-            except Exception as e:
-                logger.warning(
-                    "broadcast notify fallback failed: %s", e, exc_info=True,
-                )
-        except Exception as e:
-            logger.error("ui.notify failed: %s", e, exc_info=True)
+        if not _deliver_toast(message, opts):
+            _pending_toasts.append((message, dict(opts)))
+            if len(_pending_toasts) > _MAX_PENDING_TOASTS:
+                del _pending_toasts[: len(_pending_toasts) - _MAX_PENDING_TOASTS]
 
     return entry_id
 
@@ -564,55 +586,109 @@ def iter_service_footer_entries() -> List[ServiceFooterEntry]:
 
 _footer_container: Optional[Any] = None
 _footer_item_refs: Dict[str, Dict[str, Any]] = {}
+_footer_probe_scheduled = False
+_footer_probe_refresh_pending = False
+_footer_probe_running = False
+
+
+def _run_integration_probe_background(*, force: bool) -> None:
+    """Run service probes off the UI thread (never touch NiceGUI from here)."""
+    global _footer_probe_running, _footer_probe_refresh_pending
+    from .connection_status_tracker import probe_configured_services
+
+    try:
+        probe_configured_services(force=force)
+    except Exception:
+        logger.debug("background integration probe failed", exc_info=True)
+    finally:
+        _footer_probe_running = False
+        _footer_probe_refresh_pending = True
+
+
+def _refresh_footer_after_background_probe() -> None:
+    """Poll on the UI thread until the background probe sets the refresh flag."""
+    global _footer_probe_refresh_pending
+    if _footer_probe_refresh_pending:
+        _footer_probe_refresh_pending = False
+        refresh_service_status_footer()
+        return
+    if _footer_probe_running:
+        ui.timer(0.15, _refresh_footer_after_background_probe, once=True)
+
+
+def schedule_service_status_probe(*, force: bool = True, delay_seconds: float = 0.1) -> None:
+    """Schedule a one-shot background probe (does not block UI construction)."""
+    global _footer_probe_scheduled, _footer_probe_running
+    if _footer_probe_scheduled and force:
+        return
+    if force:
+        _footer_probe_scheduled = True
+
+    def _start_probe() -> None:
+        global _footer_probe_running
+        _footer_probe_running = True
+        threading.Thread(
+            target=_run_integration_probe_background,
+            kwargs={"force": force},
+            daemon=True,
+            name="ServiceStatusProbe",
+        ).start()
+        ui.timer(0.15, _refresh_footer_after_background_probe, once=True)
+
+    ui.timer(delay_seconds, _start_probe, once=True)
 
 
 def create_service_status_footer() -> None:
     """Mount the global connection status footer below main tab content."""
     global _footer_container, _footer_item_refs
 
+    from .startup_profiler import StartupTimer
     from .uiwindows.service_brand_icons import SERVICE_BRAND_SVG
 
-    with ui.element("div").classes(
-        "service-status-footer w-full shrink-0 flex-none"
-    ) as footer:
-        _footer_container = footer
-        with ui.element("div").classes("service-status-footer-inner w-full"):
-            for key in _SERVICE_KEYS:
-                svg = SERVICE_BRAND_SVG.get(key, "")
-                with ui.element("div").classes(
-                    "service-status-item cursor-pointer select-none"
-                ).style("display: none;") as item:
-                    item.on(
-                        "click",
-                        lambda _e, k=key: _on_footer_item_click(k),
-                    )
-                    if svg:
-                        ui.html(
-                            f'<span class="service-status-brand-icon">{svg}</span>'
-                        )
-                    ui.label(_SERVICE_LABELS[key]).classes(
-                        "service-status-name text-xs"
-                    )
+    with StartupTimer("create_service_status_footer.ui"):
+        with ui.element("div").classes(
+            "service-status-footer w-full shrink-0 flex-none"
+        ) as footer:
+            _footer_container = footer
+            with ui.element("div").classes("service-status-footer-inner w-full"):
+                for key in _SERVICE_KEYS:
+                    svg = SERVICE_BRAND_SVG.get(key, "")
                     with ui.element("div").classes(
-                        "service-status-status-cluster"
-                    ):
-                        dot = ui.element("span").classes("service-status-dot muted")
-                        badge_wrap = ui.element("span").classes(
-                            "service-status-badge info"
+                        "service-status-item cursor-pointer select-none"
+                    ).style("display: none;") as item:
+                        item.on(
+                            "click",
+                            lambda _e, k=key: _on_footer_item_click(k),
                         )
-                        with badge_wrap:
-                            badge_label = ui.label("…").classes("text-xs")
-                    _footer_item_refs[key] = {
-                        "container": item,
-                        "dot": dot,
-                        "badge": badge_label,
-                        "badge_wrap": badge_wrap,
-                    }
+                        if svg:
+                            ui.html(
+                                f'<span class="service-status-brand-icon">{svg}</span>'
+                            )
+                        ui.label(_SERVICE_LABELS[key]).classes(
+                            "service-status-name text-xs"
+                        )
+                        with ui.element("div").classes(
+                            "service-status-status-cluster"
+                        ):
+                            dot = ui.element("span").classes(
+                                "service-status-dot muted"
+                            )
+                            badge_wrap = ui.element("span").classes(
+                                "service-status-badge info"
+                            )
+                            with badge_wrap:
+                                badge_label = ui.label("…").classes("text-xs")
+                        _footer_item_refs[key] = {
+                            "container": item,
+                            "dot": dot,
+                            "badge": badge_label,
+                            "badge_wrap": badge_wrap,
+                        }
 
-    from .connection_status_tracker import probe_configured_services
+    with StartupTimer("create_service_status_footer.refresh_cached"):
+        refresh_service_status_footer()
 
-    probe_configured_services(force=True)
-    refresh_service_status_footer()
+    schedule_service_status_probe(force=True)
 
 
 def _on_footer_item_click(service_key: str) -> None:
@@ -677,6 +753,11 @@ def refresh_service_status_footer() -> None:
 
 def poll_service_status_changes() -> None:
     """Call from a UI timer; notify when a configured integration's status label changes."""
+    global _footer_probe_refresh_pending
+    if _footer_probe_refresh_pending:
+        _footer_probe_refresh_pending = False
+        refresh_service_status_footer()
+
     from .connection_status_tracker import probe_configured_services
 
     probe_configured_services()
@@ -733,6 +814,8 @@ def poll_service_connection_changes() -> None:
 def start_service_watcher_timer() -> None:
     """Start periodic polling for integration status changes (after UI exists)."""
     ui.timer(2.0, poll_service_status_changes, active=True)
+    ui.timer(1.0, flush_pending_toasts, active=True)
+    flush_pending_toasts()
 
 
 # Load persisted history at import (for non-UI code paths); UI registers refresh later

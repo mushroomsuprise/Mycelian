@@ -222,7 +222,10 @@ def initialize():
             "Alert state manager already initialized, reloading alerts from Firebase to ensure latest data"
         )
         # Ensure alerts are loaded from Firebase even if initialized with cached data
-        alert_state_manager.reload_from_firebase()
+        from .startup_profiler import StartupTimer
+
+        with StartupTimer("alert_processor.reload_from_firebase"):
+            alert_state_manager.reload_from_firebase()
 
     # Initialize web engine with correct path for templates
     from .path_utils import get_template_path
