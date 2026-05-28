@@ -660,6 +660,23 @@ def _materia_id_display_name(materia_id: int) -> str:
     return s or f"Materia {mid}"
 
 
+def _parse_inv_items_multiset(inv_slice: bytes) -> Dict[int, int]:
+    """Sum quantity per unified item id across all inventory slots (2 bytes per slot)."""
+    counts: Dict[int, int] = {}
+    n = min(INV_ITEM_SLOTS, max(0, len(inv_slice) // 2))
+    for i in range(n):
+        o = i * 2
+        if o + 2 > len(inv_slice):
+            break
+        val = struct.unpack_from("<H", inv_slice, o)[0]
+        if val == 0xFFFF:
+            continue
+        iid = int(val) & 0x1FF
+        qty = (int(val) >> 9) & 0x7F
+        counts[iid] = counts.get(iid, 0) + qty
+    return counts
+
+
 def _parse_inv_materia_multiset(inv_mat_slice: bytes) -> Dict[int, int]:
     """Count each materia id in the inventory materia table (4 bytes per slot)."""
     counts: Dict[int, int] = {}
@@ -3503,31 +3520,23 @@ class FF7Hook:
         prev = self._prev_inventory_sig
         prev_mat = self._prev_materia_inv_sig
 
-        # Unified items (consumables, weapons, armor, accessories) — 9-bit ids.
-        best_item: Optional[Tuple[int, int, int]] = None
+        # Unified items — multiset diff (stable when stacks move between slots).
+        best_item: Optional[Tuple[int, int]] = None
+        best_item_score: Optional[Tuple[int, int, int]] = None
         if prev is not None and len(prev) == len(inv_slice):
-            for idx in range(INV_ITEM_SLOTS):
-                o = idx * 2
-                cur = struct.unpack_from("<H", inv_slice, o)[0]
-                pr = struct.unpack_from("<H", prev, o)[0]
-                if cur == 0xFFFF and pr == 0xFFFF:
+            pic = _parse_inv_items_multiset(prev)
+            cic = _parse_inv_items_multiset(inv_slice)
+            for ci in set(pic) | set(cic):
+                prev_c = int(pic.get(ci, 0))
+                cur_c = int(cic.get(ci, 0))
+                dlt = cur_c - prev_c
+                if dlt <= 0:
                     continue
-                if cur == 0xFFFF:
-                    continue
-                ci, cq = int(cur) & 0x1FF, (int(cur) >> 9) & 0x7F
-                dlt: Optional[int] = None
-                if pr == 0xFFFF and cq > 0:
-                    dlt = int(cq)
-                elif int(pr) != 0xFFFF:
-                    pi, pq = int(pr) & 0x1FF, (int(pr) >> 9) & 0x7F
-                    if ci == pi and cq > pq:
-                        dlt = int(cq - pq)
-                if dlt is None or dlt <= 0:
-                    continue
-                if best_item is None or dlt > best_item[0] or (
-                    dlt == best_item[0] and idx > best_item[1]
-                ):
-                    best_item = (dlt, idx, int(ci))
+                is_new = 1 if prev_c == 0 else 0
+                score = (dlt, is_new, int(ci))
+                if best_item_score is None or score > best_item_score:
+                    best_item_score = score
+                    best_item = (dlt, int(ci))
 
         # Materia inventory — kernel materia id (per-slot orbs; multiset diffs are stable
         # if the player reorders the grid).
@@ -3547,7 +3556,7 @@ class FF7Hook:
 
         chosen: Optional[Dict[str, Any]] = None
         if best_item is not None and best_materia is not None:
-            idlt, _idx, ci = best_item
+            idlt, ci = best_item
             mdlt, mid = best_materia
             # Same tick: show the single largest gain; tie — prefer item over materia.
             if idlt >= mdlt:
@@ -3593,7 +3602,7 @@ class FF7Hook:
                         "materia_id": None,
                     }
         elif best_item is not None:
-            idlt, _idx, ci = best_item
+            idlt, ci = best_item
             if not _gain_explained_by_party_unequip(
                 int(ci) & 0x1FF, int(idlt), prev_eq_items, cur_eq_items
             ):
