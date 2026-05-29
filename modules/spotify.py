@@ -47,6 +47,10 @@ SPOTIFY_OAUTH_REDIRECT_URI = "http://127.0.0.1:9973"
 spotify_client: Optional["SpotifyClient"] = None
 spotify_thread: Optional[threading.Thread] = None
 is_running = False
+_start_lock = threading.Lock()
+
+_AUTH_FAILURE_COOLDOWN_SEC = 300.0
+_API_BACKOFF_DEFAULT_SEC = 30.0
 
 
 class CustomTCPServer(socketserver.TCPServer):
@@ -235,9 +239,16 @@ class SpotifyClient:
         self.is_authenticated = False
         self.last_track_id = None
         self.update_interval = 1.0
+        self.update_interval_playing = 1.0
+        self.update_interval_idle = 3.0
         self.running = False
         self._last_api_success = False
         self._refresh_lock = threading.Lock()
+        self._api_backoff_until = 0.0
+        self._auth_failure_until = 0.0
+        self._last_auth_error_code = ""
+        self._auth_recovery_logged = False
+        self._last_playback_state = "unknown"
 
         # Load existing data from state manager
         self.load_spotify_data()
@@ -335,6 +346,114 @@ class SpotifyClient:
             or (self.spotify_data.access_token or "").strip()
         )
 
+    def is_in_auth_cooldown(self) -> bool:
+        return time.monotonic() < self._auth_failure_until
+
+    def is_in_api_backoff(self) -> bool:
+        return time.monotonic() < self._api_backoff_until
+
+    def should_skip_playback_poll(self) -> bool:
+        if self.is_in_auth_cooldown() or self.is_in_api_backoff():
+            return True
+        if not self.is_authenticated:
+            status = (self.spotify_data.connection_status or "").strip()
+            if status in (
+                "Token Refresh Failed",
+                "Authorization Required",
+                "Not Configured",
+                "Token Refresh Error",
+            ):
+                return True
+        return False
+
+    def _access_token_needs_refresh(self) -> bool:
+        if not (self.spotify_data.access_token or "").strip():
+            return True
+        exp = self._token_expiry_epoch(self.spotify_data.token_expiry)
+        if exp is None:
+            return True
+        return time.time() >= exp - 30
+
+    def _clear_auth_failure_state(self) -> None:
+        self._auth_failure_until = 0.0
+        self._last_auth_error_code = ""
+        self._auth_recovery_logged = False
+
+    def _register_auth_failure(self, error_code: str) -> None:
+        self._last_auth_error_code = error_code
+        self._auth_failure_until = time.monotonic() + _AUTH_FAILURE_COOLDOWN_SEC
+        self.is_authenticated = False
+        self.update_field("connection_status", "Authorization Required")
+        if not self._auth_recovery_logged:
+            self._auth_recovery_logged = True
+            logger.warning(
+                "Spotify auth failed (%s). Verify Client ID/Secret in Settings match "
+                "your app at https://developer.spotify.com/dashboard, ensure redirect "
+                "URI includes %s, then reconnect via OAuth.",
+                error_code,
+                SPOTIFY_OAUTH_REDIRECT_URI,
+            )
+
+    def _apply_rate_limit_backoff(
+        self, response: requests.Response, default_sec: float = _API_BACKOFF_DEFAULT_SEC
+    ) -> None:
+        wait = default_sec
+        retry_after = response.headers.get("Retry-After")
+        if retry_after is not None:
+            try:
+                wait = float(retry_after)
+            except ValueError:
+                pass
+        wait = max(1.0, min(wait, 3600.0))
+        self._api_backoff_until = time.monotonic() + wait
+        logger.warning(
+            "Spotify API rate limited (429); backing off for %.0f seconds", wait
+        )
+
+    def _parse_oauth_error(self, response: requests.Response) -> str:
+        try:
+            return str(response.json().get("error", "") or "")
+        except (ValueError, AttributeError):
+            return ""
+
+    def _api_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        data: Optional[Dict[str, str]] = None,
+        allow_during_auth_cooldown: bool = False,
+    ) -> Optional[requests.Response]:
+        now = time.monotonic()
+        if now < self._api_backoff_until:
+            logger.debug("Skipping Spotify API request — rate-limit backoff active")
+            return None
+        if not allow_during_auth_cooldown and now < self._auth_failure_until:
+            logger.debug("Skipping Spotify API request — auth failure cooldown active")
+            return None
+        try:
+            response = requests.request(
+                method.upper(), url, headers=headers, data=data, timeout=10
+            )
+        except Exception as e:
+            logger.error("Spotify API request failed: %s", e, exc_info=True)
+            return None
+        if response.status_code == 429:
+            self._apply_rate_limit_backoff(response)
+        return response
+
+    def _get_monitor_sleep_seconds(self) -> float:
+        now = time.monotonic()
+        base = (
+            self.update_interval_playing
+            if self._last_playback_state == "playing"
+            else self.update_interval_idle
+        )
+        backoff_rem = max(0.0, self._api_backoff_until - now)
+        auth_rem = max(0.0, self._auth_failure_until - now)
+        return max(base, backoff_rem, auth_rem)
+
     def save_spotify_data(self):
         """Save current Spotify data to state manager"""
         try:
@@ -391,6 +510,9 @@ class SpotifyClient:
 
     def _refresh_token_locked(self, force: bool = False) -> bool:
         try:
+            if not force and self.is_in_auth_cooldown():
+                return bool((self.spotify_data.access_token or "").strip())
+
             self._sync_client_credentials()
 
             if not self.spotify_data.refresh_token:
@@ -408,6 +530,10 @@ class SpotifyClient:
                 if exp is not None and time.time() < exp - 30:
                     return True
 
+            if self.is_in_api_backoff():
+                logger.debug("Skipping token refresh — rate-limit backoff active")
+                return bool((self.spotify_data.access_token or "").strip())
+
             logger.info("Refreshing Spotify access token...")
 
             url = "https://accounts.spotify.com/api/token"
@@ -421,35 +547,46 @@ class SpotifyClient:
                 "client_secret": self.spotify_data.client_secret,
             }
 
-            response = requests.post(url, headers=headers, data=data, timeout=10)
+            response = self._api_request(
+                "POST", url, headers=headers, data=data, allow_during_auth_cooldown=True
+            )
+            if response is None:
+                return bool((self.spotify_data.access_token or "").strip())
 
             if response.status_code == 200:
                 token_data = response.json()
 
-                # Update tokens
                 self.update_field("access_token", token_data["access_token"])
                 if "refresh_token" in token_data:
                     self.update_field("refresh_token", token_data["refresh_token"])
 
-                # Calculate expiry time with buffer
                 expires_in = token_data.get("expires_in", 3600)
                 self.update_field("token_expiry", time.time() + expires_in - 30)
 
                 self.update_field("connection_status", "Connected")
                 self.is_authenticated = True
+                self._clear_auth_failure_state()
 
-                # Save changes to database
                 state_manager.save_changes()
 
                 logger.info("Successfully refreshed Spotify access token")
                 return True
+
+            error_code = self._parse_oauth_error(response)
+            if response.status_code == 400 and error_code in (
+                "invalid_client",
+                "invalid_grant",
+            ):
+                self._register_auth_failure(error_code)
             else:
                 logger.error(
-                    f"Failed to refresh token. Status: {response.status_code}, Response: {response.text}"
+                    "Failed to refresh token. Status: %s, Response: %s",
+                    response.status_code,
+                    response.text,
                 )
                 self.is_authenticated = False
                 self.update_field("connection_status", "Token Refresh Failed")
-                return False
+            return False
 
         except Exception as e:
             logger.error(f"Error refreshing Spotify token: {str(e)}", exc_info=True)
@@ -462,8 +599,10 @@ class SpotifyClient:
     ) -> Optional[Dict[str, Any]]:
         """Get current playback state using direct API call"""
         try:
-            # Reset API success flag
             self._last_api_success = False
+
+            if self.is_in_api_backoff() or self.is_in_auth_cooldown():
+                return None
 
             if not self.spotify_data.access_token:
                 if not (
@@ -471,7 +610,6 @@ class SpotifyClient:
                 ):
                     return None
 
-            # Refresh token if needed
             if not self.refresh_token():
                 return None
 
@@ -479,41 +617,42 @@ class SpotifyClient:
             headers = {"Authorization": "Bearer " + self.spotify_data.access_token}
 
             logger.debug("Making Spotify API call to /me/player")
-            response = requests.get(url, headers=headers, timeout=10)
+            response = self._api_request("GET", url, headers=headers)
+            if response is None:
+                return None
 
             if response.status_code == 200:
                 logger.debug("Successfully retrieved playback data")
                 self._last_api_success = True
                 return response.json()
-            elif response.status_code == 204:
-                # No content - nothing is playing, but API call was successful
+            if response.status_code == 204:
                 logger.debug("No active playback (status 204)")
                 self._last_api_success = True
                 return None
-            elif response.status_code in (401, 403):
-                # Invalid or expired bearer — force refresh (ignore local expiry short-circuit)
+            if response.status_code == 429:
+                return None
+            if response.status_code in (401, 403):
                 logger.warning(
                     "Access token rejected (%s), forcing refresh",
                     response.status_code,
                 )
                 if _allow_auth_retry and self.refresh_token(force=True):
                     return self.get_current_playback(_allow_auth_retry=False)
-                else:
-                    self.is_authenticated = False
-                    self.update_field("connection_status", "Authorization Required")
-                    return None
-            elif response.status_code == 502:
-                # Bad gateway, try refreshing token
+                self.is_authenticated = False
+                self.update_field("connection_status", "Authorization Required")
+                return None
+            if response.status_code == 502:
                 logger.warning("Bad gateway (502), attempting token refresh")
                 if _allow_auth_retry and self.refresh_token():
                     return self.get_current_playback(_allow_auth_retry=False)
-                else:
-                    return None
-            else:
-                logger.warning(
-                    f"Unexpected API response: {response.status_code} - {response.text}"
-                )
                 return None
+
+            logger.warning(
+                "Unexpected API response: %s - %s",
+                response.status_code,
+                response.text,
+            )
+            return None
 
         except Exception as e:
             logger.error(f"Error getting current playback: {str(e)}", exc_info=True)
@@ -522,6 +661,10 @@ class SpotifyClient:
     def authenticate(self) -> bool:
         """Test current authentication status and attempt token refresh if needed"""
         try:
+            if self.is_in_auth_cooldown():
+                logger.debug("Skipping Spotify authenticate — auth failure cooldown active")
+                return False
+
             self._sync_client_credentials()
 
             if not self.spotify_data.client_id or not self.spotify_data.client_secret:
@@ -530,40 +673,43 @@ class SpotifyClient:
                 self.is_authenticated = False
                 return False
 
-            # Proactive refresh on startup when a refresh token exists (fresh access token)
-            if self.spotify_data.refresh_token:
-                logger.info("Spotify authenticate: refreshing access token from refresh token")
-                if not self.refresh_token(force=True):
-                    logger.warning("Forced token refresh on authenticate failed")
+            if self.spotify_data.refresh_token and self._access_token_needs_refresh():
+                logger.info(
+                    "Spotify authenticate: refreshing access token (expired or missing)"
+                )
+                if not self.refresh_token(force=False):
+                    if self.is_in_auth_cooldown():
+                        return False
+                    logger.warning("Token refresh on authenticate failed")
                     self.update_field("connection_status", "Authorization Required")
                     self.is_authenticated = False
                     return False
 
             if not self.spotify_data.access_token:
-                logger.info("No access token available and no refresh token")
+                logger.info("No access token available")
                 self.update_field("connection_status", "Authorization Required")
                 self.is_authenticated = False
                 return False
 
-            # Test the token by making a simple API call
-            # Reset authentication state before testing
-            self.is_authenticated = False
-            playback = self.get_current_playback()
+            if self.is_in_auth_cooldown():
+                return False
 
-            # If get_current_playback succeeded (didn't return None due to auth failure)
-            # and either returned data or got a 204 (no content), we're authenticated
-            if hasattr(self, "_last_api_success") and self._last_api_success:
+            self.is_authenticated = False
+            self.get_current_playback()
+
+            if self._last_api_success:
                 self.is_authenticated = True
                 self.update_field("connection_status", "Connected")
                 logger.info("Spotify authentication successful")
                 return True
-            else:
-                self.is_authenticated = False
+
+            self.is_authenticated = False
+            if not self.is_in_auth_cooldown():
                 self.update_field("connection_status", "Authorization Required")
                 logger.warning(
                     "Spotify authentication failed - may need re-authorization"
                 )
-                return False
+            return False
 
         except Exception as e:
             logger.error(f"Error testing authentication: {str(e)}", exc_info=True)
@@ -601,12 +747,12 @@ class SpotifyClient:
     def update_playback_data(self):
         """Update playback data - similar to old script's set_playback_data"""
         try:
-            start_time = time.time()
             playback_data = self.get_current_playback()
-            api_time = time.time() - start_time
 
             if playback_data is None:
-                self.set_empty_track_data()
+                if self._last_api_success:
+                    self._last_playback_state = "idle"
+                    self.set_empty_track_data()
                 return
 
             try:
@@ -620,6 +766,7 @@ class SpotifyClient:
                     playback_data["item"]["duration_ms"]
                 )
                 is_playing = playback_data["is_playing"]
+                self._last_playback_state = "playing" if is_playing else "idle"
                 current_tracktime_seconds = playback_data["progress_ms"] / 1000
                 track_length_seconds = playback_data["item"]["duration_ms"] / 1000
 
@@ -679,18 +826,18 @@ class SpotifyClient:
             start_time = time.time()
             try:
                 if self._has_auth_tokens():
-                    self.update_playback_data()
-                    if self._last_api_success:
-                        if not self.is_authenticated:
-                            self.is_authenticated = True
-                            self.update_field("connection_status", "Connected")
+                    if not self.should_skip_playback_poll():
+                        self.update_playback_data()
+                        if self._last_api_success:
+                            if not self.is_authenticated:
+                                self.is_authenticated = True
+                                self.update_field("connection_status", "Connected")
                     self.send_websocket_data()
                 else:
                     self.set_empty_track_data()
 
-                # Calculate precise sleep time to maintain exact intervals
                 elapsed = time.time() - start_time
-                sleep_time = max(0, self.update_interval - elapsed)
+                sleep_time = max(0, self._get_monitor_sleep_seconds() - elapsed)
                 if sleep_time > 0:
                     time.sleep(sleep_time)
                 else:
@@ -834,6 +981,7 @@ class SpotifyClient:
 
                 self.is_authenticated = True
                 self.update_field("connection_status", "Connected")
+                self._clear_auth_failure_state()
 
                 # Save to database
                 state_manager.save_changes()
@@ -841,6 +989,12 @@ class SpotifyClient:
                 logger.info("Successfully completed Spotify OAuth flow")
                 return True
             else:
+                error_code = self._parse_oauth_error(response)
+                if response.status_code == 400 and error_code in (
+                    "invalid_client",
+                    "invalid_grant",
+                ):
+                    self._register_auth_failure(error_code)
                 logger.error(
                     f"OAuth completion failed: {response.status_code} - {response.text}"
                 )
@@ -911,7 +1065,13 @@ def _authenticate_with_retry(
     client: SpotifyClient, delays: tuple = (0.0, 1.0, 3.0)
 ) -> bool:
     """Run authenticate() with backoff for startup reliability."""
+    if client.is_in_auth_cooldown():
+        logger.info("Skipping Spotify startup auth — auth failure cooldown active")
+        return False
+
     for attempt, delay in enumerate(delays, start=1):
+        if client.is_in_auth_cooldown():
+            break
         if delay > 0:
             time.sleep(delay)
         client.reload_and_sync(persist=True)
@@ -923,6 +1083,8 @@ def _authenticate_with_retry(
             attempt,
             client.spotify_data.connection_status,
         )
+        if client.is_in_auth_cooldown():
+            break
     return False
 
 
@@ -930,34 +1092,37 @@ def start_spotify_service():
     """Start the Spotify service in a background thread"""
     global spotify_thread, is_running, spotify_client
 
-    if is_running:
-        logger.warning("Spotify service already running")
-        return False
-
-    try:
-        spotify_client = initialize_spotify()
-        if not spotify_client:
+    with _start_lock:
+        if is_running and spotify_thread and spotify_thread.is_alive():
+            logger.warning("Spotify service already running")
             return False
+        if is_running:
+            is_running = False
 
-        # Auto-initialize if credentials/tokens are present
-        if should_auto_initialize():
-            logger.info(
-                "Auto-initializing Spotify service with existing credentials/tokens"
+        try:
+            client = initialize_spotify()
+            if not client:
+                return False
+
+            is_running = True
+
+            if should_auto_initialize():
+                logger.info(
+                    "Auto-initializing Spotify service with existing credentials/tokens"
+                )
+                _authenticate_with_retry(client)
+
+            spotify_thread = threading.Thread(
+                target=client.start_monitoring, daemon=True, name="SpotifyMonitor"
             )
-            _authenticate_with_retry(spotify_client)
+            spotify_thread.start()
 
-        # Start monitoring thread
-        spotify_thread = threading.Thread(
-            target=spotify_client.start_monitoring, daemon=True
-        )
-        spotify_thread.start()
-        is_running = True
-
-        logger.info("Started Spotify service")
-        return True
-    except Exception as e:
-        logger.error(f"Error starting Spotify service: {str(e)}", exc_info=True)
-        return False
+            logger.info("Started Spotify service")
+            return True
+        except Exception as e:
+            is_running = False
+            logger.error(f"Error starting Spotify service: {str(e)}", exc_info=True)
+            return False
 
 
 def stop_spotify_service():

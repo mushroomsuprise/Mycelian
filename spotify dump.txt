@@ -1,0 +1,87 @@
+╭─    P:\Python Apps\Mycelian   main ↓2  ?3 ~1  7                                           3.10.7     19:57:59  ─╮
+╰─ & "p:/Python Apps/Mycelian/.venv/Scripts/Activate.ps1"                                                                         ─╯
+╭─    P:\Python Apps\Mycelian   main ↓2  ?3 ~1  7                                           3.13.1     19:57:59  ─╮
+╰─ & "p:/Python Apps/Mycelian/.venv/Scripts/python.exe" "p:/Python Apps/Mycelian/main.py"                                         ─╯
+NiceGUI ready to go on http://127.0.0.1:8000
+2026-05-28 19:58:04,867 - modules.spotify - ERROR - Failed to refresh token. Status: 400, Response: {"error":"invalid_client","error_description":"Invalid client"}
+2026-05-28 19:58:04,868 - modules.spotify - WARNING - Forced token refresh on authenticate failed
+2026-05-28 19:58:05,560 - modules.spotify - ERROR - Failed to refresh token. Status: 400, Response: {"error":"invalid_client","error_description":"Invalid client"}
+2026-05-28 19:58:05,561 - modules.spotify - WARNING - Forced token refresh on authenticate failed
+2026-05-28 19:58:06,199 - modules.spotify - ERROR - Failed to refresh token. Status: 400, Response: {"error":"invalid_client","error_description":"Invalid client"}
+2026-05-28 19:58:06,199 - modules.spotify - WARNING - Forced token refresh on authenticate failed
+2026-05-28 19:58:06,261 - modules.twitch - WARNING - No existing Twitch session available, creating temporary session
+Creating thread for event Youtube Promo
+Thread created: Event-Youtube Promo
+=== THREAD STARTED: repeating thread for event Youtube Promo (ID: b4c45929-a59f-47af-bd67-449a804bb7ee) ===
+Thread started: Event-Youtube Promo, is_alive: True
+Stored thread reference for event: Youtube Promo
+2026-05-28 19:58:06,423 - modules.chatbot - WARNING - No existing chatbot Twitch session available, creating temporary session      
+2026-05-28 19:58:06,782 - modules.spotify - ERROR - Failed to refresh token. Status: 400, Response: {"error":"invalid_client","error_description":"Invalid client"}
+2026-05-28 19:58:06,782 - modules.spotify - WARNING - Forced token refresh on authenticate failed
+2026-05-28 19:58:09,415 - modules.spotify - ERROR - Failed to refresh token. Status: 400, Response: {"error":"invalid_client","error_description":"Invalid client"}
+2026-05-28 19:58:09,415 - modules.spotify - WARNING - Forced token refresh on authenticate failed
+2026-05-28 19:58:09,641 - modules.spotify - ERROR - Failed to refresh token. Status: 400, Response: {"error":"invalid_client","error_description":"Invalid client"}
+2026-05-28 19:58:09,642 - modules.spotify - WARNING - Forced token refresh on authenticate failed
+2026-05-28 19:58:10,119 - modules.spotify - ERROR - Failed to refresh token. Status: 400, Response: {"error":"invalid_client","error_description":"Invalid client"}
+2026-05-28 19:58:10,170 - modules.spotify - WARNING - Forced token refresh on authenticate failed
+2026-05-28 19:58:10,322 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:10,533 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:11,308 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:11,544 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:12,298 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:12,553 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:13,294 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:13,547 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:14,293 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:14,554 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:15,282 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:15,582 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:16,295 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:16,565 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:17,291 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:17,542 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:18,292 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:18,553 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:19,298 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:19,567 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:19,615 - modules.youtube - WARNING - YouTube service already running
+2026-05-28 19:58:20,300 - modules.spotify - ERROR - Failed to refresh token. Status: 400, Response: {"error":"invalid_client","error_description":"Invalid client"}
+2026-05-28 19:58:20,301 - modules.spotify - WARNING - Forced token refresh on authenticate failed
+2026-05-28 19:58:20,463 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:20,555 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:21,356 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:21,557 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:22,348 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:22,560 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:23,328 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:23,557 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:24,341 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:24,571 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:25,331 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:25,577 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:26,414 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:26,553 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:27,369 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:27,543 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:28,415 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:28,574 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:29,366 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:29,543 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:30,427 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:30,563 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:31,406 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:31,562 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:32,461 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:32,565 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:33,413 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:33,546 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:34,462 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:34,575 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:35,462 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:35,560 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:36,498 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:36,498 - modules.spotify - WARNING - Spotify authentication failed - may need re-authorization
+2026-05-28 19:58:36,576 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:36,630 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:37,464 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests
+2026-05-28 19:58:37,586 - modules.spotify - WARNING - Unexpected API response: 429 - Too many requests

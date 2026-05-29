@@ -169,6 +169,7 @@ def _probe_spotify() -> None:
     if (
         has_tokens
         and not client.is_authenticated
+        and not client.is_in_auth_cooldown()
         and now - _last_spotify_auth_mono >= _SPOTIFY_AUTH_INTERVAL_SEC
     ):
         _last_spotify_auth_mono = now
