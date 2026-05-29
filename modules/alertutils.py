@@ -66,6 +66,24 @@ class AlertSettings:
     FALLBACK_ALERT_ID: str = "subs_fallback"
 
 
+# Alerts tab uses plural keys; Twitch/overlay use singular runtime types.
+UI_TAB_TO_RUNTIME_ALERT_TYPE = {
+    "bits": "bit",
+    "subs": "sub",
+    "streaks": "streak",
+    "giftsubs": "giftsub",
+    "donations": "donation",
+    "raids": "raid",
+    "follows": "follow",
+    "points": "point",
+}
+
+
+def ui_tab_to_runtime_alert_type(ui_tab: str) -> str:
+    """Map Alerts settings tab id to runtime alert_type (bit, follow, …)."""
+    return UI_TAB_TO_RUNTIME_ALERT_TYPE.get(ui_tab, ui_tab)
+
+
 # Global alert collections
 BitAlerts = {}
 BitRangeAlerts = {}
@@ -1411,9 +1429,7 @@ class AlertStateManager:
                 elif alert_type == "raids":
                     return f"{amount} Raiders"
                 elif alert_type == "streaks":
-                    return (
-                        f"{amount} Streak" if amount == 1 else f"{amount} Streaks"
-                    )
+                    return f"{amount} Streak" if amount == 1 else f"{amount} Streaks"
             except ValueError:
                 # Fallback if parsing fails
                 pass
@@ -1721,9 +1737,7 @@ def load_alerts():
     db_point_alerts = database_manager.get_data("Alerts/PointAlerts") or {}
     db_follow_alerts = database_manager.get_data("Alerts/FollowAlerts") or {}
     db_streak_alerts = database_manager.get_data("Alerts/StreakAlerts") or {}
-    db_streak_range_alerts = (
-        database_manager.get_data("Alerts/StreakRangeAlerts") or {}
-    )
+    db_streak_range_alerts = database_manager.get_data("Alerts/StreakRangeAlerts") or {}
 
     # Clear existing global collections first
     BitAlerts.clear()

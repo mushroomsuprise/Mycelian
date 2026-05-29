@@ -28,7 +28,7 @@ import time
 
 from nicegui import ui
 from ..notification_engine import notify
-from ..ui_buttons import outline_button, primary_button, destructive_button
+from ..ui_buttons import outline_button
 
 from ..help_system.contextual_help import set_alerts_ui_references
 
@@ -175,6 +175,51 @@ TWITCH_REWARD_UI_FIELD_NAMES = (
     "twitch_skip_queue_switch",
 )
 
+_TEST_ALERT_REQUIRED_ELEMENTS = (
+    "duration_input",
+    "stackable_switch",
+    "fade_in_input",
+    "fade_out_input",
+    "volume_input",
+    "gif_dir_input",
+    "gif_file_input",
+    "primary_dir_input",
+    "primary_file_input",
+    "randomized_switch",
+    "random_dir_input",
+    "random_chance_input",
+    "randomized_extra_switch",
+    "extra_dir_input",
+    "extra_chance_input",
+)
+
+
+def _element_value(elements: dict, name: str, default=None):
+    """Read a NiceGUI element value from the tab elements dict."""
+    element = elements.get(name)
+    if element is None:
+        return default
+    value = getattr(element, "value", default)
+    if value is None:
+        return default
+    return value
+
+
+def _create_test_alert_button(alert_type: str) -> ui.button:
+    """Test Alert control — outline style with click handler bound to the button."""
+
+    def _run_test(_event=None):
+        test_alert(alert_type)
+
+    btn = outline_button(
+        "Test Alert",
+        _run_test,
+        icon="play_arrow",
+        extra_classes="text-sm",
+    )
+    btn.tooltip("Test the current alert settings").classes("bg-theme-surface")
+    return btn
+
 
 def update_volume_value(alert_type: str, volume_value: int):
     """Helper function to update both volume slider and its display label
@@ -222,9 +267,9 @@ def create_tts_settings_section(alert_type: str):
             with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("Speech Playback").classes("font-medium mb-2 text-sm")
                 alert_settings_state.get_elements(alert_type)["tts_enabled_switch"] = (
-                    ui.switch("Enable Text-to-Speech", value=False).classes(
-                        "w-full q-switch"
-                    )
+                    ui.switch(
+                        "Enable Text-to-Speech", value=False
+                    ).classes("w-full q-switch")
                 )
                 alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].on(
                     "change",
@@ -587,9 +632,7 @@ def create_alert_type_panel(alert_type: str):
                             elif alert_type == "streaks":
                                 input_label = "Streak count"
                                 input_suffix = None
-                                tooltip_text = (
-                                    "Watch streak count (consecutive streams) that triggers this alert"
-                                )
+                                tooltip_text = "Watch streak count (consecutive streams) that triggers this alert"
                             elif alert_type == "bits":
                                 input_label = "Amount"
                                 input_suffix = " bits"
@@ -637,8 +680,12 @@ def create_alert_type_panel(alert_type: str):
                                     max_tooltip = "Maximum subscription month for this alert range"
                                     range_suffix = None
                                 elif alert_type == "streaks":
-                                    min_tooltip = "Minimum streak count for this alert range"
-                                    max_tooltip = "Maximum streak count for this alert range"
+                                    min_tooltip = (
+                                        "Minimum streak count for this alert range"
+                                    )
+                                    max_tooltip = (
+                                        "Maximum streak count for this alert range"
+                                    )
                                     range_suffix = None
                                 elif alert_type == "bits":
                                     min_tooltip = "Minimum amount for this alert range"
@@ -668,9 +715,7 @@ def create_alert_type_panel(alert_type: str):
                                         at,
                                     ),
                                 )
-                                ui.tooltip(min_tooltip).classes(
-                                    "bg-theme-surface"
-                                )
+                                ui.tooltip(min_tooltip).classes("bg-theme-surface")
 
                             with ui.row().classes("items-center"):
                                 alert_settings_state.get_elements(alert_type)[
@@ -692,9 +737,7 @@ def create_alert_type_panel(alert_type: str):
                                         at,
                                     ),
                                 )
-                                ui.tooltip(max_tooltip).classes(
-                                    "bg-theme-surface"
-                                )
+                                ui.tooltip(max_tooltip).classes("bg-theme-surface")
 
                 # Resub fallback toggle (subs tab only, top-right corner)
                 if alert_type == "subs":
@@ -718,126 +761,116 @@ def create_alert_type_panel(alert_type: str):
                         ).classes("bg-theme-surface")
 
             with ui.grid(columns=2).classes("w-full gap-4"):
-                    with ui.column().classes("w-full gap-2"):
-                        with _alert_expansion("General", icon="settings"):
-                            with ui.grid(columns=2).classes("w-full gap-x-2 gap-y-px"):
-                                # For points tab, add enable alert toggle
-                                if alert_type == "points":
-                                    with ui.column().classes(
-                                        f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"
-                                    ):
-                                        ui.label("Alert Configuration").classes(
-                                            "font-medium mb-2 text-sm"
-                                        )
-                                        alert_settings_state.get_elements(alert_type)[
-                                            "enable_alert_switch"
-                                        ] = ui.switch("Enable as Alert").classes(
-                                            "w-full q-switch"
-                                        )
-                                        alert_settings_state.get_elements(alert_type)[
-                                            "enable_alert_switch"
-                                        ].on(
-                                            "change",
-                                            lambda e, at=alert_type: track_field_change(
-                                                "enable_alert_switch",
-                                                alert_settings_state.get_elements(at)[
-                                                    "enable_alert_switch"
-                                                ],
-                                                e,
-                                                at,
-                                            ),
-                                        )
-                                        ui.tooltip(
-                                            "Enable this point reward as an alert in the app"
-                                        ).classes("bg-theme-surface")
-
-                                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                                    ui.label("Timing").classes("font-medium mb-2 text-sm")
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "duration_input"
-                                    ] = ui.number(
-                                        "Duration", value=3.0, min=0.1, step=0.1
-                                    ).classes("w-full bg-theme-base rounded-md")
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "duration_input"
-                                    ].on(
-                                        "change",
-                                        lambda e, at=alert_type: track_field_change(
-                                            "duration_input",
-                                            alert_settings_state.get_elements(at)[
-                                                "duration_input"
-                                            ],
-                                            e,
-                                            at,
-                                        ),
+                with ui.column().classes("w-full gap-2"):
+                    with _alert_expansion("General", icon="settings"):
+                        with ui.grid(columns=2).classes("w-full gap-x-2 gap-y-px"):
+                            # For points tab, add enable alert toggle
+                            if alert_type == "points":
+                                with ui.column().classes(
+                                    f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"
+                                ):
+                                    ui.label("Alert Configuration").classes(
+                                        "font-medium mb-2 text-sm"
                                     )
-                                    ui.tooltip(
-                                        "How long the alert will display (seconds)"
-                                    ).classes("bg-theme-surface")
-
-                                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                                    ui.label("Behavior").classes("font-medium mb-2 text-sm")
                                     alert_settings_state.get_elements(alert_type)[
-                                        "stackable_switch"
-                                    ] = ui.switch("Stackable").classes(
+                                        "enable_alert_switch"
+                                    ] = ui.switch("Enable as Alert").classes(
                                         "w-full q-switch"
                                     )
-                                    # Add change tracking - fixed to use element's current value
                                     alert_settings_state.get_elements(alert_type)[
-                                        "stackable_switch"
+                                        "enable_alert_switch"
                                     ].on(
                                         "change",
                                         lambda e, at=alert_type: track_field_change(
-                                            "stackable_switch",
+                                            "enable_alert_switch",
                                             alert_settings_state.get_elements(at)[
-                                                "stackable_switch"
+                                                "enable_alert_switch"
                                             ],
                                             e,
                                             at,
                                         ),
                                     )
                                     ui.tooltip(
-                                        "Allow multiple alerts of this type to stack"
+                                        "Enable this point reward as an alert in the app"
                                     ).classes("bg-theme-surface")
 
-                        # Audio Settings
-                        create_audio_settings_section(alert_type)
-                        create_tts_settings_section(alert_type)
+                            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
+                                ui.label("Timing").classes("font-medium mb-2 text-sm")
+                                alert_settings_state.get_elements(alert_type)[
+                                    "duration_input"
+                                ] = ui.number(
+                                    "Duration", value=3.0, min=0.1, step=0.1
+                                ).classes("w-full bg-theme-base rounded-md")
+                                alert_settings_state.get_elements(alert_type)[
+                                    "duration_input"
+                                ].on(
+                                    "change",
+                                    lambda e, at=alert_type: track_field_change(
+                                        "duration_input",
+                                        alert_settings_state.get_elements(at)[
+                                            "duration_input"
+                                        ],
+                                        e,
+                                        at,
+                                    ),
+                                )
+                                ui.tooltip(
+                                    "How long the alert will display (seconds)"
+                                ).classes("bg-theme-surface")
 
-                    with ui.column().classes("w-full gap-2"):
-                        create_visual_settings_section(alert_type)
-                        create_randomizer_settings_section(alert_type)
-                        if alert_type == "points":
-                            create_twitch_options_section(alert_type)
+                            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
+                                ui.label("Behavior").classes("font-medium mb-2 text-sm")
+                                alert_settings_state.get_elements(alert_type)[
+                                    "stackable_switch"
+                                ] = ui.switch("Stackable").classes("w-full q-switch")
+                                # Add change tracking - fixed to use element's current value
+                                alert_settings_state.get_elements(alert_type)[
+                                    "stackable_switch"
+                                ].on(
+                                    "change",
+                                    lambda e, at=alert_type: track_field_change(
+                                        "stackable_switch",
+                                        alert_settings_state.get_elements(at)[
+                                            "stackable_switch"
+                                        ],
+                                        e,
+                                        at,
+                                    ),
+                                )
+                                ui.tooltip(
+                                    "Allow multiple alerts of this type to stack"
+                                ).classes("bg-theme-surface")
+
+                    # Audio Settings
+                    create_audio_settings_section(alert_type)
+                    create_tts_settings_section(alert_type)
+
+                with ui.column().classes("w-full gap-2"):
+                    create_visual_settings_section(alert_type)
+                    create_randomizer_settings_section(alert_type)
+                    if alert_type == "points":
+                        create_twitch_options_section(alert_type)
 
             # Save and Test buttons at the bottom
             with ui.row().classes("w-full justify-end mt-2 gap-2"):
                 with ui.row().classes("items-center"):
-                    test_btn = outline_button(
-                        "Test Alert",
-                        lambda: test_alert(alert_type),
-                        icon="play_arrow",
-                        extra_classes="text-sm",
-                    )
-                    ui.tooltip("Test the current alert settings").classes(
-                        "bg-theme-surface"
-                    )
+                    _create_test_alert_button(alert_type)
 
                 with ui.row().classes("items-center"):
-                    # Delete button - only show for existing alerts
-                    alert_settings_state.get_elements(alert_type)["delete_btn"] = (
-                        ui.button(
-                            "Delete Alert",
-                            icon="delete",
-                            on_click=lambda: show_delete_confirmation(alert_type),
-                        ).classes(
-                            "alert-delete-btn transition-colors duration-200 text-sm"
-                        )
+                    delete_btn = ui.button(
+                        "Delete Alert",
+                        icon="delete",
+                        on_click=lambda _e=None, at=alert_type: show_delete_confirmation(
+                            at
+                        ),
+                    ).classes(
+                        "alert-delete-btn transition-colors duration-200 text-sm"
                     )
                     alert_settings_state.get_elements(alert_type)[
                         "delete_btn"
-                    ].visible = False  # Hidden by default
-                    ui.tooltip("Delete this alert permanently").classes(
+                    ] = delete_btn
+                    delete_btn.visible = False
+                    delete_btn.tooltip("Delete this alert permanently").classes(
                         "bg-theme-surface"
                     )
 
@@ -845,9 +878,9 @@ def create_alert_type_panel(alert_type: str):
                     save_btn = ui.button(
                         "Save Alert",
                         icon="save",
-                        on_click=lambda: save_alert(alert_type),
+                        on_click=lambda _e=None, at=alert_type: save_alert(at),
                     ).classes("alert-save-btn transition-colors duration-200 text-sm")
-                    ui.tooltip("Save your alert settings").classes(
+                    save_btn.tooltip("Save your alert settings").classes(
                         "bg-theme-surface"
                     )
 
@@ -1090,9 +1123,9 @@ def set_default_values_for_new_alert(alert_type: str):
     alert_settings_state.get_elements(alert_type)["gif_dir_input"].value = ""
     alert_settings_state.get_elements(alert_type)["gif_file_input"].value = ""
     alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].value = False
-    alert_settings_state.get_elements(alert_type)["tts_source_select"].value = (
-        "alert_message"
-    )
+    alert_settings_state.get_elements(alert_type)[
+        "tts_source_select"
+    ].value = "alert_message"
     alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value = ""
     update_tts_custom_message_visibility(alert_type)
 
@@ -1172,9 +1205,9 @@ def clear_alert_inputs(tab_type: str):
     alert_settings_state.get_elements(tab_type)["gif_dir_input"].value = ""
     alert_settings_state.get_elements(tab_type)["gif_file_input"].value = ""
     alert_settings_state.get_elements(tab_type)["tts_enabled_switch"].value = False
-    alert_settings_state.get_elements(tab_type)["tts_source_select"].value = (
-        "alert_message"
-    )
+    alert_settings_state.get_elements(tab_type)[
+        "tts_source_select"
+    ].value = "alert_message"
     alert_settings_state.get_elements(tab_type)["tts_custom_message_input"].value = ""
     update_tts_custom_message_visibility(tab_type)
 
@@ -1196,9 +1229,7 @@ def load_alert_settings(alert_type: str, alert_id: str):
         )
         if not alert_data:
             logger.error(f"Alert {alert_id} not found for type {alert_type}")
-            notify(
-                f"Alert {alert_id} not found for type {alert_type}", type="negative"
-            )
+            notify(f"Alert {alert_id} not found for type {alert_type}", type="negative")
             return
 
         logger.debug(f"Loading alert data: {alert_data}")
@@ -1244,7 +1275,9 @@ def load_alert_settings(alert_type: str, alert_id: str):
         elements["fade_in_input"].value = int(alert_data.get("fade_in", 0))
         elements["fade_out_input"].value = int(alert_data.get("fade_out", 0))
         update_volume_value(alert_type, int(alert_data.get("volume", 100)))
-        elements["tts_enabled_switch"].value = bool(alert_data.get("tts_enabled", False))
+        elements["tts_enabled_switch"].value = bool(
+            alert_data.get("tts_enabled", False)
+        )
         elements["tts_source_select"].value = str(
             alert_data.get("tts_source", "alert_message") or "alert_message"
         )
@@ -1531,9 +1564,7 @@ def handle_browse(folder_type: str):
             if field not in elements or elements[field] is None
         ]
         if missing_fields:
-            notify(
-                f"Required UI fields not found: {missing_fields}", type="negative"
-            )
+            notify(f"Required UI fields not found: {missing_fields}", type="negative")
             return
 
         # Get the initial path from the corresponding directory input field
@@ -1633,7 +1664,9 @@ def get_initial_browse_path(alert_type: str, dir_field_name: str) -> str:
                                     # Check if still within assets
                                     current_path.relative_to(assets_dir)
                                     if current_path.exists() and current_path.is_dir():
-                                        closest_path = _alert_browser_path_str(current_path)
+                                        closest_path = _alert_browser_path_str(
+                                            current_path
+                                        )
                                         logger.debug(
                                             f"Using closest existing parent directory: {closest_path}"
                                         )
@@ -1732,8 +1765,9 @@ def show_file_browser_dialog(
         "browse_mode": browse_mode,
     }
 
-    with ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog, ui.card().classes(
-        _FILE_BROWSER_CARD_CLASSES
+    with (
+        ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog,
+        ui.card().classes(_FILE_BROWSER_CARD_CLASSES),
     ):
         ui.label(title).classes("text-lg font-bold mb-4 shrink-0")
 
@@ -1831,9 +1865,7 @@ def show_file_browser_dialog(
 
             # Dialog buttons
             with ui.row().classes("w-full justify-end gap-2 mt-4 shrink-0"):
-                ui.button("Cancel", on_click=dialog.close).classes(
-                    "btn-cancel"
-                )
+                ui.button("Cancel", on_click=dialog.close).classes("btn-cancel")
 
                 # Button text depends on browse mode
                 button_text = (
@@ -2328,9 +2360,7 @@ def select_file_from_dialog(dialog_state, dialog):
                 )
 
                 logger.info(f"Selected directory: {directory_web_path}")
-                notify(
-                    f"Selected directory: {selected_path_obj.name}", type="positive"
-                )
+                notify(f"Selected directory: {selected_path_obj.name}", type="positive")
             else:
                 logger.error(f"Target UI field not found: {dir_field}")
                 notify("Error updating directory field", type="negative")
@@ -2347,195 +2377,175 @@ def select_file_from_dialog(dialog_state, dialog):
         notify("Error processing selection", type="negative")
 
 
+def _collect_test_alert_data(alert_type: str, elements: dict) -> dict:
+    """Build alert payload from the current Alerts tab form values."""
+    runtime_type = alertutils.ui_tab_to_runtime_alert_type(alert_type)
+    alert_data = {
+        "alert_type": runtime_type,
+        "duration": float(_element_value(elements, "duration_input", 3.0)),
+        "stackable": True,
+        "fade_in": int(_element_value(elements, "fade_in_input", 0)),
+        "fade_out": int(_element_value(elements, "fade_out_input", 0)),
+        "volume": int(_element_value(elements, "volume_input", 100)),
+        "audio_only": bool(_element_value(elements, "audio_only_switch", False)),
+        "single_audio_dir": str(_element_value(elements, "primary_dir_input", "") or ""),
+        "single_audio_name": str(
+            _element_value(elements, "primary_file_input", "") or ""
+        ),
+        "randomized": bool(_element_value(elements, "randomized_switch", False)),
+        "randomized_dir": str(_element_value(elements, "random_dir_input", "") or ""),
+        "randomized_chance": int(_element_value(elements, "random_chance_input", 0)),
+        "randomized_extra": bool(
+            _element_value(elements, "randomized_extra_switch", False)
+        ),
+        "randomized_extra_dir": str(
+            _element_value(elements, "extra_dir_input", "") or ""
+        ),
+        "randomized_extra_chance": int(
+            _element_value(elements, "extra_chance_input", 0)
+        ),
+        "gif_dir": str(_element_value(elements, "gif_dir_input", "") or ""),
+        "gif_name": str(_element_value(elements, "gif_file_input", "") or ""),
+        "tts_enabled": bool(_element_value(elements, "tts_enabled_switch", False)),
+        "tts_source": str(
+            _element_value(elements, "tts_source_select", "alert_message") or ""
+        ),
+        "tts_custom_message": str(
+            _element_value(elements, "tts_custom_message_input", "") or ""
+        ),
+        "alert_id": f"TestAlert{round(time.time())}",
+        "timestamp": time.time(),
+        "alert_name": "Test Alert",
+        "username": "TestUser",
+    }
+
+    if alert_type == "points" and "enable_alert_switch" in elements:
+        alert_data["enable_alert"] = bool(
+            _element_value(elements, "enable_alert_switch", False)
+        )
+
+    use_range = bool(_element_value(elements, "range_toggle", False))
+    amount = _element_value(elements, "amount_input", None)
+    min_amount = _element_value(elements, "min_input", None)
+
+    if alert_type == "bits":
+        if use_range and min_amount is not None:
+            alert_data["amt_cheered"] = int(min_amount)
+        elif amount is not None:
+            alert_data["amt_cheered"] = int(amount)
+        else:
+            alert_data["amt_cheered"] = 100
+    elif alert_type == "subs":
+        if use_range and min_amount is not None:
+            alert_data["resub_month"] = int(min_amount)
+        elif amount is not None:
+            alert_data["resub_month"] = int(amount)
+        else:
+            alert_data["resub_month"] = 1
+        alert_data["tier"] = 1
+    elif alert_type == "streaks":
+        if use_range and min_amount is not None:
+            alert_data["streak_count"] = int(min_amount)
+        elif amount is not None:
+            alert_data["streak_count"] = int(amount)
+        else:
+            alert_data["streak_count"] = 2
+        alert_data["channel_points_awarded"] = 0
+        alert_data["message"] = "Test watch streak message"
+    elif alert_type == "giftsubs":
+        if use_range and min_amount is not None:
+            alert_data["gift_qty"] = int(min_amount)
+        elif amount is not None:
+            alert_data["gift_qty"] = int(amount)
+        else:
+            alert_data["gift_qty"] = 1
+        alert_data["tier"] = 1
+    elif alert_type == "donations":
+        if use_range and min_amount is not None:
+            alert_data["donation_amount"] = float(min_amount)
+        elif amount is not None:
+            alert_data["donation_amount"] = float(amount)
+        else:
+            alert_data["donation_amount"] = 5.0
+    elif alert_type == "raids":
+        if use_range and min_amount is not None:
+            alert_data["raider_count"] = int(min_amount)
+        elif amount is not None:
+            alert_data["raider_count"] = int(amount)
+        else:
+            alert_data["raider_count"] = 10
+    elif alert_type == "points":
+        reward_id = _element_value(elements, "alert_select", "test_reward")
+        if reward_id in POINTS_REWARD_SELECT_PLACEHOLDERS or reward_id == "new":
+            reward_id = "test_reward"
+        alert_data["twitch_reward_id"] = str(reward_id)
+        alert_data["point_cost"] = 1000
+        alert_data["title"] = "Test Point Redemption"
+
+    return alert_data
+
+
 def test_alert(alert_type: str):
-    """Test the current alert settings
+    """Test the current alert settings from the form and enqueue for playback.
 
     Args:
-        alert_type (str): The type of alert being tested
+        alert_type (str): The type of alert being tested (UI tab id)
     """
     try:
-        # Check if UI elements are properly initialized
+        logger.info("test_alert invoked for tab=%s", alert_type)
         elements = alert_settings_state.get_elements(alert_type)
         if not elements:
-            notify(
-                f"UI elements not initialized for {alert_type} tab", type="warning"
-            )
+            notify(f"UI elements not initialized for {alert_type} tab", type="warning")
             return
-
-        # Verify required elements exist
-        required_elements = [
-            "duration_input",
-            "stackable_switch",
-            "fade_in_input",
-            "fade_out_input",
-            "volume_input",
-            "gif_dir_input",
-            "gif_file_input",
-            "primary_dir_input",
-            "primary_file_input",
-            "randomized_switch",
-            "random_dir_input",
-            "random_chance_input",
-            "randomized_extra_switch",
-            "extra_dir_input",
-            "extra_chance_input",
-        ]
 
         missing_elements = [
             elem
-            for elem in required_elements
+            for elem in _TEST_ALERT_REQUIRED_ELEMENTS
             if elem not in elements or elements[elem] is None
         ]
         if missing_elements:
+            logger.warning(
+                "test_alert missing elements for %s: %s", alert_type, missing_elements
+            )
             notify(f"Missing UI elements: {missing_elements}", type="warning")
             return
 
-        # Create test alert data with safe value extraction
-        alert_data = {
-            "alert_type": alert_type,
-            "duration": float(elements.get("duration_input", {}).value or 3.0),
-            "stackable": bool(elements.get("stackable_switch", {}).value or False),
-            "fade_in": int(elements.get("fade_in_input", {}).value or 0),
-            "fade_out": int(elements.get("fade_out_input", {}).value or 0),
-            "volume": int(elements.get("volume_input", {}).value or 100),
-            # Only get audio_only value if the switch exists (only available in points alerts)
-            "audio_only": bool(elements.get("audio_only_switch", {}).value)
-            if "audio_only_switch" in elements and elements["audio_only_switch"]
-            else False,
-            "single_audio_dir": str(elements.get("primary_dir_input", {}).value or ""),
-            "single_audio_name": str(
-                elements.get("primary_file_input", {}).value or ""
-            ),
-            "randomized": bool(elements.get("randomized_switch", {}).value or False),
-            "randomized_dir": str(elements.get("random_dir_input", {}).value or ""),
-            "randomized_chance": int(
-                elements.get("random_chance_input", {}).value or 0
-            ),
-            "randomized_extra": bool(
-                elements.get("randomized_extra_switch", {}).value or False
-            ),
-            "randomized_extra_dir": str(
-                elements.get("extra_dir_input", {}).value or ""
-            ),
-            "randomized_extra_chance": int(
-                elements.get("extra_chance_input", {}).value or 0
-            ),
-            "gif_dir": str(elements.get("gif_dir_input", {}).value or ""),
-            "gif_name": str(elements.get("gif_file_input", {}).value or ""),
-            "tts_enabled": bool(elements.get("tts_enabled_switch", {}).value or False),
-            "tts_source": str(
-                elements.get("tts_source_select", {}).value or "alert_message"
-            ),
-            "tts_custom_message": str(
-                elements.get("tts_custom_message_input", {}).value or ""
-            ),
-            "alert_id": f"TestAlert{round(time.time())}",
-            "timestamp": time.time(),
-            "alert_name": "Test Alert",
-        }
+        alert_data = _collect_test_alert_data(alert_type, elements)
+        runtime_type = alert_data["alert_type"]
 
-        # Add specific data based on alert type with safe handling
-        if alert_type == "bits":
-            # Handle range toggle safely
-            use_range = (
-                bool(elements.get("range_toggle", {}).value)
-                if "range_toggle" in elements and elements["range_toggle"]
-                else False
-            )
-            if use_range and "min_input" in elements and elements["min_input"]:
-                alert_data["amt_cheered"] = int(elements["min_input"].value or 100)
-            elif "amount_input" in elements and elements["amount_input"]:
-                alert_data["amt_cheered"] = int(elements["amount_input"].value or 100)
-            else:
-                alert_data["amt_cheered"] = 100  # Default value
-            alert_data["username"] = "TestUser"
-        elif alert_type == "subs":
-            use_range = (
-                bool(elements.get("range_toggle", {}).value)
-                if "range_toggle" in elements and elements["range_toggle"]
-                else False
-            )
-            if use_range and "min_input" in elements and elements["min_input"]:
-                alert_data["resub_month"] = int(elements["min_input"].value or 1)
-            elif "amount_input" in elements and elements["amount_input"]:
-                alert_data["resub_month"] = int(elements["amount_input"].value or 1)
-            else:
-                alert_data["resub_month"] = 1  # Default value
-            alert_data["username"] = "TestUser"
-            alert_data["tier"] = 1
-        elif alert_type == "streaks":
-            use_range = (
-                bool(elements.get("range_toggle", {}).value)
-                if "range_toggle" in elements and elements["range_toggle"]
-                else False
-            )
-            if use_range and "min_input" in elements and elements["min_input"]:
-                alert_data["streak_count"] = int(elements["min_input"].value or 2)
-            elif "amount_input" in elements and elements["amount_input"]:
-                alert_data["streak_count"] = int(elements["amount_input"].value or 2)
-            else:
-                alert_data["streak_count"] = 2
-            alert_data["channel_points_awarded"] = 0
-            alert_data["username"] = "TestUser"
-            alert_data["message"] = "Test watch streak message"
-        elif alert_type == "giftsubs":
-            use_range = (
-                bool(elements.get("range_toggle", {}).value)
-                if "range_toggle" in elements and elements["range_toggle"]
-                else False
-            )
-            if use_range and "min_input" in elements and elements["min_input"]:
-                alert_data["gift_qty"] = int(elements["min_input"].value or 1)
-            elif "amount_input" in elements and elements["amount_input"]:
-                alert_data["gift_qty"] = int(elements["amount_input"].value or 1)
-            else:
-                alert_data["gift_qty"] = 1  # Default value
-            alert_data["username"] = "TestUser"
-            alert_data["tier"] = 1
-        elif alert_type == "donations":
-            use_range = (
-                bool(elements.get("range_toggle", {}).value)
-                if "range_toggle" in elements and elements["range_toggle"]
-                else False
-            )
-            if use_range and "min_input" in elements and elements["min_input"]:
-                alert_data["donation_amount"] = float(
-                    elements["min_input"].value or 5.0
-                )
-            elif "amount_input" in elements and elements["amount_input"]:
-                alert_data["donation_amount"] = float(
-                    elements["amount_input"].value or 5.0
-                )
-            else:
-                alert_data["donation_amount"] = 5.0  # Default value
-            alert_data["username"] = "TestUser"
-        elif alert_type == "raids":
-            use_range = (
-                bool(elements.get("range_toggle", {}).value)
-                if "range_toggle" in elements and elements["range_toggle"]
-                else False
-            )
-            if use_range and "min_input" in elements and elements["min_input"]:
-                alert_data["raider_count"] = int(elements["min_input"].value or 10)
-            elif "amount_input" in elements and elements["amount_input"]:
-                alert_data["raider_count"] = int(elements["amount_input"].value or 10)
-            else:
-                alert_data["raider_count"] = 10  # Default value
-            alert_data["username"] = "TestUser"
-        elif alert_type == "follows":
-            alert_data["username"] = "TestUser"
-        elif alert_type == "points":
-            alert_data["username"] = "TestUser"
-            alert_data["twitch_reward_id"] = "test_reward"
-            alert_data["point_cost"] = 1000
-            alert_data["title"] = "Test Point Redemption"
-
-        # Create AlertObj and add to the correct queue
         alert = alertutils.AlertObj(**alert_data)
-        alert.is_test = True  # Mark as test alert
+        alert.is_test = True
         alert_processor.ALERT_QUEUE.append(alert)
 
-        logger.debug(f"Testing {alert_type} alert with data: {alert_data}")
+        if runtime_type == "follow":
+            try:
+                from .. import web_engine
+
+                if (
+                    hasattr(web_engine, "web_engine_instance")
+                    and web_engine.web_engine_instance
+                ):
+                    web_engine.web_engine_instance.instant_alert(
+                        {
+                            "type": "follow",
+                            "username": alert.username,
+                            "alert_id": alert.alert_id,
+                            "timestamp": alert.timestamp,
+                        }
+                    )
+            except Exception as instant_err:
+                logger.error(
+                    "Error sending instant alert for follow test: %s",
+                    instant_err,
+                    exc_info=True,
+                )
+
+        logger.info(
+            "Queued test alert tab=%s runtime=%s id=%s",
+            alert_type,
+            runtime_type,
+            alert.alert_id,
+        )
         notify(f"Testing {alert_type} alert...", type="info")
     except Exception as e:
         logger.error(f"Error testing alert: {str(e)}", exc_info=True)
@@ -2565,7 +2575,9 @@ def save_alert(alert_type: str):
             or "alert_message"
         )
         tts_custom_message = (
-            alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value
+            alert_settings_state.get_elements(alert_type)[
+                "tts_custom_message_input"
+            ].value
             or ""
         )
         # Only get audio_only value if the switch exists (only available in points alerts)
@@ -3030,18 +3042,18 @@ def create_points_alert_panel():
                         "Refresh Rewards",
                         icon="refresh",
                         on_click=lambda: load_twitch_point_rewards(),
-                    ).classes(
-                        "btn-secondary transition-colors duration-200 text-sm"
-                    )
+                    ).classes("btn-secondary transition-colors duration-200 text-sm")
                     ui.tooltip("Refresh the list of Twitch point rewards").classes(
                         "bg-theme-surface"
                     )
 
-            channel_points_banner = ui.card().classes(
-                "w-full p-3 rounded-lg"
-            ).style(
-                "background-color: var(--color-bg-warning-muted, rgba(234, 179, 8, 0.15)); "
-                "border: 1px solid var(--color-border-default);"
+            channel_points_banner = (
+                ui.card()
+                .classes("w-full p-3 rounded-lg")
+                .style(
+                    "background-color: var(--color-bg-warning-muted, rgba(234, 179, 8, 0.15)); "
+                    "border: 1px solid var(--color-border-default);"
+                )
             )
             with channel_points_banner:
                 ui.label(
@@ -3054,127 +3066,119 @@ def create_points_alert_panel():
             ] = channel_points_banner
 
             with ui.grid(columns=2).classes("w-full gap-4"):
-                    with ui.column().classes("w-full gap-2"):
-                        with _alert_expansion("General", icon="settings"):
-                            with ui.grid(columns=2).classes("w-full gap-x-2 gap-y-px"):
-                                with ui.column().classes(
-                                    f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"
-                                ):
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "enable_alert_switch"
-                                    ] = ui.switch("Enable as Alert").classes(
-                                        "w-full q-switch"
-                                    )
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "enable_alert_switch"
-                                    ].on(
-                                        "change",
-                                        lambda e, at=alert_type: track_field_change(
-                                            "enable_alert_switch",
-                                            alert_settings_state.get_elements(at)[
-                                                "enable_alert_switch"
-                                            ],
-                                            e,
-                                            at,
-                                        ),
-                                    )
-                                    ui.tooltip(
-                                        "Enable this point reward as an alert in the app"
-                                    ).classes("bg-theme-surface")
+                with ui.column().classes("w-full gap-2"):
+                    with _alert_expansion("General", icon="settings"):
+                        with ui.grid(columns=2).classes("w-full gap-x-2 gap-y-px"):
+                            with ui.column().classes(
+                                f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"
+                            ):
+                                alert_settings_state.get_elements(alert_type)[
+                                    "enable_alert_switch"
+                                ] = ui.switch("Enable as Alert").classes(
+                                    "w-full q-switch"
+                                )
+                                alert_settings_state.get_elements(alert_type)[
+                                    "enable_alert_switch"
+                                ].on(
+                                    "change",
+                                    lambda e, at=alert_type: track_field_change(
+                                        "enable_alert_switch",
+                                        alert_settings_state.get_elements(at)[
+                                            "enable_alert_switch"
+                                        ],
+                                        e,
+                                        at,
+                                    ),
+                                )
+                                ui.tooltip(
+                                    "Enable this point reward as an alert in the app"
+                                ).classes("bg-theme-surface")
 
-                                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                                    ui.label("Timing").classes("font-medium mb-2 text-sm")
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "duration_input"
-                                    ] = ui.number(
-                                        "Duration", value=3.0, min=0.1, step=0.1
-                                    ).classes("w-full bg-theme-base rounded-md")
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "duration_input"
-                                    ].on(
-                                        "change",
-                                        lambda e, at=alert_type: track_field_change(
-                                            "duration_input",
-                                            alert_settings_state.get_elements(at)[
-                                                "duration_input"
-                                            ],
-                                            e,
-                                            at,
-                                        ),
-                                    )
-                                    ui.tooltip(
-                                        "How long the alert will display (seconds)"
-                                    ).classes("bg-theme-surface")
+                            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
+                                ui.label("Timing").classes("font-medium mb-2 text-sm")
+                                alert_settings_state.get_elements(alert_type)[
+                                    "duration_input"
+                                ] = ui.number(
+                                    "Duration", value=3.0, min=0.1, step=0.1
+                                ).classes("w-full bg-theme-base rounded-md")
+                                alert_settings_state.get_elements(alert_type)[
+                                    "duration_input"
+                                ].on(
+                                    "change",
+                                    lambda e, at=alert_type: track_field_change(
+                                        "duration_input",
+                                        alert_settings_state.get_elements(at)[
+                                            "duration_input"
+                                        ],
+                                        e,
+                                        at,
+                                    ),
+                                )
+                                ui.tooltip(
+                                    "How long the alert will display (seconds)"
+                                ).classes("bg-theme-surface")
 
-                                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                                    ui.label("Behavior").classes("font-medium mb-2 text-sm")
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "stackable_switch"
-                                    ] = ui.switch("Stackable").classes(
-                                        "w-full q-switch"
-                                    )
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "stackable_switch"
-                                    ].on(
-                                        "change",
-                                        lambda e, at=alert_type: track_field_change(
-                                            "stackable_switch",
-                                            alert_settings_state.get_elements(at)[
-                                                "stackable_switch"
-                                            ],
-                                            e,
-                                            at,
-                                        ),
-                                    )
-                                    ui.tooltip(
-                                        "Allow multiple alerts of this type to stack"
-                                    ).classes("bg-theme-surface")
+                            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
+                                ui.label("Behavior").classes("font-medium mb-2 text-sm")
+                                alert_settings_state.get_elements(alert_type)[
+                                    "stackable_switch"
+                                ] = ui.switch("Stackable").classes("w-full q-switch")
+                                alert_settings_state.get_elements(alert_type)[
+                                    "stackable_switch"
+                                ].on(
+                                    "change",
+                                    lambda e, at=alert_type: track_field_change(
+                                        "stackable_switch",
+                                        alert_settings_state.get_elements(at)[
+                                            "stackable_switch"
+                                        ],
+                                        e,
+                                        at,
+                                    ),
+                                )
+                                ui.tooltip(
+                                    "Allow multiple alerts of this type to stack"
+                                ).classes("bg-theme-surface")
 
-                        create_audio_settings_section(alert_type)
-                        create_tts_settings_section(alert_type)
+                    create_audio_settings_section(alert_type)
+                    create_tts_settings_section(alert_type)
 
-                    with ui.column().classes("w-full gap-2"):
-                        create_visual_settings_section(alert_type)
-                        create_randomizer_settings_section(alert_type)
-                        create_twitch_options_section(alert_type)
+                with ui.column().classes("w-full gap-2"):
+                    create_visual_settings_section(alert_type)
+                    create_randomizer_settings_section(alert_type)
+                    create_twitch_options_section(alert_type)
 
             # Save and Test buttons at the bottom
             with ui.row().classes("w-full justify-end mt-2 gap-2"):
                 with ui.row().classes("items-center"):
-                    test_btn = outline_button(
-                        "Test Alert",
-                        lambda: test_alert(alert_type),
-                        icon="play_arrow",
-                        extra_classes="text-sm",
-                    )
-                    ui.tooltip("Test the current alert settings").classes(
-                        "bg-theme-surface"
-                    )
+                    _create_test_alert_button(alert_type)
 
                 with ui.row().classes("items-center"):
-                    # Delete button - only show for existing alerts
-                    alert_settings_state.get_elements(alert_type)["delete_btn"] = (
-                        ui.button(
-                            "Delete Alert",
-                            icon="delete",
-                            on_click=lambda: show_delete_confirmation(alert_type),
-                        ).classes(
-                            "alert-delete-btn transition-colors duration-200 text-sm"
-                        )
+                    delete_btn = ui.button(
+                        "Delete Alert",
+                        icon="delete",
+                        on_click=lambda _e=None, at=alert_type: show_delete_confirmation(
+                            at
+                        ),
+                    ).classes(
+                        "alert-delete-btn transition-colors duration-200 text-sm"
                     )
                     alert_settings_state.get_elements(alert_type)[
                         "delete_btn"
-                    ].visible = False  # Hidden by default
-                    ui.tooltip("Delete this alert permanently").classes(
+                    ] = delete_btn
+                    delete_btn.visible = False
+                    delete_btn.tooltip("Delete this alert permanently").classes(
                         "bg-theme-surface"
                     )
 
                 with ui.row().classes("items-center"):
                     save_btn = ui.button(
-                        "Save Alert", icon="save", on_click=lambda: save_point_alert()
+                        "Save Alert",
+                        icon="save",
+                        on_click=lambda _e=None: save_point_alert(),
                     ).classes("alert-save-btn transition-colors duration-200 text-sm")
                     alert_settings_state.get_elements(alert_type)["save_btn"] = save_btn
-                    ui.tooltip("Save your alert settings").classes(
+                    save_btn.tooltip("Save your alert settings").classes(
                         "bg-theme-surface"
                     )
 
@@ -3235,19 +3239,19 @@ def create_audio_settings_section(alert_type: str):
                             at,
                         ),
                     )
-                    ui.tooltip("Time in milliseconds for the audio to fade out").classes(
-                        "bg-theme-surface"
-                    )
+                    ui.tooltip(
+                        "Time in milliseconds for the audio to fade out"
+                    ).classes("bg-theme-surface")
 
                     # Volume slider with label
                     ui.label("Volume").classes("text-sm font-medium")
                     alert_settings_state.get_elements(alert_type)["volume_input"] = (
                         ui.slider(min=0, max=100, value=100).classes("flex-1")
                     )
-                    alert_settings_state.get_elements(alert_type)["volume_value_label"] = (
-                        ui.label(
-                            "100%"
-                        ).classes("text-sm font-medium min-w-[40px] text-right")
+                    alert_settings_state.get_elements(alert_type)[
+                        "volume_value_label"
+                    ] = ui.label("100%").classes(
+                        "text-sm font-medium min-w-[40px] text-right"
                     )
 
                     # Create a combined change handler for both tracking and label update
@@ -3564,9 +3568,7 @@ def create_visual_settings_section(alert_type: str):
                 ).classes(
                     "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
                 )
-                ui.tooltip("Browse for GIF/image file").classes(
-                    "bg-theme-surface"
-                )
+                ui.tooltip("Browse for GIF/image file").classes("bg-theme-surface")
 
 
 def create_twitch_options_section(alert_type: str):
@@ -4003,9 +4005,7 @@ def load_twitch_point_rewards():
                 reward_cost = reward.get("cost", 0)
                 display_name = f"{reward_title} ({reward_cost} points)"
                 reward_options[reward_id] = display_name
-            notify(
-                f"Loaded {len(rewards)} point rewards from Twitch", type="positive"
-            )
+            notify(f"Loaded {len(rewards)} point rewards from Twitch", type="positive")
         else:
             reward_options["no_rewards"] = (
                 "No rewards yet — choose + Create New Reward and click Save Alert"
@@ -4073,9 +4073,9 @@ def set_default_values_for_new_point_reward(alert_type: str):
     alert_settings_state.get_elements(alert_type)["gif_dir_input"].value = ""
     alert_settings_state.get_elements(alert_type)["gif_file_input"].value = ""
     alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].value = False
-    alert_settings_state.get_elements(alert_type)["tts_source_select"].value = (
-        "alert_message"
-    )
+    alert_settings_state.get_elements(alert_type)[
+        "tts_source_select"
+    ].value = "alert_message"
     alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value = ""
     update_tts_custom_message_visibility(alert_type)
 
@@ -4134,9 +4134,9 @@ def set_default_values_for_new_point_reward_non_twitch(alert_type: str):
     alert_settings_state.get_elements(alert_type)["gif_dir_input"].value = ""
     alert_settings_state.get_elements(alert_type)["gif_file_input"].value = ""
     alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].value = False
-    alert_settings_state.get_elements(alert_type)["tts_source_select"].value = (
-        "alert_message"
-    )
+    alert_settings_state.get_elements(alert_type)[
+        "tts_source_select"
+    ].value = "alert_message"
     alert_settings_state.get_elements(alert_type)["tts_custom_message_input"].value = ""
     update_tts_custom_message_visibility(alert_type)
 
@@ -4258,8 +4258,7 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
                 )
             if "tts_source_select" in elements and elements["tts_source_select"]:
                 elements["tts_source_select"].value = str(
-                    alert_data.get("tts_source", "alert_message")
-                    or "alert_message"
+                    alert_data.get("tts_source", "alert_message") or "alert_message"
                 )
             if (
                 "tts_custom_message_input" in elements

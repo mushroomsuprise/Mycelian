@@ -1330,8 +1330,9 @@
                 exitAnimationStartTime = null;
             }
 
-            // Skip follow alerts entirely (separate template will handle these)
-            if (alertType === 'follow') {
+            // Skip live follow alerts on main overlay (dedicated sources use instant_alert).
+            // Allow is_test so Test Alert can preview follow settings on /alerts.
+            if (alertType === 'follow' && !alertData.is_test) {
                 console.log('Follow alert detected, skipping (handled by separate template):', alertType);
                 emitQueueAlertComplete(alertData.queue_seq);
                 return;

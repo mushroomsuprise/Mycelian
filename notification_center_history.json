@@ -1,1 +1,66 @@
-[]
+[
+  {
+    "id": "fa28fc2f-1c14-464c-a549-1821b18d2a4a",
+    "ts": 1780012847.370687,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "71bc04a4-f4a2-43ee-b322-10185c5c54cd",
+    "ts": 1780012854.175303,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "53884d39-5a48-42a5-b618-ece0499979b7",
+    "ts": 1780013913.7752671,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "6d199a47-c797-47af-8704-9e14638abd91",
+    "ts": 1780013918.184281,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "dcb27a2c-5376-4fc8-b590-0e2f245e85ee",
+    "ts": 1780013926.255062,
+    "message": "Testing bits alert...",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  }
+]

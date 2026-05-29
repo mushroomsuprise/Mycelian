@@ -21,6 +21,21 @@ def _apply_btn_classes(btn: ui.button, extra_classes: str) -> ui.button:
     return btn
 
 
+def _styled_button(
+    label: str,
+    on_click: Callable[..., Any],
+    *,
+    icon: Optional[str] = None,
+    extra_classes: str = "",
+    quasar_props: str,
+) -> ui.button:
+    """Apply Quasar props first, then bind click — props() can drop handlers set in the constructor."""
+    btn = ui.button(label, icon=icon)
+    btn.props(quasar_props)
+    btn.on_click(on_click)
+    return _apply_btn_classes(btn, extra_classes)
+
+
 def primary_button(
     label: str,
     on_click: Callable[..., Any],
@@ -29,9 +44,13 @@ def primary_button(
     extra_classes: str = "",
 ) -> ui.button:
     """Solid primary action (connect, new, save)."""
-    btn = ui.button(label, on_click=on_click, icon=icon)
-    btn.props("color=primary unelevated no-caps")
-    return _apply_btn_classes(btn, extra_classes)
+    return _styled_button(
+        label,
+        on_click,
+        icon=icon,
+        extra_classes=extra_classes,
+        quasar_props="color=primary unelevated no-caps",
+    )
 
 
 def outline_button(
@@ -42,9 +61,13 @@ def outline_button(
     extra_classes: str = "",
 ) -> ui.button:
     """Outlined secondary action (refresh, test, cancel)."""
-    btn = ui.button(label, on_click=on_click, icon=icon)
-    btn.props("outline color=primary no-caps")
-    return _apply_btn_classes(btn, extra_classes)
+    return _styled_button(
+        label,
+        on_click,
+        icon=icon,
+        extra_classes=extra_classes,
+        quasar_props="outline color=primary no-caps",
+    )
 
 
 def destructive_button(
@@ -55,9 +78,13 @@ def destructive_button(
     extra_classes: str = "",
 ) -> ui.button:
     """Destructive action (delete, remove)."""
-    btn = ui.button(label, on_click=on_click, icon=icon)
-    btn.props("color=negative outline no-caps")
-    return _apply_btn_classes(btn, extra_classes)
+    return _styled_button(
+        label,
+        on_click,
+        icon=icon,
+        extra_classes=extra_classes,
+        quasar_props="color=negative outline no-caps",
+    )
 
 
 def success_button(
@@ -68,6 +95,10 @@ def success_button(
     extra_classes: str = "",
 ) -> ui.button:
     """Explicit positive confirm (enable, confirm) — not for generic 'new' actions."""
-    btn = ui.button(label, on_click=on_click, icon=icon)
-    btn.props("color=positive unelevated no-caps")
-    return _apply_btn_classes(btn, extra_classes)
+    return _styled_button(
+        label,
+        on_click,
+        icon=icon,
+        extra_classes=extra_classes,
+        quasar_props="color=positive unelevated no-caps",
+    )
