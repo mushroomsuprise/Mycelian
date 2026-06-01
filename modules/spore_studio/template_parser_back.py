@@ -61,6 +61,32 @@ def _hydrate_streamdeck_from_public_config(
     sidecar["streamdeck_options"] = sanitized
 
 
+def _hydrate_dynamic_controls_from_public_config(
+    template_name: str, sidecar: Dict[str, Any]
+) -> None:
+    """Copy dynamic_controls from public JSON when absent on the sidecar."""
+    if isinstance(sidecar.get("dynamic_controls"), dict):
+        return
+    try:
+        from ..template_config_parser import TemplateConfigParser
+    except ImportError:  # pragma: no cover
+        return
+    parser = TemplateConfigParser()
+    cfg_path = parser.get_config_path(template_name)
+    if not os.path.isfile(cfg_path):
+        return
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(cfg, dict):
+        return
+    dc = cfg.get("dynamic_controls")
+    if isinstance(dc, dict):
+        sidecar["dynamic_controls"] = dc
+
+
 def _hydrate_canvas_timing_from_public_config(
     template_name: str, sidecar: Dict[str, Any]
 ) -> None:
@@ -328,6 +354,8 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
         )
         _hydrate_streamdeck_from_public_config(template_name, sidecar)
         _hydrate_canvas_timing_from_public_config(template_name, sidecar)
+        _hydrate_dynamic_controls_from_public_config(template_name, sidecar)
+        sidecar.setdefault("dynamic_controls", {"elements": []})
         return sidecar
 
     html_path = get_template_path(f"{template_name}.html")

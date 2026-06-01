@@ -273,6 +273,7 @@ def create_template(
             "elements": [],
             "advanced_js": "",
             "streamdeck_options": {"description": "", "actions": {}},
+            "dynamic_controls": {"elements": []},
         }
 
     ensure_template_assets_folder(template_name)

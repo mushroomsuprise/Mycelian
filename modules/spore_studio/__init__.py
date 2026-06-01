@@ -25,8 +25,11 @@ import logging as _logging
 from . import (
     assets_watcher,
     behavior_blocks,
+    control_action_registry,
+    data_source_registry,
     event_registry,
     save_pipeline,
+    spore_data_codegen,
     template_codegen,
     template_parser_back,
 )
@@ -51,8 +54,11 @@ except Exception:  # pragma: no cover - best-effort startup migration
 __all__ = [
     "assets_watcher",
     "behavior_blocks",
+    "control_action_registry",
+    "data_source_registry",
     "event_registry",
     "save_pipeline",
+    "spore_data_codegen",
     "template_codegen",
     "template_parser_back",
 ]

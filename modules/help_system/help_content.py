@@ -3151,6 +3151,29 @@ New elements default exposed keys to **on** for their type's schema fields.
 - **Parent** dropdown lists valid containers; **Move to canvas** sets `parent_id` to root.
 - Dragging with **Alt** avoids accidental nesting when you want a root-level sibling.
 
+## Text Modes (Counters & Data Displays)
+
+For **text** elements, **Text mode** in Properties selects one of:
+
+| Mode | Purpose |
+|------|---------|
+| **Static text** | Classic fixed or Jinja-backed label |
+| **Counter** | Numeric value with rules (increment/decrement/set/reset) from events, Stream Deck, or bindings |
+| **Data display** | Read-only value from a data source (alert fields, chat, session stats, Twitch API, etc.) |
+
+**Counters** support optional **Persist (database)** — values load/save via `get_data` / `set_data`
+at `{template_name}/counters` (customizable path/key). When persistence is off, the value resets on reload.
+
+**Data displays** refresh when selected socket events fire; use **Refresh on events** to pick triggers.
+
+Use the **counter_adjust** binding action to change counters from the Bindings tab without duplicating rules.
+
+## Source Controls Tab
+
+The **Source Controls** inspector tab writes `dynamic_controls` into your template JSON.
+Those controls appear in the [Source Controls](help:source_controls) overlay (pause alerts, counter
+buttons, toggles, custom `{template}_{action}` sockets, etc.).
+
 ## What to Do Next
 
 After layout and styling, open the **Bindings** tab — covered in

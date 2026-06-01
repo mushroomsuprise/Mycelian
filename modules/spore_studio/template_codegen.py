@@ -30,6 +30,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .behavior_blocks import compile_bindings
+from .spore_data_codegen import compile_spore_data_features, inject_data_runtime_block
 from .timing import effective_duration_seconds
 from ..path_utils import get_template_path
 
@@ -57,9 +58,11 @@ def _replace_block(source: str, begin: str, end: str, replacement: str) -> str:
         re.escape(begin) + r"[\s\S]*?" + re.escape(end),
         re.MULTILINE,
     )
-    if not pattern.search(source):
+    match = pattern.search(source)
+    if not match:
         return source
-    return pattern.sub(begin + "\n" + replacement.rstrip("\n") + "\n" + end, source)
+    body = begin + "\n" + replacement.rstrip("\n") + "\n" + end
+    return source[: match.start()] + body + source[match.end() :]
 
 
 def _extract_block(source: str, begin: str, end: str) -> str:
@@ -283,15 +286,32 @@ def _render_element(
         ' data-spore-hidden="true"' if _element_start_hidden(element) else ""
     )
     anim_attrs = _fmt_anim_data_attrs(element)
+    text_mode = str(element.get("text_mode") or "static").strip().lower()
+    if text_mode not in ("static", "counter", "data_display"):
+        text_mode = "static"
+    mode_attr = f' data-spore-text-mode="{html.escape(text_mode, quote=True)}"'
 
     if etype == "text":
         text_var = element.get("text_var") or eid + "Text"
         text_default = props.get("text", "")
+        if text_mode == "counter":
+            cfg = element.get("counter") if isinstance(element.get("counter"), dict) else {}
+            fmt = str(cfg.get("format") or "{value}")
+            try:
+                init = cfg.get("initial_value", 0)
+            except (TypeError, ValueError):
+                init = 0
+            text_default = fmt.replace("{value}", str(init))
+        elif text_mode == "data_display":
+            cfg = element.get("data_display") if isinstance(element.get("data_display"), dict) else {}
+            text_default = str(
+                cfg.get("default_text") if cfg.get("default_text") is not None else "—"
+            )
         return (
             f'<div id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f'{anim_attrs} '
-            f'data-spore-type="text">'
+            f'data-spore-type="text"{mode_attr}>'
             f"{{{{ {text_var}|default({json.dumps(text_default)})|safe }}}}"
             f"</div>"
         )
@@ -942,7 +962,27 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
         "elements": elements_out,
         "streamdeck_options": sdo,
     }
+    dc = model.get("dynamic_controls")
+    if isinstance(dc, dict) and isinstance(dc.get("elements"), list) and dc["elements"]:
+        base["dynamic_controls"] = _clone_dynamic_controls(dc)
     return base
+
+
+def _clone_dynamic_controls(dc: Dict[str, Any]) -> Dict[str, Any]:
+    """Sanitize dynamic_controls for public template JSON."""
+    out: Dict[str, Any] = {"elements": []}
+    for row in dc.get("elements") or []:
+        if not isinstance(row, dict):
+            continue
+        cleaned = dict(row)
+        ctype = str(cleaned.get("type") or "button").strip()
+        cleaned["type"] = ctype
+        if not cleaned.get("id"):
+            continue
+        if not cleaned.get("action") and ctype != "counter_control":
+            cleaned["action"] = _slugify_id(str(cleaned.get("id")))
+        out["elements"].append(cleaned)
+    return out
 
 
 def compile_model(
@@ -977,9 +1017,15 @@ def compile_model(
     bindings = compile_bindings(elements)
     advanced_js = str(model.get("advanced_js") or "").rstrip()
 
+    base_html = inject_data_runtime_block(base_html)
+
     out_html = _replace_block(base_html, _DOM_BEGIN, _DOM_END, dom_html)
 
-    auto_replacement = bindings["js"]
+    data_js = compile_spore_data_features(model)
+    auto_parts = [bindings["js"]]
+    if data_js.strip():
+        auto_parts.append(data_js)
+    auto_replacement = "\n\n".join(auto_parts)
     out_html = _replace_block(out_html, _AUTO_BEGIN, _AUTO_END, auto_replacement)
 
     if existing_html:

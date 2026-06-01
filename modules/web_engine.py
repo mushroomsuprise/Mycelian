@@ -755,6 +755,32 @@ class WebEngine:
                 logger.error("Spore Studio events endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
 
+        @self.app.route("/api/spore-studio/data-sources")
+        def serve_spore_studio_data_sources():
+            """Return curated data sources for counters and data displays."""
+            try:
+                from .spore_studio import data_source_registry as _ds
+
+                return _ds.get_data_source_registry(), 200, {
+                    "Content-Type": "application/json"
+                }
+            except Exception as e:
+                logger.error("Spore Studio data-sources endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/control-actions")
+        def serve_spore_studio_control_actions():
+            """Return curated dynamic control actions for Source Controls."""
+            try:
+                from .spore_studio import control_action_registry as _ca
+
+                return _ca.get_control_action_registry(), 200, {
+                    "Content-Type": "application/json"
+                }
+            except Exception as e:
+                logger.error("Spore Studio control-actions endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
         @self.app.route("/api/spore-studio/templates")
         def serve_spore_studio_templates():
             """List all templates with a Spore Studio sidecar plus legacy ones."""
@@ -3031,6 +3057,12 @@ class WebEngine:
             # Delegate to the main toggle_alerts method for consistency
             self.toggle_alerts()
 
+        @self.socketio.on("resume_alerts")
+        def handle_resume_alerts():
+            global ALERTS_PAUSED
+            if ALERTS_PAUSED:
+                self.toggle_alerts()
+
         @self.socketio.on("toggle_alerts")
         def handle_toggle_alerts():
             # Handle the legacy toggle_alerts event for backward compatibility
@@ -3116,6 +3148,27 @@ class WebEngine:
 
                 path = data["path"]
                 request_etag = data.get("request_etag", False)
+
+                if path == "statistics/session":
+                    try:
+                        sm = statistics_manager.get_statistics_manager()
+                        alerts = sm.data.alerts
+                        session_doc = {
+                            "total_gift_subs": int(alerts.total_gift_subs or 0),
+                            "total_bits": int(alerts.total_bits or 0),
+                            "follows": int(alerts.follow_alerts_played or 0),
+                            "subs": int(alerts.new_subs_played or 0)
+                            + int(alerts.resubs_played or 0),
+                            "raids": int(alerts.raids or 0),
+                            "cheers": int(alerts.bit_alerts_played or 0),
+                        }
+                        result = {"data": session_doc}
+                        self.socketio.emit("get_data", result, to=request.sid)
+                        return result
+                    except Exception as exc:
+                        logger.debug(
+                            "statistics/session snapshot failed: %s", exc
+                        )
 
                 result = database_manager.get_data(path, request_etag)
                 logger.debug(f"Successfully retrieved data from path: {path}")

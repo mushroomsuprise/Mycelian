@@ -133,6 +133,8 @@
         future: [],
         templates: { spore: [], legacy: [] },
         registry: { events: [], actions: [] },
+        dataSources: { sources: [], categories: [] },
+        controlActions: { actions: [], control_types: [] },
         socket: null,
         previewToken: "",
         idCounter: 0,
@@ -627,6 +629,490 @@
         return keys;
     }
 
+    function dataSourcesForPicker(deltaOnly, displayOnly) {
+        var list = (state.dataSources && state.dataSources.sources) || [];
+        return list.filter(function (s) {
+            if (deltaOnly && !s.delta_only && s.category !== "Delta") { return false; }
+            if (displayOnly && s.delta_only) { return false; }
+            if (deltaOnly && s.display_only) { return false; }
+            return true;
+        });
+    }
+
+    function ensureTextModeDefaults(el) {
+        if (!el || el.type !== "text") { return; }
+        if (!el.text_mode) { el.text_mode = "static"; }
+        if (el.text_mode === "counter") {
+            el.counter = el.counter || {};
+            var c = el.counter;
+            if (!c.counter_id) {
+                c.counter_id = slugifyCounterId(el.id || "counter");
+            }
+            if (c.initial_value === undefined) { c.initial_value = 0; }
+            if (!c.format) { c.format = "{value}"; }
+            if (c.persist === undefined) { c.persist = false; }
+            if (!c.database_path && state.model) {
+                c.database_path = state.model.template_name + "/counters";
+            }
+            if (!c.database_key) { c.database_key = c.counter_id; }
+            if (!Array.isArray(c.rules)) { c.rules = []; }
+        }
+        if (el.text_mode === "data_display") {
+            el.data_display = el.data_display || {};
+            var d = el.data_display;
+            if (!d.source || typeof d.source !== "object") {
+                d.source = { kind: "data_source", source: "alert.username" };
+            }
+            if (!d.format) { d.format = "{value}"; }
+            if (d.default_text === undefined) { d.default_text = "—"; }
+            if (!Array.isArray(d.refresh_on)) { d.refresh_on = ["instant_alert"]; }
+        }
+    }
+
+    function slugifyCounterId(raw) {
+        return String(raw || "counter").replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_|_$/g, "") || "counter";
+    }
+
+    function buildDataSourceSelect(currentId, onChange, opts) {
+        opts = opts || {};
+        var sel = document.createElement("select");
+        var blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "(select source)";
+        sel.appendChild(blank);
+        var sources = dataSourcesForPicker(opts.deltaOnly, opts.displayOnly);
+        var cats = {};
+        sources.forEach(function (s) {
+            var cat = s.category || "Other";
+            if (!cats[cat]) { cats[cat] = []; }
+            cats[cat].push(s);
+        });
+        Object.keys(cats).sort().forEach(function (cat) {
+            var og = document.createElement("optgroup");
+            og.label = cat;
+            cats[cat].forEach(function (s) {
+                var op = document.createElement("option");
+                op.value = s.id;
+                op.textContent = s.label || s.id;
+                if (String(s.id) === String(currentId)) { op.selected = true; }
+                og.appendChild(op);
+            });
+            sel.appendChild(og);
+        });
+        sel.addEventListener("change", function () {
+            if (onChange) { onChange(sel.value); }
+        });
+        return sel;
+    }
+
+    function buildDeltaEditor(delta, onChange) {
+        var wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.flexDirection = "column";
+        wrap.style.gap = "6px";
+        delta = delta || { kind: "fixed", value: 1 };
+        var kindSel = document.createElement("select");
+        ["fixed", "random_int", "random_float", "data_source"].forEach(function (k) {
+            var op = document.createElement("option");
+            op.value = k;
+            op.textContent = k;
+            if ((delta.kind || "fixed") === k) { op.selected = true; }
+            kindSel.appendChild(op);
+        });
+        var fields = document.createElement("div");
+        function redraw() {
+            fields.innerHTML = "";
+            var k = kindSel.value;
+            delta.kind = k;
+            if (k === "fixed") {
+                fields.appendChild(formRow("Value", numberEl(delta.value != null ? delta.value : 1, function (v) {
+                    delta.value = Number(v) || 0;
+                    onChange(delta);
+                })));
+            } else if (k === "random_int" || k === "random_float") {
+                fields.appendChild(formRow("Min", numberEl(delta.min != null ? delta.min : 1, function (v) {
+                    delta.min = Number(v); onChange(delta);
+                })));
+                fields.appendChild(formRow("Max", numberEl(delta.max != null ? delta.max : 5, function (v) {
+                    delta.max = Number(v); onChange(delta);
+                })));
+                if (k === "random_float") {
+                    fields.appendChild(formRow("Decimals", numberEl(delta.decimals != null ? delta.decimals : 0, function (v) {
+                        delta.decimals = Number(v); onChange(delta);
+                    })));
+                }
+            } else if (k === "data_source") {
+                fields.appendChild(formRow("Source", buildDataSourceSelect(delta.source, function (sid) {
+                    delta.source = sid;
+                    onChange(delta);
+                }, { deltaOnly: false })));
+                fields.appendChild(formRow("Fallback", numberEl(delta.fallback != null ? delta.fallback : 1, function (v) {
+                    delta.fallback = Number(v); onChange(delta);
+                })));
+            }
+            onChange(delta);
+        }
+        kindSel.addEventListener("change", redraw);
+        wrap.appendChild(formRow("Delta kind", kindSel));
+        wrap.appendChild(fields);
+        redraw();
+        return wrap;
+    }
+
+    function renderTextModeSection(host, el) {
+        if (el.type !== "text" || isLegacyModel()) { return; }
+        ensureTextModeDefaults(el);
+        var modeSel = document.createElement("select");
+        ["static", "counter", "data_display"].forEach(function (m) {
+            var op = document.createElement("option");
+            op.value = m;
+            op.textContent = m === "static" ? "Static text" : (m === "counter" ? "Counter" : "Data display");
+            if ((el.text_mode || "static") === m) { op.selected = true; }
+            modeSel.appendChild(op);
+        });
+        modeSel.addEventListener("change", function () {
+            el.text_mode = modeSel.value;
+            ensureTextModeDefaults(el);
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        host.appendChild(formRow("Text mode", modeSel));
+
+        if (el.text_mode === "counter") {
+            var c = el.counter;
+            host.appendChild(formRow("Counter id", inputEl("text", c.counter_id, function (v) {
+                c.counter_id = slugifyCounterId(v);
+                c.database_key = c.counter_id;
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            host.appendChild(formRow("Initial value", numberEl(c.initial_value, function (v) {
+                c.initial_value = Number(v) || 0;
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            host.appendChild(formRow("Min", numberEl(c.min != null ? c.min : "", function (v) {
+                c.min = v === "" ? null : Number(v);
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            host.appendChild(formRow("Max", numberEl(c.max != null ? c.max : "", function (v) {
+                c.max = v === "" ? null : Number(v);
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            host.appendChild(formRow("Format", inputEl("text", c.format || "{value}", function (v) {
+                c.format = v;
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            var persistCb = document.createElement("input");
+            persistCb.type = "checkbox";
+            persistCb.checked = !!c.persist;
+            persistCb.addEventListener("change", function () {
+                c.persist = persistCb.checked;
+                pushHistoryDebounced();
+                modelTouch();
+            });
+            host.appendChild(formRow("Persist (database)", persistCb));
+            if (c.persist) {
+                host.appendChild(formRow("DB path", inputEl("text", c.database_path || "", function (v) {
+                    c.database_path = v.trim();
+                    pushHistoryDebounced();
+                    modelTouch();
+                })));
+                host.appendChild(formRow("DB key", inputEl("text", c.database_key || "", function (v) {
+                    c.database_key = v.trim();
+                    pushHistoryDebounced();
+                    modelTouch();
+                })));
+            }
+            var rulesHead = document.createElement("h4");
+            rulesHead.className = "ss-section-sub";
+            rulesHead.textContent = "Counter rules";
+            host.appendChild(rulesHead);
+            (c.rules || []).forEach(function (rule, ridx) {
+                var card = document.createElement("div");
+                card.className = "ss-binding-row";
+                card.style.marginBottom = "8px";
+                var trigSel = document.createElement("select");
+                ["event", "streamdeck"].forEach(function (t) {
+                    var op = document.createElement("option");
+                    op.value = t;
+                    op.textContent = t;
+                    if ((rule.trigger || "event") === t) { op.selected = true; }
+                    trigSel.appendChild(op);
+                });
+                trigSel.addEventListener("change", function () {
+                    rule.trigger = trigSel.value;
+                    renderProperties();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Trigger", trigSel));
+                if ((rule.trigger || "event") === "event") {
+                    var evSel = document.createElement("select");
+                    (state.registry.events || []).forEach(function (ev) {
+                        var op = document.createElement("option");
+                        op.value = ev.event;
+                        op.textContent = ev.label || ev.event;
+                        if (rule.event === ev.event) { op.selected = true; }
+                        evSel.appendChild(op);
+                    });
+                    evSel.addEventListener("change", function () {
+                        rule.event = evSel.value;
+                        pushHistoryDebounced();
+                        modelTouch();
+                    });
+                    card.appendChild(formRow("Event", evSel));
+                } else {
+                    card.appendChild(formRow("Stream Deck action id", inputEl("text", rule.streamdeck_action || "", function (v) {
+                        rule.streamdeck_action = v;
+                        pushHistoryDebounced();
+                        modelTouch();
+                    })));
+                }
+                var opSel = document.createElement("select");
+                ["increment", "decrement", "set", "reset"].forEach(function (o) {
+                    var op = document.createElement("option");
+                    op.value = o;
+                    op.textContent = o;
+                    if ((rule.operation || "increment") === o) { op.selected = true; }
+                    opSel.appendChild(op);
+                });
+                opSel.addEventListener("change", function () {
+                    rule.operation = opSel.value;
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Operation", opSel));
+                card.appendChild(buildDeltaEditor(rule.delta, function (d) {
+                    rule.delta = d;
+                    pushHistoryDebounced();
+                    modelTouch();
+                }));
+                var rm = document.createElement("button");
+                rm.type = "button";
+                rm.className = "ss-btn";
+                rm.textContent = "Remove rule";
+                rm.addEventListener("click", function () {
+                    c.rules.splice(ridx, 1);
+                    pushHistory();
+                    renderProperties();
+                    modelTouch();
+                });
+                card.appendChild(rm);
+                host.appendChild(card);
+            });
+            var addRule = document.createElement("button");
+            addRule.type = "button";
+            addRule.className = "ss-btn ss-btn--primary";
+            addRule.textContent = "+ Add counter rule";
+            addRule.addEventListener("click", function () {
+                c.rules.push({
+                    trigger: "event",
+                    event: "instant_alert",
+                    filter: {},
+                    operation: "increment",
+                    delta: { kind: "fixed", value: 1 }
+                });
+                pushHistory();
+                renderProperties();
+                modelTouch();
+            });
+            host.appendChild(addRule);
+        }
+
+        if (el.text_mode === "data_display") {
+            var d = el.data_display;
+            var srcId = (d.source && d.source.source) || "";
+            host.appendChild(formRow("Data source", buildDataSourceSelect(srcId, function (sid) {
+                d.source = { kind: "data_source", source: sid };
+                pushHistoryDebounced();
+                modelTouch();
+            }, { displayOnly: true })));
+            host.appendChild(formRow("Format", inputEl("text", d.format || "{value}", function (v) {
+                d.format = v;
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            host.appendChild(formRow("Default text", inputEl("text", d.default_text, function (v) {
+                d.default_text = v;
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            var refreshWrap = document.createElement("div");
+            refreshWrap.style.display = "flex";
+            refreshWrap.style.flexDirection = "column";
+            refreshWrap.style.gap = "4px";
+            (state.registry.events || []).forEach(function (ev) {
+                var cb = document.createElement("input");
+                cb.type = "checkbox";
+                var en = ev.event;
+                cb.checked = (d.refresh_on || []).indexOf(en) !== -1;
+                cb.addEventListener("change", function () {
+                    d.refresh_on = d.refresh_on || [];
+                    if (cb.checked) {
+                        if (d.refresh_on.indexOf(en) === -1) { d.refresh_on.push(en); }
+                    } else {
+                        d.refresh_on = d.refresh_on.filter(function (x) { return x !== en; });
+                    }
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                var lbl = document.createElement("label");
+                lbl.style.fontSize = "11px";
+                lbl.appendChild(cb);
+                lbl.appendChild(document.createTextNode(" " + (ev.label || en)));
+                refreshWrap.appendChild(lbl);
+            });
+            host.appendChild(formRow("Refresh on events", refreshWrap));
+        }
+    }
+
+    function ensureDynamicControls(model) {
+        if (!model.dynamic_controls || typeof model.dynamic_controls !== "object") {
+            model.dynamic_controls = { elements: [] };
+        }
+        if (!Array.isArray(model.dynamic_controls.elements)) {
+            model.dynamic_controls.elements = [];
+        }
+    }
+
+    function renderSourceControlsPanel() {
+        var host = $("#ss-sourcecontrols-host");
+        if (!host) { return; }
+        host.innerHTML = "";
+        if (!state.model || state.model.legacy) {
+            host.innerHTML = '<div class="ss-empty">Source Controls are available for Spore Studio templates.</div>';
+            return;
+        }
+        ensureDynamicControls(state.model);
+        var dc = state.model.dynamic_controls;
+        var hint = document.createElement("p");
+        hint.style.cssText = "color:var(--ss-text-muted);font-size:11px;margin:0 0 10px;";
+        hint.textContent = "Controls appear in the Source Controls overlay and emit template socket events.";
+        host.appendChild(hint);
+        var addBtn = document.createElement("button");
+        addBtn.className = "ss-btn ss-btn--primary";
+        addBtn.textContent = "+ Add control";
+        addBtn.addEventListener("click", function () {
+            dc.elements.push({
+                type: "button",
+                id: "control_" + (dc.elements.length + 1),
+                label: "New control",
+                action: "custom_template_action",
+                button_text: "Run"
+            });
+            pushHistory();
+            renderSourceControlsPanel();
+            modelTouch();
+        });
+        host.appendChild(addBtn);
+        var types = (state.controlActions && state.controlActions.control_types) || [];
+        var actions = (state.controlActions && state.controlActions.actions) || [];
+        dc.elements.forEach(function (ctrl, idx) {
+            var card = document.createElement("div");
+            card.className = "ss-binding-row";
+            card.style.marginTop = "10px";
+            card.appendChild(formRow("Control id", inputEl("text", ctrl.id || "", function (v) {
+                ctrl.id = v.trim();
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            var typeSel = document.createElement("select");
+            types.forEach(function (t) {
+                var op = document.createElement("option");
+                op.value = t.type;
+                op.textContent = t.label || t.type;
+                if ((ctrl.type || "button") === t.type) { op.selected = true; }
+                typeSel.appendChild(op);
+            });
+            typeSel.addEventListener("change", function () {
+                ctrl.type = typeSel.value;
+                renderSourceControlsPanel();
+                modelTouch();
+            });
+            card.appendChild(formRow("Type", typeSel));
+            card.appendChild(formRow("Label", inputEl("text", ctrl.label || "", function (v) {
+                ctrl.label = v;
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            var actSel = document.createElement("select");
+            actions.forEach(function (a) {
+                var op = document.createElement("option");
+                op.value = a.action;
+                op.textContent = a.label || a.action;
+                if ((ctrl.action || "") === a.action) { op.selected = true; }
+                actSel.appendChild(op);
+            });
+            actSel.addEventListener("change", function () {
+                ctrl.action = actSel.value;
+                pushHistoryDebounced();
+                modelTouch();
+            });
+            card.appendChild(formRow("Action", actSel));
+            if (ctrl.type === "button" || ctrl.type === "counter_control") {
+                card.appendChild(formRow("Button text", inputEl("text", ctrl.button_text || "Run", function (v) {
+                    ctrl.button_text = v;
+                    pushHistoryDebounced();
+                    modelTouch();
+                })));
+            }
+            if (ctrl.action === "counter_adjust" || ctrl.type === "counter_control") {
+                card.appendChild(formRow("Counter id", inputEl("text", ctrl.target_counter_id || "", function (v) {
+                    ctrl.target_counter_id = v;
+                    pushHistoryDebounced();
+                    modelTouch();
+                })));
+                var opSel = document.createElement("select");
+                ["increment", "decrement", "set", "reset"].forEach(function (o) {
+                    var op = document.createElement("option");
+                    op.value = o;
+                    op.textContent = o;
+                    if ((ctrl.operation || "increment") === o) { op.selected = true; }
+                    opSel.appendChild(op);
+                });
+                opSel.addEventListener("change", function () {
+                    ctrl.operation = opSel.value;
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Operation", opSel));
+                card.appendChild(buildDeltaEditor(ctrl.delta, function (d) {
+                    ctrl.delta = d;
+                    pushHistoryDebounced();
+                    modelTouch();
+                }));
+            }
+            if (ctrl.action === "element_show" || ctrl.action === "element_hide" || ctrl.action === "element_toggle") {
+                card.appendChild(formRow("Element id", inputEl("text", ctrl.element_id || "", function (v) {
+                    ctrl.element_id = v;
+                    pushHistoryDebounced();
+                    modelTouch();
+                })));
+            }
+            var rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "ss-btn";
+            rm.textContent = "Remove";
+            rm.addEventListener("click", function () {
+                dc.elements.splice(idx, 1);
+                pushHistory();
+                renderSourceControlsPanel();
+                modelTouch();
+            });
+            card.appendChild(rm);
+            host.appendChild(card);
+        });
+    }
+
     function ensureElementAnimations(el) {
         if (!el) { return; }
         el.animations = el.animations && typeof el.animations === "object"
@@ -864,7 +1350,17 @@
             }
 
             if (el.type === "text") {
-                node.textContent = (el.props && el.props.text) || "";
+                var tmode = el.text_mode || "static";
+                if (tmode === "counter" && el.counter) {
+                    var cfmt = el.counter.format || "{value}";
+                    var civ = el.counter.initial_value != null ? el.counter.initial_value : 0;
+                    node.textContent = cfmt.replace("{value}", String(civ));
+                } else if (tmode === "data_display" && el.data_display) {
+                    node.textContent = el.data_display.default_text != null
+                        ? String(el.data_display.default_text) : "—";
+                } else {
+                    node.textContent = (el.props && el.props.text) || "";
+                }
             } else if (el.type === "image") {
                 node.textContent = (el.props && el.props.src) ? "img: " + el.props.src : "(image)";
             } else if (el.type === "video") {
@@ -1502,8 +1998,16 @@
         shWrap.appendChild(shHint);
         host.appendChild(formRow("Start hidden until shown", shWrap));
 
+        if (el.type === "text" && !isLegacyModel()) {
+            renderTextModeSection(host, el);
+        }
+
         var schema = ELEMENT_PROP_SCHEMA[el.type] || [];
+        var textMode = el.text_mode || "static";
         schema.forEach(function (entry) {
+            if (el.type === "text" && textMode !== "static" && entry.key === "text") {
+                return;
+            }
             var current = el.props && el.props[entry.key];
             var ctrl;
             if (entry.type === "textarea") {
@@ -2933,6 +3437,9 @@
             if (!model.legacy) {
                 ensureElementExposeDefaults(el);
                 ensureElementAnimations(el);
+                if (el.type === "text") {
+                    ensureTextModeDefaults(el);
+                }
             }
             if (model.legacy && el.parent_id) {
                 delete el.parent_id;
@@ -2961,6 +3468,7 @@
             }
             syncDurationWithLayout(model);
         }
+        ensureDynamicControls(model);
         return model;
     }
 
@@ -3297,6 +3805,7 @@
         renderStage();
         renderInspector();
         renderStreamdeckPanel();
+        renderSourceControlsPanel();
         renderOutline();
         renderCanvasPanel();
         updateDeleteTemplateButton();
@@ -3583,11 +4092,17 @@
         setupKeyboard();
         setupSocket();
 
-        fetch("/api/spore-studio/events")
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                state.registry.events = data.events || [];
-                state.registry.actions = data.actions || [];
+        Promise.all([
+            fetch("/api/spore-studio/events").then(function (r) { return r.json(); }),
+            fetch("/api/spore-studio/data-sources").then(function (r) { return r.json(); }),
+            fetch("/api/spore-studio/control-actions").then(function (r) { return r.json(); })
+        ])
+            .then(function (results) {
+                var evData = results[0] || {};
+                state.registry.events = evData.events || [];
+                state.registry.actions = evData.actions || [];
+                state.dataSources = results[1] || { sources: [], categories: [] };
+                state.controlActions = results[2] || { actions: [], control_types: [] };
                 renderPreviewMockToolbar();
             })
             .then(refreshTemplateList)

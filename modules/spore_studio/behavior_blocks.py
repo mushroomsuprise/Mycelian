@@ -530,6 +530,42 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
         ]
         return lines
 
+    if action == "counter_adjust":
+        cid = str(args.get("counter_id") or "").strip()
+        op = str(args.get("operation") or "increment")
+        dk = str(args.get("delta_kind") or "fixed")
+        delta: Dict[str, Any] = {"kind": dk}
+        if dk == "fixed":
+            try:
+                delta["value"] = float(args.get("delta_value", 1))
+            except (TypeError, ValueError):
+                delta["value"] = 1
+        elif dk in ("random_int", "random_float"):
+            try:
+                delta["min"] = float(args.get("delta_min", 1))
+            except (TypeError, ValueError):
+                delta["min"] = 1
+            try:
+                delta["max"] = float(args.get("delta_max", 5))
+            except (TypeError, ValueError):
+                delta["max"] = 5
+            if dk == "random_float":
+                try:
+                    delta["decimals"] = int(args.get("delta_decimals", 0))
+                except (TypeError, ValueError):
+                    delta["decimals"] = 0
+        elif dk == "data_source":
+            delta["source"] = str(args.get("delta_source") or "")
+            try:
+                delta["fallback"] = float(args.get("delta_value", 1))
+            except (TypeError, ValueError):
+                delta["fallback"] = 1
+        return [
+            "window.__sporeLastPayload.event = payload || {};",
+            f"sporeCounterAdjust({_js_string(cid)}, {_js_string(op)}, "
+            f"{_js_value(delta)}, payload);",
+        ]
+
     return [f"// Unknown action: {action}"]
 
 

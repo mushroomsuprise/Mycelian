@@ -62,5 +62,19 @@
     "type": "info",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "c7cde8ce-5aaa-4b8e-a97f-bdfbb3f25d7b",
+    "ts": 1780274694.251256,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
   }
 ]

@@ -349,6 +349,30 @@ _ACTIONS: List[Dict[str, Any]] = [
              "default": 420, "min": 0, "max": 60000},
         ],
     },
+    {
+        "action": "counter_adjust",
+        "label": "Adjust counter",
+        "description": (
+            "Increment, decrement, set, or reset a Spore Studio counter on this "
+            "template (text element in Counter mode)."
+        ),
+        "args": [
+            {"key": "counter_id", "label": "Counter id", "type": "string",
+             "default": "", "description": "counter_id from the text element."},
+            {"key": "operation", "label": "Operation", "type": "select",
+             "options": ["increment", "decrement", "set", "reset"],
+             "default": "increment"},
+            {"key": "delta_kind", "label": "Delta kind", "type": "select",
+             "options": ["fixed", "random_int", "random_float", "data_source"],
+             "default": "fixed"},
+            {"key": "delta_value", "label": "Fixed delta / fallback", "type": "number",
+             "default": 1},
+            {"key": "delta_source", "label": "Data source id", "type": "string",
+             "default": "", "description": "When delta kind is data_source."},
+            {"key": "delta_min", "label": "Random min", "type": "number", "default": 1},
+            {"key": "delta_max", "label": "Random max", "type": "number", "default": 5},
+        ],
+    },
 ]
 def get_event_registry() -> Dict[str, Any]:
     """
