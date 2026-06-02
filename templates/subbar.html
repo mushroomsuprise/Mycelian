@@ -233,6 +233,11 @@
             updateDisplay();
         });
 
+        socket.on('template_config_updated', function(data) {
+            if (data && data.template && data.template !== 'subbar') return;
+            loadTemplateConfig();
+        });
+
         socket.on('instant_alert', function(alertData) {
             if (!isEnabled) {
                 console.log('SubBar is disabled, skipping alert processing');
@@ -563,13 +568,9 @@
         // Load template config directly from API
         async function loadTemplateConfig() {
             try {
-                const response = await fetch('/api/all-template-configs');
+                const response = await fetch('/api/template-config/subbar', { credentials: 'same-origin' });
                 if (response.ok) {
-                    const allConfigs = await response.json();
-                    console.log('Loaded all template configs:', Object.keys(allConfigs));
-                    
-                    // Get the subbar config specifically
-                    const subbarConfigData = allConfigs.subbar;
+                    const subbarConfigData = await response.json();
                     if (subbarConfigData && subbarConfigData.elements) {
                         console.log('Found subbar template config:', subbarConfigData);
                         

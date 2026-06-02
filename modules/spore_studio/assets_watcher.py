@@ -127,19 +127,18 @@ def _broadcast_changes(template_name: str, snapshot: Dict[str, Any]) -> None:
 
 
 def _watched_templates() -> List[str]:
-    """List all templates with an existing asset folder."""
-    base = get_assets_path()
-    if not os.path.isdir(base):
-        return []
-    templates: List[str] = []
-    for entry in os.listdir(base):
-        if entry.startswith(".") or entry.startswith("_"):
-            continue
-        full = os.path.join(base, entry)
-        if not os.path.isdir(full):
-            continue
-        templates.append(entry)
-    return templates
+    """Templates with active preview/editor sessions (see WebEngine registry)."""
+    try:
+        from .. import web_engine
+
+        inst = getattr(web_engine, "web_engine_instance", None)
+        if inst is not None and hasattr(inst, "get_assets_watch_templates"):
+            active = inst.get_assets_watch_templates()
+            if active:
+                return list(active)
+    except Exception as e:
+        logger.debug("assets watcher template list fallback: %s", e)
+    return []
 
 
 def _poll_once() -> None:

@@ -272,15 +272,14 @@ class ConnectorIntegration:
             badges = getattr(data.event, "badges", [])
 
             from . import twitch
-            from .twitch_moderators import get_moderator_cache, resolve_is_moderator
+            from .twitch_moderators import resolve_is_moderator_async
 
             broadcaster_id = (
                 str(twitch.twitch_api.user_id)
                 if twitch.twitch_api and twitch.twitch_api.user_id
                 else None
             )
-            await get_moderator_cache().refresh()
-            is_moderator = resolve_is_moderator(
+            is_moderator = await resolve_is_moderator_async(
                 user_id, badges=badges, broadcaster_id=broadcaster_id
             )
 

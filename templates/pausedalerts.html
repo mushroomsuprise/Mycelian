@@ -167,6 +167,11 @@
             
         });
 
+        socket.on('template_config_updated', function(data) {
+            if (data && data.template && data.template !== 'pausedalerts') return;
+            loadTemplateConfig();
+        });
+
         socket.on('disconnect', function() {
             console.log('Disconnected from pausedalerts server');
         });
@@ -401,13 +406,9 @@
         // Load template config directly from API
         async function loadTemplateConfig() {
             try {
-                const response = await fetch('/api/all-template-configs');
+                const response = await fetch('/api/template-config/pausedalerts', { credentials: 'same-origin' });
                 if (response.ok) {
-                    const allConfigs = await response.json();
-                    console.log('Loaded all template configs:', Object.keys(allConfigs));
-                    
-                    // Get the pausedalerts config specifically
-                    const pausedalertsConfigData = allConfigs.pausedalerts;
+                    const pausedalertsConfigData = await response.json();
                     if (pausedalertsConfigData && pausedalertsConfigData.elements) {
                         console.log('Found pausedalerts template config:', pausedalertsConfigData);
                         

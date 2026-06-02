@@ -488,6 +488,11 @@
             console.log('Giveaway template connected');
         });
 
+        socket.on('template_config_updated', function(data) {
+            if (data && data.template && data.template !== 'giveaway') return;
+            loadTemplateConfig();
+        });
+
         socket.on('giveaway_start', function(data) {
             setKeyword(data.keyword || '');
             elClosedMessage.classList.add('hidden');
@@ -646,13 +651,12 @@
 
         async function loadTemplateConfig() {
             try {
-                var response = await fetch('/api/all-template-configs', { credentials: 'same-origin' });
+                var response = await fetch('/api/template-config/giveaway', { credentials: 'same-origin' });
                 if (!response.ok) {
                     console.error('Failed to load template configs:', response.status);
                     return;
                 }
-                var allConfigs = await response.json();
-                var gwConfigData = allConfigs.giveaway;
+                var gwConfigData = await response.json();
                 if (!gwConfigData || !gwConfigData.elements) {
                     console.warn('No giveaway config found in response');
                     return;

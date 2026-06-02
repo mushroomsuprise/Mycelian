@@ -76,5 +76,103 @@
         "settings_subtab": "Twitch"
       }
     ]
+  },
+  {
+    "id": "bd2fbe8b-ac0b-4b52-846a-2b60770b8434",
+    "ts": 1780440793.652202,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "03f6b552-91a3-4bd7-911f-f2bdd21b1479",
+    "ts": 1780440912.543017,
+    "message": "Twitch: Authenticated but Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:twitch:Authenticated but Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "da9c97d2-8c68-48b7-bbad-16e3fb061704",
+    "ts": 1780440914.5642,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "6f4f1963-71eb-4e6c-be91-bec048612295",
+    "ts": 1780440920.573746,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "169e7eb5-61dc-489b-8311-2d6db23520cb",
+    "ts": 1780440922.579318,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "0ccc7c3c-44cc-4aa9-963f-c506f2ca1e86",
+    "ts": 1780441841.295563,
+    "message": "Twitch: Authenticated but Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:twitch:Authenticated but Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "68baf557-8e5a-4efa-9370-ec9a0b825676",
+    "ts": 1780441843.2290719,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
   }
 ]

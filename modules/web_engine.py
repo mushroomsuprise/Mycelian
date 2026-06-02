@@ -443,12 +443,16 @@ class WebEngine:
             __name__, template_folder=self.template_dir
         )  # Don't set static_folder to avoid conflicts
 
-        # Enable Flask's built-in template reloading and development features
-        self.app.config["TEMPLATES_AUTO_RELOAD"] = True
+        # Template auto-reload: dev / unfrozen builds only (OBS sources stat every HTML file otherwise)
+        _jinja_auto_reload = bool(
+            os.environ.get("MYCELIAN_DEV")
+            or not getattr(sys, "frozen", False)
+        )
+        self.app.config["TEMPLATES_AUTO_RELOAD"] = _jinja_auto_reload
         self.app.config["SEND_FILE_MAX_AGE_DEFAULT"] = (
             0  # Disable caching for development
         )
-        self.app.jinja_env.auto_reload = True
+        self.app.jinja_env.auto_reload = _jinja_auto_reload
 
         # Configure SocketIO with increased limits to prevent "Too many packets in payload" errors
         # This can happen during startup when there are rapid bursts of Socket.IO events
@@ -465,10 +469,19 @@ class WebEngine:
 
         # Short-TTL cache for GET /api/all-template-configs (OBS refresh storms)
         self._all_template_configs_cache: Optional[
-            Tuple[str, float, Dict[str, Any]]
+            Tuple[str, float, bytes]
         ] = None
         self._all_template_configs_cache_lock = threading.Lock()
         self._all_template_configs_slow_log_at = 0.0
+
+        # Bounded Twitch API worker (avoids per-request thread + event loop)
+        self._twitch_api_queue: queue.Queue = queue.Queue()
+        self._twitch_api_worker_started = False
+        self._twitch_api_worker_lock = threading.Lock()
+
+        # Spore Studio assets watcher: poll only these template asset folders
+        self._assets_watch_templates_lock = threading.Lock()
+        self._assets_watch_templates: set = set()
 
         self.socketio = SocketIO(
             self.app,
@@ -494,7 +507,8 @@ class WebEngine:
             response.headers["Access-Control-Allow-Headers"] = (
                 "Content-Type, Authorization"
             )
-            logger.debug("CORS headers added to response")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("CORS headers added to response")
             return response
 
         # Handle preflight OPTIONS requests
@@ -514,24 +528,18 @@ class WebEngine:
         # Add custom static file route to handle subdirectories properly
         @self.app.route("/assets/<path:filename>")
         def serve_static_file(filename):
-            logger.debug(f"Custom route: Attempting to serve static file: {filename}")
+            _static_debug = logger.isEnabledFor(logging.DEBUG)
+            if _static_debug:
+                logger.debug(
+                    "Custom route: Attempting to serve static file: %s", filename
+                )
             assets_path = get_assets_path()
             full_path = os.path.join(assets_path, filename)
 
-            logger.debug(f"Assets folder path: {assets_path}")
-            logger.debug(f"Requested file full path: {full_path}")
-            logger.debug(f"File exists: {os.path.exists(full_path)}")
-            logger.debug(f"Working directory: {os.getcwd()}")
-
             try:
                 if os.path.exists(full_path) and os.path.isfile(full_path):
-                    logger.debug(f"Successfully serving static file: {filename}")
-                    # Use send_from_directory with the parent directory and full relative path
                     directory_path = os.path.dirname(full_path)
                     filename_only = os.path.basename(full_path)
-                    logger.debug(
-                        f"Sending from directory: {directory_path}, filename: {filename_only}"
-                    )
                     mimetype = _mimetype_for_asset_filename(filename_only)
                     if mimetype:
                         return send_from_directory(
@@ -550,26 +558,13 @@ class WebEngine:
         # Also add the standard /static/ route with the same functionality for backward compatibility
         @self.app.route("/static/<path:filename>")
         def serve_static_file_standard(filename):
-            logger.debug(
-                f"Standard static route: Attempting to serve static file: {filename}"
-            )
             assets_path = get_assets_path()
             full_path = os.path.join(assets_path, filename)
 
-            logger.debug(f"Assets folder path: {assets_path}")
-            logger.debug(f"Requested file full path: {full_path}")
-            logger.debug(f"File exists: {os.path.exists(full_path)}")
-            logger.debug(f"Working directory: {os.getcwd()}")
-
             try:
                 if os.path.exists(full_path) and os.path.isfile(full_path):
-                    logger.debug(f"Successfully serving static file: {filename}")
-                    # Use send_from_directory with the parent directory and full relative path
                     directory_path = os.path.dirname(full_path)
                     filename_only = os.path.basename(full_path)
-                    logger.debug(
-                        f"Sending from directory: {directory_path}, filename: {filename_only}"
-                    )
                     mimetype = _mimetype_for_asset_filename(filename_only)
                     if mimetype:
                         return send_from_directory(
@@ -672,17 +667,31 @@ class WebEngine:
             t0 = time.time()
             try:
                 preview_tok = request.cookies.get("mycelian_preview_token") or ""
-                configs = self._get_all_template_configs_cached(preview_tok)
+                payload_bytes, cache_hit = self._get_all_template_configs_cached(
+                    preview_tok
+                )
                 elapsed = time.time() - t0
                 if elapsed > 0.5 and time.time() >= self._all_template_configs_slow_log_at:
                     self._all_template_configs_slow_log_at = time.time() + 30.0
+                    try:
+                        template_count = len(
+                            json.loads(payload_bytes.decode("utf-8"))
+                        )
+                    except Exception:
+                        template_count = -1
                     logger.warning(
-                        "serve_all_template_configs slow: %.3fs (%s templates, cache_key=%r)",
+                        "serve_all_template_configs slow: %.3fs (%s templates, "
+                        "cache_hit=%s cache_key=%r)",
                         elapsed,
-                        len(configs),
+                        template_count,
+                        cache_hit,
                         preview_tok[:8] if preview_tok else "",
                     )
-                return configs, 200, {"Content-Type": "application/json"}
+                return (
+                    payload_bytes,
+                    200,
+                    {"Content-Type": "application/json"},
+                )
 
             except Exception as e:
                 logger.error(
@@ -882,6 +891,7 @@ class WebEngine:
                 self._register_spore_preview_session_keep_draft(
                     str(token), str(template)
                 )
+                self.register_assets_watch_template(str(template))
                 return (
                     {"ok": True},
                     200,
@@ -2052,29 +2062,102 @@ class WebEngine:
 
     def _get_all_template_configs_cached(
         self, preview_tok: str
-    ) -> Dict[str, Any]:
+    ) -> Tuple[bytes, bool]:
+        """Return UTF-8 JSON bytes and whether the response came from TTL cache."""
         cache_key = preview_tok or ""
         now = time.time()
         with self._all_template_configs_cache_lock:
             cached = self._all_template_configs_cache
             if cached is not None:
-                key, expires_at, data = cached
+                key, expires_at, payload_bytes = cached
                 if key == cache_key and now < expires_at:
-                    return copy.deepcopy(data)
-        configs = self._build_all_template_configs(
-            preview_tok or None
-        )
+                    return payload_bytes, True
+        configs = self._build_all_template_configs(preview_tok or None)
+        payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
         with self._all_template_configs_cache_lock:
             self._all_template_configs_cache = (
                 cache_key,
                 now + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
-                copy.deepcopy(configs),
+                payload_bytes,
             )
-        return configs
+        return payload_bytes, False
 
     def invalidate_all_template_configs_cache(self) -> None:
         with self._all_template_configs_cache_lock:
             self._all_template_configs_cache = None
+
+    def broadcast_template_config_updated(self, template_name: str) -> None:
+        """Notify overlays that a template JSON was saved (reload via single-config API)."""
+        if not template_name:
+            return
+        try:
+            with self.app.app_context():
+                self.socketio.emit(
+                    "template_config_updated",
+                    {"template": str(template_name)},
+                )
+        except Exception as e:
+            logger.debug(
+                "broadcast_template_config_updated failed for %s: %s",
+                template_name,
+                e,
+            )
+
+    def register_assets_watch_template(self, template_name: str) -> None:
+        """Limit Spore assets mtime polling to active preview/editor templates."""
+        name = (template_name or "").strip()
+        if not name:
+            return
+        with self._assets_watch_templates_lock:
+            self._assets_watch_templates.add(name)
+
+    def unregister_assets_watch_template(self, template_name: str) -> None:
+        name = (template_name or "").strip()
+        if not name:
+            return
+        with self._assets_watch_templates_lock:
+            self._assets_watch_templates.discard(name)
+
+    def get_assets_watch_templates(self) -> List[str]:
+        with self._assets_watch_templates_lock:
+            return sorted(self._assets_watch_templates)
+
+    def ensure_twitch_api_worker(self) -> None:
+        with self._twitch_api_worker_lock:
+            if self._twitch_api_worker_started:
+                return
+            self._twitch_api_worker_started = True
+        threading.Thread(
+            target=self._twitch_api_worker_loop,
+            name="MycelianTwitchApiWorker",
+            daemon=True,
+        ).start()
+
+    def _submit_twitch_api_coro(self, coro) -> None:
+        self.ensure_twitch_api_worker()
+        self._twitch_api_queue.put(coro)
+
+    def _twitch_api_worker_loop(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            while True:
+                coro = self._twitch_api_queue.get()
+                if coro is None:
+                    break
+                try:
+                    loop.run_until_complete(coro)
+                except Exception as e:
+                    logger.error(
+                        "Twitch API worker job failed: %s", e, exc_info=True
+                    )
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+            with self._twitch_api_worker_lock:
+                self._twitch_api_worker_started = False
 
     def _socket_client_connected(self) -> int:
         with self._socket_connected_lock:
@@ -2214,9 +2297,17 @@ class WebEngine:
 
                         if draft_html is not None and draft_config is not None:
                             template_config = copy.deepcopy(draft_config)
-                        else:
+                        elif overrides or mycelian_preview_mode:
                             template_config = copy.deepcopy(
-                                engine_self.template_config_parser.load_config(template)
+                                engine_self.template_config_parser.load_config(
+                                    template
+                                )
+                            )
+                        else:
+                            template_config = (
+                                engine_self.template_config_parser.load_config(
+                                    template
+                                )
                             )
 
                         engine_self._apply_preview_config_layers(
@@ -2358,9 +2449,17 @@ class WebEngine:
 
                 if draft_html is not None and draft_config is not None:
                     template_config = copy.deepcopy(draft_config)
-                else:
+                elif overrides or mycelian_preview_mode:
                     template_config = copy.deepcopy(
-                        engine_self.template_config_parser.load_config(template_name)
+                        engine_self.template_config_parser.load_config(
+                            template_name
+                        )
+                    )
+                else:
+                    template_config = (
+                        engine_self.template_config_parser.load_config(
+                            template_name
+                        )
                     )
 
                 engine_self._apply_preview_config_layers(
@@ -2711,7 +2810,6 @@ class WebEngine:
             """
             client_sid = request.sid
             logger.debug(f"Received get_audio_files request from {client_sid}: {data}")
-            print(f"Received get_audio_files request from {client_sid}: {data}")
 
             try:
                 if (
@@ -2828,7 +2926,6 @@ class WebEngine:
         @self.socketio.on("connect")
         def handle_connect():
             connected = self._socket_client_connected()
-            print(f" WEBSOCKET: Client connected - SID: {request.sid}")
             logger.info(
                 "Socket.IO client connected sid=%s (connected=%s)",
                 request.sid,
@@ -2936,6 +3033,10 @@ class WebEngine:
                 tok = str(tok)
                 self._preview_iframe_sids[tok] = request.sid
                 self._preview_iframe_tokens[request.sid] = tok
+                with self._preview_sessions_lock:
+                    sess = self._preview_sessions.get(tok)
+                if isinstance(sess, dict) and sess.get("template"):
+                    self.register_assets_watch_template(str(sess["template"]))
                 from .template_preview_settings import load_template_preview_settings
 
                 self.socketio.emit(
@@ -2990,7 +3091,6 @@ class WebEngine:
         @self.socketio.on("disconnect")
         def handle_disconnect():
             connected = self._socket_client_disconnected()
-            print(f" WEBSOCKET: Client disconnected - SID: {request.sid}")
             logger.info(
                 "Socket.IO client disconnected sid=%s (connected=%s)",
                 request.sid,
@@ -3378,167 +3478,130 @@ class WebEngine:
                     "json_data"
                 )  # Renamed to avoid conflict with aiohttp's 'json' parameter if passed directly
 
-                # Run the async handler in a new thread with its own event loop
-                def run_async_handler():
+                async def handle_request():
                     try:
-                        # Create a new event loop for this thread
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
+                        if not twitch.twitch_api:
+                            logger.error(
+                                "Twitch API module not initialized or twitch_api instance not found."
+                            )
+                            self.socketio.emit(
+                                "twitch_api_proxy_response",
+                                {
+                                    "error": "Twitch API not initialized.",
+                                    "success": False,
+                                },
+                                to=client_sid,
+                            )
+                            return
 
-                        async def handle_request():
-                            try:
-                                if not twitch.twitch_api:
-                                    logger.error(
-                                        "Twitch API module not initialized or twitch_api instance not found."
+                        from .dataobjects import state_manager
+
+                        twitch_data = state_manager.get_twitch_data()
+
+                        if (
+                            not twitch_data
+                            or not twitch_data.auth_token
+                            or not twitch_data.client_id
+                        ):
+                            logger.warning(
+                                "Twitch API not authenticated - no valid tokens in state manager"
+                            )
+                            self.socketio.emit(
+                                "twitch_api_proxy_response",
+                                {
+                                    "error": "Twitch authentication required.",
+                                    "success": False,
+                                },
+                                to=client_sid,
+                            )
+                            return
+
+                        if (
+                            twitch.twitch_api.auth_token != twitch_data.auth_token
+                            or twitch.twitch_api.client_id != twitch_data.client_id
+                        ):
+                            logger.debug(
+                                "Updating Twitch API instance with current state manager data for proxy call"
+                            )
+                            twitch.twitch_api.auth_token = twitch_data.auth_token
+                            twitch.twitch_api.client_id = twitch_data.client_id
+                            twitch.twitch_api.refresh_token = twitch_data.refresh_token
+                            if twitch_data.token_expiry:
+                                try:
+                                    twitch.twitch_api.token_expiry = (
+                                        datetime.fromisoformat(
+                                            twitch_data.token_expiry
+                                        )
                                     )
-                                    self.socketio.emit(
-                                        "twitch_api_proxy_response",
-                                        {
-                                            "error": "Twitch API not initialized.",
-                                            "success": False,
-                                        },
-                                        to=client_sid,
-                                    )
-                                    return
-
-                                # Get current Twitch authentication data from state manager
-                                from .dataobjects import state_manager
-
-                                twitch_data = state_manager.get_twitch_data()
-
-                                # Check if we have valid authentication credentials from state manager
-                                if (
-                                    not twitch_data
-                                    or not twitch_data.auth_token
-                                    or not twitch_data.client_id
-                                ):
+                                except ValueError:
                                     logger.warning(
-                                        "Twitch API not authenticated - no valid tokens in state manager"
+                                        "Invalid token expiry format in state manager: %s",
+                                        twitch_data.token_expiry,
                                     )
-                                    self.socketio.emit(
-                                        "twitch_api_proxy_response",
-                                        {
-                                            "error": "Twitch authentication required.",
-                                            "success": False,
-                                        },
-                                        to=client_sid,
-                                    )
-                                    return
+                                    twitch.twitch_api.token_expiry = None
 
-                                # Update the twitch API instance with current state manager data if needed
-                                if (
-                                    twitch.twitch_api.auth_token
-                                    != twitch_data.auth_token
-                                    or twitch.twitch_api.client_id
-                                    != twitch_data.client_id
-                                ):
-                                    logger.debug(
-                                        "Updating Twitch API instance with current state manager data for proxy call"
-                                    )
-                                    twitch.twitch_api.auth_token = (
-                                        twitch_data.auth_token
-                                    )
-                                    twitch.twitch_api.client_id = twitch_data.client_id
-                                    twitch.twitch_api.refresh_token = (
-                                        twitch_data.refresh_token
-                                    )
-                                    if twitch_data.token_expiry:
-                                        try:
-                                            twitch.twitch_api.token_expiry = (
-                                                datetime.fromisoformat(
-                                                    twitch_data.token_expiry
-                                                )
-                                            )
-                                        except ValueError:
-                                            logger.warning(
-                                                f"Invalid token expiry format in state manager: {twitch_data.token_expiry}"
-                                            )
-                                            twitch.twitch_api.token_expiry = None
+                        original_auth_token = twitch.twitch_api.auth_token
+                        original_refresh_token = twitch.twitch_api.refresh_token
 
-                                # Store the original tokens to detect if they were refreshed
-                                original_auth_token = twitch.twitch_api.auth_token
-                                original_refresh_token = twitch.twitch_api.refresh_token
+                        api_response = await twitch.twitch_api.generic_api_call(
+                            url=url,
+                            method=method,
+                            params=params,
+                            json_data=json_payload,
+                        )
 
-                                # Call the generic_api_call method
-                                api_response = await twitch.twitch_api.generic_api_call(
-                                    url=url,
-                                    method=method,
-                                    params=params,
-                                    json_data=json_payload,
-                                )
-
-                                # Check if tokens were refreshed during the API call
-                                if (
-                                    twitch.twitch_api.auth_token != original_auth_token
-                                    or twitch.twitch_api.refresh_token
-                                    != original_refresh_token
-                                ):
+                        if (
+                            twitch.twitch_api.auth_token != original_auth_token
+                            or twitch.twitch_api.refresh_token
+                            != original_refresh_token
+                        ):
+                            logger.info(
+                                "Tokens were refreshed during API proxy call - syncing to state manager"
+                            )
+                            try:
+                                refreshed_twitch_data = {
+                                    "client_id": twitch.twitch_api.client_id,
+                                    "client_secret": twitch.twitch_api.client_secret,
+                                    "auth_token": twitch.twitch_api.auth_token,
+                                    "refresh_token": twitch.twitch_api.refresh_token,
+                                    "user_id": twitch.twitch_api.user_id,
+                                    "token_expiry": (
+                                        twitch.twitch_api.token_expiry.isoformat()
+                                        if twitch.twitch_api.token_expiry
+                                        else ""
+                                    ),
+                                    "current_category": twitch_data.current_category,
+                                }
+                                state_manager.set_twitch_data(refreshed_twitch_data)
+                                save_success = state_manager.save_changes()
+                                if save_success:
                                     logger.info(
-                                        "Tokens were refreshed during API proxy call - syncing to state manager"
+                                        "Successfully synced refreshed tokens from API proxy call to state manager"
                                     )
-
-                                    # Sync the refreshed tokens back to state manager
-                                    try:
-                                        refreshed_twitch_data = {
-                                            "client_id": twitch.twitch_api.client_id,
-                                            "client_secret": twitch.twitch_api.client_secret,
-                                            "auth_token": twitch.twitch_api.auth_token,
-                                            "refresh_token": twitch.twitch_api.refresh_token,
-                                            "user_id": twitch.twitch_api.user_id,
-                                            "token_expiry": (
-                                                twitch.twitch_api.token_expiry.isoformat()
-                                                if twitch.twitch_api.token_expiry
-                                                else ""
-                                            ),
-                                            "current_category": twitch_data.current_category,  # Preserve existing category
-                                        }
-
-                                        state_manager.set_twitch_data(
-                                            refreshed_twitch_data
-                                        )
-                                        save_success = state_manager.save_changes()
-
-                                        if save_success:
-                                            logger.info(
-                                                "Successfully synced refreshed tokens from API proxy call to state manager"
-                                            )
-                                        else:
-                                            logger.warning(
-                                                "Failed to save refreshed tokens from API proxy call to state manager"
-                                            )
-
-                                    except Exception as sync_error:
-                                        logger.error(
-                                            f"Error syncing refreshed tokens from API proxy call: {str(sync_error)}",
-                                            exc_info=True,
-                                        )
-
-                                logger.debug(
-                                    f"Twitch API proxy call successful for URL: {url}"
-                                )
-                                self.socketio.emit(
-                                    "twitch_api_proxy_response",
-                                    {"success": True, "data": api_response},
-                                    to=client_sid,
-                                )
-
-                            except Exception as e:
+                                else:
+                                    logger.warning(
+                                        "Failed to save refreshed tokens from API proxy call to state manager"
+                                    )
+                            except Exception as sync_error:
                                 logger.error(
-                                    f"Error in async twitch_api_proxy handler: {str(e)}",
+                                    "Error syncing refreshed tokens from API proxy call: %s",
+                                    sync_error,
                                     exc_info=True,
                                 )
-                                self.socketio.emit(
-                                    "twitch_api_proxy_response",
-                                    {"error": str(e), "success": False},
-                                    to=client_sid,
-                                )
 
-                        # Run the async function
-                        loop.run_until_complete(handle_request())
+                        logger.debug(
+                            "Twitch API proxy call successful for URL: %s", url
+                        )
+                        self.socketio.emit(
+                            "twitch_api_proxy_response",
+                            {"success": True, "data": api_response},
+                            to=client_sid,
+                        )
 
                     except Exception as e:
                         logger.error(
-                            f"Error in thread for twitch_api_proxy: {str(e)}",
+                            "Error in async twitch_api_proxy handler: %s",
+                            e,
                             exc_info=True,
                         )
                         self.socketio.emit(
@@ -3546,18 +3609,8 @@ class WebEngine:
                             {"error": str(e), "success": False},
                             to=client_sid,
                         )
-                    finally:
-                        # Clean up the event loop
-                        try:
-                            loop.close()
-                        except:
-                            pass
 
-                # Start the thread
-                import threading
-
-                thread = threading.Thread(target=run_async_handler, daemon=True)
-                thread.start()
+                self._submit_twitch_api_coro(handle_request())
 
             except Exception as e:
                 logger.error(f"Error in twitch_api_proxy: {str(e)}", exc_info=True)
@@ -4587,56 +4640,29 @@ class WebEngine:
                         twitch.twitch_api.client_id = twitch_data.client_id
                         twitch.twitch_api.refresh_token = twitch_data.refresh_token
 
-                # Run the async handler in a new thread with its own event loop
-                def run_async_handler():
+                async def handle_request():
                     try:
-                        # Create a new event loop for this thread
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-
-                        async def handle_request():
-                            try:
-                                api_response = (
-                                    await twitch.twitch_api.generic_api_call(
-                                        url=endpoint,
-                                        method=method,
-                                        params=params,
-                                        json_data=json_data,
-                                    )
-                                )
-
-                                response_data = {
-                                    "success": True,
-                                    "data": api_response,
-                                    "requestId": request_id,
-                                }
-                                self.socketio.emit(
-                                    "twitch-api-response", response_data, to=client_sid
-                                )
-                                logger.debug(
-                                    f"Twitch API request successful for {endpoint}"
-                                )
-
-                            except Exception as e:
-                                logger.error(
-                                    f"Error in async twitch-api-request handler: {str(e)}",
-                                    exc_info=True,
-                                )
-                                response_data = {
-                                    "success": False,
-                                    "error": str(e),
-                                    "requestId": request_id,
-                                }
-                                self.socketio.emit(
-                                    "twitch-api-response", response_data, to=client_sid
-                                )
-
-                        # Run the async function
-                        loop.run_until_complete(handle_request())
-
+                        api_response = await twitch.twitch_api.generic_api_call(
+                            url=endpoint,
+                            method=method,
+                            params=params,
+                            json_data=json_data,
+                        )
+                        response_data = {
+                            "success": True,
+                            "data": api_response,
+                            "requestId": request_id,
+                        }
+                        self.socketio.emit(
+                            "twitch-api-response", response_data, to=client_sid
+                        )
+                        logger.debug(
+                            "Twitch API request successful for %s", endpoint
+                        )
                     except Exception as e:
                         logger.error(
-                            f"Error in thread for twitch-api-request: {str(e)}",
+                            "Error in async twitch-api-request handler: %s",
+                            e,
                             exc_info=True,
                         )
                         response_data = {
@@ -4647,18 +4673,8 @@ class WebEngine:
                         self.socketio.emit(
                             "twitch-api-response", response_data, to=client_sid
                         )
-                    finally:
-                        # Clean up the event loop
-                        try:
-                            loop.close()
-                        except:
-                            pass
 
-                # Start the thread
-                import threading
-
-                thread = threading.Thread(target=run_async_handler, daemon=True)
-                thread.start()
+                self._submit_twitch_api_coro(handle_request())
 
             except Exception as e:
                 logger.error(

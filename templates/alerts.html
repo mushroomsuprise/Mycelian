@@ -756,6 +756,15 @@
         };
 
         // Add socket connection debugging
+        socket.on('template_config_updated', function (data) {
+            if (!data || !data.template || data.template === 'alerts') {
+                loadTemplateConfig();
+            }
+            if (window.allTemplateConfigs !== undefined) {
+                window.allTemplateConfigs = undefined;
+            }
+        });
+
         socket.on('connect', function () {
             console.log('Socket connected successfully');
             socket.emit('get-streamer-info');
@@ -917,12 +926,28 @@
             if (_templateConfigsLoadPromise) {
                 return _templateConfigsLoadPromise;
             }
-            _templateConfigsLoadPromise = loadTemplateConfig().then(function () {
+            _templateConfigsLoadPromise = loadAllTemplateConfigs().then(function () {
                 _templateConfigsLoadPromise = null;
             }).catch(function (e) {
                 _templateConfigsLoadPromise = null;
             });
             return _templateConfigsLoadPromise;
+        }
+
+        async function loadAllTemplateConfigs() {
+            try {
+                const response = await fetch('/api/all-template-configs');
+                if (response.ok) {
+                    window.allTemplateConfigs = await response.json();
+                    console.log('Loaded all template configs (lazy):', Object.keys(window.allTemplateConfigs));
+                } else {
+                    console.error('Failed to load all template configs:', response.status);
+                    window.allTemplateConfigs = {};
+                }
+            } catch (error) {
+                console.error('Error loading all template configs:', error);
+                window.allTemplateConfigs = {};
+            }
         }
 
         function pointHasGif(alertData) {
@@ -2419,44 +2444,30 @@
             return parseAlertMessage(alertData);
         }
 
-        // Load template config directly from API
+        // Load alerts template config only (full map loaded lazily for dedicated templates)
         async function loadTemplateConfig() {
             try {
-                const response = await fetch('/api/all-template-configs');
+                const response = await fetch('/api/template-config/alerts', { credentials: 'same-origin' });
                 if (response.ok) {
-                    const allConfigs = await response.json();
-                    window.allTemplateConfigs = allConfigs;
-                    console.log('Loaded all template configs:', Object.keys(allConfigs));
-
-                    // Get the alerts config specifically
-                    const alertsConfigData = allConfigs.alerts;
+                    const alertsConfigData = await response.json();
                     if (alertsConfigData && alertsConfigData.elements) {
                         console.log('Found alerts template config:', alertsConfigData);
-
-                        // Extract the config values from the elements array
                         const config = {};
                         alertsConfigData.elements.forEach(element => {
                             if (element.type !== 'section') {
                                 config[element.id] = element.value;
                             }
                         });
-
                         console.log('Parsed config values:', config);
                         applyTemplateConfig(config);
                     } else {
                         console.warn('No alerts config found in response');
                     }
                 } else {
-                    console.error('Failed to load template configs:', response.status);
-                    if (window.allTemplateConfigs === undefined) {
-                        window.allTemplateConfigs = {};
-                    }
+                    console.error('Failed to load alerts template config:', response.status);
                 }
             } catch (error) {
                 console.error('Error loading template config:', error);
-                if (window.allTemplateConfigs === undefined) {
-                    window.allTemplateConfigs = {};
-                }
             }
         }
 

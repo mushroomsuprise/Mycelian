@@ -1648,10 +1648,9 @@
 
         async function loadTemplateConfig() {
             try {
-                var response = await fetch('/api/all-template-configs');
+                var response = await fetch('/api/template-config/ff7', { credentials: 'same-origin' });
                 if (!response.ok) return;
-                var all = await response.json();
-                var block = all.ff7;
+                var block = await response.json();
                 if (!block || !block.elements) return;
                 var flat = {};
                 block.elements.forEach(function (el) {
@@ -2309,10 +2308,13 @@
             socket.on('ff7_clear_bosses', function () {
                 socket.emit('game_hook_command', { hook: 'ff7', action: 'clear_bosses' });
             });
+            socket.on('template_config_updated', function (data) {
+                if (data && data.template && data.template !== 'ff7') return;
+                loadTemplateConfig();
+            });
         }
 
         loadTemplateConfig();
-        setInterval(loadTemplateConfig, 4000);
     </script>
 </body>
 </html>

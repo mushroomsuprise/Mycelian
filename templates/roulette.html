@@ -870,10 +870,7 @@
             hideResult();
         });
 
-        // Handle configuration changes that require wheel rebuild
-        socket.on('config_updated', function () {
-            console.log('Configuration updated, rebuilding wheel');
-            // Rebuild wheel with enabled options only
+        function rouletteRebuildAfterConfigLoad() {
             var enabledData = getEnabledOptions();
             rouletteData.options = enabledData.options;
             rouletteData.colors = enabledData.colors;
@@ -882,6 +879,17 @@
             rouletteData.textFontWeights = enabledData.textFontWeights;
             updateArcSize();
             drawRouletteWheel();
+        }
+
+        // Handle configuration changes that require wheel rebuild
+        socket.on('config_updated', function () {
+            console.log('Configuration updated, rebuilding wheel');
+            loadTemplateConfig().then(rouletteRebuildAfterConfigLoad);
+        });
+
+        socket.on('template_config_updated', function (data) {
+            if (data && data.template && data.template !== 'roulette') return;
+            loadTemplateConfig().then(rouletteRebuildAfterConfigLoad);
         });
 
         // Helper function to hide result display
@@ -1578,13 +1586,12 @@
 
         async function loadTemplateConfig() {
             try {
-                var response = await fetch('/api/all-template-configs', { credentials: 'same-origin' });
+                var response = await fetch('/api/template-config/roulette', { credentials: 'same-origin' });
                 if (!response.ok) {
                     console.error('Failed to load template configs:', response.status);
                     return;
                 }
-                var allConfigs = await response.json();
-                var rlConfigData = allConfigs.roulette;
+                var rlConfigData = await response.json();
                 if (!rlConfigData || !rlConfigData.elements) {
                     console.warn('No roulette config found in response');
                     return;

@@ -490,6 +490,13 @@
         var streamerID = null;
         var emoteFetchInProgress = false;
         var badgeFetchInProgress = false;
+        var CHAT_DEBUG = false;
+
+        function chatLog() {
+            if (CHAT_DEBUG) {
+                console.log.apply(console, arguments);
+            }
+        }
 
         // Font randomization settings
         var enableMessageFontRandomization = {{ EnableMessageFontRandomization | tojson }};
@@ -529,6 +536,7 @@
         var usernameColorCache = {};
 
         // Emote and badge data caches
+        var emoteLookupMap = new Map();
         var emoteCache = {
             bttv: { global: [], user: [] },
             seventv: { global: [], user: [] },
@@ -576,12 +584,12 @@
             // If user has a Twitch-assigned color, use it
             if (twitchColor && twitchColor.trim() !== '') {
                 finalColor = twitchColor;
-                console.log('Using Twitch color', finalColor, 'for username', username);
+                chatLog('Using Twitch color', finalColor, 'for username', username);
             } else {
                 // Assign a random color from our list
                 var randomIndex = Math.floor(Math.random() * randomUsernameColors.length);
                 finalColor = randomUsernameColors[randomIndex];
-                console.log('Assigned random color', finalColor, 'to username', username);
+                chatLog('Assigned random color', finalColor, 'to username', username);
             }
 
             // Store the color assignment for consistency (both Twitch and random colors)
@@ -609,7 +617,7 @@
                 '}';
             document.head.appendChild(style);
 
-            console.log('Loaded random font:', fontName, 'as', fontFamily);
+            chatLog('Loaded random font:', fontName, 'as', fontFamily);
 
             return fontFamily;
         }
@@ -625,7 +633,7 @@
                 // Apply the random font to the element with fallbacks
                 element.style.fontFamily = fontFamily + ', chat-font, Arial, sans-serif';
 
-                console.log('Applied random font:', randomFont, 'to', isUsername ? 'username' : 'message');
+                chatLog('Applied random font:', randomFont, 'to', isUsername ? 'username' : 'message');
             } catch (error) {
                 console.error('Error applying random font:', error);
                 // Fallback to default font
@@ -635,8 +643,13 @@
 
         // Socket event listeners
         socket.on('connect', function () {
-            console.log('Connected to chat server');
+            chatLog('Connected to chat server');
             requestStreamerInfo();
+        });
+
+        socket.on('template_config_updated', function (data) {
+            if (data && data.template && data.template !== 'chat') return;
+            loadTemplateConfig();
         });
 
         socket.on('clear-chat', function () {
@@ -664,10 +677,10 @@
         });
 
         socket.on('streamer-info', function (data) {
-            console.log('Received streamer-info event:', data);
+            chatLog('Received streamer-info event:', data);
             if (data && data.user_id) {
                 streamerID = data.user_id;
-                console.log('Received streamer ID:', streamerID);
+                chatLog('Received streamer ID:', streamerID);
                 fetchAllEmotesAndBadges();
             } else {
                 console.warn('Invalid or missing streamer info:', data);
@@ -679,13 +692,13 @@
         });
 
         socket.on('activity_feed_alert', function (alertData) {
-            console.log('Received activity_feed_alert event:', alertData);
+            chatLog('Received activity_feed_alert event:', alertData);
             addActivityEventMessage(alertData);
         });
 
         // Connector action event listeners
         socket.on('chat_add_message', function (data) {
-            console.log('Connector action: add message', data);
+            chatLog('Connector action: add message', data);
             var messageData = data || {};
 
             // Create a test message if no message data provided
@@ -703,7 +716,7 @@
         });
 
         socket.on('chat_temporary_random_font', function (data) {
-            console.log('Connector action: temporary random font', data);
+            chatLog('Connector action: temporary random font', data);
             var duration = (data && data.duration) ? parseInt(data.duration) : 10000; // Default 10 seconds
 
             // Get available font families from CSS or use a set of common fonts
@@ -727,12 +740,12 @@
 
                 // Apply random font
                 chatContainer.style.fontFamily = randomFont;
-                console.log('Applied temporary font:', randomFont, 'for', duration + 'ms');
+                chatLog('Applied temporary font:', randomFont, 'for', duration + 'ms');
 
                 // Restore original font after duration
                 setTimeout(function () {
                     chatContainer.style.fontFamily = originalFont;
-                    console.log('Restored original font');
+                    chatLog('Restored original font');
                 }, duration);
             }
         });
@@ -747,7 +760,7 @@
             if (!streamerID || emoteFetchInProgress) return;
 
             emoteFetchInProgress = true;
-            console.log('Starting emote and badge fetch...');
+            chatLog('Starting emote and badge fetch...');
 
             // Fetch third-party emotes (no auth required)
             fetchBTTVEmotes();
@@ -762,7 +775,7 @@
 
         // Handle Twitch API responses
         function handleTwitchApiResponse(data) {
-            console.log('Received twitch-api-response:', data);
+            chatLog('Received twitch-api-response:', data);
 
             if (!data || !data.requestId) {
                 console.error('Invalid response data:', data);
@@ -770,7 +783,7 @@
             }
 
             try {
-                console.log('Processing request ID:', data.requestId, 'Success:', data.success);
+                chatLog('Processing request ID:', data.requestId, 'Success:', data.success);
 
                 if (!data.success) {
                     console.error('API request failed:', data.error, 'for request:', data.requestId);
@@ -781,7 +794,7 @@
                         (errText.indexOf('not initialized') !== -1 ||
                             errText.indexOf('not ready') !== -1);
                     if (retryableTwitch) {
-                        console.log('Scheduling Twitch API retry for', data.requestId);
+                        chatLog('Scheduling Twitch API retry for', data.requestId);
                         setTimeout(function () {
                             emoteFetchInProgress = false;
                             if (data.requestId === 'twitch-global-badges' ||
@@ -801,40 +814,41 @@
 
                 switch (data.requestId) {
                     case 'twitch-global-emotes':
-                        console.log('Processing twitch-global-emotes response:', data.data);
+                        chatLog('Processing twitch-global-emotes response:', data.data);
                         if (data.success && data.data && data.data.data) {
                             emoteCache.twitch.global = data.data.data;
-                            console.log('Twitch global emotes loaded:', emoteCache.twitch.global.length);
+                            rebuildEmoteLookupMap();
+                            chatLog('Twitch global emotes loaded:', emoteCache.twitch.global.length);
                         } else {
                             console.error('Invalid twitch-global-emotes response structure:', data.data);
                         }
                         break;
 
                     case 'twitch-global-badges':
-                        console.log('Processing twitch-global-badges response:', data.data);
+                        chatLog('Processing twitch-global-badges response:', data.data);
                         if (data.success && data.data && data.data.data) {
                             badgeCache.global = data.data.data;
-                            console.log('Twitch global badges loaded:', badgeCache.global.length);
+                            chatLog('Twitch global badges loaded:', badgeCache.global.length);
                         } else {
                             console.error('Invalid twitch-global-badges response structure:', data.data);
                         }
                         break;
 
                     case 'twitch-user-badges':
-                        console.log('Processing twitch-user-badges response:', data.data);
+                        chatLog('Processing twitch-user-badges response:', data.data);
                         if (data.success && data.data && data.data.data) {
                             badgeCache.user = data.data.data;
-                            console.log('Twitch user badges loaded:', badgeCache.user.length);
+                            chatLog('Twitch user badges loaded:', badgeCache.user.length);
                         } else {
                             console.error('Invalid twitch-user-badges response structure:', data.data);
                         }
                         break;
 
                     case 'twitch-cheermotes':
-                        console.log('Processing twitch-cheermotes response:', data.data);
+                        chatLog('Processing twitch-cheermotes response:', data.data);
                         if (data.success && data.data && data.data.data) {
                             processCheermotes(data.data.data);
-                            console.log('Cheermotes loaded');
+                            chatLog('Cheermotes loaded');
                         } else {
                             console.error('Invalid twitch-cheermotes response structure:', data.data);
                         }
@@ -913,7 +927,7 @@
 
         // Add an activity feed event message to chat
         function addActivityEventMessage(alertData) {
-            console.log('Adding activity event message:', alertData);
+            chatLog('Adding activity event message:', alertData);
 
             var chatContainer = document.getElementById('chat');
             var messageElement = document.createElement('li');
@@ -1014,7 +1028,7 @@
         // Use Twitch 112px CDN assets for gigantified power-up messages (Twitch native emotes only)
         function upgradeTwitchEmoteUrlsForGigantified(html) {
             if (!html || typeof html !== 'string') {
-                console.log('[gigantified] upgradeTwitchEmoteUrlsForGigantified skipped (empty or non-string html)', html);
+                chatLog('[gigantified] upgradeTwitchEmoteUrlsForGigantified skipped (empty or non-string html)', html);
                 return html;
             }
             return html.replace(
@@ -1023,7 +1037,7 @@
                     var upgraded = prefix + '3.0';
                     var idMatch = match.match(/emoticons\/v2\/([^/]+)\//);
                     var emoteId = idMatch ? idMatch[1] : '(unknown)';
-                    console.log('[gigantified] CDN URL upgrade (1.0 -> 3.0 tier)', { emoteId: emoteId, from: match, to: upgraded });
+                    chatLog('[gigantified] CDN URL upgrade (1.0 -> 3.0 tier)', { emoteId: emoteId, from: match, to: upgraded });
                     return upgraded;
                 }
             );
@@ -1048,7 +1062,7 @@
 
                 function logState(phase) {
                     var rect = el.getBoundingClientRect();
-                    console.log('[gigantified] image diagnostics', {
+                    chatLog('[gigantified] image diagnostics', {
                         messageId: msgId,
                         phase: phase,
                         src: src,
@@ -1076,7 +1090,7 @@
                     });
                     el.addEventListener('error', function onGigantifiedImgError() {
                         el.removeEventListener('error', onGigantifiedImgError);
-                        console.log('[gigantified] image load error', { messageId: msgId, src: src });
+                        chatLog('[gigantified] image load error', { messageId: msgId, src: src });
                     });
                 }
             });
@@ -1084,13 +1098,13 @@
 
         // Add a new message to chat
         function addMessage(messageData) {
-            console.log('Adding message:', messageData);
+            chatLog('Adding message:', messageData);
 
             // Check if username filtering is enabled and if this username should be filtered
             if (enableUsernameFiltering && messageData.username) {
                 var lowerUsername = messageData.username.toLowerCase();
                 if (filteredUsernames.indexOf(lowerUsername) !== -1) {
-                    console.log('Filtering out message from:', messageData.username);
+                    chatLog('Filtering out message from:', messageData.username);
                     return; // Skip this message
                 }
             }
@@ -1118,11 +1132,11 @@
             if (processedMessage.length >= 7 && processedMessage.substring(0, 7).toUpperCase() === 'ACTION ') {
                 isActionMessage = true;
                 processedMessage = processedMessage.substring(7).trim();
-                console.log('ACTION message detected (CTCP). Original:', messageData.message, 'Processed:', processedMessage);
+                chatLog('ACTION message detected (CTCP). Original:', messageData.message, 'Processed:', processedMessage);
             } else if (processedMessage.startsWith('/me ')) {
                 isActionMessage = true;
                 processedMessage = processedMessage.substring(4).trim();
-                console.log('ACTION message detected (/me). Original:', messageData.message, 'Processed:', processedMessage);
+                chatLog('ACTION message detected (/me). Original:', messageData.message, 'Processed:', processedMessage);
             }
 
             // Apply random font to message if enabled
@@ -1148,14 +1162,14 @@
 
             // Add badges if enabled and available
             if (enableBadges && messageData.badges) {
-                console.log('Processing badges for', messageData.username, ':', messageData.badges);
+                chatLog('Processing badges for', messageData.username, ':', messageData.badges);
                 var badgesHTML = parseBadges(messageData.badges);
-                console.log('Generated badges HTML:', badgesHTML);
+                chatLog('Generated badges HTML:', badgesHTML);
                 if (badgesHTML) {
                     headerHTML += '<div class="message-badges">' + badgesHTML + '</div>';
                 }
             } else {
-                console.log('Badges disabled or no badges for', messageData.username, 'enableBadges:', enableBadges, 'badges:', messageData.badges);
+                chatLog('Badges disabled or no badges for', messageData.username, 'enableBadges:', enableBadges, 'badges:', messageData.badges);
             }
 
             // Add username with color
@@ -1188,32 +1202,32 @@
             }
 
             if (messageData.message_type === 'power_ups_gigantified_emote') {
-                console.log('[gigantified] message branch', { messageId: messageData.id, enableEmotes: enableEmotes });
+                chatLog('[gigantified] message branch', { messageId: messageData.id, enableEmotes: enableEmotes });
                 if (enableEmotes) {
                     var twitchTier10Re = /static-cdn\.jtvnw\.net\/emoticons\/v2\/[^/]+\/default\/(?:light|dark)\/1\.0/g;
                     var twitchTier30Re = /static-cdn\.jtvnw\.net\/emoticons\/v2\/[^/]+\/default\/(?:light|dark)\/3\.0/g;
                     var preUpgrade = messageContent || '';
                     var count10pre = (preUpgrade.match(twitchTier10Re) || []).length;
                     var count30pre = (preUpgrade.match(twitchTier30Re) || []).length;
-                    console.log('[gigantified] Twitch CDN URL tier counts (pre-upgrade): /1.0:', count10pre, '/3.0:', count30pre);
+                    chatLog('[gigantified] Twitch CDN URL tier counts (pre-upgrade): /1.0:', count10pre, '/3.0:', count30pre);
                     messageContent = upgradeTwitchEmoteUrlsForGigantified(messageContent);
                     var postUpgrade = messageContent || '';
                     var count10post = (postUpgrade.match(twitchTier10Re) || []).length;
                     var count30post = (postUpgrade.match(twitchTier30Re) || []).length;
-                    console.log('[gigantified] Twitch CDN URL tier counts (post-upgrade): /1.0:', count10post, '/3.0:', count30post);
+                    chatLog('[gigantified] Twitch CDN URL tier counts (post-upgrade): /1.0:', count10post, '/3.0:', count30post);
                 } else {
-                    console.log('[gigantified] URL upgrade skipped (enableEmotes is false); gigantified-message styling may still apply');
+                    chatLog('[gigantified] URL upgrade skipped (enableEmotes is false); gigantified-message styling may still apply');
                 }
             }
 
             messageHTML += '<div class="message-content">' + messageContent + '</div>';
 
-            console.log('Final message HTML:', messageHTML);
+            chatLog('Final message HTML:', messageHTML);
 
             // Try to set innerHTML safely
             try {
                 messageElement.innerHTML = messageHTML;
-                console.log('HTML set successfully');
+                chatLog('HTML set successfully');
             } catch (error) {
                 console.error('Error setting innerHTML:', error);
                 // Fallback to text content if HTML fails
@@ -1230,18 +1244,18 @@
 
             // Apply gigantified styling to Twitch CDN emotes only (power-up uses native emotes)
             if (messageData.message_type === 'power_ups_gigantified_emote') {
-                console.log('[gigantified] applying gigantified-message class', messageData.id);
+                chatLog('[gigantified] applying gigantified-message class', messageData.id);
                 messageElement.classList.add('gigantified-message');
                 var emoteElements = messageElement.querySelectorAll('.emote-img, .emote-base, .emote-overlay, .emote-zw');
                 emoteElements.forEach(function (emoteElement) {
                     var src = emoteElement.getAttribute('src') || '';
                     if (src.indexOf('static-cdn.jtvnw.net/emoticons/') !== -1) {
                         emoteElement.classList.add('gigantified-emote');
-                        console.log('[gigantified] applied gigantified-emote', { messageId: messageData.id, tag: emoteElement.tagName, src: src });
+                        chatLog('[gigantified] applied gigantified-emote', { messageId: messageData.id, tag: emoteElement.tagName, src: src });
                     } else if (src) {
-                        console.log('[gigantified] skipped gigantified-emote (non-Twitch CDN src)', { messageId: messageData.id, tag: emoteElement.tagName, src: src });
+                        chatLog('[gigantified] skipped gigantified-emote (non-Twitch CDN src)', { messageId: messageData.id, tag: emoteElement.tagName, src: src });
                     } else {
-                        console.log('[gigantified] skipped gigantified-emote (missing src)', { messageId: messageData.id, tag: emoteElement.tagName });
+                        chatLog('[gigantified] skipped gigantified-emote (missing src)', { messageId: messageData.id, tag: emoteElement.tagName });
                     }
                 });
             }
@@ -1264,47 +1278,47 @@
 
         // Parse badges into HTML
         function parseBadges(badgeString) {
-            console.log('parseBadges called with:', badgeString);
+            chatLog('parseBadges called with:', badgeString);
 
             if (!badgeString || badgeString === 'null') {
-                console.log('No badges to parse');
+                chatLog('No badges to parse');
                 return '';
             }
 
             var badges = badgeString.split(',');
             var badgeHTML = '';
 
-            console.log('Split badges:', badges);
+            chatLog('Split badges:', badges);
 
             badges.forEach(function (badge) {
                 var parts = badge.split('/');
                 if (parts.length !== 2) {
-                    console.log('Invalid badge format:', badge);
+                    chatLog('Invalid badge format:', badge);
                     return;
                 }
 
                 var badgeSet = parts[0];
                 var badgeId = parts[1];
 
-                console.log('Processing badge:', badgeSet, '/', badgeId);
+                chatLog('Processing badge:', badgeSet, '/', badgeId);
 
                 // Check if badge is disabled
                 if (disabledBadges[badgeSet]) {
-                    console.log('Badge disabled:', badgeSet);
+                    chatLog('Badge disabled:', badgeSet);
                     return;
                 }
 
                 var badgeUrl = findBadgeUrl(badgeSet, badgeId);
-                console.log('Found badge URL for', badgeSet, '/', badgeId, ':', badgeUrl);
+                chatLog('Found badge URL for', badgeSet, '/', badgeId, ':', badgeUrl);
 
                 if (badgeUrl) {
                     badgeHTML += '<img src="' + badgeUrl + '" class="badge-img" alt="' + badgeSet + '">';
                 } else {
-                    console.log('No URL found for badge:', badgeSet, '/', badgeId);
+                    chatLog('No URL found for badge:', badgeSet, '/', badgeId);
                 }
             });
 
-            console.log('Final badge HTML:', badgeHTML);
+            chatLog('Final badge HTML:', badgeHTML);
             return badgeHTML;
         }
 
@@ -1358,7 +1372,7 @@
                             }
 
                             if (bestMatch) {
-                                console.log('Using subscriber badge tier for', targetMonths, 'months:', bestMatch.id + '-month badge');
+                                chatLog('Using subscriber badge tier for', targetMonths, 'months:', bestMatch.id + '-month badge');
                                 return bestMatch.image_url_1x;
                             }
                         }
@@ -1512,12 +1526,12 @@
                 // Check third-party emotes with zero-width support
                 var emoteResult = findEmoteWithMetadata(word);
                 if (emoteResult) {
-                    console.log('Processing emote:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
+                    chatLog('Processing emote:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
 
                     // Check if this is a zero-width emote and if there's a previous word to check
                     if (emoteResult.isZeroWidth && i > 0) {
                         var previousWord = words[i - 1]; // Get the previous word
-                        console.log('Zero-width emote detected:', word, 'Previous word:', previousWord);
+                        chatLog('Zero-width emote detected:', word, 'Previous word:', previousWord);
 
                         // Check if previous word is an emote (either HTML or text)
                         var isPreviousWordEmote = false;
@@ -1533,7 +1547,7 @@
                             isPreviousWordEmote = previousEmoteResult !== null;
                         }
 
-                        console.log('Previous word analysis - isEmote:', isPreviousWordEmote, 'isCheermote:', isPreviousWordCheermote);
+                        chatLog('Previous word analysis - isEmote:', isPreviousWordEmote, 'isCheermote:', isPreviousWordCheermote);
 
                         if (isPreviousWordEmote && !isPreviousWordCheermote) {
                             // Create overlay with previous emote
@@ -1551,7 +1565,7 @@
                             // Replace the previous word in parsedWords with the overlay
                             parsedWords[parsedWords.length - 1] = overlayResult;
 
-                            console.log('Created zero-width overlay for:', word, 'on base emote:', previousWord);
+                            chatLog('Created zero-width overlay for:', word, 'on base emote:', previousWord);
                             continue;
                         }
                     }
@@ -1561,12 +1575,12 @@
                         var emoteImg;
                         if (emoteResult.isZeroWidth) {
                             // Zero-width emote without base, render as regular emote with special class
-                            console.log('Rendering zero-width emote as standalone:', word);
+                            chatLog('Rendering zero-width emote as standalone:', word);
                             emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
                         } else {
                             emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
                         }
-                        console.log('Generated emote HTML:', emoteImg);
+                        chatLog('Generated emote HTML:', emoteImg);
                         parsedWords.push(emoteImg);
                     } else {
                         console.error('Emote found but no URL available for:', word, emoteResult);
@@ -1633,12 +1647,12 @@
                 // Check third-party emotes with zero-width support
                 var emoteResult = findEmoteWithMetadata(word);
                 if (emoteResult) {
-                    console.log('Processing emote in ACTION:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
+                    chatLog('Processing emote in ACTION:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
 
                     // Check if this is a zero-width emote and if there's a previous word to check
                     if (emoteResult.isZeroWidth && i > 0) {
                         var previousWord = words[i - 1]; // Get the previous word
-                        console.log('Zero-width emote detected in ACTION:', word, 'Previous word:', previousWord);
+                        chatLog('Zero-width emote detected in ACTION:', word, 'Previous word:', previousWord);
 
                         // Check if previous word is an emote (either HTML or text)
                         var isPreviousWordEmote = false;
@@ -1654,7 +1668,7 @@
                             isPreviousWordEmote = previousEmoteResult !== null;
                         }
 
-                        console.log('Previous word analysis in ACTION - isEmote:', isPreviousWordEmote, 'isCheermote:', isPreviousWordCheermote);
+                        chatLog('Previous word analysis in ACTION - isEmote:', isPreviousWordEmote, 'isCheermote:', isPreviousWordCheermote);
 
                         if (isPreviousWordEmote && !isPreviousWordCheermote) {
                             // Create overlay with previous emote
@@ -1672,7 +1686,7 @@
                             // Replace the previous word in parsedWords with the overlay
                             parsedWords[parsedWords.length - 1] = overlayResult;
 
-                            console.log('Created zero-width overlay in ACTION for:', word, 'on base emote:', previousWord);
+                            chatLog('Created zero-width overlay in ACTION for:', word, 'on base emote:', previousWord);
                             continue;
                         }
                     }
@@ -1682,12 +1696,12 @@
                         var emoteImg;
                         if (emoteResult.isZeroWidth) {
                             // Zero-width emote without base, render as regular emote with special class
-                            console.log('Rendering zero-width emote as standalone in ACTION:', word);
+                            chatLog('Rendering zero-width emote as standalone in ACTION:', word);
                             emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
                         } else {
                             emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
                         }
-                        console.log('Generated emote HTML in ACTION:', emoteImg);
+                        chatLog('Generated emote HTML in ACTION:', emoteImg);
                         parsedWords.push(emoteImg);
                     } else {
                         console.error('Emote found but no URL available in ACTION for:', word, emoteResult);
@@ -1754,7 +1768,7 @@
                 // Check third-party emotes with zero-width support
                 var emoteResult = findEmoteWithMetadata(word);
                 if (emoteResult) {
-                    console.log('Processing emote with context:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
+                    chatLog('Processing emote with context:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
 
                     // Check if this is a zero-width emote
                     if (emoteResult.isZeroWidth) {
@@ -1765,7 +1779,7 @@
                         // First, check for previous word in the current text part
                         if (i > 0) {
                             var previousWord = words[i - 1];
-                            console.log('Zero-width emote detected:', word, 'Previous word in part:', previousWord);
+                            chatLog('Zero-width emote detected:', word, 'Previous word in part:', previousWord);
 
                             // Check if previous word is an emote (either HTML or text)
                             var isPreviousWordEmote = false;
@@ -1789,7 +1803,7 @@
                             if (isPreviousWordEmote && !isPreviousWordCheermote) {
                                 baseEmoteFound = true;
                                 baseEmoteIndex = -1; // Indicates current part
-                                console.log('Found base emote in current part for:', word);
+                                chatLog('Found base emote in current part for:', word);
                             }
                         }
 
@@ -1804,7 +1818,7 @@
                                     baseEmoteHtml = prevPart;
                                     baseEmoteFound = true;
                                     baseEmoteIndex = j;
-                                    console.log('Found Twitch emote in previous part for zero-width:', word, 'Base emote:', baseEmoteHtml);
+                                    chatLog('Found Twitch emote in previous part for zero-width:', word, 'Base emote:', baseEmoteHtml);
                                     break;
                                 }
 
@@ -1816,7 +1830,7 @@
                                         baseEmoteHtml = emoteMatches[emoteMatches.length - 1]; // Get the last emote
                                         baseEmoteFound = true;
                                         baseEmoteIndex = j;
-                                        console.log('Found third-party emote in previous part for zero-width:', word, 'Base emote:', baseEmoteHtml);
+                                        chatLog('Found third-party emote in previous part for zero-width:', word, 'Base emote:', baseEmoteHtml);
                                         break;
                                     }
                                 }
@@ -1832,7 +1846,7 @@
                                 var lastParsedWord = parsedWords[parsedWords.length - 1];
                                 if (lastParsedWord.includes('emote-img')) {
                                     parsedWords[parsedWords.length - 1] = overlayResult;
-                                    console.log('Replaced previous word with overlay for:', word);
+                                    chatLog('Replaced previous word with overlay for:', word);
                                     continue;
                                 }
                             }
@@ -1842,7 +1856,7 @@
                                 // Handle the case where the base emote is the entire previous part
                                 if (previousParts[baseEmoteIndex] === baseEmoteHtml) {
                                     previousParts[baseEmoteIndex] = overlayResult;
-                                    console.log('Replaced entire previous part with overlay for:', word);
+                                    chatLog('Replaced entire previous part with overlay for:', word);
                                     continue;
                                 }
 
@@ -1850,12 +1864,12 @@
                                 if (previousParts[baseEmoteIndex].includes(baseEmoteHtml)) {
                                     // Replace the specific emote within the part
                                     previousParts[baseEmoteIndex] = previousParts[baseEmoteIndex].replace(baseEmoteHtml, overlayResult);
-                                    console.log('Replaced emote within previous part with overlay for:', word);
+                                    chatLog('Replaced emote within previous part with overlay for:', word);
                                     continue;
                                 }
                             }
 
-                            console.log('Warning: Found base emote but could not replace it properly for:', word);
+                            chatLog('Warning: Found base emote but could not replace it properly for:', word);
                         }
                     }
 
@@ -1864,12 +1878,12 @@
                         var emoteImg;
                         if (emoteResult.isZeroWidth) {
                             // Zero-width emote without base, render as regular emote with special class
-                            console.log('Rendering zero-width emote as standalone:', word);
+                            chatLog('Rendering zero-width emote as standalone:', word);
                             emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
                         } else {
                             emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
                         }
-                        console.log('Generated emote HTML with context:', emoteImg);
+                        chatLog('Generated emote HTML with context:', emoteImg);
                         parsedWords.push(emoteImg);
                     } else {
                         console.error('Emote found but no URL available for:', word, emoteResult);
@@ -1936,7 +1950,7 @@
                 // Check third-party emotes with zero-width support
                 var emoteResult = findEmoteWithMetadata(word);
                 if (emoteResult) {
-                    console.log('Processing emote with context in ACTION:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
+                    chatLog('Processing emote with context in ACTION:', word, 'isZeroWidth:', emoteResult.isZeroWidth, 'source:', emoteResult.source, 'url:', emoteResult.url);
 
                     // Check if this is a zero-width emote
                     if (emoteResult.isZeroWidth) {
@@ -1947,7 +1961,7 @@
                         // First, check for previous word in the current text part
                         if (i > 0) {
                             var previousWord = words[i - 1];
-                            console.log('Zero-width emote detected in ACTION:', word, 'Previous word in part:', previousWord);
+                            chatLog('Zero-width emote detected in ACTION:', word, 'Previous word in part:', previousWord);
 
                             // Check if previous word is an emote (either HTML or text)
                             var isPreviousWordEmote = false;
@@ -1971,7 +1985,7 @@
                             if (isPreviousWordEmote && !isPreviousWordCheermote) {
                                 baseEmoteFound = true;
                                 baseEmoteIndex = -1; // Indicates current part
-                                console.log('Found base emote in current part for ACTION:', word);
+                                chatLog('Found base emote in current part for ACTION:', word);
                             }
                         }
 
@@ -1986,7 +2000,7 @@
                                     baseEmoteHtml = prevPart;
                                     baseEmoteFound = true;
                                     baseEmoteIndex = j;
-                                    console.log('Found Twitch emote in previous part for zero-width ACTION:', word, 'Base emote:', baseEmoteHtml);
+                                    chatLog('Found Twitch emote in previous part for zero-width ACTION:', word, 'Base emote:', baseEmoteHtml);
                                     break;
                                 }
 
@@ -1998,7 +2012,7 @@
                                         baseEmoteHtml = emoteMatches[emoteMatches.length - 1]; // Get the last emote
                                         baseEmoteFound = true;
                                         baseEmoteIndex = j;
-                                        console.log('Found third-party emote in previous part for zero-width ACTION:', word, 'Base emote:', baseEmoteHtml);
+                                        chatLog('Found third-party emote in previous part for zero-width ACTION:', word, 'Base emote:', baseEmoteHtml);
                                         break;
                                     }
                                 }
@@ -2014,7 +2028,7 @@
                                 var lastParsedWord = parsedWords[parsedWords.length - 1];
                                 if (lastParsedWord.includes('emote-img')) {
                                     parsedWords[parsedWords.length - 1] = overlayResult;
-                                    console.log('Replaced previous word with overlay for ACTION:', word);
+                                    chatLog('Replaced previous word with overlay for ACTION:', word);
                                     continue;
                                 }
                             }
@@ -2024,7 +2038,7 @@
                                 // Handle the case where the base emote is the entire previous part
                                 if (previousParts[baseEmoteIndex] === baseEmoteHtml) {
                                     previousParts[baseEmoteIndex] = overlayResult;
-                                    console.log('Replaced entire previous part with overlay for ACTION:', word);
+                                    chatLog('Replaced entire previous part with overlay for ACTION:', word);
                                     continue;
                                 }
 
@@ -2032,12 +2046,12 @@
                                 if (previousParts[baseEmoteIndex].includes(baseEmoteHtml)) {
                                     // Replace the specific emote within the part
                                     previousParts[baseEmoteIndex] = previousParts[baseEmoteIndex].replace(baseEmoteHtml, overlayResult);
-                                    console.log('Replaced emote within previous part with overlay for ACTION:', word);
+                                    chatLog('Replaced emote within previous part with overlay for ACTION:', word);
                                     continue;
                                 }
                             }
 
-                            console.log('Warning: Found base emote but could not replace it properly for ACTION:', word);
+                            chatLog('Warning: Found base emote but could not replace it properly for ACTION:', word);
                         }
                     }
 
@@ -2046,12 +2060,12 @@
                         var emoteImg;
                         if (emoteResult.isZeroWidth) {
                             // Zero-width emote without base, render as regular emote with special class
-                            console.log('Rendering zero-width emote as standalone in ACTION:', word);
+                            chatLog('Rendering zero-width emote as standalone in ACTION:', word);
                             emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
                         } else {
                             emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
                         }
-                        console.log('Generated emote HTML with context in ACTION:', emoteImg);
+                        chatLog('Generated emote HTML with context in ACTION:', emoteImg);
                         parsedWords.push(emoteImg);
                     } else {
                         console.error('Emote found but no URL available in ACTION for:', word, emoteResult);
@@ -2070,7 +2084,7 @@
 
         // Parse Twitch emotes on the original message before processing other emotes
         function parseTwitchEmotesInOriginalMessage(message, emotesString) {
-            console.log('Parsing Twitch emotes. Message:', message, 'Emotes:', emotesString);
+            chatLog('Parsing Twitch emotes. Message:', message, 'Emotes:', emotesString);
 
             if (!emotesString || emotesString === 'null') {
                 return { message: message, usedPositions: [] };
@@ -2087,7 +2101,7 @@
                 var emoteId = parts[0];
                 var positions = parts[1].split(',');
 
-                console.log('Processing Twitch emote ID:', emoteId, 'Positions:', positions);
+                chatLog('Processing Twitch emote ID:', emoteId, 'Positions:', positions);
 
                 positions.forEach(function (position) {
                     var range = position.split('-');
@@ -2096,7 +2110,7 @@
                     var start = parseInt(range[0]);
                     var end = parseInt(range[1]);
 
-                    console.log('Twitch emote position:', start, '-', end, 'Text:', message.substring(start, end + 1));
+                    chatLog('Twitch emote position:', start, '-', end, 'Text:', message.substring(start, end + 1));
 
                     replacements.push({
                         start: start,
@@ -2111,7 +2125,7 @@
             // Sort by start position (descending) to replace from end to start
             replacements.sort(function (a, b) { return b.start - a.start; });
 
-            console.log('Twitch emote replacements:', replacements);
+            chatLog('Twitch emote replacements:', replacements);
 
             // Apply replacements to the original message
             var processedMessage = message;
@@ -2119,13 +2133,13 @@
                 var emoteUrl = 'https://static-cdn.jtvnw.net/emoticons/v2/' + replacement.emoteId + '/default/light/1.0';
                 var emoteImg = '<img src="' + emoteUrl + '" class="emote-img" alt="emote" onerror="console.error(\'Failed to load Twitch emote:\', this.src); this.style.display=\'none\';">';
 
-                console.log('Replacing Twitch emote at position', replacement.start, '-', replacement.end, 'with URL:', emoteUrl);
+                chatLog('Replacing Twitch emote at position', replacement.start, '-', replacement.end, 'with URL:', emoteUrl);
 
                 var before = processedMessage.substring(0, replacement.start);
                 var after = processedMessage.substring(replacement.end + 1);
                 processedMessage = before + emoteImg + after;
 
-                console.log('Message after replacement:', processedMessage);
+                chatLog('Message after replacement:', processedMessage);
             });
 
             return { message: processedMessage, usedPositions: usedPositions };
@@ -2133,15 +2147,15 @@
 
         // Create emote overlay combination
         function createEmoteOverlay(baseEmoteHtml, overlayUrl, overlayName) {
-            console.log('Creating emote overlay. Base HTML:', baseEmoteHtml, 'Overlay URL:', overlayUrl, 'Overlay name:', overlayName);
+            chatLog('Creating emote overlay. Base HTML:', baseEmoteHtml, 'Overlay URL:', overlayUrl, 'Overlay name:', overlayName);
 
             // If the base is already a container, extract the base emote
             if (baseEmoteHtml.includes('emote-container')) {
-                console.log('Base is already a container, extracting base emote');
+                chatLog('Base is already a container, extracting base emote');
                 var baseMatch = baseEmoteHtml.match(/<img[^>]*class="[^"]*emote-base[^"]*"[^>]*>/);
                 if (baseMatch) {
                     baseEmoteHtml = baseMatch[0];
-                    console.log('Extracted base emote:', baseEmoteHtml);
+                    chatLog('Extracted base emote:', baseEmoteHtml);
                 }
             }
 
@@ -2159,7 +2173,7 @@
             var baseAlt = altMatch ? altMatch[1] : 'emote';
             var baseClasses = classMatch ? classMatch[1] : 'emote-img';
 
-            console.log('Extracted base emote - src:', baseSrc, 'alt:', baseAlt, 'classes:', baseClasses);
+            chatLog('Extracted base emote - src:', baseSrc, 'alt:', baseAlt, 'classes:', baseClasses);
 
             // Create the overlay container with the base emote and overlay
             var result = '<span class="emote-container">' +
@@ -2167,141 +2181,128 @@
                 '<img src="' + overlayUrl + '" class="emote-overlay" alt="' + escapeHtml(overlayName) + '" title="Zero-width overlay: ' + escapeHtml(overlayName) + '">' +
                 '</span>';
 
-            console.log('Created overlay container:', result);
+            chatLog('Created overlay container:', result);
             return result;
         }
 
-        // Enhanced emote finder that returns metadata including zero-width info
-        function findEmoteWithMetadata(emoteName) {
-            // Debug: Log when we're searching for specific emotes that might be problematic
-            if (emoteName === 'Buhhloon') {
-                console.log('DEBUG: Searching for Buhhloon emote');
-                console.log('7TV global cache:', emoteCache.seventv.global);
-                console.log('7TV user cache:', emoteCache.seventv.user);
+        function buildSevenTvEmoteMetadata(seventvEmote, emoteName) {
+            var isZeroWidth = false;
+            if (seventvEmote.data && seventvEmote.data.flags !== undefined) {
+                isZeroWidth = (seventvEmote.data.flags & 256) !== 0;
+            } else if (seventvEmote.flags !== undefined) {
+                isZeroWidth = (seventvEmote.flags & 256) !== 0;
             }
 
-            // Check BTTV emotes
-            var bttvEmote = findInEmoteArray(emoteCache.bttv.global, emoteName, 'code') ||
-                findInEmoteArray(emoteCache.bttv.user, emoteName, 'code');
-            if (bttvEmote) {
+            var emoteUrl = null;
+            if (seventvEmote.data && seventvEmote.data.host && seventvEmote.data.host.url && seventvEmote.data.host.files) {
+                var files = seventvEmote.data.host.files;
+                var file1x = files.find(function (file) {
+                    return file.name === '1x.webp' || file.name === '1x.avif' || file.name === '1x.png' || file.name.startsWith('1x.');
+                });
+                if (file1x) {
+                    emoteUrl = 'https:' + seventvEmote.data.host.url + '/' + file1x.name;
+                }
+            }
+            if (!emoteUrl) {
+                emoteUrl = 'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x.webp';
+            }
+
+            return {
+                url: emoteUrl,
+                name: emoteName,
+                isZeroWidth: isZeroWidth,
+                source: '7TV'
+            };
+        }
+
+        function rebuildEmoteLookupMap() {
+            emoteLookupMap.clear();
+
+            function addFromArray(array, nameProperty, builder) {
+                if (!array || !Array.isArray(array)) {
+                    return;
+                }
+                array.forEach(function (emote) {
+                    if (!emote) {
+                        return;
+                    }
+                    var emoteName = emote[nameProperty];
+                    if (!emoteName) {
+                        return;
+                    }
+                    var metadata = builder(emote, emoteName);
+                    if (metadata && metadata.url) {
+                        emoteLookupMap.set(emoteName, metadata);
+                    }
+                });
+            }
+
+            // Lowest priority first; later sources overwrite earlier matches.
+            addFromArray(emoteCache.twitch.global, 'name', function (emote, emoteName) {
                 return {
-                    url: 'https://cdn.betterttv.net/emote/' + bttvEmote.id + '/1x',
+                    url: 'https://static-cdn.jtvnw.net/emoticons/v2/' + emote.id + '/default/light/1.0',
                     name: emoteName,
                     isZeroWidth: false,
-                    source: 'BTTV'
+                    source: 'Twitch'
                 };
-            }
-
-            // Check 7TV emotes with zero-width support
-            var seventvEmote = findInEmoteArray(emoteCache.seventv.global, emoteName, 'name') ||
-                findInEmoteArray(emoteCache.seventv.user, emoteName, 'name');
-            if (seventvEmote) {
-                // Check if this emote has zero-width flag
-                var isZeroWidth = false;
-
-                // Debug logging for 7TV emote structure
-                console.log('Found 7TV emote:', emoteName, 'Structure:', seventvEmote);
-
-                // Check flags in data section first (primary location for 7TV API v3)
-                if (seventvEmote.data && seventvEmote.data.flags !== undefined) {
-                    isZeroWidth = (seventvEmote.data.flags & 256) !== 0;
-                    console.log('7TV emote', emoteName, 'data.flags:', seventvEmote.data.flags, 'isZeroWidth:', isZeroWidth);
-                }
-                // Fallback to top-level flags
-                else if (seventvEmote.flags !== undefined) {
-                    isZeroWidth = (seventvEmote.flags & 256) !== 0;
-                    console.log('7TV emote', emoteName, 'top-level flags:', seventvEmote.flags, 'isZeroWidth:', isZeroWidth);
-                }
-
-                console.log('7TV emote', emoteName, 'final isZeroWidth:', isZeroWidth);
-
-                // Construct the 7TV emote URL - try different formats
-                var emoteUrl = null;
-
-                console.log('7TV emote raw data for', emoteName, ':', seventvEmote);
-
-                if (seventvEmote.data && seventvEmote.data.host && seventvEmote.data.host.url && seventvEmote.data.host.files) {
-                    // New 7TV API v3 format
-                    var files = seventvEmote.data.host.files;
-                    console.log('7TV emote files available:', files);
-
-                    var file1x = files.find(function (file) {
-                        return file.name === '1x.webp' || file.name === '1x.avif' || file.name === '1x.png' || file.name.startsWith('1x.');
-                    });
-
-                    if (file1x) {
-                        emoteUrl = 'https:' + seventvEmote.data.host.url + '/' + file1x.name;
-                        console.log('Using 7TV v3 format:', emoteUrl);
-                    }
-                }
-
-                // Fallback to legacy URL formats
-                if (!emoteUrl) {
-                    // Try different legacy formats
-                    var legacyUrls = [
-                        'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x.webp',
-                        'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x.avif',
-                        'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x.png',
-                        'https://cdn.7tv.app/emote/' + seventvEmote.id + '/1x'
-                    ];
-
-                    emoteUrl = legacyUrls[0]; // Default to first format
-                    console.log('Using 7TV legacy format:', emoteUrl);
-                }
-
-                console.log('Final 7TV emote URL for', emoteName, ':', emoteUrl);
-
-                return {
-                    url: emoteUrl,
-                    name: emoteName,
-                    isZeroWidth: isZeroWidth,
-                    source: '7TV'
-                };
-            }
-
-            // Debug: Log when we can't find the emote
-            if (emoteName === 'Buhhloon') {
-                console.log('DEBUG: Could not find Buhhloon emote in any cache');
-            }
-
-            // Check FFZ emotes
-            var ffzEmote = findInEmoteArray(emoteCache.ffz.global, emoteName, 'name') ||
-                findInEmoteArray(emoteCache.ffz.user, emoteName, 'name');
-            if (ffzEmote) {
+            });
+            addFromArray(emoteCache.ffz.user, 'name', function (emote, emoteName) {
                 var ffzUrl = null;
-                if (ffzEmote.urls) {
-                    // Try different size formats
-                    ffzUrl = ffzEmote.urls['1'] || ffzEmote.urls['2'] || ffzEmote.urls['4'];
-                    // Make sure URL is absolute
+                if (emote.urls) {
+                    ffzUrl = emote.urls['1'] || emote.urls['2'] || emote.urls['4'];
                     if (ffzUrl && !ffzUrl.startsWith('http')) {
                         ffzUrl = 'https:' + ffzUrl;
                     }
                 }
-
-                console.log('FFZ emote URL for', emoteName, ':', ffzUrl);
-
                 return {
                     url: ffzUrl,
                     name: emoteName,
                     isZeroWidth: false,
                     source: 'FFZ'
                 };
-            }
-
-            // Check Twitch global emotes
-            var twitchEmote = findInEmoteArray(emoteCache.twitch.global, emoteName, 'name');
-            if (twitchEmote) {
-                var twitchUrl = 'https://static-cdn.jtvnw.net/emoticons/v2/' + twitchEmote.id + '/default/light/1.0';
-                console.log('Twitch emote URL for', emoteName, ':', twitchUrl);
-
+            });
+            addFromArray(emoteCache.ffz.global, 'name', function (emote, emoteName) {
+                var ffzUrl = null;
+                if (emote.urls) {
+                    ffzUrl = emote.urls['1'] || emote.urls['2'] || emote.urls['4'];
+                    if (ffzUrl && !ffzUrl.startsWith('http')) {
+                        ffzUrl = 'https:' + ffzUrl;
+                    }
+                }
                 return {
-                    url: twitchUrl,
+                    url: ffzUrl,
                     name: emoteName,
                     isZeroWidth: false,
-                    source: 'Twitch'
+                    source: 'FFZ'
                 };
-            }
+            });
+            addFromArray(emoteCache.seventv.user, 'name', buildSevenTvEmoteMetadata);
+            addFromArray(emoteCache.seventv.global, 'name', buildSevenTvEmoteMetadata);
+            addFromArray(emoteCache.bttv.user, 'code', function (emote, emoteName) {
+                return {
+                    url: 'https://cdn.betterttv.net/emote/' + emote.id + '/1x',
+                    name: emoteName,
+                    isZeroWidth: false,
+                    source: 'BTTV'
+                };
+            });
+            addFromArray(emoteCache.bttv.global, 'code', function (emote, emoteName) {
+                return {
+                    url: 'https://cdn.betterttv.net/emote/' + emote.id + '/1x',
+                    name: emoteName,
+                    isZeroWidth: false,
+                    source: 'BTTV'
+                };
+            });
 
+            chatLog('Emote lookup map rebuilt:', emoteLookupMap.size, 'entries');
+        }
+
+        // Enhanced emote finder that returns metadata including zero-width info
+        function findEmoteWithMetadata(emoteName) {
+            if (emoteLookupMap.has(emoteName)) {
+                return emoteLookupMap.get(emoteName);
+            }
             return null;
         }
 
@@ -2439,12 +2440,12 @@
                 });
             }
 
-            console.log('Chat settings updated:', settings);
+            chatLog('Chat settings updated:', settings);
         }
 
         // Handle moderation events
         function handleModerationEvent(moderationData) {
-            console.log('Moderation event received:', moderationData);
+            chatLog('Moderation event received:', moderationData);
 
             try {
                 if (moderationData.actions) {
@@ -2453,7 +2454,7 @@
                         var deleteAction = moderationData.actions.delete;
                         if (deleteAction.message_id) {
                             removeMessageById(deleteAction.message_id);
-                            console.log('Removed message by ID:', deleteAction.message_id);
+                            chatLog('Removed message by ID:', deleteAction.message_id);
                         }
                     }
 
@@ -2462,7 +2463,7 @@
                         var timeoutAction = moderationData.actions.timeout;
                         // Remove recent messages from timed out user
                         removeMessagesByUser(timeoutAction.user_id);
-                        console.log('Removed messages from timed out user:', timeoutAction.user_name, timeoutAction.user_id);
+                        chatLog('Removed messages from timed out user:', timeoutAction.user_name, timeoutAction.user_id);
                     }
 
                     // Handle user ban
@@ -2470,13 +2471,13 @@
                         var banAction = moderationData.actions.ban;
                         // Remove all messages from banned user
                         removeMessagesByUser(banAction.user_id);
-                        console.log('Removed messages from banned user:', banAction.user_name, banAction.user_id);
+                        chatLog('Removed messages from banned user:', banAction.user_name, banAction.user_id);
                     }
 
                     // Handle warning - no message removal needed for warnings
                     if (moderationData.actions.warning) {
                         var warningAction = moderationData.actions.warning;
-                        console.log('Warning received for user:', warningAction.user_name, warningAction.user_id);
+                        chatLog('Warning received for user:', warningAction.user_name, warningAction.user_id);
                     }
                 }
             } catch (error) {
@@ -2508,7 +2509,7 @@
             if (element) {
                 element.remove();
                 messageCount--;
-                console.log('Removed message by ID:', messageId);
+                chatLog('Removed message by ID:', messageId);
             }
         }
 
@@ -2521,14 +2522,14 @@
             messages.forEach(function (message) {
                 message.remove();
                 removedCount++;
-                console.log('Removed message from user:', userId, 'Message ID:', message.id);
+                chatLog('Removed message from user:', userId, 'Message ID:', message.id);
             });
 
             if (removedCount > 0) {
                 messageCount -= removedCount;
-                console.log('Removed ' + removedCount + ' messages from user:', userId);
+                chatLog('Removed ' + removedCount + ' messages from user:', userId);
             } else {
-                console.log('No messages found for user:', userId);
+                chatLog('No messages found for user:', userId);
             }
         }
 
@@ -2543,7 +2544,7 @@
         // Refresh emotes periodically (every 30 minutes)
         setInterval(function () {
             if (streamerID && !emoteFetchInProgress) {
-                console.log('Refreshing emotes...');
+                chatLog('Refreshing emotes...');
                 fetchAllEmotesAndBadges();
             }
         }, 30 * 60 * 1000);
@@ -2690,13 +2691,12 @@
 
         async function loadTemplateConfig() {
             try {
-                var response = await fetch('/api/all-template-configs', { credentials: 'same-origin' });
+                var response = await fetch('/api/template-config/chat', { credentials: 'same-origin' });
                 if (!response.ok) {
                     console.error('Failed to load template configs:', response.status);
                     return;
                 }
-                var allConfigs = await response.json();
-                var chatConfigData = allConfigs.chat;
+                var chatConfigData = await response.json();
                 if (!chatConfigData || !chatConfigData.elements) {
                     console.warn('No chat config found in response');
                     return;
@@ -2716,7 +2716,7 @@
         loadTemplateConfig();
 
         // Initialize
-        console.log('Mycelian Chat initialized');
+        chatLog('Mycelian Chat initialized');
 
         // BTTV Emote Fetching
         function fetchBTTVEmotes() {
@@ -2725,7 +2725,8 @@
                 .then(response => response.json())
                 .then(data => {
                     emoteCache.bttv.global = data;
-                    console.log('BTTV global emotes loaded:', data.length);
+                    rebuildEmoteLookupMap();
+                    chatLog('BTTV global emotes loaded:', data.length);
                 })
                 .catch(error => console.error('Error fetching BTTV global emotes:', error));
 
@@ -2735,7 +2736,8 @@
                     .then(response => response.json())
                     .then(data => {
                         emoteCache.bttv.user = (data.channelEmotes || []).concat(data.sharedEmotes || []);
-                        console.log('BTTV user emotes loaded:', emoteCache.bttv.user.length);
+                        rebuildEmoteLookupMap();
+                        chatLog('BTTV user emotes loaded:', emoteCache.bttv.user.length);
                     })
                     .catch(error => console.error('Error fetching BTTV user emotes:', error));
             }
@@ -2748,8 +2750,8 @@
                 .then(response => response.json())
                 .then(data => {
                     emoteCache.seventv.global = data.emotes || [];
-                    console.log('7TV global emotes loaded:', emoteCache.seventv.global.length);
-                    console.log('7TV global emotes:', emoteCache.seventv.global);
+                    rebuildEmoteLookupMap();
+                    chatLog('7TV global emotes loaded:', emoteCache.seventv.global.length);
                 })
                 .catch(error => console.error('Error fetching 7TV global emotes:', error));
 
@@ -2759,7 +2761,8 @@
                     .then(response => response.json())
                     .then(data => {
                         emoteCache.seventv.user = (data.emote_set && data.emote_set.emotes) || [];
-                        console.log('7TV user emotes loaded:', emoteCache.seventv.user.length);
+                        rebuildEmoteLookupMap();
+                        chatLog('7TV user emotes loaded:', emoteCache.seventv.user.length);
                     })
                     .catch(error => console.error('Error fetching 7TV user emotes:', error));
             }
@@ -2772,7 +2775,8 @@
                 .then(response => response.json())
                 .then(data => {
                     emoteCache.ffz.global = (data.sets && data.sets['3'] && data.sets['3'].emoticons) || [];
-                    console.log('FFZ global emotes loaded:', emoteCache.ffz.global.length);
+                    rebuildEmoteLookupMap();
+                    chatLog('FFZ global emotes loaded:', emoteCache.ffz.global.length);
                 })
                 .catch(error => console.error('Error fetching FFZ global emotes:', error));
 
@@ -2783,7 +2787,8 @@
                     .then(data => {
                         if (data.room && data.room.set && data.sets && data.sets[data.room.set]) {
                             emoteCache.ffz.user = data.sets[data.room.set].emoticons || [];
-                            console.log('FFZ user emotes loaded:', emoteCache.ffz.user.length);
+                            rebuildEmoteLookupMap();
+                            chatLog('FFZ user emotes loaded:', emoteCache.ffz.user.length);
                         }
                     })
                     .catch(error => console.error('Error fetching FFZ user emotes:', error));
@@ -2792,7 +2797,7 @@
 
         // Twitch Emote Fetching (via websocket proxy)
         function fetchTwitchEmotes() {
-            console.log('Requesting Twitch global emotes...');
+            chatLog('Requesting Twitch global emotes...');
             socket.emit('twitch-api-request', {
                 endpoint: 'https://api.twitch.tv/helix/chat/emotes/global',
                 method: 'GET',
@@ -2802,7 +2807,7 @@
 
         // Twitch Badge Fetching (via websocket proxy)
         function fetchTwitchBadges() {
-            console.log('Requesting Twitch global badges...');
+            chatLog('Requesting Twitch global badges...');
             // Global badges
             socket.emit('twitch-api-request', {
                 endpoint: 'https://api.twitch.tv/helix/chat/badges/global',
@@ -2812,7 +2817,7 @@
 
             // User badges
             if (streamerID) {
-                console.log('Requesting Twitch user badges for ID:', streamerID);
+                chatLog('Requesting Twitch user badges for ID:', streamerID);
                 socket.emit('twitch-api-request', {
                     endpoint: `https://api.twitch.tv/helix/chat/badges?broadcaster_id=${streamerID}`,
                     method: 'GET',
@@ -2826,7 +2831,7 @@
         // Cheermote Fetching (via websocket proxy)
         function fetchCheermotes() {
             if (streamerID) {
-                console.log('Requesting cheermotes for ID:', streamerID);
+                chatLog('Requesting cheermotes for ID:', streamerID);
                 socket.emit('twitch-api-request', {
                     endpoint: `https://api.twitch.tv/helix/bits/cheermotes?broadcaster_id=${streamerID}`,
                     method: 'GET',

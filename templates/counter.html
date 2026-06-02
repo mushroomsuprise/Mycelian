@@ -221,6 +221,11 @@
             updateDisplay();
         });
 
+        socket.on('template_config_updated', function (data) {
+            if (data && data.template && data.template !== 'counter') return;
+            loadTemplateConfig();
+        });
+
         socket.on('refresh-counter', function () {
             if (settings.enableAnimations) {
                 animateRefresh();
@@ -460,13 +465,9 @@
         // Load template config directly from API
         async function loadTemplateConfig() {
             try {
-                const response = await fetch('/api/all-template-configs');
+                const response = await fetch('/api/template-config/counter', { credentials: 'same-origin' });
                 if (response.ok) {
-                    const allConfigs = await response.json();
-                    console.log('Loaded all template configs:', Object.keys(allConfigs));
-
-                    // Get the counter config specifically
-                    const counterConfigData = allConfigs.counter;
+                    const counterConfigData = await response.json();
                     if (counterConfigData && counterConfigData.elements) {
                         console.log('Found counter template config:', counterConfigData);
 

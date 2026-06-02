@@ -1376,13 +1376,9 @@
         // Load template config directly from API
         async function loadTemplateConfig() {
             try {
-                const response = await fetch('/api/all-template-configs');
+                const response = await fetch('/api/template-config/bitboss', { credentials: 'same-origin' });
                 if (response.ok) {
-                    const allConfigs = await response.json();
-                    console.log('Loaded all template configs:', Object.keys(allConfigs));
-
-                    // Get the bitboss config specifically
-                    const bitbossConfigData = allConfigs.bitboss;
+                    const bitbossConfigData = await response.json();
                     if (bitbossConfigData && bitbossConfigData.elements) {
                         console.log('Found bitboss template config:', bitbossConfigData);
 
@@ -1594,8 +1590,10 @@
             loadTemplateConfig();
         }, 1000);
 
-        // Periodically reload config to pick up changes (every 30 seconds)
-        setInterval(loadTemplateConfig, 30000);
+        socket.on('template_config_updated', function (data) {
+            if (data && data.template && data.template !== 'bitboss') return;
+            loadTemplateConfig();
+        });
 
         console.log('Mycelian Bit Boss initialized with instant_alert queue system');
         console.log('Game settings:', gameSettings);

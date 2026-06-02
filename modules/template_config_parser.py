@@ -28,7 +28,8 @@ import glob
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+import threading
+from typing import Any, Dict, List, Optional, Tuple
 
 from .path_utils import get_data_path
 
@@ -150,7 +151,77 @@ class TemplateConfigParser:
         if not os.path.exists(self.config_dir):
             os.makedirs(self.config_dir)
             logger.debug(f"Created config directory: {self.config_dir}")
-    
+
+        # mtime-keyed caches (invalidated on save/delete/create)
+        self._file_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._hidden_cache: Dict[str, Tuple[float, bool]] = {}
+        self._cache_lock = threading.Lock()
+
+    def _config_mtime(self, config_name: str) -> float:
+        path = self.get_config_path(config_name)
+        try:
+            return os.path.getmtime(path) if os.path.exists(path) else 0.0
+        except OSError:
+            return 0.0
+
+    def invalidate_cache(self, config_name: Optional[str] = None) -> None:
+        """Drop cached JSON for one config or all configs."""
+        with self._cache_lock:
+            if config_name is None:
+                self._file_cache.clear()
+                self._hidden_cache.clear()
+            else:
+                self._file_cache.pop(config_name, None)
+                self._hidden_cache.pop(config_name, None)
+
+    def _load_raw_config_from_disk(self, config_name: str) -> Dict[str, Any]:
+        """Read JSON from disk without using the mtime cache."""
+        config_path = self.get_config_path(config_name)
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                return loaded
+            return self._create_default_config(config_name)
+        default_config = self._create_default_config(config_name)
+        self.save_config(config_name, default_config)
+        return default_config
+
+    def _get_cached_raw_config(self, config_name: str) -> Dict[str, Any]:
+        mtime = self._config_mtime(config_name)
+        with self._cache_lock:
+            cached = self._file_cache.get(config_name)
+            if cached is not None and cached[0] == mtime:
+                return copy.deepcopy(cached[1])
+        raw = self._load_raw_config_from_disk(config_name)
+        with self._cache_lock:
+            self._file_cache[config_name] = (self._config_mtime(config_name), copy.deepcopy(raw))
+        return raw
+
+    def _filter_config(
+        self,
+        config: Dict[str, Any],
+        include_dynamic_controls: bool,
+        include_streamdeck_options: bool,
+    ) -> Dict[str, Any]:
+        out = config
+        if (
+            not include_dynamic_controls
+            and isinstance(out, dict)
+            and "dynamic_controls" in out
+        ):
+            out = out.copy()
+            del out["dynamic_controls"]
+        if (
+            not include_streamdeck_options
+            and isinstance(out, dict)
+            and "streamdeck_options" in out
+        ):
+            if out is config:
+                out = out.copy()
+            del out["streamdeck_options"]
+        return out
+
     def get_config_files(self) -> List[str]:
         """
         Get a list of all configuration files
@@ -205,16 +276,29 @@ class TemplateConfigParser:
             bool: True if the config is hidden, False otherwise
         """
         try:
-            config = self.load_config(config_name, include_dynamic_controls=True)
-            
-            # Check for "hidden" property at the root level
-            if isinstance(config, dict) and config.get('hidden', False):
-                logger.debug(f"Config {config_name} is marked as hidden")
-                return True
-            
-            return False
+            mtime = self._config_mtime(config_name)
+            with self._cache_lock:
+                cached = self._hidden_cache.get(config_name)
+                if cached is not None and cached[0] == mtime:
+                    return cached[1]
+            config = self.load_config(
+                config_name, include_dynamic_controls=False
+            )
+            hidden = bool(
+                isinstance(config, dict) and config.get("hidden", False)
+            )
+            with self._cache_lock:
+                self._hidden_cache[config_name] = (mtime, hidden)
+            if hidden:
+                logger.debug("Config %s is marked as hidden", config_name)
+            return hidden
         except Exception as e:
-            logger.error(f"Error checking if config {config_name} is hidden: {str(e)}", exc_info=True)
+            logger.error(
+                "Error checking if config %s is hidden: %s",
+                config_name,
+                e,
+                exc_info=True,
+            )
             return False
     
     def get_config_path(self, config_name: str) -> str:
@@ -241,32 +325,17 @@ class TemplateConfigParser:
         Returns:
             Dict[str, Any]: Configuration data
         """
-        config_path = self.get_config_path(config_name)
-
         try:
-            if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-
-                # Filter out dynamic_controls if not requested
-                if not include_dynamic_controls and isinstance(config, dict) and 'dynamic_controls' in config:
-                    config = config.copy()  # Don't modify the original
-                    del config['dynamic_controls']
-
-                # Filter out streamdeck_options if not requested
-                if not include_streamdeck_options and isinstance(config, dict) and 'streamdeck_options' in config:
-                    config = config.copy()  # Don't modify the original
-                    del config['streamdeck_options']
-
-                logger.debug(f"Successfully loaded config for {config_name}")
-                return config
-            else:
-                logger.warning(f"Config file for {config_name} not found. Creating default config.")
-                default_config = self._create_default_config(config_name)
-                self.save_config(config_name, default_config)
-                return default_config
+            raw = self._get_cached_raw_config(config_name)
+            config = self._filter_config(
+                raw, include_dynamic_controls, include_streamdeck_options
+            )
+            logger.debug("Successfully loaded config for %s", config_name)
+            return config
         except Exception as e:
-            logger.error(f"Error loading config for {config_name}: {str(e)}", exc_info=True)
+            logger.error(
+                "Error loading config for %s: %s", config_name, e, exc_info=True
+            )
             return self._create_default_config(config_name)
     
     def save_config(self, config_name: str, config: Dict[str, Any]) -> bool:
@@ -283,13 +352,32 @@ class TemplateConfigParser:
         config_path = self.get_config_path(config_name)
         
         try:
-            with open(config_path, 'w') as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=4)
-            logger.debug(f"Successfully saved config for {config_name}")
+            self.invalidate_cache(config_name)
+            logger.debug("Successfully saved config for %s", config_name)
+            self._notify_config_saved(config_name)
             return True
         except Exception as e:
-            logger.error(f"Error saving config for {config_name}: {str(e)}", exc_info=True)
+            logger.error(
+                "Error saving config for %s: %s", config_name, e, exc_info=True
+            )
             return False
+
+    @staticmethod
+    def _notify_config_saved(config_name: str) -> None:
+        """Invalidate web-engine caches and notify overlay clients."""
+        try:
+            from . import web_engine
+
+            inst = getattr(web_engine, "web_engine_instance", None)
+            if inst is None:
+                return
+            inst.invalidate_all_template_configs_cache()
+            if hasattr(inst, "broadcast_template_config_updated"):
+                inst.broadcast_template_config_updated(config_name)
+        except Exception as e:
+            logger.debug("Config save notify skipped: %s", e)
     
     def _create_default_config(self, config_name: str) -> Dict[str, Any]:
         """
@@ -361,10 +449,12 @@ class TemplateConfigParser:
             if default_config is None:
                 default_config = self._create_default_config(config_name)
             
-            with open(config_path, 'w') as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(default_config, f, indent=4)
-            
-            logger.debug(f"Successfully created config for {config_name}")
+
+            self.invalidate_cache(config_name)
+            logger.debug("Successfully created config for %s", config_name)
+            self._notify_config_saved(config_name)
             return True
         except Exception as e:
             logger.error(f"Error creating config for {config_name}: {str(e)}", exc_info=True)
@@ -385,7 +475,16 @@ class TemplateConfigParser:
         try:
             if os.path.exists(config_path):
                 os.remove(config_path)
-                logger.debug(f"Successfully deleted config for {config_name}")
+                self.invalidate_cache(config_name)
+                logger.debug("Successfully deleted config for %s", config_name)
+                try:
+                    from . import web_engine
+
+                    inst = getattr(web_engine, "web_engine_instance", None)
+                    if inst is not None:
+                        inst.invalidate_all_template_configs_cache()
+                except Exception:
+                    pass
                 return True
             else:
                 logger.warning(f"Config file for {config_name} not found.")
