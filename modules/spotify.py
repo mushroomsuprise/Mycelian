@@ -238,9 +238,9 @@ class SpotifyClient:
         self.spotify_data: SpotifyData = SpotifyData()
         self.is_authenticated = False
         self.last_track_id = None
-        self.update_interval = 1.0
-        self.update_interval_playing = 1.0
-        self.update_interval_idle = 3.0
+        self.update_interval = 5.0
+        self.update_interval_playing = 5.0
+        self.update_interval_idle = 5.0
         self.running = False
         self._last_api_success = False
         self._refresh_lock = threading.Lock()
@@ -1088,44 +1088,65 @@ def _authenticate_with_retry(
     return False
 
 
+_spotify_start_thread: Optional[threading.Thread] = None
+
+
+def _start_spotify_service_impl() -> None:
+    """Blocking Spotify client setup (runs off the deferred init thread)."""
+    global spotify_thread, is_running, spotify_client, _spotify_start_thread
+
+    try:
+        client = initialize_spotify()
+        if not client:
+            return
+
+        with _start_lock:
+            is_running = True
+
+        if should_auto_initialize():
+            logger.info(
+                "Auto-initializing Spotify service with existing credentials/tokens"
+            )
+            _authenticate_with_retry(client)
+
+        monitor = threading.Thread(
+            target=client.start_monitoring, daemon=True, name="SpotifyMonitor"
+        )
+        with _start_lock:
+            spotify_thread = monitor
+        monitor.start()
+
+        logger.info("Started Spotify service")
+    except Exception as e:
+        with _start_lock:
+            is_running = False
+        logger.error(f"Error starting Spotify service: {str(e)}", exc_info=True)
+
+
 def start_spotify_service():
-    """Start the Spotify service in a background thread"""
-    global spotify_thread, is_running, spotify_client
+    """Start the Spotify service without blocking the caller."""
+    global _spotify_start_thread, is_running, spotify_thread
 
     with _start_lock:
         if is_running and spotify_thread and spotify_thread.is_alive():
             logger.warning("Spotify service already running")
             return False
+        if _spotify_start_thread is not None and _spotify_start_thread.is_alive():
+            logger.debug("Spotify service start already in progress")
+            return True
         if is_running:
             is_running = False
 
-        try:
-            client = initialize_spotify()
-            if not client:
-                return False
-
-            is_running = True
-
-            if should_auto_initialize():
-                logger.info(
-                    "Auto-initializing Spotify service with existing credentials/tokens"
-                )
-                _authenticate_with_retry(client)
-
-            spotify_thread = threading.Thread(
-                target=client.start_monitoring, daemon=True, name="SpotifyMonitor"
-            )
-            spotify_thread.start()
-
-            logger.info("Started Spotify service")
-            return True
-        except Exception as e:
-            is_running = False
-            logger.error(f"Error starting Spotify service: {str(e)}", exc_info=True)
-            return False
+        _spotify_start_thread = threading.Thread(
+            target=_start_spotify_service_impl,
+            daemon=True,
+            name="SpotifyServiceStart",
+        )
+        _spotify_start_thread.start()
+        return True
 
 
-def stop_spotify_service():
+def stop_spotify_service(*, join_timeout: float = 5.0) -> None:
     """Stop the Spotify service"""
     global spotify_thread, is_running, spotify_client
 
@@ -1140,7 +1161,7 @@ def stop_spotify_service():
         is_running = False
 
         if spotify_thread and spotify_thread.is_alive():
-            spotify_thread.join(timeout=5)
+            spotify_thread.join(timeout=join_timeout)
 
         logger.info("Stopped Spotify service")
     except Exception as e:

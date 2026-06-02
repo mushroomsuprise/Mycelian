@@ -217,15 +217,13 @@ def initialize():
     if alert_state_manager is None:
         logger.info("Alert state manager not initialized, initializing now...")
         initialize_alert_state()
+    elif not getattr(alert_state_manager, "_initialized", False):
+        logger.info("Alert state manager not initialized, initializing now...")
+        initialize_alert_state()
     else:
-        logger.info(
-            "Alert state manager already initialized, reloading alerts from Firebase to ensure latest data"
+        logger.debug(
+            "Alert state already loaded during startup; skipping reload_from_firebase"
         )
-        # Ensure alerts are loaded from Firebase even if initialized with cached data
-        from .startup_profiler import StartupTimer
-
-        with StartupTimer("alert_processor.reload_from_firebase"):
-            alert_state_manager.reload_from_firebase()
 
     # Initialize web engine with correct path for templates
     from .path_utils import get_template_path
@@ -306,13 +304,13 @@ def cleanup():
             web_engine_instance.stop()
             logger.debug("Web engine stopped")
 
-        # Wait for threads to finish
+        # Brief join; threads are daemon and exit once the queue/web server stop.
         if web_thread and web_thread.is_alive():
-            web_thread.join(timeout=5)
+            web_thread.join(timeout=2)
             logger.debug("Web thread joined")
 
         if alert_thread and alert_thread.is_alive():
-            alert_thread.join(timeout=5)
+            alert_thread.join(timeout=1)
             logger.debug("Alert thread joined")
 
         # Reset initialization state

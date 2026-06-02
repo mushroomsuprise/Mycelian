@@ -43,15 +43,30 @@ def _merge_window_args_from_env() -> None:
         core.app.native.window_args[key] = val
 
 
-def _open_window_with_mycelian_env(host, port, title, width, height, fullscreen, frameless, mq, rq):
-    """Wrapper for ``nicegui.native.native_mode._open_window`` (must stay module-level for pickle)."""
+def _open_window_with_mycelian_env(
+    host, port, title, width, height, fullscreen, frameless, method_queue, response_queue
+):
+    """Wrapper for ``nicegui.native.native_mode._open_window`` (must stay module-level for pickle).
+
+    Signature matches NiceGUI 2.x (no protocol/event_sender).
+    """
     import nicegui.native.native_mode as nm
 
     _merge_window_args_from_env()
     orig = getattr(nm, _ORIG_ATTR, None)
     if orig is None:
         raise RuntimeError("native_window_bridge: original _open_window not installed")
-    return orig(host, port, title, width, height, fullscreen, frameless, mq, rq)
+    return orig(
+        host,
+        port,
+        title,
+        width,
+        height,
+        fullscreen,
+        frameless,
+        method_queue,
+        response_queue,
+    )
 
 
 def _install_patch() -> None:

@@ -210,64 +210,31 @@ with StartupTimer("setup_logging"):
     setup_logging()
 logger = logging.getLogger(__name__)
 
-# Global shutdown flag to prevent multiple shutdown attempts
-_shutdown_in_progress = False
-_shutdown_lock = threading.Lock()
-
-
 # Signal handlers for graceful shutdown
 def signal_handler(sig, frame):
     """Handle termination signals"""
-    global _shutdown_in_progress
+    from modules.shutdown import (
+        cleanup_shared_memory,
+        is_shutdown_in_progress,
+        shutdown_application,
+    )
 
-    with _shutdown_lock:
-        if _shutdown_in_progress:
-            # Already shutting down, just exit
-            sys.exit(0)
-        _shutdown_in_progress = True
+    if is_shutdown_in_progress():
+        sys.exit(0)
 
     # Use print instead of logger to avoid reentrant logging issues
     print(f"Received signal {sig}, shutting down...")
 
     try:
-        # Clean up resources
-        from modules import alert_processor
-
-        alert_processor.cleanup()
-        print("Alert processor cleaned up")
-
-        # Clean up statistics manager
-        try:
-            from modules import statistics_manager
-
-            print("Saving statistics data before application shutdown...")
-            statistics_manager.shutdown_statistics()
-            print("Statistics data saved successfully before shutdown")
-        except Exception as e:
-            print(f"Error saving statistics during shutdown: {str(e)}")
-
-        # Clean up shared memory
-        try:
-            from multiprocessing import shared_memory  # type: ignore
-
-            # Check if shared memory exists before trying to access it
-            try:
-                status_shm = shared_memory.SharedMemory(
-                    name="status_flags", create=False
-                )
-                status_shm.close()
-                status_shm.unlink()
-                print("Shared memory cleaned up")
-            except FileNotFoundError:
-                print("Shared memory 'status_flags' not found, skipping cleanup")
-        except Exception as e:
-            print(f"Error cleaning up shared memory: {str(e)}")
-
+        shutdown_application(reason=f"signal_{sig}", force=False)
+        cleanup_shared_memory()
         print("Cleanup completed, exiting...")
+        from modules.updater import _force_application_exit
+
+        _force_application_exit()
     except Exception as e:
         print(f"Error during cleanup: {str(e)}")
-
-    sys.exit(0)
+        sys.exit(1)
 
 
 # Register signal handlers
@@ -278,13 +245,12 @@ signal.signal(signal.SIGTERM, signal_handler)
 # Register atexit handler as final fallback for statistics saving
 def emergency_stats_save():
     """Emergency statistics save as final fallback"""
-    global _shutdown_in_progress
+    from modules.shutdown import is_shutdown_in_progress, mark_shutdown_in_progress
 
-    with _shutdown_lock:
-        if _shutdown_in_progress:
-            # Already shutting down, skip emergency save
-            return
-        _shutdown_in_progress = True
+    if is_shutdown_in_progress():
+        return
+    if not mark_shutdown_in_progress():
+        return
 
     try:
         from modules import statistics_manager
@@ -472,6 +438,12 @@ if __name__ == "__main__":
         )
         mainuiwindow.start_ui()
         print_startup_message("ui.run returned (application shutdown)")
+        logger.warning("ui.run returned — finalizing shutdown and exiting process")
+
+        from modules.shutdown import shutdown_application
+
+        shutdown_application(reason="ui_run_returned", force=False)
+        sys.exit(0)
     except Exception as e:
         logger.error(f"Error starting UI server: {str(e)}", exc_info=True)
         sys.exit(1)

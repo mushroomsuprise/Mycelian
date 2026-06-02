@@ -67,6 +67,7 @@ class ModeratorCache:
         global _scope_warned
 
         from . import twitch
+        from .twitch import TwitchSessionNotReadyError
 
         api = twitch.twitch_api
         if not api or not api.user_id:
@@ -99,11 +100,20 @@ class ModeratorCache:
                 self._last_fetch_success = True
             logger.debug("Moderator cache refreshed: %d moderators", len(ids))
             return True
+        except TwitchSessionNotReadyError as e:
+            with self._lock:
+                self._last_fetch = time.time()
+                self._last_fetch_success = False
+            logger.debug("Moderator cache refresh deferred: %s", e)
+            return False
         except Exception as e:
             with self._lock:
                 self._last_fetch = time.time()
                 self._last_fetch_success = False
             err = str(e).lower()
+            if "session not ready" in err:
+                logger.debug("Moderator cache refresh deferred: %s", e)
+                return False
             if "403" in err or "401" in err or "forbidden" in err:
                 if not _scope_warned:
                     _scope_warned = True

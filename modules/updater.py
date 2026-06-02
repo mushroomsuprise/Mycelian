@@ -24,13 +24,15 @@ SOFTWARE.
 """
 
 import asyncio
+import copy
 import logging
 import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import aiohttp
 
@@ -52,6 +54,11 @@ logger = logging.getLogger(__name__)
 GITHUB_OWNER = "mushroomsuprise"  # Replace with your GitHub username
 GITHUB_REPO = "mycelian"        # Replace with your repository name
 GITHUB_API_BASE = "https://api.github.com"
+
+# Shared GitHub releases/latest cache (avoids duplicate startup fetches)
+_GITHUB_RELEASE_CACHE_TTL_SEC = 60.0
+_github_release_cache_lock = threading.Lock()
+_github_release_cache: Optional[Tuple[float, Optional[Dict[str, Any]]]] = None
 
 # Ensure 'packaging' and 'aiohttp' libraries are installed: pip install packaging aiohttp
 
@@ -119,7 +126,7 @@ def _select_os_appropriate_asset(assets: list) -> str:
         logger.error(f"Error selecting OS-appropriate asset: {e}", exc_info=True)
         return ""
 
-async def fetch_latest_update_info_from_github():
+async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
     """
     Fetches the latest update information from GitHub releases API asynchronously.
     
@@ -127,8 +134,21 @@ async def fetch_latest_update_info_from_github():
         dict: A dictionary with 'latest_version', 'download_url', 'release_notes',
               or None if data is not found, invalid, or an error occurs.
     """
+    global _github_release_cache
+
+    if not force_refresh:
+        now = time.monotonic()
+        with _github_release_cache_lock:
+            if _github_release_cache is not None:
+                cached_at, cached_value = _github_release_cache
+                if now - cached_at < _GITHUB_RELEASE_CACHE_TTL_SEC:
+                    if cached_value is None:
+                        return None
+                    return copy.deepcopy(cached_value)
+
     api_url = f"{GITHUB_API_BASE}/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
     
+    result: Optional[Dict[str, Any]] = None
     try:
         # Set a reasonable timeout to prevent hanging
         timeout = aiohttp.ClientTimeout(total=10.0)  # 10 second timeout
@@ -161,7 +181,7 @@ async def fetch_latest_update_info_from_github():
                     
                     if latest_version:
                         logger.info(f"Successfully fetched update info from GitHub: version {latest_version}")
-                        return {
+                        result = {
                             "latest_version": latest_version,
                             "download_url": download_url,
                             "release_notes": release_notes,
@@ -169,23 +189,25 @@ async def fetch_latest_update_info_from_github():
                         }
                     else:
                         logger.warning(f"No valid version found in GitHub release data. Tag name: {tag_name}")
-                        return None
                         
                 elif response.status == 404:
                     logger.warning(f"GitHub repository '{GITHUB_OWNER}/{GITHUB_REPO}' not found or has no releases")
-                    return None
                 else:
                     logger.error(f"GitHub API request failed with status {response.status}: {await response.text()}")
-                    return None
                     
     except aiohttp.ClientError as e:
         logger.error(f"Network error while fetching update info from GitHub: {e}", exc_info=True)
-        return None
     except Exception as e:
         logger.error(f"Unexpected error fetching update info from GitHub: {e}", exc_info=True)
-        return None
+    finally:
+        with _github_release_cache_lock:
+            _github_release_cache = (time.monotonic(), result)
 
-async def check_for_updates(current_app_version: str):
+    if result is None:
+        return None
+    return copy.deepcopy(result)
+
+async def check_for_updates(current_app_version: str, *, force_refresh: bool = False):
     """
     Checks if a newer version of the application is available on GitHub.
 
@@ -197,7 +219,7 @@ async def check_for_updates(current_app_version: str):
               and 'release_notes' if an update is available. Otherwise, returns None.
     """
     logger.info(f"Checking for updates on GitHub. Current application version: {current_app_version}")
-    update_info = await fetch_latest_update_info_from_github()
+    update_info = await fetch_latest_update_info_from_github(force_refresh=force_refresh)
 
     if update_info:
         latest_version = update_info.get("latest_version")
@@ -764,32 +786,41 @@ class UpdateManager:
     def __init__(self) -> None:
         self._initial_timer = None
         self._periodic_timer = None
+        self._periodic_schedule_timer = None
         self._check_running = False
         self._dialog_open = False
         self._session_suppressed = False  # set when user declines an automatic update (session only)
+        self._ui_ready_scheduled = False
+        self._automatic_startup_check_done = False
 
     # ---------------- Scheduling ----------------
     def on_ui_ready(self) -> None:
         """Schedule initial and periodic checks once the UI is up."""
+        if self._ui_ready_scheduled:
+            logger.debug("UpdateManager.on_ui_ready already scheduled; skipping")
+            return
+        self._ui_ready_scheduled = True
+
         try:
             from nicegui import ui
 
             def _after_settle_schedule_pre_check() -> None:
                 ui.timer(PRE_CHECK_DELAY_SECONDS, self._run_initial_check, once=True)
 
-            if self._initial_timer is None:
-                self._initial_timer = ui.timer(
-                    STARTUP_SETTLE_SECONDS,
-                    _after_settle_schedule_pre_check,
-                    once=True,
-                )
-            ui.timer(
-                PERIODIC_SCHEDULE_DELAY_SECONDS,
-                self.reschedule_periodic_timer,
+            self._initial_timer = ui.timer(
+                STARTUP_SETTLE_SECONDS,
+                _after_settle_schedule_pre_check,
                 once=True,
             )
+            if self._periodic_schedule_timer is None:
+                self._periodic_schedule_timer = ui.timer(
+                    PERIODIC_SCHEDULE_DELAY_SECONDS,
+                    self.reschedule_periodic_timer,
+                    once=True,
+                )
         except Exception as e:
             logger.error(f"UpdateManager.on_ui_ready error: {e}", exc_info=True)
+            self._ui_ready_scheduled = False
 
     def _run_initial_check(self) -> None:
         if self._session_suppressed:
@@ -834,6 +865,11 @@ class UpdateManager:
         if self._session_suppressed:
             logger.info("UpdateManager: session suppressed; skipping periodic check")
             return
+        if not self._automatic_startup_check_done:
+            logger.debug(
+                "UpdateManager: skipping periodic check until startup check completes"
+            )
+            return
         self.trigger_check_and_prompt()
 
     # ---------------- Public triggers ----------------
@@ -842,6 +878,7 @@ class UpdateManager:
         self.trigger_check_and_prompt(manual=True)
 
     def trigger_check_and_prompt(self, manual: bool = False) -> None:
+        logger.info("UpdateManager: update check requested (manual=%s)", manual)
         if self._check_running:
             logger.info("UpdateManager: check already running; skipping")
             return
@@ -878,7 +915,11 @@ class UpdateManager:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    result_holder["update_info"] = loop.run_until_complete(check_for_updates(current_app_version))
+                    result_holder["update_info"] = loop.run_until_complete(
+                        check_for_updates(
+                            current_app_version, force_refresh=manual
+                        )
+                    )
                 except Exception as e:
                     logger.error(f"UpdateManager: error in async check: {e}", exc_info=True)
                     result_holder["error"] = str(e)
@@ -902,6 +943,8 @@ class UpdateManager:
                     poll_counter["count"] += 1
                     if poll_counter["count"] >= max_polls:
                         logger.warning("UpdateManager: update check timed out")
+                        if not manual:
+                            self._automatic_startup_check_done = True
                         self._check_running = False
                         return False
 
@@ -911,6 +954,8 @@ class UpdateManager:
                     if result_holder["error"]:
                         if manual:
                             notify(f"Error checking for updates: {result_holder['error']}", type="negative")
+                        elif not manual:
+                            self._automatic_startup_check_done = True
                         self._check_running = False
                         return False
 
@@ -920,6 +965,8 @@ class UpdateManager:
                     else:
                         if manual:
                             notify("You are running the latest version!", type="positive", timeout=3000)
+                    if not manual:
+                        self._automatic_startup_check_done = True
                     self._check_running = False
                     return False
                 except Exception as e:

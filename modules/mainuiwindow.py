@@ -70,7 +70,6 @@ _splash_status = None
 from modules.uiwindows.activity_feed import (
     add_alert_to_feed,
     create_activity_feed_tab,
-    stop_alert_processor,
 )
 from modules.uiwindows.customsources import create_custom_sources_tab
 
@@ -810,76 +809,6 @@ def _schedule_update_manager_init() -> None:
     ui.timer(2.0, init_update_manager, once=True)
 
 
-def initialize_ui() -> None:
-    """Initialize all UI related components and apply initial settings."""
-    logger.info("Initializing UI and app state...")
-
-    try:
-        # Database and state managers are now initialized in main.py before this function
-        # Apply initial theme setting (use default if not available)
-        try:
-            # Use state_manager to get app settings with proper initialization
-            app_settings = dataobjects.state_manager.get_app_settings()
-            dark_mode = True  # Default to dark mode
-            theme_name = "dark"  # Default to dark theme
-            if app_settings and hasattr(app_settings, "current_theme"):
-                theme_name = app_settings.current_theme
-
-            # Apply the theme
-            apply_theme(theme_name)
-            logger.info(f"Theme '{theme_name}' enabled based on settings.")
-        except Exception as e:
-            logger.error(f"Error applying theme: {str(e)}", exc_info=True)
-
-        # Create the UI elements immediately
-        create_ui_elements()
-        logger.info("UI elements created.")
-
-        # Start connector processing in a separate thread (not dependent on NiceGUI's event loop)
-        import threading
-
-        def start_connector_processing_thread():
-            try:
-                from . import connector_manager
-
-                manager = connector_manager.get_manager()
-                manager.start_connector_thread()
-            except Exception as e:
-                logger.error(
-                    f"Error starting connector processing thread: {str(e)}",
-                    exc_info=True,
-                )
-
-        # Start connector processing in background thread
-        connector_thread = threading.Thread(
-            target=start_connector_processing_thread, daemon=True
-        )
-        connector_thread.start()
-
-        # Register cleanup handler
-        app.on_shutdown(cleanup_resources)
-        logger.info("Shutdown handler registered.")
-
-        # Alert processor is already initialized in main.py, no need to initialize again
-        logger.info("Alert processor already initialized in main.py startup sequence")
-
-        _schedule_update_manager_init()
-        _schedule_streamdeck_plugin_version_check()
-
-        logger.info("UI initialization completed, ready to start NiceGUI server.")
-
-    except Exception as e:
-        logger.error(f"Error during UI initialization: {str(e)}", exc_info=True)
-        from .notification_engine import notify as app_notify
-
-        app_notify(
-            "Application initialization failed. Please restart.",
-            type="negative",
-            position="center",
-        )
-        raise
-
-
 def _configure_webview2_for_admin():
     """Configure WebView2 to work properly when running as administrator (Windows only)"""
     import platform
@@ -968,7 +897,6 @@ def start_ui():
                 # Register cleanup handler
                 app.on_shutdown(cleanup_resources)
 
-                # main.py calls start_ui(), not initialize_ui(); schedule UI timers here too.
                 _schedule_update_manager_init()
                 _schedule_streamdeck_plugin_version_check()
 
@@ -1003,6 +931,10 @@ def start_ui():
             )
             _file_browser_qdialog_css_injected = True
 
+        from .shutdown import register_native_window_close_handler
+
+        register_native_window_close_handler()
+
         with StartupTimer("mainuiwindow.ui_run_native"):
             ui.run(native=True, dark=True, reload=False)
         logger.info("NiceGUI app started.")
@@ -1012,109 +944,14 @@ def start_ui():
 
 
 def cleanup_resources():
-    """Clean up resources when the application is shutting down"""
+    """Clean up resources when NiceGUI is shutting down (delegates to shutdown coordinator)."""
     try:
-        logger.debug("Cleaning up resources before shutdown")
+        from .shutdown import shutdown_application
 
-        try:
-            from .obs_service import obs_service as _obs
-
-            _obs.stop()
-            logger.debug("Stopped OBS WebSocket service")
-        except Exception as e:
-            logger.debug("OBS service stop skipped: %s", e)
-
-        # Clean up web engine if it's running
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                web_engine.web_engine_instance.stop()
-                logger.debug("Successfully stopped web engine")
-        except Exception as e:
-            logger.error(f"Error stopping web engine: {str(e)}")
-
-        # Stop alert processor if it's running
-        try:
-            if hasattr(web_engine, "ALERTS_PAUSED"):
-                web_engine.ALERTS_PAUSED = True
-                logger.debug("Successfully paused alert processor")
-        except Exception as e:
-            logger.error(f"Error pausing alert processor: {str(e)}")
-
-        # Stop the activity feed alert processor
-        try:
-            stop_alert_processor()
-            logger.debug("Successfully stopped activity feed alert processor")
-        except Exception as e:
-            logger.error(f"Error stopping activity feed alert processor: {str(e)}")
-
-        # Handle WebView2 cleanup gracefully to prevent BrowserProcessId errors
-        try:
-            _cleanup_webview2_gracefully()
-        except Exception as e:
-            logger.error(f"Error during WebView2 cleanup: {str(e)}")
-
-        # Save statistics data before shutdown
-        try:
-            from . import statistics_manager
-
-            logger.info("Saving statistics data before application shutdown...")
-            statistics_manager.shutdown_statistics()
-            logger.info("Statistics data saved successfully before shutdown")
-        except Exception as e:
-            logger.error(
-                f"Error saving statistics during shutdown: {str(e)}", exc_info=True
-            )
-
-        logger.debug("Cleanup completed")
-
+        shutdown_application(reason="nicegui_on_shutdown", force=False)
     except Exception as e:
         logger.error(f"Error during resource cleanup: {str(e)}")
         # Don't re-raise exceptions during cleanup
-
-
-def _cleanup_webview2_gracefully():
-    """Clean up WebView2/pywebview resources gracefully to prevent BrowserProcessId errors"""
-    import platform
-
-    try:
-        # Try to access pywebview directly to close windows properly
-        try:
-            import webview
-
-            if hasattr(webview, "windows") and webview.windows:
-                for window in webview.windows:
-                    try:
-                        # Check if window and its core are still valid before accessing
-                        if window and hasattr(window, "destroy"):
-                            window.destroy()
-                            logger.debug("WebView window destroyed gracefully")
-                    except AttributeError as e:
-                        # Handle platform-specific attribute errors
-                        if platform.system() == "Windows":
-                            # Windows-specific WebView2 error handling
-                            if "BrowserProcessId" in str(e) or "NoneType" in str(e):
-                                logger.warning(
-                                    "WebView2 BrowserProcessId error handled during cleanup"
-                                )
-                            else:
-                                logger.error(
-                                    f"WebView2 cleanup attribute error: {str(e)}"
-                                )
-                        else:
-                            # Generic error handling for other platforms
-                            logger.error(f"WebView cleanup attribute error: {str(e)}")
-                    except Exception as e:
-                        logger.error(f"Error destroying WebView window: {str(e)}")
-        except ImportError:
-            logger.debug("pywebview not available for cleanup")
-        except Exception as e:
-            logger.error(f"Error accessing pywebview during cleanup: {str(e)}")
-
-    except Exception as e:
-        logger.error(f"Error during WebView graceful cleanup: {str(e)}")
 
 
 class LazyTabPanel:

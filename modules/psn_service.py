@@ -106,11 +106,8 @@ def _finalize_psn_client_state(
         )
 
 
-def initialize_psn_module():
-    """Initialize the PSNClient based on stored settings and starts the update thread.
-    Should be called after state_manager is initialized.
-    Idempotent: concurrent or repeated calls reuse one client and one connect attempt.
-    """
+def _initialize_psn_module_impl() -> None:
+    """Blocking PSN connect and updater setup (runs off the deferred init thread)."""
     global psn_client_instance
 
     with _psn_init_lock:
@@ -166,6 +163,15 @@ def initialize_psn_module():
             logger.exception(f"Exception during PSN service initialization: {e}")
 
         logger.info("=== PSN SERVICE INITIALIZATION COMPLETE ===")
+
+
+def initialize_psn_module() -> None:
+    """Start PSN initialization in the background so deferred startup is not blocked."""
+    threading.Thread(
+        target=_initialize_psn_module_impl,
+        daemon=True,
+        name="PSNInit",
+    ).start()
 
 
 def psn_data_update_loop():
@@ -621,7 +627,7 @@ def start_psn_data_updater_thread():
         logger.info("PSN data updater thread (PSN Service) already running.")
 
 
-def stop_psn_data_updater_thread():
+def stop_psn_data_updater_thread(*, join_timeout: float = 5.0) -> None:
     """Stops the PSN data updater thread."""
     global psn_update_thread
     logger.info("=== STOPPING PSN DATA UPDATER THREAD ===")
@@ -629,10 +635,11 @@ def stop_psn_data_updater_thread():
     if psn_update_thread and psn_update_thread.is_alive():
         logger.info("Attempting to stop PSN data updater thread (PSN Service)...")
         stop_psn_thread_event.set()
-        psn_update_thread.join(timeout=5.0)
+        psn_update_thread.join(timeout=join_timeout)
         if psn_update_thread.is_alive():
-            logger.exception(
-                "PSN data updater thread (PSN Service) did not stop in the allocated time."
+            logger.warning(
+                "PSN data updater thread (PSN Service) did not stop within %.1fs.",
+                join_timeout,
             )
         else:
             logger.info("PSN data updater thread (PSN Service) stopped successfully.")

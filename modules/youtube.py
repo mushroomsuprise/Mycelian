@@ -952,8 +952,9 @@ class YouTubeClient:
                     self.update_video_data()
                     self.send_websocket_data()
                 else:
-                    # Try to reconnect
-                    if self.authenticate():
+                    if not (self.youtube_data.api_key or "").strip():
+                        pass
+                    elif self.authenticate():
                         self.update_video_data()
 
                 # Calculate precise sleep time to maintain exact intervals
@@ -1076,7 +1077,7 @@ def start_youtube_service():
         return False
 
 
-def stop_youtube_service():
+def stop_youtube_service(*, join_timeout: float = 5.0) -> None:
     """Stop the YouTube service"""
     global youtube_thread, is_running, youtube_client
 
@@ -1091,7 +1092,7 @@ def stop_youtube_service():
         is_running = False
 
         if youtube_thread and youtube_thread.is_alive():
-            youtube_thread.join(timeout=5)
+            youtube_thread.join(timeout=join_timeout)
 
         logger.info("Stopped YouTube service")
     except Exception as e:

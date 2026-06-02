@@ -77,6 +77,11 @@ ensure_channel_chat_notification_watch_streak_patch()
 
 logger = logging.getLogger(__name__)
 
+
+class TwitchSessionNotReadyError(Exception):
+    """Helix call cannot run yet (missing auth or Twitch library client)."""
+
+
 # Global flag to track initialization status
 _initialized = False
 _init_lock = threading.Lock()
@@ -2877,20 +2882,22 @@ class Twitch_API:
                 session_to_use = self.twitch._Twitch__session
                 logger.debug("Using existing authenticated Twitch session for API call")
             else:
-                # Helix proxy: use a short-lived session when the library client is not up yet
-                if self.twitch:
-                    logger.warning(
-                        "No existing Twitch session available, creating temporary session"
+                # Helix may run before twitchAPI opens its persistent session (e.g. moderator cache on connect).
+                if self.auth_token and self.client_id:
+                    logger.debug(
+                        "Twitch HTTP session not open yet; using ephemeral session for Helix call"
                     )
+                    session_to_use = aiohttp.ClientSession()
+                    close_session_after = True
+                elif self.twitch:
+                    raise TwitchSessionNotReadyError("Twitch API session not ready")
                 else:
                     logger.debug(
-                        "Twitch library client not ready; "
-                        "using temporary session for Helix API call"
+                        "Twitch library client not initialized; "
+                        "using ephemeral session for Helix API call"
                     )
-                import aiohttp
-
-                session_to_use = aiohttp.ClientSession()
-                close_session_after = True
+                    session_to_use = aiohttp.ClientSession()
+                    close_session_after = True
 
             # Make the API call
             async with session_to_use.request(
@@ -3003,6 +3010,8 @@ class Twitch_API:
                             f"Twitch API Error {response.status}: {response_data}"
                         )
 
+        except TwitchSessionNotReadyError:
+            raise
         except aiohttp.ClientError as e:
             logger.error(
                 f"aiohttp.ClientError during generic API call to {url}: {str(e)}",
@@ -3010,10 +3019,11 @@ class Twitch_API:
             )
             raise Exception(f"Network error during API call: {str(e)}")
         except Exception as e:
+            if isinstance(e, TwitchSessionNotReadyError):
+                raise
             logger.error(
                 f"Error during generic API call to {url}: {str(e)}", exc_info=True
             )
-            # Re-raise the exception to be handled by the caller
             raise
         finally:
             # Only close temporary session if we created one

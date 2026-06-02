@@ -2122,6 +2122,16 @@ class WebEngine:
         with self._assets_watch_templates_lock:
             return sorted(self._assets_watch_templates)
 
+    def _stop_twitch_api_worker(self) -> None:
+        """Signal the dedicated Twitch API worker thread to exit."""
+        with self._twitch_api_worker_lock:
+            if not self._twitch_api_worker_started:
+                return
+        try:
+            self._twitch_api_queue.put(None)
+        except Exception as e:
+            logger.debug("Could not enqueue Twitch API worker shutdown: %s", e)
+
     def ensure_twitch_api_worker(self) -> None:
         with self._twitch_api_worker_lock:
             if self._twitch_api_worker_started:
@@ -6765,6 +6775,7 @@ class WebEngine:
     def stop(self):
         """Stop the WebEngine server"""
         global web_engine_running
+        self._stop_twitch_api_worker()
         if self.is_running:
             logger.debug("Stopping WebEngine server")
             try:
@@ -6795,7 +6806,7 @@ class WebEngine:
                 stop_thread.start()
 
                 # Wait for the stop thread to finish
-                stop_thread.join(timeout=5)
+                stop_thread.join(timeout=2)
 
                 self.is_running = False
                 web_engine_running = False
