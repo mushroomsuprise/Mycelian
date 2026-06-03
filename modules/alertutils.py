@@ -843,6 +843,26 @@ class AlertStateManager:
 
                 state_keys = type_map[alert_type]
 
+                # Startup preload may omit range paths; load any empty collections now.
+                needs_collection_update = False
+                for key in state_keys:
+                    if key not in self._alert_paths:
+                        continue
+                    if self._alert_state.get(key):
+                        continue
+                    firebase_path = self._alert_paths[key]
+                    data = database_manager.get_data(firebase_path) or {}
+                    if data:
+                        self._alert_state[key] = data
+                        logger.debug(
+                            "Lazy-loaded %d alerts from %s",
+                            len(data),
+                            firebase_path,
+                        )
+                        needs_collection_update = True
+                if needs_collection_update:
+                    self._update_global_collections()
+
                 # Combine alerts from all relevant state keys
                 result = {}
                 for key in state_keys:

@@ -926,28 +926,12 @@
             if (_templateConfigsLoadPromise) {
                 return _templateConfigsLoadPromise;
             }
-            _templateConfigsLoadPromise = loadAllTemplateConfigs().then(function () {
+            _templateConfigsLoadPromise = loadTemplateConfig().then(function () {
                 _templateConfigsLoadPromise = null;
             }).catch(function (e) {
                 _templateConfigsLoadPromise = null;
             });
             return _templateConfigsLoadPromise;
-        }
-
-        async function loadAllTemplateConfigs() {
-            try {
-                const response = await fetch('/api/all-template-configs');
-                if (response.ok) {
-                    window.allTemplateConfigs = await response.json();
-                    console.log('Loaded all template configs (lazy):', Object.keys(window.allTemplateConfigs));
-                } else {
-                    console.error('Failed to load all template configs:', response.status);
-                    window.allTemplateConfigs = {};
-                }
-            } catch (error) {
-                console.error('Error loading all template configs:', error);
-                window.allTemplateConfigs = {};
-            }
         }
 
         function pointHasGif(alertData) {
@@ -2444,12 +2428,16 @@
             return parseAlertMessage(alertData);
         }
 
-        // Load alerts template config only (full map loaded lazily for dedicated templates)
+        // Load template config directly from API
         async function loadTemplateConfig() {
             try {
-                const response = await fetch('/api/template-config/alerts', { credentials: 'same-origin' });
+                const response = await fetch('/api/all-template-configs');
                 if (response.ok) {
-                    const alertsConfigData = await response.json();
+                    const allConfigs = await response.json();
+                    window.allTemplateConfigs = allConfigs;
+                    console.log('Loaded all template configs:', Object.keys(allConfigs));
+
+                    const alertsConfigData = allConfigs.alerts;
                     if (alertsConfigData && alertsConfigData.elements) {
                         console.log('Found alerts template config:', alertsConfigData);
                         const config = {};
@@ -2464,10 +2452,16 @@
                         console.warn('No alerts config found in response');
                     }
                 } else {
-                    console.error('Failed to load alerts template config:', response.status);
+                    console.error('Failed to load template configs:', response.status);
+                    if (window.allTemplateConfigs === undefined) {
+                        window.allTemplateConfigs = {};
+                    }
                 }
             } catch (error) {
                 console.error('Error loading template config:', error);
+                if (window.allTemplateConfigs === undefined) {
+                    window.allTemplateConfigs = {};
+                }
             }
         }
 

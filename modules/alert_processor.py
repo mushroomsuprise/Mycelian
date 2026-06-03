@@ -221,9 +221,13 @@ def initialize():
         logger.info("Alert state manager not initialized, initializing now...")
         initialize_alert_state()
     else:
-        logger.debug(
-            "Alert state already loaded during startup; skipping reload_from_firebase"
+        logger.info(
+            "Alert state manager already initialized, reloading alerts from Firebase to ensure latest data"
         )
+        from .startup_profiler import StartupTimer
+
+        with StartupTimer("alert_processor.reload_from_firebase"):
+            alert_state_manager.reload_from_firebase()
 
     # Initialize web engine with correct path for templates
     from .path_utils import get_template_path

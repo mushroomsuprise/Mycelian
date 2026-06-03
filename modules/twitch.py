@@ -3305,6 +3305,27 @@ def _is_channel_points_forbidden(exc: BaseException) -> bool:
     return False
 
 
+def _run_twitch_coro_sync(coro, timeout: float = 30):
+    """Run a coroutine from sync code (safe when NiceGUI already has a loop running)."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    import concurrent.futures
+
+    def _run_in_thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(_run_in_thread).result(timeout=timeout)
+
+
 async def _fetch_channel_point_rewards_async():
     """Fetch custom channel point rewards; returns (rewards_or_none, status).
 
@@ -3344,7 +3365,7 @@ def fetch_channel_point_rewards():
         return {"rewards": None, "status": "not_connected"}
 
     try:
-        rewards, status = asyncio.run(_fetch_channel_point_rewards_async())
+        rewards, status = _run_twitch_coro_sync(_fetch_channel_point_rewards_async())
     except Exception as e:
         logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
         return {"rewards": None, "status": "error"}
@@ -3392,7 +3413,7 @@ def get_point_reward_by_id(reward_id: str):
                 logger.error(f"Point reward {reward_id} not found")
                 return None
 
-        return asyncio.run(get_reward_async())
+        return _run_twitch_coro_sync(get_reward_async())
 
     except Exception as e:
         logger.error(f"Error getting point reward {reward_id}: {str(e)}", exc_info=True)
@@ -3422,7 +3443,7 @@ def create_point_reward(reward_data: dict):
                 logger.error("Failed to create point reward")
                 return None
 
-        return asyncio.run(create_reward_async())
+        return _run_twitch_coro_sync(create_reward_async())
 
     except Exception as e:
         logger.error(f"Error creating point reward: {str(e)}", exc_info=True)
@@ -3448,7 +3469,7 @@ def update_point_reward(reward_id: str, reward_data: dict):
             )
             return response is not None
 
-        return asyncio.run(update_reward_async())
+        return _run_twitch_coro_sync(update_reward_async())
 
     except Exception as e:
         logger.error(
@@ -3471,7 +3492,7 @@ def delete_point_reward(reward_id: str):
             response = await twitch_api.generic_api_call(url, "DELETE")
             return response is not None
 
-        return asyncio.run(delete_reward_async())
+        return _run_twitch_coro_sync(delete_reward_async())
 
     except Exception as e:
         logger.error(
