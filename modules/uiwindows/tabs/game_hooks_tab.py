@@ -19,10 +19,19 @@ logger = logging.getLogger(__name__)
 _CARD_BASE = (
     "content-card w-full min-w-0 p-3 border-2 border-solid transition-colors"
 )
-_BORDER_NEUTRAL = "border-transparent"
-_BORDER_SUCCESS = "border-theme-success"
-_BORDER_WARNING = "border-theme-warning"
-_BORDER_ERROR = "border-theme-error"
+_STATE_NEUTRAL = "border-transparent"
+_STATE_SUCCESS = "border-theme-success"
+_STATE_WARNING = "border-theme-warning"
+_STATE_ERROR = "border-theme-error"
+_STATE_UNSUPPORTED = "opacity-60 border-theme-error"
+
+_CARD_STATE_CLASSES = {
+    "neutral": _STATE_NEUTRAL,
+    "success": _STATE_SUCCESS,
+    "warning": _STATE_WARNING,
+    "error": _STATE_ERROR,
+    "unsupported": _STATE_UNSUPPORTED,
+}
 
 
 class GameHooksTab:
@@ -77,39 +86,55 @@ class GameHooksTab:
             return msg
         return msg[: max_len - 1] + "…"
 
+    def _is_unsupported(self, hook_id: str, snap: Optional[Dict[str, Any]] = None) -> bool:
+        if not self._hook_supported.get(hook_id, True):
+            return True
+        if not isinstance(snap, dict):
+            return False
+        debug = snap.get("debug")
+        if isinstance(debug, dict) and debug.get("stage") == "unsupported_os":
+            return True
+        err_raw = snap.get("error")
+        err = err_raw if isinstance(err_raw, str) else (str(err_raw) if err_raw else "")
+        err_l = err.lower()
+        return "requires windows" in err_l or "only supported on windows" in err_l
+
     @staticmethod
-    def _border_from_snapshot(snap: Dict[str, Any]) -> Tuple[str, Optional[str]]:
-        """Return (border_class, optional_error_message_for_notify)."""
+    def _state_from_snapshot(snap: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+        """Return (card_state, optional_error_message_for_notify)."""
         disabled = bool(snap.get("disabled"))
         attached = bool(snap.get("attached"))
         err_raw = snap.get("error")
         err = err_raw if isinstance(err_raw, str) else (str(err_raw) if err_raw else "")
 
         if disabled:
-            return _BORDER_NEUTRAL, None
+            return "neutral", None
 
         err_l = err.lower()
         if "requires windows" in err_l or "only supported on windows" in err_l:
-            return _BORDER_WARNING, None
+            return "unsupported", None
+
+        debug = snap.get("debug")
+        if isinstance(debug, dict) and debug.get("stage") == "unsupported_os":
+            return "unsupported", None
 
         if attached and not err:
-            return _BORDER_SUCCESS, None
+            return "success", None
 
         if not err or not err.strip():
-            return _BORDER_WARNING, None
+            return "warning", None
 
         if "not attached" in err_l or "not found" in err_l:
-            return _BORDER_WARNING, None
+            return "warning", None
 
-        return _BORDER_ERROR, GameHooksTab._truncate(err)
+        return "error", GameHooksTab._truncate(err)
 
-    def _apply_card_border(self, hook_id: str, border_class: str) -> None:
+    def _apply_card_state(self, hook_id: str, state: str) -> None:
         card = self.ui_elements.get(f"{hook_id}_card")
         if card is None:
             return
-        card.classes(
-            replace=f"{_CARD_BASE} {border_class}",
-        )
+        state_classes = _CARD_STATE_CLASSES.get(state, _STATE_NEUTRAL)
+        card.classes(replace=f"{_CARD_BASE} {state_classes}")
 
     def _maybe_notify_error(self, hook_id: str, err_msg: Optional[str], title: str) -> None:
         prev = self._last_error_notified.get(hook_id, "")
@@ -130,22 +155,27 @@ class GameHooksTab:
             info = game_hooks_service.get_hook_ui_snapshot(hook_id)
         except Exception as e:
             logger.debug("%s runtime status: %s", hook_id, e)
-            self._apply_card_border(hook_id, _BORDER_ERROR)
+            self._apply_card_state(hook_id, "error")
             self._maybe_notify_error(hook_id, "Status unavailable", title)
             return
 
-        if not info.get("service_running"):
-            self._apply_card_border(hook_id, _BORDER_WARNING)
+        snap = info.get(hook_id)
+        if self._is_unsupported(hook_id, snap if isinstance(snap, dict) else None):
+            self._apply_card_state(hook_id, "unsupported")
             self._last_error_notified.pop(hook_id, None)
             return
 
-        snap = info.get(hook_id)
-        if not isinstance(snap, dict):
-            self._apply_card_border(hook_id, _BORDER_NEUTRAL)
+        if not info.get("service_running"):
+            self._apply_card_state(hook_id, "warning")
+            self._last_error_notified.pop(hook_id, None)
             return
 
-        border_class, err_msg = self._border_from_snapshot(snap)
-        self._apply_card_border(hook_id, border_class)
+        if not isinstance(snap, dict):
+            self._apply_card_state(hook_id, "neutral")
+            return
+
+        state, err_msg = self._state_from_snapshot(snap)
+        self._apply_card_state(hook_id, state)
         self._maybe_notify_error(hook_id, err_msg, title)
 
     def _refresh_all_runtime_status(self) -> None:
@@ -168,8 +198,11 @@ class GameHooksTab:
                     for meta in hook_metas:
                         hid = meta.hook_id
                         hook_supported = self._hook_supported.get(hid, True)
+                        initial_state = (
+                            "unsupported" if not hook_supported else "neutral"
+                        )
                         with ui.column().classes(
-                            f"{_CARD_BASE} {_BORDER_NEUTRAL}"
+                            f"{_CARD_BASE} {_CARD_STATE_CLASSES[initial_state]}"
                         ) as card_col:
                             self.ui_elements[f"{hid}_card"] = card_col
                             with ui.row().classes(

@@ -26,8 +26,16 @@
         return Array.prototype.slice.call((root || document).querySelectorAll(sel));
     };
 
+    var DESIGN_CANVAS_MIN_PX = 50;
+
     var DEFAULT_PROPS = {
-        text: { text: "Hello", font_size: 32, color: "#ffffff", font_family: "Arial" },
+        text: {
+            text: "Hello",
+            font_size: 32,
+            color: "#ffffff",
+            font_family: "Arial",
+            vertical_align: "top"
+        },
         image: { src: "" },
         video: {
             src: "",
@@ -57,12 +65,14 @@
             { key: "text", label: "Text", type: "textarea" },
             { key: "font_size", label: "Font size (px)", type: "number" },
             { key: "color", label: "Color", type: "color" },
-            { key: "font_family", label: "Font family", type: "text" },
+            { key: "font_family", label: "Font", type: "font" },
             { key: "font_weight", label: "Font weight", type: "select",
               options: ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"] },
             { key: "text_align", label: "Text align", type: "select",
               options: ["left", "center", "right"] },
-            { key: "background_color", label: "Background", type: "text" }
+            { key: "vertical_align", label: "Vertical align", type: "select",
+              options: ["top", "center", "bottom"] },
+            { key: "background_color", label: "Background", type: "color" }
         ],
         image: [
             { key: "src", label: "Source URL", type: "text" },
@@ -95,7 +105,7 @@
               min: 0, max: 120000 }
         ],
         container: [
-            { key: "background_color", label: "Background", type: "text" },
+            { key: "background_color", label: "Background", type: "color" },
             { key: "border_radius", label: "Border radius (px)", type: "number" },
             { key: "border_width", label: "Border width (px)", type: "number" },
             { key: "border_color", label: "Border color", type: "color" }
@@ -138,7 +148,9 @@
         socket: null,
         previewToken: "",
         idCounter: 0,
-        dirty: false
+        dirty: false,
+        assetSnapshot: null,
+        defaultFonts: []
     };
 
     function uuid() {
@@ -650,6 +662,8 @@
             }
             if (c.initial_value === undefined) { c.initial_value = 0; }
             if (!c.format) { c.format = "{value}"; }
+            el.props = el.props || {};
+            el.props.text = c.format;
             if (c.persist === undefined) { c.persist = false; }
             if (!c.database_path && state.model) {
                 c.database_path = state.model.template_name + "/counters";
@@ -667,6 +681,641 @@
             if (d.default_text === undefined) { d.default_text = "—"; }
             if (!Array.isArray(d.refresh_on)) { d.refresh_on = ["instant_alert"]; }
         }
+        if (el.text_mode === "counter" || el.text_mode === "data_display") {
+            ensureValueAnimationDefaults(el);
+        }
+    }
+
+    var DEFAULT_VALUE_ANIMATION = {
+        enabled: false,
+        type: "fade-in",
+        duration_ms: 500,
+        easing: "ease-out",
+        pulse: false
+    };
+
+    var DEFAULT_COUNTER_IMAGE_TRANSITION = {
+        enabled: false,
+        type: "fade",
+        duration_ms: 400,
+        easing: "ease-out"
+    };
+
+    function ensureValueAnimationDefaults(el) {
+        if (!el || el.type !== "text") { return; }
+        if (!el.value_animation || typeof el.value_animation !== "object") {
+            el.value_animation = Object.assign({}, DEFAULT_VALUE_ANIMATION);
+        } else {
+            Object.keys(DEFAULT_VALUE_ANIMATION).forEach(function (k) {
+                if (el.value_animation[k] === undefined) {
+                    el.value_animation[k] = DEFAULT_VALUE_ANIMATION[k];
+                }
+            });
+        }
+    }
+
+    function listCountersInModel() {
+        return (state.model.elements || []).filter(function (e) {
+            return e.type === "text" && (e.text_mode || "static") === "counter" && e.counter;
+        }).map(function (e) {
+            var cid = e.counter.counter_id || slugifyCounterId(e.id);
+            return { id: cid, label: e.id + " (" + cid + ")" };
+        });
+    }
+
+    function componentToHex(c) {
+        var h = Math.max(0, Math.min(255, parseInt(c, 10) || 0)).toString(16);
+        return h.length === 1 ? "0" + h : h;
+    }
+
+    function rgbToHex(r, g, b) {
+        return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+    }
+
+    function parseColorForPicker(val) {
+        var s = String(val == null ? "" : val).trim();
+        if (!s || s === "transparent") {
+            return { hex: "#000000", raw: s || "transparent", transparent: true };
+        }
+        if (/^#[0-9a-f]{6}$/i.test(s)) {
+            return { hex: s, raw: s };
+        }
+        if (/^#[0-9a-f]{3}$/i.test(s)) {
+            var h = s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+            return { hex: "#" + h, raw: s };
+        }
+        var m = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+        if (m) {
+            return { hex: rgbToHex(m[1], m[2], m[3]), raw: s };
+        }
+        return { hex: "#ffffff", raw: s };
+    }
+
+    function buildColorPicker(current, onChange) {
+        var wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.flexDirection = "column";
+        wrap.style.gap = "6px";
+        var parsed = parseColorForPicker(current);
+        var row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.gap = "8px";
+        row.style.alignItems = "center";
+        var colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.value = parsed.hex;
+        colorInput.title = "Pick color";
+        colorInput.style.flex = "0 0 auto";
+        colorInput.style.width = "40px";
+        colorInput.style.height = "32px";
+        colorInput.style.padding = "0";
+        colorInput.style.border = "none";
+        colorInput.style.background = "transparent";
+        var textInput = document.createElement("input");
+        textInput.type = "text";
+        textInput.placeholder = "#hex or rgba(...)";
+        textInput.value = parsed.raw;
+        textInput.style.flex = "1";
+        var transBtn = document.createElement("button");
+        transBtn.type = "button";
+        transBtn.className = "ss-btn ss-btn--sm";
+        transBtn.textContent = "Clear";
+        transBtn.title = "Set transparent";
+        transBtn.addEventListener("click", function () {
+            textInput.value = "transparent";
+            onChange("transparent");
+            renderStage();
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        colorInput.addEventListener("input", function () {
+            textInput.value = colorInput.value;
+            onChange(colorInput.value);
+            renderStage();
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        textInput.addEventListener("change", function () {
+            var p2 = parseColorForPicker(textInput.value);
+            if (/^#[0-9a-f]{6}$/i.test(String(textInput.value).trim())) {
+                colorInput.value = textInput.value.trim();
+            } else if (p2.hex) {
+                colorInput.value = p2.hex;
+            }
+            onChange(textInput.value);
+            renderStage();
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        row.appendChild(colorInput);
+        row.appendChild(textInput);
+        row.appendChild(transBtn);
+        wrap.appendChild(row);
+        return wrap;
+    }
+
+    var _editorFontFacesInjected = {};
+
+    function slugifyElementIdForFont(raw) {
+        return String(raw || "el").replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_|_$/g, "") || "el";
+    }
+
+    function resolveFontFilenameFromValue(fontValue) {
+        var v = String(fontValue || "").trim();
+        if (!v) { return ""; }
+        var fonts = state.defaultFonts || [];
+        var i;
+        for (i = 0; i < fonts.length; i++) {
+            var f = fonts[i];
+            if (v === f.filename || v === f.label || v === f.css_family) {
+                return f.filename;
+            }
+        }
+        if (/\.(ttf|otf|woff2?)$/i.test(v)) { return v; }
+        for (i = 0; i < fonts.length; i++) {
+            f = fonts[i];
+            if (String(f.label).toLowerCase() === v.toLowerCase()) {
+                return f.filename;
+            }
+        }
+        return v;
+    }
+
+    function fontExposedInSourceSettings(el) {
+        if (!el) { return false; }
+        var mm = el.source_settings_expose;
+        if (!mm || typeof mm !== "object") { return true; }
+        if (!("font_family" in mm)) { return true; }
+        return !!mm.font_family;
+    }
+
+    function ensureEditorFontFaceLoaded(familyName, filename) {
+        if (!filename || !/\.(ttf|otf|woff2?)$/i.test(filename)) { return; }
+        var fid = "ss-face-" + familyName.replace(/[^a-z0-9]+/gi, "_");
+        if (_editorFontFacesInjected[fid]) { return; }
+        var st = document.createElement("style");
+        st.id = fid;
+        st.textContent =
+            '@font-face { font-family: "' + familyName + '"; src: url("/assets/default_assets/fonts/' +
+            filename.replace(/"/g, "") + '"); }';
+        document.head.appendChild(st);
+        _editorFontFacesInjected[fid] = true;
+    }
+
+    function normalizeElementFontFamily(el) {
+        if (!el || !el.props) { return; }
+        var v = String(el.props.font_family || "").trim();
+        if (!v) { return; }
+        var fonts = state.defaultFonts || [];
+        var i;
+        for (i = 0; i < fonts.length; i++) {
+            var f = fonts[i];
+            if (v === f.filename || v === f.label || v === f.css_family) {
+                el.props.font_family = f.filename;
+                return;
+            }
+        }
+    }
+
+    function editorFontFamilyForPreview(fontValue, el) {
+        var v = String(fontValue || "").trim();
+        if (!v) { return ""; }
+        var filename = resolveFontFilenameFromValue(v);
+        if (el && fontExposedInSourceSettings(el)) {
+            var fam = "spore-el-" + slugifyElementIdForFont(el.id);
+            ensureEditorFontFaceLoaded(fam, filename);
+            return '"' + fam + '"';
+        }
+        if (/\.(ttf|otf|woff2?)$/i.test(filename)) {
+            var fid = "ss-editor-font-" + filename.replace(/[^a-z0-9]/gi, "_");
+            ensureEditorFontFaceLoaded(fid, filename);
+            return '"' + fid + '"';
+        }
+        return v;
+    }
+
+    function buildFontFamilySelect(current, onChange) {
+        var wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.flexDirection = "column";
+        wrap.style.gap = "4px";
+        var fonts = state.defaultFonts || [];
+        var sel = document.createElement("select");
+        var blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = fonts.length ? "(select font)" : "(no fonts in default assets)";
+        sel.appendChild(blank);
+        fonts.forEach(function (f) {
+            var op = document.createElement("option");
+            op.value = f.filename;
+            op.textContent = f.label || f.filename;
+            if (String(current) === String(f.filename) ||
+                    String(current) === String(f.label)) {
+                op.selected = true;
+            }
+            sel.appendChild(op);
+        });
+        var customOp = document.createElement("option");
+        customOp.value = "__custom__";
+        customOp.textContent = "(custom name…)";
+        var inList = fonts.some(function (f) {
+            return String(f.filename) === String(current) ||
+                String(f.label) === String(current);
+        });
+        if (current && !inList) { customOp.selected = true; }
+        sel.appendChild(customOp);
+        var customInput = document.createElement("input");
+        customInput.type = "text";
+        customInput.placeholder = "Font family name or .ttf filename";
+        customInput.value = current || "";
+        customInput.style.display = (current && !inList) ? "block" : "none";
+        sel.addEventListener("change", function () {
+            if (sel.value === "__custom__") {
+                customInput.style.display = "block";
+                customInput.focus();
+                return;
+            }
+            customInput.style.display = "none";
+            onChange(sel.value);
+        });
+        customInput.addEventListener("change", function () {
+            onChange(customInput.value);
+            renderStage();
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        wrap.appendChild(sel);
+        wrap.appendChild(customInput);
+        return wrap;
+    }
+
+    function templateImageAssets() {
+        var snap = state.assetSnapshot;
+        if (!snap || !Array.isArray(snap.files)) { return []; }
+        return snap.files.filter(function (f) {
+            return (f.kind || "") === "image";
+        });
+    }
+
+    /**
+     * Dropdown of images from assets/{template} plus optional custom URL field.
+     * @param {string} currentUrl
+     * @param {function(string): void} onChange
+     * @returns {HTMLElement}
+     */
+    function buildImageSrcPicker(currentUrl, onChange) {
+        var wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.flexDirection = "column";
+        wrap.style.gap = "4px";
+        var images = templateImageAssets();
+        var cur = currentUrl == null ? "" : String(currentUrl);
+        var urlInList = images.some(function (f) {
+            return String(f.url) === cur;
+        });
+        var useCustom = !!cur && !urlInList;
+
+        var sel = document.createElement("select");
+        var blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = images.length
+            ? "(select image)"
+            : "(no images in assets — use custom URL)";
+        sel.appendChild(blank);
+        images.forEach(function (file) {
+            var op = document.createElement("option");
+            op.value = file.url;
+            op.textContent = file.rel_path || file.name;
+            if (cur === String(file.url)) { op.selected = true; }
+            sel.appendChild(op);
+        });
+        var customOp = document.createElement("option");
+        customOp.value = "__custom__";
+        customOp.textContent = "(custom URL…)";
+        if (useCustom) { customOp.selected = true; }
+        sel.appendChild(customOp);
+
+        var customInput = document.createElement("input");
+        customInput.type = "text";
+        customInput.placeholder = "/assets/… or https://…";
+        customInput.value = cur;
+        customInput.style.display = useCustom ? "block" : "none";
+
+        sel.addEventListener("change", function () {
+            if (sel.value === "__custom__") {
+                customInput.style.display = "block";
+                customInput.focus();
+                return;
+            }
+            customInput.style.display = "none";
+            onChange(sel.value);
+        });
+        customInput.addEventListener("change", function () {
+            onChange(customInput.value);
+        });
+        customInput.addEventListener("input", function () {
+            onChange(customInput.value);
+        });
+
+        wrap.appendChild(sel);
+        wrap.appendChild(customInput);
+        return wrap;
+    }
+
+    function ensureImageSrcDefaults(el) {
+        if (!el || el.type !== "image") { return; }
+        if (!el.src_mode) { el.src_mode = "static"; }
+        if (!el.counter_src || typeof el.counter_src !== "object") {
+            el.counter_src = {
+                counter_id: "",
+                ranges: [],
+                default_src: (el.props && el.props.src) || ""
+            };
+        }
+        if (!Array.isArray(el.counter_src.ranges)) {
+            el.counter_src.ranges = [];
+        }
+        if (el.counter_src.default_src === undefined) {
+            el.counter_src.default_src = (el.props && el.props.src) || "";
+        }
+        ensureCounterImageTransitionDefaults(el);
+    }
+
+    function ensureCounterImageTransitionDefaults(el) {
+        if (!el || el.type !== "image") { return; }
+        if ((el.src_mode || "static") !== "from_counter") { return; }
+        if (!el.counter_image_transition || typeof el.counter_image_transition !== "object") {
+            el.counter_image_transition = Object.assign({}, DEFAULT_COUNTER_IMAGE_TRANSITION);
+        } else {
+            Object.keys(DEFAULT_COUNTER_IMAGE_TRANSITION).forEach(function (k) {
+                if (el.counter_image_transition[k] === undefined) {
+                    el.counter_image_transition[k] = DEFAULT_COUNTER_IMAGE_TRANSITION[k];
+                }
+            });
+        }
+    }
+
+    function renderCounterImageTransitionSection(host, el) {
+        if (el.type !== "image" || (el.src_mode || "static") !== "from_counter") { return; }
+        var ranges = (el.counter_src && el.counter_src.ranges) || [];
+        if (ranges.length < 2) {
+            var hint = document.createElement("p");
+            hint.style.cssText =
+                "color:var(--ss-text-muted);font-size:10px;margin:8px 0;line-height:1.4;";
+            hint.textContent =
+                "Add at least two counter ranges to enable transition animations when the image changes.";
+            host.appendChild(hint);
+            return;
+        }
+        ensureCounterImageTransitionDefaults(el);
+        var tr = el.counter_image_transition;
+        var sect = document.createElement("div");
+        sect.className = "ss-form-section";
+        var title = document.createElement("div");
+        title.className = "ss-form-section__title";
+        title.textContent = "Range change transition";
+        sect.appendChild(title);
+        var enCb = document.createElement("input");
+        enCb.type = "checkbox";
+        enCb.checked = !!tr.enabled;
+        enCb.addEventListener("change", function () {
+            tr.enabled = enCb.checked;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        sect.appendChild(formRow("Animate when image changes", enCb));
+        var typeSel = document.createElement("select");
+        [
+            { v: "fade", label: "Fade out, then fade in" },
+            { v: "slide", label: "Slide out, then slide in" },
+            { v: "crossfade", label: "Crossfade" },
+            { v: "bounce", label: "Bounce out, then bounce in" },
+            { v: "roll", label: "Roll out, then roll in" }
+        ].forEach(function (opt) {
+            var op = document.createElement("option");
+            op.value = opt.v;
+            op.textContent = opt.label;
+            if ((tr.type || "fade") === opt.v) { op.selected = true; }
+            typeSel.appendChild(op);
+        });
+        typeSel.addEventListener("change", function () {
+            tr.type = typeSel.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        sect.appendChild(formRow("Transition type", typeSel));
+        sect.appendChild(formRow("Duration (ms)", numberEl(
+            tr.duration_ms != null ? tr.duration_ms : 400,
+            function (v) {
+                tr.duration_ms = Math.max(0, parseInt(v, 10) || 0);
+                pushHistoryDebounced();
+                modelTouch();
+            }
+        )));
+        var easeSel = document.createElement("select");
+        ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].forEach(function (e) {
+            var op = document.createElement("option");
+            op.value = e;
+            op.textContent = e;
+            if ((tr.easing || "ease-out") === e) { op.selected = true; }
+            easeSel.appendChild(op);
+        });
+        easeSel.addEventListener("change", function () {
+            tr.easing = easeSel.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        sect.appendChild(formRow("Easing", easeSel));
+        host.appendChild(sect);
+    }
+
+    function renderImageSrcModeSection(host, el) {
+        if (el.type !== "image" || isLegacyModel()) { return; }
+        ensureImageSrcDefaults(el);
+        var modeSel = document.createElement("select");
+        [
+            { v: "static", label: "Static URL" },
+            { v: "from_counter", label: "From counter (ranges)" }
+        ].forEach(function (m) {
+            var op = document.createElement("option");
+            op.value = m.v;
+            op.textContent = m.label;
+            if ((el.src_mode || "static") === m.v) { op.selected = true; }
+            modeSel.appendChild(op);
+        });
+        modeSel.addEventListener("change", function () {
+            el.src_mode = modeSel.value;
+            ensureImageSrcDefaults(el);
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        host.appendChild(formRow("Image source mode", modeSel));
+
+        if ((el.src_mode || "static") !== "from_counter") { return; }
+
+        var cs = el.counter_src;
+        var counters = listCountersInModel();
+        var cidSel = document.createElement("select");
+        var blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = counters.length ? "(select counter)" : "(no counters in template)";
+        cidSel.appendChild(blank);
+        counters.forEach(function (c) {
+            var op = document.createElement("option");
+            op.value = c.id;
+            op.textContent = c.label;
+            if (String(cs.counter_id) === String(c.id)) { op.selected = true; }
+            cidSel.appendChild(op);
+        });
+        cidSel.addEventListener("change", function () {
+            cs.counter_id = cidSel.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        host.appendChild(formRow("Counter", cidSel));
+
+        host.appendChild(formRow("Default src (fallback)", buildImageSrcPicker(
+            cs.default_src || "", function (v) {
+                cs.default_src = v;
+                pushHistoryDebounced();
+                modelTouch();
+            }
+        )));
+
+        var rangesHead = document.createElement("h4");
+        rangesHead.className = "ss-section-sub";
+        rangesHead.textContent = "Src ranges (min–max)";
+        host.appendChild(rangesHead);
+
+        (cs.ranges || []).forEach(function (row, ridx) {
+            var card = document.createElement("div");
+            card.className = "ss-binding-row";
+            card.style.marginBottom = "8px";
+            card.appendChild(formRow("Min", numberEl(row.min != null ? row.min : 0, function (v) {
+                row.min = parseInt(v, 10) || 0;
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            card.appendChild(formRow("Max", numberEl(row.max != null ? row.max : 0, function (v) {
+                row.max = parseInt(v, 10) || 0;
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            card.appendChild(formRow("Image", buildImageSrcPicker(row.src || "", function (v) {
+                row.src = v;
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            })));
+            var rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "ss-btn";
+            rm.textContent = "Remove range";
+            rm.addEventListener("click", function () {
+                cs.ranges.splice(ridx, 1);
+                pushHistory();
+                renderProperties();
+                modelTouch();
+            });
+            card.appendChild(rm);
+            host.appendChild(card);
+        });
+
+        var addRange = document.createElement("button");
+        addRange.type = "button";
+        addRange.className = "ss-btn ss-btn--primary";
+        addRange.textContent = "+ Add range";
+        addRange.addEventListener("click", function () {
+            cs.ranges.push({ min: 0, max: 0, src: "" });
+            pushHistory();
+            renderProperties();
+            modelTouch();
+        });
+        host.appendChild(addRange);
+        renderCounterImageTransitionSection(host, el);
+    }
+
+    function renderValueAnimationSection(host, el) {
+        if (el.type !== "text") { return; }
+        var mode = el.text_mode || "static";
+        if (mode !== "counter" && mode !== "data_display") { return; }
+        ensureValueAnimationDefaults(el);
+        var va = el.value_animation;
+        var sect = document.createElement("div");
+        sect.className = "ss-form-section";
+        var title = document.createElement("div");
+        title.className = "ss-form-section__title";
+        title.textContent = "Value change animation";
+        sect.appendChild(title);
+        var enCb = document.createElement("input");
+        enCb.type = "checkbox";
+        enCb.checked = !!va.enabled;
+        enCb.addEventListener("change", function () {
+            va.enabled = enCb.checked;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        sect.appendChild(formRow("Enable on value update", enCb));
+        var typeSel = document.createElement("select");
+        ["tick_up", "fade-in", "slide-in", "bounce"].forEach(function (t) {
+            var labels = {
+                tick_up: "Tick up (count)",
+                "fade-in": "fade-in",
+                "slide-in": "slide-in",
+                bounce: "bounce"
+            };
+            var op = document.createElement("option");
+            op.value = t;
+            op.textContent = labels[t] || t;
+            if ((va.type || "fade-in") === t) { op.selected = true; }
+            typeSel.appendChild(op);
+        });
+        typeSel.addEventListener("change", function () {
+            va.type = typeSel.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        sect.appendChild(formRow("Animation type", typeSel));
+        var tickHint = document.createElement("p");
+        tickHint.style.cssText =
+            "color:var(--ss-text-muted);font-size:10px;margin:4px 0 0;line-height:1.4;";
+        tickHint.textContent =
+            "Tick up animates the number from the previous value (like memecalc). " +
+            "Other types play a visual effect on the text.";
+        sect.appendChild(tickHint);
+        sect.appendChild(formRow("Duration (ms)", numberEl(
+            va.duration_ms != null ? va.duration_ms : 500, function (v) {
+                va.duration_ms = Math.max(0, parseInt(v, 10) || 0);
+                pushHistoryDebounced();
+                modelTouch();
+            }
+        )));
+        var easeSel = document.createElement("select");
+        ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].forEach(function (e) {
+            var op = document.createElement("option");
+            op.value = e;
+            op.textContent = e;
+            if ((va.easing || "ease-out") === e) { op.selected = true; }
+            easeSel.appendChild(op);
+        });
+        easeSel.addEventListener("change", function () {
+            va.easing = easeSel.value;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        sect.appendChild(formRow("Easing", easeSel));
+        var pulseCb = document.createElement("input");
+        pulseCb.type = "checkbox";
+        pulseCb.checked = !!va.pulse;
+        pulseCb.addEventListener("change", function () {
+            va.pulse = pulseCb.checked;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        sect.appendChild(formRow("Continuous pulse", pulseCb));
+        host.appendChild(sect);
     }
 
     function slugifyCounterId(raw) {
@@ -804,12 +1453,17 @@
                 pushHistoryDebounced();
                 modelTouch();
             })));
-            host.appendChild(formRow("Format", inputEl("text", c.format || "{value}", function (v) {
+            var formatInput = inputEl("text", c.format || "{value}", function (v) {
                 c.format = v;
+                el.props = el.props || {};
+                el.props.text = v;
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            });
+            host.appendChild(
+                formRowPropWithExpose(el, "text", "Format (use {value})", formatInput)
+            );
             var persistCb = document.createElement("input");
             persistCb.type = "checkbox";
             persistCb.checked = !!c.persist;
@@ -934,12 +1588,20 @@
                 pushHistoryDebounced();
                 modelTouch();
             }, { displayOnly: true })));
-            host.appendChild(formRow("Format", inputEl("text", d.format || "{value}", function (v) {
+            var displayFormatInput = inputEl("text", d.format || "{value}", function (v) {
                 d.format = v;
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            });
+            host.appendChild(
+                formRowPropWithExpose(
+                    el,
+                    "text",
+                    "Format (use {value})",
+                    displayFormatInput
+                )
+            );
             host.appendChild(formRow("Default text", inputEl("text", d.default_text, function (v) {
                 d.default_text = v;
                 renderStage();
@@ -972,6 +1634,10 @@
                 refreshWrap.appendChild(lbl);
             });
             host.appendChild(formRow("Refresh on events", refreshWrap));
+        }
+
+        if (el.text_mode === "counter" || el.text_mode === "data_display") {
+            renderValueAnimationSection(host, el);
         }
     }
 
@@ -1314,6 +1980,11 @@
         stage.style.width = design.width + "px";
         stage.style.height = design.height + "px";
 
+        var dims = document.createElement("div");
+        dims.className = "ss-stage-dims";
+        dims.textContent = design.width + " \u00d7 " + design.height;
+        stage.appendChild(dims);
+
         var elems = state.model.elements || [];
         var byId = {};
         elems.forEach(function (e) {
@@ -1333,8 +2004,16 @@
             node.className = "ss-element";
             node.dataset.sporeId = el.id;
             node.dataset.sporeType = el.type;
-            var pos = el.position || { x: 0, y: 0 };
             var sz = el.size || { w: 100, h: 30 };
+            var parentEl = null;
+            if (pidNorm(el.parent_id)) {
+                parentEl = byId[el.parent_id];
+                if (parentEl) {
+                    ensurePlacementDefaults(el);
+                    applyPlacementToPosition(el, parentEl);
+                }
+            }
+            var pos = el.position || { x: 0, y: 0 };
             node.style.left = pos.x + "px";
             node.style.top = pos.y + "px";
             node.style.width = sz.w + "px";
@@ -1407,9 +2086,23 @@
         if (props.color) { node.style.color = props.color; }
         if (props.background_color) { node.style.background = props.background_color; }
         if (props.font_size != null) { node.style.fontSize = props.font_size + "px"; }
-        if (props.font_family) { node.style.fontFamily = props.font_family; }
+        if (props.font_family) {
+            node.style.fontFamily = editorFontFamilyForPreview(props.font_family, el);
+        }
         if (props.font_weight) { node.style.fontWeight = props.font_weight; }
         if (props.text_align) { node.style.textAlign = props.text_align; }
+        if (el.type === "text") {
+            var va = props.vertical_align || "top";
+            if (va === "center" || va === "bottom") {
+                node.style.display = "flex";
+                node.style.flexDirection = "column";
+                node.style.justifyContent = va === "center" ? "center" : "flex-end";
+            } else {
+                node.style.display = "";
+                node.style.flexDirection = "";
+                node.style.justifyContent = "";
+            }
+        }
         if (props.border_radius != null) { node.style.borderRadius = props.border_radius + "px"; }
         if (props.border_width != null && props.border_color) {
             node.style.border = props.border_width + "px solid " + props.border_color;
@@ -1419,6 +2112,85 @@
 
     function pidNorm(pid) {
         return pid || null;
+    }
+
+    var PLACEMENT_ANCHORS_H = ["left", "center", "right"];
+    var PLACEMENT_ANCHORS_V = ["top", "center", "bottom"];
+
+    function ensurePlacementDefaults(el) {
+        if (!el || !pidNorm(el.parent_id)) { return; }
+        if (!el.placement || typeof el.placement !== "object") {
+            el.placement = {
+                anchor_h: "left",
+                anchor_v: "top",
+                offset_x: (el.position && el.position.x) || 0,
+                offset_y: (el.position && el.position.y) || 0
+            };
+        } else {
+            if (!el.placement.anchor_h) { el.placement.anchor_h = "left"; }
+            if (!el.placement.anchor_v) { el.placement.anchor_v = "top"; }
+            if (el.placement.offset_x == null) { el.placement.offset_x = 0; }
+            if (el.placement.offset_y == null) { el.placement.offset_y = 0; }
+        }
+    }
+
+    function placementBase(parentW, parentH, childW, childH, anchorH, anchorV) {
+        var ah = anchorH || "left";
+        var av = anchorV || "top";
+        var bx = 0;
+        var by = 0;
+        if (ah === "center") { bx = (parentW - childW) / 2; }
+        else if (ah === "right") { bx = parentW - childW; }
+        if (av === "center") { by = (parentH - childH) / 2; }
+        else if (av === "bottom") { by = parentH - childH; }
+        return { x: Math.round(bx), y: Math.round(by) };
+    }
+
+    function resolvePlacementPosition(child, parentEl) {
+        if (!parentEl) {
+            var p0 = child.position || { x: 0, y: 0 };
+            return { x: p0.x || 0, y: p0.y || 0 };
+        }
+        if (!child.placement || typeof child.placement !== "object") {
+            var p1 = child.position || { x: 0, y: 0 };
+            return { x: p1.x || 0, y: p1.y || 0 };
+        }
+        var pw = (parentEl.size && parentEl.size.w) || 0;
+        var ph = (parentEl.size && parentEl.size.h) || 0;
+        var cw = (child.size && child.size.w) || 0;
+        var ch = (child.size && child.size.h) || 0;
+        var pl = child.placement;
+        var base = placementBase(pw, ph, cw, ch, pl.anchor_h, pl.anchor_v);
+        return {
+            x: base.x + (parseInt(pl.offset_x, 10) || 0),
+            y: base.y + (parseInt(pl.offset_y, 10) || 0)
+        };
+    }
+
+    function applyPlacementToPosition(child, parentEl) {
+        if (!parentEl) { return; }
+        ensurePlacementDefaults(child);
+        var pos = resolvePlacementPosition(child, parentEl);
+        child.position = { x: Math.max(0, pos.x), y: Math.max(0, pos.y) };
+    }
+
+    function syncPlacementFromPosition(child, parentEl) {
+        if (!parentEl) { return; }
+        ensurePlacementDefaults(child);
+        var pw = (parentEl.size && parentEl.size.w) || 0;
+        var ph = (parentEl.size && parentEl.size.h) || 0;
+        var cw = (child.size && child.size.w) || 0;
+        var ch = (child.size && child.size.h) || 0;
+        var pl = child.placement;
+        var base = placementBase(pw, ph, cw, ch, pl.anchor_h, pl.anchor_v);
+        var px = (child.position && child.position.x) || 0;
+        var py = (child.position && child.position.y) || 0;
+        pl.offset_x = px - base.x;
+        pl.offset_y = py - base.y;
+    }
+
+    function elementByIdFromModel(id) {
+        return (state.model.elements || []).find(function (e) { return e.id === id; });
     }
 
     /** Set ``parent_id`` and ``position`` from drop geometry (viewport rects). */
@@ -1440,6 +2212,11 @@
                     x: Math.max(0, Math.round(nr.left - pr.left)),
                     y: Math.max(0, Math.round(nr.top - pr.top))
                 };
+                var parEl = elementByIdFromModel(np);
+                if (parEl) {
+                    ensurePlacementDefaults(modelEl);
+                    syncPlacementFromPosition(modelEl, parEl);
+                }
                 return;
             }
         }
@@ -1564,6 +2341,13 @@
                     });
                 }
             }
+            if (dd.didMove && pidNorm(modelEl.parent_id)) {
+                var parDrag = elementByIdFromModel(modelEl.parent_id);
+                if (parDrag) {
+                    ensurePlacementDefaults(modelEl);
+                    syncPlacementFromPosition(modelEl, parDrag);
+                }
+            }
             pushHistoryDebounced();
             modelTouch();
             dragData = null;
@@ -1593,6 +2377,14 @@
         });
         document.addEventListener("mouseup", function () {
             if (resizeData) {
+                if (pidNorm(modelEl.parent_id)) {
+                    var parRs = elementByIdFromModel(modelEl.parent_id);
+                    if (parRs) {
+                        ensurePlacementDefaults(modelEl);
+                        applyPlacementToPosition(modelEl, parRs);
+                        renderStage();
+                    }
+                }
                 pushHistoryDebounced();
                 modelTouch();
             }
@@ -1854,6 +2646,91 @@
         host.appendChild(note);
     }
 
+    function renderPlacementInContainerSection(host, el) {
+        var pnorm = pidNorm(el.parent_id);
+        if (!pnorm) { return; }
+        var parentEl = elementByIdFromModel(pnorm);
+        if (!parentEl) { return; }
+        ensurePlacementDefaults(el);
+
+        var sect = document.createElement("div");
+        sect.className = "ss-form-section";
+        var title = document.createElement("div");
+        title.className = "ss-form-section__title";
+        title.textContent = "Placement in container";
+        sect.appendChild(title);
+
+        var grid = document.createElement("div");
+        grid.className = "ss-placement-grid";
+        grid.style.cssText =
+            "display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:8px 0;";
+        var presets = [
+            { ah: "left", av: "top", label: "↖" },
+            { ah: "center", av: "top", label: "↑" },
+            { ah: "right", av: "top", label: "↗" },
+            { ah: "left", av: "center", label: "←" },
+            { ah: "center", av: "center", label: "◎" },
+            { ah: "right", av: "center", label: "→" },
+            { ah: "left", av: "bottom", label: "↙" },
+            { ah: "center", av: "bottom", label: "↓" },
+            { ah: "right", av: "bottom", label: "↘" }
+        ];
+        presets.forEach(function (preset) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "ss-btn ss-btn--sm";
+            btn.textContent = preset.label;
+            btn.title = preset.ah + " / " + preset.av;
+            if (el.placement.anchor_h === preset.ah &&
+                    el.placement.anchor_v === preset.av) {
+                btn.style.outline = "2px solid var(--ss-accent,#7c3aed)";
+            }
+            btn.addEventListener("click", function () {
+                el.placement.anchor_h = preset.ah;
+                el.placement.anchor_v = preset.av;
+                el.placement.offset_x = 0;
+                el.placement.offset_y = 0;
+                applyPlacementToPosition(el, parentEl);
+                pushHistoryDebounced();
+                renderStage();
+                renderProperties();
+                modelTouch();
+            });
+            grid.appendChild(btn);
+        });
+        sect.appendChild(grid);
+
+        var offRow = document.createElement("div");
+        offRow.className = "ss-row";
+        offRow.appendChild(formRow("Offset X", numberEl(
+            el.placement.offset_x || 0, function (v) {
+                el.placement.offset_x = parseInt(v, 10) || 0;
+                applyPlacementToPosition(el, parentEl);
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }
+        )));
+        offRow.appendChild(formRow("Offset Y", numberEl(
+            el.placement.offset_y || 0, function (v) {
+                el.placement.offset_y = parseInt(v, 10) || 0;
+                applyPlacementToPosition(el, parentEl);
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }
+        )));
+        sect.appendChild(offRow);
+
+        var hint = document.createElement("p");
+        hint.style.cssText =
+            "color:var(--ss-text-muted);font-size:10px;margin:4px 0 0;line-height:1.4;";
+        hint.textContent =
+            "Presets anchor inside the parent; offsets fine-tune. Dragging updates offset while keeping the anchor.";
+        sect.appendChild(hint);
+        host.appendChild(sect);
+    }
+
     function renderProperties() {
         var host = $("#ss-properties-host");
         host.innerHTML = "";
@@ -1938,13 +2815,22 @@
                 });
                 host.appendChild(detachBtn);
             }
+            if (pnorm) {
+                renderPlacementInContainerSection(host, el);
+            }
         }
 
         var posRow = document.createElement("div");
         posRow.className = "ss-row";
+        var parForPos = pidNorm(el.parent_id)
+            ? elementByIdFromModel(el.parent_id) : null;
         posRow.appendChild(formRow("X", numberEl(el.position && el.position.x || 0, function (v) {
             el.position = el.position || { x: 0, y: 0 };
             el.position.x = Math.max(0, parseInt(v, 10) || 0);
+            if (parForPos) {
+                ensurePlacementDefaults(el);
+                syncPlacementFromPosition(el, parForPos);
+            }
             renderStage();
             pushHistoryDebounced();
             modelTouch();
@@ -1952,6 +2838,10 @@
         posRow.appendChild(formRow("Y", numberEl(el.position && el.position.y || 0, function (v) {
             el.position = el.position || { x: 0, y: 0 };
             el.position.y = Math.max(0, parseInt(v, 10) || 0);
+            if (parForPos) {
+                ensurePlacementDefaults(el);
+                syncPlacementFromPosition(el, parForPos);
+            }
             renderStage();
             pushHistoryDebounced();
             modelTouch();
@@ -2002,13 +2892,32 @@
             renderTextModeSection(host, el);
         }
 
+        if (el.type === "image" && !isLegacyModel()) {
+            renderImageSrcModeSection(host, el);
+        }
+
         var schema = ELEMENT_PROP_SCHEMA[el.type] || [];
         var textMode = el.text_mode || "static";
+        var imageSrcMode = el.src_mode || "static";
         schema.forEach(function (entry) {
             if (el.type === "text" && textMode !== "static" && entry.key === "text") {
                 return;
             }
+            if (el.type === "image" && imageSrcMode === "from_counter" && entry.key === "src") {
+                return;
+            }
             var current = el.props && el.props[entry.key];
+            if (el.type === "image" && entry.key === "src") {
+                var srcPicker = buildImageSrcPicker(current || "", function (v) {
+                    el.props = el.props || {};
+                    el.props.src = v;
+                    renderStage();
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, srcPicker));
+                return;
+            }
             var ctrl;
             if (entry.type === "textarea") {
                 ctrl = document.createElement("textarea");
@@ -2028,9 +2937,26 @@
                     ctrl.appendChild(op);
                 });
             } else if (entry.type === "color") {
-                ctrl = document.createElement("input");
-                ctrl.type = "color";
-                ctrl.value = current && /^#[0-9a-f]{6}$/i.test(String(current)) ? current : "#ffffff";
+                ctrl = buildColorPicker(current, function (v) {
+                    el.props = el.props || {};
+                    el.props[entry.key] = v;
+                    renderStage();
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl));
+                return;
+            } else if (entry.type === "font") {
+                ctrl = buildFontFamilySelect(current || "", function (v) {
+                    el.props = el.props || {};
+                    el.props[entry.key] = v;
+                    normalizeElementFontFamily(el);
+                    renderStage();
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl));
+                return;
             } else {
                 ctrl = document.createElement("input");
                 ctrl.type = entry.type === "number" ? "number" : "text";
@@ -3169,6 +4095,9 @@
             }
             ensureElementExposeDefaults(el);
             ensureElementAnimations(el);
+            if (type === "text") { ensureTextModeDefaults(el); }
+            if (type === "image") { ensureImageSrcDefaults(el); }
+            if (pid) { ensurePlacementDefaults(el); }
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
             normalizeParentLinksAndReorderLive();
@@ -3285,6 +4214,7 @@
      * Asset browser
      * ------------------------------------------------------------------ */
     function renderAssets(snapshot) {
+        state.assetSnapshot = snapshot || null;
         var grid = $("#ss-asset-grid");
         grid.innerHTML = "";
         if (!snapshot || !snapshot.files || snapshot.files.length === 0) {
@@ -3323,6 +4253,10 @@
             });
             grid.appendChild(card);
         });
+        var selEl = selectedElement();
+        if (selEl && selEl.type === "image" && state.selectedId) {
+            renderProperties();
+        }
     }
 
     function escapeHtml(s) {
@@ -3410,8 +4344,14 @@
         model.template_name = model.template_name || "untitled";
         model.alert_system = model.alert_system === "instant" ? "instant" : "queue";
         model.design = model.design || { width: 800, height: 200 };
-        model.design.width = Number(model.design.width) || 800;
-        model.design.height = Number(model.design.height) || 200;
+        model.design.width = Math.max(
+            DESIGN_CANVAS_MIN_PX,
+            Number(model.design.width) || 800
+        );
+        model.design.height = Math.max(
+            DESIGN_CANVAS_MIN_PX,
+            Number(model.design.height) || 200
+        );
         model.elements = Array.isArray(model.elements) ? model.elements : [];
         model.elements.forEach(function (el) {
             el.id = el.id || uuid();
@@ -3439,6 +4379,13 @@
                 ensureElementAnimations(el);
                 if (el.type === "text") {
                     ensureTextModeDefaults(el);
+                    normalizeElementFontFamily(el);
+                }
+                if (el.type === "image") {
+                    ensureImageSrcDefaults(el);
+                }
+                if (pidNorm(el.parent_id)) {
+                    ensurePlacementDefaults(el);
                 }
             }
             if (model.legacy && el.parent_id) {
@@ -3905,18 +4852,56 @@
     function setupCanvasPanel() {
         $("#ss-canvas-w").addEventListener("change", function (ev) {
             if (!state.model) { return; }
-            state.model.design.width = Math.max(320, parseInt(ev.target.value, 10) || 800);
+            state.model.design.width = Math.max(
+                DESIGN_CANVAS_MIN_PX,
+                parseInt(ev.target.value, 10) || 800
+            );
             renderStage();
             pushHistory();
             modelTouch();
         });
         $("#ss-canvas-h").addEventListener("change", function (ev) {
             if (!state.model) { return; }
-            state.model.design.height = Math.max(240, parseInt(ev.target.value, 10) || 200);
+            state.model.design.height = Math.max(
+                DESIGN_CANVAS_MIN_PX,
+                parseInt(ev.target.value, 10) || 200
+            );
             renderStage();
             pushHistory();
             modelTouch();
         });
+        var matchRootBtn = $("#ss-canvas-match-root");
+        if (matchRootBtn) {
+            matchRootBtn.addEventListener("click", function () {
+                if (!state.model) { return; }
+                var roots = (state.model.elements || []).filter(function (e) {
+                    return e.type === "container" && !pidNorm(e.parent_id) && !isLegacyElement(e);
+                });
+                if (roots.length !== 1) {
+                    showToast(
+                        roots.length === 0
+                            ? "Add a top-level container first."
+                            : "Match canvas requires exactly one top-level container.",
+                        "error"
+                    );
+                    return;
+                }
+                var root = roots[0];
+                var sz = root.size || { w: 800, h: 200 };
+                state.model.design.width = Math.max(
+                    DESIGN_CANVAS_MIN_PX,
+                    parseInt(sz.w, 10) || DESIGN_CANVAS_MIN_PX
+                );
+                state.model.design.height = Math.max(
+                    DESIGN_CANVAS_MIN_PX,
+                    parseInt(sz.h, 10) || DESIGN_CANVAS_MIN_PX
+                );
+                renderCanvasPanel();
+                renderStage();
+                pushHistory();
+                modelTouch();
+            });
+        }
         $("#ss-alert-system").addEventListener("change", function (ev) {
             if (!state.model) { return; }
             state.model.alert_system = ev.target.value === "instant" ? "instant" : "queue";
@@ -4095,7 +5080,8 @@
         Promise.all([
             fetch("/api/spore-studio/events").then(function (r) { return r.json(); }),
             fetch("/api/spore-studio/data-sources").then(function (r) { return r.json(); }),
-            fetch("/api/spore-studio/control-actions").then(function (r) { return r.json(); })
+            fetch("/api/spore-studio/control-actions").then(function (r) { return r.json(); }),
+            fetch("/api/spore-studio/fonts").then(function (r) { return r.json(); })
         ])
             .then(function (results) {
                 var evData = results[0] || {};
@@ -4103,6 +5089,7 @@
                 state.registry.actions = evData.actions || [];
                 state.dataSources = results[1] || { sources: [], categories: [] };
                 state.controlActions = results[2] || { actions: [], control_types: [] };
+                state.defaultFonts = (results[3] && results[3].fonts) || [];
                 renderPreviewMockToolbar();
             })
             .then(refreshTemplateList)

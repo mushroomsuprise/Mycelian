@@ -818,6 +818,19 @@ class WebEngine:
                 logger.error("Spore Studio model endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
 
+        @self.app.route("/api/spore-studio/fonts")
+        def serve_spore_studio_fonts():
+            """Return fonts from assets/default_assets/fonts for the editor picker."""
+            try:
+                from .spore_studio import fonts_registry as _fr
+
+                return _fr.get_font_registry(), 200, {
+                    "Content-Type": "application/json"
+                }
+            except Exception as e:
+                logger.error("Spore Studio fonts endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
         @self.app.route("/api/spore-studio/assets/<template_name>")
         def serve_spore_studio_assets(template_name):
             """Return the asset tree for a single template (drives the asset browser)."""
@@ -2714,6 +2727,8 @@ class WebEngine:
 
     @staticmethod
     def _template_variable_map(template_config: Dict[str, Any]) -> Dict[str, Any]:
+        from .spore_studio.fonts_registry import resolve_font_filename
+
         out: Dict[str, Any] = {}
         for element in template_config.get("elements", []):
             if (
@@ -2721,7 +2736,13 @@ class WebEngine:
                 and "id" in element
                 and "value" in element
             ):
-                out[element["id"]] = element["value"]
+                eid = str(element["id"])
+                val = element["value"]
+                if eid.endswith("_font_family") and val not in (None, ""):
+                    resolved = resolve_font_filename(str(val))
+                    if resolved:
+                        val = resolved
+                out[eid] = val
         return out
 
     def _merge_preview_session_into_config(

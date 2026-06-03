@@ -11,7 +11,10 @@ from modules.spore_studio import (
     spore_data_codegen,
     template_codegen,
 )
-from modules.spore_studio.behavior_blocks import compile_bindings
+from modules.spore_studio.behavior_blocks import (
+    COUNTER_IMAGE_TRANSITION_CSS,
+    compile_bindings,
+)
 
 
 class SporeStudioDataFeaturesTests(unittest.TestCase):
@@ -99,8 +102,16 @@ class SporeStudioDataFeaturesTests(unittest.TestCase):
         self.assertIn('data-spore-text-mode="counter"', html)
         self.assertIn('data-spore-text-mode="data_display"', html)
         self.assertIn("sporeResolveSource", html)
+        self.assertIn("subs_format", html)
         self.assertIn("dynamic_controls", cfg)
         self.assertEqual(len(cfg["dynamic_controls"]["elements"]), 1)
+        cfg_ids = {
+            el["id"]
+            for el in cfg.get("elements", [])
+            if isinstance(el, dict) and "id" in el
+        }
+        self.assertIn("subs_format", cfg_ids)
+        self.assertNotIn("subsText", cfg_ids)
 
     def test_counter_adjust_binding_compiles(self):
         elements = [
@@ -124,6 +135,164 @@ class SporeStudioDataFeaturesTests(unittest.TestCase):
         ]
         out = compile_bindings(elements)
         self.assertIn("sporeCounterAdjust", out["js"])
+
+    def test_value_animation_and_counter_image_features(self):
+        model = {
+            "template_name": "feat_tpl",
+            "alert_system": "instant",
+            "design": {"width": 400, "height": 200},
+            "elements": [
+                {
+                    "id": "cnt",
+                    "type": "text",
+                    "category": "Elements",
+                    "text_mode": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 120, "h": 40},
+                    "props": {
+                        "text": "0",
+                        "font_size": 24,
+                        "vertical_align": "center",
+                    },
+                    "bindings": [],
+                    "counter": {
+                        "counter_id": "bits",
+                        "initial_value": 0,
+                        "format": "{value}",
+                        "rules": [],
+                    },
+                    "value_animation": {
+                        "enabled": True,
+                        "type": "fade-in",
+                        "duration_ms": 400,
+                        "easing": "ease-out",
+                        "pulse": False,
+                    },
+                },
+                {
+                    "id": "pic",
+                    "type": "image",
+                    "category": "Elements",
+                    "src_mode": "from_counter",
+                    "counter_src": {
+                        "counter_id": "bits",
+                        "ranges": [
+                            {"min": 0, "max": 99, "src": "/assets/feat_tpl/low.png"},
+                            {"min": 100, "max": 9999, "src": "/assets/feat_tpl/high.png"},
+                        ],
+                        "default_src": "/assets/feat_tpl/fallback.png",
+                    },
+                    "position": {"x": 10, "y": 50},
+                    "size": {"w": 64, "h": 64},
+                    "props": {"src": ""},
+                    "bindings": [],
+                    "counter_image_transition": {
+                        "enabled": True,
+                        "type": "crossfade",
+                        "duration_ms": 350,
+                        "easing": "ease-in-out",
+                    },
+                },
+                {
+                    "id": "box",
+                    "type": "container",
+                    "category": "Elements",
+                    "position": {"x": 200, "y": 0},
+                    "size": {"w": 100, "h": 80},
+                    "props": {},
+                    "bindings": [],
+                },
+                {
+                    "id": "lbl",
+                    "type": "text",
+                    "category": "Elements",
+                    "parent_id": "box",
+                    "placement": {
+                        "anchor_h": "center",
+                        "anchor_v": "center",
+                        "offset_x": 0,
+                        "offset_y": 0,
+                    },
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 80, "h": 24},
+                    "props": {"text": "Hi", "font_size": 16},
+                    "bindings": [],
+                },
+            ],
+        }
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn("value_animation", js)
+        self.assertIn("__sporeCounterImages", js)
+        self.assertIn("pic_range_0_src", js)
+        self.assertIn("pic_counter_default_src", js)
+        self.assertIn("range_transition", js)
+        self.assertIn("crossfade", js)
+        self.assertIn("cnt_format", js)
+        self.assertNotIn("cntText", js)
+
+        html, cfg = template_codegen.compile_model(model)
+        self.assertIn("justify-content: center", html)
+        self.assertIn('data-spore-src-mode="counter"', html)
+        self.assertIn("sporeValueFadeIn", html)
+        self.assertIn("cnt_format", html)
+        self.assertIn("pic_counter_default_src", html)
+
+        cfg_ids = {
+            el["id"]
+            for el in cfg.get("elements", [])
+            if isinstance(el, dict) and "id" in el
+        }
+        self.assertIn("cnt_format", cfg_ids)
+        self.assertIn("pic_counter_default_src", cfg_ids)
+        self.assertIn("pic_range_0_src", cfg_ids)
+        self.assertIn("pic_range_1_src", cfg_ids)
+        self.assertNotIn("picSrc", cfg_ids)
+        self.assertNotIn("cntText", cfg_ids)
+        design_w = next(
+            el for el in cfg["elements"] if el.get("id") == "DesignWidth"
+        )
+        self.assertEqual(design_w.get("min"), 50)
+
+        bindings = compile_bindings(model["elements"])
+        self.assertIn("spore-ci-fade-out", COUNTER_IMAGE_TRANSITION_CSS)
+        self.assertIn("spore-ci-fade-out", bindings["css"])
+
+    def test_font_registry_and_tick_up_meta(self):
+        from modules.spore_studio import fonts_registry
+
+        reg = fonts_registry.get_font_registry()
+        self.assertIn("fonts", reg)
+        self.assertEqual(fonts_registry.resolve_font_filename("Renogare"), "Renogare.ttf")
+        model = {
+            "template_name": "font_tick",
+            "alert_system": "instant",
+            "design": {"width": 200, "height": 80},
+            "elements": [
+                {
+                    "id": "n",
+                    "type": "text",
+                    "text_mode": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 100, "h": 30},
+                    "props": {"font_family": "Renogare", "font_size": 20},
+                    "counter": {"counter_id": "n", "initial_value": 0, "rules": []},
+                    "value_animation": {
+                        "enabled": True,
+                        "type": "tick_up",
+                        "duration_ms": 300,
+                        "easing": "ease-out",
+                        "pulse": False,
+                    },
+                }
+            ],
+        }
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn('"type": "tick_up"', js)
+        html, _ = template_codegen.compile_model(model)
+        self.assertIn("@font-face", html)
+        self.assertIn("Renogare.ttf", html)
+        self.assertIn("spore-el-n", html)
+        self.assertIn("Renogare.ttf", html)
 
 
 if __name__ == "__main__":

@@ -55,6 +55,35 @@ def _slugify_id(value: str) -> str:
     return value.strip("_") or "el"
 
 
+DESIGN_CANVAS_MIN_PX = 50
+
+
+def counter_format_config_id(element_id: str) -> str:
+    """Public JSON / Jinja id for a counter or data-display format string."""
+    return f"{_slugify_id(element_id)}_format"
+
+
+def counter_image_default_src_id(element_id: str) -> str:
+    return f"{_slugify_id(element_id)}_counter_default_src"
+
+
+def counter_image_range_min_id(element_id: str, index: int) -> str:
+    return f"{_slugify_id(element_id)}_range_{index}_min"
+
+
+def counter_image_range_max_id(element_id: str, index: int) -> str:
+    return f"{_slugify_id(element_id)}_range_{index}_max"
+
+
+def counter_image_range_src_id(element_id: str, index: int) -> str:
+    return f"{_slugify_id(element_id)}_range_{index}_src"
+
+
+def _jinja_tojson_default(var_name: str, default: Any) -> str:
+    """Jinja expression embedded in generated JS (resolved at HTML render)."""
+    return f"{{{{ {var_name}|default({json.dumps(default)})|tojson }}}}"
+
+
 def _collect_counters(elements: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
     out: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
     for el in elements or []:
@@ -66,6 +95,22 @@ def _collect_counters(elements: List[Dict[str, Any]]) -> List[Tuple[Dict[str, An
         if not isinstance(cfg, dict):
             continue
         out.append((el, cfg))
+    return out
+
+
+def _collect_counter_images(
+    elements: List[Dict[str, Any]],
+) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    out: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+    for el in elements or []:
+        if not isinstance(el, dict) or (el.get("type") or "").lower() != "image":
+            continue
+        if str(el.get("src_mode") or "static").strip().lower() != "from_counter":
+            continue
+        cs = el.get("counter_src")
+        if not isinstance(cs, dict):
+            continue
+        out.append((el, cs))
     return out
 
 
@@ -81,6 +126,48 @@ def _collect_displays(elements: List[Dict[str, Any]]) -> List[Tuple[Dict[str, An
             continue
         out.append((el, cfg))
     return out
+
+
+def _counter_image_transition_meta(el: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Normalize counter range image transition settings for runtime JS."""
+    tr = el.get("counter_image_transition")
+    if not isinstance(tr, dict) or not tr.get("enabled"):
+        return None
+    atype = str(tr.get("type") or "fade").strip().lower()
+    allowed = ("slide", "fade", "crossfade", "bounce", "roll")
+    if atype not in allowed:
+        atype = "fade"
+    try:
+        dur = max(0, int(float(tr.get("duration_ms", 400))))
+    except (TypeError, ValueError):
+        dur = 400
+    return {
+        "enabled": True,
+        "type": atype,
+        "duration_ms": dur,
+        "easing": str(tr.get("easing") or "ease-out"),
+    }
+
+
+def _value_animation_meta(el: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Normalize value-change animation settings for runtime JS."""
+    va = el.get("value_animation")
+    if not isinstance(va, dict) or not va.get("enabled"):
+        return None
+    try:
+        dur = max(0, int(float(va.get("duration_ms", 500))))
+    except (TypeError, ValueError):
+        dur = 500
+    atype = str(va.get("type") or "fade-in").strip()
+    if atype not in ("tick_up", "fade-in", "slide-in", "bounce"):
+        atype = "fade-in"
+    return {
+        "enabled": True,
+        "type": atype,
+        "duration_ms": dur,
+        "easing": str(va.get("easing") or "ease-out"),
+        "pulse": bool(va.get("pulse")),
+    }
 
 
 def _counter_ids_unique(elements: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -105,25 +192,85 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
     lines.append("window.__sporeChatPayloadKeys = " + _js_value(CHAT_PAYLOAD_KEYS) + ";")
     lines.append("window.__sporeTemplateName = " + _js_string(template_name) + ";")
 
+    counter_images = _collect_counter_images(elements)
+    if counter_images:
+        lines.append("window.__sporeCounterImages = window.__sporeCounterImages || [];")
+        for el, cs in counter_images:
+            eid_slug = _slugify_id(str(el.get("id") or ""))
+            eid = str(el.get("id") or "")
+            cid = _slugify_id(str(cs.get("counter_id") or ""))
+            default_default = str(
+                cs.get("default_src")
+                or (el.get("props") or {}).get("src")
+                or ""
+            )
+            default_var = counter_image_default_src_id(eid_slug)
+            range_parts: List[str] = []
+            range_index = 0
+            for row in cs.get("ranges") or []:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    lo = int(float(row.get("min", 0)))
+                except (TypeError, ValueError):
+                    lo = 0
+                try:
+                    hi = int(float(row.get("max", lo)))
+                except (TypeError, ValueError):
+                    hi = lo
+                src = str(row.get("src") or "").strip()
+                if not src:
+                    continue
+                src_var = counter_image_range_src_id(eid_slug, range_index)
+                range_parts.append(
+                    "{"
+                    f'"min": {lo}, "max": {hi}, '
+                    f'"src": {_jinja_tojson_default(src_var, src)}'
+                    "}"
+                )
+                range_index += 1
+            ranges_js = ", ".join(range_parts)
+            tr_meta = _counter_image_transition_meta(el)
+            tr_js = (
+                f', "range_transition": {_js_value(tr_meta)}'
+                if tr_meta
+                else ""
+            )
+            lines.append(
+                "window.__sporeCounterImages.push({"
+                f'"elementId": {_js_string(eid)}, '
+                f'"counter_id": {_js_string(cid)}, '
+                f'"default_src": {_jinja_tojson_default(default_var, default_default)}, '
+                f'"ranges": [{ranges_js}]'
+                f"{tr_js}"
+                "});"
+            )
+
     # Counter metadata registration
     for el, cfg in _collect_counters(elements):
         eid = str(el.get("id") or "")
         cid = _slugify_id(str(cfg.get("counter_id") or eid or "counter"))
         db_path = str(cfg.get("database_path") or f"{template_name}/counters").strip()
         db_key = str(cfg.get("database_key") or cid).strip()
+        fmt_default = str(cfg.get("format") or "{value}")
+        fmt_var = counter_format_config_id(_slugify_id(eid))
         meta: Dict[str, Any] = {
             "elementId": eid,
             "counter_id": cid,
             "initial_value": cfg.get("initial_value", 0),
             "min": cfg.get("min"),
             "max": cfg.get("max"),
-            "format": str(cfg.get("format") or "{value}"),
             "persist": bool(cfg.get("persist")),
             "database_path": db_path,
             "database_key": db_key,
         }
+        va_meta = _value_animation_meta(el)
+        if va_meta:
+            meta["value_animation"] = va_meta
         lines.append(
-            f"window.__sporeCounterMeta[{_js_string(cid)}] = {_js_value(meta)};"
+            f"window.__sporeCounterMeta[{_js_string(cid)}] = Object.assign("
+            f"{_js_value(meta)}, "
+            f'{{"format": {_jinja_tojson_default(fmt_var, fmt_default)}}});'
         )
 
     if _collect_counters(elements):
@@ -198,6 +345,9 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
             "format": str(cfg.get("format") or "{value}"),
             "default_text": str(cfg.get("default_text") if cfg.get("default_text") is not None else "—"),
         }
+        va_disp = _value_animation_meta(el)
+        if va_disp:
+            spec["value_animation"] = va_disp
         lines.append(f"window.__sporeDataDisplays.push({_js_value(spec)});")
         for ev in cfg.get("refresh_on") or []:
             if ev:

@@ -82,6 +82,117 @@ ANIMATION_CSS = """
 .sporePop { animation: sporePop 0.35s ease-out both; }
 """.strip()
 
+VALUE_CHANGE_ANIMATION_CSS = """
+@keyframes sporeValueFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sporeValueFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sporeValueSlideIn {
+  from { transform: translateX(-30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes sporeValueBounce {
+  0%, 20%, 53%, 80%, 100% { transform: translate3d(0, 0, 0); }
+  40%, 43% { transform: translate3d(0, -12px, 0); }
+  70% { transform: translate3d(0, -6px, 0); }
+  90% { transform: translate3d(0, -2px, 0); }
+}
+@keyframes sporeValuePulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+.spore-value-fade-in {
+  animation: sporeValueFadeIn var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) both;
+}
+.spore-value-fade-out {
+  animation: sporeValueFadeOut var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) both;
+}
+.spore-value-slide-in {
+  animation: sporeValueSlideIn var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) both;
+}
+.spore-value-bounce {
+  animation: sporeValueBounce var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) both;
+}
+.spore-value-pulse {
+  animation: sporeValuePulse var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) infinite;
+}
+""".strip()
+
+COUNTER_IMAGE_TRANSITION_CSS = """
+.spore-counter-image-host {
+  position: absolute;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.spore-counter-image-host > img.spore-element,
+.spore-counter-image-host > img.spore-counter-image-alt {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  box-sizing: border-box;
+}
+.spore-counter-image-alt {
+  pointer-events: none;
+  z-index: 2;
+}
+@keyframes sporeCiFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sporeCiFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sporeCiSlideOut {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-100%); opacity: 0; }
+}
+@keyframes sporeCiSlideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes sporeCiBounceOut {
+  0% { transform: scale(1); opacity: 1; }
+  35% { transform: scale(1.08); opacity: 0.9; }
+  100% { transform: scale(0.4); opacity: 0; }
+}
+@keyframes sporeCiBounceIn {
+  0% { transform: scale(0.4); opacity: 0; }
+  55% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes sporeCiRollOut {
+  from { transform: perspective(400px) rotateY(0deg); opacity: 1; }
+  to { transform: perspective(400px) rotateY(90deg); opacity: 0; }
+}
+@keyframes sporeCiRollIn {
+  from { transform: perspective(400px) rotateY(-90deg); opacity: 0; }
+  to { transform: perspective(400px) rotateY(0deg); opacity: 1; }
+}
+.spore-ci-fade-out {
+  animation: sporeCiFadeOut var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-in) both;
+}
+.spore-ci-fade-in {
+  animation: sporeCiFadeIn var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-out) both;
+}
+.spore-ci-slide-out {
+  animation: sporeCiSlideOut var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-in) both;
+}
+.spore-ci-slide-in {
+  animation: sporeCiSlideIn var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-out) both;
+}
+.spore-ci-bounce-out {
+  animation: sporeCiBounceOut var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-in) both;
+}
+.spore-ci-bounce-in {
+  animation: sporeCiBounceIn var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-out) both;
+}
+.spore-ci-roll-out {
+  animation: sporeCiRollOut var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-in) both;
+  transform-origin: center center;
+}
+.spore-ci-roll-in {
+  animation: sporeCiRollIn var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-out) both;
+  transform-origin: center center;
+}
+""".strip()
+
 
 _ANIM_CLASS = {
     "fade": ("spore-anim-fade-in", "spore-anim-fade-out"),
@@ -661,6 +772,39 @@ def _element_uses_animations(element: Dict[str, Any]) -> bool:
     return False
 
 
+def _elements_need_counter_image_transition_css(elements: List[Dict[str, Any]]) -> bool:
+    """True when any counter-sourced image enables range transition animations."""
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        if str(element.get("type") or "").lower() != "image":
+            continue
+        if str(element.get("src_mode") or "static").strip().lower() != "from_counter":
+            continue
+        tr = element.get("counter_image_transition")
+        if isinstance(tr, dict) and tr.get("enabled"):
+            atype = str(tr.get("type") or "none").strip().lower()
+            if atype and atype != "none":
+                return True
+    return False
+
+
+def _elements_need_value_change_css(elements: List[Dict[str, Any]]) -> bool:
+    """True when any text element enables counter/data value-change animations."""
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        if str(element.get("type") or "").lower() != "text":
+            continue
+        mode = str(element.get("text_mode") or "static").strip().lower()
+        if mode not in ("counter", "data_display"):
+            continue
+        va = element.get("value_animation")
+        if isinstance(va, dict) and va.get("enabled"):
+            return True
+    return False
+
+
 def _bindings_need_preset_css(elements: List[Dict[str, Any]]) -> bool:
     """Keyframe utility classes (.sporeShake, .sporePop) used by flash_class."""
     for element in elements or []:
@@ -841,9 +985,12 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
     if twitch_emits:
         js = js + "\n\n" + "\n\n".join(twitch_emits)
 
-    css = (
-        ANIMATION_CSS
-        if (use_animation or _bindings_need_preset_css(elements))
-        else ""
-    )
+    css_parts: List[str] = []
+    if use_animation or _bindings_need_preset_css(elements):
+        css_parts.append(ANIMATION_CSS)
+    if _elements_need_value_change_css(elements):
+        css_parts.append(VALUE_CHANGE_ANIMATION_CSS)
+    if _elements_need_counter_image_transition_css(elements):
+        css_parts.append(COUNTER_IMAGE_TRANSITION_CSS)
+    css = "\n\n".join(css_parts)
     return {"js": js, "css": css}

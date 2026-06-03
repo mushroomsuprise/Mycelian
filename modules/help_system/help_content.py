@@ -3056,6 +3056,7 @@ Select any element to edit:
 | **Type** | Read-only (`text`, `image`, `video`, `audio`, `container`) |
 | **Parent** | `(canvas root)` or container id; **Move to canvas** unnests |
 | **X**, **Y**, **W**, **H** | Position and size in pixels |
+| **Placement in container** | When nested: 3×3 anchor presets plus **Offset X/Y** for fine tuning (dragging updates offset) |
 | **Start hidden until shown** | Element begins hidden; Show bindings reveal it |
 | **Delete element** | Remove element and children |
 
@@ -3081,16 +3082,19 @@ Elements with non-`none` animations show a small **anim** badge on the canvas.
 | **Text** | Default label content |
 | **Font size (px)** | Numeric |
 | **Color** | Color picker |
-| **Font family** | CSS font family string (e.g. `Inter, sans-serif`) |
+| **Font** | Dropdown of files in `assets/default_assets/fonts/`, or custom name |
 | **Font weight** | `normal`, `bold`, or `100`–`900` |
 | **Text align** | `left`, `center`, `right` |
-| **Background** | CSS color or `transparent` |
+| **Vertical align** | `top`, `center`, `bottom` — positions text within the element height |
+| **Background** | Color picker (supports `#hex`, `rgba(...)`, or transparent) |
 
 ### Image
 
 | Property | Notes |
 |----------|-------|
-| **Source URL** | Path or URL for `<img src>` |
+| **Image source mode** | **Static URL** or **From counter (ranges)** |
+| **Source URL** | Dropdown of images in `assets/{template_name}/`, or **(custom URL…)** for manual paths |
+| **Counter / ranges / default src** | When using counter mode: pick a counter, assign an image per min–max range from the same asset dropdown |
 | **Border radius (px)** | Corner rounding |
 | **Opacity** | 0–1 |
 
@@ -3167,6 +3171,19 @@ at `{template_name}/counters` (customizable path/key). When persistence is off, 
 **Data displays** refresh when selected socket events fire; use **Refresh on events** to pick triggers.
 
 Use the **counter_adjust** binding action to change counters from the Bindings tab without duplicating rules.
+
+### Value change animation (counter & data display)
+
+When **Text mode** is **Counter** or **Data display**, an extra section appears:
+
+| Field | Purpose |
+|-------|---------|
+| **Enable on value update** | Animate the text when the displayed value changes |
+| **Animation type** | `tick_up` (count from previous value, memecalc-style), `fade-in`, `slide-in`, or `bounce` |
+| **Duration (ms)** / **Easing** | Timing for the one-shot animation |
+| **Continuous pulse** | Optional looping pulse (can be busy on fast updates) |
+
+This is separate from per-element **Entrance / Exit** animations used by Show/Hide bindings.
 
 ## Source Controls Tab
 

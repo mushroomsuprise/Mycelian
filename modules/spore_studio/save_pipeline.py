@@ -24,6 +24,10 @@ from ..template_config_parser import TemplateConfigParser
 
 logger = logging.getLogger(__name__)
 
+# Public JSON fields always rewritten from the editor model on save (not merged
+# from prior Source Settings values).
+_CODEGEN_OWNED_CONFIG_VALUE_IDS = frozenset({"DesignWidth", "DesignHeight"})
+
 
 # First-party overlays: excluded from Spore Studio's picker and non-deletable.
 SPORE_STUDIO_PROTECTED_TEMPLATES = frozenset({"activity_feed", "source_controls"})
@@ -73,7 +77,12 @@ def _merge_element_arrays(new_arr: list, old_arr: list) -> list:
             merged = _clone(new_el)
             old_el = old_by_id.get(str(new_el["id"]))
             if old_el is not None:
-                if "value" in old_el and "value" in merged:
+                el_id = str(new_el["id"])
+                if (
+                    "value" in old_el
+                    and "value" in merged
+                    and el_id not in _CODEGEN_OWNED_CONFIG_VALUE_IDS
+                ):
                     merged["value"] = _clone(old_el["value"])
                 if "elements" in merged and "elements" in old_el:
                     merged["elements"] = _merge_element_arrays(

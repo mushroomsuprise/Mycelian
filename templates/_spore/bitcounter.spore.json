@@ -1,0 +1,206 @@
+{
+  "advanced_js": "",
+  "alert_system": "instant",
+  "design": {
+    "height": 55,
+    "width": 300
+  },
+  "duration_seconds": 5.0,
+  "dynamic_controls": {
+    "elements": []
+  },
+  "elements": [
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Container",
+      "id": "container1",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "props": {
+        "background_color": "transparent"
+      },
+      "size": {
+        "h": 50,
+        "w": 300
+      },
+      "source_settings_expose": {
+        "background_color": true,
+        "border_color": true,
+        "border_radius": true,
+        "border_width": true
+      },
+      "type": "container"
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Counter",
+      "counter": {
+        "counter_id": "bit_count",
+        "database_key": "bit_count",
+        "database_path": "subcounter/counters",
+        "format": "{value}",
+        "initial_value": 0,
+        "persist": false,
+        "rules": [
+          {
+            "delta": {
+              "kind": "data_source",
+              "source": "alert.amt_cheered",
+              "value": 1
+            },
+            "event": "instant_alert",
+            "filter": {},
+            "operation": "increment",
+            "trigger": "event"
+          }
+        ]
+      },
+      "id": "bit_counter",
+      "parent_id": "container1",
+      "placement": {
+        "anchor_h": "left",
+        "anchor_v": "center",
+        "offset_x": 60,
+        "offset_y": 8
+      },
+      "position": {
+        "x": 60,
+        "y": 13
+      },
+      "props": {
+        "color": "#ffffff",
+        "font_family": "Renogare.ttf",
+        "font_size": 40,
+        "text": "{value}",
+        "vertical_align": "center"
+      },
+      "size": {
+        "h": 40,
+        "w": 200
+      },
+      "source_settings_expose": {
+        "background_color": true,
+        "color": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "text": true,
+        "text_align": true,
+        "vertical_align": true
+      },
+      "text_mode": "counter",
+      "type": "text",
+      "value_animation": {
+        "duration_ms": 1000,
+        "easing": "ease-out",
+        "enabled": true,
+        "pulse": false,
+        "type": "tick_up"
+      }
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Bit Image",
+      "counter_image_transition": {
+        "duration_ms": 600,
+        "easing": "ease-out",
+        "enabled": true,
+        "type": "roll"
+      },
+      "counter_src": {
+        "counter_id": "bit_count",
+        "default_src": "",
+        "ranges": [
+          {
+            "max": 99,
+            "min": 0,
+            "src": "/assets/bitcounter/cheer1.gif"
+          },
+          {
+            "max": 999,
+            "min": 100,
+            "src": "/assets/bitcounter/cheer100.gif"
+          },
+          {
+            "max": 4999,
+            "min": 1000,
+            "src": "/assets/bitcounter/cheer1000.gif"
+          },
+          {
+            "max": 9999,
+            "min": 5000,
+            "src": "/assets/bitcounter/cheer5000.gif"
+          },
+          {
+            "max": 99999,
+            "min": 10000,
+            "src": "/assets/bitcounter/cheer10000.gif"
+          },
+          {
+            "max": 9999999999,
+            "min": 100000,
+            "src": "/assets/bitcounter/cheer100000.gif"
+          }
+        ]
+      },
+      "id": "image3",
+      "parent_id": "container1",
+      "placement": {
+        "anchor_h": "left",
+        "anchor_v": "center",
+        "offset_x": 0,
+        "offset_y": 0
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "props": {
+        "src": ""
+      },
+      "size": {
+        "h": 50,
+        "w": 50
+      },
+      "source_settings_expose": {
+        "border_radius": true,
+        "opacity": true,
+        "src": true
+      },
+      "src_mode": "from_counter",
+      "type": "image"
+    }
+  ],
+  "queued": false,
+  "streamdeck_options": {
+    "actions": {},
+    "description": ""
+  },
+  "template_name": "bitcounter"
+}

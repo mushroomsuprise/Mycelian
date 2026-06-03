@@ -125,13 +125,17 @@
                     <div class="ss-row">
                         <div class="ss-form-row">
                             <label>Width (px)</label>
-                            <input type="number" id="ss-canvas-w" min="320" max="7680">
+                            <input type="number" id="ss-canvas-w" min="50" max="7680">
                         </div>
                         <div class="ss-form-row">
                             <label>Height (px)</label>
-                            <input type="number" id="ss-canvas-h" min="240" max="4320">
+                            <input type="number" id="ss-canvas-h" min="50" max="4320">
                         </div>
                     </div>
+                    <button type="button" class="ss-btn ss-btn--ghost" id="ss-canvas-match-root"
+                            title="Set canvas size to the sole top-level container's width and height">
+                        Match canvas to root container
+                    </button>
                     <div class="ss-form-row">
                         <label>Alert system</label>
                         <select id="ss-alert-system">

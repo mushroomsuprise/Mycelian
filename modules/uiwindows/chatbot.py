@@ -1006,6 +1006,15 @@ CUSTOM_CSS = """
     padding-bottom: 4px;
 }
 
+.giveaway-options-card .q-field__control {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.giveaway-options-card .q-field--focused .q-field__control {
+    box-shadow: none !important;
+}
+
 .control-button {
     transition: all 0.2s ease;
 }
@@ -1765,37 +1774,46 @@ def render_giveaways_tab(container_el) -> None:
                     _build_entrants_list()
                     ui.timer(2.5, callback=_build_entrants_list)
 
-                with ui.column().classes("flex-1 min-w-[14rem] gap-1"):
-                    ui.label("Options").classes("text-sm font-medium mb-1")
-                    with ui.grid(columns=2).classes("w-full gap-1"):
-                        _giveaway_switch(
-                            "No duplicate entries",
-                            "One ticket per user in the entry pool",
-                            "no_duplicate_entries",
-                            True,
-                        )
-                        _giveaway_switch(
-                            "Unique winners per draw",
-                            "Same user cannot win more than one slot in a single draw",
-                            "unique_winners_per_draw",
-                            True,
-                        )
-                        _giveaway_switch(
-                            "Remove winners from pool",
-                            "Remove drawn winners from the pool after each draw",
-                            "remove_winners_from_pool",
-                            True,
-                        )
-                        _giveaway_switch(
-                            "Exclude moderators",
-                            "Moderators cannot enter the giveaway",
-                            "exclude_mods",
-                        )
-                        _giveaway_switch(
-                            "Exclude VIPs",
-                            "VIP badge holders cannot enter the giveaway",
-                            "exclude_vips",
-                        )
+                with ui.column().classes(
+                    "flex-1 min-w-[14rem] gap-0 rounded-lg border "
+                    "border-[var(--color-border)] giveaway-options-card"
+                ):
+                    with ui.row().classes(
+                        "w-full items-center px-4 py-2 "
+                        "bg-[var(--color-bg-elevated)] rounded-t-lg border-b "
+                        "border-[var(--color-border)]"
+                    ):
+                        ui.label("Options").classes("text-lg font-medium")
+                    with ui.column().classes("w-full p-3"):
+                        with ui.grid(columns=2).classes("w-full gap-1"):
+                            _giveaway_switch(
+                                "No duplicate entries",
+                                "One ticket per user in the entry pool",
+                                "no_duplicate_entries",
+                                True,
+                            )
+                            _giveaway_switch(
+                                "Unique winners per draw",
+                                "Same user cannot win more than one slot in a single draw",
+                                "unique_winners_per_draw",
+                                True,
+                            )
+                            _giveaway_switch(
+                                "Remove winners from pool",
+                                "Remove drawn winners from the pool after each draw",
+                                "remove_winners_from_pool",
+                                True,
+                            )
+                            _giveaway_switch(
+                                "Exclude moderators",
+                                "Moderators cannot enter the giveaway",
+                                "exclude_mods",
+                            )
+                            _giveaway_switch(
+                                "Exclude VIPs",
+                                "VIP badge holders cannot enter the giveaway",
+                                "exclude_vips",
+                            )
 
             def do_start():
                 ok, msg = get_giveaway_manager().start_giveaway()

@@ -1,3 +1,394 @@
+<!DOCTYPE html>
+<!--
+    Mycelian Spore Studio - instant_alert boilerplate
+    Generated for: bitcounter
+    Alert system: instant (responds to instant_alert, no alert_complete handshake)
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian {{ TemplateTitle }}</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" crossorigin="anonymous"></script>
+    <style id="spore-studio-styles">
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: Arial, sans-serif;
+        }
+
+        #sporeRoot {
+            position: relative;
+            width: {{ DesignWidth }}px;
+            height: {{ DesignHeight }}px;
+        }
+
+        .spore-element {
+            position: absolute;
+        }
+
+        .spore-element > .spore-video-visual {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .spore-element[data-spore-hidden="true"] {
+            display: none;
+        }
+    </style>
+    <!-- SPORE_STUDIO:styles-begin -->
+<style id="spore-studio-styles">
+@font-face { font-family: "spore-el-bit_counter"; src: url("/assets/default_assets/fonts/{{ bit_counter_font_family|default("Renogare.ttf") }}"); }
+
+@keyframes sporeValueFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sporeValueFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sporeValueSlideIn {
+  from { transform: translateX(-30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes sporeValueBounce {
+  0%, 20%, 53%, 80%, 100% { transform: translate3d(0, 0, 0); }
+  40%, 43% { transform: translate3d(0, -12px, 0); }
+  70% { transform: translate3d(0, -6px, 0); }
+  90% { transform: translate3d(0, -2px, 0); }
+}
+@keyframes sporeValuePulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+.spore-value-fade-in {
+  animation: sporeValueFadeIn var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) both;
+}
+.spore-value-fade-out {
+  animation: sporeValueFadeOut var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) both;
+}
+.spore-value-slide-in {
+  animation: sporeValueSlideIn var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) both;
+}
+.spore-value-bounce {
+  animation: sporeValueBounce var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) both;
+}
+.spore-value-pulse {
+  animation: sporeValuePulse var(--spore-va-dur, 0.5s) var(--spore-va-ease, ease-out) infinite;
+}
+
+.spore-counter-image-host {
+  position: absolute;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.spore-counter-image-host > img.spore-element,
+.spore-counter-image-host > img.spore-counter-image-alt {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  box-sizing: border-box;
+}
+.spore-counter-image-alt {
+  pointer-events: none;
+  z-index: 2;
+}
+@keyframes sporeCiFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sporeCiFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sporeCiSlideOut {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-100%); opacity: 0; }
+}
+@keyframes sporeCiSlideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes sporeCiBounceOut {
+  0% { transform: scale(1); opacity: 1; }
+  35% { transform: scale(1.08); opacity: 0.9; }
+  100% { transform: scale(0.4); opacity: 0; }
+}
+@keyframes sporeCiBounceIn {
+  0% { transform: scale(0.4); opacity: 0; }
+  55% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes sporeCiRollOut {
+  from { transform: perspective(400px) rotateY(0deg); opacity: 1; }
+  to { transform: perspective(400px) rotateY(90deg); opacity: 0; }
+}
+@keyframes sporeCiRollIn {
+  from { transform: perspective(400px) rotateY(-90deg); opacity: 0; }
+  to { transform: perspective(400px) rotateY(0deg); opacity: 1; }
+}
+.spore-ci-fade-out {
+  animation: sporeCiFadeOut var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-in) both;
+}
+.spore-ci-fade-in {
+  animation: sporeCiFadeIn var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-out) both;
+}
+.spore-ci-slide-out {
+  animation: sporeCiSlideOut var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-in) both;
+}
+.spore-ci-slide-in {
+  animation: sporeCiSlideIn var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-out) both;
+}
+.spore-ci-bounce-out {
+  animation: sporeCiBounceOut var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-in) both;
+}
+.spore-ci-bounce-in {
+  animation: sporeCiBounceIn var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-out) both;
+}
+.spore-ci-roll-out {
+  animation: sporeCiRollOut var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-in) both;
+  transform-origin: center center;
+}
+.spore-ci-roll-in {
+  animation: sporeCiRollIn var(--spore-ci-dur, 0.25s) var(--spore-ci-ease, ease-out) both;
+  transform-origin: center center;
+}
+</style>
+<!-- SPORE_STUDIO:styles-end -->
+</head>
+<body>
+    <div id="sporeRoot" data-mycelian-template="bitcounter">
+        <!-- SPORE_STUDIO:dom-begin -->
+        <div id="container1" class="spore-element" style="left: 0px; top: 0px; width: 300px; height: 50px; background-color: transparent" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="container">
+            <div id="bit_counter" class="spore-element" style="left: 60px; top: 13px; width: 200px; height: 40px; color: #ffffff; font-family: spore-el-bit_counter; font-size: 40px; display: flex; flex-direction: column; justify-content: center" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="text" data-spore-text-mode="counter">{{ bit_counter_format|default("0")|safe }}</div>
+            <img id="image3" class="spore-element" style="left: 0px; top: 0px; width: 50px; height: 50px" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="image" data-spore-src-mode="counter" data-spore-counter-id="bit_count" src="{{ image3_counter_default_src|default("") }}" alt="" /></div>
+<!-- SPORE_STUDIO:dom-end -->
+    </div>
+
+    <script>
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        var SPORE_ANIM_CLASS_MAP = {
+            fade: { in: 'spore-anim-fade-in', out: 'spore-anim-fade-out' },
+            slideIn: { in: 'spore-anim-slidein', out: 'spore-anim-slideout' },
+            slideOut: { in: 'spore-anim-slidein', out: 'spore-anim-slideout' },
+            scaleIn: { in: 'spore-anim-scalein', out: 'spore-anim-scaleout' },
+            scaleOut: { in: 'spore-anim-scalein', out: 'spore-anim-scaleout' },
+            none: { in: '', out: '' }
+        };
+        function sporeAnimClassFor(type, dir) {
+            var m = SPORE_ANIM_CLASS_MAP[type] || SPORE_ANIM_CLASS_MAP.none;
+            return dir === 'in' ? (m.in || '') : (m.out || '');
+        }
+        function sporeReadAnimConfig(el, override) {
+            override = override || {};
+            var g = function (key, attr, def) {
+                if (override[key] !== undefined && override[key] !== null && override[key] !== '') {
+                    return String(override[key]);
+                }
+                var v = el.getAttribute(attr);
+                return v != null && v !== '' ? v : def;
+            };
+            var gi = function (key, attr, def) {
+                if (override[key] !== undefined && override[key] !== null && override[key] !== '') {
+                    var o = parseInt(String(override[key]), 10);
+                    return isNaN(o) ? def : o;
+                }
+                var v = el.getAttribute(attr);
+                var n = v != null && v !== '' ? parseInt(v, 10) : def;
+                return isNaN(n) ? def : n;
+            };
+            return {
+                animIn: g('animIn', 'data-spore-anim-in', 'none'),
+                animOut: g('animOut', 'data-spore-anim-out', 'none'),
+                animInMs: gi('animInMs', 'data-spore-anim-in-ms', 300),
+                animOutMs: gi('animOutMs', 'data-spore-anim-out-ms', 300),
+                delayMs: gi('delayMs', 'data-spore-anim-delay-ms', 0),
+                easing: g('easing', 'data-spore-anim-easing', 'ease-out')
+            };
+        }
+        function sporeAnimateIn(el, override, done) {
+            if (!el) { if (done) { done(); } return; }
+            var cfg = sporeReadAnimConfig(el, override);
+            var cls = sporeAnimClassFor(cfg.animIn, 'in');
+            if (!cls || cfg.animIn === 'none') { if (done) { done(); } return; }
+            var ms = Math.max(0, cfg.animInMs || 300);
+            el.classList.remove(cls);
+            void el.offsetWidth;
+            el.style.animationDuration = (ms / 1000) + 's';
+            el.style.animationTimingFunction = cfg.easing || 'ease-out';
+            el.classList.add(cls);
+            setTimeout(function () {
+                try { el.classList.remove(cls); } catch (e0) {}
+                el.style.animationDuration = '';
+                el.style.animationTimingFunction = '';
+                if (done) { done(); }
+            }, ms);
+        }
+        function sporeAnimateOut(el, override, done) {
+            if (!el) { if (done) { done(); } return; }
+            var cfg = sporeReadAnimConfig(el, override);
+            var cls = sporeAnimClassFor(cfg.animOut, 'out');
+            if (!cls || cfg.animOut === 'none') { if (done) { done(); } return; }
+            var ms = Math.max(0, cfg.animOutMs || 300);
+            el.classList.remove(cls);
+            void el.offsetWidth;
+            el.style.animationDuration = (ms / 1000) + 's';
+            el.style.animationTimingFunction = cfg.easing || 'ease-in';
+            el.classList.add(cls);
+            setTimeout(function () {
+                try { el.classList.remove(cls); } catch (e1) {}
+                el.style.animationDuration = '';
+                el.style.animationTimingFunction = '';
+                if (done) { done(); }
+            }, ms);
+        }
+        function sporeShow(id, override) {
+            var el = document.getElementById(id);
+            if (!el) { return; }
+            el.removeAttribute('data-spore-hidden');
+            var cfg = sporeReadAnimConfig(el, override);
+            var run = function () { sporeAnimateIn(el, override, null); };
+            if (cfg.delayMs > 0) {
+                setTimeout(run, cfg.delayMs);
+            } else {
+                run();
+            }
+        }
+        function sporeHide(id, override) {
+            var el = document.getElementById(id);
+            if (!el) { return; }
+            var au = null;
+            if (el.tagName === 'AUDIO') {
+                au = el;
+            } else {
+                au = el.querySelector('audio');
+            }
+            function applyHidden() {
+                var cfg = sporeReadAnimConfig(el, override);
+                var cls = sporeAnimClassFor(cfg.animOut, 'out');
+                if (!cls || cfg.animOut === 'none') {
+                    el.setAttribute('data-spore-hidden', 'true');
+                    return;
+                }
+                sporeAnimateOut(el, override, function () {
+                    el.setAttribute('data-spore-hidden', 'true');
+                });
+            }
+            if (!au) {
+                applyHidden();
+                return;
+            }
+            var fadeRaw = au.getAttribute('data-spore-audio-fade-out');
+            var fadeMs = fadeRaw ? parseInt(fadeRaw, 10) : 0;
+            if (!fadeMs || fadeMs <= 0 || isNaN(fadeMs)) {
+                try { au.pause(); } catch (e1) {}
+                applyHidden();
+                return;
+            }
+            var steps = Math.max(8, Math.floor(fadeMs / 40));
+            var iv = fadeMs / steps;
+            var startVol = (typeof au.volume === 'number' && !isNaN(au.volume)) ? au.volume : 1;
+            var step = startVol / steps;
+            var n = 0;
+            var t = setInterval(function () {
+                n += 1;
+                try {
+                    au.volume = Math.max(0, startVol - step * n);
+                } catch (e2) {}
+                if (n >= steps) {
+                    clearInterval(t);
+                    try {
+                        au.volume = startVol;
+                    } catch (e3) {}
+                    try { au.pause(); } catch (e4) {}
+                    applyHidden();
+                }
+            }, iv);
+        }
+        /**
+         * @param {?Object} overrides - optional volume / fade_in_ms from binding args
+         */
+        function sporePlayMediaAudio(domId, overrides) {
+            overrides = overrides || {};
+            var el = document.getElementById(domId);
+            var au = null;
+            if (el && el.tagName === 'AUDIO') {
+                au = el;
+            } else if (el) {
+                au = el.querySelector('audio');
+            }
+            if (!au || typeof au.play !== 'function') {
+                return;
+            }
+            var tgtVolRaw = overrides.volume;
+            if (tgtVolRaw === undefined || tgtVolRaw === '') {
+                var dv = au.getAttribute('data-spore-audio-volume');
+                tgtVolRaw = dv != null && dv !== '' ? parseFloat(dv) : 1;
+            }
+            var tgtVol = Math.max(0, Math.min(1, Number(tgtVolRaw)));
+            if (!isFinite(tgtVol)) {
+                tgtVol = 1;
+            }
+            var fadeInMs = overrides.fade_in_ms;
+            if (fadeInMs === undefined || fadeInMs === '') {
+                var fd = au.getAttribute('data-spore-audio-fade-in');
+                fadeInMs = fd ? parseInt(fd, 10) : 0;
+            }
+            fadeInMs = parseInt(String(fadeInMs), 10);
+            if (isNaN(fadeInMs) || fadeInMs < 0) {
+                fadeInMs = 0;
+            }
+            try {
+                au.currentTime = 0;
+            } catch (e5) {}
+            var doPlay = function () {
+                var p = au.play();
+                if (p && typeof p.catch === 'function') {
+                    p.catch(function () {});
+                }
+            };
+            if (fadeInMs > 0) {
+                try {
+                    au.volume = 0;
+                } catch (e6) {}
+                doPlay();
+                var stepsPi = Math.max(8, Math.floor(fadeInMs / 40));
+                var ivPi = fadeInMs / stepsPi;
+                var nPi = 0;
+                var tPi = setInterval(function () {
+                    nPi += 1;
+                    var v = tgtVol * (nPi / stepsPi);
+                    if (nPi >= stepsPi) {
+                        clearInterval(tPi);
+                        try {
+                            au.volume = tgtVol;
+                        } catch (e7) {}
+                    } else {
+                        try {
+                            au.volume = v;
+                        } catch (e8) {}
+                    }
+                }, ivPi);
+            } else {
+                try {
+                    au.volume = tgtVol;
+                } catch (e9) {}
+                doPlay();
+            }
+        }
+        function sporeSetText(id, value) {
+            var el = document.getElementById(id);
+            if (el) { el.textContent = (value == null ? '' : String(value)); }
+        }
+
+        function sporeMatchesFilter(payload, filter) {
+            if (!filter || typeof filter !== 'object') { return true; }
+            for (var k in filter) {
+                if (!Object.prototype.hasOwnProperty.call(filter, k)) { continue; }
+                if (payload == null) { return false; }
+                if (payload[k] !== filter[k]) { return false; }
+            }
+            return true;
+        }
+
+        // SPORE_STUDIO:data-runtime-begin
 /* Spore Studio shared data/counter/control runtime (injected into overlays). */
 (function () {
     if (typeof window === 'undefined') { return; }
@@ -720,3 +1111,92 @@
     window.sporeLoadStatsCache = sporeLoadStatsCache;
     window.sporeDispatchControlAction = sporeDispatchControlAction;
 })();
+// SPORE_STUDIO:data-runtime-end
+
+        // SPORE_STUDIO:auto-begin
+function sporeApplyBindings(eventName, payload) {
+    try {
+        console.log('[spore-studio] sporeApplyBindings', eventName, payload);
+    } catch (__sporeLog) {}
+}
+
+window.__sporeAlertPayloadKeys = {"alert.amount": "amount", "alert.quantity": "quantity", "alert.tier": "tier", "alert.amt_cheered": "amt_cheered", "alert.cumulative_months": "cumulative_months", "alert.raider_count": "raider_count", "alert.username": "username", "alert.message": "message", "alert.alert_type": "alert_type", "alert.currency": "currency", "alert.queue_seq": "queue_seq"};
+window.__sporeChatPayloadKeys = {"chat.username": "username", "chat.message": "message", "chat.userid": "userid", "chat.badges": "badges", "chat.color": "color", "chat.message_text": "message_text"};
+window.__sporeTemplateName = "bitcounter";
+window.__sporeCounterImages = window.__sporeCounterImages || [];
+window.__sporeCounterImages.push({"elementId": "image3", "counter_id": "bit_count", "default_src": {{ image3_counter_default_src|default("")|tojson }}, "ranges": [{"min": 0, "max": 99, "src": {{ image3_range_0_src|default("/assets/bitcounter/cheer1.gif")|tojson }}}, {"min": 100, "max": 999, "src": {{ image3_range_1_src|default("/assets/bitcounter/cheer100.gif")|tojson }}}, {"min": 1000, "max": 4999, "src": {{ image3_range_2_src|default("/assets/bitcounter/cheer1000.gif")|tojson }}}, {"min": 5000, "max": 9999, "src": {{ image3_range_3_src|default("/assets/bitcounter/cheer5000.gif")|tojson }}}, {"min": 10000, "max": 99999, "src": {{ image3_range_4_src|default("/assets/bitcounter/cheer10000.gif")|tojson }}}, {"min": 100000, "max": 9999999999, "src": {{ image3_range_5_src|default("/assets/bitcounter/cheer100000.gif")|tojson }}}], "range_transition": {"enabled": true, "type": "roll", "duration_ms": 600, "easing": "ease-out"}});
+window.__sporeCounterMeta["bit_count"] = Object.assign({"elementId": "bit_counter", "counter_id": "bit_count", "initial_value": 0, "min": null, "max": null, "persist": false, "database_path": "subcounter/counters", "database_key": "bit_count", "value_animation": {"enabled": true, "type": "tick_up", "duration_ms": 1000, "easing": "ease-out", "pulse": false}}, {"format": {{ bit_counter_format|default("{value}")|tojson }}});
+(function () {
+    var __ids = ["bit_count"];
+    var __i = 0;
+    function __next() {
+        if (__i >= __ids.length) { return; }
+        var __c = __ids[__i++];
+        sporeCounterHydrate(__c, __next);
+    }
+    __next();
+})();
+(function () {
+    var __ev = "instant_alert";
+    var __cid = "bit_count";
+    var __op = "increment";
+    var __delta = {"kind": "data_source", "source": "alert.amt_cheered", "value": 1};
+    var __filter = {};
+    if (typeof socket !== 'undefined' && socket && socket.on) {
+        socket.on(__ev, function (data) {
+            if (!sporeMatchesFilter(data || {}, __filter)) { return; }
+            window.__sporeLastPayload.event = data || {};
+            sporeCounterAdjust(__cid, __op, __delta, data);
+        });
+    }
+})();
+if (typeof socket !== 'undefined' && socket && socket.on) {
+    socket.on('connect', function () {
+        sporeLoadStatsCache();
+        sporeRefreshAllDataDisplays();
+    });
+    socket.on('twitch-api-response', function (data) {
+        if (data && data.requestId) {
+            window.__sporeTwitchCache[data.requestId] = data; }
+        sporeRefreshAllDataDisplays();
+    });
+}
+// SPORE_STUDIO:auto-end
+
+        (function () {
+            if (typeof socket !== 'undefined' && socket && socket.on) {
+                socket.on('streamdeck_template_action', function (data) {
+                    try {
+                        console.log('[bitcounter] streamdeck_template_action (debug)', data);
+                    } catch (e) {}
+                });
+            }
+        })();
+
+        socket.on('connect', function () {
+            var __r = document.getElementById('sporeRoot');
+            var __t = __r && __r.getAttribute('data-mycelian-template');
+            console.log('[bitcounter] socket connect (debug)', {
+                template: __t || 'bitcounter',
+                sid: socket && socket.id
+            });
+        });
+
+        socket.on('instant_alert', function (data) {
+            try {
+                console.log('[bitcounter] instant_alert (debug)', data);
+                sporeApplyBindings('instant_alert', data || {});
+            } catch (err) {
+                console.error('[bitcounter] binding error', err);
+            }
+        });
+
+        // SPORE_STUDIO:user-begin
+// Place advanced custom JavaScript below. Anything between the
+        // user-begin and user-end markers is preserved across Spore Studio
+        // saves. Use sporeShow(id) / sporeHide(id) / sporeSetText(id,val)
+        // helpers, and listen for additional socket events here if needed.
+// SPORE_STUDIO:user-end
+    </script>
+</body>
+</html>

@@ -30,7 +30,22 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .behavior_blocks import compile_bindings
-from .spore_data_codegen import compile_spore_data_features, inject_data_runtime_block
+from .fonts_registry import (
+    exposed_element_font_family,
+    font_css_family_name,
+    is_font_filename,
+    resolve_font_filename,
+)
+from .spore_data_codegen import (
+    DESIGN_CANVAS_MIN_PX,
+    compile_spore_data_features,
+    counter_format_config_id,
+    counter_image_default_src_id,
+    counter_image_range_max_id,
+    counter_image_range_min_id,
+    counter_image_range_src_id,
+    inject_data_runtime_block,
+)
 from .timing import effective_duration_seconds
 from ..path_utils import get_template_path
 
@@ -102,7 +117,73 @@ _NON_STYLE_PROP_KEYS = frozenset(
 )
 
 
-def _css_kv(props: Dict[str, Any]) -> List[Tuple[str, str]]:
+def _register_font_lookup(lookup: Dict[str, str], raw: str, family: str) -> None:
+    """Alias raw prop values and resolved filenames to a CSS ``font-family`` name."""
+    lookup[raw] = family
+    resolved = resolve_font_filename(raw)
+    if resolved:
+        lookup[resolved] = family
+        stem = os.path.splitext(resolved)[0]
+        if stem:
+            lookup[stem] = family
+
+
+def _compile_spore_font_css(
+    elements: List[Dict[str, Any]],
+) -> Tuple[str, Dict[str, str]]:
+    """
+    Emit ``@font-face`` rules and a lookup table for inline ``font-family`` values.
+
+    Exposed fonts use a per-element family plus a Jinja variable for the file path.
+    """
+    lines: List[str] = []
+    lookup: Dict[str, str] = {}
+    seen_static: Dict[str, str] = {}
+
+    for el in elements or []:
+        if not isinstance(el, dict):
+            continue
+        props = el.get("props") or {}
+        raw = str(props.get("font_family") or "").strip()
+        if not raw:
+            continue
+        eid = _slugify_id(el.get("id"))
+
+        if _expose_field(el, "font_family"):
+            fam = exposed_element_font_family(eid)
+            default_fn = resolve_font_filename(raw) or raw
+            jvar = f"{eid}_font_family"
+            jinja_src = "{{ " + jvar + "|default(" + json.dumps(default_fn) + ") }}"
+            lines.append(
+                f'@font-face {{ font-family: "{fam}"; '
+                f'src: url("/assets/default_assets/fonts/{jinja_src}"); }}'
+            )
+            _register_font_lookup(lookup, raw, fam)
+            continue
+
+        filename = resolve_font_filename(raw)
+        if not filename or filename in seen_static:
+            if filename and filename in seen_static:
+                _register_font_lookup(lookup, raw, seen_static[filename])
+            continue
+        fam = font_css_family_name(filename)
+        seen_static[filename] = fam
+        esc_name = html.escape(filename, quote=True)
+        lines.append(
+            f'@font-face {{ font-family: "{fam}"; '
+            f'src: url("/assets/default_assets/fonts/{esc_name}"); }}'
+        )
+        _register_font_lookup(lookup, raw, fam)
+
+    return "\n".join(lines), lookup
+
+
+def _css_kv(
+    props: Dict[str, Any],
+    *,
+    font_map: Optional[Dict[str, str]] = None,
+    element: Optional[Dict[str, Any]] = None,
+) -> List[Tuple[str, str]]:
     """
     Collapse the editor-model ``props`` block into a list of CSS declarations.
 
@@ -129,9 +210,31 @@ def _css_kv(props: Dict[str, Any]) -> List[Tuple[str, str]]:
             continue
         if value in (None, ""):
             continue
+        if key == "vertical_align":
+            va = str(value).strip().lower()
+            if va in ("center", "bottom"):
+                out.append(("display", "flex"))
+                out.append(("flex-direction", "column"))
+                jc = "center" if va == "center" else "flex-end"
+                out.append(("justify-content", jc))
+            continue
         css_key = key.replace("_", "-")
         if key in pixel_keys:
             out.append((css_key, f"{value}px"))
+        elif key == "font_family":
+            raw_ff = str(value).strip()
+            fam = (font_map or {}).get(raw_ff)
+            if not fam and font_map:
+                resolved = resolve_font_filename(raw_ff)
+                if resolved:
+                    fam = font_map.get(resolved)
+                if not fam:
+                    stem = os.path.splitext(raw_ff)[0]
+                    fam = font_map.get(stem)
+            if fam:
+                out.append(("font-family", fam))
+            elif raw_ff:
+                out.append(("font-family", raw_ff))
         elif key in raw_keys:
             out.append((css_key, str(value)))
         elif key == "text":
@@ -176,12 +279,73 @@ def _element_start_hidden(element: Dict[str, Any]) -> bool:
     return False
 
 
-def _element_style(element: Dict[str, Any]) -> str:
+def _placement_base(
+    parent_w: float,
+    parent_h: float,
+    child_w: float,
+    child_h: float,
+    anchor_h: str,
+    anchor_v: str,
+) -> Tuple[float, float]:
+    """Pixel offset of child top-left for anchor presets inside a container."""
+    ah = str(anchor_h or "left").strip().lower()
+    av = str(anchor_v or "top").strip().lower()
+    if ah == "center":
+        bx = (parent_w - child_w) / 2.0
+    elif ah == "right":
+        bx = parent_w - child_w
+    else:
+        bx = 0.0
+    if av == "center":
+        by = (parent_h - child_h) / 2.0
+    elif av == "bottom":
+        by = parent_h - child_h
+    else:
+        by = 0.0
+    return bx, by
+
+
+def _resolve_child_position(
+    child: Dict[str, Any],
+    parent: Optional[Dict[str, Any]],
+) -> Tuple[int, int]:
+    """Resolve left/top for a nested element (anchor + offset or legacy position)."""
+    if parent is None:
+        pos = child.get("position") or {}
+        return int(pos.get("x", 0) or 0), int(pos.get("y", 0) or 0)
+    placement = child.get("placement")
+    if isinstance(placement, dict):
+        psize = parent.get("size") or {}
+        csize = child.get("size") or {}
+        pw = float(psize.get("w") or 0)
+        ph = float(psize.get("h") or 0)
+        cw = float(csize.get("w") or 0)
+        ch = float(csize.get("h") or 0)
+        ah = str(placement.get("anchor_h") or "left")
+        av = str(placement.get("anchor_v") or "top")
+        bx, by = _placement_base(pw, ph, cw, ch, ah, av)
+        try:
+            ox = int(placement.get("offset_x", 0) or 0)
+        except (TypeError, ValueError):
+            ox = 0
+        try:
+            oy = int(placement.get("offset_y", 0) or 0)
+        except (TypeError, ValueError):
+            oy = 0
+        return int(bx) + ox, int(by) + oy
+    pos = child.get("position") or {}
+    return int(pos.get("x", 0) or 0), int(pos.get("y", 0) or 0)
+
+
+def _element_style(
+    element: Dict[str, Any],
+    *,
+    parent: Optional[Dict[str, Any]] = None,
+    font_map: Optional[Dict[str, str]] = None,
+) -> str:
     """Compose the inline ``style`` attribute for a single absolute-positioned element."""
-    pos = element.get("position") or {}
+    x, y = _resolve_child_position(element, parent)
     size = element.get("size") or {}
-    x = pos.get("x", 0)
-    y = pos.get("y", 0)
     w = size.get("w")
     h = size.get("h")
     declarations: List[Tuple[str, str]] = [
@@ -192,7 +356,9 @@ def _element_style(element: Dict[str, Any]) -> str:
         declarations.append(("width", f"{w}px"))
     if h is not None:
         declarations.append(("height", f"{h}px"))
-    declarations.extend(_css_kv(element.get("props") or {}))
+    declarations.extend(
+        _css_kv(element.get("props") or {}, font_map=font_map, element=element)
+    )
     return "; ".join(f"{k}: {v}" for k, v in declarations)
 
 
@@ -263,7 +429,11 @@ def _fmt_anim_data_attrs(element: Dict[str, Any]) -> str:
 
 
 def _render_element(
-    element: Dict[str, Any], *, children_inner_markup: str = "",
+    element: Dict[str, Any],
+    *,
+    children_inner_markup: str = "",
+    parent: Optional[Dict[str, Any]] = None,
+    font_map: Optional[Dict[str, str]] = None,
 ) -> str:
     """
     Render one editor element as the HTML snippet inserted into the DOM block.
@@ -280,7 +450,7 @@ def _render_element(
     eid = _slugify_id(element.get("id"))
     etype = (element.get("type") or "container").lower()
     props = element.get("props") or {}
-    style = _element_style(element)
+    style = _element_style(element, parent=parent, font_map=font_map)
     classes = "spore-element"
     hidden_attr = (
         ' data-spore-hidden="true"' if _element_start_hidden(element) else ""
@@ -294,6 +464,7 @@ def _render_element(
     if etype == "text":
         text_var = element.get("text_var") or eid + "Text"
         text_default = props.get("text", "")
+        jinja_var = text_var
         if text_mode == "counter":
             cfg = element.get("counter") if isinstance(element.get("counter"), dict) else {}
             fmt = str(cfg.get("format") or "{value}")
@@ -302,29 +473,48 @@ def _render_element(
             except (TypeError, ValueError):
                 init = 0
             text_default = fmt.replace("{value}", str(init))
+            jinja_var = counter_format_config_id(eid)
         elif text_mode == "data_display":
             cfg = element.get("data_display") if isinstance(element.get("data_display"), dict) else {}
             text_default = str(
                 cfg.get("default_text") if cfg.get("default_text") is not None else "—"
             )
+            jinja_var = counter_format_config_id(eid)
         return (
             f'<div id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f'{anim_attrs} '
             f'data-spore-type="text"{mode_attr}>'
-            f"{{{{ {text_var}|default({json.dumps(text_default)})|safe }}}}"
+            f"{{{{ {jinja_var}|default({json.dumps(text_default)})|safe }}}}"
             f"</div>"
         )
 
     if etype == "image":
         src_var = element.get("src_var") or eid + "Src"
-        src_default = props.get("src", "")
+        src_mode = str(element.get("src_mode") or "static").strip().lower()
+        counter_attrs = ""
+        jinja_src_var = src_var
+        if src_mode == "from_counter":
+            cs = (
+                element.get("counter_src")
+                if isinstance(element.get("counter_src"), dict)
+                else {}
+            )
+            src_default = str(cs.get("default_src") or props.get("src") or "")
+            cid = _slugify_id(str(cs.get("counter_id") or ""))
+            jinja_src_var = counter_image_default_src_id(eid)
+            counter_attrs = (
+                f' data-spore-src-mode="counter" '
+                f'data-spore-counter-id="{html.escape(cid, quote=True)}"'
+            )
+        else:
+            src_default = props.get("src", "")
         return (
             f'<img id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f'{anim_attrs} '
-            f'data-spore-type="image" '
-            f'src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}" '
+            f'data-spore-type="image"{counter_attrs} '
+            f'src="{{{{ {jinja_src_var}|default({json.dumps(src_default)}) }}}}" '
             f'alt="" />'
         )
 
@@ -448,6 +638,9 @@ def _emit_dom_recursive(
     el: Dict[str, Any],
     children_map: Dict[str, List[Dict[str, Any]]],
     rel_indent: str,
+    *,
+    parent: Optional[Dict[str, Any]] = None,
+    font_map: Optional[Dict[str, str]] = None,
 ) -> str:
     """Return fully-indented subtree markup beginning with ``_DOM_ROW_INDENT_BASE``."""
     etype = str(el.get("type") or "container").lower()
@@ -455,34 +648,53 @@ def _emit_dom_recursive(
     cid_key = "" if eid_raw in (None, "") else str(eid_raw)
 
     if etype != "container":
-        return _DOM_ROW_INDENT_BASE + rel_indent + _render_element(el)
+        return (
+            _DOM_ROW_INDENT_BASE
+            + rel_indent
+            + _render_element(el, parent=parent, font_map=font_map)
+        )
 
     nested = children_map.get(cid_key, [])
     if not nested:
         return (
             _DOM_ROW_INDENT_BASE
             + rel_indent
-            + _render_element(el, children_inner_markup="")
+            + _render_element(
+                el, children_inner_markup="", parent=parent, font_map=font_map
+            )
         )
 
     child_indent = rel_indent + "    "
-    child_chunks = [_emit_dom_recursive(ch, children_map, child_indent) for ch in nested]
+    child_chunks = [
+        _emit_dom_recursive(
+            ch, children_map, child_indent, parent=el, font_map=font_map
+        )
+        for ch in nested
+    ]
     inner_markup = "\n" + "\n".join(child_chunks)
     return (
         _DOM_ROW_INDENT_BASE
         + rel_indent
-        + _render_element(el, children_inner_markup=inner_markup)
+        + _render_element(
+            el, children_inner_markup=inner_markup, parent=parent, font_map=font_map
+        )
     )
 
 
-def _render_dom_tree(elements: Any) -> str:
+def _render_dom_tree(
+    elements: Any,
+    *,
+    font_map: Optional[Dict[str, str]] = None,
+) -> str:
     if not isinstance(elements, list):
         return ""
     dicts_only = [e for e in elements if isinstance(e, dict)]
     if not dicts_only:
         return ""
     roots, cmap = _partition_elements_for_dom(dicts_only)
-    return "\n".join(_emit_dom_recursive(r, cmap, "") for r in roots)
+    return "\n".join(
+        _emit_dom_recursive(r, cmap, "", font_map=font_map) for r in roots
+    )
 
 
 def _boilerplate_path(alert_system: str) -> str:
@@ -627,7 +839,7 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
             "id": "DesignWidth",
             "label": "Design Width",
             "value": width,
-            "min": 320,
+            "min": DESIGN_CANVAS_MIN_PX,
             "max": 7680,
             "description": "Logical canvas width in pixels.",
         },
@@ -636,7 +848,7 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
             "id": "DesignHeight",
             "label": "Design Height",
             "value": height,
-            "min": 240,
+            "min": DESIGN_CANVAS_MIN_PX,
             "max": 4320,
             "description": "Logical canvas height in pixels.",
         },
@@ -690,8 +902,47 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
             props = element.get("props") or {}
 
             if etype == "text":
-                text_var = element.get("text_var") or eid + "Text"
-                if _expose_field(element, "text"):
+                text_mode = str(element.get("text_mode") or "static").strip().lower()
+                if text_mode == "counter" and _expose_field(element, "text"):
+                    cfg = (
+                        element.get("counter")
+                        if isinstance(element.get("counter"), dict)
+                        else {}
+                    )
+                    fmt_id = counter_format_config_id(eid)
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": fmt_id,
+                            "label": f"{element.get('id', eid)} format",
+                            "value": str(cfg.get("format") or "{value}"),
+                            "description": (
+                                f"Display format for counter '{element.get('id', eid)}'. "
+                                "Use {{value}} for the numeric counter."
+                            ),
+                        }
+                    )
+                elif text_mode == "data_display" and _expose_field(element, "text"):
+                    cfg = (
+                        element.get("data_display")
+                        if isinstance(element.get("data_display"), dict)
+                        else {}
+                    )
+                    fmt_id = counter_format_config_id(eid)
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": fmt_id,
+                            "label": f"{element.get('id', eid)} format",
+                            "value": str(cfg.get("format") or "{value}"),
+                            "description": (
+                                f"Display format for '{element.get('id', eid)}'. "
+                                "Use {{value}} for the resolved data value."
+                            ),
+                        }
+                    )
+                elif text_mode == "static" and _expose_field(element, "text"):
+                    text_var = element.get("text_var") or eid + "Text"
                     elements_out.append(
                         {
                             "type": "text",
@@ -703,8 +954,87 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                         }
                     )
             elif etype in ("image", "video", "audio"):
-                src_var = element.get("src_var") or eid + "Src"
-                if _expose_field(element, "src"):
+                src_mode = str(element.get("src_mode") or "static").strip().lower()
+                if (
+                    etype == "image"
+                    and src_mode == "from_counter"
+                    and _expose_field(element, "src")
+                ):
+                    cs = (
+                        element.get("counter_src")
+                        if isinstance(element.get("counter_src"), dict)
+                        else {}
+                    )
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": counter_image_default_src_id(eid),
+                            "label": f"{element.get('id', eid)} default image",
+                            "value": str(
+                                cs.get("default_src")
+                                or props.get("src")
+                                or ""
+                            ),
+                            "description": (
+                                f"Image URL when no counter range matches "
+                                f"'{element.get('id', eid)}'."
+                            ),
+                        }
+                    )
+                    for ri, row in enumerate(cs.get("ranges") or []):
+                        if not isinstance(row, dict):
+                            continue
+                        try:
+                            lo = int(float(row.get("min", 0)))
+                        except (TypeError, ValueError):
+                            lo = 0
+                        try:
+                            hi = int(float(row.get("max", lo)))
+                        except (TypeError, ValueError):
+                            hi = lo
+                        src_val = str(row.get("src") or "")
+                        elements_out.append(
+                            {
+                                "type": "number",
+                                "id": counter_image_range_min_id(eid, ri),
+                                "label": (
+                                    f"{element.get('id', eid)} range {ri + 1} min"
+                                ),
+                                "value": lo,
+                                "min": -9999999999,
+                                "max": 9999999999,
+                                "description": "Counter value range minimum (inclusive).",
+                            }
+                        )
+                        elements_out.append(
+                            {
+                                "type": "number",
+                                "id": counter_image_range_max_id(eid, ri),
+                                "label": (
+                                    f"{element.get('id', eid)} range {ri + 1} max"
+                                ),
+                                "value": hi,
+                                "min": -9999999999,
+                                "max": 9999999999,
+                                "description": "Counter value range maximum (inclusive).",
+                            }
+                        )
+                        elements_out.append(
+                            {
+                                "type": "text",
+                                "id": counter_image_range_src_id(eid, ri),
+                                "label": (
+                                    f"{element.get('id', eid)} range {ri + 1} image"
+                                ),
+                                "value": src_val,
+                                "description": (
+                                    f"Image URL when counter is between min and max "
+                                    f"for '{element.get('id', eid)}'."
+                                ),
+                            }
+                        )
+                elif _expose_field(element, "src"):
+                    src_var = element.get("src_var") or eid + "Src"
                     elements_out.append(
                         {
                             "type": "text",
@@ -865,12 +1195,15 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                     continue
                 if not _expose_field(element, key):
                     continue
+                export_val = str(props[key])
+                if key == "font_family":
+                    export_val = resolve_font_filename(export_val) or export_val
                 elements_out.append(
                     {
                         "type": "color" if "color" in key else "text",
                         "id": f"{eid}_{key}",
                         "label": f"{element.get('id', eid)} {key.replace('_', ' ')}",
-                        "value": str(props[key]),
+                        "value": export_val,
                         "description":
                             f"{key.replace('_', ' ').title()} for "
                             f"'{element.get('id', eid)}'.",
@@ -985,6 +1318,22 @@ def _clone_dynamic_controls(dc: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _normalize_model_font_families(model: Dict[str, Any]) -> None:
+    """Resolve font labels (e.g. Renogare) to filenames in element props."""
+    for el in model.get("elements") or []:
+        if not isinstance(el, dict):
+            continue
+        props = el.get("props")
+        if not isinstance(props, dict):
+            continue
+        raw = str(props.get("font_family") or "").strip()
+        if not raw:
+            continue
+        resolved = resolve_font_filename(raw)
+        if resolved:
+            props["font_family"] = resolved
+
+
 def compile_model(
     model: Dict[str, Any],
     *,
@@ -1011,8 +1360,10 @@ def compile_model(
     template_name = model.get("template_name") or "untitled"
     base_html = base_html.replace("__TEMPLATE_NAME__", template_name)
 
+    _normalize_model_font_families(model)
     elements = model.get("elements") or []
-    dom_html = _render_dom_tree(elements)
+    font_css, font_map = _compile_spore_font_css(elements)
+    dom_html = _render_dom_tree(elements, font_map=font_map)
 
     bindings = compile_bindings(elements)
     advanced_js = str(model.get("advanced_js") or "").rstrip()
@@ -1037,8 +1388,17 @@ def compile_model(
             out_html, _USER_BEGIN, _USER_END, advanced_js
         )
 
-    if bindings["css"]:
-        styles = "<style id=\"spore-studio-anim\">\n" + bindings["css"] + "\n</style>"
+    style_parts: List[str] = []
+    if font_css.strip():
+        style_parts.append(font_css.strip())
+    if bindings["css"].strip():
+        style_parts.append(bindings["css"].strip())
+    if style_parts:
+        styles = (
+            '<style id="spore-studio-styles">\n'
+            + "\n\n".join(style_parts)
+            + "\n</style>"
+        )
         out_html = _replace_block(out_html, _STYLES_BEGIN, _STYLES_END, styles)
     else:
         out_html = _replace_block(out_html, _STYLES_BEGIN, _STYLES_END, "")
