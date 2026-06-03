@@ -935,7 +935,7 @@ class YouTubeClient:
 
             api_time = time.time() - start_time
             if api_time > 10:
-                logger.warning(".3f")
+                logger.warning("Slow YouTube API response: %.3fs", api_time)
 
         except Exception as e:
             logger.error(f"Error updating YouTube video data: {str(e)}", exc_info=True)
@@ -963,7 +963,9 @@ class YouTubeClient:
                 if sleep_time > 0:
                     time.sleep(sleep_time)
                 else:
-                    logger.debug(".3f")
+                    logger.debug(
+                        "YouTube update loop exceeded interval: %.3fs", elapsed
+                    )
             except Exception as e:
                 logger.error(
                     f"Error in YouTube monitoring loop: {str(e)}", exc_info=True

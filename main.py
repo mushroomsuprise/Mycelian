@@ -33,6 +33,8 @@ import threading
 import time
 from pathlib import Path
 
+from modules.log_trim import trim_log_file as _trim_log_file
+
 # Set True to print [startup] timing lines and summaries to the console.
 ENABLE_STARTUP_PROFILING = False
 
@@ -101,49 +103,6 @@ def get_data_path(relative_path):
 LOG_MAX_BYTES = 50 * 1024 * 1024  # 50 MiB cap for mycelian.log
 
 
-def _trim_log_file(path: Path, max_bytes: int) -> None:
-    """Keep only the newest max_bytes of a log file (line-aligned)."""
-    if not path.is_file():
-        return
-    try:
-        size = path.stat().st_size
-    except OSError:
-        return
-    if size <= max_bytes:
-        return
-
-    slack = 4096
-    read_size = min(size, max_bytes + slack)
-    try:
-        with open(path, "rb") as f:
-            f.seek(size - read_size)
-            chunk = f.read(read_size)
-    except OSError:
-        return
-
-    text = chunk.decode("utf-8", errors="replace")
-    excess = len(text.encode("utf-8")) - max_bytes
-    if excess > 0:
-        cut = excess
-        nl = text.find("\n", cut)
-        if nl != -1:
-            text = text[nl + 1 :]
-        else:
-            text = text[cut:]
-
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    try:
-        with open(tmp_path, "w", encoding="utf-8", errors="replace") as out:
-            out.write(text)
-        tmp_path.replace(path)
-    except OSError:
-        if tmp_path.is_file():
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
-
-
 class CappedFileHandler(logging.FileHandler):
     """File handler that trims oldest log content when the file exceeds max_bytes."""
 
@@ -154,22 +113,32 @@ class CappedFileHandler(logging.FileHandler):
         super().__init__(filename, mode="a", **kwargs)
 
     def emit(self, record):
-        if self.baseFilename:
+        if self.baseFilename is None:
+            return
+        try:
+            self.acquire()
             try:
+                if self.stream is None:
+                    self.stream = self._open()
+                msg = self.format(record)
+                stream = self.stream
+                stream.write(msg + self.terminator)
+                self.flush()
                 if os.path.getsize(self.baseFilename) > self.max_bytes:
-                    self.acquire()
-                    try:
-                        if self.stream:
-                            self.stream.close()
-                            self.stream = None
-                        _trim_log_file(Path(self.baseFilename), self.max_bytes)
-                        if not self.delay:
-                            self.stream = self._open()
-                    finally:
-                        self.release()
-            except OSError:
-                pass
-        super().emit(record)
+                    if self.stream:
+                        self.stream.close()
+                        self.stream = None
+                    _trim_log_file(Path(self.baseFilename), self.max_bytes)
+                    if not self.delay:
+                        self.stream = self._open()
+            except RecursionError:
+                raise
+            except Exception:
+                self.handleError(record)
+            finally:
+                self.release()
+        except Exception:
+            self.handleError(record)
 
 
 # Set up logging configuration

@@ -512,5 +512,6 @@ Getting Help
 
 **Log Locations:**
 * Application logs: ``logs/mycelian.log`` (capped at 50MB; oldest entries are removed when the limit is reached)
-* Database operations: ``logs/database.log``
-* WebSocket events: ``logs/websocket.log`` 
+* If an older build left ``mycelian.log`` full of blank lines or stray characters on Windows, delete or rename that file once after updating; the app recreates it on the next launch.
+
+**Support note:** Corrupted logs from pre-fix Windows builds are safe to delete; no settings are stored in ``mycelian.log``.

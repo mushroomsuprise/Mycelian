@@ -225,7 +225,7 @@ def _deliver_toast(message: str, opts: Dict[str, Any]) -> bool:
         _broadcast_notify(message, opts)
         return True
     except Exception as e:
-        logger.warning("broadcast notify fallback failed: %s", e, exc_info=True)
+        logger.warning("broadcast notify fallback failed: %s", e)
         return False
 
 
