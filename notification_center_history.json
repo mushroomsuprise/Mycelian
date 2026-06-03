@@ -14,5 +14,61 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "24b698aa-d25a-4f60-9f32-5ac2af151837",
+    "ts": 1780525976.181193,
+    "message": "Twitch: Authenticated but Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:twitch:Authenticated but Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "8918643a-f04f-473b-8504-73fa2d9b5beb",
+    "ts": 1780525976.1831613,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "ad1252f7-a38b-4b87-b47b-0e09bbb65127",
+    "ts": 1780525978.1869144,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "89579f26-7020-4307-bcfb-9778d7acc46b",
+    "ts": 1780525980.195861,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
   }
 ]
