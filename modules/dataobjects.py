@@ -606,6 +606,14 @@ class StateManager:
                 filtered_dict["client_secret"] = ensure_decrypted(
                     filtered_dict["client_secret"]
                 )
+            if "auth_token" in filtered_dict:
+                filtered_dict["auth_token"] = ensure_decrypted(
+                    filtered_dict["auth_token"]
+                )
+            if "refresh_token" in filtered_dict:
+                filtered_dict["refresh_token"] = ensure_decrypted(
+                    filtered_dict["refresh_token"]
+                )
 
             # Create a new TwitchData object with the filtered data
             self._twitch_data = TwitchData(**filtered_dict)

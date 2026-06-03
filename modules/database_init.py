@@ -201,11 +201,8 @@ def initialize_database_system() -> bool:
 
         # Use asyncio to parallelize initialization if event loop is available
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
             with StartupTimer("database_init.config_and_api_credentials"):
-                config_success, api_success = loop.run_until_complete(init_managers())
-            loop.close()
+                config_success, api_success = asyncio.run(init_managers())
         except RuntimeError:
             # Fall back to sequential initialization if event loop is already running
             with StartupTimer("database_init.config_manager.initialize"):
@@ -311,16 +308,21 @@ def _migrate_old_database_settings_if_needed(config_data: dict) -> bool:
     try:
         logger.info("Checking for old database settings to migrate...")
 
-        # Try to load existing database settings from the database
-        from .dataobjects import state_manager
+        # Read DatabaseSettings with a single path fetch — avoid state_manager.initialize()
+        # which downloads 7+ paths on every launch before initialize_with_data runs.
+        from .dataobjects import DatabaseSettings
+        from . import database_manager
 
-        # Initialize state manager to read from the current database
-        if not hasattr(state_manager, "_initialized") or not state_manager._initialized:
-            state_manager.initialize()
-
-        # Try to get database settings from the database
         try:
-            db_settings = state_manager.get_database_settings()
+            raw = database_manager.get_data("DatabaseSettings") or {}
+            if raw:
+                valid_keys = [
+                    f.name for f in DatabaseSettings.__dataclass_fields__.values()
+                ]
+                filtered = {k: v for k, v in raw.items() if k in valid_keys}
+                db_settings = DatabaseSettings(**filtered)
+            else:
+                db_settings = DatabaseSettings()
 
             # Check if we have meaningful database settings in the database
             # that are different from defaults and should be migrated

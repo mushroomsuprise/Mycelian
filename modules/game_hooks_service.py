@@ -26,6 +26,7 @@ from .game_hooks.base import GameHook
 from .game_hooks.registry import (
     create_hook,
     is_hook_enabled,
+    refresh_hook_enabled_cache,
     registered_hook_ids,
 )
 
@@ -275,6 +276,10 @@ class GameHooksServiceImpl:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        try:
+            refresh_hook_enabled_cache()
+        except Exception as e:
+            logger.debug("Could not preload hook enabled cache: %s", e)
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._coordinator_loop,

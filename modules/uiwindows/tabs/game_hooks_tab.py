@@ -11,7 +11,12 @@ from ...ui_buttons import outline_button, primary_button
 
 from ...database_manager import database_manager
 from ...game_hooks.base import runtime_os_key
-from ...game_hooks.registry import enabled_db_path, is_hook_enabled, list_hooks_for_ui
+from ...game_hooks.registry import (
+    enabled_db_path,
+    is_hook_enabled,
+    list_hooks_for_ui,
+    set_hook_enabled_cached,
+)
 from ..os_brand_icons import OS_BRAND_ROW
 
 logger = logging.getLogger(__name__)
@@ -275,6 +280,7 @@ class GameHooksTab:
                     enabled_db_path(hid), {"enabled": to_save}
                 )
                 if ok:
+                    set_hook_enabled_cached(hid, to_save)
                     self._loaded_enabled[hid] = bool(to_save)
                     self._buffer_enabled[hid] = bool(to_save)
                     logger.info("GameHooks: %s_enabled=%s", hid, to_save)

@@ -2200,24 +2200,19 @@ class WebEngine:
         self._twitch_api_queue.put(coro)
 
     def _twitch_api_worker_loop(self) -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
             while True:
                 coro = self._twitch_api_queue.get()
                 if coro is None:
                     break
                 try:
-                    loop.run_until_complete(coro)
+                    # Fresh loop per job so aiohttp connector cleanup completes fully.
+                    asyncio.run(coro)
                 except Exception as e:
                     logger.error(
                         "Twitch API worker job failed: %s", e, exc_info=True
                     )
         finally:
-            try:
-                loop.close()
-            except Exception:
-                pass
             with self._twitch_api_worker_lock:
                 self._twitch_api_worker_started = False
 
@@ -3594,12 +3589,17 @@ class WebEngine:
                         if (
                             twitch.twitch_api.auth_token != twitch_data.auth_token
                             or twitch.twitch_api.client_id != twitch_data.client_id
+                            or twitch.twitch_api.client_secret
+                            != twitch_data.client_secret
+                            or twitch.twitch_api.refresh_token
+                            != twitch_data.refresh_token
                         ):
                             logger.debug(
                                 "Updating Twitch API instance with current state manager data for proxy call"
                             )
                             twitch.twitch_api.auth_token = twitch_data.auth_token
                             twitch.twitch_api.client_id = twitch_data.client_id
+                            twitch.twitch_api.client_secret = twitch_data.client_secret
                             twitch.twitch_api.refresh_token = twitch_data.refresh_token
                             if twitch_data.token_expiry:
                                 try:
@@ -4117,13 +4117,32 @@ class WebEngine:
                 page = data.get("page", 1)
                 limit = data.get("limit", 25)
 
-                # Initialize the alert state manager if not already done
-                alertutils.initialize_alert_state()
+                from . import dataobjects
 
-                # Get paginated stored alerts
-                result = alertutils.alert_state_manager.get_stored_alerts_paginated(
-                    page=page, limit=limit
-                )
+                if alertutils.alert_state_manager is None:
+                    logger.warning(
+                        "get_stored_alerts_paginated: alert_state_manager not initialized"
+                    )
+                    result = {
+                        "alerts": [],
+                        "total_count": 0,
+                        "page": page,
+                        "limit": limit,
+                        "total_pages": 1,
+                        "has_next": False,
+                        "has_prev": False,
+                    }
+                else:
+                    app_settings = dataobjects.state_manager.get_app_settings()
+                    max_total_alerts = (
+                        app_settings.activity_feed_max_pages
+                        * app_settings.activity_feed_limit
+                    )
+                    result = alertutils.alert_state_manager.get_limited_stored_alerts_paginated(
+                        page=page,
+                        limit=limit,
+                        max_total_alerts=max_total_alerts,
+                    )
 
                 # Convert stored alerts to activity feed format
                 converted_alerts = []
@@ -4200,50 +4219,20 @@ class WebEngine:
                 # Import necessary modules
                 import time
 
-                from modules.uiwindows.activity_feed import load_restored_alerts
+                from modules.uiwindows.activity_feed import (
+                    load_restored_alerts_for_time_window,
+                )
 
-                # Calculate time window
                 current_time = time.time()
-                cutoff_time = current_time - (hours * 3600)  # Convert hours to seconds
-
-                # Load all alerts within the time window
-                alerts_to_process = []
-                page = 1
-                historical_count = 0
-                all_alerts_loaded = False
+                cutoff_time = current_time - (hours * 3600)
 
                 logger.debug(
                     f"Loading condensed view alerts for past {hours} hours (cutoff: {cutoff_time})"
                 )
 
-                while not all_alerts_loaded:
-                    restored_alerts, pagination_info = load_restored_alerts(page=page)
-
-                    if not restored_alerts:
-                        break
-
-                    # Process alerts from this page
-                    page_alerts_in_window = 0
-                    for alert_data in restored_alerts:
-                        alert_timestamp = alert_data.get("timestamp", 0)
-                        if alert_timestamp >= cutoff_time:
-                            alerts_to_process.append(alert_data)
-                            historical_count += 1
-                            page_alerts_in_window += 1
-                        else:
-                            # If we've reached alerts older than our cutoff time, we can stop
-                            # (assuming alerts are returned in chronological order, newest first)
-                            all_alerts_loaded = True
-                            break
-
-                    # Check if we should continue to next page
-                    if not pagination_info.get("has_next", False):
-                        all_alerts_loaded = True
-                    elif page_alerts_in_window == 0:
-                        # If no alerts from this page were in our time window, we can stop
-                        all_alerts_loaded = True
-                    else:
-                        page += 1
+                alerts_to_process, historical_count = (
+                    load_restored_alerts_for_time_window(cutoff_time)
+                )
 
                 logger.debug(
                     f"Loaded {historical_count} alerts for condensed view (past {hours} hours)"
@@ -4707,13 +4696,25 @@ class WebEngine:
                     if (
                         twitch.twitch_api.auth_token != twitch_data.auth_token
                         or twitch.twitch_api.client_id != twitch_data.client_id
+                        or twitch.twitch_api.client_secret != twitch_data.client_secret
+                        or twitch.twitch_api.refresh_token != twitch_data.refresh_token
                     ):
                         logger.debug(
                             "Updating Twitch API instance with current state manager data"
                         )
                         twitch.twitch_api.auth_token = twitch_data.auth_token
                         twitch.twitch_api.client_id = twitch_data.client_id
+                        twitch.twitch_api.client_secret = twitch_data.client_secret
                         twitch.twitch_api.refresh_token = twitch_data.refresh_token
+                        if twitch_data.token_expiry:
+                            try:
+                                twitch.twitch_api.token_expiry = (
+                                    datetime.fromisoformat(
+                                        twitch_data.token_expiry
+                                    )
+                                )
+                            except ValueError:
+                                pass
 
                 async def handle_request():
                     try:
@@ -4735,14 +4736,22 @@ class WebEngine:
                             "Twitch API request successful for %s", endpoint
                         )
                     except Exception as e:
-                        logger.error(
-                            "Error in async twitch-api-request handler: %s",
-                            e,
-                            exc_info=True,
-                        )
+                        err = str(e)
+                        if err.startswith("Authentication required"):
+                            logger.warning(
+                                "Twitch API request skipped (%s): %s",
+                                endpoint,
+                                err,
+                            )
+                        else:
+                            logger.error(
+                                "Error in async twitch-api-request handler: %s",
+                                e,
+                                exc_info=True,
+                            )
                         response_data = {
                             "success": False,
-                            "error": str(e),
+                            "error": err,
                             "requestId": request_id,
                         }
                         self.socketio.emit(

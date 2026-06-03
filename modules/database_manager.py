@@ -681,12 +681,19 @@ class FirebaseDatabase(DatabaseInterface):
             logger.error(f"Failed to initialize Firebase: {str(e)}", exc_info=True)
             return False
 
+    def _probe_connection(self) -> None:
+        """Cheap connectivity check — never download the full database tree."""
+        if self._root_ref is None:
+            raise RuntimeError("Firebase database not initialized")
+        # .info/* lives at the DB root; _root_ref is /{streamer} and cannot use .info children.
+        # Shallow read returns only child key names under the streamer node (no payloads).
+        self._root_ref.get(shallow=True)
+
     def _ensure_connection_tested(self):
         """Ensure the Firebase connection has been tested before performing operations"""
         if not self._connection_tested:
             try:
-                test_ref = firebase_db.reference("/", app=self._app)
-                test_ref.get()  # This will throw an exception if not connected
+                self._probe_connection()
                 logger.debug("Firebase connection test passed")
                 self._connection_tested = True
             except Exception as test_error:
@@ -718,9 +725,26 @@ class FirebaseDatabase(DatabaseInterface):
             if request_etag:
                 data = response[0]
                 etag = response[1]
-                return {"data": data or {}, "etag": etag}
+                payload = data or {}
             else:
-                return response or {}
+                payload = response or {}
+
+            if logger.isEnabledFor(logging.DEBUG) and payload:
+                try:
+                    approx_bytes = len(
+                        json.dumps(payload, default=str, ensure_ascii=False)
+                    )
+                    logger.debug(
+                        "Firebase download path=%s approx_bytes=%d",
+                        path,
+                        approx_bytes,
+                    )
+                except Exception:
+                    pass
+
+            if request_etag:
+                return {"data": payload, "etag": etag}
+            return payload
 
         except Exception as e:
             logger.error(
@@ -809,10 +833,7 @@ class FirebaseDatabase(DatabaseInterface):
         """Get Firebase connection status"""
         try:
             if self._root_ref:
-                # Test the connection with a simple read operation
-                # Use a safe path that doesn't contain illegal characters
-                test_ref = firebase_db.reference("/", app=self._app)
-                test_ref.get()  # This will throw an exception if not connected
+                self._probe_connection()
 
                 return {
                     "status": "Connected",
@@ -873,9 +894,8 @@ class FirebaseDatabase(DatabaseInterface):
             if not self._root_ref:
                 return self.initialize()
 
-            # Test by reading connection status
-            result = self._root_ref.child(".info/connected").get()
-            return bool(result)
+            self._probe_connection()
+            return True
         except Exception as e:
             logger.error(f"Firebase connection test failed: {str(e)}")
             return False
@@ -977,6 +997,35 @@ class FirebaseDatabase(DatabaseInterface):
                 f"Error getting snapshot from Firebase: {str(e)}", exc_info=True
             )
             return {}
+
+    def get_alert_storage_limited(self, max_alerts: int) -> Dict[str, Any]:
+        """Fetch up to max_alerts completed alerts without downloading full AlertStorage."""
+        if not self._initialized:
+            self.initialize()
+        if self._root_ref is None or max_alerts <= 0:
+            return {}
+
+        self._ensure_connection_tested()
+        storage_ref = self._root_ref.child("Alerts/AlertStorage")
+        try:
+            result = (
+                storage_ref.order_by_child("timestamp")
+                .limit_to_last(int(max_alerts))
+                .get()
+            )
+            if isinstance(result, dict) and result:
+                logger.debug(
+                    "Firebase AlertStorage limit_to_last fetched %d alert(s)",
+                    len(result),
+                )
+                return result
+        except Exception as e:
+            logger.debug(
+                "Firebase limit_to_last on AlertStorage unavailable, using full read: %s",
+                e,
+            )
+
+        return self.get_data("Alerts/AlertStorage") or {}
 
 
 class MongoDatabase(DatabaseInterface):
@@ -1470,6 +1519,24 @@ class DatabaseManager:
             logger.error("Database not initialized")
             return {}
 
+    def get_paths_from_snapshot(self, snapshot: Dict[str, Any]) -> List[str]:
+        """Derive path list from an in-memory snapshot (avoids a second full-tree read)."""
+        if not snapshot:
+            return []
+        if isinstance(self._database, FirebaseDatabase):
+            paths: List[str] = []
+            self._database._extract_paths(snapshot, "", paths)
+            return sorted(paths)
+        return self.get_all_paths()
+
+    def get_alert_storage_limited(self, max_alerts: int) -> Dict[str, Any]:
+        """Limited completed-alert fetch when the backend supports it."""
+        if not self._initialized:
+            self.initialize()
+        if self._database and hasattr(self._database, "get_alert_storage_limited"):
+            return self._database.get_alert_storage_limited(max_alerts)
+        return self.get_data("Alerts/AlertStorage") or {}
+
     def migrate_data(
         self, source_config: DatabaseConfig, target_config: DatabaseConfig
     ) -> bool:
@@ -1617,9 +1684,13 @@ async def load_all_initial_data() -> Dict[str, Any]:
         "Alerts/StreakAlerts",
         "Alerts/FollowAlerts",
         "Alerts/DonationAlerts",
+        "Alerts/GiftsubAlerts",
+        "Alerts/GiftsubRangeAlerts",
+        "Alerts/RaidAlerts",
+        "Alerts/RaidRangeAlerts",
         "Alerts/PointAlerts",
         "Alerts/AlertQueue",
-        # Skip: BotData/*, ViewerData, AlertStorage, extended alert ranges
+        # Skip: BotData/*, ViewerData, AlertStorage, other extended alert ranges
     ]
 
     logger.info(f"Loading {len(startup_paths)} essential startup data paths...")

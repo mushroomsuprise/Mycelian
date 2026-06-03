@@ -132,6 +132,7 @@ class AlertStateManager:
         }
         # Add alert storage for completed alerts
         self._alert_storage = {}
+        self._alert_storage_loaded = False
 
         self._alert_paths = {
             "bits": "Alerts/BitAlerts",
@@ -199,17 +200,16 @@ class AlertStateManager:
             for key in self._alert_state:
                 self._alert_state[key] = {}
 
-            # Clear alert storage
+            # Clear alert storage (lazy-loaded when activity feed requests history)
             self._alert_storage = {}
+            self._alert_storage_loaded = False
 
             # Load alerts from pre-loaded data
             for state_key, firebase_path in self._alert_paths.items():
                 if state_key == "alert_storage":
-                    # Special handling for alert storage - load individual records
-                    # For now, we'll skip this as it requires more complex logic
-                    # TODO: Implement loading alert storage from pre-loaded data
-                    self._alert_storage = {}
-                    logger.debug("Skipped loading alert storage from pre-loaded data")
+                    logger.debug(
+                        "Skipped loading alert storage from pre-loaded data (lazy load)"
+                    )
                 else:
                     data = all_data.get(firebase_path, {})
                     self._alert_state[state_key] = data
@@ -275,12 +275,13 @@ class AlertStateManager:
 
             # Clear alert storage
             self._alert_storage = {}
+            self._alert_storage_loaded = False
 
             # Load alerts from Firebase
             for state_key, firebase_path in self._alert_paths.items():
                 if state_key == "alert_storage":
-                    # Special handling for alert storage - load individual records
-                    self._alert_storage = self._load_individual_alert_storage()
+                    self._alert_storage = self._fetch_alert_storage_from_database()
+                    self._alert_storage_loaded = True
                     logger.debug(
                         f"Loaded {len(self._alert_storage)} stored alerts from individual records"
                     )
@@ -296,14 +297,37 @@ class AlertStateManager:
         except Exception as e:
             logger.error(f"Error loading alerts from Firebase: {str(e)}", exc_info=True)
 
-    def _load_individual_alert_storage(self) -> dict:
-        """Load individual alert storage records from the database
+    def _invalidate_alert_storage_cache(self) -> None:
+        """Drop cached completed alerts so the next read refetches from the database."""
+        self._alert_storage_loaded = False
+        self._alert_storage = {}
+
+    def _is_firebase_backend(self) -> bool:
+        try:
+            config = database_manager.get_config()
+            return bool(config and config.database_type == "firebase")
+        except Exception:
+            return False
+
+    def _ensure_alert_storage_loaded(self, max_alerts: Optional[int] = None) -> None:
+        """Load completed alerts once per session (or after invalidation)."""
+        if self._alert_storage_loaded:
+            return
+        self._alert_storage = self._fetch_alert_storage_from_database(
+            max_alerts=max_alerts
+        )
+        self._alert_storage_loaded = True
+
+    def _fetch_alert_storage_from_database(
+        self, max_alerts: Optional[int] = None
+    ) -> dict:
+        """Load completed alert records from the database.
 
         Returns:
             dict: Dictionary of alert_id -> alert_data
         """
         try:
-            alert_storage = {}
+            alert_storage: dict = {}
 
             # For SQL database, query for all paths that start with Alerts/AlertStorage/
             if hasattr(database_manager.database_manager, "_database") and hasattr(
@@ -313,22 +337,29 @@ class AlertStateManager:
                     cursor = (
                         database_manager.database_manager._database._connection.cursor()
                     )
+                    limit_clause = ""
+                    params: list = ["Alerts/AlertStorage/%", "Alerts/AlertStorage"]
+                    if max_alerts and max_alerts > 0:
+                        limit_clause = (
+                            " ORDER BY json_extract(data_json, '$.timestamp') DESC "
+                            f"LIMIT {int(max_alerts)}"
+                        )
                     cursor.execute(
-                        """
+                        f"""
                         SELECT data_path, data_json FROM app_data 
                         WHERE data_path LIKE ? AND data_path != ?
+                        {limit_clause}
                     """,
-                        ("Alerts/AlertStorage/%", "Alerts/AlertStorage"),
+                        tuple(params),
                     )
 
                     rows = cursor.fetchall()
                     for row in rows:
                         path = row["data_path"]
-                        alert_id = path.split("/")[-1]  # Get the last part as alert ID
+                        alert_id = path.split("/")[-1]
                         try:
                             alert_data = json.loads(row["data_json"])
                             alert_storage[alert_id] = alert_data
-                            logger.debug(f"Loaded stored alert: {alert_id}")
                         except json.JSONDecodeError as e:
                             logger.error(
                                 f"Error parsing JSON for stored alert {path}: {e}"
@@ -336,9 +367,17 @@ class AlertStateManager:
 
                 except Exception as e:
                     logger.error(f"Error querying stored alerts from SQL database: {e}")
+            elif self._is_firebase_backend() and max_alerts and max_alerts > 0:
+                collection_data = database_manager.get_alert_storage_limited(
+                    max_alerts
+                )
+                if collection_data:
+                    alert_storage = collection_data
+                    logger.debug(
+                        "Loaded %d stored alerts via Firebase limit_to_last",
+                        len(alert_storage),
+                    )
             else:
-                # For other database types, try to get the collection first
-                # This might work if individual records were consolidated into a collection
                 collection_data = database_manager.get_data("Alerts/AlertStorage") or {}
                 if collection_data:
                     alert_storage = collection_data
@@ -352,6 +391,10 @@ class AlertStateManager:
             )
             return {}
 
+    def _load_individual_alert_storage(self) -> dict:
+        """Load individual alert storage records from the database (uncached)."""
+        return self._fetch_alert_storage_from_database()
+
     async def _load_alerts_from_firebase_async(self):
         """Load all alerts from Firebase asynchronously and update the state"""
         try:
@@ -359,27 +402,25 @@ class AlertStateManager:
             for key in self._alert_state:
                 self._alert_state[key] = {}
 
-            # Clear alert storage
+            # Completed alerts are lazy-loaded to avoid downloading AlertStorage at init
             self._alert_storage = {}
+            self._alert_storage_loaded = False
 
-            # Get all paths to load
-            paths = list(self._alert_paths.values())
+            paths = [
+                p
+                for k, p in self._alert_paths.items()
+                if k != "alert_storage"
+            ]
 
-            # Load all data in parallel
             logger.debug(f"Loading {len(paths)} alert paths in parallel")
             results = await database_manager.get_multiple_data_async(paths)
 
-            # Process results
             for state_key, firebase_path in self._alert_paths.items():
-                data = results.get(firebase_path, {}) or {}
                 if state_key == "alert_storage":
-                    self._alert_storage = data
-                    logger.debug(
-                        f"Loaded {len(data)} stored alerts from {firebase_path}"
-                    )
-                else:
-                    self._alert_state[state_key] = data
-                    logger.debug(f"Loaded {len(data)} alerts from {firebase_path}")
+                    continue
+                data = results.get(firebase_path, {}) or {}
+                self._alert_state[state_key] = data
+                logger.debug(f"Loaded {len(data)} alerts from {firebase_path}")
 
             # Update the global alert collections
             self._update_global_collections()
@@ -814,12 +855,69 @@ class AlertStateManager:
                 )
                 return {}
 
+    def ensure_alert_paths_loaded(self, state_keys: List[str]) -> None:
+        """Load specific alert collections from the database if they are empty."""
+        with self._lock:
+            for state_key in state_keys:
+                if state_key not in self._alert_paths:
+                    continue
+                if self._alert_state.get(state_key):
+                    continue
+                firebase_path = self._alert_paths[state_key]
+                data = database_manager.get_data(firebase_path) or {}
+                if data:
+                    self._alert_state[state_key] = data
+                    logger.debug(
+                        "Lazy-loaded %d alerts from %s",
+                        len(data),
+                        firebase_path,
+                    )
+            self._update_global_collections()
+
     def reload_from_firebase(self):
         """Force a reload of all alerts from Firebase"""
         with self._lock:
             logger.debug("Reloading all alerts from Firebase")
+            self._invalidate_alert_storage_cache()
             self._load_alerts_from_firebase()
             logger.debug("Reload completed")
+
+    def reload_alert_type_from_firebase(
+        self, alert_type: str, include_ranges: bool = True
+    ) -> None:
+        """Reload only the alert config paths for one settings tab (not AlertStorage)."""
+        type_map = {
+            "bits": ["bits", "bit_ranges"] if include_ranges else ["bits"],
+            "subs": ["subs", "sub_ranges"] if include_ranges else ["subs"],
+            "giftsubs": (
+                ["giftsubs", "giftsub_ranges"] if include_ranges else ["giftsubs"]
+            ),
+            "donations": (
+                ["donations", "donation_ranges"] if include_ranges else ["donations"]
+            ),
+            "raids": ["raids", "raid_ranges"] if include_ranges else ["raids"],
+            "streaks": (
+                ["streaks", "streak_ranges"] if include_ranges else ["streaks"]
+            ),
+            "follows": ["follows"],
+            "points": ["points"],
+        }
+        state_keys = type_map.get(alert_type)
+        if not state_keys:
+            logger.error("reload_alert_type_from_firebase: invalid type %s", alert_type)
+            return
+
+        with self._lock:
+            logger.debug(
+                "Reloading alert paths for type %s: %s", alert_type, state_keys
+            )
+            for state_key in state_keys:
+                if state_key not in self._alert_paths:
+                    continue
+                firebase_path = self._alert_paths[state_key]
+                data = database_manager.get_data(firebase_path) or {}
+                self._alert_state[state_key] = data
+            self._update_global_collections()
 
     def sync_to_firebase(self):
         """Force a sync of all alerts to Firebase"""
@@ -1142,6 +1240,8 @@ class AlertStateManager:
                 self.initialize()
 
             try:
+                self._ensure_alert_storage_loaded()
+
                 # Convert stored alerts to list and sort by timestamp (newest first)
                 alerts_list = []
                 for alert_id, alert_data in self._alert_storage.items():
@@ -1229,6 +1329,15 @@ class AlertStateManager:
                 stored_alert = self._alert_storage.get(alert_id)
                 if stored_alert is not None:
                     return copy.deepcopy(stored_alert)
+
+                single = database_manager.get_data(
+                    f"Alerts/AlertStorage/{alert_id}"
+                )
+                if isinstance(single, dict) and single:
+                    self._alert_storage[alert_id] = single
+                    if not self._alert_storage_loaded:
+                        self._alert_storage_loaded = True
+                    return copy.deepcopy(single)
                 return None
             except Exception as e:
                 logger.error(
@@ -1248,8 +1357,8 @@ class AlertStateManager:
         """
         with self._lock:
             try:
-                # Use the same individual alert loading method as _load_individual_alert_storage
-                all_stored_alerts = self._load_individual_alert_storage()
+                self._ensure_alert_storage_loaded(max_alerts=max_alerts)
+                all_stored_alerts = dict(self._alert_storage)
 
                 if not all_stored_alerts:
                     logger.debug("No stored alerts found")
@@ -1306,7 +1415,6 @@ class AlertStateManager:
         """
         with self._lock:
             try:
-                # Get limited stored alerts from Firebase
                 limited_stored_alerts = self.get_limited_stored_alerts_from_firebase(
                     max_total_alerts
                 )
@@ -1853,6 +1961,11 @@ def fetch_giftsub_alert(quantity: int) -> Optional[AlertObj]:
 
     # Get all giftsub alerts (including ranges)
     alerts = alert_state_manager.get_alerts_by_type("giftsubs", include_ranges=True)
+    if not alerts:
+        alert_state_manager.ensure_alert_paths_loaded(
+            ["giftsubs", "giftsub_ranges"]
+        )
+        alerts = alert_state_manager.get_alerts_by_type("giftsubs", include_ranges=True)
 
     # Check for exact quantity match first
     exact_key = "giftsubs" + str(quantity)
@@ -1881,7 +1994,14 @@ def fetch_giftsub_alert(quantity: int) -> Optional[AlertObj]:
     elif alerts:
         # Fall back to first available alert if default not found
         return AlertObj(**next(iter(alerts.values())))
-    return None
+
+    logger.warning(
+        "No giftsub alert configured for quantity %s, using default", quantity
+    )
+    fallback = AlertObj()
+    fallback.alert_type = "giftsub"
+    fallback.alert_name = "Default Giftsub"
+    return fallback
 
 
 def fetch_donation_alert(quantity: int) -> Optional[AlertObj]:

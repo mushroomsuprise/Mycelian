@@ -2180,6 +2180,45 @@ def load_restored_alerts(page=1):
         }
 
 
+def load_restored_alerts_for_time_window(cutoff_time: float):
+    """Load stored alerts newer than cutoff_time using one AlertStorage fetch."""
+    try:
+        from modules import alertutils, dataobjects
+
+        app_settings = dataobjects.state_manager.get_app_settings()
+        max_total_alerts = (
+            app_settings.activity_feed_max_pages * app_settings.activity_feed_limit
+        )
+
+        alertutils.alert_state_manager.initialize()
+        limited = alertutils.alert_state_manager.get_limited_stored_alerts_from_firebase(
+            max_total_alerts
+        )
+
+        restored_alerts = []
+        for alert_id, alert_data in limited.items():
+            if alert_data.get("timestamp", 0) < cutoff_time:
+                continue
+            row = dict(alert_data)
+            row["alert_id"] = alert_id
+            feed_alert = convert_stored_alert_to_feed_format(row)
+            if feed_alert:
+                restored_alerts.append(feed_alert)
+
+        restored_alerts.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+        logger.debug(
+            "Loaded %d restored alerts for condensed view (cutoff=%s)",
+            len(restored_alerts),
+            cutoff_time,
+        )
+        return restored_alerts, len(restored_alerts)
+    except Exception as e:
+        logger.error(
+            f"Error loading restored alerts for time window: {str(e)}", exc_info=True
+        )
+        return [], 0
+
+
 def clear_restored_alerts():
     """Clear all restored alerts from the previous alerts container"""
     try:
@@ -2470,38 +2509,9 @@ def create_condensed_view():
         )
 
         try:
-            # Load all pages of alerts until we have all alerts within the time window
-            page = 1
-            all_alerts_loaded = False
-
-            while not all_alerts_loaded:
-                restored_alerts, pagination_info = load_restored_alerts(page=page)
-
-                if not restored_alerts:
-                    break
-
-                # Process alerts from this page
-                page_alerts_in_window = 0
-                for alert_data in restored_alerts:
-                    alert_timestamp = alert_data.get("timestamp", 0)
-                    if alert_timestamp >= cutoff_time:
-                        alerts_to_process.append(alert_data)
-                        historical_count += 1
-                        page_alerts_in_window += 1
-                    else:
-                        # If we've reached alerts older than our cutoff time, we can stop
-                        # (assuming alerts are returned in chronological order, newest first)
-                        all_alerts_loaded = True
-                        break
-
-                # Check if we should continue to next page
-                if not pagination_info.get("has_next", False):
-                    all_alerts_loaded = True
-                elif page_alerts_in_window == 0:
-                    # If no alerts from this page were in our time window, we can stop
-                    all_alerts_loaded = True
-                else:
-                    page += 1
+            alerts_to_process, historical_count = load_restored_alerts_for_time_window(
+                cutoff_time
+            )
 
             print(
                 f"Condensed view loaded {historical_count} alerts from storage (past {condense_historical_hours} hours)"

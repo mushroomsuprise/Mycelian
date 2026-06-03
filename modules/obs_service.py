@@ -128,6 +128,11 @@ def _is_transient_connect_error(exc: BaseException) -> bool:
 
     if isinstance(exc, (ConnectionRefusedError, BrokenPipeError, ConnectionResetError, TimeoutError)):
         return True
+    if type(exc).__name__ == "OBSSDKError":
+        return True
+    msg = str(exc).lower()
+    if "no password provided" in msg or "authentication enabled" in msg:
+        return True
     return type(exc).__name__ in ("WebSocketTimeoutException", "WebSocketBadStatusException")
 
 
@@ -932,4 +937,5 @@ obs_service = ObsServiceImpl()
 def start_obs_service() -> None:
     # Avoid ERROR stack traces each attempt while OBS isn't running yet.
     logging.getLogger("obsws_python.baseclient.ObsClient").setLevel(logging.CRITICAL)
+    logging.getLogger("obsws_python.reqs.ReqClient").setLevel(logging.CRITICAL)
     obs_service.start()

@@ -30,6 +30,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -46,6 +47,7 @@ from twitchAPI.object.eventsub import (
     ChannelModerateEvent,
     ChannelPointsCustomRewardRedemptionAddEvent,
     ChannelRaidEvent,
+    ChannelSubscribeEvent,
     ChannelSubscriptionGiftEvent,
     ChannelSubscriptionMessageEvent,
     ChannelUpdateEvent,
@@ -53,7 +55,7 @@ from twitchAPI.object.eventsub import (
     HypeTrainEvent,
 )
 from twitchAPI.twitch import Twitch
-from twitchAPI.type import AuthScope
+from twitchAPI.type import AuthScope, InvalidRefreshTokenException
 
 from . import (
     alert_processor,
@@ -66,6 +68,7 @@ from . import (
 from .chatbot_core import EventType
 from .chatbot_manager import get_manager as get_chatbot_manager
 from .template_config_parser import match_point_reward_dedicated_template
+from .text_safe import safe_console_str
 from .twitch_eventsub_patch import ensure_channel_chat_notification_watch_streak_patch
 from .uiwindows.activity_feed import (
     add_alert_to_feed,
@@ -88,6 +91,15 @@ _init_lock = threading.Lock()
 
 # Global flag to track Twitch API connection status
 twitch_connected = False
+
+
+@asynccontextmanager
+async def _ephemeral_client_session():
+    """Short-lived Helix client; enable_cleanup_closed avoids pending tasks on Py 3.13."""
+    connector = aiohttp.TCPConnector(enable_cleanup_closed=True)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        yield session
+
 
 _CHEER_BITS_CACHE_TTL = 10.0
 _cheer_bits_cache: dict[str, dict[str, Any]] = {}
@@ -283,6 +295,54 @@ class Twitch_API:
         self._refresh_lock = threading.Lock()
         self._last_refresh_attempt = None
 
+    def _apply_api_credentials_from_store(self) -> None:
+        """Merge Twitch app client id/secret from api_credentials.json (Settings source of truth)."""
+        try:
+            from modules import api_credentials_manager
+
+            creds = api_credentials_manager.get_twitch_credentials()
+            if creds.get("client_id"):
+                self.client_id = creds["client_id"]
+            if creds.get("client_secret"):
+                self.client_secret = creds["client_secret"]
+        except Exception as e:
+            logger.debug("Could not load Twitch credentials from credential store: %s", e)
+
+    def sync_helix_credentials_from_state(self) -> None:
+        """Merge tokens and client credentials from state/credential store into this instance.
+
+        EventSub init populates twitch_api in its init thread; Helix proxy callers
+        (e.g. overlay web_engine) must refresh from state_manager before API calls.
+        """
+        try:
+            if (
+                hasattr(dataobjects.state_manager, "_initialized")
+                and dataobjects.state_manager._initialized
+            ):
+                twitch_data = dataobjects.state_manager.get_twitch_data()
+                if twitch_data:
+                    if twitch_data.client_id:
+                        self.client_id = twitch_data.client_id
+                    if twitch_data.client_secret:
+                        self.client_secret = twitch_data.client_secret
+                    if twitch_data.auth_token:
+                        self.auth_token = twitch_data.auth_token
+                    if twitch_data.refresh_token:
+                        self.refresh_token = twitch_data.refresh_token
+                    if twitch_data.user_id:
+                        self.user_id = twitch_data.user_id
+                    if twitch_data.token_expiry:
+                        try:
+                            self.token_expiry = datetime.fromisoformat(
+                                twitch_data.token_expiry
+                            )
+                        except ValueError:
+                            pass
+        except Exception as e:
+            logger.debug("Helix credential sync from state manager: %s", e)
+
+        self._apply_api_credentials_from_store()
+
     def load_auth_data(self):
         """Load authentication data from the state manager"""
         try:
@@ -330,19 +390,16 @@ class Twitch_API:
                         self.token_expiry = None
 
                 # Check if we have valid tokens
-                if self.auth_token and self.refresh_token:
-                    logger.debug("Successfully loaded Twitch authentication data")
-                    return True
-                else:
-                    logger.info(
-                        "Missing auth token or refresh token in state data - will need to authenticate"
-                    )
-                    return False
-            else:
-                logger.info(
-                    "No Twitch authentication data found - will need to authenticate"
-                )
-                return False
+            # Client id/secret often live only in api_credentials.json, not TwitchData
+            self._apply_api_credentials_from_store()
+
+            if self.auth_token and self.refresh_token:
+                logger.debug("Successfully loaded Twitch authentication data")
+                return True
+            logger.info(
+                "Missing auth token or refresh token in state data - will need to authenticate"
+            )
+            return False
         except Exception as e:
             logger.error(
                 f"Error loading Twitch authentication data: {str(e)}", exc_info=True
@@ -414,8 +471,11 @@ class Twitch_API:
 
     def is_token_expired(self):
         """Check if the current auth token is expired"""
-        if not self.token_expiry:
+        if not self.auth_token:
             return True
+        if not self.token_expiry:
+            # Unknown expiry — use token until Helix returns 401
+            return False
         # Consider token expired if less than 5 minutes remaining
         return datetime.now() + timedelta(minutes=5) >= self.token_expiry
 
@@ -449,6 +509,13 @@ class Twitch_API:
             self._last_refresh_attempt = now
 
             logger.info("Refreshing authentication token")
+
+            self.sync_helix_credentials_from_state()
+            if not self.client_id or not self.client_secret:
+                logger.warning(
+                    "Cannot refresh Twitch token: client id/secret not configured"
+                )
+                return False
 
             # Check if we have a refresh token
             if not self.refresh_token:
@@ -524,26 +591,29 @@ class Twitch_API:
                 f"Successfully refreshed authentication token (old: {old_auth_token[:10]}..., new: {new_auth_token[:10]}...)"
             )
             return True
-        except Exception as e:
-            logger.error(
-                f"Failed to refresh authentication token: {str(e)}", exc_info=True
-            )
-
-            # If refresh completely failed, clear tokens to force re-authentication
-            self.auth_token = ""
-            self.refresh_token = ""
-            self.token_expiry = None
-
-            try:
-                self.save_auth_data()
-                # Also sync cleared state to state manager
-                self._sync_tokens_to_state_manager()
+        except InvalidRefreshTokenException as e:
+            err = str(e).lower()
+            if "client secret" in err or "client_id" in err:
                 logger.warning(
-                    "Cleared invalid tokens after refresh failure - OAuth re-authentication required"
+                    "Cannot refresh Twitch token (check client id/secret in Settings): %s",
+                    e,
                 )
-            except Exception as save_error:
-                logger.error(f"Failed to save cleared token state: {str(save_error)}")
-
+                return False
+            logger.warning("Twitch refresh token invalid: %s", e)
+            self._clear_tokens_after_refresh_failure()
+            return False
+        except Exception as e:
+            err = str(e).lower()
+            if "client secret" in err:
+                logger.warning(
+                    "Cannot refresh Twitch token (check client secret in Settings): %s",
+                    e,
+                )
+                return False
+            logger.error(
+                "Failed to refresh authentication token: %s", e, exc_info=True
+            )
+            self._clear_tokens_after_refresh_failure()
             return False
         finally:
             # Always release the lock
@@ -551,6 +621,20 @@ class Twitch_API:
                 self._refresh_lock.release()
             except:
                 pass  # Lock might already be released
+
+    def _clear_tokens_after_refresh_failure(self) -> None:
+        """Clear stored tokens after a failed refresh (invalid/revoked token)."""
+        self.auth_token = ""
+        self.refresh_token = ""
+        self.token_expiry = None
+        try:
+            self.save_auth_data()
+            self._sync_tokens_to_state_manager()
+            logger.warning(
+                "Cleared invalid tokens after refresh failure - OAuth re-authentication required"
+            )
+        except Exception as save_error:
+            logger.error("Failed to save cleared token state: %s", save_error)
 
     async def authenticate_with_oauth(self):
         """Handle the OAuth flow to get new authentication tokens"""
@@ -601,8 +685,9 @@ class Twitch_API:
         try:
             logger.debug("Staging Twitch API connection")
 
-            # Try to load existing auth data from database
+            # Load tokens from state + client id/secret from api_credentials.json
             auth_data_loaded = self.load_auth_data()
+            self.sync_helix_credentials_from_state()
 
             # Check if we have client credentials at minimum
             if not self.client_id or not self.client_secret:
@@ -841,20 +926,24 @@ class Twitch_API:
         # Process message through chatbot system
         try:
             chatbot_manager = get_chatbot_manager()
-            print(f"[CHATBOT] Processing message for commands: {message}")
+            logger.debug(
+                "Processing chat message for commands: %s",
+                safe_console_str(message),
+            )
             chatbot_response = chatbot_manager.process_chat_message(msg_dict)
 
             if chatbot_response:
                 response_message, command_name = chatbot_response
-                print(
-                    f"[CHATBOT] Command '{command_name}' triggered, response: {response_message}"
+                logger.debug(
+                    "Command '%s' triggered, response: %s",
+                    command_name,
+                    safe_console_str(response_message),
                 )
 
                 # Send chatbot response back to chat
                 try:
                     from .chatbot import send_chatbot_message
 
-                    print(f"[CHATBOT] Attempting to send response: {response_message}")
                     send_chatbot_message(response_message)
                     logger.debug(
                         f"Chatbot responded to command '{command_name}': {response_message}"
@@ -865,10 +954,12 @@ class Twitch_API:
                         f"Command '{command_name}' processed by {username}: {response_message}"
                     )
                 except Exception as send_error:
-                    print(f"[CHATBOT] ERROR sending response: {str(send_error)}")
                     logger.error(f"Error sending chatbot response: {str(send_error)}")
             else:
-                print(f"[CHATBOT] No command matched for message: {message}")
+                logger.debug(
+                    "No command matched for message: %s",
+                    safe_console_str(message),
+                )
                 try:
                     from .giveaway_manager import get_giveaway_manager
 
@@ -891,25 +982,20 @@ class Twitch_API:
                 )
 
                 if chatbot_response:
-                    print(
-                        f"[CHATBOT] Chat message event triggered, response: {chatbot_response}"
+                    logger.debug(
+                        "Chat message event triggered, response: %s",
+                        safe_console_str(chatbot_response),
                     )
 
                     # Send chatbot response back to chat
                     try:
                         from .chatbot import send_chatbot_message
 
-                        print(
-                            f"[CHATBOT] Attempting to send chat message event response: {chatbot_response}"
-                        )
                         send_chatbot_message(chatbot_response)
                         logger.debug(
                             f"Chatbot responded to chat message event: {chatbot_response}"
                         )
                     except Exception as send_error:
-                        print(
-                            f"[CHATBOT] ERROR sending chat message event response: {str(send_error)}"
-                        )
                         logger.error(
                             f"Error sending chatbot chat message event response: {str(send_error)}"
                         )
@@ -1530,28 +1616,38 @@ class Twitch_API:
             alert_id=alert.alert_id,
         )
 
-    async def on_new_sub(self, data: ChannelSubscriptionMessageEvent):
-        """Handle new subscription events (first-time subscribers)"""
+    async def on_new_sub(self, data: ChannelSubscribeEvent):
+        """Handle channel.subscribe events (subs without a shared chat message)."""
+        if getattr(data.event, "is_gift", False):
+            logger.debug(
+                "Skipping channel.subscribe for gift recipient %s (handled via gift sub)",
+                data.event.user_name,
+            )
+            return
+
         logger.debug(f"New subscription from {data.event.user_name}")
 
         username = data.event.user_name
         tier_str = str(data.event.tier)
         tier = int(tier_str[:-3]) if tier_str else 1  # Default to 1 if tier is weird
-        user_msg = data.event.message.text if data.event.message else None
+        sub_message = getattr(data.event, "message", None)
+        user_msg = getattr(sub_message, "text", None) if sub_message else None
         current_timestamp = time.time()
 
         # Handle as new subscription
         logger.debug(f"Processing as new sub: {username}")
         alert = alertutils.fetch_sub_alert(1)
+        if alert is None:
+            logger.warning("No sub alert configured, using default for %s", username)
+            alert = alertutils.AlertObj()
+            alert.alert_type = "sub"
         alert.username = username
         alert.alert_type = "sub"
         alert.tier = tier
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
         alert.message = user_msg or ""  # Use empty string if None
-        alert.emotes = _subscription_message_emotes(
-            data.event.message if data.event.message else None
-        )
+        alert.emotes = _subscription_message_emotes(sub_message)
 
         alert_processor.ALERT_QUEUE.append(alert)
         # Store completed alert using AlertStateManager
@@ -1639,6 +1735,13 @@ class Twitch_API:
             f"Gift subscription from {data.event.user_name} for {data.event.total} months"
         )
         alert = alertutils.fetch_giftsub_alert(data.event.total)
+        if alert is None:
+            logger.warning(
+                "No giftsub alert configured for qty %s, using default",
+                data.event.total,
+            )
+            alert = alertutils.AlertObj()
+            alert.alert_type = "giftsub"
         gifter_name = (
             data.event.user_name if not data.event.is_anonymous else "Anonymous Gifter"
         )
@@ -2671,7 +2774,15 @@ class Twitch_API:
             try:
                 from .twitch_moderators import get_moderator_cache
 
-                await get_moderator_cache().refresh(force=True)
+                for _ in range(20):
+                    if is_twitch_api_ready():
+                        await get_moderator_cache().refresh(force=True)
+                        break
+                    await asyncio.sleep(0.25)
+                else:
+                    logger.debug(
+                        "Moderator cache refresh deferred: Twitch HTTP session not ready"
+                    )
             except Exception as mod_err:
                 logger.debug("Moderator cache refresh on connect: %s", mod_err)
 
@@ -2835,26 +2946,34 @@ class Twitch_API:
             f"Attempting generic API call: {method.upper()} {url} with params={params}, json_data={json_data}"
         )
 
-        # Check if we have basic auth credentials
+        # Helix proxy may run on another thread before this instance was updated
+        self.sync_helix_credentials_from_state()
+
         if not self.auth_token or not self.client_id:
             logger.debug("Missing auth tokens, attempting to load from database")
-            # Try to load existing auth data first
             auth_loaded = self.load_auth_data()
             if not auth_loaded or not self.auth_token or not self.client_id:
-                logger.error(
+                logger.warning(
                     "No valid authentication credentials available for API call"
                 )
                 raise Exception("Authentication required - no valid tokens available")
 
-        # Check if token is expired and refresh if needed
+        # Proactive refresh only when we know expiry and have client secret for refresh
         if self.is_token_expired():
-            logger.info("Token expired, attempting refresh for generic API call")
-            refresh_success = await self.refresh_auth_token()
-            if not refresh_success:
-                logger.error("Token refresh failed for API call")
-                raise Exception("Authentication required - token refresh failed")
+            if not self.client_secret:
+                self._apply_api_credentials_from_store()
+            if self.client_secret:
+                logger.info("Token expired, attempting refresh for generic API call")
+                refresh_success = await self.refresh_auth_token()
+                if not refresh_success:
+                    logger.warning("Token refresh failed for API call")
+                    raise Exception("Authentication required - token refresh failed")
+            else:
+                logger.warning(
+                    "Token appears expired but client secret not configured — "
+                    "set Twitch API credentials in Settings"
+                )
 
-        # Verify we have the basic authentication requirements
         if not self.auth_token:
             logger.warning("No auth token available for API call")
             raise Exception("Authentication token missing - authentication required")
@@ -2868,37 +2987,7 @@ class Twitch_API:
         if json_data is not None:
             headers["Content-Type"] = "application/json"
 
-        # Use the existing Twitch session from the authenticated instance
-        session_to_use = None
-        close_session_after = False
-
-        try:
-            # Always try to use the existing session from the authenticated Twitch object
-            if (
-                self.twitch
-                and hasattr(self.twitch, "_Twitch__session")
-                and self.twitch._Twitch__session
-            ):
-                session_to_use = self.twitch._Twitch__session
-                logger.debug("Using existing authenticated Twitch session for API call")
-            else:
-                # Helix may run before twitchAPI opens its persistent session (e.g. moderator cache on connect).
-                if self.auth_token and self.client_id:
-                    logger.debug(
-                        "Twitch HTTP session not open yet; using ephemeral session for Helix call"
-                    )
-                    session_to_use = aiohttp.ClientSession()
-                    close_session_after = True
-                elif self.twitch:
-                    raise TwitchSessionNotReadyError("Twitch API session not ready")
-                else:
-                    logger.debug(
-                        "Twitch library client not initialized; "
-                        "using ephemeral session for Helix API call"
-                    )
-                    session_to_use = aiohttp.ClientSession()
-                    close_session_after = True
-
+        async def _perform_request(session_to_use: aiohttp.ClientSession) -> dict:
             # Make the API call
             async with session_to_use.request(
                 method.upper(),
@@ -3010,6 +3099,28 @@ class Twitch_API:
                             f"Twitch API Error {response.status}: {response_data}"
                         )
 
+        try:
+            if (
+                self.twitch
+                and hasattr(self.twitch, "_Twitch__session")
+                and self.twitch._Twitch__session
+            ):
+                logger.debug("Using existing authenticated Twitch session for API call")
+                return await _perform_request(self.twitch._Twitch__session)
+            if self.auth_token and self.client_id:
+                logger.debug(
+                    "Twitch HTTP session not open yet; using ephemeral session for Helix call"
+                )
+                async with _ephemeral_client_session() as session:
+                    return await _perform_request(session)
+            if self.twitch:
+                raise TwitchSessionNotReadyError("Twitch API session not ready")
+            logger.debug(
+                "Twitch library client not initialized; "
+                "using ephemeral session for Helix API call"
+            )
+            async with _ephemeral_client_session() as session:
+                return await _perform_request(session)
         except TwitchSessionNotReadyError:
             raise
         except aiohttp.ClientError as e:
@@ -3017,7 +3128,7 @@ class Twitch_API:
                 f"aiohttp.ClientError during generic API call to {url}: {str(e)}",
                 exc_info=True,
             )
-            raise Exception(f"Network error during API call: {str(e)}")
+            raise Exception(f"Network error during API call: {str(e)}") from e
         except Exception as e:
             if isinstance(e, TwitchSessionNotReadyError):
                 raise
@@ -3025,14 +3136,6 @@ class Twitch_API:
                 f"Error during generic API call to {url}: {str(e)}", exc_info=True
             )
             raise
-        finally:
-            # Only close temporary session if we created one
-            if close_session_after and session_to_use:
-                try:
-                    await session_to_use.close()
-                    logger.debug("Closed temporary session")
-                except Exception as e:
-                    logger.warning(f"Error closing temporary session: {str(e)}")
 
     def stop_connection(self):
         """Stop the current Twitch connection cleanly"""
@@ -3237,27 +3340,11 @@ async def get_point_rewards_async():
 
 def fetch_channel_point_rewards():
     """Sync: structured result for UI (rewards list only when status is ok)."""
-    import concurrent.futures
-
     if not twitch_api or not twitch_api.is_connected:
         return {"rewards": None, "status": "not_connected"}
 
-    def run_async():
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(_fetch_channel_point_rewards_async())
-            finally:
-                loop.close()
-        except Exception as e:
-            logger.error(f"Error in async thread: {str(e)}")
-            return (None, "error")
-
     try:
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            rewards, status = future.result(timeout=10)
+        rewards, status = asyncio.run(_fetch_channel_point_rewards_async())
     except Exception as e:
         logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
         return {"rewards": None, "status": "error"}
@@ -3278,8 +3365,6 @@ def get_point_rewards():
 def get_point_reward_by_id(reward_id: str):
     """Get a specific point reward by ID from Twitch API"""
     try:
-        import concurrent.futures
-
         if not twitch_api or not twitch_api.is_connected:
             logger.error("Twitch API not connected")
             return None
@@ -3307,21 +3392,7 @@ def get_point_reward_by_id(reward_id: str):
                 logger.error(f"Point reward {reward_id} not found")
                 return None
 
-        def run_async():
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(get_reward_async())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error in async thread: {str(e)}")
-                return None
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            return future.result(timeout=10)  # 10 second timeout
+        return asyncio.run(get_reward_async())
 
     except Exception as e:
         logger.error(f"Error getting point reward {reward_id}: {str(e)}", exc_info=True)
@@ -3331,8 +3402,6 @@ def get_point_reward_by_id(reward_id: str):
 def create_point_reward(reward_data: dict):
     """Create a new point reward on Twitch"""
     try:
-        import concurrent.futures
-
         if not twitch_api or not twitch_api.is_connected:
             logger.error("Twitch API not connected")
             return None
@@ -3353,21 +3422,7 @@ def create_point_reward(reward_data: dict):
                 logger.error("Failed to create point reward")
                 return None
 
-        def run_async():
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(create_reward_async())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error in async thread: {str(e)}")
-                return None
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            return future.result(timeout=10)  # 10 second timeout
+        return asyncio.run(create_reward_async())
 
     except Exception as e:
         logger.error(f"Error creating point reward: {str(e)}", exc_info=True)
@@ -3377,8 +3432,6 @@ def create_point_reward(reward_data: dict):
 def update_point_reward(reward_id: str, reward_data: dict):
     """Update an existing point reward on Twitch"""
     try:
-        import concurrent.futures
-
         if not twitch_api or not twitch_api.is_connected:
             logger.error("Twitch API not connected")
             return False
@@ -3395,21 +3448,7 @@ def update_point_reward(reward_id: str, reward_data: dict):
             )
             return response is not None
 
-        def run_async():
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(update_reward_async())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error in async thread: {str(e)}")
-                return False
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            return future.result(timeout=10)  # 10 second timeout
+        return asyncio.run(update_reward_async())
 
     except Exception as e:
         logger.error(
@@ -3421,8 +3460,6 @@ def update_point_reward(reward_id: str, reward_data: dict):
 def delete_point_reward(reward_id: str):
     """Delete a point reward from Twitch"""
     try:
-        import concurrent.futures
-
         if not twitch_api or not twitch_api.is_connected:
             logger.error("Twitch API not connected")
             return False
@@ -3434,21 +3471,7 @@ def delete_point_reward(reward_id: str):
             response = await twitch_api.generic_api_call(url, "DELETE")
             return response is not None
 
-        def run_async():
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(delete_reward_async())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error in async thread: {str(e)}")
-                return False
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            return future.result(timeout=10)  # 10 second timeout
+        return asyncio.run(delete_reward_async())
 
     except Exception as e:
         logger.error(
@@ -3547,7 +3570,6 @@ def initialize() -> None:
         # alert_init_thread.daemon = True
         # alert_init_thread.start()
 
-        # Create a new thread for the async initialization
         init_thread = threading.Thread(
             target=lambda: asyncio.run(twitch_api.intialize_twitch_api())
         )
@@ -3580,10 +3602,11 @@ def can_proxy_helix_api_requests() -> bool:
     api = twitch_api
     if api is None:
         return False
-    if api.auth_token and api.client_id:
-        return True
     try:
-        return bool(api.load_auth_data() and api.auth_token and api.client_id)
+        api.sync_helix_credentials_from_state()
+        if not (api.auth_token and api.client_id):
+            api.load_auth_data()
+        return bool(api.auth_token and api.client_id)
     except Exception:
         return False
 

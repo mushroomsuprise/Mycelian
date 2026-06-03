@@ -500,8 +500,7 @@ def initialize_tab_values(tab_name):
         alert_settings_state.set_current_tab(alert_type)
         logger.debug(f"Current tab set to: {alert_settings_state.current_tab}")
 
-        # Reload alert data from Firebase to ensure we have the latest
-        alertutils.alert_state_manager.reload_from_firebase()
+        refresh_alert_dropdowns()
 
         # Store current values for the tab
         store_original_values(alert_type)
@@ -2797,10 +2796,6 @@ def save_alert(alert_type: str):
                     == "new"
                     or selected_value == alertutils.AlertSettings.FALLBACK_ALERT_ID
                 ):
-                    # Force a refresh of the alert list
-                    alertutils.alert_state_manager.reload_from_firebase()
-
-                    # Get alerts for this type (fresh from Firebase)
                     alerts = get_alerts_for_type(alert_type)
                     if alerts or alert_type == "subs":
                         # Create updated options
@@ -4740,9 +4735,6 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
 
             # Update the dropdown to remove the deleted alert
             try:
-                # Reload alerts from Firebase to get updated list
-                alertutils.alert_state_manager.reload_from_firebase()
-
                 if alert_type == "points":
                     load_twitch_point_rewards()
                     alert_settings_state.get_elements(alert_type)[

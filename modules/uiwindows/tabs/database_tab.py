@@ -80,7 +80,7 @@ class DatabaseViewer:
         """Load a complete snapshot of the database"""
         try:
             self.snapshot = database_manager.get_snapshot()
-            self.all_paths = database_manager.get_all_paths()
+            self.all_paths = database_manager.get_paths_from_snapshot(self.snapshot)
             logger.info(f"Database snapshot loaded: {len(self.all_paths)} paths found")
         except Exception as e:
             logger.error(f"Error loading database snapshot: {e}", exc_info=True)
@@ -99,8 +99,8 @@ class DatabaseViewer:
             with ui.row().classes("items-center gap-3"):
                 ui.icon("storage", size="md").classes("text-theme-primary")
                 ui.label("Database Explorer").classes("text-xl font-bold")
-                db_status = database_manager.get_connection_status()
-                db_type = db_status.get("database_type", "Unknown")
+                cfg = database_manager.get_config()
+                db_type = (cfg.database_type if cfg else "unknown").title()
                 ui.badge(db_type, color="primary").classes("ml-2")
 
             with ui.row().classes("gap-2"):

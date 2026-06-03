@@ -989,31 +989,9 @@ class Chatbot_API:
         if json_data is not None:
             headers["Content-Type"] = "application/json"
 
-        # Use the existing Twitch session from the authenticated instance
-        session_to_use = None
-        close_session_after = False
+        import aiohttp
 
-        try:
-            # Always try to use the existing session from the authenticated Twitch object
-            if (
-                self.twitch
-                and hasattr(self.twitch, "_Twitch__session")
-                and getattr(self.twitch, "_Twitch__session", None)
-            ):
-                session_to_use = getattr(self.twitch, "_Twitch__session")
-                logger.debug(
-                    "Using existing authenticated chatbot Twitch session for API call"
-                )
-            else:
-                # Only create a temporary session as a last resort
-                logger.warning(
-                    "No existing chatbot Twitch session available, creating temporary session"
-                )
-                import aiohttp
-
-                session_to_use = aiohttp.ClientSession()
-                close_session_after = True
-
+        async def _perform_request(session_to_use: aiohttp.ClientSession) -> dict:
             # Make the API call
             async with session_to_use.request(
                 method.upper(),
@@ -1107,27 +1085,46 @@ class Chatbot_API:
                             f"Twitch API Error {response.status}: {response_data}"
                         )
 
+        try:
+            if (
+                self.twitch
+                and hasattr(self.twitch, "_Twitch__session")
+                and getattr(self.twitch, "_Twitch__session", None)
+            ):
+                logger.debug(
+                    "Using existing authenticated chatbot Twitch session for API call"
+                )
+                return await _perform_request(
+                    getattr(self.twitch, "_Twitch__session")
+                )
+            if self.auth_token and self.client_id:
+                logger.debug(
+                    "Chatbot Twitch HTTP session not open yet; using ephemeral session for Helix call"
+                )
+                from .twitch import _ephemeral_client_session
+
+                async with _ephemeral_client_session() as session:
+                    return await _perform_request(session)
+            logger.debug(
+                "Chatbot library client not initialized; "
+                "using ephemeral session for Helix API call"
+            )
+            from .twitch import _ephemeral_client_session
+
+            async with _ephemeral_client_session() as session:
+                return await _perform_request(session)
         except aiohttp.ClientError as e:
             logger.error(
                 f"aiohttp.ClientError during chatbot generic API call to {url}: {str(e)}",
                 exc_info=True,
             )
-            raise Exception(f"Network error during chatbot API call: {str(e)}")
+            raise Exception(f"Network error during chatbot API call: {str(e)}") from e
         except Exception as e:
             logger.error(
                 f"Error during chatbot generic API call to {url}: {str(e)}",
                 exc_info=True,
             )
-            # Re-raise the exception to be handled by the caller
             raise
-        finally:
-            # Only close temporary session if we created one
-            if close_session_after and session_to_use:
-                try:
-                    await session_to_use.close()
-                    logger.debug("Closed temporary chatbot session")
-                except Exception as e:
-                    logger.warning(f"Error closing temporary chatbot session: {str(e)}")
 
     def get_connection_status(self):
         """Get current chatbot connection status for UI display"""

@@ -912,10 +912,8 @@ class UpdateManager:
             result_holder: Dict[str, Any] = {"completed": False, "update_info": None, "error": None}
 
             def worker():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
                 try:
-                    result_holder["update_info"] = loop.run_until_complete(
+                    result_holder["update_info"] = asyncio.run(
                         check_for_updates(
                             current_app_version, force_refresh=manual
                         )
@@ -924,10 +922,6 @@ class UpdateManager:
                     logger.error(f"UpdateManager: error in async check: {e}", exc_info=True)
                     result_holder["error"] = str(e)
                 finally:
-                    try:
-                        loop.close()
-                    except Exception:
-                        pass
                     result_holder["completed"] = True
 
             import threading
@@ -1104,17 +1098,16 @@ class UpdateManager:
                 "done": False,
             }
 
-            def worker():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    def progress_cb(fraction: float, speed_bps: float) -> None:
-                        download_state["progress"] = max(0.0, min(1.0, float(fraction)))
-                        download_state["speed_bps"] = float(speed_bps or 0.0)
+            async def _download():
+                def progress_cb(fraction: float, speed_bps: float) -> None:
+                    download_state["progress"] = max(0.0, min(1.0, float(fraction)))
+                    download_state["speed_bps"] = float(speed_bps or 0.0)
 
-                    path = loop.run_until_complete(
-                        download_update_with_metrics(download_url, progress_cb)
-                    )
+                return await download_update_with_metrics(download_url, progress_cb)
+
+            def worker():
+                try:
+                    path = asyncio.run(_download())
                     if path:
                         temp_files.append(path)
                         temp_dir = os.path.dirname(path)
@@ -1134,10 +1127,6 @@ class UpdateManager:
                     download_state["status"] = "failed"
                     download_state["error"] = str(e)
                 finally:
-                    try:
-                        loop.close()
-                    except Exception:
-                        pass
                     download_state["done"] = True
 
             def poll_update():
