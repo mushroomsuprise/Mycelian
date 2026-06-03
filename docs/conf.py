@@ -46,7 +46,7 @@ project = 'Mycelian'
 project_copyright = '2024, Mycelian'
 copyright = project_copyright  # noqa: A001 - Sphinx requires this variable name
 author = 'mushroomsuprise'
-release = '1.9.10'
+release = '1.9.11'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
