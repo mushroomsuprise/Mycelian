@@ -259,5 +259,61 @@
     "streamdeck_options": {
         "description": "",
         "actions": {}
-    }
+    },
+    "preview_mocks": [
+        {
+            "event": "instant_alert",
+            "label": "Random instant alert"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Follow",
+            "alert_type": "follow"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Sub",
+            "alert_type": "sub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Resub",
+            "alert_type": "resub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Gift sub",
+            "alert_type": "giftsub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Bits",
+            "alert_type": "bit"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Raid",
+            "alert_type": "raid"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Donation",
+            "alert_type": "donation"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Points",
+            "alert_type": "point"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Streak",
+            "alert_type": "streak"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Hype train",
+            "alert_type": "hype_train"
+        }
+    ]
 }

@@ -21,9 +21,25 @@ from __future__ import annotations
 import logging
 import random
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Canonical alert types for per-type preview toolbar buttons.
+_PREVIEW_ALERT_TYPES: Tuple[Tuple[str, str], ...] = (
+    ("follow", "Follow"),
+    ("sub", "Sub"),
+    ("resub", "Resub"),
+    ("giftsub", "Gift sub"),
+    ("bit", "Bits"),
+    ("raid", "Raid"),
+    ("donation", "Donation"),
+    ("point", "Points"),
+    ("streak", "Streak"),
+    ("hype_train", "Hype train"),
+)
+
+_ALERT_SOCKET_EVENTS = frozenset({"next_alert", "instant_alert"})
 
 
 _FALLBACK_POOLS: Dict[str, Any] = {
@@ -94,6 +110,89 @@ def _connector_chat_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
         "text": msg,
         "is_moderator": random.random() < 0.2,
     }
+
+
+def _random_tier() -> str:
+    return random.choice(("1000", "2000", "3000"))
+
+
+def _typed_alert_fields(alert_type: str) -> Dict[str, Any]:
+    """Type-specific fields for a mock alert payload (no username/timestamp)."""
+    at = (alert_type or "follow").strip().lower()
+    if at == "follow":
+        return {}
+    if at == "sub":
+        return {"tier": _random_tier()}
+    if at == "resub":
+        return {
+            "tier": _random_tier(),
+            "cumulative_months": random.randint(2, 48),
+            "message": random.choice(
+                ("Thanks for sticking around!", "Month streak!", "Still here!")
+            ),
+        }
+    if at == "giftsub":
+        return {"tier": _random_tier(), "gift_qty": random.randint(1, 10)}
+    if at == "bit":
+        return {
+            "amt_cheered": random.randint(1, 10_000),
+            "message": random.choice(
+                ("Cheer preview!", "PogChamp", "Take my bits!")
+            ),
+        }
+    if at == "raid":
+        return {"raider_count": random.randint(2, 200)}
+    if at == "donation":
+        return {
+            "amount": round(random.uniform(1.0, 100.0), 2),
+            "currency": random.choice(("USD", "EUR", "GBP")),
+            "message": "Thanks for the support!",
+        }
+    if at == "point":
+        return {
+            "alert_name": random.choice(
+                ("Hydrate", "Sound alert", "Highlight message")
+            ),
+            "message": "Channel point redemption preview",
+        }
+    if at == "streak":
+        return {
+            "streak_count": random.randint(2, 12),
+            "channel_points_awarded": random.randint(0, 500),
+        }
+    if at == "hype_train":
+        return {
+            "level": random.randint(1, 5),
+            "total": random.randint(10, 500),
+        }
+    return {}
+
+
+def build_typed_alert_payload(
+    alert_system: str,
+    alert_type: str,
+    pools: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Build a single alert mock with a fixed ``alert_type`` and realistic fields.
+    """
+    pools = pools if pools is not None else _demo_pools()
+    at = (alert_type or "follow").strip().lower()
+    payload: Dict[str, Any] = {
+        "alert_type": at,
+        "username": random.choice(pools["usernames"]),
+        "duration": 5,
+        "timestamp": time.time(),
+    }
+    payload.update(_typed_alert_fields(at))
+    if str(alert_system or "queue").strip().lower() == "queue":
+        try:
+            from .. import web_engine as _we
+
+            payload["queue_seq"] = _we.assign_next_alert_queue_seq()
+        except Exception:
+            payload.setdefault("queue_seq", 1)
+    return payload
 
 
 def _next_alert_queue_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
@@ -319,27 +418,131 @@ _BUILDERS: Dict[str, Tuple[str, Any]] = {
 
 def build_mock_payload(
     event_name: str,
+    *,
+    alert_type: Optional[str] = None,
 ) -> Optional[Tuple[str, Any]]:
     """
     Return ``(socket_event, payload)`` for a one-shot mock emit, or
     ``None`` when ``event_name`` has no registered builder. Logged at
     debug level so a missing builder is easy to diagnose without
     spamming production logs.
+
+    When ``alert_type`` is set and ``event_name`` is ``next_alert`` or
+    ``instant_alert``, emits a typed alert mock instead of a random preset.
     """
-    spec = _BUILDERS.get(event_name)
+    pools = _demo_pools()
+    ev = str(event_name or "").strip()
+    if alert_type and ev in _ALERT_SOCKET_EVENTS:
+        try:
+            system = "queue" if ev == "next_alert" else "instant"
+            body = build_typed_alert_payload(system, alert_type, pools)
+            return ev, body
+        except Exception as e:  # pragma: no cover
+            logger.warning(
+                "Typed alert mock for %s/%s raised %s: %s",
+                ev, alert_type, type(e).__name__, e,
+            )
+            return None
+    spec = _BUILDERS.get(ev)
     if spec is None:
-        logger.debug("No mock builder registered for event %r", event_name)
+        logger.debug("No mock builder registered for event %r", ev)
         return None
     socket_event, builder = spec
     try:
-        payload = builder(_demo_pools())
+        payload = builder(pools)
     except Exception as e:  # pragma: no cover - builder bugs surface in dev
         logger.warning(
             "Mock builder for %s raised %s: %s",
-            event_name, type(e).__name__, e,
+            ev, type(e).__name__, e,
         )
         return None
     return socket_event, payload
+
+
+def _collect_bound_events(model: Dict[str, Any]) -> List[str]:
+    """Unique socket event names referenced by bindings, counters, refresh_on."""
+    found: List[str] = []
+    seen: set[str] = set()
+
+    def add(ev: Any) -> None:
+        if not ev or not isinstance(ev, str):
+            return
+        name = ev.strip()
+        if not name or name in seen:
+            return
+        seen.add(name)
+        found.append(name)
+
+    for element in model.get("elements") or []:
+        if not isinstance(element, dict):
+            continue
+        for binding in element.get("bindings") or []:
+            if isinstance(binding, dict):
+                add(binding.get("event"))
+        counter = element.get("counter")
+        if isinstance(counter, dict):
+            for rule in counter.get("rules") or []:
+                if isinstance(rule, dict):
+                    add(rule.get("event"))
+        dd = element.get("data_display")
+        if isinstance(dd, dict):
+            for ev in dd.get("refresh_on") or []:
+                add(ev)
+    return found
+
+
+def _registry_event_label(event_name: str) -> str:
+    try:
+        from . import event_registry as _er
+
+        row = _er.get_event(event_name)
+        if row.get("label"):
+            return str(row["label"])
+    except Exception:
+        pass
+    return event_name.replace("_", " ").replace("-", " ").title()
+
+
+def derive_preview_mocks(model: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Build the ``preview_mocks`` list persisted in ``template_configs/*.json``
+    and shown in Spore Studio / Custom Sources preview toolbars.
+    """
+    if not isinstance(model, dict):
+        return []
+    alert_system = str(model.get("alert_system") or "queue").strip().lower()
+    if alert_system not in ("queue", "instant"):
+        alert_system = "queue"
+    primary = "next_alert" if alert_system == "queue" else "instant_alert"
+    generic_label = (
+        "Random queue alert" if primary == "next_alert" else "Random instant alert"
+    )
+
+    actions: List[Dict[str, Any]] = [
+        {"event": primary, "label": generic_label},
+    ]
+    for at_key, at_label in _PREVIEW_ALERT_TYPES:
+        actions.append(
+            {
+                "event": primary,
+                "label": at_label,
+                "alert_type": at_key,
+            }
+        )
+
+    bound = _collect_bound_events(model)
+    for ev in bound:
+        if ev in _ALERT_SOCKET_EVENTS:
+            continue
+        if ev == "subbar_instant_alert":
+            continue
+        actions.append(
+            {
+                "event": ev,
+                "label": _registry_event_label(ev),
+            }
+        )
+    return actions
 
 
 def supported_events() -> Tuple[str, ...]:

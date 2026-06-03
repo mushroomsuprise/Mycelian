@@ -292,8 +292,30 @@
         if (state.model && !state.model.legacy) {
             syncDurationWithLayout(state.model);
             refreshDurationCanvasUi();
+            schedulePreviewMocksRefresh();
         }
         schedulePreviewDraft();
+    }
+
+    var previewMocksTimer = null;
+    function schedulePreviewMocksRefresh() {
+        if (!state.model || state.model.legacy) { return; }
+        clearTimeout(previewMocksTimer);
+        previewMocksTimer = setTimeout(function () {
+            previewMocksTimer = null;
+            fetch("/api/spore-studio/preview/mocks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: state.model })
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!state.model || !data || !data.preview_mocks) { return; }
+                    state.model.preview_mocks = data.preview_mocks;
+                    renderPreviewMockToolbar();
+                })
+                .catch(function () { /* best-effort */ });
+        }, 400);
     }
 
     var previewDraftTimer = null;
@@ -4529,64 +4551,114 @@
         else { openPreviewDialog(); }
     }
 
+    function _isAlertPreviewMock(act) {
+        return act && (act.event === "next_alert" || act.event === "instant_alert");
+    }
+
+    function _emitPreviewMock(act) {
+        var body = {
+            token: state.previewToken,
+            event: act.event
+        };
+        if (act.alert_type) {
+            body.alert_type = act.alert_type;
+        }
+        fetch("/api/spore-studio/preview/emit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        })
+            .then(function (r) {
+                return r.json().then(function (data) {
+                    return { ok: r.ok, data: data };
+                });
+            })
+            .then(function (res) {
+                if (!res.ok) {
+                    toast(
+                        (res.data && res.data.error) || "Mock emit failed",
+                        "error"
+                    );
+                }
+            })
+            .catch(function () {
+                toast("Mock emit failed", "error");
+            });
+    }
+
+    function _appendPreviewMockButtons(host, actions) {
+        (actions || []).forEach(function (act) {
+            var btn = document.createElement("button");
+            btn.className = "ss-btn ss-btn--ghost";
+            btn.textContent = act.label || act.event;
+            var title = "Emit mock '" + act.event + "'";
+            if (act.alert_type) {
+                title += " (" + act.alert_type + ")";
+            }
+            btn.title = title + " over the preview socket";
+            btn.addEventListener("click", function () {
+                _emitPreviewMock(act);
+            });
+            host.appendChild(btn);
+        });
+    }
+
     /**
-     * Build a row of "Emit mock <event>" buttons inside the preview
-     * dialog. Each button POSTs to /api/spore-studio/preview/emit and
-     * the server pushes one mock socket event into the iframe's sid.
-     * Re-rendered whenever the events registry loads (init flow) so
-     * the toolbar reflects exactly the events the binding picker can
-     * attach actions to.
+     * Build mock emit buttons in the preview dialog from ``preview_mocks``
+     * (Spore templates) or the full event registry (legacy templates).
      */
     function renderPreviewMockToolbar() {
         var host = $("#ss-preview-mocks");
         if (!host) { return; }
         host.innerHTML = "";
-        var events = state.registry.events || [];
-        if (events.length === 0) {
+
+        var mocks = (state.model && state.model.preview_mocks) || [];
+        if (state.model && !state.model.legacy && mocks.length) {
+            var alertMocks = mocks.filter(_isAlertPreviewMock);
+            var otherMocks = mocks.filter(function (a) {
+                return !_isAlertPreviewMock(a);
+            });
+            if (alertMocks.length) {
+                var aLab = document.createElement("span");
+                aLab.className = "ss-mocktools-empty";
+                aLab.textContent = "Alerts:";
+                host.appendChild(aLab);
+                _appendPreviewMockButtons(host, alertMocks);
+            }
+            if (otherMocks.length) {
+                var oLab = document.createElement("span");
+                oLab.className = "ss-mocktools-empty";
+                oLab.textContent = "Other:";
+                host.appendChild(oLab);
+                _appendPreviewMockButtons(host, otherMocks);
+            }
+        } else if (state.model && state.model.legacy) {
+            var events = state.registry.events || [];
+            if (events.length === 0) {
+                var emptyLegacy = document.createElement("span");
+                emptyLegacy.className = "ss-mocktools-empty";
+                emptyLegacy.textContent = "Loading mock events…";
+                host.appendChild(emptyLegacy);
+            } else {
+                var label = document.createElement("span");
+                label.className = "ss-mocktools-empty";
+                label.textContent = "Mock:";
+                host.appendChild(label);
+                _appendPreviewMockButtons(host, events.map(function (ev) {
+                    return { event: ev.event, label: ev.label || ev.event };
+                }));
+            }
+        } else if (!state.model) {
             var empty = document.createElement("span");
             empty.className = "ss-mocktools-empty";
             empty.textContent = "Loading mock events…";
             host.appendChild(empty);
         } else {
-            var label = document.createElement("span");
-            label.className = "ss-mocktools-empty";
-            label.textContent = "Mock:";
-            host.appendChild(label);
-            events.forEach(function (ev) {
-                var btn = document.createElement("button");
-                btn.className = "ss-btn ss-btn--ghost";
-                btn.textContent = ev.label || ev.event;
-                btn.title = "Emit mock '" + ev.event +
-                    "' over the preview socket";
-                btn.addEventListener("click", function () {
-                    fetch("/api/spore-studio/preview/emit", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            token: state.previewToken,
-                            event: ev.event,
-                        }),
-                    })
-                        .then(function (r) {
-                            return r.json().then(function (data) {
-                                return { ok: r.ok, data: data };
-                            });
-                        })
-                        .then(function (res) {
-                            if (!res.ok) {
-                                toast(
-                                    (res.data && res.data.error) ||
-                                        "Mock emit failed",
-                                    "error"
-                                );
-                            }
-                        })
-                        .catch(function () {
-                            toast("Mock emit failed", "error");
-                        });
-                });
-                host.appendChild(btn);
-            });
+            var pending = document.createElement("span");
+            pending.className = "ss-mocktools-empty";
+            pending.textContent = "Loading mock events…";
+            host.appendChild(pending);
+            schedulePreviewMocksRefresh();
         }
         if (state.model && !state.model.legacy && state.model.streamdeck_options) {
             var ax = state.model.streamdeck_options.actions || {};
@@ -4907,6 +4979,7 @@
             state.model.alert_system = ev.target.value === "instant" ? "instant" : "queue";
             pushHistory();
             modelTouch();
+            renderPreviewMockToolbar();
         });
         $("#ss-template-title").addEventListener("change", function (ev) {
             if (!state.model) { return; }

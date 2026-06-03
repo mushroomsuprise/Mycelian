@@ -813,6 +813,11 @@ class WebEngine:
                 from .spore_studio import template_parser_back as _tpb
 
                 model = _tpb.parse_existing(template_name)
+                if isinstance(model, dict) and not model.get("legacy"):
+                    from .spore_studio import preview_mocks as _pm
+
+                    model = dict(model)
+                    model["preview_mocks"] = _pm.derive_preview_mocks(model)
                 return model, 200, {"Content-Type": "application/json"}
             except Exception as e:
                 logger.error("Spore Studio model endpoint error: %s", e)
@@ -1071,8 +1076,12 @@ class WebEngine:
                 custom = payload.get("data")
                 if custom is None:
                     custom = payload.get("payload")
+                alert_type = payload.get("alert_type")
                 ok, err, emitted = self.emit_preview_mock(
-                    str(token), str(event_name), custom
+                    str(token),
+                    str(event_name),
+                    custom,
+                    alert_type=alert_type,
                 )
                 if not ok:
                     code = 404 if err and "No preview iframe" in err else 400
@@ -1089,6 +1098,36 @@ class WebEngine:
             except Exception as e:
                 logger.error(
                     "Spore Studio preview emit error: %s", e, exc_info=True,
+                )
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route("/api/spore-studio/preview/mocks", methods=["POST"])
+        def spore_studio_preview_mocks():
+            """Derive preview toolbar actions from an in-memory editor model."""
+            try:
+                from .spore_studio import preview_mocks as _pm
+
+                payload = request.get_json(silent=True) or {}
+                model = payload.get("model")
+                if not isinstance(model, dict):
+                    return (
+                        {"error": "model object is required"},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                mocks = _pm.derive_preview_mocks(model)
+                return (
+                    {"preview_mocks": mocks},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    "Spore Studio preview mocks error: %s", e, exc_info=True,
                 )
                 return (
                     {"error": str(e)},
@@ -2599,6 +2638,8 @@ class WebEngine:
         token: str,
         event_name: str,
         custom: Optional[Any] = None,
+        *,
+        alert_type: Optional[str] = None,
     ) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         Emit one mock Socket.IO event to the preview iframe registered for
@@ -2621,7 +2662,10 @@ class WebEngine:
                 return True, None, str(event_name)
             from .spore_studio import preview_mocks as _pm
 
-            spec = _pm.build_mock_payload(str(event_name))
+            spec = _pm.build_mock_payload(
+                str(event_name),
+                alert_type=str(alert_type).strip() if alert_type else None,
+            )
             if spec is None:
                 return False, f"No mock payload defined for '{event_name}'.", None
             socket_event, body = spec

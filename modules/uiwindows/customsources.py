@@ -622,8 +622,7 @@ def _rebuild_preview_mock_toolbar(config_name: str) -> None:
     row.clear()
     st = load_template_preview_settings()
     row.visible = bool(st.get("show_mock_toolbar", True))
-    route = _effective_preview_route(config_name)
-    actions = get_mock_actions(route)
+    actions = get_mock_actions(config_name)
     with row:
         if not actions:
             ui.label("No mock events for this template.").classes(
@@ -633,14 +632,21 @@ def _rebuild_preview_mock_toolbar(config_name: str) -> None:
         for act in actions:
             ev = act["event"]
             label = act.get("label", ev)
+            alert_type = act.get("alert_type")
 
-            def _emit_mock(event_name: str = ev) -> None:
+            def _emit_mock(
+                event_name: str = ev,
+                mock_alert_type: Any = alert_type,
+            ) -> None:
                 eng = getattr(web_engine_module, "web_engine_instance", None)
                 if not eng or not getattr(eng, "is_running", False):
                     notify("Overlay server is not ready.", type="warning")
                     return
                 ok, err, _ = eng.emit_preview_mock(
-                    CUSTOM_SOURCES_PREVIEW_TOKEN, event_name, None
+                    CUSTOM_SOURCES_PREVIEW_TOKEN,
+                    event_name,
+                    None,
+                    alert_type=mock_alert_type,
                 )
                 if not ok:
                     notify(str(err or "Mock emit failed"), type="negative")

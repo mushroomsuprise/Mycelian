@@ -1288,12 +1288,15 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
 
     sdo = _sanitize_streamdeck_options(model.get("streamdeck_options"))
     _merge_streamdeck_binding_args_into_actions(model.get("elements") or [], sdo)
+    from .preview_mocks import derive_preview_mocks
+
     base: Dict[str, Any] = {
         "template_name": template_name,
         "spore_studio": True,
         "alert_system": str(model.get("alert_system") or "queue"),
         "elements": elements_out,
         "streamdeck_options": sdo,
+        "preview_mocks": derive_preview_mocks(model),
     }
     dc = model.get("dynamic_controls")
     if isinstance(dc, dict) and isinstance(dc.get("elements"), list) and dc["elements"]:

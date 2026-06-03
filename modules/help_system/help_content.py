@@ -3457,11 +3457,14 @@ Below the title bar:
 
 | Section | Purpose |
 |---------|---------|
-| **Mock:** | One button per registry event — emits a demo payload into the preview only |
+| **Alerts:** | Random queue/instant alert plus one button per alert type (follow, sub, bits, …) with realistic random fields |
+| **Other:** | Non-alert events referenced by bindings or counter rules on this template |
 | **SD:** | One button per Stream Deck action defined on this template |
 
 Click a mock button to fire a single socket event into the preview overlay. Payloads use the
-same shape as production events (demo usernames, alert presets, etc.).
+same shape as production events (demo usernames, alert presets, etc.). On **Save**, the
+generated ``template_configs/{name}.json`` includes a ``preview_mocks`` list used by the
+Custom Sources preview toolbar as well.
 
 > **Tip:** Build bindings in [Event Bindings & Actions](help:spore_studio_bindings), then verify
 > with mocks before adding the browser source to OBS.
