@@ -70,6 +70,12 @@ from .path_utils import (
 )
 from .psnapi import PSNData  # For type hinting if needed, and default object
 from .streamdeck_plugin_utils import enqueue_streamdeck_connector_event
+from .streamdeck_template_dispatch import (
+    coerce_streamdeck_action_data as _coerce_streamdeck_action_data,
+    merged_streamdeck_options_payload as _merged_streamdeck_options_payload,
+    plan_streamdeck_template_action_emit,
+    resolve_streamdeck_options_action as _resolve_streamdeck_options_action_fn,
+)
 from .template_config_parser import (
     TemplateConfigParser,
     resolve_dynamic_control_values_from_elements,
@@ -94,44 +100,6 @@ _ASSET_MEDIA_MIMETYPES = {
 def _mimetype_for_asset_filename(filename: str) -> Optional[str]:
     ext = os.path.splitext(filename)[1].lower()
     return _ASSET_MEDIA_MIMETYPES.get(ext)
-
-
-def _coerce_streamdeck_action_data(raw: Any) -> Dict[str, Any]:
-    """Normalize client ``actionData`` (dict or JSON string) to a plain dict."""
-    if raw is None:
-        return {}
-    if isinstance(raw, dict):
-        return dict(raw)
-    if isinstance(raw, str):
-        s = raw.strip()
-        if not s:
-            return {}
-        try:
-            parsed = json.loads(s)
-        except (json.JSONDecodeError, TypeError, ValueError):
-            return {}
-        if isinstance(parsed, dict):
-            return dict(parsed)
-        return {}
-    return {}
-
-
-def _merged_streamdeck_options_payload(
-    action_config: dict, raw_action_data: Any
-) -> Dict[str, Any]:
-    """
-    ``default_data`` from template ``streamdeck_options`` actions, overridden by
-    coerced client ``actionData``. Same merge semantics as
-    :meth:`WebEngine._execute_streamdeck_action`.
-    """
-    coerced = _coerce_streamdeck_action_data(raw_action_data)
-    dd = action_config.get("default_data", {})
-    if not isinstance(dd, dict):
-        dd = {}
-    merged: Dict[str, Any] = dict(dd)
-    if coerced:
-        merged.update(coerced)
-    return merged
 
 
 # Mock data pools shared with :mod:`spore_studio.preview_mocks` for manual
@@ -5283,34 +5251,15 @@ class WebEngine:
         ``template_action``: coerce payload, resolve ``streamdeck_options``,
         emit named event(s) with merged ``actionData``.
         """
-        coerced = _coerce_streamdeck_action_data(action_data_raw)
-        compat_key = action_name
-        merged_ad = coerced
-        resolved_event = event_name_req if event_name_req else action_name
-
-        if use_client_event_name:
-            self._emit_streamdeck_template_events(
-                template_name, compat_key, resolved_event, merged_ad
-            )
-            return compat_key, resolved_event
-
         cfg = self._load_streamdeck_template_config(template_name)
-        if cfg:
-            sdo = cfg.get("streamdeck_options")
-            if isinstance(sdo, dict):
-                acts = sdo.get("actions")
-                if isinstance(acts, dict):
-                    acfg, sd_key = self._resolve_streamdeck_options_action(
-                        acts, action_name
-                    )
-                    if acfg is not None:
-                        compat_key = sd_key or action_name
-                        merged_ad = _merged_streamdeck_options_payload(acfg, coerced)
-                        resolved_event = str(
-                            acfg.get("event")
-                            or f"{template_name}_{compat_key}"
-                        )
-
+        compat_key, resolved_event, merged_ad = plan_streamdeck_template_action_emit(
+            template_name=template_name,
+            action_name=action_name,
+            event_name_req=event_name_req,
+            action_data_raw=action_data_raw,
+            template_config=cfg if cfg else None,
+            use_client_event_name=use_client_event_name,
+        )
         self._emit_streamdeck_template_events(
             template_name, compat_key, resolved_event, merged_ad
         )
@@ -5319,40 +5268,8 @@ class WebEngine:
     def _resolve_streamdeck_options_action(
         self, streamdeck_actions: dict, action_name: str
     ) -> tuple:
-        """
-        Resolve ``streamdeck_options.actions`` entry by dict key or exact
-        display ``name`` match. Returns ``(action_config_dict_or_None, dict_key)``.
-        """
-        if not isinstance(streamdeck_actions, dict) or not action_name:
-            return None, None
-        if action_name in streamdeck_actions:
-            spec = streamdeck_actions[action_name]
-            return (spec if isinstance(spec, dict) else None), str(action_name)
-        an = str(action_name).strip()
-        for key, spec in streamdeck_actions.items():
-            if not isinstance(spec, dict):
-                continue
-            if str(spec.get("name") or "").strip() == an:
-                return spec, str(key)
-        # Physical Stream Deck keys may not match ``action_*`` ids (typos, older
-        # saves). Match the configured socket ``event`` string or a stable suffix
-        # (e.g. action id ``test_1`` vs event ``show_test_1``).
-        for key, spec in streamdeck_actions.items():
-            if not isinstance(spec, dict):
-                continue
-            ev_raw = spec.get("event")
-            if ev_raw is None:
-                continue
-            ev = str(ev_raw).strip()
-            if not ev:
-                continue
-            if ev == an:
-                return spec, str(key)
-            if ev.endswith("_" + an):
-                return spec, str(key)
-            if len(an) >= 5 and ev.endswith(an):
-                return spec, str(key)
-        return None, None
+        """Delegate to :func:`streamdeck_template_dispatch.resolve_streamdeck_options_action`."""
+        return _resolve_streamdeck_options_action_fn(streamdeck_actions, action_name)
 
     def _execute_streamdeck_action(
         self,

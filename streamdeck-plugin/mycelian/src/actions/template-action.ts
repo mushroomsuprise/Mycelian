@@ -47,10 +47,6 @@ export class TemplateAction extends SingletonAction<TemplateActionSettings> {
 				actionName: settings.selectedAction,
 				actionData: settings.actionData || {},
 			};
-			const resolvedEvent = settings.resolvedEvent?.trim();
-			if (resolvedEvent) {
-				requestData.eventName = resolvedEvent;
-			}
 
 			const response = await fetch(apiUrl(serverConfig, "/api/streamdeck/template_action"), {
 				method: 'POST',

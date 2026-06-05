@@ -645,20 +645,55 @@ html, body {
     font-size: 11px;
     padding: 2px 4px;
 }
+.ss-preview-dialog__zoom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    background: var(--ss-bg-input);
+    border-bottom: 1px solid var(--ss-border);
+    flex: 0 0 auto;
+}
+.ss-preview-dialog__zoom-label {
+    font-size: 11px;
+    color: var(--ss-text-muted);
+    flex: 0 0 auto;
+}
+.ss-preview-dialog__zoom-range {
+    flex: 1;
+    min-width: 80px;
+}
+.ss-preview-dialog__zoom-value {
+    font-size: 11px;
+    color: var(--ss-text-muted);
+    min-width: 36px;
+    text-align: right;
+    flex: 0 0 auto;
+}
 .ss-preview-dialog__body {
     flex: 1;
+    min-height: 0;
     background:
         linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%) 0 0 / 16px 16px,
         linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%) 8px 8px / 16px 16px;
-    overflow: hidden;
+    overflow: auto;
     position: relative;
 }
-.ss-preview-dialog__body iframe {
-    width: 100%;
-    height: 100%;
+.ss-preview-dialog__viewport {
+    position: relative;
+    flex: 0 0 auto;
+}
+.ss-preview-dialog__viewport iframe {
     border: 0;
     background: transparent;
     display: block;
+    transform-origin: top left;
+}
+.ss-preview-dialog--chrome-active .ss-preview-dialog__viewport iframe {
+    pointer-events: none;
+}
+.ss-preview-dialog--chrome-active {
+    user-select: none;
 }
 .ss-preview-dialog__resize {
     position: absolute;

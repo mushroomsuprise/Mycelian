@@ -147,6 +147,7 @@
         controlActions: { actions: [], control_types: [] },
         socket: null,
         previewToken: "",
+        previewZoomPct: 100,
         idCounter: 0,
         dirty: false,
         assetSnapshot: null,
@@ -3334,6 +3335,33 @@
         binding.filter = {};
     }
 
+    function streamdeckActionIdsUsedOnElement(el, exceptBinding) {
+        var used = {};
+        (el.bindings || []).forEach(function (b) {
+            if (b === exceptBinding) { return; }
+            if (bindingTrigger(b) === "streamdeck" && b.streamdeck_action) {
+                used[b.streamdeck_action] = true;
+            }
+        });
+        return used;
+    }
+
+    /** First unused Stream Deck action id on this element, else first defined action. */
+    function suggestStreamdeckActionForBinding(el, binding) {
+        if (!state.model || state.model.legacy) { return ""; }
+        ensureStreamdeckModel();
+        var acts = state.model.streamdeck_options.actions || {};
+        var keys = Object.keys(acts).sort();
+        if (!keys.length) { return ""; }
+        var aid = binding && binding.streamdeck_action;
+        if (aid && acts[aid]) { return aid; }
+        var used = streamdeckActionIdsUsedOnElement(el, binding);
+        for (var i = 0; i < keys.length; i++) {
+            if (!used[keys[i]]) { return keys[i]; }
+        }
+        return keys[0];
+    }
+
     function syncAllStreamdeckBindingsForAction(actionId) {
         if (!state.model || !actionId) { return; }
         (state.model.elements || []).forEach(function (el) {
@@ -3344,6 +3372,15 @@
                 }
             });
         });
+    }
+
+    function flushStreamdeckPanelInputs() {
+        var host = $("#ss-streamdeck-host");
+        if (!host) { return; }
+        var active = document.activeElement;
+        if (active && host.contains(active) && typeof active.blur === "function") {
+            active.blur();
+        }
     }
 
     function migrateStreamdeckActionId(oldId, newId) {
@@ -3394,6 +3431,27 @@
             "Overlays listen for the Socket event string. Bind elements on the Bindings tab using trigger Stream Deck."
         );
         host.appendChild(intro);
+
+        var eventsSeen = {};
+        var dupEvents = [];
+        Object.keys(sd.actions || {}).forEach(function (aid) {
+            var ev = String((sd.actions[aid] || {}).event || "").trim();
+            if (!ev) { return; }
+            if (eventsSeen[ev]) {
+                if (dupEvents.indexOf(ev) < 0) { dupEvents.push(ev); }
+            } else {
+                eventsSeen[ev] = true;
+            }
+        });
+        if (dupEvents.length) {
+            var dupWarn = document.createElement("p");
+            dupWarn.style.cssText = "color:#e6a700;font-size:11px;margin:0 0 8px;";
+            dupWarn.textContent = (
+                "Multiple actions share socket event(s): " + dupEvents.join(", ") + ". " +
+                "Bindings on that event will all fire when any of those actions is pressed."
+            );
+            host.appendChild(dupWarn);
+        }
 
         var descRow = document.createElement("div");
         descRow.className = "ss-form-row";
@@ -3488,11 +3546,14 @@
                 var nameIn = document.createElement("input");
                 nameIn.type = "text";
                 nameIn.value = spec.name || "";
-                nameIn.addEventListener("change", function () {
+                function syncStreamdeckDisplayName() {
                     spec.name = nameIn.value;
+                    t.textContent = spec.name || aid;
                     pushHistoryDebounced();
                     modelTouch();
-                });
+                }
+                nameIn.addEventListener("input", syncStreamdeckDisplayName);
+                nameIn.addEventListener("change", syncStreamdeckDisplayName);
                 card.appendChild(formRow("Display name", nameIn));
 
                 var infoIn = document.createElement("input");
@@ -3565,7 +3626,7 @@
             sd.actions[nid] = {
                 name: "New action",
                 description: "",
-                event: "my_custom_event",
+                event: nid,
                 default_data: {}
             };
             pushHistory();
@@ -3661,6 +3722,24 @@
             return;
         }
 
+        if (state.model && !state.model.legacy) {
+            ensureStreamdeckModel();
+            var sdActionCount = Object.keys(
+                state.model.streamdeck_options.actions || {}
+            ).length;
+            if (sdActionCount > 0) {
+                var sdBindHint = document.createElement("p");
+                sdBindHint.className = "ss-binding-row__hint";
+                sdBindHint.style.cssText = "margin:0 0 10px;line-height:1.4;";
+                sdBindHint.textContent = (
+                    "Stream Deck: assign one binding per hardware key — Trigger → " +
+                    "Stream Deck action, then pick the matching action id. " +
+                    "New bindings on this element default to the first action not already used here."
+                );
+                host.appendChild(sdBindHint);
+            }
+        }
+
         var addBtn = document.createElement("button");
         addBtn.className = "ss-btn ss-btn--primary";
         addBtn.textContent = "+ Add binding";
@@ -3720,9 +3799,7 @@
             trigSel.addEventListener("change", function () {
                 if (trigSel.value === "streamdeck") {
                     binding.trigger = "streamdeck";
-                    ensureStreamdeckModel();
-                    var kk = Object.keys(state.model.streamdeck_options.actions || {}).sort();
-                    binding.streamdeck_action = kk[0] || "";
+                    binding.streamdeck_action = suggestStreamdeckActionForBinding(el, binding);
                     applyStreamdeckBindingSync(binding);
                     maybeDefaultStartHiddenForShow(el, binding);
                 } else {
@@ -3758,7 +3835,7 @@
                         sdSel.appendChild(op);
                     });
                     if (!binding.streamdeck_action || !sdActs[binding.streamdeck_action]) {
-                        binding.streamdeck_action = keys[0];
+                        binding.streamdeck_action = suggestStreamdeckActionForBinding(el, binding);
                     }
                     applyStreamdeckBindingSync(binding);
                     maybeDefaultStartHiddenForShow(el, binding);
@@ -4443,6 +4520,7 @@
 
     function saveCurrent() {
         if (!state.model) { return; }
+        flushStreamdeckPanelInputs();
         setStatus("Saving…");
         var payload = { model: state.model };
         fetch("/api/spore-studio/save", {
@@ -4530,10 +4608,67 @@
             });
     }
 
+    function previewDesignSize() {
+        var dw = 800;
+        var dh = 200;
+        if (state.model && state.model.design) {
+            dw = Math.max(
+                DESIGN_CANVAS_MIN_PX,
+                parseInt(state.model.design.width, 10) || 800
+            );
+            dh = Math.max(
+                DESIGN_CANVAS_MIN_PX,
+                parseInt(state.model.design.height, 10) || 200
+            );
+        }
+        return { width: dw, height: dh };
+    }
+
+    function applyPreviewLayout() {
+        var viewport = $("#ss-preview-viewport");
+        var iframe = $("#ss-preview-iframe");
+        if (!viewport || !iframe) { return; }
+        var size = previewDesignSize();
+        var zoom = state.previewZoomPct || 100;
+        if (!isFinite(zoom) || zoom <= 0) { zoom = 100; }
+        var scale = zoom / 100;
+        var sw = Math.max(1, Math.round(size.width * scale));
+        var sh = Math.max(1, Math.round(size.height * scale));
+        viewport.style.width = sw + "px";
+        viewport.style.height = sh + "px";
+        iframe.style.width = size.width + "px";
+        iframe.style.height = size.height + "px";
+        iframe.style.transform = "scale(" + scale + ")";
+        iframe.style.transformOrigin = "top left";
+        var zoomVal = $("#ss-preview-zoom-value");
+        var zoomRange = $("#ss-preview-zoom-range");
+        if (zoomVal) { zoomVal.textContent = Math.round(zoom) + "%"; }
+        if (zoomRange && String(zoomRange.value) !== String(Math.round(zoom))) {
+            zoomRange.value = String(Math.round(zoom));
+        }
+    }
+
+    function setupPreviewZoom() {
+        var zoomRange = $("#ss-preview-zoom-range");
+        var zoomReset = $("#ss-preview-zoom-reset");
+        if (!zoomRange) { return; }
+        zoomRange.addEventListener("input", function () {
+            state.previewZoomPct = parseInt(zoomRange.value, 10) || 100;
+            applyPreviewLayout();
+        });
+        if (zoomReset) {
+            zoomReset.addEventListener("click", function () {
+                state.previewZoomPct = 100;
+                applyPreviewLayout();
+            });
+        }
+    }
+
     function openPreviewDialog() {
         var dlg = $("#ss-preview-dialog");
         if (!dlg) { return; }
         dlg.removeAttribute("hidden");
+        applyPreviewLayout();
         refreshPreview(true);
     }
 
@@ -4714,10 +4849,25 @@
         var head = dlg.querySelector("[data-drag-handle]");
         var resize = dlg.querySelector("[data-resize-handle]");
         renderPreviewMockToolbar();
+        setupPreviewZoom();
 
         var dragData = null;
+        var resizeData = null;
+
+        function endChromeInteraction() {
+            dragData = null;
+            resizeData = null;
+            dlg.classList.remove("ss-preview-dialog--chrome-active");
+        }
+
+        function beginChromeInteraction(handle, ev) {
+            dlg.classList.add("ss-preview-dialog--chrome-active");
+            if (handle && handle.setPointerCapture && ev.pointerId !== undefined) {
+                try { handle.setPointerCapture(ev.pointerId); } catch (capErr) { /* ignore */ }
+            }
+        }
+
         head.addEventListener("mousedown", function (ev) {
-            // Header buttons should still be clickable.
             if (ev.target.closest("button")) { return; }
             var rect = dlg.getBoundingClientRect();
             dragData = {
@@ -4726,20 +4876,9 @@
                 origLeft: rect.left,
                 origTop: rect.top
             };
+            beginChromeInteraction(head, ev);
             ev.preventDefault();
         });
-        document.addEventListener("mousemove", function (ev) {
-            if (!dragData) { return; }
-            var x = dragData.origLeft + (ev.clientX - dragData.startX);
-            var y = dragData.origTop + (ev.clientY - dragData.startY);
-            x = Math.max(0, Math.min(window.innerWidth - 80, x));
-            y = Math.max(0, Math.min(window.innerHeight - 40, y));
-            dlg.style.left = x + "px";
-            dlg.style.top = y + "px";
-        });
-        document.addEventListener("mouseup", function () { dragData = null; });
-
-        var resizeData = null;
         resize.addEventListener("mousedown", function (ev) {
             var rect = dlg.getBoundingClientRect();
             resizeData = {
@@ -4748,17 +4887,34 @@
                 origW: rect.width,
                 origH: rect.height
             };
+            beginChromeInteraction(resize, ev);
             ev.preventDefault();
             ev.stopPropagation();
         });
         document.addEventListener("mousemove", function (ev) {
-            if (!resizeData) { return; }
-            var w = Math.max(280, resizeData.origW + (ev.clientX - resizeData.startX));
-            var h = Math.max(200, resizeData.origH + (ev.clientY - resizeData.startY));
-            dlg.style.width = w + "px";
-            dlg.style.height = h + "px";
+            if (dragData) {
+                var dlgW = dlg.offsetWidth || 280;
+                var dlgH = dlg.offsetHeight || 200;
+                var x = dragData.origLeft + (ev.clientX - dragData.startX);
+                var y = dragData.origTop + (ev.clientY - dragData.startY);
+                x = Math.max(0, Math.min(window.innerWidth - dlgW, x));
+                y = Math.max(0, Math.min(window.innerHeight - dlgH, y));
+                dlg.style.left = x + "px";
+                dlg.style.top = y + "px";
+                return;
+            }
+            if (resizeData) {
+                var rect = dlg.getBoundingClientRect();
+                var maxW = Math.max(280, window.innerWidth - rect.left);
+                var maxH = Math.max(200, window.innerHeight - rect.top);
+                var w = Math.max(280, resizeData.origW + (ev.clientX - resizeData.startX));
+                var h = Math.max(200, resizeData.origH + (ev.clientY - resizeData.startY));
+                dlg.style.width = Math.min(w, maxW) + "px";
+                dlg.style.height = Math.min(h, maxH) + "px";
+                applyPreviewLayout();
+            }
         });
-        document.addEventListener("mouseup", function () { resizeData = null; });
+        document.addEventListener("mouseup", endChromeInteraction);
 
         var closeBtn = $("#ss-preview-close");
         if (closeBtn) { closeBtn.addEventListener("click", closePreviewDialog); }
@@ -4931,6 +5087,7 @@
             renderStage();
             pushHistory();
             modelTouch();
+            if (previewDialogOpen()) { applyPreviewLayout(); }
         });
         $("#ss-canvas-h").addEventListener("change", function (ev) {
             if (!state.model) { return; }
@@ -4941,6 +5098,7 @@
             renderStage();
             pushHistory();
             modelTouch();
+            if (previewDialogOpen()) { applyPreviewLayout(); }
         });
         var matchRootBtn = $("#ss-canvas-match-root");
         if (matchRootBtn) {
@@ -4972,6 +5130,7 @@
                 renderStage();
                 pushHistory();
                 modelTouch();
+                if (previewDialogOpen()) { applyPreviewLayout(); }
             });
         }
         $("#ss-alert-system").addEventListener("change", function (ev) {

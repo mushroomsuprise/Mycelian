@@ -188,9 +188,20 @@
         <div class="ss-preview-dialog__mocktools" id="ss-preview-mocks"
              title="Click to emit one mock socket event into the preview">
         </div>
+        <div class="ss-preview-dialog__zoom" id="ss-preview-zoom">
+            <label class="ss-preview-dialog__zoom-label" for="ss-preview-zoom-range">Zoom</label>
+            <input type="range" id="ss-preview-zoom-range" class="ss-preview-dialog__zoom-range"
+                   min="25" max="200" step="5" value="100"
+                   title="Preview zoom (% of design canvas size)" />
+            <span id="ss-preview-zoom-value" class="ss-preview-dialog__zoom-value">100%</span>
+            <button type="button" class="ss-btn ss-btn--ghost" id="ss-preview-zoom-reset"
+                    title="Reset zoom to 100%">Reset</button>
+        </div>
         <div class="ss-preview-dialog__body">
-            <iframe id="ss-preview-iframe"
-                    sandbox="allow-scripts allow-same-origin"></iframe>
+            <div class="ss-preview-dialog__viewport" id="ss-preview-viewport">
+                <iframe id="ss-preview-iframe"
+                        sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
         </div>
         <div class="ss-preview-dialog__resize" data-resize-handle></div>
     </div>
