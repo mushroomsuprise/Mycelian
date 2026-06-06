@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify Now Playing</title>
+    <style>
+        @font-face{
+          font-family: main-font;
+          src: url("/assets/default_assets/fonts/Renogare.ttf")
+        }
+
+        :root {
+            --font-family: main-font;
+            --track-name-font-size: 65px;
+            --track-name-font-size-long: 65px;
+            --artist-name-font-size: 35px;
+            --track-name-color: white;
+            --artist-name-color: white;
+            --artist-name-opacity: 0.8;
+            --progress-bar-height: 50px;
+            --progress-bar-bg: #808080;
+            --progress-bar-bg-opacity: 1;
+            --progress-bar-fill: #ffc107;
+            --time-font-size: 30px;
+            --time-color: white;
+            --time-opacity: 1;
+            --transition-duration: 0.3s;
+            --album-art-size: 300px;
+            --album-art-border-radius: 0px;
+            --album-art-margin-right: 24px;
+            --container-max-width: 800px;
+            --container-padding: 20px;
+            --container-border-radius: 0px;
+            --track-info-width: 450px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background: transparent;
+            overflow: hidden;
+            color: white;
+        }
+
+        .spotify-container {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            padding: var(--container-padding);
+            background: transparent;
+            max-width: var(--container-max-width);
+            border-radius: var(--container-border-radius);
+            position: absolute;
+            transition: all var(--transition-duration) ease;
+        }
+
+        .spotify-container:hover {
+            transform: translateY(-2px);
+        }
+
+
+
+        .album-art {
+            width: var(--album-art-size, 300px);
+            height: var(--album-art-size, 300px);
+            display: block;
+            border-radius: var(--album-art-border-radius, 0px);
+            margin-right: var(--album-art-margin-right, 24px);
+            transition: all var(--transition-duration) ease;
+        }
+
+        .album-art.playing {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .album-art.paused {
+            filter: grayscale(0.3);
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.02);
+            }
+        }
+
+        .track-info {
+            display: flex;
+            flex-direction: column;
+            font-family: var(--font-family);
+            font-size: 50px;
+            color: var(--track-name-color);
+            text-align: center;
+            align-items: center;
+            justify-content: center;
+            vertical-align: middle;
+            width: var(--track-info-width);
+            min-width: 200px;
+            height: 280px;
+            margin-top: 20px;
+        }
+
+        .track-name {
+            font-size: var(--track-name-font-size);
+            height: 97.5px;
+            color: var(--track-name-color);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            transition: all var(--transition-duration) ease;
+        }
+
+        .track-name.long-title {
+            font-size: var(--track-name-font-size-long);
+        }
+
+        .artist-name {
+            font-size: var(--artist-name-font-size);
+            height: 52.5px;
+            color: var(--artist-name-color);
+            opacity: var(--artist-name-opacity);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .progress-container {
+            width: 100%;
+            height: 85px;
+            margin-top: 10px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: var(--progress-bar-height);
+            background: var(--progress-bar-bg);
+            opacity: var(--progress-bar-bg-opacity);
+            border-radius: calc(var(--progress-bar-height) / 2);
+            overflow: hidden;
+            position: relative;
+            z-index: 1;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--progress-bar-fill);
+            border-radius: calc(var(--progress-bar-height) / 2);
+            transition: none;
+            position: relative;
+            z-index: 2;
+        }
+
+        .time-info {
+            font-size: var(--time-font-size);
+            color: var(--time-color);
+            opacity: var(--time-opacity);
+            text-align: right;
+            justify-content: right;
+            align-items: right;
+            padding-right: 0;
+            width: 100%;
+            height: 45px;
+            margin-bottom: 10px;
+        }
+
+        .llama {
+            position: absolute;
+            width: 80px;
+            animation: dance 2s linear infinite;
+            left: 310px;
+            top: 200px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        @keyframes dance {
+          0% {
+            transform: rotate(0deg);
+          }
+          25% {
+            transform: rotate(10deg);
+          }
+          50% {
+            transform: rotate(0deg);
+          }
+          75% {
+            transform: rotate(-10deg);
+          }
+          100% {
+            transform: rotate(0deg);
+          }
+        }
+
+        .nothing-playing {
+            opacity: 0.6;
+            filter: grayscale(1);
+        }
+
+        .paused-playing {
+            opacity: 0.7;
+            filter: grayscale(0.5);
+        }
+
+        .hidden {
+            opacity: 0;
+            transform: scale(0.9) rotate(1deg);
+            filter: blur(8px);
+            pointer-events: none;
+            transition: opacity 1.2s ease-out, transform 1.2s ease-out, filter 1.2s ease-out;
+        }
+
+        .visible {
+            opacity: 1;
+            transform: scale(1) rotate(0deg);
+            filter: blur(0px);
+            pointer-events: auto;
+            transition: opacity 0.6s ease-in, transform 0.6s ease-in, filter 0.6s ease-in;
+        }
+
+        .dissolve-out {
+            animation: dissolveOut 1.2s ease-out forwards;
+        }
+
+        .dissolve-in {
+            animation: dissolveIn 0.6s ease-in forwards;
+        }
+
+        @keyframes dissolveOut {
+            0% {
+                opacity: 1;
+                transform: scale(1) rotate(0deg);
+                filter: blur(0px);
+            }
+            30% {
+                opacity: 0.8;
+                transform: scale(0.98) rotate(0.3deg);
+                filter: blur(1px);
+            }
+            60% {
+                opacity: 0.4;
+                transform: scale(0.95) rotate(0.7deg);
+                filter: blur(3px);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(0.9) rotate(1deg);
+                filter: blur(8px);
+            }
+        }
+
+        @keyframes dissolveIn {
+            0% {
+                opacity: 0;
+                transform: scale(0.95) rotate(-0.5deg);
+                filter: blur(5px);
+            }
+            50% {
+                opacity: 0.7;
+                transform: scale(0.98) rotate(-0.2deg);
+                filter: blur(2px);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1) rotate(0deg);
+                filter: blur(0px);
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Responsive design */
+        @media (max-width: 600px) {
+            .spotify-container {
+                flex-direction: column;
+                text-align: center;
+                padding: 16px;
+            }
+
+            .track-name {
+                font-size: 50px;
+            }
+
+            .artist-name {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="spotify-container hidden" id="spotify-container">
+        <img id="album-art" class="album-art" src="" alt="Album Art" />
+        <div class="track-info">
+            <div id="track-name" class="track-name">Nothing playing</div>
+            <div id="artist-name" class="artist-name">Nothing playing</div>
+            <div id="llama" class="llama"><img src="assets/spotify/LargeLlamaR.png" width="80" style="display: inline-block;"/></div>
+            <div id="current-time" class="time-info">0:00 / 0:00</div>
+            <div class="progress-container">
+                <div id="progress-bar" class="progress-bar">
+                    <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const socket = io.connect('http://' + document.domain + ':' + location.port);
+        
+        // DOM elements
+        const container = document.getElementById('spotify-container');
+        const albumArt = document.getElementById('album-art');
+        const trackName = document.getElementById('track-name');
+        const artistName = document.getElementById('artist-name');
+        const progressFill = document.getElementById('progress-fill');
+        const progressBar = document.getElementById('progress-bar');
+        const currentTime = document.getElementById('current-time');
+        const llama = document.getElementById('llama');
+
+        let lastTrackId = null;
+        let isPlaying = false;
+        let hideTimer = null;
+        let isHidden = true; // Start as hidden since container has 'hidden' class by default
+        let lastPlayingState = false;
+        let defaultAlbumArt = 'assets/spotify/NoAlbumArt.png'; // Default album art path
+        let initialLoadComplete = false;
+        let lastPauseState = null; // Track when pause state changes
+
+        const DRIFT_THRESHOLD_SEC = 1.5;
+        const playback = {
+            positionSec: 0,
+            durationSec: 0,
+            isPlaying: false,
+            trackKey: '',
+            anchorMs: 0,
+        };
+        let playbackTickId = null;
+
+        function formatTime(seconds) {
+            const total = Math.max(0, Math.floor(seconds));
+            const mins = Math.floor(total / 60);
+            const secs = total % 60;
+            if (mins < 1) {
+                return '0:' + String(secs).padStart(2, '0');
+            }
+            return mins + ':' + String(secs).padStart(2, '0');
+        }
+
+        function getTrackKey(data) {
+            return (data.track_name || 'Nothing playing') + '|' + (data.artist_name || 'Nothing playing');
+        }
+
+        function isNothingPlayingKey(trackKey) {
+            return trackKey === 'Nothing playing|Nothing playing';
+        }
+
+        function getLocalPositionSec() {
+            let pos = playback.positionSec;
+            if (playback.isPlaying) {
+                pos += (performance.now() - playback.anchorMs) / 1000;
+            }
+            if (playback.durationSec > 0) {
+                pos = Math.min(pos, playback.durationSec);
+            }
+            return Math.max(0, pos);
+        }
+
+        function reanchor(positionSec) {
+            playback.positionSec = positionSec;
+            playback.anchorMs = performance.now();
+        }
+
+        function syncPlaybackFromServer(data) {
+            const serverPos = data.current_tracktime_seconds || 0;
+            const newTrackKey = getTrackKey(data);
+            const trackChanged = newTrackKey !== playback.trackKey;
+            const playing = Boolean(data.is_playing);
+            playback.durationSec = data.track_length_seconds || 0;
+
+            if (isNothingPlayingKey(newTrackKey)) {
+                playback.trackKey = newTrackKey;
+                playback.isPlaying = false;
+                reanchor(0);
+                stopPlaybackTick();
+                return;
+            }
+
+            if (trackChanged) {
+                playback.trackKey = newTrackKey;
+                playback.isPlaying = playing;
+                reanchor(serverPos);
+                if (playing) {
+                    startPlaybackTick();
+                } else {
+                    stopPlaybackTick();
+                }
+                return;
+            }
+
+            playback.trackKey = newTrackKey;
+
+            if (!playing) {
+                playback.isPlaying = false;
+                reanchor(serverPos);
+                stopPlaybackTick();
+                return;
+            }
+
+            const localPos = getLocalPositionSec();
+            if (Math.abs(serverPos - localPos) > DRIFT_THRESHOLD_SEC) {
+                reanchor(serverPos);
+            }
+            playback.isPlaying = true;
+            startPlaybackTick();
+        }
+
+        function startPlaybackTick() {
+            if (playbackTickId !== null) {
+                return;
+            }
+            function tick() {
+                if (!playback.isPlaying || playback.durationSec <= 0 || isNothingPlayingKey(playback.trackKey)) {
+                    stopPlaybackTick();
+                    return;
+                }
+                renderPlaybackUI();
+                playbackTickId = requestAnimationFrame(tick);
+            }
+            playbackTickId = requestAnimationFrame(tick);
+        }
+
+        function stopPlaybackTick() {
+            if (playbackTickId !== null) {
+                cancelAnimationFrame(playbackTickId);
+                playbackTickId = null;
+            }
+        }
+
+        function positionLlama(progress) {
+            const progressBarRect = progressBar.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const progressBarWidth = progressBarRect.width;
+            const progressBarHeight = progressBarRect.height;
+            const llamaWidth = 80;
+            const llamaHeight = 80;
+
+            if (progress > 0 && progressBarWidth > 0) {
+                const progressPixels = progressBarWidth * progress;
+                const llamaHorizontalOffset = llamaWidth / 2;
+                const progressBarLeftOffset = progressBarRect.left - containerRect.left;
+                const llamaLeftPosition = progressBarLeftOffset + progressPixels - llamaHorizontalOffset;
+                const progressBarTopOffset = progressBarRect.top - containerRect.top;
+                const llamaTopPosition = progressBarTopOffset + (progressBarHeight / 2) - (llamaHeight / 2);
+                llama.style.left = Math.max(0, llamaLeftPosition) + 'px';
+                llama.style.top = llamaTopPosition + 'px';
+            } else {
+                const progressBarLeftOffset = progressBarRect.left - containerRect.left;
+                const progressBarTopOffset = progressBarRect.top - containerRect.top;
+                const llamaTopPosition = progressBarTopOffset + (progressBarHeight / 2) - (llamaHeight / 2);
+                llama.style.left = Math.max(0, progressBarLeftOffset - llamaWidth / 2) + 'px';
+                llama.style.top = llamaTopPosition + 'px';
+            }
+        }
+
+        function renderPlaybackUI() {
+            const positionSec = getLocalPositionSec();
+            const durationSec = playback.durationSec;
+            const progress = durationSec > 0 ? positionSec / durationSec : 0;
+
+            currentTime.innerHTML = formatTime(positionSec) + ' / ' + formatTime(durationSec);
+            progressFill.style.width = (progress * 100) + '%';
+            positionLlama(progress);
+        }
+
+        // Handle Spotify data updates - purely reactive, only receives pushed data from backend
+        socket.on('spotify_data_update', function(data) {
+            console.log('Received spotify_data_update:', {
+                track: data.track_name,
+                progress: data.current_tracktime_seconds + '/' + data.track_length_seconds,
+                playing: data.is_playing
+            });
+            updateSpotifyDisplay(data);
+        });
+
+        // Load template config directly from API
+        async function loadTemplateConfig() {
+            try {
+                const response = await fetch('/api/all-template-configs');
+                if (response.ok) {
+                    const allConfigs = await response.json();
+                    console.log('Loaded all template configs:', Object.keys(allConfigs));
+                    
+                    // Get the spotify config specifically
+                    const spotifyConfigData = allConfigs.spotify;
+                    if (spotifyConfigData && spotifyConfigData.elements) {
+                        console.log('Found spotify template config:', spotifyConfigData);
+                        
+                        // Extract the config values from the elements array
+                        const config = {};
+                        spotifyConfigData.elements.forEach(element => {
+                            if (element.type !== 'section') {
+                                config[element.id] = element.value;
+                            }
+                        });
+                        
+                        console.log('Parsed config values:', config);
+                        applyTemplateConfig(config);
+                    } else {
+                        console.warn('No spotify config found in response');
+                    }
+                } else {
+                    console.error('Failed to load template configs:', response.status);
+                }
+            } catch (error) {
+                console.error('Error loading template config:', error);
+            }
+        }
+
+        // No initial data requests - backend will push data automatically
+        
+        // Load config on startup
+        loadTemplateConfig();
+        
+        // Periodically reload config to pick up changes (reduced frequency)
+        setInterval(loadTemplateConfig, 30000); // Changed from 5 seconds to 30 seconds
+
+        function applyTemplateConfig(config) {
+            console.log('Applying template config:', config);
+            
+            // Add debugging for specific values we're interested in
+            console.log('AlbumArtSize:', config.AlbumArtSize);
+            console.log('TrackNameFontSize:', config.TrackNameFontSize);
+            console.log('ContainerMaxWidth:', config.ContainerMaxWidth);
+            console.log('ProgressBarHeight:', config.ProgressBarHeight);
+            
+            // Update default album art path if configured
+            if (config.DefaultAlbumArt) {
+                defaultAlbumArt = config.DefaultAlbumArt;
+            }
+
+            // Apply container settings
+            if (config.ContainerTop !== undefined) {
+                container.style.top = config.ContainerTop + 'px';
+            }
+            if (config.ContainerLeft !== undefined) {
+                container.style.left = config.ContainerLeft + 'px';
+            }
+            if (config.ContainerMaxWidth !== undefined) {
+                const value = config.ContainerMaxWidth + 'px';
+                console.log('Setting --container-max-width to:', value);
+                document.documentElement.style.setProperty('--container-max-width', value);
+            }
+            if (config.ContainerPadding !== undefined) {
+                const value = config.ContainerPadding + 'px';
+                console.log('Setting --container-padding to:', value);
+                document.documentElement.style.setProperty('--container-padding', value);
+            }
+            if (config.ContainerBorderRadius !== undefined) {
+                const value = config.ContainerBorderRadius + 'px';
+                console.log('Setting --container-border-radius to:', value);
+                document.documentElement.style.setProperty('--container-border-radius', value);
+            }
+
+            // Calculate and set track info width based on container dimensions
+            if (config.ContainerMaxWidth !== undefined && config.AlbumArtSize !== undefined) {
+                const containerMaxWidth = config.ContainerMaxWidth || 800;
+                const albumArtSize = config.AlbumArtSize || 300;
+                const albumArtMargin = config.AlbumArtMarginRight || 24;
+                const containerPadding = config.ContainerPadding || 20;
+                
+                // Calculate available width for track info: ContainerMaxWidth - AlbumArtSize - AlbumArtMargin - (ContainerPadding * 2)
+                const trackInfoWidth = containerMaxWidth - albumArtSize - albumArtMargin - (containerPadding * 2);
+                const trackInfoWidthValue = Math.max(trackInfoWidth, 200) + 'px'; // Ensure minimum width
+                
+                console.log('Calculating track info width:', {
+                    containerMaxWidth,
+                    albumArtSize,
+                    albumArtMargin,
+                    containerPadding,
+                    calculatedWidth: trackInfoWidth
+                });
+                console.log('Setting --track-info-width to:', trackInfoWidthValue);
+                document.documentElement.style.setProperty('--track-info-width', trackInfoWidthValue);
+            }
+
+            // Apply background settings
+            if (config.BackgroundColor1 !== undefined && config.BackgroundColor2 !== undefined) {
+                const opacity = config.BackgroundOpacity || 0.3;
+                const color1 = config.BackgroundColor1;
+                const color2 = config.BackgroundColor2;
+                
+                // Handle transparent background
+                if (color1 === 'transparent' && color2 === 'transparent') {
+                    // Clear all background properties to ensure transparency
+                    container.style.background = 'none';
+                    container.style.backgroundColor = 'transparent';
+                    container.style.backgroundImage = 'none';
+                    container.style.removeProperty('background');
+                    container.style.removeProperty('background-color');
+                    console.log('Setting background to transparent - cleared all background properties');
+                } else {
+                    // Apply gradient background
+                    container.style.background = `linear-gradient(135deg, ${color1}, ${color2})`;
+                    if (opacity > 0) {
+                        // Only set background color if opacity is greater than 0
+                        container.style.backgroundColor = `rgba(255, 255, 255, ${opacity})`;
+                    } else {
+                        container.style.backgroundColor = 'transparent';
+                    }
+                    console.log(`Setting background gradient: ${color1} to ${color2} with opacity ${opacity}`);
+                }
+            }
+
+            // Apply backdrop blur (but not when background is transparent)
+            if (config.EnableBlur && config.BlurAmount !== undefined) {
+                // Don't apply blur if background is transparent
+                if (config.BackgroundColor1 === 'transparent' && config.BackgroundColor2 === 'transparent') {
+                    container.style.backdropFilter = 'none';
+                    container.style.webkitBackdropFilter = 'none';
+                    console.log('Disabled backdrop blur for transparent background');
+                } else {
+                    container.style.backdropFilter = `blur(${config.BlurAmount}px)`;
+                    container.style.webkitBackdropFilter = `blur(${config.BlurAmount}px)`;
+                    console.log(`Setting backdrop blur: ${config.BlurAmount}px`);
+                }
+            } else {
+                // Disable blur if not enabled
+                container.style.backdropFilter = 'none';
+                container.style.webkitBackdropFilter = 'none';
+            }
+
+            // Apply album art settings
+            if (config.AlbumArtSize !== undefined) {
+                const value = config.AlbumArtSize + 'px';
+                console.log('Setting --album-art-size to:', value);
+                document.documentElement.style.setProperty('--album-art-size', value);
+            }
+            if (config.AlbumArtBorderRadius !== undefined) {
+                const value = config.AlbumArtBorderRadius + 'px';
+                console.log('Setting --album-art-border-radius to:', value);
+                document.documentElement.style.setProperty('--album-art-border-radius', value);
+            }
+            if (config.AlbumArtMarginRight !== undefined) {
+                const value = config.AlbumArtMarginRight + 'px';
+                console.log('Setting --album-art-margin-right to:', value);
+                document.documentElement.style.setProperty('--album-art-margin-right', value);
+            }
+
+            // Apply text styling
+            if (config.FontFamily) {
+                console.log('Setting --font-family to:', config.FontFamily);
+                document.documentElement.style.setProperty('--font-family', config.FontFamily);
+            }
+            if (config.TrackNameFontSize !== undefined) {
+                const value = config.TrackNameFontSize + 'px';
+                console.log('Setting --track-name-font-size to:', value);
+                document.documentElement.style.setProperty('--track-name-font-size', value);
+            }
+            if (config.TrackNameFontSizeLong !== undefined) {
+                const value = config.TrackNameFontSizeLong + 'px';
+                console.log('Setting --track-name-font-size-long to:', value);
+                document.documentElement.style.setProperty('--track-name-font-size-long', value);
+            }
+            if (config.ArtistNameFontSize !== undefined) {
+                const value = config.ArtistNameFontSize + 'px';
+                console.log('Setting --artist-name-font-size to:', value);
+                document.documentElement.style.setProperty('--artist-name-font-size', value);
+            }
+            if (config.TrackNameColor) {
+                document.documentElement.style.setProperty('--track-name-color', config.TrackNameColor);
+            }
+            if (config.ArtistNameColor) {
+                document.documentElement.style.setProperty('--artist-name-color', config.ArtistNameColor);
+            }
+            if (config.ArtistNameOpacity !== undefined) {
+                document.documentElement.style.setProperty('--artist-name-opacity', config.ArtistNameOpacity);
+            }
+
+            // Apply progress bar settings
+            if (config.ProgressBarHeight !== undefined) {
+                const value = config.ProgressBarHeight + 'px';
+                console.log('Setting --progress-bar-height to:', value);
+                document.documentElement.style.setProperty('--progress-bar-height', value);
+            }
+            if (config.ProgressBarBackground) {
+                const bgOpacity = config.ProgressBarBackgroundOpacity || 0.2;
+                document.documentElement.style.setProperty('--progress-bar-bg', config.ProgressBarBackground);
+                document.documentElement.style.setProperty('--progress-bar-bg-opacity', bgOpacity);
+            }
+            if (config.ProgressBarFillStart && config.ProgressBarFillEnd) {
+                const gradient = `linear-gradient(90deg, ${config.ProgressBarFillStart}, ${config.ProgressBarFillEnd})`;
+                document.documentElement.style.setProperty('--progress-bar-fill', gradient);
+            }
+
+            // Apply time display settings
+            if (config.TimeFontSize !== undefined) {
+                document.documentElement.style.setProperty('--time-font-size', config.TimeFontSize + 'px');
+            }
+            if (config.TimeColor) {
+                document.documentElement.style.setProperty('--time-color', config.TimeColor);
+            }
+            if (config.TimeOpacity !== undefined) {
+                document.documentElement.style.setProperty('--time-opacity', config.TimeOpacity);
+            }
+
+            // Apply animation settings
+            if (config.TransitionDuration !== undefined) {
+                document.documentElement.style.setProperty('--transition-duration', config.TransitionDuration + 's');
+            }
+
+            // Store config values for use in other functions
+            window.spotifyConfig = config;
+        }
+
+        function updateSpotifyDisplay(data) {
+            console.log('Updating Spotify display with data:', {
+                track: data.track_name,
+                progress: data.current_tracktime_seconds + '/' + data.track_length_seconds,
+                playing: data.is_playing
+            });
+
+            syncPlaybackFromServer(data);
+
+            const trackTitle = data.track_name || 'Nothing playing';
+            const artist = data.artist_name || 'Nothing playing';
+            const albumImageURL = data.album_image_url || '';
+            const playing = data.is_playing || false;
+
+            // Update track info
+            trackName.innerHTML = String(trackTitle);
+            artistName.innerHTML = String(artist);
+
+            // Handle long titles using config
+            const longTitleThreshold = window.spotifyConfig?.LongTitleThreshold || 30;
+            if (trackName.innerHTML.length <= longTitleThreshold) {
+                trackName.classList.remove('long-title');
+            } else {
+                trackName.classList.add('long-title');
+                if (trackName.innerHTML.length > longTitleThreshold + 10) {
+                    trackName.innerHTML = trackName.innerHTML.slice(0, longTitleThreshold + 7) + '...';
+                }
+            }
+
+            renderPlaybackUI();
+
+            // Handle playing state for llama animation
+            if (playing) {
+                llama.style.animationPlayState = "running";
+            } else {
+                llama.style.animationPlayState = "paused";
+            }
+
+            // Update album art
+            if (albumImageURL && albumImageURL !== '') {
+                albumArt.style.display = 'block';
+                albumArt.src = albumImageURL;
+            } else if (trackTitle !== 'Nothing playing') {
+                // Show default album art for local files or when no art is available
+                albumArt.style.display = 'block';
+                albumArt.src = defaultAlbumArt;
+            } else {
+                albumArt.style.display = 'none';
+            }
+
+            // Handle llama visibility
+            if (trackName.innerHTML === "Nothing playing") {
+                llama.style.display = "none";
+            } else {
+                llama.style.display = "block";
+            }
+
+
+
+            // Handle playing state
+            isPlaying = playing;
+            updatePlayingState();
+
+            // Handle playing/paused/nothing playing states and auto-hide functionality
+            const config = window.spotifyConfig || {};
+            const hideWhenNotPlaying = config.HideWhenNotPlaying !== false;
+            const nothingPlayingOpacity = config.NothingPlayingOpacity || 0.6;
+            const hideDelayMs = (config.HideDelaySeconds || 30) * 1000; // Convert seconds to milliseconds
+            
+            if (trackTitle === 'Nothing playing') {
+                // Nothing is playing - hide the player immediately or keep it hidden
+                container.classList.add('nothing-playing');
+                container.classList.remove('paused-playing');
+                
+                if (!isHidden) {
+                    console.log('Nothing playing - hiding player');
+                    hidePlayer();
+                }
+            } else if (playing) {
+                // Music is actively playing - clear all states and timers, show player
+                container.classList.remove('nothing-playing');
+                container.classList.remove('paused-playing');
+                container.style.opacity = ''; // Reset opacity for playing state
+                
+                // Clear any existing hide timer and reset pause state
+                if (hideTimer) {
+                    console.log('Clearing hide timer - music playing');
+                    clearTimeout(hideTimer);
+                    hideTimer = null;
+                }
+                lastPauseState = null; // Reset pause state tracking
+                
+                // Show player if hidden
+                if (isHidden) {
+                    showPlayer();
+                }
+                
+                // Add fade-in animation for new tracks (if enabled)
+                const currentTrackId = trackTitle + artist;
+                if (currentTrackId !== lastTrackId && config.EnableFadeInAnimation !== false) {
+                    container.classList.remove('fade-in');
+                    setTimeout(() => container.classList.add('fade-in'), 10);
+                    lastTrackId = currentTrackId;
+                }
+            } else {
+                // Music is paused - add paused styling and handle hide timer
+                container.classList.remove('nothing-playing');
+                container.classList.add('paused-playing');
+                container.style.opacity = ''; // Reset opacity for paused state
+                
+                if (hideWhenNotPlaying && !initialLoadComplete) {
+                    // On initial load with paused music, hide immediately
+                    console.log('Initial load with paused music - hiding immediately');
+                    hidePlayer();
+                } else if (hideWhenNotPlaying) {
+                    // Music was playing and then paused - only start timer if state changed
+                    const currentPauseState = trackTitle + ':paused';
+                    if (lastPauseState !== currentPauseState && !hideTimer && !isHidden) {
+                        console.log('Music just paused - starting hide timer');
+                        hideTimer = setTimeout(() => {
+                            hidePlayer();
+                        }, hideDelayMs);
+                        lastPauseState = currentPauseState;
+                    }
+                }
+                
+                // Add fade-in animation for new tracks (if enabled)
+                const currentTrackId = trackTitle + artist;
+                if (currentTrackId !== lastTrackId && config.EnableFadeInAnimation !== false) {
+                    container.classList.remove('fade-in');
+                    setTimeout(() => container.classList.add('fade-in'), 10);
+                    lastTrackId = currentTrackId;
+                }
+            }
+            
+            // Mark initial load as complete after first update
+            if (!initialLoadComplete) {
+                initialLoadComplete = true;
+            }
+            
+            // Track playing state changes
+            lastPlayingState = playing;
+        }
+
+        function updatePlayingState() {
+            const config = window.spotifyConfig || {};
+            
+            if (isPlaying) {
+                // Enable pulse animation if configured
+                if (config.EnablePulseAnimation !== false) {
+                    albumArt.classList.add('playing');
+                }
+                albumArt.classList.remove('paused');
+            } else {
+                albumArt.classList.remove('playing');
+                // Enable grayscale when paused if configured
+                if (config.EnableGrayscaleWhenPaused !== false) {
+                    albumArt.classList.add('paused');
+                } else {
+                    albumArt.classList.remove('paused');
+                }
+            }
+        }
+
+        function hidePlayer() {
+            stopPlaybackTick();
+            if (!isHidden) {
+                // Start dissolve out animation
+                container.classList.remove('visible', 'dissolve-in');
+                container.classList.add('dissolve-out');
+                
+                // After animation completes, set to hidden state
+                setTimeout(() => {
+                    container.classList.remove('dissolve-out');
+                    container.classList.add('hidden');
+                    isHidden = true;
+                }, 1200); // Match animation duration
+                
+                // Clear the hide timer since we're now hiding
+                if (hideTimer) {
+                    clearTimeout(hideTimer);
+                    hideTimer = null;
+                }
+                
+                console.log('Player dissolving out after inactivity');
+            }
+        }
+
+        function showPlayer() {
+            if (isHidden) {
+                // Start dissolve in animation
+                container.classList.remove('hidden', 'dissolve-out');
+                container.classList.add('dissolve-in');
+                
+                // After animation completes, set to visible state
+                setTimeout(() => {
+                    container.classList.remove('dissolve-in');
+                    container.classList.add('visible');
+                }, 600); // Match animation duration
+                
+                isHidden = false;
+                if (playback.isPlaying) {
+                    startPlaybackTick();
+                }
+                console.log('Player dissolving in - music activity detected');
+            }
+        }
+
+        // Handle connection events
+        socket.on('connect', function() {
+            console.log('Connected to Spotify websocket - waiting for backend data push');
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Disconnected from Spotify websocket');
+            stopPlaybackTick();
+            if (hideTimer) {
+                clearTimeout(hideTimer);
+                hideTimer = null;
+            }
+        });
+
+        socket.on('spotify_data_error', function(data) {
+            console.error('Spotify data error:', data.error);
+        });
+
+        // Frontend is now purely reactive - only listens to backend pushes, never requests data
+    </script>
+</body>
+</html> 
