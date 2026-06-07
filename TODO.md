@@ -1,8 +1,5 @@
 Legacy Templates:
     [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
-General:
-    [] - Upgrade all packages to their newest versions. Note: NiceGUI upgrade will require code changes to the way we start the app, the splash screen, and the custom injected CSS (Tailwind will be updated in this). Custom UI options (especially colors) will need to be checked as well to ensure they get applied by the theme manager
-
-Spotify:
-    [] - Add more settings for the text shadow to the Spotify template. Ability to change shadow size, opacity, color, and offset. This will be for any text withing the template.
+Spore Studio:
+    [] - Expand interactive help system's content for Spore Studio. Detail out how to create templates, setup counters, data sources, streamdeck actions, bindings, source controls, and anything else not mentioned here.
