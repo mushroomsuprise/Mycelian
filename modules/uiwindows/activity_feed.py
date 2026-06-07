@@ -1548,8 +1548,10 @@ def create_activity_feed_tab():
     _DOCK_BTN_PROPS = "flat no-caps dense"
 
     with ui.element("div").classes("content-section w-full h-full relative"):
-        # Control buttons row
-        with ui.row().classes("w-full items-center gap-2 mb-4"):
+        # Control buttons row (nowrap + horizontal scroll avoids clipping toggle on narrow/scaled windows)
+        with ui.row().classes(
+            "w-full items-center gap-2 mb-4 flex-nowrap overflow-x-auto"
+        ):
             from modules import web_engine
             from modules.mainuiwindow import toggle_alerts
 
@@ -1636,10 +1638,14 @@ def create_activity_feed_tab():
 
             activity_feed_state.condense_toggle = ui.switch(
                 text="Condense List", value=False, on_change=toggle_condense_list
-            ).classes("condense-toggle")
+            ).classes("condense-toggle shrink-0")
+            logger.debug(
+                "Condense List toggle created (id=%s)",
+                getattr(activity_feed_state.condense_toggle, "id", None),
+            )
 
             # Create a container for the filter dropdown
-            with ui.element("div").classes("relative"):
+            with ui.element("div").classes("relative shrink-0"):
                 # Create a button for filters
                 filter_button = ui.button(icon="filter_list", text="FILTERS").classes(
                     "control-button"
@@ -1841,6 +1847,9 @@ def create_activity_feed_tab():
 
             # Hide pagination initially (only show for previous alerts tab)
             activity_feed_state.pagination_container.classes(add="hidden")
+
+            # Ensure condense toggle visibility matches initial tab (Current Alerts)
+            update_condensed_view()
 
             # Start on current alerts tab - no need to load restored alerts initially
 
@@ -2379,8 +2388,13 @@ def update_condensed_view():
         # Show/hide condense toggle based on current tab
         if activity_feed_state.current_tab == "current":
             activity_feed_state.condense_toggle.classes(remove="hidden")
+            logger.debug("Condense List toggle shown (Current Alerts tab)")
         else:
             activity_feed_state.condense_toggle.classes(add="hidden")
+            logger.debug(
+                "Condense List toggle hidden (tab=%s; only visible on Current Alerts)",
+                activity_feed_state.current_tab,
+            )
 
         # Only create condensed view if we're on current tab and toggle is on
         if (

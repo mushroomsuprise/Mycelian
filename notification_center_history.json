@@ -506,5 +506,19 @@
         "settings_subtab": "Twitch"
       }
     ]
+  },
+  {
+    "id": "eaaae19f-a95b-4ba4-a155-2d73fda20b0d",
+    "ts": 1780845053.196601,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
   }
 ]

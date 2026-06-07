@@ -94,7 +94,7 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.10.1"
+VERSION = "1.10.2"
 BUILD_DATE = "May 27th 2026"
 
 # Stream Deck plugin version (manifest.json "Version"; Elgato semver, e.g. 0.2.2.0)
@@ -525,6 +525,14 @@ def get_hidden_imports(current_os):
         ]
     )
 
+    # NiceGUI 3.x lazy-loads elements via ui.__getattr__; collect all submodules for frozen builds.
+    try:
+        from PyInstaller.utils.hooks import collect_submodules
+
+        hidden_imports.extend(collect_submodules("nicegui"))
+    except ImportError:
+        pass
+
     # DNS resolution (eventlet greendns dynamically imports all dns submodules)
     try:
         from PyInstaller.utils.hooks import collect_submodules
@@ -768,7 +776,7 @@ def get_data_files():
     # Include COMPREHENSIVE NiceGUI files (required for UI to work)
     nicegui_path = os.path.dirname(nicegui.__file__)
 
-    # Include NiceGUI static files (CSS, JS, fonts, etc.)
+    # Include NiceGUI static files (CSS, JS, fonts, UnoCSS utilities, Quasar, etc.)
     nicegui_static = os.path.join(nicegui_path, "static")
     if os.path.exists(nicegui_static):
         data_files.append((nicegui_static, "nicegui/static"))
