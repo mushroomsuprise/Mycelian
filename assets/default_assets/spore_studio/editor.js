@@ -3346,7 +3346,20 @@
         return used;
     }
 
-    /** First unused Stream Deck action id on this element, else first defined action. */
+    function streamdeckActionIdsUsedInTemplate(exceptBinding) {
+        var used = {};
+        (state.model.elements || []).forEach(function (el) {
+            (el.bindings || []).forEach(function (b) {
+                if (b === exceptBinding) { return; }
+                if (bindingTrigger(b) === "streamdeck" && b.streamdeck_action) {
+                    used[b.streamdeck_action] = true;
+                }
+            });
+        });
+        return used;
+    }
+
+    /** First unused Stream Deck action id in the template, else first defined action. */
     function suggestStreamdeckActionForBinding(el, binding) {
         if (!state.model || state.model.legacy) { return ""; }
         ensureStreamdeckModel();
@@ -3355,7 +3368,7 @@
         if (!keys.length) { return ""; }
         var aid = binding && binding.streamdeck_action;
         if (aid && acts[aid]) { return aid; }
-        var used = streamdeckActionIdsUsedOnElement(el, binding);
+        var used = streamdeckActionIdsUsedInTemplate(binding);
         for (var i = 0; i < keys.length; i++) {
             if (!used[keys[i]]) { return keys[i]; }
         }
@@ -3734,7 +3747,7 @@
                 sdBindHint.textContent = (
                     "Stream Deck: assign one binding per hardware key — Trigger → " +
                     "Stream Deck action, then pick the matching action id. " +
-                    "New bindings on this element default to the first action not already used here."
+                    "New bindings default to the first action not already used in this template."
                 );
                 host.appendChild(sdBindHint);
             }

@@ -5269,6 +5269,13 @@ class WebEngine:
         self._emit_streamdeck_template_events(
             template_name, compat_key, resolved_event, merged_ad
         )
+        logger.info(
+            "Stream Deck: dispatched %s.%s (requested=%s, event=%s)",
+            template_name,
+            compat_key,
+            action_name,
+            resolved_event,
+        )
         return compat_key, resolved_event
 
     def _resolve_streamdeck_options_action(

@@ -648,7 +648,6 @@
         }
 
         function saveSettings() {
-            // Update hidden SDPI components - they will automatically save the settings
             const selectedTemplateSetting = document.getElementById('selectedTemplateSetting');
             const selectedActionSetting = document.getElementById('selectedActionSetting');
             const resolvedEventSetting = document.getElementById('resolvedEventSetting');
@@ -658,6 +657,16 @@
             if (selectedActionSetting) selectedActionSetting.value = currentSettings.selectedAction || '';
             if (resolvedEventSetting) resolvedEventSetting.value = currentSettings.resolvedEvent || '';
             if (actionDataSetting) actionDataSetting.value = JSON.stringify(currentSettings.actionData || {});
+
+            [selectedTemplateSetting, selectedActionSetting, resolvedEventSetting, actionDataSetting].forEach(function (field) {
+                if (field) {
+                    field.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            });
+
+            if (typeof SDPIComponents !== 'undefined' && SDPIComponents.streamDeckClient) {
+                SDPIComponents.streamDeckClient.setSettings(currentSettings);
+            }
         }
 
         function showConnectionStatus(message, type) {

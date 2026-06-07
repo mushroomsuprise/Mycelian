@@ -48,7 +48,7 @@ class BuildProgress:
 
 
 # Global progress tracker
-progress = BuildProgress()
+progress = BuildProgress(total_steps=6)
 
 
 def get_project_root():
@@ -94,8 +94,11 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.9.12"
+VERSION = "1.10.1"
 BUILD_DATE = "May 27th 2026"
+
+# Stream Deck plugin version (manifest.json "Version"; Elgato semver, e.g. 0.2.2.0)
+STREAMDECK_PLUGIN_VERSION = "1.0.0.0"
 
 # Version file path (set to None if no version file, or provide path like 'version.txt')
 VERSION_FILE = None
@@ -129,6 +132,158 @@ def ensure_dependencies():
             [sys.executable, "-m", "pip", "install", "pyinstaller"], check=True
         )
         progress.update("PyInstaller installed")
+
+
+def deploy_streamdeck_plugin_to_sd_plugin(project_root: Path) -> Path:
+    """
+    Copy the built Stream Deck plugin into ``sd_plugin/`` for Mycelian.iss.
+
+    Overwrites matching files and leaves any extra bundled assets (e.g. legacy
+    action icons) that are not present in the TypeScript build output.
+    """
+    src = (
+        project_root
+        / "streamdeck-plugin"
+        / "mycelian"
+        / "com.mushroomsuprise.mycelian.sdPlugin"
+    )
+    dest = project_root / "sd_plugin" / "com.mushroomsuprise.mycelian.sdPlugin"
+    if not src.is_dir():
+        raise FileNotFoundError(f"Stream Deck build output missing: {src}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dest, dirs_exist_ok=True)
+    return dest
+
+
+def update_streamdeck_plugin_manifest_version(project_root: Path) -> bool:
+    """
+    Write ``STREAMDECK_PLUGIN_VERSION`` into the plugin ``manifest.json`` before
+    rollup/deploy so ``sd_plugin/`` and the installer bundle the new version.
+    """
+    import json
+
+    manifest_path = (
+        project_root
+        / "streamdeck-plugin"
+        / "mycelian"
+        / "com.mushroomsuprise.mycelian.sdPlugin"
+        / "manifest.json"
+    )
+    if not manifest_path.is_file():
+        progress.update("Stream Deck manifest.json not found; skipping version stamp")
+        return True
+
+    version = str(STREAMDECK_PLUGIN_VERSION).strip()
+    if not version:
+        progress.error("STREAMDECK_PLUGIN_VERSION is empty")
+        return False
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["Version"] = version
+        with open(manifest_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(data, f, indent="\t", ensure_ascii=False)
+            f.write("\n")
+    except (OSError, json.JSONDecodeError, TypeError) as e:
+        progress.error(f"Could not update Stream Deck manifest version: {e}")
+        return False
+
+    progress.update(f"Stream Deck plugin version set to {version}")
+    return True
+
+
+def build_streamdeck_plugin(project_root: Path) -> bool:
+    """
+    Build the Stream Deck plugin and stage it under ``sd_plugin/`` for the
+    Inno Setup installer (``Mycelian.iss`` → ``Source: "sd_plugin\\*"``).
+    """
+    plugin_dir = project_root / "streamdeck-plugin" / "mycelian"
+    if not plugin_dir.is_dir():
+        progress.update("Stream Deck plugin source not found; skipping")
+        return True
+
+    package_json = plugin_dir / "package.json"
+    if not package_json.exists():
+        progress.update("Stream Deck plugin package.json missing; skipping")
+        return True
+
+    if not update_streamdeck_plugin_manifest_version(project_root):
+        return False
+
+    npm_cmd = "npm.cmd" if CURRENT_OS == "windows" else "npm"
+    try:
+        subprocess.run(
+            [npm_cmd, "--version"],
+            cwd=plugin_dir,
+            capture_output=True,
+            check=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        progress.error("npm is required to build the Stream Deck plugin")
+        return False
+
+    if not (plugin_dir / "node_modules").is_dir():
+        progress.update("Installing Stream Deck plugin npm dependencies...")
+        install = subprocess.run(
+            [npm_cmd, "ci"],
+            cwd=plugin_dir,
+            capture_output=True,
+            text=True,
+        )
+        if install.returncode != 0:
+            progress.update("npm ci failed; trying npm install...")
+            install = subprocess.run(
+                [npm_cmd, "install"],
+                cwd=plugin_dir,
+                capture_output=True,
+                text=True,
+            )
+            if install.returncode != 0:
+                progress.error("Failed to install Stream Deck plugin dependencies")
+                if install.stderr:
+                    progress.update(install.stderr.strip())
+                return False
+
+    deploy_script = (
+        "build:deploy:win" if CURRENT_OS == "windows" else "build:deploy"
+    )
+    progress.update(f"Running npm run {deploy_script}...")
+    result = subprocess.run(
+        [npm_cmd, "run", deploy_script],
+        cwd=plugin_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        progress.update(
+            f"npm run {deploy_script} failed; falling back to build + deploy"
+        )
+        build = subprocess.run(
+            [npm_cmd, "run", "build"],
+            cwd=plugin_dir,
+            capture_output=True,
+            text=True,
+        )
+        if build.returncode != 0:
+            progress.error("Stream Deck plugin build failed")
+            if build.stderr:
+                progress.update(build.stderr.strip())
+            return False
+        try:
+            dest = deploy_streamdeck_plugin_to_sd_plugin(project_root)
+        except FileNotFoundError as e:
+            progress.error(str(e))
+            return False
+    else:
+        dest = project_root / "sd_plugin" / "com.mushroomsuprise.mycelian.sdPlugin"
+
+    if not dest.is_dir():
+        progress.error(f"Stream Deck plugin staging folder missing: {dest}")
+        return False
+
+    progress.update(f"Staged Stream Deck plugin for installer: {dest}")
+    return True
 
 
 def clean_build():
@@ -362,6 +517,7 @@ def get_hidden_imports(current_os):
             "eventlet.green",
             "eventlet.green.threading",
             "eventlet.green.socket",
+            "eventlet.support.greendns",
             "gevent",
             "gevent.socket",
             "gevent.threading",
@@ -369,20 +525,27 @@ def get_hidden_imports(current_os):
         ]
     )
 
-    # DNS resolution
-    hidden_imports.extend(
-        [
-            "dns",
-            "dns.asyncbackend",
-            "dns.asyncquery",
-            "dns.asyncresolver",
-            "dns.e164",
-            "dns.namedict",
-            "dns.tsigkeyring",
-            "dns.versioned",
-            "dns.dnssec",
-        ]
-    )
+    # DNS resolution (eventlet greendns dynamically imports all dns submodules)
+    try:
+        from PyInstaller.utils.hooks import collect_submodules
+
+        hidden_imports.extend(collect_submodules("dns"))
+    except ImportError:
+        hidden_imports.extend(
+            [
+                "dns",
+                "dns.asyncbackend",
+                "dns.asyncquery",
+                "dns.asyncresolver",
+                "dns.btree",
+                "dns.btreezone",
+                "dns.e164",
+                "dns.namedict",
+                "dns.tsigkeyring",
+                "dns.versioned",
+                "dns.dnssec",
+            ]
+        )
 
     # HTTP and networking
     hidden_imports.extend(
@@ -593,7 +756,7 @@ def get_hidden_imports(current_os):
         ]
     )
 
-    return hidden_imports
+    return list(dict.fromkeys(hidden_imports))
 
 
 def get_data_files():
@@ -1280,11 +1443,18 @@ def main():
         update_version_across_files()
         progress.success()
 
-        # Step 4: Build executable
+        # Step 4: Build Stream Deck plugin into sd_plugin for the installer
+        progress.next_step("Building Stream Deck plugin for installer")
+        if not build_streamdeck_plugin(project_root):
+            progress.error("Stream Deck plugin build failed")
+            sys.exit(1)
+        progress.success()
+
+        # Step 5: Build executable
         progress.next_step("Building executable")
         success, dist_dir = build_executable()
         if success:
-            # Step 5: Post-build tasks
+            # Step 6: Post-build tasks
             progress.next_step("Finalizing build")
             post_build_tasks(dist_dir)
             progress.success()

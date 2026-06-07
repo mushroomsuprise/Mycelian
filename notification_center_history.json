@@ -82,5 +82,313 @@
         "settings_subtab": "Twitch"
       }
     ]
+  },
+  {
+    "id": "953d8daf-d11f-4c07-a5bf-9a0973f577d8",
+    "ts": 1780794935.0931888,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "d7cec3fa-3bc2-40f8-9631-e31b3ddd37df",
+    "ts": 1780794936.5387354,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "f5b808eb-450c-4103-a749-530e2a66228f",
+    "ts": 1780794936.5448704,
+    "message": "Creating new alert...",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "50ad31fc-8d04-4307-8398-3705928865bc",
+    "ts": 1780794937.0946116,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "2f5933d0-5efa-423c-8a84-82585607a450",
+    "ts": 1780794943.12663,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "1ea2dbf7-33b6-4e5b-9340-eb618dbd379a",
+    "ts": 1780795127.6565733,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "0ee4f1f9-f779-4dd8-a131-741006049646",
+    "ts": 1780795129.6698961,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "8948952d-1bd8-4bc3-8bd4-97b098041e6b",
+    "ts": 1780795133.6738973,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "c870259d-e303-4e11-8725-fce94945d553",
+    "ts": 1780795138.0126715,
+    "message": "Created test",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "52f66e3b-2b26-455a-8a3b-1a9eccfa9e16",
+    "ts": 1780795175.8418274,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "f2253a9f-7509-42f3-b28d-fa8064d6c843",
+    "ts": 1780795187.164285,
+    "message": "Saved test",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "c9075241-1256-4690-9f4f-ec1b559f921b",
+    "ts": 1780795193.9161725,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "7e2e1993-5cde-472f-94dd-71ffe90542a0",
+    "ts": 1780795222.021236,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "f3adaf99-4708-41a5-943e-5e634dedfd36",
+    "ts": 1780795246.9720974,
+    "message": "Saved test",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "b4d849c0-6959-4003-a679-738f057c0208",
+    "ts": 1780795252.1334894,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "26790e56-3082-4615-ab8d-f1c4123d0e18",
+    "ts": 1780795287.288828,
+    "message": "OBS responded successfully",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "12fc0f27-2d02-4345-afd2-ba5954088e2d",
+    "ts": 1780795288.2588344,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "51aa72ec-52f8-4f43-a826-f280a178ba15",
+    "ts": 1780795305.2211664,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "bf89c8fa-c60e-49e1-859f-9be2bcbc37bb",
+    "ts": 1780795317.8058443,
+    "message": "Copied: http://127.0.0.1:5000/test",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "faa332aa-79bf-4d49-98b1-af174d8250ca",
+    "ts": 1780795477.967295,
+    "message": "Saved test",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "6f03e59c-a209-404d-9a1d-ef9950f14a96",
+    "ts": 1780795990.055861,
+    "message": "Quit the Stream Deck app completely (macOS: Stream Deck \u2192 Quit Stream Deck), then click Reinstall Plugin again. Stream Deck locks plugin files while it is running.",
+    "type": "negative",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "f91ed904-633a-4717-964e-392edb6bf48c",
+    "ts": 1780795997.0997374,
+    "message": "Plugin reinstalled successfully! Quit and reopen Stream Deck (or restart it) so the update loads.",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "45bace84-f93a-4e05-95e5-c5f184060fd7",
+    "ts": 1780796428.0053673,
+    "message": "Saved test",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "d353df55-abce-4a2e-bf82-80eefd40c36d",
+    "ts": 1780796697.6042151,
+    "message": "Created test",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "b1854b58-63d7-455f-8e5f-3fde03d8c845",
+    "ts": 1780796742.3718076,
+    "message": "Saved test",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "9234d45f-d409-441e-9765-8a6fe2f432c1",
+    "ts": 1780797190.5990965,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "a96d2933-e137-4fcb-9435-e01f7d3d3a7f",
+    "ts": 1780797191.0673764,
+    "message": "A new Stream Deck plugin version (v1.0.0.0) is available. Reinstall from Settings \u2192 App Settings, then restart Stream Deck. Click this in the notification center to open App Settings.",
+    "type": "warning",
+    "dedupe_key": "streamdeck:plugin_outdated",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "App Settings"
+      }
+    ]
+  },
+  {
+    "id": "927dc766-3b81-4f02-babc-a9ce4e4f1565",
+    "ts": 1780797207.1885004,
+    "message": "Plugin reinstalled successfully! Quit and reopen Stream Deck (or restart it) so the update loads.",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
   }
 ]
