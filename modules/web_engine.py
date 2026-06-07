@@ -40,6 +40,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+import warnings
+
+# Eventlet emits a deprecation warning on import. Flask-SocketIO still relies on
+# it here, so silence the noise (a migration off eventlet is tracked separately).
+warnings.filterwarnings("ignore", message=r"\s*Eventlet is deprecated")
+
 import eventlet
 import eventlet.green.select
 import eventlet.green.socket

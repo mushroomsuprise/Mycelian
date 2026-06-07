@@ -22,6 +22,7 @@ from typing import Any, Dict
 from nicegui import ui
 
 from ...help_system.contextual_help import spore_studio_help_button
+from ...ui_timer import layout_schedule
 from .. import customsources as _customsources_module  # noqa: F401  (style consistency)
 from ... import web_engine as web_engine_module
 
@@ -121,7 +122,7 @@ def create_spore_studio_tab() -> None:
                 )
                 open_external_btn.tooltip("Open the editor in your default browser")
 
-        body = ui.element("div").classes("w-full flex-grow relative min-h-0 pb-3")
+        body = ui.element("div").classes("w-full grow relative min-h-0 pb-3")
         state["body"] = body
 
         with body:
@@ -151,7 +152,7 @@ def create_spore_studio_tab() -> None:
                     on_click=lambda: _refresh_iframe(state),
                 ).props("dense").classes("mt-2")
 
-    ui.timer(0.5, lambda: _refresh_iframe(state), once=True)
+    layout_schedule(0.5, lambda: _refresh_iframe(state), once=True)
 
 
 def _refresh_iframe(state: Dict[str, Any]) -> None:

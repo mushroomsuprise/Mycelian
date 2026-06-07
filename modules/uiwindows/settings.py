@@ -34,6 +34,7 @@ from typing import Dict, List, Optional
 import aiohttp
 from nicegui import ui
 from ..notification_engine import notify
+from ..ui_timer import layout_schedule
 
 from .. import dataobjects, psn_service, twitch
 from ..api_credentials_manager import api_credentials_manager
@@ -541,7 +542,7 @@ class SettingsUI:
                                 # self.refresh_twitch_status()
 
                                 # Add a timer to refresh status when tab becomes visible
-                                ui.timer(
+                                layout_schedule(
                                     0.1, lambda: self.refresh_twitch_status(), once=True
                                 )
 
@@ -739,7 +740,7 @@ class SettingsUI:
                                     ).classes("font-semibold")
 
                         # PSN status update is now completely deferred to avoid blocking UI creation
-                        # ui.timer(0.1, lambda: self.update_psn_status_display(), once=True)
+                        # layout_schedule(0.1, lambda: self.update_psn_status_display(), once=True)
 
                     # Spotify Tab
                     with ui.tab_panel("Spotify").classes("tab-content"):
@@ -796,7 +797,7 @@ class SettingsUI:
                                 # self.refresh_spotify_status()
 
                                 # Add a timer to refresh status when tab becomes visible - but delay it more to avoid spam
-                                ui.timer(
+                                layout_schedule(
                                     2.0,
                                     lambda: self.refresh_spotify_status(),
                                     once=True,
@@ -1031,7 +1032,7 @@ class SettingsUI:
                                     ).props("icon=refresh outline")
 
                                 # Initial status update with timer
-                                ui.timer(
+                                layout_schedule(
                                     2.0,
                                     lambda: self.refresh_youtube_status(),
                                     once=True,
@@ -1167,7 +1168,7 @@ class SettingsUI:
                                         check_value_change.last_value = current_value
 
                                     # Schedule next check (prevents timer leak)
-                                    ui.timer(0.5, check_value_change, once=True)
+                                    layout_schedule(0.5, check_value_change, once=True)
 
                                 # Start the initial check
                                 check_value_change()
@@ -1482,7 +1483,7 @@ class SettingsUI:
                                 self.update_database_config_visibility()
 
                                 # Initial status update
-                                ui.timer(
+                                layout_schedule(
                                     0.1,
                                     lambda: self.refresh_database_status(),
                                     once=True,
@@ -1493,7 +1494,7 @@ class SettingsUI:
                                     logger.info(
                                         "Database type is Firebase, scheduling Firebase config status update"
                                     )
-                                    ui.timer(
+                                    layout_schedule(
                                         0.2,
                                         lambda: self.update_firebase_config_status(),
                                         once=True,
@@ -1562,7 +1563,7 @@ class SettingsUI:
                                 ).props("icon=refresh outline")
 
                             # Load source URLs initially
-                            ui.timer(0.1, lambda: self.refresh_source_urls(), once=True)
+                            layout_schedule(0.1, lambda: self.refresh_source_urls(), once=True)
 
                 # Button row for save/discard
                 with ui.row().classes("button-row w-full mb-4"):
@@ -2002,7 +2003,7 @@ class SettingsUI:
                 self.update_database_config_visibility()
 
                 # Refresh database status after potential type change
-                ui.timer(0.2, lambda: self.refresh_database_status(), once=True)
+                layout_schedule(0.2, lambda: self.refresh_database_status(), once=True)
 
                 notify("Settings saved successfully", type="positive", timeout=2000)
                 logger.info(
@@ -2341,7 +2342,7 @@ class SettingsUI:
                 # Call the original check function
                 return check_oauth_result()
 
-            oauth_timer = ui.timer(0.2, check_oauth_result_with_timeout)
+            oauth_timer = layout_schedule(0.2, check_oauth_result_with_timeout)
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(oauth_timer)
@@ -2632,7 +2633,7 @@ class SettingsUI:
                 # Call the original check function
                 return check_spotify_oauth_result()
 
-            spotify_oauth_timer = ui.timer(0.2, check_spotify_oauth_result_with_timeout)
+            spotify_oauth_timer = layout_schedule(0.2, check_spotify_oauth_result_with_timeout)
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(spotify_oauth_timer)
@@ -2765,7 +2766,7 @@ class SettingsUI:
                 firebase_visible = new_type == "firebase"
                 self.firebase_config.visible = firebase_visible
                 if firebase_visible:
-                    ui.timer(
+                    layout_schedule(
                         0.1, lambda: self.update_firebase_config_status(), once=True
                     )
 
@@ -2945,7 +2946,7 @@ class SettingsUI:
                 return False  # Default stop
 
             # Start timer to check results with timeout protection
-            db_test_timer = ui.timer(0.2, check_db_test_result_with_timeout)
+            db_test_timer = layout_schedule(0.2, check_db_test_result_with_timeout)
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(db_test_timer)
@@ -3211,7 +3212,7 @@ class SettingsUI:
                 # Call the original check function
                 return check_migration_status()
 
-            migration_timer = ui.timer(0.5, check_migration_status_with_timeout)
+            migration_timer = layout_schedule(0.5, check_migration_status_with_timeout)
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(migration_timer)
@@ -3317,7 +3318,7 @@ class SettingsUI:
                 if visible:
                     logger.info("Firebase config is now visible, updating status")
                     # Use a timer to ensure UI is ready
-                    ui.timer(
+                    layout_schedule(
                         0.1, lambda: self.update_firebase_config_status(), once=True
                     )
             else:
@@ -3799,7 +3800,7 @@ class SettingsUI:
                     return False  # Stop checking
 
             # Start timer to check results every 200ms (reduced frequency)
-            ui.timer(0.2, check_changelog_result)
+            layout_schedule(0.2, check_changelog_result)
 
         except Exception as e:
             logger.error(f"Error showing changelog modal: {e}", exc_info=True)
@@ -4066,7 +4067,7 @@ class SettingsUI:
 
                 # File listing area
                 with ui.scroll_area().classes(
-                    "w-full min-h-0 flex-1 border rounded-lg p-2 bg-theme-base"
+                    "w-full min-h-0 flex-1 border border-theme-default rounded-lg p-2 bg-theme-base"
                 ):
                     dialog_state["file_list"] = ui.column().classes("w-full gap-1")
 
@@ -4416,7 +4417,7 @@ class SettingsUI:
                     self._cleanup_spotify_test()
 
             # Schedule completion check after 5 seconds
-            ui.timer(5.0, handle_test_completion, once=True)
+            layout_schedule(5.0, handle_test_completion, once=True)
 
         except Exception as e:
             logger.error(f"Error handling Spotify test: {str(e)}", exc_info=True)
@@ -4704,7 +4705,7 @@ class SettingsUI:
                     self._cleanup_youtube_test()
 
             # Schedule completion check after 5 seconds
-            ui.timer(5.0, handle_test_completion, once=True)
+            layout_schedule(5.0, handle_test_completion, once=True)
 
         except Exception as e:
             logger.error(f"Error handling YouTube test: {str(e)}", exc_info=True)
@@ -5165,7 +5166,7 @@ class SettingsUI:
                             previous_settings_tab = current_tab
 
                     # Check for tab changes every 200ms
-                    ui.timer(0.2, check_settings_tab_changes, active=True)
+                    layout_schedule(0.2, check_settings_tab_changes, active=True)
 
                     # Lazy-loaded default tab never fires a change event on first open
                     initial_settings_tab = tabs.value or self._active_tab_name
@@ -5173,7 +5174,7 @@ class SettingsUI:
                         initial_settings_tab
                         and initial_settings_tab not in self._settings_loaded_tabs
                     ):
-                        ui.timer(
+                        layout_schedule(
                             0.05,
                             lambda t=initial_settings_tab: load_tab_content(t),
                             once=True,
@@ -5209,7 +5210,7 @@ class SettingsUI:
                         on_tab_change(mock_event)
                         previous_subtab = current_subtab
 
-                ui.timer(0.5, check_subtab_changes, active=True)  # Check every 500ms
+                layout_schedule(0.5, check_subtab_changes, active=True)  # Check every 500ms
 
         # Log timing summary
         # log_startup_summary()
@@ -5260,7 +5261,7 @@ class SettingsUI:
                     ui.button("Refresh URLs", on_click=self.refresh_source_urls).props(
                         "icon=refresh outline"
                     )
-                ui.timer(0.1, lambda: self.refresh_source_urls(), once=True)
+                layout_schedule(0.1, lambda: self.refresh_source_urls(), once=True)
 
     def _show_unsaved_changes_dialog(
         self, tabs_component, prev_name: str, next_name: str

@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from nicegui import ui
 from ..notification_engine import notify
 from ..ui_form_controls import form_input, form_number, form_select, form_textarea
+from ..ui_timer import layout_schedule
 from ..ui_buttons import destructive_button, outline_button, primary_button
 from ..path_utils import get_assets_path, get_template_path
 
@@ -484,7 +485,7 @@ def _run_preview_scale_js(reset_pan: bool) -> None:
     )
     try:
         ui.run_javascript(js)
-        ui.timer(0.15, lambda j=js: ui.run_javascript(j), once=True)
+        layout_schedule(0.15, lambda j=js: ui.run_javascript(j), once=True)
     except Exception as e:
         logger.debug("Preview scale JS skipped: %s", e)
 
@@ -520,7 +521,7 @@ def _bind_split_divider_js() -> None:
     )
     try:
         ui.run_javascript(js)
-        ui.timer(0.2, lambda j=js: ui.run_javascript(j), once=True)
+        layout_schedule(0.2, lambda j=js: ui.run_javascript(j), once=True)
     except Exception as e:
         logger.debug("Preview split JS skipped: %s", e)
 
@@ -738,7 +739,7 @@ def _schedule_template_preview_refresh() -> None:
             return
         _push_hot_preview_overrides()
 
-    ui.timer(0.32, _tick, once=True)
+    layout_schedule(0.32, _tick, once=True)
 
 
 def create_custom_sources_tab():
@@ -799,7 +800,7 @@ def create_custom_sources_tab():
                     tooltip="Filter configuration properties by label",
                     label="Search properties",
                     placeholder="Type to search by property label...",
-                    classes="flex-grow bg-theme-base",
+                    classes="grow bg-theme-base",
                     on_change=lambda e: on_search_changed(
                         e, config_parser, config_select, config_container
                     ),
@@ -825,7 +826,7 @@ def create_custom_sources_tab():
                         icon="delete",
                     )
 
-                ui.element("div").classes("flex-grow")
+                ui.element("div").classes("grow")
 
                 with ui.row().classes("gap-2"):
                     outline_button(
@@ -855,7 +856,7 @@ def create_custom_sources_tab():
             ui.element("div")
             .props(f"id={preview_split_row_id}")
             .classes(
-                "flex-grow overflow-hidden flex flex-row min-h-0 px-2 pb-2 gap-0 items-stretch w-full"
+                "grow overflow-hidden flex flex-row min-h-0 px-2 pb-2 gap-0 items-stretch w-full"
             )
         ):
             editor_panel = (
@@ -1108,7 +1109,7 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
                 )
 
             # Scrollable content area - flexible height
-            with ui.scroll_area().classes("w-full flex-grow"):
+            with ui.scroll_area().classes("w-full grow"):
                 # Create a form for the elements
                 form_data = {}
 
@@ -1352,7 +1353,7 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
                 form_data_store[config_name] = form_data
 
                 # Set a small delay to ensure everything is rendered before initializing
-                ui.timer(0.1, lambda: initialize_values(config_name), once=True)
+                layout_schedule(0.1, lambda: initialize_values(config_name), once=True)
 
 
 def initialize_values(config_name):
@@ -1612,7 +1613,7 @@ def render_form_element(
                         on_change=lambda e, id=element_id: update_form_data(
                             form_data, id, e.value
                         ),
-                    ).classes("flex-grow")
+                    ).classes("grow")
 
                     # Value display
                     value_label = ui.label(str(slider_value)).classes(

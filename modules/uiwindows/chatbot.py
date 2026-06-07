@@ -35,6 +35,7 @@ from nicegui import ui
 from ..notification_engine import notify
 from ..ui_buttons import outline_button, primary_button
 from ..ui_form_controls import form_input, form_number, form_textarea
+from ..ui_timer import layout_schedule
 
 from ..help_system.contextual_help import set_chatbot_ui_references
 
@@ -1353,7 +1354,7 @@ def create_chatbot_tab():
 
         # Main content area with tab panels - each panel contains its own buttons and content
         with ui.tab_panels(chatbot_tabs, value=commands_tab).classes(
-            "w-full flex-grow"
+            "w-full grow"
         ):
             # Commands Tab
             with ui.tab_panel(commands_tab).classes(
@@ -1404,7 +1405,7 @@ def create_chatbot_tab():
 
                 # Commands content area
                 global commands_container
-                with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.scroll_area().classes("w-full grow"):
                     commands_container = ui.element("div").classes("w-full p-4")
 
             # Events Tab
@@ -1456,7 +1457,7 @@ def create_chatbot_tab():
 
                 # Events content area
                 global events_container
-                with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.scroll_area().classes("w-full grow"):
                     events_container = ui.element("div").classes("w-full p-4")
 
             # Quotes Tab
@@ -1515,7 +1516,7 @@ def create_chatbot_tab():
 
                 # Quotes content area
                 global quotes_container
-                with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.scroll_area().classes("w-full grow"):
                     quotes_container = ui.element("div").classes("w-full p-4")
 
             # Greetings Tab
@@ -1576,7 +1577,7 @@ def create_chatbot_tab():
 
                 # Greetings content area
                 global greetings_container
-                with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.scroll_area().classes("w-full grow"):
                     greetings_container = ui.element("div").classes("w-full p-4")
 
             # Giveaways Tab
@@ -1594,7 +1595,7 @@ def create_chatbot_tab():
                             extra_classes="px-3 py-2",
                         )
 
-                with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.scroll_area().classes("w-full grow"):
                     giveaways_container = ui.element("div").classes("w-full p-4")
 
         # Load and display chatbot items for all tabs
@@ -1725,12 +1726,12 @@ def render_giveaways_tab(container_el) -> None:
 
             with ui.row().classes("w-full gap-4 items-stretch min-h-[280px]"):
                 with ui.column().classes(
-                    "flex-[2] min-w-0 gap-0 rounded-lg border border-[var(--color-border)]"
+                    "flex-[2] min-w-0 gap-0 rounded-lg border border-[var(--color-border-default)]"
                 ):
                     with ui.row().classes(
                         "w-full items-center justify-between px-4 py-2 "
                         "bg-[var(--color-bg-elevated)] rounded-t-lg border-b "
-                        "border-[var(--color-border)]"
+                        "border-[var(--color-border-default)]"
                     ):
                         ui.label("Giveaway Entrants").classes("text-lg font-medium")
                         pool_count = gm.get_pool_size()
@@ -1772,16 +1773,16 @@ def render_giveaways_tab(container_el) -> None:
                                             )
 
                     _build_entrants_list()
-                    ui.timer(2.5, callback=_build_entrants_list)
+                    layout_schedule(2.5, callback=_build_entrants_list)
 
                 with ui.column().classes(
                     "flex-1 min-w-[14rem] gap-0 rounded-lg border "
-                    "border-[var(--color-border)] giveaway-options-card"
+                    "border-[var(--color-border-default)] giveaway-options-card"
                 ):
                     with ui.row().classes(
                         "w-full items-center px-4 py-2 "
                         "bg-[var(--color-bg-elevated)] rounded-t-lg border-b "
-                        "border-[var(--color-border)]"
+                        "border-[var(--color-border-default)]"
                     ):
                         ui.label("Options").classes("text-lg font-medium")
                     with ui.column().classes("w-full p-3"):
@@ -2245,7 +2246,7 @@ def create_command_card(command_id: str, command: ChatCommand):
     with ui.element("div").classes(card_classes):
         # Header row with name and status
         with ui.row().classes("w-full items-center justify-between mb-3"):
-            with ui.column().classes("gap-1 flex-grow"):
+            with ui.column().classes("gap-1 grow"):
                 ui.label(command.name).classes("text-base font-semibold")
                 # Command name and aliases underneath
                 command_text = f"!{command.command_name}"
@@ -2349,26 +2350,26 @@ def create_command_card(command_id: str, command: ChatCommand):
                 on_click=lambda cid=command_id: show_edit_chatbot_dialog(
                     cid, "command"
                 ),
-            ).classes("control-button btn-secondary text-xs px-3 py-1 flex-grow")
+            ).classes("control-button btn-secondary text-xs px-3 py-1 grow")
 
             if command.command_type == CommandType.COUNTER:
                 ui.button(
                     icon="replay",
                     text="Reset",
                     on_click=lambda cid=command_id: reset_command_counter(cid),
-                ).classes("control-button btn-warning text-xs px-3 py-1 flex-grow")
+                ).classes("control-button btn-warning text-xs px-3 py-1 grow")
 
             ui.button(
                 icon="play_arrow",
                 text="Test",
                 on_click=lambda cid=command_id: test_chatbot_item(cid, "command"),
-            ).classes("control-button btn-success text-xs px-3 py-1 flex-grow")
+            ).classes("control-button btn-success text-xs px-3 py-1 grow")
 
             ui.button(
                 icon="delete",
                 text="Delete",
                 on_click=lambda cid=command_id: delete_chatbot_item(cid, "command"),
-            ).classes("control-button btn-danger text-xs px-3 py-1 flex-grow")
+            ).classes("control-button btn-danger text-xs px-3 py-1 grow")
 
 
 def create_event_card(event_id: str, event: ChatEvent):
@@ -2380,7 +2381,7 @@ def create_event_card(event_id: str, event: ChatEvent):
     with ui.element("div").classes(card_classes):
         # Header row with name and status
         with ui.row().classes("w-full items-center justify-between mb-3"):
-            with ui.column().classes("gap-1 flex-grow"):
+            with ui.column().classes("gap-1 grow"):
                 ui.label(event.name).classes("text-base font-semibold")
                 # Event type underneath with interval for interval events
                 event_type_text = format_event_name(event.event_type)
@@ -2448,19 +2449,19 @@ def create_event_card(event_id: str, event: ChatEvent):
                 icon="edit",
                 text="Edit",
                 on_click=lambda eid=event_id: show_edit_chatbot_dialog(eid, "event"),
-            ).classes("control-button btn-secondary text-xs px-3 py-1 flex-grow")
+            ).classes("control-button btn-secondary text-xs px-3 py-1 grow")
 
             ui.button(
                 icon="play_arrow",
                 text="Test",
                 on_click=lambda eid=event_id: test_chatbot_item(eid, "event"),
-            ).classes("control-button btn-warning text-xs px-3 py-1 flex-grow")
+            ).classes("control-button btn-warning text-xs px-3 py-1 grow")
 
             ui.button(
                 icon="delete",
                 text="Delete",
                 on_click=lambda eid=event_id: delete_chatbot_item(eid, "event"),
-            ).classes("control-button btn-danger text-xs px-3 py-1 flex-grow")
+            ).classes("control-button btn-danger text-xs px-3 py-1 grow")
 
 
 def create_quote_card(quote_id: str, quote):
@@ -2470,7 +2471,7 @@ def create_quote_card(quote_id: str, quote):
     with ui.element("div").classes(card_classes):
         # Header row with quote number and actions
         with ui.row().classes("w-full items-center justify-between mb-3"):
-            with ui.column().classes("gap-1 flex-grow"):
+            with ui.column().classes("gap-1 grow"):
                 ui.label(f"Quote #{quote.quote_number}").classes(
                     "text-base font-semibold"
                 )
@@ -2528,7 +2529,7 @@ def create_greeting_card(greeting_id: str, greeting):
     with ui.element("div").classes(card_classes):
         # Header row with username and status
         with ui.row().classes("w-full items-center justify-between mb-3"):
-            with ui.column().classes("gap-1 flex-grow"):
+            with ui.column().classes("gap-1 grow"):
                 ui.label(f"@{greeting.username}").classes("text-base font-semibold")
                 if greeting.user_id:
                     ui.label(f"ID: {greeting.user_id}").classes("text-xs text-cyan-300")
@@ -2591,13 +2592,13 @@ def create_greeting_card(greeting_id: str, greeting):
                 icon="edit",
                 text="Edit",
                 on_click=lambda gid=greeting_id: show_edit_greeting_dialog(gid),
-            ).classes("control-button btn-secondary text-xs px-3 py-1 flex-grow")
+            ).classes("control-button btn-secondary text-xs px-3 py-1 grow")
 
             ui.button(
                 icon="delete",
                 text="Delete",
                 on_click=lambda gid=greeting_id: delete_greeting(gid),
-            ).classes("control-button btn-danger text-xs px-3 py-1 flex-grow")
+            ).classes("control-button btn-danger text-xs px-3 py-1 grow")
 
 
 def format_interval_human_readable(seconds: int) -> str:
@@ -2802,7 +2803,7 @@ def show_chatbot_dialog(item_id: Optional[str] = None, item_type: Optional[str] 
                     ).classes("secondary-text")
 
                 # Dialog content
-                with ui.scroll_area().classes("flex-grow p-4"):
+                with ui.scroll_area().classes("grow p-4"):
                     create_chatbot_form(item_id, item_type)
 
     create_dialog.open()
@@ -3291,12 +3292,12 @@ def create_variable_processing_section(form_data: dict) -> ui.element:
                     label="Processing Expression",
                     placeholder="account_age=date_to_age({data.created_at})",
                     value=expression,
-                ).classes("flex-grow text-xs w-full")
+                ).classes("grow text-xs w-full")
 
                 ui.button(
                     icon="delete",
                     on_click=lambda: remove_processing_expression(expression_input),
-                ).classes("control-button btn-danger text-xs px-2 py-1 flex-shrink-0")
+                ).classes("control-button btn-danger text-xs px-2 py-1 shrink-0")
 
                 expression_input.on_value_change(lambda e: update_processing())
 
@@ -3563,7 +3564,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                 if event_type in events_with_settings:
                     with event_settings_container:
                         with ui.element("div").classes(
-                            "form-section mb-4 border border-gray-600 rounded-lg bg-theme-surface/30 p-4"
+                            "form-section mb-4 border border-gray-600 rounded-lg bg-theme-surface-30 p-4"
                         ):
                             ui.label("Event Settings").classes(
                                 "form-section-title mb-4"
@@ -3680,7 +3681,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
         if item_type == "command":
             # Command Settings Section (Collapsible)
             with ui.expansion("Settings", icon="settings").classes(
-                "w-full mb-4 border border-gray-600 rounded-lg bg-theme-surface/30 hover:bg-theme-surface/50 transition-colors"
+                "w-full mb-4 border border-gray-600 rounded-lg bg-theme-surface-30 hover-bg-theme-surface-50 transition-colors"
             ) as command_expansion:
                 with command_expansion.add_slot("default"):
                     with ui.element("div").classes("form-section p-4 w-full"):
@@ -3984,7 +3985,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                         update_examples()
 
                 # Right column - Variables panel (fixed width)
-                with ui.element("div").classes("w-96 flex-shrink-0"):
+                with ui.element("div").classes("w-96 shrink-0"):
                     # Variables panel header
                     with ui.row().classes("items-center justify-between mb-3"):
                         ui.label("Variables").classes(
@@ -5031,7 +5032,7 @@ def show_custom_variable_dialog(
 
                         # Help text in a fixed height scrollable container
                         with ui.element("div").classes(
-                            "h-40 overflow-y-auto bg-theme-surface/50 p-3 rounded border border-gray-600"
+                            "h-40 overflow-y-auto bg-theme-surface-50 p-3 rounded border border-gray-600"
                         ):
                             ui.label("💡 Expression Examples:").classes(
                                 "text-xs font-medium text-indigo-400 mb-2 block"
@@ -5085,7 +5086,7 @@ def show_custom_variable_dialog(
                             ).classes("control-button btn-primary px-4 py-2")
 
                     # Right column - Variables panel (matching command dialog style)
-                    with ui.element("div").classes("w-96 flex-shrink-0"):
+                    with ui.element("div").classes("w-96 shrink-0"):
                         # Variables panel header
                         with ui.row().classes("items-center justify-between mb-3"):
                             ui.label("Variables").classes(
@@ -5419,7 +5420,7 @@ def show_custom_variable_dialog(
                             # No dynamic category updates needed for custom variables dialog
 
                     # Third column - Expressions/Modifiers panel
-                    with ui.element("div").classes("w-full flex-shrink-0"):
+                    with ui.element("div").classes("w-full shrink-0"):
                         # Expressions panel header
                         with ui.row().classes("items-center justify-between mb-3"):
                             ui.label("Expressions & Modifiers").classes(

@@ -29,6 +29,7 @@ import time
 from nicegui import ui
 from ..notification_engine import notify
 from ..ui_buttons import outline_button
+from ..ui_timer import layout_schedule
 
 from ..help_system.contextual_help import set_alerts_ui_references
 
@@ -392,13 +393,13 @@ def create_alert_settings_tab():
                     except Exception as load_err:
                         logger.error(f"Error in direct load: {str(load_err)}")
 
-                ui.timer(0.1, direct_load, once=True)
+                layout_schedule(0.1, direct_load, once=True)
 
         alert_tabs.on("change", simple_tab_handler)
 
         # Main content area with tab panels
         with ui.tab_panels(alert_tabs, value=bits_tab).classes(
-            "w-full h-[calc(100%-48px)] flex-grow"
+            "w-full h-[calc(100%-48px)] grow"
         ):
             # Bits Alerts Tab
             with ui.tab_panel(bits_tab).classes(
@@ -468,12 +469,12 @@ def create_alert_settings_tab():
                         logger.error(f"Error in load_points_when_visible: {str(e)}")
 
                 # Schedule multiple attempts to load when this panel is created
-                ui.timer(0.5, load_points_when_visible, once=True)
-                ui.timer(1.5, load_points_when_visible, once=True)
-                ui.timer(3.0, load_points_when_visible, once=True)
+                layout_schedule(0.5, load_points_when_visible, once=True)
+                layout_schedule(1.5, load_points_when_visible, once=True)
+                layout_schedule(3.0, load_points_when_visible, once=True)
 
         # Initialize first tab immediately
-        ui.timer(0.5, lambda: initialize_tab_values("Bits"), once=True)
+        layout_schedule(0.5, lambda: initialize_tab_values("Bits"), once=True)
 
 
 def initialize_tab_values(tab_name):
@@ -520,7 +521,7 @@ def initialize_tab_values(tab_name):
                     logger.error(f"Error loading Twitch point rewards: {str(load_err)}")
 
             # Simple delayed load
-            ui.timer(0.3, simple_load_rewards, once=True)
+            layout_schedule(0.3, simple_load_rewards, once=True)
 
         # If alert_select has a valid value, try to reload that alert
         if (
@@ -884,10 +885,10 @@ def create_alert_type_panel(alert_type: str):
                     )
 
             # At the end of building the tab, trigger the default alert to load or store original values
-            ui.timer(0.5, lambda: initialize_alert_values(alert_type), once=True)
+            layout_schedule(0.5, lambda: initialize_alert_values(alert_type), once=True)
 
             # Register all UI elements for tracking
-            ui.timer(1.0, register_ui_elements, once=True)
+            layout_schedule(1.0, register_ui_elements, once=True)
 
             # Log to verify that the panel was created
             logger.debug(f"Created alert panel for {alert_type}")
@@ -1428,9 +1429,9 @@ def load_alert_settings(alert_type: str, alert_id: str):
                 logger.error(f"Error in force UI refresh: {str(refresh_err)}")
 
         # Schedule multiple refresh attempts with delays
-        ui.timer(0.1, force_ui_refresh_multiple, once=True)
-        ui.timer(0.3, force_ui_refresh_multiple, once=True)
-        ui.timer(0.5, force_ui_refresh_multiple, once=True)
+        layout_schedule(0.1, force_ui_refresh_multiple, once=True)
+        layout_schedule(0.3, force_ui_refresh_multiple, once=True)
+        layout_schedule(0.5, force_ui_refresh_multiple, once=True)
 
         # Update range/exact inputs if applicable
         is_fallback = alert_id == alertutils.AlertSettings.FALLBACK_ALERT_ID
@@ -1838,7 +1839,7 @@ def show_file_browser_dialog(
 
             # File listing area
             with ui.scroll_area().classes(
-                "w-full min-h-0 flex-1 border rounded-lg p-2 bg-theme-base"
+                "w-full min-h-0 flex-1 border border-theme-default rounded-lg p-2 bg-theme-base"
             ):
                 dialog_state["file_list"] = ui.column().classes("w-full gap-1")
 
@@ -3190,7 +3191,7 @@ def create_points_alert_panel():
                     logger.error(f"Error in auto-load rewards: {str(auto_load_err)}")
 
             # Schedule auto-load with a delay to ensure UI is fully rendered
-            ui.timer(1.0, auto_load_rewards, once=True)
+            layout_schedule(1.0, auto_load_rewards, once=True)
 
 
 def create_audio_settings_section(alert_type: str):
@@ -3898,9 +3899,9 @@ def _schedule_point_reward_select_refresh(select_element):
         except Exception as refresh_err:
             logger.error(f"Error in force refresh: {str(refresh_err)}")
 
-    ui.timer(0.1, force_refresh, once=True)
-    ui.timer(0.3, force_refresh, once=True)
-    ui.timer(0.5, force_refresh, once=True)
+    layout_schedule(0.1, force_refresh, once=True)
+    layout_schedule(0.3, force_refresh, once=True)
+    layout_schedule(0.5, force_refresh, once=True)
 
 
 def load_twitch_point_rewards():
@@ -4380,9 +4381,9 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
                 logger.error(f"Error in force UI refresh: {str(refresh_err)}")
 
         # Schedule multiple refresh attempts with delays
-        ui.timer(0.1, force_ui_refresh, once=True)
-        ui.timer(0.3, force_ui_refresh, once=True)
-        ui.timer(0.5, force_ui_refresh, once=True)
+        layout_schedule(0.1, force_ui_refresh, once=True)
+        layout_schedule(0.3, force_ui_refresh, once=True)
+        layout_schedule(0.5, force_ui_refresh, once=True)
 
         # Store original values
         store_original_values(alert_type)
@@ -4626,7 +4627,7 @@ def save_point_alert():
                     store_original_values(alert_type)
                     clear_changed_styling(alert_type)
 
-            ui.timer(0.85, after_list_refresh, once=True)
+            layout_schedule(0.85, after_list_refresh, once=True)
         else:
             notify("Error saving point alert settings", type="negative")
 

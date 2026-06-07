@@ -21,12 +21,128 @@ from nicegui import ui
 
 from .connection_status_tracker import service_configured as _service_configured
 from .path_utils import get_data_path
+from .ui_timer import app_schedule
 
 logger = logging.getLogger(__name__)
 
 HISTORY_FILENAME = "notification_center_history.json"
 MAX_HISTORY_ITEMS = 200
 DEFAULT_DEDUPE_COOLDOWN_SEC = 45.0
+DEFAULT_TOAST_TIMEOUT_MS = 5000
+# Values below this threshold are treated as seconds (legacy call sites used ``timeout=3``).
+_TIMEOUT_SECONDS_THRESHOLD = 1000
+
+# Quasar Notify pins ``left``/``width`` on dismiss but not ``top``. When leave-active
+# applies ``position: absolute`` the toast jumps to the top slot before exiting — this
+# script snapshots offsetTop and restores it for mycelian toasts.
+NOTIFICATION_LEAVE_PIN_SCRIPT = """
+<script>
+(function () {
+    var LEAVE_ACTIVE = 'q-notification--top-right-leave-active';
+
+    function snapshotPositions() {
+        document.querySelectorAll('.q-notification.mycelian-toast').forEach(function (el) {
+            if (el.classList.contains(LEAVE_ACTIVE)) {
+                return;
+            }
+            el.dataset.mycelianOffsetTop = String(el.offsetTop);
+        });
+    }
+
+    function pinLeavePosition(el) {
+        if (!el.classList || !el.classList.contains('mycelian-toast')) {
+            return;
+        }
+        if (!el.classList.contains(LEAVE_ACTIVE)) {
+            return;
+        }
+        if (el.dataset.mycelianLeavePinned === '1') {
+            return;
+        }
+        var top = el.dataset.mycelianOffsetTop;
+        if (top == null || top === '') {
+            return;
+        }
+        el.style.top = top + 'px';
+        el.dataset.mycelianLeavePinned = '1';
+    }
+
+    function scanLeaving() {
+        document.querySelectorAll('.q-notification.mycelian-toast.' + LEAVE_ACTIVE)
+            .forEach(pinLeavePosition);
+    }
+
+    var tracking = false;
+    var trackRaf = null;
+
+    function trackLoop() {
+        snapshotPositions();
+        scanLeaving();
+        if (document.querySelector('.q-notification.mycelian-toast')) {
+            trackRaf = requestAnimationFrame(trackLoop);
+        } else {
+            tracking = false;
+            trackRaf = null;
+        }
+    }
+
+    function ensureTracking() {
+        if (tracking) {
+            return;
+        }
+        if (!document.querySelector('.q-notification.mycelian-toast')) {
+            return;
+        }
+        tracking = true;
+        trackRaf = requestAnimationFrame(trackLoop);
+    }
+
+    function attachLists() {
+        document.querySelectorAll('.q-notifications__list').forEach(function (list) {
+            if (list.dataset.mycelianNotifyObserved === '1') {
+                return;
+            }
+            list.dataset.mycelianNotifyObserved = '1';
+            var observer = new MutationObserver(function (records) {
+                records.forEach(function (record) {
+                    if (record.type === 'attributes' && record.attributeName === 'class') {
+                        pinLeavePosition(record.target);
+                    }
+                });
+                snapshotPositions();
+                scanLeaving();
+                ensureTracking();
+            });
+            observer.observe(list, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class'],
+            });
+        });
+    }
+
+    function boot() {
+        attachLists();
+        snapshotPositions();
+        ensureTracking();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        boot();
+    }
+
+    new MutationObserver(function () {
+        attachLists();
+        ensureTracking();
+    }).observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+"""
+
+_notification_leave_script_injected = False
 
 _last_emit_monotonic: Dict[str, float] = {}
 _history: List[Dict[str, Any]] = []
@@ -206,8 +322,55 @@ def _mark_dedupe(dedupe_key: str) -> None:
     _last_emit_monotonic[dedupe_key] = time.monotonic()
 
 
+def _normalize_timeout_ms(timeout: Optional[float]) -> int:
+    """Convert app timeout values to Quasar Notify milliseconds.
+
+    Call sites mix seconds (``3``, ``8.0``) and milliseconds (``2000``). Quasar
+    always expects milliseconds; small values otherwise dismiss almost instantly.
+    """
+    if timeout is None:
+        return DEFAULT_TOAST_TIMEOUT_MS
+    if timeout == 0:
+        return 0
+    if timeout < _TIMEOUT_SECONDS_THRESHOLD:
+        return max(0, int(round(float(timeout) * 1000)))
+    return max(0, int(round(float(timeout))))
+
+
+def _build_toast_opts(
+    ntype: str,
+    *,
+    position: str = "top-right",
+    timeout: Optional[float] = None,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Build Quasar Notify options aligned with notification-center history cards.
+
+    Quasar ``type`` applies ``bg-*`` utilities from the ``quasar_importants`` CSS layer
+    (bright fills, white text, type icons). History cards use themed ``nc-history-card--*``
+    classes instead — floating toasts mirror that via ``mycelian-toast--*``.
+    """
+    opts: Dict[str, Any] = {
+        "position": position,
+        "classes": f"mycelian-toast mycelian-toast--{ntype}",
+        "group": False,
+        "ignoreDefaults": True,
+        "timeout": _normalize_timeout_ms(timeout),
+    }
+    extra = dict(kwargs)
+    extra.pop("type", None)
+    if "timeout" in extra:
+        extra["timeout"] = _normalize_timeout_ms(extra.get("timeout"))
+    close_btn = extra.get("close_button", extra.get("closeBtn"))
+    if close_btn is True:
+        extra["close_button"] = "\u00d7"
+    opts.update(extra)
+    return opts
+
+
 def _deliver_toast(message: str, opts: Dict[str, Any]) -> bool:
     """Show a toast if the UI is ready. Returns False when delivery should be retried."""
+    inject_notification_ui_assets()
     try:
         ui.notify(message, **opts)
         return True
@@ -284,10 +447,9 @@ def notify(
     _trigger_history_refresh()
 
     if not skip_toast:
-        opts = {"type": ntype, "position": position}
-        if timeout is not None:
-            opts["timeout"] = timeout
-        opts.update(kwargs)
+        opts = _build_toast_opts(
+            ntype, position=position, timeout=timeout, **kwargs
+        )
         if not _deliver_toast(message, opts):
             _pending_toasts.append((message, dict(opts)))
             if len(_pending_toasts) > _MAX_PENDING_TOASTS:
@@ -321,9 +483,9 @@ def _broadcast_notify(message: str, opts: Dict[str, Any]) -> None:
     loop = getattr(core, "loop", None)
 
     def _enqueue_on_loop() -> None:
-        # Mycelian uses NiceGUI's auto-index pattern (no @ui.page), so
-        # ``Client.auto_index_client`` IS the live UI window — we MUST
-        # include it. The outbox loop already skips clients without a
+        # Mycelian renders all UI through a single ``ui.run(root=...)`` page, so the
+        # live native window is just an entry in ``Client.instances``. Broadcast to
+        # every connected client; the outbox loop already skips clients without a
         # socket connection, so no extra filter is needed here.
         for client in list(Client.instances.values()):
             try:
@@ -613,7 +775,7 @@ def _refresh_footer_after_background_probe() -> None:
         refresh_service_status_footer()
         return
     if _footer_probe_running:
-        ui.timer(0.15, _refresh_footer_after_background_probe, once=True)
+        app_schedule(0.15, _refresh_footer_after_background_probe, once=True)
 
 
 def schedule_service_status_probe(*, force: bool = True, delay_seconds: float = 0.1) -> None:
@@ -633,9 +795,9 @@ def schedule_service_status_probe(*, force: bool = True, delay_seconds: float = 
             daemon=True,
             name="ServiceStatusProbe",
         ).start()
-        ui.timer(0.15, _refresh_footer_after_background_probe, once=True)
+        app_schedule(0.15, _refresh_footer_after_background_probe, once=True)
 
-    ui.timer(delay_seconds, _start_probe, once=True)
+    app_schedule(delay_seconds, _start_probe, once=True)
 
 
 def create_service_status_footer() -> None:
@@ -813,8 +975,8 @@ def poll_service_connection_changes() -> None:
 
 def start_service_watcher_timer() -> None:
     """Start periodic polling for integration status changes (after UI exists)."""
-    ui.timer(2.0, poll_service_status_changes, active=True)
-    ui.timer(1.0, flush_pending_toasts, active=True)
+    app_schedule(2.0, poll_service_status_changes, active=True)
+    app_schedule(1.0, flush_pending_toasts, active=True)
     flush_pending_toasts()
 
 
@@ -824,6 +986,7 @@ load_history()
 _history_last_read_ts: float = time.time()
 
 _history_column: Optional[Any] = None
+_history_scroll_area: Optional[Any] = None
 _notification_dialog: Optional[Any] = None
 _tray_badge_ref: Optional[Any] = None
 
@@ -871,10 +1034,23 @@ def _bump_history_read_watermark() -> None:
     _update_tray_badge()
 
 
+def _scroll_history_to_top() -> None:
+    scroll = _history_scroll_area
+    if scroll is None:
+        return
+    try:
+        if getattr(scroll, "is_deleted", False):
+            return
+        scroll.scroll_to(pixels=0, duration=0.28)
+    except Exception as e:
+        logger.debug("history scroll-to-top failed: %s", e)
+
+
 def _render_history_cards() -> None:
     col = _history_column
     if col is None:
         return
+    panel_open = _notification_panel_is_open()
     col.clear()
     with col:
         items = list(reversed(get_history()))
@@ -916,7 +1092,8 @@ def _render_history_cards() -> None:
                 return _go
 
             with ui.card().classes(
-                f"nc-history-card w-full min-w-0 overflow-visible {type_class} p-0 gap-0"
+                f"nc-history-card nc-history-card--enter w-full min-w-0 overflow-visible "
+                f"{type_class} p-0 gap-0"
             ):
                 with ui.row().classes(
                     "w-full items-center justify-between gap-2 flex-nowrap "
@@ -949,10 +1126,24 @@ def _render_history_cards() -> None:
                         "text-sm break-words text-[var(--color-text-primary)] leading-snug"
                     )
 
+    if panel_open:
+        _scroll_history_to_top()
+
+
+def inject_notification_ui_assets() -> None:
+    """Inject shared head assets for toast leave-position pinning (once)."""
+    global _notification_leave_script_injected
+    if _notification_leave_script_injected:
+        return
+    ui.add_head_html(NOTIFICATION_LEAVE_PIN_SCRIPT, shared=True)
+    _notification_leave_script_injected = True
+
 
 def create_notification_tray_button() -> None:
     """Place inside the main header row (next to tabs). Opens notification center."""
-    global _history_column, _notification_dialog, _tray_badge_ref
+    global _history_column, _history_scroll_area, _notification_dialog, _tray_badge_ref
+
+    inject_notification_ui_assets()
 
     def refresh() -> None:
         _render_history_cards()
@@ -994,8 +1185,11 @@ def create_notification_tray_button() -> None:
                     icon="close",
                     on_click=close_notification_panel,
                 ).props("flat dense round").tooltip("Close panel")
-        with ui.scroll_area().classes("w-full flex-grow min-h-0"):
-            _history_column = ui.column().classes("w-full gap-2")
+        with ui.scroll_area().classes(
+            "nc-history-scroll w-full grow min-h-0"
+        ) as history_scroll:
+            _history_scroll_area = history_scroll
+            _history_column = ui.column().classes("nc-history-list w-full gap-2")
 
     with ui.row().classes("relative inline-flex items-center shrink-0"):
         ui.button(icon="notifications", on_click=toggle_panel).props(

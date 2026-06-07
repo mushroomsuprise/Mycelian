@@ -544,67 +544,107 @@ body:not(.body--dark) .text-grey {
     border: 1px solid var(--color-border-default) !important;
 }
 
-/* Notifications */
-.q-notification {
-    background: var(--color-bg-elevated) !important;
+/*
+ * Notification surfaces — history panel cards + top-right floating toasts.
+ * Floating toasts use mycelian-toast--* classes (see notification_engine._build_toast_opts)
+ * instead of Quasar notify ``type`` so we avoid quasar_importants bg-* / text-white defaults.
+ */
+.nc-history-card {
+    border-radius: 8px;
+    transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nc-history-card--enter {
+    animation: nc-history-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes nc-history-enter {
+    from {
+        opacity: 0;
+        transform: translateX(14px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.nc-history-list .nc-history-card--enter:nth-child(1) { animation-delay: 0ms; }
+.nc-history-list .nc-history-card--enter:nth-child(2) { animation-delay: 35ms; }
+.nc-history-list .nc-history-card--enter:nth-child(3) { animation-delay: 70ms; }
+.nc-history-list .nc-history-card--enter:nth-child(4) { animation-delay: 105ms; }
+.nc-history-list .nc-history-card--enter:nth-child(n+5) { animation-delay: 140ms; }
+
+.nc-history-scroll .q-scrollarea__container {
+    scroll-behavior: smooth;
+}
+
+.q-notification.mycelian-toast {
+    border-radius: 8px;
+    background: var(--color-bg-surface) !important;
     color: var(--color-text-primary) !important;
     border: 1px solid var(--color-border-default) !important;
+    box-shadow: 0 1px 3px var(--color-bg-overlay) !important;
+    max-width: min(65vw, 420px) !important;
+    margin: 8px 10px 0 !important;
+    font-size: 0.875rem !important;
+    /* Keep Quasar enter/leave transitions (transform + opacity); do not replace with
+       filter/box-shadow only — that caused instant flash in/out after the NG3 restyle. */
+    transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.36s cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
-.q-notification.bg-positive,
-.q-notification--positive {
-    background: color-mix(
-        in srgb,
-        var(--color-notify-success, var(--color-success)) 22%,
-        var(--color-bg-elevated)
-    ) !important;
-    border-color: color-mix(
-        in srgb,
-        var(--color-notify-success, var(--color-success)) 45%,
-        var(--color-border-default)
-    ) !important;
+/* Top-right toasts: slide/fade from the right edge (Quasar default is translateY from above). */
+.q-notification.mycelian-toast.q-notification--top-right-enter-from,
+.q-notification.mycelian-toast.q-notification--top-right-leave-to {
+    opacity: 0 !important;
+    transform: translateX(calc(100% + 12px)) !important;
 }
 
-.q-notification.bg-negative,
-.q-notification--negative {
-    background: color-mix(
-        in srgb,
-        var(--color-notify-error, var(--color-error)) 22%,
-        var(--color-bg-elevated)
-    ) !important;
-    border-color: color-mix(
-        in srgb,
-        var(--color-notify-error, var(--color-error)) 45%,
-        var(--color-border-default)
-    ) !important;
+/* Quasar leave-active uses position:absolute without top — offsetTop restored via JS. */
+.q-notification.mycelian-toast.q-notification--top-right-leave-active {
+    margin-top: 0 !important;
 }
 
-.q-notification.bg-warning,
-.q-notification--warning {
-    background: color-mix(
-        in srgb,
-        var(--color-notify-warning, var(--color-warning)) 22%,
-        var(--color-bg-elevated)
-    ) !important;
-    border-color: color-mix(
-        in srgb,
-        var(--color-notify-warning, var(--color-warning)) 45%,
-        var(--color-border-default)
-    ) !important;
+@media (prefers-reduced-motion: reduce) {
+    .nc-history-card--enter {
+        animation: none !important;
+    }
+
+    .nc-history-scroll .q-scrollarea__container {
+        scroll-behavior: auto;
+    }
+
+    .q-notification.mycelian-toast {
+        transition: none !important;
+    }
+
+    .q-notification.mycelian-toast.q-notification--top-right-enter-from,
+    .q-notification.mycelian-toast.q-notification--top-right-leave-to {
+        transform: none !important;
+    }
 }
 
-.q-notification.bg-info,
-.q-notification--info {
-    background: color-mix(
-        in srgb,
-        var(--color-notify-info, var(--color-info)) 22%,
-        var(--color-bg-elevated)
-    ) !important;
-    border-color: color-mix(
-        in srgb,
-        var(--color-notify-info, var(--color-info)) 45%,
-        var(--color-border-default)
-    ) !important;
+.q-notification.mycelian-toast.text-white,
+.q-notification.mycelian-toast .q-notification__message,
+.q-notification.mycelian-toast .q-notification__caption {
+    color: var(--color-text-primary) !important;
+}
+
+.q-notification.mycelian-toast .q-notification__actions .q-btn {
+    min-width: 1.75rem !important;
+    min-height: 1.75rem !important;
+    padding: 0.25rem !important;
+    color: var(--color-text-muted) !important;
+    font-size: 1rem !important;
+    line-height: 1 !important;
+    text-transform: none !important;
+    border-radius: 50% !important;
+}
+
+.q-notification.mycelian-toast .q-notification__actions .q-btn:hover {
+    background: var(--color-hover-overlay) !important;
+    color: var(--color-text-primary) !important;
 }
 
 /*
@@ -621,13 +661,8 @@ body.q-ios-padding .q-notifications__list.q-notifications__list--top.items-end {
     ) !important;
 }
 
-/* Notification center history cards (see modules/notification_engine.py) */
-.nc-history-card {
-    border-radius: 8px;
-    transition: filter 0.15s ease, box-shadow 0.15s ease;
-}
-
-.nc-history-card--positive {
+.nc-history-card--positive,
+.q-notification.mycelian-toast--positive {
     background: color-mix(
         in srgb,
         var(--color-notify-success, var(--color-success)) 22%,
@@ -641,7 +676,8 @@ body.q-ios-padding .q-notifications__list.q-notifications__list--top.items-end {
     box-shadow: 0 1px 3px var(--color-bg-overlay);
 }
 
-.nc-history-card--negative {
+.nc-history-card--negative,
+.q-notification.mycelian-toast--negative {
     background: color-mix(
         in srgb,
         var(--color-notify-error, var(--color-error)) 22%,
@@ -655,7 +691,8 @@ body.q-ios-padding .q-notifications__list.q-notifications__list--top.items-end {
     box-shadow: 0 1px 3px var(--color-bg-overlay);
 }
 
-.nc-history-card--warning {
+.nc-history-card--warning,
+.q-notification.mycelian-toast--warning {
     background: color-mix(
         in srgb,
         var(--color-notify-warning, var(--color-warning)) 22%,
@@ -670,7 +707,9 @@ body.q-ios-padding .q-notifications__list.q-notifications__list--top.items-end {
 }
 
 .nc-history-card--info,
-.nc-history-card--ongoing {
+.nc-history-card--ongoing,
+.q-notification.mycelian-toast--info,
+.q-notification.mycelian-toast--ongoing {
     background: color-mix(
         in srgb,
         var(--color-notify-info, var(--color-info)) 22%,
@@ -684,9 +723,11 @@ body.q-ios-padding .q-notifications__list.q-notifications__list--top.items-end {
     box-shadow: 0 1px 3px var(--color-bg-overlay);
 }
 
-.nc-history-card--default {
+.nc-history-card--default,
+.q-notification.mycelian-toast--default {
     background: var(--color-bg-surface) !important;
     border: 1px solid var(--color-border-default) !important;
+    box-shadow: 0 1px 3px var(--color-bg-overlay);
 }
 
 .nc-history-card__body--clickable:hover {
@@ -855,14 +896,13 @@ body:not(.body--dark) .q-icon {
 }
 
 /* Notifications and tooltips in light mode */
-body:not(.body--dark) .q-notification {
+body:not(.body--dark) .q-notification.mycelian-toast {
     background: var(--color-bg-elevated) !important;
     color: var(--color-text-primary) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 
-body:not(.body--dark) .q-notification.bg-positive,
-body:not(.body--dark) .q-notification--positive {
+body:not(.body--dark) .q-notification.mycelian-toast--positive {
     background: color-mix(
         in srgb,
         var(--color-notify-success, var(--color-success)) 18%,
@@ -870,8 +910,7 @@ body:not(.body--dark) .q-notification--positive {
     ) !important;
 }
 
-body:not(.body--dark) .q-notification.bg-negative,
-body:not(.body--dark) .q-notification--negative {
+body:not(.body--dark) .q-notification.mycelian-toast--negative {
     background: color-mix(
         in srgb,
         var(--color-notify-error, var(--color-error)) 18%,
@@ -879,8 +918,7 @@ body:not(.body--dark) .q-notification--negative {
     ) !important;
 }
 
-body:not(.body--dark) .q-notification.bg-warning,
-body:not(.body--dark) .q-notification--warning {
+body:not(.body--dark) .q-notification.mycelian-toast--warning {
     background: color-mix(
         in srgb,
         var(--color-notify-warning, var(--color-warning)) 18%,
@@ -888,8 +926,8 @@ body:not(.body--dark) .q-notification--warning {
     ) !important;
 }
 
-body:not(.body--dark) .q-notification.bg-info,
-body:not(.body--dark) .q-notification--info {
+body:not(.body--dark) .q-notification.mycelian-toast--info,
+body:not(.body--dark) .q-notification.mycelian-toast--ongoing {
     background: color-mix(
         in srgb,
         var(--color-notify-info, var(--color-info)) 18%,
@@ -1191,6 +1229,11 @@ button.alert-save-btn:hover,
     color: var(--color-primary-hover) !important;
 }
 
+/* Muted text - replaces text-gray-500 */
+.text-theme-muted {
+    color: var(--color-text-muted) !important;
+}
+
 /* Status text colors - replaces text-green-500, text-red-500, etc. */
 .text-theme-success {
     color: var(--color-success) !important;
@@ -1229,6 +1272,17 @@ button.alert-save-btn:hover,
     background-color: var(--color-bg-overlay) !important;
 }
 
+/* Translucent surface variants - replaces Tailwind opacity modifiers like
+   bg-theme-surface/30, which do not work on custom (non-registered) color
+   classes under Tailwind 4. */
+.bg-theme-surface-30 {
+    background-color: color-mix(in srgb, var(--color-bg-surface) 30%, transparent) !important;
+}
+
+.bg-theme-surface-50 {
+    background-color: color-mix(in srgb, var(--color-bg-surface) 50%, transparent) !important;
+}
+
 /* Hover backgrounds - replaces hover:bg-[#2a2a2a] */
 .hover-theme-surface:hover {
     background-color: var(--color-bg-surface) !important;
@@ -1236,6 +1290,10 @@ button.alert-save-btn:hover,
 
 .hover-theme-overlay:hover {
     background-color: var(--color-hover-overlay) !important;
+}
+
+.hover-bg-theme-surface-50:hover {
+    background-color: color-mix(in srgb, var(--color-bg-surface) 50%, transparent) !important;
 }
 
 /* =========================================

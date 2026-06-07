@@ -30,6 +30,7 @@ import os
 from nicegui import ui
 from ..notification_engine import notify
 from ..ui_form_controls import form_input, form_number
+from ..ui_timer import layout_schedule
 
 from .. import template_config_parser, web_engine
 
@@ -126,7 +127,7 @@ def create_source_controls_tab():
                     )
 
         # Create a container for the controls - flexible height
-        with ui.element("div").classes("flex-grow overflow-hidden"):
+        with ui.element("div").classes("grow overflow-hidden"):
             with ui.scroll_area().classes("w-full h-full"):
                 source_controls_container = ui.element("div").classes("w-full")
 
@@ -423,7 +424,7 @@ def create_counter_control(template_name, element):
             "w-6 h-6 btn-success text-xs"
         )
         ui.button("Reset", on_click=reset).classes(
-            "flex-grow btn-cancel text-xs py-1"
+            "grow btn-cancel text-xs py-1"
         )
 
 
@@ -461,7 +462,7 @@ def create_text_input_control(template_name, element):
                 {"text": text_payload},
             )
 
-        emit_timer["timer"] = ui.timer(0.0, emit_now, once=True)
+        emit_timer["timer"] = layout_schedule(0.0, emit_now, once=True)
 
     text_input = form_input(
         tooltip=placeholder or "Send text to the template control",

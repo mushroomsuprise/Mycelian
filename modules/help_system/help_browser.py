@@ -264,7 +264,7 @@ class HelpBrowser:
                     "w-full px-3 py-2"
                 ).style("display: none;")
 
-                with ui.scroll_area().classes("help-scroll flex-grow").style("flex: 1;"):
+                with ui.scroll_area().classes("help-scroll grow").style("flex: 1;"):
                     with ui.column().classes("w-full p-3 gap-1"):
                         ui.label("Categories").classes(
                             "text-xs font-medium uppercase tracking-wider mb-2 help-text-muted"
@@ -291,7 +291,7 @@ class HelpBrowser:
                 with ui.row().classes("w-full items-center"):
                     ui.icon(category_icon, size="xs").classes("help-icon-accent").style("margin-right: 8px;")
                     ui.label(category_name).classes(
-                        "flex-grow text-left text-sm help-text-primary"
+                        "grow text-left text-sm help-text-primary"
                     )
                     expand_icon = ui.icon("expand_more", size="xs").classes("help-expand-icon")
                     ui.badge(str(len(topics))).props("outline").classes(
@@ -340,7 +340,7 @@ class HelpBrowser:
     def _build_content_area(self):
         """Build main content area with optional TOC sidebar"""
         try:
-            with ui.column().classes("help-content-area flex-grow h-full").style(
+            with ui.column().classes("help-content-area grow h-full").style(
                 "flex: 1; min-width: 0; display: flex; flex-direction: column;"
             ):
                 with ui.row().classes("w-full items-center p-3 gap-2 help-toolbar"):
@@ -361,7 +361,7 @@ class HelpBrowser:
                     ).style("min-width: 36px;").on("click", self._show_welcome).tooltip("Home")
 
                     self.breadcrumb_container = ui.row().classes(
-                        "help-breadcrumb flex-grow items-center mx-2"
+                        "help-breadcrumb grow items-center mx-2"
                     )
                     with self.breadcrumb_container:
                         ui.label("Home").classes("help-breadcrumb-item text-sm")
@@ -370,7 +370,7 @@ class HelpBrowser:
                         "help-close-btn"
                     ).style("min-width: 36px;").on("click", lambda: self.dialog.close()).tooltip("Close")
 
-                with ui.scroll_area().classes("help-scroll flex-grow").style("flex: 1;"):
+                with ui.scroll_area().classes("help-scroll grow").style("flex: 1;"):
                     with ui.row().classes("w-full").style(
                         "display: flex; align-items: flex-start; gap: 0;"
                     ):
@@ -465,7 +465,7 @@ class HelpBrowser:
                                         ui.icon("article", size="sm").classes(
                                             "help-icon-accent"
                                         ).style("margin-top: 2px;")
-                                        with ui.column().classes("gap-1 flex-grow"):
+                                        with ui.column().classes("gap-1 grow"):
                                             ui.label(topic.title).classes(
                                                 "font-medium text-sm help-text-primary"
                                             )
@@ -644,7 +644,7 @@ class HelpBrowser:
                                     ui.icon("article", size="xs").classes(
                                         "help-icon-accent-muted"
                                     ).style("margin-top: 2px;")
-                                    with ui.column().classes("gap-1 flex-grow"):
+                                    with ui.column().classes("gap-1 grow"):
                                         ui.label(rel_topic.title).classes(
                                             "font-medium text-sm help-text-primary"
                                         )
@@ -895,7 +895,7 @@ class HelpBrowser:
                             with ui.row().classes("w-full items-center mb-3"):
                                 ui.icon(icon, size="md").classes("help-icon-accent")
                                 ui.label(category_name).classes(
-                                    "text-lg font-semibold flex-grow ml-3 help-text-primary"
+                                    "text-lg font-semibold grow ml-3 help-text-primary"
                                 )
                                 ui.label(f"{len(topics)} topics").classes("text-sm help-text-muted")
 
@@ -950,7 +950,7 @@ class HelpBrowser:
                                 ui.icon("article", size="sm").classes(
                                     "help-icon-accent-muted"
                                 ).style("margin-top: 2px;")
-                                with ui.column().classes("gap-1 flex-grow"):
+                                with ui.column().classes("gap-1 grow"):
                                     ui.label(topic.title).classes("font-medium help-text-primary")
                                     ui.label(topic.summary).classes("text-sm help-text-secondary")
                                     if topic.keywords:

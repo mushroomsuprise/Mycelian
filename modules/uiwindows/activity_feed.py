@@ -1614,7 +1614,7 @@ def create_activity_feed_tab():
             )
             ui.button(icon="skip_next", text="SKIP ALERT").classes("control-button")
 
-            ui.element("div").classes("flex-grow")
+            ui.element("div").classes("grow")
 
             # Condense List toggle (only visible on Current Alerts tab)
             def toggle_condense_list(e):
@@ -1841,7 +1841,7 @@ def create_activity_feed_tab():
             ).classes("tab-button")
 
         # Create a scrollable container for alert cards
-        with ui.element("div").classes("scroll-content flex-grow"):
+        with ui.element("div").classes("scroll-content grow"):
             # Add pagination controls container above the feed (only visible for previous alerts tab)
             activity_feed_state.pagination_container = ui.element("div").classes(
                 "w-full mb-2"

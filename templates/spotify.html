@@ -33,6 +33,7 @@
             --container-padding: 20px;
             --container-border-radius: 0px;
             --track-info-width: 450px;
+            --text-shadow: none;
         }
 
         * {
@@ -98,6 +99,7 @@
             font-family: var(--font-family);
             font-size: 50px;
             color: var(--track-name-color);
+            text-shadow: var(--text-shadow);
             text-align: center;
             align-items: center;
             justify-content: center;
@@ -694,6 +696,28 @@
             }
             if (config.ArtistNameOpacity !== undefined) {
                 document.documentElement.style.setProperty('--artist-name-opacity', config.ArtistNameOpacity);
+            }
+
+            // Text shadow (applies to all text via .track-info)
+            if (config.EnableTextShadow !== false && config.TextShadowColor) {
+                const offsetX = config.TextShadowOffsetX ?? 2;
+                const offsetY = config.TextShadowOffsetY ?? 2;
+                const blur = config.TextShadowBlur ?? 4;
+                const opacity = config.TextShadowOpacity ?? 0.5;
+                let shadowColor = config.TextShadowColor;
+                if (shadowColor.startsWith('#')) {
+                    const hex = shadowColor.slice(1);
+                    const r = parseInt(hex.substring(0, 2), 16);
+                    const g = parseInt(hex.substring(2, 4), 16);
+                    const b = parseInt(hex.substring(4, 6), 16);
+                    shadowColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                }
+                document.documentElement.style.setProperty(
+                    '--text-shadow',
+                    `${offsetX}px ${offsetY}px ${blur}px ${shadowColor}`
+                );
+            } else {
+                document.documentElement.style.setProperty('--text-shadow', 'none');
             }
 
             // Apply progress bar settings

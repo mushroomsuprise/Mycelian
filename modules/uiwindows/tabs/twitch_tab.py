@@ -6,6 +6,7 @@ from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_input
+from ...ui_timer import layout_schedule
 from ...ui_settings_layout import (
     settings_footer,
     settings_form_grid,
@@ -33,7 +34,7 @@ class TwitchTab:
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
-        ui.timer(0.05, self._refresh_status, once=True)
+        layout_schedule(0.05, self._refresh_status, once=True)
 
     def _refresh_main_status(self) -> None:
         """Refresh main Twitch account status display."""
@@ -233,7 +234,7 @@ class TwitchTab:
                 )
 
             settings_footer(self.discard, self.save)
-            self._status_timer = ui.timer(3.0, self._refresh_status, active=True)
+            self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
 
     # ----- helpers -----
     def _load_from_state(self) -> None:
@@ -452,7 +453,7 @@ class TwitchTab:
                 # Call the original check function
                 return check_oauth_result()
 
-            oauth_timer = ui.timer(0.2, check_oauth_result_with_timeout)
+            oauth_timer = layout_schedule(0.2, check_oauth_result_with_timeout)
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(oauth_timer)
@@ -622,7 +623,7 @@ class TwitchTab:
                 # Call the original check function
                 return check_oauth_result()
 
-            oauth_timer = ui.timer(0.2, check_oauth_result_with_timeout)
+            oauth_timer = layout_schedule(0.2, check_oauth_result_with_timeout)
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(oauth_timer)

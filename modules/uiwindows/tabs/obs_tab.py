@@ -15,6 +15,7 @@ from ...dataobjects import OBSData, state_manager
 from ...notification_engine import notify
 from ...obs_service import obs_service
 from ...ui_form_controls import form_input, form_number
+from ...ui_timer import layout_schedule
 
 
 class ObsTab:
@@ -29,7 +30,7 @@ class ObsTab:
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
-        ui.timer(0.05, self._refresh_status, once=True)
+        layout_schedule(0.05, self._refresh_status, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:
@@ -182,7 +183,7 @@ class ObsTab:
                     ("Test", self._test_connection, "wifi_tethering", False),
                 ],
             )
-            self._status_timer = ui.timer(5.0, self._refresh_status, active=True)
+            self._status_timer = layout_schedule(5.0, self._refresh_status, active=True)
 
         self._refresh_status()
 

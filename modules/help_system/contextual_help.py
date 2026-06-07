@@ -9,6 +9,7 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 from .help_manager import get_help_manager
 from .help_browser import ensure_help_system_styles, show_help_browser
+from ..ui_timer import layout_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +95,8 @@ def navigate_to_settings_subtab(
 
     try:
         navigate_to_main_tab(target_main)
-        ui.timer(0.12, go_sub, once=True)
-        ui.timer(0.45, go_sub, once=True)
+        layout_schedule(0.12, go_sub, once=True)
+        layout_schedule(0.45, go_sub, once=True)
     except Exception as e:
         logger.debug("navigate_to_settings_subtab failed: %s", e)
 
@@ -307,7 +308,7 @@ def inline_help(text: str, topic_id: str = None, context: str = None, show_icon:
             if show_icon:
                 ui.icon("info", size="sm").classes("help-inline-icon")
 
-            ui.label(text).classes("text-sm secondary-text flex-grow")
+            ui.label(text).classes("text-sm secondary-text grow")
 
             # Add "Learn more" link if topic available
             link_topic_id = topic_id

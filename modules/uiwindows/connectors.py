@@ -33,6 +33,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 from nicegui import context, run, ui
 from ..notification_engine import notify
 from ..ui_buttons import outline_button, primary_button
+from ..ui_timer import layout_schedule
 from ..ui_form_controls import form_input, form_number, form_select
 
 
@@ -581,7 +582,7 @@ def create_connectors_tab():
                     )
 
         # Main content area - flexible height
-        with ui.element("div").classes("flex-grow overflow-hidden relative"):
+        with ui.element("div").classes("grow overflow-hidden relative"):
             with ui.scroll_area().classes("w-full h-full"):
                 connectors_container = ui.element("div").classes("w-full p-4")
 
@@ -729,14 +730,14 @@ def _open_folder_floating_window(folder_id: str) -> None:
             )
             with head:
                 drag_area = ui.element("div").classes(
-                    "folder-float-handle flex flex-row items-center gap-2 flex-grow min-w-0"
+                    "folder-float-handle flex flex-row items-center gap-2 grow min-w-0"
                 )
                 with drag_area:
-                    ui.icon("folder", size="sm").classes("text-amber-400 flex-shrink-0")
+                    ui.icon("folder", size="sm").classes("text-amber-400 shrink-0")
                     title_label = ui.label(title).classes(
                         "text-base font-semibold text-theme-primary truncate"
                     )
-                with ui.row().classes("items-center gap-1 flex-shrink-0"):
+                with ui.row().classes("items-center gap-1 shrink-0"):
                     floater_enable_sw = ui.switch(
                         value=(fold_state == "all_on"),
                         on_change=lambda e, fid=folder_id: set_folder_connectors_enabled(
@@ -1103,9 +1104,9 @@ def load_connectors():
                 with ui.row().classes(
                     "w-full items-center justify-between gap-2 flex-none"
                 ):
-                    with ui.row().classes("items-center gap-2 flex-grow min-w-0"):
+                    with ui.row().classes("items-center gap-2 grow min-w-0"):
                         ui.icon("folder", size="28px").classes(
-                            "text-amber-400 flex-shrink-0"
+                            "text-amber-400 shrink-0"
                         )
                         title_lbl = ui.label(name).classes(
                             "text-base font-semibold text-theme-primary truncate"
@@ -1114,9 +1115,9 @@ def load_connectors():
                         ui.label(
                             f"{count} connector{'s' if count != 1 else ''}"
                         ).classes(
-                            "text-xs secondary-text whitespace-nowrap flex-shrink-0"
+                            "text-xs secondary-text whitespace-nowrap shrink-0"
                         )
-                    with ui.row().classes("items-center gap-1 flex-shrink-0"):
+                    with ui.row().classes("items-center gap-1 shrink-0"):
                         folder_enable_sw = ui.switch(
                             "Toggle all",
                             value=(fold_state == "all_on"),
@@ -1138,7 +1139,7 @@ def load_connectors():
                         ).props("flat dense round").tooltip("Delete folder")
 
                 open_zone = ui.column().classes(
-                    "connector-folder-open-zone w-full flex-grow min-w-0 p-1 -m-1"
+                    "connector-folder-open-zone w-full grow min-w-0 p-1 -m-1"
                 )
                 open_zone.on(
                     "click",
@@ -1162,7 +1163,7 @@ def load_connectors():
                                         else "connector-folder-preview-tile-disabled"
                                     )
                                 )
-                                icon_cls = "text-amber-300 flex-shrink-0 mb-0.5"
+                                icon_cls = "text-amber-300 shrink-0 mb-0.5"
                                 if not c.enabled:
                                     icon_cls += " opacity-40"
                                 with ui.element("div").classes(tile_cls):
@@ -1266,7 +1267,7 @@ def create_connector_card(
     with card_element:
         # Header row with name, controls, and actions
         with ui.row().classes("w-full items-center justify-between gap-2 mb-3"):
-            with ui.column().classes("gap-1 flex-grow min-w-0"):
+            with ui.column().classes("gap-1 grow min-w-0"):
                 ui.label(connector.name).classes(
                     "text-base font-semibold text-theme-primary truncate"
                 )
@@ -1275,7 +1276,7 @@ def create_connector_card(
                         "text-xs secondary-text truncate"
                     )
 
-            with ui.row().classes("items-center gap-1 flex-shrink-0"):
+            with ui.row().classes("items-center gap-1 shrink-0"):
                 ui.switch(
                     value=connector.enabled,
                     on_change=lambda e, cid=connector_id: toggle_connector(
@@ -1305,8 +1306,8 @@ def create_connector_card(
 
             with ui.column().classes("connector-flow gap-0 mb-3"):
                 with ui.row().classes("items-center gap-2 flex-wrap w-full"):
-                    ui.icon("flash_on", size="16px").classes("text-blue-400 flex-shrink-0")
-                    ui.label("Trigger").classes("connector-flow-label flex-shrink-0")
+                    ui.icon("flash_on", size="16px").classes("text-blue-400 shrink-0")
+                    ui.label("Trigger").classes("connector-flow-label shrink-0")
                     ui.label(
                         format_trigger_name(connector.trigger.trigger_type)
                     ).classes("trigger-badge")
@@ -1317,10 +1318,10 @@ def create_connector_card(
                 if has_filter:
                     with ui.row().classes("items-center gap-2 flex-wrap w-full"):
                         ui.icon("filter_list", size="16px").classes(
-                            "text-theme-primary flex-shrink-0"
+                            "text-theme-primary shrink-0"
                         )
                         ui.label("Condition").classes(
-                            "connector-flow-label flex-shrink-0"
+                            "connector-flow-label shrink-0"
                         )
                         for condition in conditions:
                             chip_text = _format_condition_for_card(
@@ -1336,9 +1337,9 @@ def create_connector_card(
                 if has_actions:
                     with ui.row().classes("items-center gap-2 flex-wrap w-full"):
                         ui.icon("play_arrow", size="16px").classes(
-                            "text-green-400 flex-shrink-0"
+                            "text-green-400 shrink-0"
                         )
-                        ui.label("Actions").classes("connector-flow-label flex-shrink-0")
+                        ui.label("Actions").classes("connector-flow-label shrink-0")
                         for action in connector.actions:
                             action_display = get_action_display_name(action)
                             ui.label(action_display).classes("action-badge")
@@ -1503,7 +1504,7 @@ def show_connector_dialog(connector_id: str = None):
                     ).classes("secondary-text")
 
                 # Dialog content
-                with ui.scroll_area().classes("flex-grow p-4"):
+                with ui.scroll_area().classes("grow p-4"):
                     create_connector_form(connector_id)
 
     create_dialog.open()
@@ -2445,7 +2446,7 @@ def add_action_to_form_with_data_and_index(
                     "text-base font-medium"
                 )
                 if action_index > 0:
-                    with ui.row().classes("items-center gap-2 flex-grow justify-end"):
+                    with ui.row().classes("items-center gap-2 grow justify-end"):
                         form_number(
                             tooltip=f"Delay in seconds from Action #{action_index}",
                             label="Delay (s)",
@@ -2835,7 +2836,7 @@ def create_obs_control_config(
                 notify("OBS lists updated", type="positive")
             refresh_op_args()
 
-        ui.timer(0, _job, once=True)
+        layout_schedule(0, _job, once=True)
 
     ui.button("Refresh OBS lists", icon="refresh", on_click=_refresh_remote_lists).classes(
         "mb-2"
@@ -2861,7 +2862,7 @@ def create_obs_control_config(
             logger.debug("OBS action UI bootstrap snapshot: %s", e)
         refresh_op_args()
 
-    ui.timer(0, _bootstrap_obs_lists_once, once=True)
+    layout_schedule(0, _bootstrap_obs_lists_once, once=True)
 
     ui.label(
         "Requires OBS Studio running with WebSocket enabled "
@@ -5674,7 +5675,7 @@ def show_help_dialog():
                     ).classes("secondary-text")
 
                 # Content
-                with ui.scroll_area().classes("flex-grow p-6"):
+                with ui.scroll_area().classes("grow p-6"):
                     with ui.column().classes("w-full max-w-4xl mx-auto gap-6"):
                         # What are Connectors?
                         with ui.element("div").classes("form-section"):

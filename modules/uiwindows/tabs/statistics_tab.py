@@ -9,6 +9,7 @@ from typing import Any, Dict, Generator, List, Optional
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_form_controls import form_input
+from ...ui_timer import layout_schedule
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -452,7 +453,11 @@ class StatisticsTab:
 
         def update_task():
             try:
-                if self.live_updates_enabled and self.statistics_container is not None:
+                if (
+                    self.live_updates_enabled
+                    and self.statistics_container is not None
+                    and not getattr(self.statistics_container, "is_deleted", False)
+                ):
                     # Only update if the statistics tab is currently visible
                     # We'll do a lightweight update without clearing the entire container
                     self._update_statistics_display()
@@ -460,7 +465,7 @@ class StatisticsTab:
                 print(f"Error in live statistics update: {str(e)}")
 
         # Start the timer
-        self.live_update_timer = ui.timer(
+        self.live_update_timer = layout_schedule(
             self.live_update_interval, update_task, active=True
         )
         print(

@@ -67,6 +67,10 @@ _ui_elements_created = False
 _splash_dialog = None
 _splash_progress = None
 _splash_status = None
+# Set True once a splash close has been requested. Guards against a race where the
+# deferred-services close thread fires before the client connects and the splash is
+# built in build_root_ui() (which would otherwise leave a splash that never closes).
+_splash_close_requested = False
 from modules.uiwindows.activity_feed import (
     add_alert_to_feed,
     create_activity_feed_tab,
@@ -77,6 +81,7 @@ from . import alertutils, database_manager, dataobjects, web_engine
 from .theme_manager import get_theme_manager, generate_css_variables
 from .ui_font import apply_app_font, get_app_font_css_block
 from .ui_styles import get_full_theme_css
+from .ui_timer import app_schedule, layout_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +91,9 @@ logger = logging.getLogger(__name__)
 # Setup app window properties (maximized is applied in start_ui() from saved settings + env bridge)
 app.native.window_args["title"] = "Mycelian"
 app.native.window_args["min_size"] = (1400, 850)
-ui.colors(
-    primary="var(--color-primary)",
-)
+# NiceGUI 3.x removed the shared auto-index client, so ``ui.colors`` (an element)
+# can no longer be created at import/module scope. It is created per-client inside
+# build_root_ui() instead.
 
 
 # Theme CSS will be injected dynamically when theme is applied
@@ -161,6 +166,22 @@ def _sync_quasar_brand_colors_js(theme) -> None:
     ui.run_javascript(js_code)
 
 
+def _has_ui_context() -> bool:
+    """Return True if a NiceGUI slot/client context is active (i.e. after ui.run).
+
+    Deliberately avoids ``nicegui.context.client``: before the server starts that
+    property has the side effect of creating a pseudo client and switching NiceGUI
+    into "script mode", which is incompatible with the ``ui.run(root=...)`` pattern.
+    Here we only need to know whether it is safe to create UI elements.
+    """
+    try:
+        from nicegui.slot import Slot
+
+        return bool(Slot.get_stack())
+    except Exception:
+        return False
+
+
 def apply_theme(theme_name: str):
     """Apply the selected theme to the application
 
@@ -186,13 +207,16 @@ def apply_theme(theme_name: str):
     # Generate theme CSS variables
     theme_css = generate_css_variables(theme)
 
-    # Set NiceGUI dark mode based on theme_type (for body--dark class)
-    # This ensures some NiceGUI components work correctly
+    # Set NiceGUI dark mode based on theme_type (for body--dark class).
+    # ui.dark_mode() creates a NiceGUI element, which needs an active client/slot
+    # context. During pre-run theme setup there is no client yet, so defer it;
+    # build_root_ui() applies the correct mode once the client connects.
     theme_type = theme_manager.get_theme_type(theme_name)
-    if theme_type == "dark":
-        ui.dark_mode().enable()
-    else:
-        ui.dark_mode().disable()
+    if _has_ui_context():
+        if theme_type == "dark":
+            ui.dark_mode().enable()
+        else:
+            ui.dark_mode().disable()
 
     # Inject base CSS once
     if not _base_css_injected:
@@ -661,9 +685,9 @@ ACTIVITY_FEED_CSS = """
 }
 """
 
-# Add animation observer script
-ui.add_head_html(
-    """
+# Animation observer script (injected via build_root_ui() with shared=True so it
+# does not require a client context and is only added once).
+ANIMATION_OBSERVER_SCRIPT = """
 <script>
 // Intersection Observer for animation performance optimization
 (function() {
@@ -758,10 +782,20 @@ ui.add_head_html(
 })();
 </script>
 """
-)
 
+
+_animation_observer_injected = False
 _update_manager_ui_scheduled = False
 _streamdeck_plugin_check_scheduled = False
+
+
+def _inject_animation_observer() -> None:
+    """Inject the animation IntersectionObserver script once (shared across pages)."""
+    global _animation_observer_injected
+    if _animation_observer_injected:
+        return
+    ui.add_head_html(ANIMATION_OBSERVER_SCRIPT, shared=True)
+    _animation_observer_injected = True
 
 
 def _schedule_streamdeck_plugin_version_check() -> None:
@@ -784,7 +818,7 @@ def _schedule_streamdeck_plugin_version_check() -> None:
                 exc_info=True,
             )
 
-    ui.timer(2.5, check_streamdeck_plugin, once=True)
+    app_schedule(2.5, check_streamdeck_plugin, once=True)
 
 
 def _schedule_update_manager_init() -> None:
@@ -806,7 +840,7 @@ def _schedule_update_manager_init() -> None:
 
     # Short delay until client/UI is ready; first automatic update check is then
     # STARTUP_SETTLE_SECONDS + PRE_CHECK_DELAY_SECONDS after on_ui_ready (see updater.py).
-    ui.timer(2.0, init_update_manager, once=True)
+    layout_schedule(2.0, init_update_manager, once=True)
 
 
 def _configure_webview2_for_admin():
@@ -861,45 +895,77 @@ def _configure_webview2_for_admin():
         # Don't fail the entire startup if this fails
 
 
+def build_root_ui() -> None:
+    """Build the entire desktop UI for the single native window.
+
+    Passed as the positional ``root`` argument to ``ui.run`` (NiceGUI 3.x). It runs
+    once per client connection inside an active slot/client context, replacing the
+    removed 2.x shared auto-index client where all UI used to be created before
+    ``ui.run``.
+    """
+    from .startup_profiler import StartupTimer
+
+    # Per-page Quasar primary color (was module scope in NiceGUI 2.x).
+    ui.colors(primary="var(--color-primary)")
+
+    # Head script that powers the activity-feed animation pausing.
+    _inject_animation_observer()
+
+    # Splash overlay shown while deferred services finish initializing.
+    create_splash_screen()
+
+    # Apply dark/light mode for the active theme now that a client context exists.
+    try:
+        theme_manager = get_theme_manager()
+        current_theme = theme_manager.get_theme()
+        theme_type = (
+            theme_manager.get_theme_type(current_theme.name)
+            if current_theme
+            else "dark"
+        )
+        if theme_type == "dark":
+            ui.dark_mode().enable()
+        else:
+            ui.dark_mode().disable()
+    except Exception as e:
+        logger.debug("Could not apply initial dark mode: %s", e)
+
+    if not _ui_elements_created:
+        logger.info("Creating UI elements...")
+        with StartupTimer("mainuiwindow.create_ui_elements"):
+            create_ui_elements()
+
+            # Start connector processing in a separate thread (not dependent on NiceGUI's event loop)
+            import threading
+
+            def start_connector_processing_thread():
+                try:
+                    from . import connector_manager
+
+                    manager = connector_manager.get_manager()
+                    manager.start_connector_thread()
+                except Exception as e:
+                    logger.error(
+                        f"Error starting connector processing thread: {str(e)}",
+                        exc_info=True,
+                    )
+
+            # Start connector processing in background thread
+            connector_thread = threading.Thread(
+                target=start_connector_processing_thread, daemon=True
+            )
+            connector_thread.start()
+
+            _schedule_update_manager_init()
+            _schedule_streamdeck_plugin_version_check()
+
+
 def start_ui():
     """Start the NiceGUI server (blocking call)"""
     global _file_browser_qdialog_css_injected
     from .startup_profiler import StartupTimer
 
     try:
-        # Create UI elements if not already created (for phased initialization)
-        if not _ui_elements_created:
-            logger.info("Creating UI elements before starting server...")
-            with StartupTimer("mainuiwindow.create_ui_elements"):
-                create_ui_elements()
-
-                # Start connector processing in a separate thread (not dependent on NiceGUI's event loop)
-                import threading
-
-                def start_connector_processing_thread():
-                    try:
-                        from . import connector_manager
-
-                        manager = connector_manager.get_manager()
-                        manager.start_connector_thread()
-                    except Exception as e:
-                        logger.error(
-                            f"Error starting connector processing thread: {str(e)}",
-                            exc_info=True,
-                        )
-
-                # Start connector processing in background thread
-                connector_thread = threading.Thread(
-                    target=start_connector_processing_thread, daemon=True
-                )
-                connector_thread.start()
-
-                # Register cleanup handler
-                app.on_shutdown(cleanup_resources)
-
-                _schedule_update_manager_init()
-                _schedule_streamdeck_plugin_version_check()
-
         # Configure WebView2 data directory for administrator privileges
         _configure_webview2_for_admin()
 
@@ -924,6 +990,7 @@ def start_ui():
             }
         )
 
+        # File-browser dialog CSS uses shared head HTML, which is safe before ui.run.
         if not _file_browser_qdialog_css_injected:
             ui.add_head_html(
                 f"<style id='mycelian-file-browser-qdialog'>{FILE_BROWSER_QDIALOG_CSS}</style>",
@@ -931,12 +998,17 @@ def start_ui():
             )
             _file_browser_qdialog_css_injected = True
 
+        # Register cleanup + native window close handlers before the server runs.
+        app.on_shutdown(cleanup_resources)
+
         from .shutdown import register_native_window_close_handler
 
         register_native_window_close_handler()
 
         with StartupTimer("mainuiwindow.ui_run_native"):
-            ui.run(native=True, dark=True, reload=False)
+            # NiceGUI 3.x: pass the UI builder as the positional ``root`` so it runs
+            # inside a real client context (the 2.x auto-index client is gone).
+            ui.run(build_root_ui, native=True, dark=True, reload=False)
         logger.info("NiceGUI app started.")
     except Exception as e:
         logger.error(f"Error starting NiceGUI server: {str(e)}", exc_info=True)
@@ -982,6 +1054,11 @@ def create_splash_screen():
     """Create splash screen shown during initialization"""
     global _splash_dialog, _splash_progress, _splash_status
 
+    # If a close was already requested before the client connected, skip building
+    # the splash so it can never be left open with no one to close it.
+    if _splash_close_requested:
+        return None, None, None
+
     with ui.dialog(value=True) as _splash_dialog:
         _splash_dialog.props("persistent")
         _splash_dialog.classes("backdrop-blur-sm")
@@ -1010,7 +1087,8 @@ def update_splash_progress(value: float, text: str):
 
 def close_splash_screen():
     """Close the splash screen"""
-    global _splash_dialog
+    global _splash_dialog, _splash_close_requested
+    _splash_close_requested = True
     if _splash_dialog:
         _splash_dialog.close()
         _splash_dialog = None
@@ -1040,8 +1118,9 @@ def initialize_ui_shell():
             apply_theme("dark")  # Default to dark theme
             apply_theme(True)  # Default to dark mode
 
-        # Create splash screen for deferred service loading
-        create_splash_screen()
+        # Splash screen is created later in build_root_ui() once a client context
+        # exists (NiceGUI 3.x removed the pre-run shared auto-index client). This
+        # progress update no-ops until then.
         update_splash_progress(0.1, "Core components loaded")
 
         # Don't create UI elements yet - they'll be created when start_ui() is called
@@ -1069,7 +1148,7 @@ def create_ui_elements():
         with ui.row().classes(
             "w-full items-stretch gap-1 flex-nowrap shrink-0 flex-none"
         ):
-            with ui.column().classes("flex-grow min-w-0"):
+            with ui.column().classes("grow min-w-0"):
                 with ui.tabs().classes("w-full") as tabs:
                     activity_tab = ui.tab("Activity Feed")
                     alerts_tab = ui.tab("Alerts")
@@ -1254,7 +1333,7 @@ def create_ui_elements():
                     # Update previous_tab to the current value
                     previous_tab = tabs.value
 
-            ui.timer(0.5, check_tab_changes, active=True)  # Check every 500ms
+            layout_schedule(0.5, check_tab_changes, active=True)  # Check every 500ms
 
             start_service_watcher_timer()
 
@@ -1292,7 +1371,7 @@ def create_ui_elements():
             create_service_status_footer()
 
         # Re-apply saved font once the native client is connected (head CSS is static at theme inject)
-        ui.timer(0.5, lambda: apply_app_font(), once=True)
+        layout_schedule(0.5, lambda: apply_app_font(), once=True)
 
     # Mark UI elements as created
     _ui_elements_created = True
@@ -1344,7 +1423,7 @@ def toggle_alerts():
                 logger.debug(
                     "Web engine not ready, scheduling retry broadcast in 1 second"
                 )
-                ui.timer(1.0, try_broadcast, once=True)
+                app_schedule(1.0, try_broadcast, once=True)
 
         # Force a sync of the pause button state in the activity feed
         try:

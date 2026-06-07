@@ -6,6 +6,7 @@ from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_input, form_select
+from ...ui_timer import layout_schedule
 from ...ui_settings_layout import (
     settings_action_row,
     settings_form_grid,
@@ -47,7 +48,7 @@ class SpotifyTab:
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
-        ui.timer(0.05, self._refresh_status, once=True)
+        layout_schedule(0.05, self._refresh_status, once=True)
 
     def _refresh_status(self) -> None:
         """Refresh Spotify status display."""
@@ -206,7 +207,7 @@ class SpotifyTab:
                     self._handle_oauth_connection,
                     icon="login",
                 )
-            self._status_timer = ui.timer(5.0, self._refresh_status, active=True)
+            self._status_timer = layout_schedule(5.0, self._refresh_status, active=True)
 
     def _load_from_state(self) -> None:
         sp = state_manager.get_spotify_data()
@@ -393,7 +394,7 @@ class SpotifyTab:
                     return False  # Stop checking
                 return False  # Default stop
 
-            oauth_timer = ui.timer(0.2, check_oauth_result)
+            oauth_timer = layout_schedule(0.2, check_oauth_result)
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(oauth_timer)
@@ -527,7 +528,7 @@ class SpotifyTab:
                     self._cleanup_test()
 
             # Execute completion handler after a delay
-            ui.timer(1.0, handle_test_completion, once=True)
+            layout_schedule(1.0, handle_test_completion, once=True)
 
         except Exception as e:
             import logging

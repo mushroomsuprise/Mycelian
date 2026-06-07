@@ -85,6 +85,14 @@ class TwitchSessionNotReadyError(Exception):
     """Helix call cannot run yet (missing auth or Twitch library client)."""
 
 
+class TwitchPermissionError(Exception):
+    """Twitch returned 403 Forbidden (e.g. endpoint requires Affiliate/Partner).
+
+    This is an expected condition for some accounts, not an auth failure, so
+    callers can treat it quietly instead of logging it as an error.
+    """
+
+
 # Global flag to track initialization status
 _initialized = False
 _init_lock = threading.Lock()
@@ -3013,6 +3021,16 @@ class Twitch_API:
                         else {"status": response.status, "data": response_data}
                     )
                 else:
+                    # 403 is an expected permission boundary (e.g. channel points
+                    # require Affiliate/Partner). Surface it quietly without an
+                    # error-level traceback and skip the pointless token refresh.
+                    if response.status == 403:
+                        logger.warning(
+                            f"Generic API call forbidden (403): {url} - Response: {response_data}"
+                        )
+                        raise TwitchPermissionError(
+                            f"Twitch API Error 403: {response_data}"
+                        )
                     logger.error(
                         f"Generic API call failed ({response.status}): {url} - Response: {response_data}"
                     )
@@ -3073,6 +3091,13 @@ class Twitch_API:
                                                 "data": retry_data,
                                             }
                                         )
+                                    elif retry_response.status == 403:
+                                        logger.warning(
+                                            f"Generic API call forbidden (403) after token refresh: {url} - Response: {retry_data}"
+                                        )
+                                        raise TwitchPermissionError(
+                                            f"Twitch API Error 403: {retry_data}"
+                                        )
                                     else:
                                         logger.error(
                                             f"Generic API call still failed after token refresh ({retry_response.status}): {url} - Response: {retry_data}"
@@ -3087,6 +3112,8 @@ class Twitch_API:
                                 raise Exception(
                                     f"Authentication failed - token refresh unsuccessful"
                                 )
+                        except TwitchPermissionError:
+                            raise
                         except Exception as refresh_error:
                             logger.error(
                                 f"Error during token refresh retry: {str(refresh_error)}"
@@ -3121,7 +3148,7 @@ class Twitch_API:
             )
             async with _ephemeral_client_session() as session:
                 return await _perform_request(session)
-        except TwitchSessionNotReadyError:
+        except (TwitchSessionNotReadyError, TwitchPermissionError):
             raise
         except aiohttp.ClientError as e:
             logger.error(
@@ -3297,6 +3324,8 @@ class Twitch_API:
 # Point reward API functions
 def _is_channel_points_forbidden(exc: BaseException) -> bool:
     """True when Twitch denies custom rewards (e.g. broadcaster not Affiliate/Partner)."""
+    if isinstance(exc, TwitchPermissionError):
+        return True
     msg = str(exc).lower()
     if "partner or affiliate" in msg:
         return True
@@ -3345,9 +3374,13 @@ async def _fetch_channel_point_rewards_async():
         logger.error("Invalid response format from Twitch API")
         return (None, "error")
     except Exception as e:
-        logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
         if _is_channel_points_forbidden(e):
+            logger.warning(
+                "Channel point rewards unavailable: the channel must have "
+                "Affiliate or Partner status."
+            )
             return (None, "not_unlocked")
+        logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
         return (None, "error")
 
 

@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, List
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
+from ...ui_timer import layout_schedule
 from ...ui_form_controls import form_input, form_select
 from ...ui_settings_layout import (
     THEME_CHIP_CLASSES,
@@ -67,8 +68,8 @@ class PSNTab:
             self._status_timer.active = True
         if self._mismatch_timer is not None:
             self._mismatch_timer.active = True
-        ui.timer(0.05, self._refresh_status, once=True)
-        ui.timer(0.2, self.refresh_game_cache, once=True)
+        layout_schedule(0.05, self._refresh_status, once=True)
+        layout_schedule(0.2, self.refresh_game_cache, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:
@@ -116,7 +117,7 @@ class PSNTab:
             with self.ui_elements["mismatch_banner"]:
                 with ui.row().classes("w-full items-center gap-2"):
                     ui.icon("warning").classes("text-xl text-theme-warning")
-                    with ui.column().classes("flex-grow gap-0"):
+                    with ui.column().classes("grow gap-0"):
                         ui.label("Game Mismatch Detected").classes(
                             "font-semibold text-theme-warning"
                         )
@@ -177,11 +178,11 @@ class PSNTab:
             self._build_game_cache_section()
             self.refresh_game_cache()
 
-            ui.timer(0.1, self._refresh_status, once=True)
-            ui.timer(0.8, self._refresh_status, once=True)
-            ui.timer(0.5, self._check_mismatch, once=True)
-            self._status_timer = ui.timer(3.0, self._refresh_status, active=True)
-            self._mismatch_timer = ui.timer(10.0, self._check_mismatch, active=True)
+            layout_schedule(0.1, self._refresh_status, once=True)
+            layout_schedule(0.8, self._refresh_status, once=True)
+            layout_schedule(0.5, self._check_mismatch, once=True)
+            self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
+            self._mismatch_timer = layout_schedule(10.0, self._check_mismatch, active=True)
 
     def _start_npsso_auth(self) -> None:
         """Start the NPSSO authentication flow"""
@@ -278,7 +279,7 @@ class PSNTab:
                             _npsso_trace("deferred_save: finally -> reset_connect_ui")
                             reset_connect_ui()
 
-                    ui.timer(0.01, deferred_save, once=True)
+                    layout_schedule(0.01, deferred_save, once=True)
                     _npsso_trace(
                         "on_auth_complete: scheduled async deferred_save via ui.timer"
                     )
@@ -391,19 +392,8 @@ class PSNTab:
                 else:
                     on_auth_complete(r)
 
-            slot = getattr(self.connect_button, "parent_slot", None)
-            if slot is None:
-                logger.error("PSN tab: connect_button has no parent_slot")
-                on_auth_complete(
-                    NpssoResult(
-                        success=False,
-                        error_message="UI error: cannot start NPSSO capture timer.",
-                    )
-                )
-                return
-            with slot:
-                self._npsso_capture_timer = ui.timer(0.2, poll_capture)
-                _npsso_trace("begin_capture_after_instructions: poll timer started")
+            self._npsso_capture_timer = layout_schedule(0.2, poll_capture)
+            _npsso_trace("begin_capture_after_instructions: poll timer started")
 
         try:
             show_npsso_instruction_dialog(begin_capture_after_instructions)

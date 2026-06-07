@@ -141,6 +141,8 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
     """
     from nicegui import ui
 
+    from .ui_timer import layout_schedule
+
     def on_continue() -> None:
         print(
             f"[NPSSO_TRACE] t={time.monotonic():.3f} "
@@ -172,7 +174,7 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
 
                 with ui.row().classes("gap-3 items-start"):
                     ui.badge("1", color="primary").classes("rounded-full mt-1")
-                    with ui.column().classes("gap-1 flex-grow"):
+                    with ui.column().classes("gap-1 grow"):
                         ui.label(
                             "Click Continue to open a dedicated sign-in window"
                         ).classes("font-medium")
@@ -182,7 +184,7 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
 
                 with ui.row().classes("gap-3 items-start"):
                     ui.badge("2", color="primary").classes("rounded-full mt-1")
-                    with ui.column().classes("gap-1 flex-grow"):
+                    with ui.column().classes("gap-1 grow"):
                         ui.label(
                             "Wait until you are fully signed in on PlayStation.com"
                         ).classes("font-medium")
@@ -192,7 +194,7 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
 
                 with ui.row().classes("gap-3 items-start"):
                     ui.badge("3", color="primary").classes("rounded-full mt-1")
-                    with ui.column().classes("gap-1 flex-grow"):
+                    with ui.column().classes("gap-1 grow"):
                         ui.label(
                             "Use the menu: NPSSO → I am signed in — retrieve NPSSO token"
                         ).classes("font-medium")
@@ -218,9 +220,11 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
                     continue_btn.disable()
 
                     def countdown_timer(remaining: int) -> None:
+                        if getattr(continue_btn, "is_deleted", False):
+                            return
                         if remaining > 0:
                             continue_btn.text = f"Continue ({remaining})"
-                            ui.timer(
+                            layout_schedule(
                                 1.0,
                                 lambda: countdown_timer(remaining - 1),
                                 once=True,
@@ -228,6 +232,6 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
                         else:
                             enable_continue()
 
-                    ui.timer(0.1, lambda: countdown_timer(10), once=True)
+                    layout_schedule(0.1, lambda: countdown_timer(10), once=True)
 
     dialog.open()

@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
+from ...ui_timer import layout_schedule
 
 from ...database_manager import database_manager
 from ...game_hooks.base import runtime_os_key
@@ -240,7 +241,7 @@ class GameHooksTab:
                                     sw.disable()
                                 self.ui_elements[f"{hid}_toggle"] = sw
 
-                self._status_timer = ui.timer(
+                self._status_timer = layout_schedule(
                     0.5, self._refresh_all_runtime_status, active=True
                 )
 
@@ -248,7 +249,7 @@ class GameHooksTab:
                 outline_button("Discard", self.discard)
                 primary_button("Save", self.save)
 
-        ui.timer(0.05, self._refresh_all_runtime_status, once=True)
+        layout_schedule(0.05, self._refresh_all_runtime_status, once=True)
 
     def _on_toggle(self, hook_id: str, value: bool) -> None:
         if not self._hook_supported.get(hook_id, True):
@@ -260,7 +261,7 @@ class GameHooksTab:
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
-        ui.timer(0.05, self._refresh_all_runtime_status, once=True)
+        layout_schedule(0.05, self._refresh_all_runtime_status, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:

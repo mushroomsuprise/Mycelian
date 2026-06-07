@@ -37,6 +37,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import aiohttp
 
 from .notification_engine import notify
+from .ui_timer import layout_schedule
 from packaging.version import \
     parse as parse_version  # For robust version comparison
 
@@ -805,15 +806,15 @@ class UpdateManager:
             from nicegui import ui
 
             def _after_settle_schedule_pre_check() -> None:
-                ui.timer(PRE_CHECK_DELAY_SECONDS, self._run_initial_check, once=True)
+                layout_schedule(PRE_CHECK_DELAY_SECONDS, self._run_initial_check, once=True)
 
-            self._initial_timer = ui.timer(
+            self._initial_timer = layout_schedule(
                 STARTUP_SETTLE_SECONDS,
                 _after_settle_schedule_pre_check,
                 once=True,
             )
             if self._periodic_schedule_timer is None:
-                self._periodic_schedule_timer = ui.timer(
+                self._periodic_schedule_timer = layout_schedule(
                     PERIODIC_SCHEDULE_DELAY_SECONDS,
                     self.reschedule_periodic_timer,
                     once=True,
@@ -855,7 +856,7 @@ class UpdateManager:
                     pass
                 self._periodic_timer = None
 
-            self._periodic_timer = ui.timer(interval_seconds, self._periodic_check)
+            self._periodic_timer = layout_schedule(interval_seconds, self._periodic_check)
             setattr(app, "update_check_timer", self._periodic_timer)
             logger.info(f"UpdateManager: scheduled periodic checks every {interval_minutes} minutes")
         except Exception as e:
@@ -969,7 +970,7 @@ class UpdateManager:
                     return False
 
             # Create a timer that will keep checking until poll_result returns False
-            update_timer = ui.timer(0.2, poll_result)
+            update_timer = layout_schedule(0.2, poll_result)
             
             # Add a safety mechanism to ensure the timer stops after completion
             def ensure_timer_stops():
@@ -983,7 +984,7 @@ class UpdateManager:
                 return not result_holder["completed"]
             
             # Safety timer that runs for longer intervals to ensure cleanup
-            ui.timer(1.0, ensure_timer_stops)
+            layout_schedule(1.0, ensure_timer_stops)
         except Exception as e:
             logger.error(f"UpdateManager.trigger_check_and_prompt error: {e}", exc_info=True)
             self._check_running = False
@@ -1167,7 +1168,7 @@ class UpdateManager:
                                 cleanup_temp_files(temp_files)
                                 self._dialog_open = False
 
-                        ui.timer(2.0, launch, once=True)
+                        layout_schedule(2.0, launch, once=True)
                         return False
                     return not bool(download_state.get("done", False))
                 except Exception as e:
@@ -1176,7 +1177,7 @@ class UpdateManager:
 
             t = threading.Thread(target=worker, daemon=True)
             t.start()
-            ui.timer(0.2, poll_update)
+            layout_schedule(0.2, poll_update)
         except Exception as e:
             logger.error(f"UpdateManager._start_download_flow error: {e}", exc_info=True)
 

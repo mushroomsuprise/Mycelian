@@ -43,12 +43,13 @@ def _merge_window_args_from_env() -> None:
         core.app.native.window_args[key] = val
 
 
-def _open_window_with_mycelian_env(
-    host, port, title, width, height, fullscreen, frameless, method_queue, response_queue
-):
+def _open_window_with_mycelian_env(*args, **kwargs):
     """Wrapper for ``nicegui.native.native_mode._open_window`` (must stay module-level for pickle).
 
-    Signature matches NiceGUI 2.x (no protocol/event_sender).
+    The positional signature of ``_open_window`` changed between NiceGUI 2.x and 3.x
+    (3.x prepends ``protocol`` and adds ``event_sender``/``favicon``). To stay robust
+    across versions we accept ``*args``/``**kwargs`` and forward them unchanged to the
+    original implementation after merging native window args from the environment.
     """
     import nicegui.native.native_mode as nm
 
@@ -56,17 +57,7 @@ def _open_window_with_mycelian_env(
     orig = getattr(nm, _ORIG_ATTR, None)
     if orig is None:
         raise RuntimeError("native_window_bridge: original _open_window not installed")
-    return orig(
-        host,
-        port,
-        title,
-        width,
-        height,
-        fullscreen,
-        frameless,
-        method_queue,
-        response_queue,
-    )
+    return orig(*args, **kwargs)
 
 
 def _install_patch() -> None:

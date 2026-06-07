@@ -10,6 +10,7 @@ from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_input, form_number, form_select
+from ...ui_timer import layout_schedule
 from ...ui_settings_layout import (
     settings_form_grid,
     settings_section,
@@ -707,7 +708,7 @@ class DatabaseTab:
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
-        ui.timer(0.05, self._refresh_status, once=True)
+        layout_schedule(0.05, self._refresh_status, once=True)
 
     def _refresh_status(self) -> None:
         """Refresh Database status display."""
@@ -1027,9 +1028,9 @@ class DatabaseTab:
                     self._refresh_status()
                     return
                 if not migration_status["completed"]:
-                    ui.timer(0.5, poll, once=True)
+                    layout_schedule(0.5, poll, once=True)
 
-            ui.timer(0.5, poll, once=True)
+            layout_schedule(0.5, poll, once=True)
 
         except Exception as e:
             logger.error(f"Error starting migration: {e}", exc_info=True)
@@ -1269,7 +1270,7 @@ class DatabaseTab:
                 )
                 outline_button("Discard", self.discard)
                 primary_button("Save", self.save)
-            self._status_timer = ui.timer(3.0, self._refresh_status, active=True)
+            self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
 
     def _load_from_config(self) -> None:
         cfg = config_manager.get_database_config()

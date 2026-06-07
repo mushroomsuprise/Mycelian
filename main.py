@@ -189,7 +189,10 @@ def signal_handler(sig, frame):
     )
 
     if is_shutdown_in_progress():
-        sys.exit(0)
+        # Shutdown is already underway. Returning (instead of sys.exit) avoids the
+        # "Exception ignored in atexit callback" noise that occurs when a second
+        # signal fires while urllib3/atexit handlers are still closing sockets.
+        return
 
     # Use print instead of logger to avoid reentrant logging issues
     print(f"Received signal {sig}, shutting down...")
