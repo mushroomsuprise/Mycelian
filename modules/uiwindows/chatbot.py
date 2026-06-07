@@ -33,7 +33,7 @@ from typing import Any, Dict, Optional
 
 from nicegui import ui
 from ..notification_engine import notify
-from ..ui_buttons import outline_button, primary_button
+from ..ui_buttons import apply_flat_btn_props, outline_button, primary_button, themed_control_button
 from ..ui_form_controls import form_input, form_number, form_textarea
 from ..ui_timer import layout_schedule
 
@@ -1840,31 +1840,36 @@ def render_giveaways_tab(container_el) -> None:
                 reload_giveaways()
 
             with ui.row().classes("flex-wrap gap-2"):
-                ui.button(
+                themed_control_button(
+                    "Start giveaway",
+                    do_start,
                     icon="play_arrow",
-                    text="Start giveaway",
-                    on_click=do_start,
-                ).classes("control-button btn-success px-3 py-2")
-                ui.button(
+                    extra_classes="btn-success px-3 py-2",
+                )
+                themed_control_button(
+                    "Stop accepting",
+                    do_stop,
                     icon="stop",
-                    text="Stop accepting",
-                    on_click=do_stop,
-                ).classes("control-button btn-cancel px-3 py-2")
-                ui.button(
+                    extra_classes="btn-cancel px-3 py-2",
+                )
+                themed_control_button(
+                    "Draw winners",
+                    do_draw,
                     icon="casino",
-                    text="Draw winners",
-                    on_click=do_draw,
-                ).classes("control-button btn-primary px-3 py-2")
-                ui.button(
+                    extra_classes="btn-primary px-3 py-2",
+                )
+                themed_control_button(
+                    "Clear giveaway",
+                    do_clear,
                     icon="delete_sweep",
-                    text="Clear giveaway",
-                    on_click=do_clear,
-                ).classes("control-button btn-danger px-3 py-2")
-                ui.button(
+                    extra_classes="btn-danger px-3 py-2",
+                )
+                themed_control_button(
+                    "Refresh",
+                    reload_giveaways,
                     icon="refresh",
-                    text="Refresh",
-                    on_click=reload_giveaways,
-                ).classes("control-button btn-secondary px-3 py-2")
+                    extra_classes="btn-secondary px-3 py-2",
+                )
 
             ui.label("Statistics").classes("text-lg font-medium")
             try:
@@ -2013,13 +2018,12 @@ def refresh_tab_content(tab_type: str):
                         button_text = "Create First Quote"
                     else:
                         button_text = "Create First Greeting"
-                    ui.button(
+                    themed_control_button(
+                        button_text,
+                        lambda: show_create_chatbot_dialog(tab_type[:-1]),
                         icon="add",
-                        text=button_text,
-                        on_click=lambda: show_create_chatbot_dialog(
-                            tab_type[:-1]
-                        ),  # Remove 's'
-                    ).classes("control-button btn-secondary px-6 py-3 mt-4")
+                        extra_classes="btn-secondary px-6 py-3 mt-4",
+                    )
             else:
                 # Display items in a grid
                 with ui.element("div").classes(
@@ -2085,11 +2089,12 @@ def load_chatbot_items():
                         ui.label(
                             f"Create your first {tab_name[:-1]} to automate your chat"
                         ).classes("text-sm muted-text fade-in")
-                        ui.button(
+                        themed_control_button(
+                            "Create First Command",
+                            lambda: show_create_chatbot_dialog("command"),
                             icon="add",
-                            text="Create First Command",
-                            on_click=lambda: show_create_chatbot_dialog("command"),
-                        ).classes("control-button btn-secondary px-6 py-3 mt-4")
+                            extra_classes="btn-secondary px-6 py-3 mt-4",
+                        )
                 else:
                     # Display items in a grid
                     with ui.element("div").classes(
@@ -2124,11 +2129,12 @@ def load_chatbot_items():
                         ui.label(
                             f"Create your first {tab_name[:-1]} to automate your chat"
                         ).classes("text-sm muted-text fade-in")
-                        ui.button(
+                        themed_control_button(
+                            "Create First Event",
+                            lambda: show_create_chatbot_dialog("event"),
                             icon="add",
-                            text="Create First Event",
-                            on_click=lambda: show_create_chatbot_dialog("event"),
-                        ).classes("control-button btn-secondary px-6 py-3 mt-4")
+                            extra_classes="btn-secondary px-6 py-3 mt-4",
+                        )
                 else:
                     # Display items in a grid
                     with ui.element("div").classes(
@@ -2163,11 +2169,12 @@ def load_chatbot_items():
                         ui.label(
                             f"Create your first {tab_name[:-1]} to automate your chat"
                         ).classes("text-sm muted-text fade-in")
-                        ui.button(
+                        themed_control_button(
+                            "Create First Quote",
+                            lambda: show_create_chatbot_dialog("quote"),
                             icon="add",
-                            text="Create First Quote",
-                            on_click=lambda: show_create_chatbot_dialog("quote"),
-                        ).classes("control-button btn-secondary px-6 py-3 mt-4")
+                            extra_classes="btn-secondary px-6 py-3 mt-4",
+                        )
                 else:
                     # Display items in a grid
                     with ui.element("div").classes(
@@ -2208,11 +2215,12 @@ def load_chatbot_items():
                         ui.label(
                             f"Create your first {tab_name[:-1]} to automate your chat"
                         ).classes("text-sm muted-text fade-in")
-                        ui.button(
+                        themed_control_button(
+                            "Create First Greeting",
+                            lambda: show_create_greeting_dialog(),
                             icon="add",
-                            text="Create First Greeting",
-                            on_click=lambda: show_create_greeting_dialog(),
-                        ).classes("control-button btn-secondary px-6 py-3 mt-4")
+                            extra_classes="btn-secondary px-6 py-3 mt-4",
+                        )
                 else:
                     # Display items in a grid
                     with ui.element("div").classes(
@@ -2344,32 +2352,34 @@ def create_command_card(command_id: str, command: ChatCommand):
 
         # Action buttons
         with ui.row().classes("w-full items-center gap-2 mt-3"):
-            ui.button(
+            themed_control_button(
+                "Edit",
+                lambda cid=command_id: show_edit_chatbot_dialog(cid, "command"),
                 icon="edit",
-                text="Edit",
-                on_click=lambda cid=command_id: show_edit_chatbot_dialog(
-                    cid, "command"
-                ),
-            ).classes("control-button btn-secondary text-xs px-3 py-1 grow")
+                extra_classes="btn-secondary text-xs px-3 py-1 grow",
+            )
 
             if command.command_type == CommandType.COUNTER:
-                ui.button(
+                themed_control_button(
+                    "Reset",
+                    lambda cid=command_id: reset_command_counter(cid),
                     icon="replay",
-                    text="Reset",
-                    on_click=lambda cid=command_id: reset_command_counter(cid),
-                ).classes("control-button btn-warning text-xs px-3 py-1 grow")
+                    extra_classes="btn-warning text-xs px-3 py-1 grow",
+                )
 
-            ui.button(
+            themed_control_button(
+                "Test",
+                lambda cid=command_id: test_chatbot_item(cid, "command"),
                 icon="play_arrow",
-                text="Test",
-                on_click=lambda cid=command_id: test_chatbot_item(cid, "command"),
-            ).classes("control-button btn-success text-xs px-3 py-1 grow")
+                extra_classes="btn-success text-xs px-3 py-1 grow",
+            )
 
-            ui.button(
+            themed_control_button(
+                "Delete",
+                lambda cid=command_id: delete_chatbot_item(cid, "command"),
                 icon="delete",
-                text="Delete",
-                on_click=lambda cid=command_id: delete_chatbot_item(cid, "command"),
-            ).classes("control-button btn-danger text-xs px-3 py-1 grow")
+                extra_classes="btn-danger text-xs px-3 py-1 grow",
+            )
 
 
 def create_event_card(event_id: str, event: ChatEvent):
@@ -2445,23 +2455,26 @@ def create_event_card(event_id: str, event: ChatEvent):
 
         # Action buttons
         with ui.row().classes("w-full items-center gap-2 mt-3"):
-            ui.button(
+            themed_control_button(
+                "Edit",
+                lambda eid=event_id: show_edit_chatbot_dialog(eid, "event"),
                 icon="edit",
-                text="Edit",
-                on_click=lambda eid=event_id: show_edit_chatbot_dialog(eid, "event"),
-            ).classes("control-button btn-secondary text-xs px-3 py-1 grow")
+                extra_classes="btn-secondary text-xs px-3 py-1 grow",
+            )
 
-            ui.button(
+            themed_control_button(
+                "Test",
+                lambda eid=event_id: test_chatbot_item(eid, "event"),
                 icon="play_arrow",
-                text="Test",
-                on_click=lambda eid=event_id: test_chatbot_item(eid, "event"),
-            ).classes("control-button btn-warning text-xs px-3 py-1 grow")
+                extra_classes="btn-warning text-xs px-3 py-1 grow",
+            )
 
-            ui.button(
+            themed_control_button(
+                "Delete",
+                lambda eid=event_id: delete_chatbot_item(eid, "event"),
                 icon="delete",
-                text="Delete",
-                on_click=lambda eid=event_id: delete_chatbot_item(eid, "event"),
-            ).classes("control-button btn-danger text-xs px-3 py-1 grow")
+                extra_classes="btn-danger text-xs px-3 py-1 grow",
+            )
 
 
 def create_quote_card(quote_id: str, quote):
@@ -2482,17 +2495,19 @@ def create_quote_card(quote_id: str, quote):
 
             # Action buttons
             with ui.column().classes("items-end gap-2"):
-                ui.button(
+                themed_control_button(
+                    "Edit",
+                    lambda qid=quote_id: show_edit_quote_dialog(qid),
                     icon="edit",
-                    text="Edit",
-                    on_click=lambda qid=quote_id: show_edit_quote_dialog(qid),
-                ).classes("control-button btn-secondary text-xs px-3 py-1")
+                    extra_classes="btn-secondary text-xs px-3 py-1",
+                )
 
-                ui.button(
+                themed_control_button(
+                    "Delete",
+                    lambda qid=quote_id: delete_quote_item(qid),
                     icon="delete",
-                    text="Delete",
-                    on_click=lambda qid=quote_id: delete_quote_item(qid),
-                ).classes("control-button btn-danger text-xs px-3 py-1")
+                    extra_classes="btn-danger text-xs px-3 py-1",
+                )
 
         # Quote text
         with ui.column().classes("w-full mb-3"):
@@ -2588,17 +2603,19 @@ def create_greeting_card(greeting_id: str, greeting):
 
         # Action buttons
         with ui.row().classes("w-full items-center gap-2 mt-3"):
-            ui.button(
+            themed_control_button(
+                "Edit",
+                lambda gid=greeting_id: show_edit_greeting_dialog(gid),
                 icon="edit",
-                text="Edit",
-                on_click=lambda gid=greeting_id: show_edit_greeting_dialog(gid),
-            ).classes("control-button btn-secondary text-xs px-3 py-1 grow")
+                extra_classes="btn-secondary text-xs px-3 py-1 grow",
+            )
 
-            ui.button(
+            themed_control_button(
+                "Delete",
+                lambda gid=greeting_id: delete_greeting(gid),
                 icon="delete",
-                text="Delete",
-                on_click=lambda gid=greeting_id: delete_greeting(gid),
-            ).classes("control-button btn-danger text-xs px-3 py-1 grow")
+                extra_classes="btn-danger text-xs px-3 py-1 grow",
+            )
 
 
 def format_interval_human_readable(seconds: int) -> str:
@@ -2700,13 +2717,14 @@ def show_create_quote_dialog():
                             "flat"
                         ).classes("secondary-text")
 
-                        ui.button(
-                            icon="save",
-                            text="Add Quote",
-                            on_click=lambda: save_new_quote(
+                        themed_control_button(
+                            "Add Quote",
+                            lambda: save_new_quote(
                                 quote_text.value, author_input.value
                             ),
-                        ).classes("control-button btn-primary px-4 py-2")
+                            icon="save",
+                            extra_classes="btn-primary px-4 py-2",
+                        )
 
     create_dialog.open()
 
@@ -3294,10 +3312,12 @@ def create_variable_processing_section(form_data: dict) -> ui.element:
                     value=expression,
                 ).classes("grow text-xs w-full")
 
-                ui.button(
+                themed_control_button(
+                    "",
+                    lambda: remove_processing_expression(expression_input),
                     icon="delete",
-                    on_click=lambda: remove_processing_expression(expression_input),
-                ).classes("control-button btn-danger text-xs px-2 py-1 shrink-0")
+                    extra_classes="btn-danger text-xs px-2 py-1 shrink-0",
+                )
 
                 expression_input.on_value_change(lambda e: update_processing())
 
@@ -3838,7 +3858,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                                     value="1",
                                 ).classes("w-32")
 
-                                ui.button(
+                                add_mapping_btn = ui.button(
                                     "Add Mapping",
                                     icon="add",
                                     on_click=lambda: [
@@ -3862,7 +3882,11 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                                         new_pos_input.set_value("1"),
                                         update_argument_mappings(),
                                     ],
-                                ).classes("btn-success text-xs px-3 py-2")
+                                )
+                                add_mapping_btn.classes(
+                                    "btn-success mycelian-btn text-xs px-3 py-2"
+                                )
+                                apply_flat_btn_props(add_mapping_btn)
 
         # Event-specific options - Event Settings section is now handled dynamically above
 
@@ -3991,14 +4015,15 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                         ui.label("Variables").classes(
                             "text-sm font-medium secondary-text"
                         )
-                        ui.button(
-                            icon="add",
-                            text="Custom Variable",
-                            on_click=lambda: show_custom_variable_dialog(
+                        themed_control_button(
+                            "Custom Variable",
+                            lambda: show_custom_variable_dialog(
                                 form_data,
                                 lambda: update_custom_variables_display(form_data),
                             ),
-                        ).classes("control-button btn-primary text-xs px-2 py-1")
+                            icon="add",
+                            extra_classes="btn-primary text-xs px-2 py-1",
+                        )
 
                     # Variables list container with scroll
                     with ui.element("div").classes("max-h-96 overflow-y-auto"):
@@ -4556,11 +4581,12 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                 if item_type
                 else "Create Item"
             )
-            ui.button(
+            themed_control_button(
+                button_text,
+                lambda: save_chatbot_item(form_data),
                 icon="save",
-                text=button_text,
-                on_click=lambda: save_chatbot_item(form_data),
-            ).classes("control-button btn-secondary px-6 py-2")
+                extra_classes="btn-secondary px-6 py-2",
+            )
 
 
 def update_event_settings_fields(event_type: str, form_data: dict, existing_item=None):
@@ -5072,10 +5098,9 @@ def show_custom_variable_dialog(
                             )
                             button_icon = "save" if not edit_mode else "edit"
 
-                            ui.button(
-                                icon=button_icon,
-                                text=button_text,
-                                on_click=lambda: create_custom_variable(
+                            themed_control_button(
+                                button_text,
+                                lambda: create_custom_variable(
                                     var_name_input.value,
                                     expression_input.value,
                                     form_data,
@@ -5083,7 +5108,9 @@ def show_custom_variable_dialog(
                                     edit_mode=edit_mode,
                                     edit_var_name=edit_var_name,
                                 ),
-                            ).classes("control-button btn-primary px-4 py-2")
+                                icon=button_icon,
+                                extra_classes="btn-primary px-4 py-2",
+                            )
 
                     # Right column - Variables panel (matching command dialog style)
                     with ui.element("div").classes("w-96 shrink-0"):
@@ -7363,13 +7390,15 @@ def delete_chatbot_item(item_id: str, item_type: str):
 
             with ui.row().classes("w-full justify-end gap-2"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
-                ui.button(
+                delete_btn = ui.button(
                     "Delete",
                     on_click=lambda: [
                         confirm_delete(),
                         dialog.close(),
                     ],
-                ).classes("btn-danger")
+                )
+                delete_btn.classes("btn-danger mycelian-btn")
+                apply_flat_btn_props(delete_btn)
 
     dialog.open()
 
@@ -7442,15 +7471,16 @@ def show_create_greeting_dialog():
                             "flat"
                         ).classes("secondary-text")
 
-                        ui.button(
-                            icon="save",
-                            text="Add Greeting",
-                            on_click=lambda: handle_greeting_save(
+                        themed_control_button(
+                            "Add Greeting",
+                            lambda: handle_greeting_save(
                                 username_input.value,
                                 greeting_text_input.value,
                                 enabled_toggle.value,
                             ),
-                        ).classes("control-button btn-secondary px-4 py-2")
+                            icon="save",
+                            extra_classes="btn-secondary px-4 py-2",
+                        )
 
     create_dialog.open()
 
@@ -7626,15 +7656,16 @@ def show_edit_greeting_dialog(greeting_id: str):
                             "flat"
                         ).classes("secondary-text")
 
-                        ui.button(
-                            icon="save",
-                            text="Update Greeting",
-                            on_click=lambda: update_greeting(
+                        themed_control_button(
+                            "Update Greeting",
+                            lambda: update_greeting(
                                 greeting_id,
                                 greeting_text_input.value,
                                 enabled_toggle.value,
                             ),
-                        ).classes("control-button btn-secondary px-4 py-2")
+                            icon="save",
+                            extra_classes="btn-secondary px-4 py-2",
+                        )
 
     edit_dialog.open()
 
@@ -7701,13 +7732,15 @@ def delete_greeting(greeting_id: str):
 
             with ui.row().classes("w-full items-center justify-end gap-2"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
-                ui.button(
+                delete_btn = ui.button(
                     "Delete",
                     on_click=lambda: [
                         confirm_delete(),
                         dialog.close(),
                     ],
-                ).classes("btn-danger")
+                )
+                delete_btn.classes("btn-danger mycelian-btn")
+                apply_flat_btn_props(delete_btn)
 
     dialog.open()
 
@@ -7846,15 +7879,16 @@ def show_greeting_settings_dialog():
                             text="Cancel", on_click=greeting_settings_dialog.close
                         ).props("flat").classes("secondary-text")
 
-                        ui.button(
-                            icon="save",
-                            text="Save Settings",
-                            on_click=lambda: save_greeting_settings_and_close(
+                        themed_control_button(
+                            "Save Settings",
+                            lambda: save_greeting_settings_and_close(
                                 default_greeting_input.value,
                                 reset_interval_input.value,
                                 greeting_settings_dialog,
                             ),
-                        ).classes("control-button btn-secondary px-4 py-2")
+                            icon="save",
+                            extra_classes="btn-secondary px-4 py-2",
+                        )
 
     greeting_settings_dialog.open()
 
@@ -7996,13 +8030,14 @@ def show_quote_settings_dialog():
                             "flat"
                         ).classes("secondary-text")
 
-                        ui.button(
-                            icon="save",
-                            text="Save Settings",
-                            on_click=lambda: save_quote_settings(
+                        themed_control_button(
+                            "Save Settings",
+                            lambda: save_quote_settings(
                                 quote_cooldown_input.value,
                             ),
-                        ).classes("control-button btn-secondary px-4 py-2")
+                            icon="save",
+                            extra_classes="btn-secondary px-4 py-2",
+                        )
 
     edit_dialog.open()
 

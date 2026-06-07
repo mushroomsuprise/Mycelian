@@ -313,19 +313,77 @@ body:not(.body--dark) .text-grey {
 }
 
 /*
- * NiceGUI buttons are Quasar .q-btn elements. Legacy .control-button chrome
- * must not override .props("color=...") / outline — use .mycelian-btn for
- * shared hover only, or .btn-* for custom-filled non-Quasar styling.
+ * NiceGUI 3.x: Quasar .q-btn needs explicit chrome — flat props + these rules.
+ * Semantic fills use .btn-*; neutral dock chrome uses .control-button alone.
  */
 .q-btn.control-button:not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel) {
-    background-color: unset !important;
-    border: unset !important;
-    color: unset !important;
-    padding: unset !important;
-    font-size: unset !important;
-    font-weight: unset !important;
+    background-color: var(--color-hover-overlay) !important;
+    color: var(--color-text-primary) !important;
+    border: 1px solid var(--color-border-default) !important;
+    border-radius: 4px !important;
+    font-weight: 500 !important;
     display: inline-flex !important;
-    gap: unset !important;
+    gap: 6px !important;
+}
+
+.q-btn.control-button:not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel):hover {
+    background-color: var(--color-active-overlay) !important;
+}
+
+.q-btn.control-button.paused {
+    background-color: var(--color-primary-light) !important;
+    color: var(--color-primary-hover) !important;
+    border-color: var(--color-border-accent) !important;
+}
+
+/* Activity feed tab row (segmented, OBS-dock style) */
+.tab-row {
+    display: flex;
+    width: 100%;
+    margin-bottom: 16px;
+    gap: 0;
+}
+
+.q-btn.tab-button,
+.tab-button:not(.q-btn) {
+    flex: 1;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    background-color: var(--color-bg-surface) !important;
+    color: var(--color-text-muted) !important;
+    border: 1px solid var(--color-border-subtle) !important;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+    border-radius: 0 !important;
+    margin: 0 !important;
+}
+
+.q-btn.tab-button:first-child,
+.tab-button:not(.q-btn):first-child {
+    border-top-left-radius: 6px !important;
+    border-bottom-left-radius: 6px !important;
+}
+
+.q-btn.tab-button:last-child,
+.tab-button:not(.q-btn):last-child {
+    border-top-right-radius: 6px !important;
+    border-bottom-right-radius: 6px !important;
+    border-left: none !important;
+}
+
+.q-btn.tab-button:hover,
+.tab-button:not(.q-btn):hover {
+    background-color: var(--color-hover-overlay) !important;
+    color: var(--color-text-secondary) !important;
+}
+
+.q-btn.tab-button.active,
+.tab-button:not(.q-btn).active {
+    background-color: var(--color-primary-light) !important;
+    color: var(--color-text-primary) !important;
+    border-color: var(--color-primary) !important;
 }
 
 .mycelian-btn {
@@ -862,9 +920,13 @@ body:not(.body--dark) .control-button:not(.q-btn):not(.btn-primary):not(.btn-sec
 }
 
 body:not(.body--dark) .q-btn.control-button:not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel) {
-    background-color: unset !important;
-    border: unset !important;
-    color: unset !important;
+    background-color: var(--color-bg-surface) !important;
+    color: var(--color-text-primary) !important;
+    border: 1px solid var(--color-border-default) !important;
+}
+
+body:not(.body--dark) .q-btn.control-button:not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel):hover {
+    background-color: var(--color-hover-overlay) !important;
 }
 
 /* Scrollbars in light mode */
@@ -1212,6 +1274,69 @@ button.alert-save-btn:hover,
 }
 
 .btn-cancel:hover {
+    background-color: var(--color-hover-overlay) !important;
+}
+
+/* Quasar .q-btn overrides for semantic button classes */
+.q-btn.btn-primary,
+button.btn-primary {
+    background-color: var(--color-primary) !important;
+    color: var(--color-text-inverse) !important;
+    border: none !important;
+}
+
+.q-btn.btn-primary:hover {
+    background-color: var(--color-primary-hover) !important;
+    opacity: 0.95;
+}
+
+.q-btn.btn-secondary {
+    background-color: var(--color-info) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.q-btn.btn-secondary:hover {
+    filter: brightness(0.85);
+}
+
+.q-btn.btn-danger {
+    background-color: var(--color-error) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.q-btn.btn-danger:hover {
+    filter: brightness(0.85);
+}
+
+.q-btn.btn-warning {
+    background-color: var(--color-warning) !important;
+    color: black !important;
+    border: none !important;
+}
+
+.q-btn.btn-warning:hover {
+    filter: brightness(0.85);
+}
+
+.q-btn.btn-success {
+    background-color: var(--color-success) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.q-btn.btn-success:hover {
+    filter: brightness(0.85);
+}
+
+.q-btn.btn-cancel {
+    background-color: var(--color-bg-surface) !important;
+    color: var(--color-text-primary) !important;
+    border: 1px solid var(--color-border-default) !important;
+}
+
+.q-btn.btn-cancel:hover {
     background-color: var(--color-hover-overlay) !important;
 }
 

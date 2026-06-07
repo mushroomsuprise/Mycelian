@@ -35,12 +35,11 @@ import random
 import sys
 import threading
 import time
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
-
-import warnings
 
 # Eventlet emits a deprecation warning on import. Flask-SocketIO still relies on
 # it here, so silence the noise (a migration off eventlet is tracked separately).
@@ -55,6 +54,10 @@ import eventlet.green.time
 import eventlet.wsgi
 from engineio.async_drivers import gevent
 from engineio.payload import Payload
+
+# Default is 16; OBS browser-source reconnect bursts can exceed that in one polling POST.
+Payload.max_decode_packets = 128
+
 from flask import (
     Flask,
     make_response,
@@ -67,7 +70,6 @@ from flask_socketio import SocketIO, emit
 
 from . import alertutils, database_manager, statistics_manager, twitch
 from .dataobjects import state_manager  # To access live PSN data
-from .theme_manager import generate_css_variables, get_theme_manager
 from .path_utils import (
     get_assets_path,
     get_data_path,
@@ -78,14 +80,21 @@ from .psnapi import PSNData  # For type hinting if needed, and default object
 from .streamdeck_plugin_utils import enqueue_streamdeck_connector_event
 from .streamdeck_template_dispatch import (
     coerce_streamdeck_action_data as _coerce_streamdeck_action_data,
+)
+from .streamdeck_template_dispatch import (
     merged_streamdeck_options_payload as _merged_streamdeck_options_payload,
+)
+from .streamdeck_template_dispatch import (
     plan_streamdeck_template_action_emit,
+)
+from .streamdeck_template_dispatch import (
     resolve_streamdeck_options_action as _resolve_streamdeck_options_action_fn,
 )
 from .template_config_parser import (
     TemplateConfigParser,
     resolve_dynamic_control_values_from_elements,
 )
+from .theme_manager import generate_css_variables, get_theme_manager
 
 logger = logging.getLogger(__name__)
 

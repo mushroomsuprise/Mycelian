@@ -29,6 +29,7 @@ import os
 
 from nicegui import ui
 from ..notification_engine import notify
+from ..ui_buttons import apply_flat_btn_props
 from ..ui_form_controls import form_input, form_number
 from ..ui_timer import layout_schedule
 
@@ -96,13 +97,12 @@ CUSTOM_CSS = """
 }
 """
 
-
 def create_source_controls_tab():
     """Create the Source Controls tab UI"""
     global source_controls_container
 
     # Add custom CSS to the page
-    ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
+    ui.add_head_html(f"<style>{CUSTOM_CSS}</style>", shared=True)
 
     # Create a card for the entire tab content with flex layout
     with ui.element("div").classes("content-section w-full h-full flex flex-col relative"):
@@ -120,11 +120,12 @@ def create_source_controls_tab():
                     ui.label(
                         "Interactive controls for your templates (includes hidden templates)"
                     ).classes("text-xs opacity-75 fade-in")
-                    ui.button(
+                    refresh_btn = ui.button(
                         icon="refresh", text="Refresh", on_click=refresh_source_controls
                     ).classes(
                         "control-button btn-primary text-xs px-2 py-1"
                     )
+                    apply_flat_btn_props(refresh_btn, dense=True)
 
         # Create a container for the controls - flexible height
         with ui.element("div").classes("grow overflow-hidden"):
@@ -371,7 +372,8 @@ def create_button_control(template_name, element):
     else:
         button_classes += " btn-primary"
 
-    ui.button(button_text, on_click=handle_button_click).classes(button_classes)
+    btn = ui.button(button_text, on_click=handle_button_click).classes(button_classes)
+    apply_flat_btn_props(btn)
 
 
 def create_slider_control(template_name, element):
@@ -417,15 +419,18 @@ def create_counter_control(template_name, element):
         send_websocket_event(template_name, action_reset, {})
 
     with ui.row().classes("gap-1 w-full"):
-        ui.button("-", on_click=decrement).classes(
+        dec_btn = ui.button("-", on_click=decrement).classes(
             "w-6 h-6 btn-danger text-xs"
         )
-        ui.button("+", on_click=increment).classes(
+        apply_flat_btn_props(dec_btn, dense=True)
+        inc_btn = ui.button("+", on_click=increment).classes(
             "w-6 h-6 btn-success text-xs"
         )
-        ui.button("Reset", on_click=reset).classes(
+        apply_flat_btn_props(inc_btn, dense=True)
+        reset_btn = ui.button("Reset", on_click=reset).classes(
             "grow btn-cancel text-xs py-1"
         )
+        apply_flat_btn_props(reset_btn)
 
 
 def create_spin_control(template_name, element):
@@ -435,9 +440,10 @@ def create_spin_control(template_name, element):
     def handle_spin():
         send_websocket_event(template_name, action, {})
 
-    ui.button("Spin", on_click=handle_spin).classes(
+    spin_btn = ui.button("Spin", on_click=handle_spin).classes(
         "btn-warning w-full text-xs py-1"
     )
+    apply_flat_btn_props(spin_btn)
 
 
 def create_text_input_control(template_name, element):
@@ -539,9 +545,10 @@ def show_debug_info():
                     ui.label("No dynamic handlers registered").classes("secondary-text")
 
                 with ui.row().classes("w-full justify-end mt-4"):
-                    ui.button("Close", on_click=dialog.close).classes(
+                    close_btn = ui.button("Close", on_click=dialog.close).classes(
                         "btn-cancel"
                     )
+                    apply_flat_btn_props(close_btn)
 
             dialog.open()
         else:

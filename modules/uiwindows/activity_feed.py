@@ -1117,7 +1117,8 @@ def update_alert_visibility():
             display: block !important;
         }
         </style>
-    """
+    """,
+        shared=True,
     )
 
     # Only update UI if we actually made changes
@@ -1540,8 +1541,11 @@ def create_activity_feed_tab():
             color: rgba(255, 255, 255, 0.6);
         }
         </style>
-    """
+    """,
+        shared=True,
     )
+
+    _DOCK_BTN_PROPS = "flat no-caps dense"
 
     with ui.element("div").classes("content-section w-full h-full relative"):
         # Control buttons row
@@ -1556,6 +1560,7 @@ def create_activity_feed_tab():
             pause_btn = ui.button(
                 icon="pause", text="PAUSE ALERTS", on_click=on_pause_button_click
             ).classes("control-button")
+            pause_btn.props(_DOCK_BTN_PROPS)
 
             def update_pause_button_state():
                 """Update the pause button state based on current ALERTS_PAUSED status"""
@@ -1581,14 +1586,14 @@ def create_activity_feed_tab():
                     logger.debug(f"Final pause state: paused={paused}")
 
                     if paused:
-                        pause_btn.props("icon=play_arrow")
+                        pause_btn.props(f"{_DOCK_BTN_PROPS} icon=play_arrow")
                         pause_btn.text = "RESUME ALERTS"
                         pause_btn.classes(remove="control-button")
                         pause_btn.classes(add="control-button paused")
                         logger.debug("Updated button to RESUME ALERTS state")
 
                     else:
-                        pause_btn.props("icon=pause")
+                        pause_btn.props(f"{_DOCK_BTN_PROPS} icon=pause")
                         pause_btn.text = "PAUSE ALERTS"
                         pause_btn.classes(remove="paused")
                         pause_btn.classes(add="control-button")
@@ -1609,10 +1614,14 @@ def create_activity_feed_tab():
                     f"Error initializing pause button state: {str(e)}", exc_info=True
                 )
 
-            ui.button(icon="notifications_off", text="MUTE ALERTS").classes(
+            mute_btn = ui.button(icon="notifications_off", text="MUTE ALERTS").classes(
                 "control-button"
             )
-            ui.button(icon="skip_next", text="SKIP ALERT").classes("control-button")
+            mute_btn.props(_DOCK_BTN_PROPS)
+            skip_btn = ui.button(icon="skip_next", text="SKIP ALERT").classes(
+                "control-button"
+            )
+            skip_btn.props(_DOCK_BTN_PROPS)
 
             ui.element("div").classes("grow")
 
@@ -1635,6 +1644,7 @@ def create_activity_feed_tab():
                 filter_button = ui.button(icon="filter_list", text="FILTERS").classes(
                     "control-button"
                 )
+                filter_button.props(_DOCK_BTN_PROPS)
 
                 # Create an invisible backdrop that covers the entire screen when dropdown is open
                 backdrop = ui.element("div").classes("fixed inset-0 z-40")
@@ -1689,7 +1699,8 @@ def create_activity_feed_tab():
                         opacity: 0.5 !important;
                     }
                     </style>
-                """
+                """,
+                    shared=True,
                 )
 
                 # Store the dropdown and backdrop references in the activity_feed_state
@@ -1769,57 +1780,6 @@ def create_activity_feed_tab():
                             create_checkbox("streaks", "Watch streaks")
                             create_checkbox("hype_train", "Hype Train")
 
-        # Add tab system with custom styling
-        ui.add_head_html(
-            """
-            <style>
-            .tab-row {
-                display: flex;
-                width: 100%;
-                margin-bottom: 16px;
-                gap: 0;
-            }
-            
-            .tab-button {
-                flex: 1;
-                padding: 8px 16px;
-                font-size: 14px;
-                font-weight: 500;
-                background-color: var(--color-bg-surface) !important;
-                color: var(--color-text-muted) !important;
-                border: 1px solid var(--color-border-subtle) !important;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                text-align: center;
-                border-radius: 0 !important;
-                margin: 0 !important;
-            }
-
-            .tab-button:first-child {
-                border-top-left-radius: 6px !important;
-                border-bottom-left-radius: 6px !important;
-            }
-
-            .tab-button:last-child {
-                border-top-right-radius: 6px !important;
-                border-bottom-right-radius: 6px !important;
-                border-left: none !important;
-            }
-
-            .tab-button:hover {
-                background-color: var(--color-hover-overlay) !important;
-                color: var(--color-text-secondary) !important;
-            }
-
-            .tab-button.active {
-                background-color: var(--color-primary-light) !important;
-                color: var(--color-text-primary) !important;
-                border-color: var(--color-primary) !important;
-            }
-            </style>
-        """
-        )
-
         with ui.row().classes("tab-row"):
 
             def on_current_tab():
@@ -1833,12 +1793,14 @@ def create_activity_feed_tab():
                 current_tab_btn.classes(remove="active")
 
             current_tab_btn = ui.button(
-                text="Current Alerts", on_click=on_current_tab
+                text="CURRENT ALERTS", on_click=on_current_tab
             ).classes("tab-button active")
+            current_tab_btn.props(_DOCK_BTN_PROPS)
 
             previous_tab_btn = ui.button(
-                text="Previous Alerts", on_click=on_previous_tab
+                text="PREVIOUS ALERTS", on_click=on_previous_tab
             ).classes("tab-button")
+            previous_tab_btn.props(_DOCK_BTN_PROPS)
 
         # Create a scrollable container for alert cards
         with ui.element("div").classes("scroll-content grow"):
