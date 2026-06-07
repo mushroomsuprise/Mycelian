@@ -310,7 +310,6 @@ def register_native_window_close_handler() -> None:
     def _on_native_closed(_event) -> None:
         logger.info("Native window closed event received")
         _signal_nicegui_server_exit()
-        shutdown_application(reason="native_window_closed", force=False)
 
     event_manager.on("closed", _on_native_closed)
     _native_close_registered = True
@@ -364,4 +363,3 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
 def request_native_window_shutdown() -> None:
     """Called when the native webview window closes without a full server shutdown."""
     _signal_nicegui_server_exit()
-    shutdown_application(reason="native_window_closed", force=False)

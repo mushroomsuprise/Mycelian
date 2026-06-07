@@ -1008,11 +1008,36 @@ def start_ui():
         with StartupTimer("mainuiwindow.ui_run_native"):
             # NiceGUI 3.x: pass the UI builder as the positional ``root`` so it runs
             # inside a real client context (the 2.x auto-index client is gone).
-            ui.run(build_root_ui, native=True, dark=True, reload=False)
+            try:
+                ui.run(build_root_ui, native=True, dark=True, reload=False)
+            except Exception as run_err:
+                from .shutdown import is_shutdown_in_progress
+
+                if is_shutdown_in_progress() and _is_benign_shutdown_websocket_error(
+                    run_err
+                ):
+                    logger.warning(
+                        "Benign websocket close during shutdown: %s", run_err
+                    )
+                else:
+                    raise
         logger.info("NiceGUI app started.")
     except Exception as e:
+        from .shutdown import is_shutdown_in_progress
+
+        if is_shutdown_in_progress() and _is_benign_shutdown_websocket_error(e):
+            logger.warning("Benign websocket close during shutdown: %s", e)
+            return
         logger.error(f"Error starting NiceGUI server: {str(e)}", exc_info=True)
         raise
+
+
+def _is_benign_shutdown_websocket_error(exc: BaseException) -> bool:
+    try:
+        from wsproto.utilities import LocalProtocolError
+    except ImportError:
+        return False
+    return isinstance(exc, LocalProtocolError)
 
 
 def cleanup_resources():

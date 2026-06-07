@@ -417,5 +417,11 @@ if __name__ == "__main__":
         shutdown_application(reason="ui_run_returned", force=False)
         sys.exit(0)
     except Exception as e:
+        from modules.shutdown import is_shutdown_in_progress, shutdown_application
+
+        if is_shutdown_in_progress():
+            logger.warning("UI server stopped during shutdown: %s", e)
+            shutdown_application(reason="ui_run_returned", force=False)
+            sys.exit(0)
         logger.error(f"Error starting UI server: {str(e)}", exc_info=True)
         sys.exit(1)

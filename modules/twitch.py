@@ -302,6 +302,7 @@ class Twitch_API:
         # Token refresh synchronization
         self._refresh_lock = threading.Lock()
         self._last_refresh_attempt = None
+        self._connection_epoch = 0
 
     def _apply_api_credentials_from_store(self) -> None:
         """Merge Twitch app client id/secret from api_credentials.json (Settings source of truth)."""
@@ -2587,9 +2588,14 @@ class Twitch_API:
 
     def _health_check_loop(self):
         """Background thread that periodically checks connection health and token expiry"""
+        from .shutdown import is_shutdown_in_progress
+
         global twitch_connected
         while True:
             try:
+                if is_shutdown_in_progress():
+                    break
+
                 # Check if connection is alive
                 if (
                     self.eventsub
@@ -2612,7 +2618,8 @@ class Twitch_API:
                         )
                         self.is_connected = False
                         twitch_connected = False
-                        self.reconnect()
+                        if not is_shutdown_in_progress():
+                            self.reconnect()
                     else:
                         logger.warning(
                             "Twitch connection health check failed, will retry"
@@ -2713,6 +2720,11 @@ class Twitch_API:
 
     def reconnect(self):
         """Attempt to reconnect to Twitch"""
+        from .shutdown import is_shutdown_in_progress
+
+        if is_shutdown_in_progress():
+            return
+
         try:
             logger.debug("Attempting to reconnect to Twitch")
 
@@ -2739,8 +2751,12 @@ class Twitch_API:
             self.is_connected = False
             global twitch_connected
             twitch_connected = False
+            self._connection_epoch += 1
             self.eventsub = None
             self.last_health_check = None
+
+            if is_shutdown_in_progress():
+                return
 
             # Create a new thread for the async reconnection
             reconnect_thread = threading.Thread(
@@ -2756,8 +2772,13 @@ class Twitch_API:
             )
 
     async def intialize_twitch_api(self):
+        from .shutdown import is_shutdown_in_progress
+
         global twitch_connected
         logger.debug("Initializing Twitch API websocket connection")
+        if is_shutdown_in_progress():
+            return False
+        epoch = self._connection_epoch
         try:
             # Stage the Twitch API (authenticate)
             staging_success = await self.stage_twitch_api()
@@ -2768,11 +2789,15 @@ class Twitch_API:
                 notify_twitch_connect_failed()
                 return False  # Return False instead of raising exception
 
+            if is_shutdown_in_progress() or self._connection_epoch != epoch:
+                return False
+
             # Initialize the EventSub websocket
             self.eventsub = EventSubWebsocket(self.twitch)
+            eventsub = self.eventsub
 
             # Start the websocket connection first
-            self.eventsub.start()
+            eventsub.start()
 
             # Update connection state
             self.is_connected = True
@@ -2794,11 +2819,18 @@ class Twitch_API:
             except Exception as mod_err:
                 logger.debug("Moderator cache refresh on connect: %s", mod_err)
 
+            if (
+                is_shutdown_in_progress()
+                or self._connection_epoch != epoch
+                or self.eventsub is not eventsub
+            ):
+                return False
+
             # Register event handlers
             try:
                 # Subscribe to channel chat messages
                 try:
-                    await self.eventsub.listen_channel_chat_message(
+                    await eventsub.listen_channel_chat_message(
                         self.user.id, self.user.id, self.on_chat_message
                     )
                     logger.debug("Successfully subscribed to channel chat messages")
@@ -2809,7 +2841,7 @@ class Twitch_API:
                     raise
 
                 try:
-                    await self.eventsub.listen_channel_chat_notification(
+                    await eventsub.listen_channel_chat_notification(
                         self.user.id, self.user.id, self.on_chat_notification
                     )
                     logger.debug(
@@ -2823,7 +2855,7 @@ class Twitch_API:
 
                 # Subscribe to channel moderation events
                 try:
-                    await self.eventsub.listen_channel_moderate(
+                    await eventsub.listen_channel_moderate(
                         self.user.id, self.user.id, self.on_moderate
                     )
                     logger.debug("Successfully subscribed to channel moderation events")
@@ -2835,7 +2867,7 @@ class Twitch_API:
 
                 # Subscribe to channel update events (critical for category updates)
                 try:
-                    await self.eventsub.listen_channel_update(
+                    await eventsub.listen_channel_update(
                         self.user.id, self.on_update
                     )
                     logger.info(
@@ -2849,7 +2881,7 @@ class Twitch_API:
 
                 # Subscribe to channel follow events
                 try:
-                    await self.eventsub.listen_channel_follow_v2(
+                    await eventsub.listen_channel_follow_v2(
                         self.user.id, self.user.id, self.on_follow
                     )
                     logger.debug("Successfully subscribed to channel follow events")
@@ -2861,7 +2893,7 @@ class Twitch_API:
 
                 # Subscribe to channel subscription messages
                 try:
-                    await self.eventsub.listen_channel_subscription_message(
+                    await eventsub.listen_channel_subscription_message(
                         self.user.id, self.on_sub
                     )
                     logger.debug(
@@ -2875,7 +2907,7 @@ class Twitch_API:
 
                 # Subscribe to channel subscription events
                 try:
-                    await self.eventsub.listen_channel_subscribe(
+                    await eventsub.listen_channel_subscribe(
                         self.user.id, self.on_new_sub
                     )
                     logger.debug(
@@ -2887,20 +2919,20 @@ class Twitch_API:
                     )
                     raise
 
-                await self.eventsub.listen_channel_subscription_gift(
+                await eventsub.listen_channel_subscription_gift(
                     self.user.id, self.on_sub_gift
                 )
-                await self.eventsub.listen_channel_cheer(self.user.id, self.on_cheer)
-                await self.eventsub.listen_channel_bits_use(
+                await eventsub.listen_channel_cheer(self.user.id, self.on_cheer)
+                await eventsub.listen_channel_bits_use(
                     self.user.id, self.on_bits_use
                 )
-                await self.eventsub.listen_channel_raid(
+                await eventsub.listen_channel_raid(
                     self.on_raid, self.user.id, None
                 )
-                await self.eventsub.listen_channel_points_custom_reward_redemption_add(
+                await eventsub.listen_channel_points_custom_reward_redemption_add(
                     self.user.id, self.on_points
                 )
-                # await self.eventsub.listen_hype_train_begin(
+                # await eventsub.listen_hype_train_begin(
                 #     self.user.id, self.on_hype_train_start
                 # )
                 # await self.eventsub.listen_hype_train_progress(
@@ -2915,6 +2947,9 @@ class Twitch_API:
                 twitch_connected = False
                 notify_twitch_connect_failed()
                 return False  # Return False instead of raising exception
+
+            if is_shutdown_in_progress() or self._connection_epoch != epoch:
+                return False
 
             # Start the health check thread
             self.start_health_check()
@@ -3208,6 +3243,7 @@ class Twitch_API:
             self.is_connected = False
             global twitch_connected
             twitch_connected = False
+            self._connection_epoch += 1
             self.eventsub = None
             self.last_health_check = None
 
