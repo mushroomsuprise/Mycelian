@@ -363,7 +363,7 @@ class StatisticsTab:
             if self._export_end_date and snap.get("export_end"):
                 self._export_end_date.value = snap["export_end"]
             if snap.get("user_search"):
-                self._on_user_search(notify=False)
+                self._on_user_search(show_notification=False)
         except Exception as e:
             print(f"Could not restore statistics tab inputs: {e}")
 
@@ -1327,7 +1327,7 @@ class StatisticsTab:
                         "secondary-text italic"
                     )
 
-    def _on_user_search(self, notify: bool = True):
+    def _on_user_search(self, show_notification: bool = True):
         """Handle user search: fetch and display per-user stats for the selected date range."""
         try:
             username = (
@@ -1336,7 +1336,7 @@ class StatisticsTab:
                 else ""
             )
             if not username:
-                if notify:
+                if show_notification:
                     notify("Please enter a username.", type="warning")
                 return
 
@@ -1358,7 +1358,8 @@ class StatisticsTab:
                     hour=23, minute=59, second=59, microsecond=999999
                 )
             except ValueError:
-                notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
+                if show_notification:
+                    notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
                 return
 
             start_ts = start_dt.timestamp()
@@ -1394,12 +1395,12 @@ class StatisticsTab:
                         username, start_dt, end_dt, events, range_counts, range_totals, user_stats
                     )
 
-            if notify:
+            if show_notification:
                 notify(f"Found {len(events)} events for {username}.", type="positive")
 
         except Exception as e:
             print(f"Error in user search: {e}")
-            if notify:
+            if show_notification:
                 notify("Error searching user statistics.", type="negative")
 
     def _render_per_user_results(
