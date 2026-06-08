@@ -25,6 +25,7 @@ SOFTWARE.
 
 import asyncio
 import logging
+import threading
 import time
 from typing import Any, Dict, List
 
@@ -41,6 +42,7 @@ class ConnectorIntegration:
     def __init__(self):
         self.manager = get_manager()
         self._twitch_integration_setup = False
+        self._twitch_retry_thread = None
 
     def setup_twitch_integration(self):
         """Set up integration with Twitch events"""
@@ -94,10 +96,57 @@ class ConnectorIntegration:
                 logger.info("Twitch integration set up for connector system")
                 self._twitch_integration_setup = True
             else:
-                logger.warning("Twitch API not available for connector integration")
+                logger.warning(
+                    "Twitch API not available for connector integration; "
+                    "will retry when it becomes ready"
+                )
+                self._schedule_twitch_integration_retry()
 
         except Exception as e:
             logger.error(f"Error setting up Twitch integration: {e}", exc_info=True)
+
+    def _schedule_twitch_integration_retry(self) -> None:
+        """Retry Twitch handler wiring once the Twitch API finishes initializing.
+
+        Connector deferred init can run before Twitch finishes connecting; without
+        this, Twitch events would never trigger connectors until an app restart.
+        """
+        if self._twitch_integration_setup:
+            return
+        if self._twitch_retry_thread is not None and self._twitch_retry_thread.is_alive():
+            return
+
+        def _retry_loop() -> None:
+            from .shutdown import is_shutdown_in_progress
+
+            # Poll for up to ~5 minutes for the Twitch API to come up.
+            deadline = time.time() + 300.0
+            while time.time() < deadline:
+                if is_shutdown_in_progress() or self._twitch_integration_setup:
+                    return
+                time.sleep(5.0)
+                try:
+                    from . import twitch
+
+                    if getattr(twitch, "twitch_api", None):
+                        logger.info(
+                            "Twitch API now ready; wiring connector integration"
+                        )
+                        self.setup_twitch_integration()
+                        return
+                except Exception as e:
+                    logger.debug("Twitch integration retry check failed: %s", e)
+            if not self._twitch_integration_setup:
+                logger.warning(
+                    "Twitch API never became ready; connector integration not wired"
+                )
+
+        self._twitch_retry_thread = threading.Thread(
+            target=_retry_loop,
+            name="ConnectorTwitchIntegrationRetry",
+            daemon=True,
+        )
+        self._twitch_retry_thread.start()
 
     def _wrap_twitch_handler(self, api_instance, handler_name: str, connector_handler):
         """Wrap a Twitch API handler to also send events to connector system"""

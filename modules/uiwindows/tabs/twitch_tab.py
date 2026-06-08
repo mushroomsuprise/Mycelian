@@ -30,10 +30,13 @@ class TwitchTab:
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
         self._status_timer: Optional[Any] = None
+        self._token_timer: Optional[Any] = None
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
+        if self._token_timer is not None:
+            self._token_timer.active = True
         layout_schedule(0.05, self._refresh_status, once=True)
 
     def _refresh_main_status(self) -> None:
@@ -70,6 +73,8 @@ class TwitchTab:
             if "main_last_update_label" in self.ui_elements:
                 last_update = status_info.get("last_update", "Never")
                 self.ui_elements["main_last_update_label"].set_text(last_update)
+
+            self._update_token_timing_labels("main", status_info)
 
         except Exception as e:
             import logging
@@ -120,6 +125,8 @@ class TwitchTab:
                 last_update = status_info.get("last_update", "Never")
                 self.ui_elements["chatbot_last_update_label"].set_text(last_update)
 
+            self._update_token_timing_labels("chatbot", status_info)
+
         except Exception as e:
             import logging
 
@@ -137,9 +144,55 @@ class TwitchTab:
         self._refresh_main_status()
         self._refresh_chatbot_status()
 
+    def _refresh_token_countdowns(self) -> None:
+        """Update token refresh/expiry countdowns (runs every second)."""
+        try:
+            from ... import chatbot, twitch
+
+            self._update_token_timing_labels(
+                "main", twitch.get_twitch_connection_status()
+            )
+            self._update_token_timing_labels(
+                "chatbot", chatbot.get_chatbot_connection_status()
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _countdown_label_classes(status_info: Dict[str, Any], *, for_expiry: bool) -> str:
+        if status_info.get("token_expired"):
+            return "font-semibold text-sm text-theme-error"
+        if not for_expiry and status_info.get("token_refresh_due"):
+            return "font-semibold text-sm text-theme-warning"
+        return "font-semibold text-sm"
+
+    def _update_token_timing_labels(
+        self, prefix: str, status_info: Dict[str, Any]
+    ) -> None:
+        """Apply token refresh / expiry countdown fields to the account card."""
+        pairs = (
+            ("token_refresh_countdown", f"{prefix}_token_refresh_countdown_label", False),
+            ("token_refresh_at", f"{prefix}_token_refresh_at_label", None),
+            ("token_expires_countdown", f"{prefix}_token_expires_countdown_label", True),
+            ("token_expires_at", f"{prefix}_token_expires_at_label", None),
+        )
+        for field, key, for_expiry in pairs:
+            if key not in self.ui_elements:
+                continue
+            label = self.ui_elements[key]
+            label.set_text(status_info.get(field, "—"))
+            if for_expiry is not None:
+                label.classes(
+                    replace=self._countdown_label_classes(
+                        status_info, for_expiry=for_expiry
+                    )
+                )
+
     def on_exit(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = False
+        if self._token_timer is not None:
+            self._token_timer.active = False
 
     def _build_account_panel(
         self,
@@ -182,6 +235,22 @@ class TwitchTab:
                     self.ui_elements[f"{prefix}_last_update_label"] = ui.label(
                         "Never"
                     ).classes("secondary-text text-sm")
+                with ui.column().classes("gap-0"):
+                    ui.label("Next refresh").classes("text-xs secondary-text")
+                    self.ui_elements[f"{prefix}_token_refresh_countdown_label"] = (
+                        ui.label("—").classes("font-semibold text-sm")
+                    )
+                    self.ui_elements[f"{prefix}_token_refresh_at_label"] = ui.label(
+                        "—"
+                    ).classes("secondary-text text-xs")
+                with ui.column().classes("gap-0"):
+                    ui.label("Token expires").classes("text-xs secondary-text")
+                    self.ui_elements[f"{prefix}_token_expires_countdown_label"] = (
+                        ui.label("—").classes("font-semibold text-sm")
+                    )
+                    self.ui_elements[f"{prefix}_token_expires_at_label"] = ui.label(
+                        "—"
+                    ).classes("secondary-text text-xs")
             with settings_form_grid(columns=2):
                 self.ui_elements[client_id_key] = form_input(
                     tooltip="Twitch application Client ID from the developer console",
@@ -235,6 +304,9 @@ class TwitchTab:
 
             settings_footer(self.discard, self.save)
             self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
+            self._token_timer = layout_schedule(
+                1.0, self._refresh_token_countdowns, active=True
+            )
 
     # ----- helpers -----
     def _load_from_state(self) -> None:

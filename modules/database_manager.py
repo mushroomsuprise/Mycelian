@@ -568,6 +568,10 @@ class FirebaseDatabase(DatabaseInterface):
         self._initialized = False
         self._connection_tested = False
 
+    def _http_timeout(self) -> int:
+        """Per-request HTTP timeout (seconds) for the firebase-admin DB client."""
+        return max(5, int(getattr(self.config, "connection_timeout", 30) or 30))
+
     def initialize(self) -> bool:
         """Initialize Firebase connection"""
         if not FIREBASE_AVAILABLE:
@@ -635,7 +639,11 @@ class FirebaseDatabase(DatabaseInterface):
                         self.service_account_path
                     )
                     self._app = firebase_admin.initialize_app(
-                        cred, {"databaseURL": self.database_url}
+                        cred,
+                        {
+                            "databaseURL": self.database_url,
+                            "httpTimeout": self._http_timeout(),
+                        },
                     )
                     logger.debug("Firebase initialized successfully")
                 except ValueError as e:
@@ -652,7 +660,12 @@ class FirebaseDatabase(DatabaseInterface):
 
                             app_name = f"mycelian_{uuid.uuid4().hex[:8]}"
                             self._app = firebase_admin.initialize_app(
-                                cred, {"databaseURL": self.database_url}, name=app_name
+                                cred,
+                                {
+                                    "databaseURL": self.database_url,
+                                    "httpTimeout": self._http_timeout(),
+                                },
+                                name=app_name,
                             )
                             logger.debug(
                                 f"Firebase initialized with unique name: {app_name}"
@@ -1421,15 +1434,52 @@ class DatabaseManager:
             return {}
 
     def set_data(self, path: str, data: Dict[str, Any]) -> bool:
-        """Set data in the database"""
+        """Set data in the database with a hard timeout.
+
+        The write runs on a short-lived worker thread so a hung backend write
+        (e.g. a stalled Firebase request on a flaky network) can never block the
+        calling thread indefinitely. Combined with state writes no longer holding
+        the global StateManager lock, this prevents a single slow write from
+        freezing the web engine / Twitch threads.
+        """
         if not self._initialized:
             self.initialize()
 
-        if self._database:
-            return self._database.set_data(path, data)
-        else:
+        if not self._database:
             logger.error("Database not initialized")
             return False
+
+        return self._set_data_with_timeout(path, data)
+
+    def _set_data_with_timeout(self, path: str, data: Dict[str, Any]) -> bool:
+        timeout = max(5, int(getattr(self._config, "connection_timeout", 30) or 30))
+        result: Dict[str, Any] = {"value": False}
+
+        def _worker() -> None:
+            try:
+                result["value"] = self._database.set_data(path, data)
+            except Exception as e:
+                logger.error(
+                    "Database write worker failed for %s: %s", path, e, exc_info=True
+                )
+                result["value"] = False
+
+        worker = threading.Thread(
+            target=_worker, name="MycelianDBWrite", daemon=True
+        )
+        worker.start()
+        worker.join(timeout)
+
+        if worker.is_alive():
+            logger.error(
+                "Database write to %s timed out after %ss; continuing without "
+                "blocking (the write may complete later)",
+                path,
+                timeout,
+            )
+            return False
+
+        return bool(result["value"])
 
     def update_data(self, path: str, data: Dict[str, Any]) -> bool:
         """Update data in the database"""

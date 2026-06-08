@@ -33,6 +33,7 @@ import os
 import queue
 import random
 import sys
+import faulthandler
 import threading
 import time
 import warnings
@@ -449,6 +450,12 @@ class WebEngine:
         self._socket_connected_lock = threading.Lock()
         self._heartbeat_task_started = False
         self._heartbeat_lock = threading.Lock()
+
+        # Watchdog: the gevent heartbeat updates this timestamp; a native thread
+        # watches it and dumps all thread stacks if the gevent hub stops ticking
+        # (the signature of a freeze where OBS sources / Stream Deck stop).
+        self._last_gevent_heartbeat: Optional[float] = None
+        self._watchdog_thread: Optional[threading.Thread] = None
 
         # Short-TTL cache for GET /api/all-template-configs (OBS refresh storms)
         self._all_template_configs_cache: Optional[
@@ -2073,6 +2080,16 @@ class WebEngine:
         self.server_thread = None
         self.is_running = False
 
+        # Auto-recovery: a native supervisor thread (started by alert_processor)
+        # restarts the server when its thread exits or the gevent hub freezes,
+        # so OBS browser sources, Stream Deck, and alerts come back without the
+        # user having to restart the whole app.
+        self._restart_lock = threading.Lock()
+        self._last_restart_ts = 0.0
+        self._restart_attempts = 0
+        self._supervisor_thread: Optional[threading.Thread] = None
+        self._restart_giveup_notified = False
+
     _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 3.0
 
     def _build_all_template_configs(self, preview_tok: Optional[str]) -> Dict[str, Any]:
@@ -2216,11 +2233,13 @@ class WebEngine:
             return self._socket_connected_count
 
     def ensure_web_engine_heartbeat(self) -> None:
-        """Log connected client count periodically (diagnostics)."""
+        """Log connected client count periodically and arm the freeze watchdog."""
         with self._heartbeat_lock:
             if self._heartbeat_task_started:
                 return
             self._heartbeat_task_started = True
+            # Seed the heartbeat now so the watchdog has a baseline.
+            self._last_gevent_heartbeat = time.time()
         try:
             self.socketio.start_background_task(self._web_engine_heartbeat_loop)
         except Exception as exc:
@@ -2229,6 +2248,17 @@ class WebEngine:
             logger.warning(
                 "Could not start WebEngine heartbeat task: %s", exc, exc_info=True
             )
+            return
+
+        # Native (non-greenlet) watchdog thread: keeps running even if the gevent
+        # hub is fully blocked, so it can capture the frozen state.
+        if self._watchdog_thread is None or not self._watchdog_thread.is_alive():
+            self._watchdog_thread = threading.Thread(
+                target=self._watchdog_loop,
+                name="MycelianWebEngineWatchdog",
+                daemon=True,
+            )
+            self._watchdog_thread.start()
 
     def _web_engine_heartbeat_loop(self) -> None:
         while self.is_running:
@@ -2238,11 +2268,259 @@ class WebEngine:
                 break
             if not self.is_running:
                 break
+            # Mark the gevent hub as alive for the watchdog.
+            self._last_gevent_heartbeat = time.time()
             logger.info(
                 "WebEngine heartbeat: connected_clients=%s is_running=%s",
                 self._get_socket_connected_count(),
                 self.is_running,
             )
+
+    def _watchdog_loop(self) -> None:
+        """Detect a frozen gevent hub and dump thread stacks for diagnosis.
+
+        The gevent heartbeat ticks every ~10s. If it stops advancing, the
+        Socket.IO hub thread is blocked (e.g. on a native lock) and OBS sources /
+        Stream Deck are effectively dead. We dump every thread's stack once per
+        stall so the actual blocking call site is captured in the logs.
+        """
+        stall_threshold = 45.0  # ~4 missed 10s heartbeats
+        poll_interval = 15.0
+        dumped = False
+        while self.is_running:
+            time.sleep(poll_interval)
+            if not self.is_running:
+                break
+            last = self._last_gevent_heartbeat
+            if last is None:
+                continue
+            stalled_for = time.time() - last
+            if stalled_for > stall_threshold:
+                if not dumped:
+                    self._dump_all_thread_stacks(
+                        f"WebEngine gevent hub unresponsive for {stalled_for:.0f}s"
+                    )
+                    dumped = True
+            else:
+                if dumped:
+                    logger.warning(
+                        "WebEngine watchdog: gevent hub recovered after stall"
+                    )
+                dumped = False
+
+    def _dump_all_thread_stacks(self, reason: str) -> None:
+        """Write every thread's stack to a freeze-dump file (and the log).
+
+        Uses ``faulthandler`` writing straight to a file descriptor so the dump
+        succeeds even if the stall involves the logging lock itself.
+        """
+        try:
+            log_dir = Path(get_data_path("logs"))
+            log_dir.mkdir(exist_ok=True)
+            dump_path = (
+                log_dir / f"freeze_dump_{datetime.now():%Y%m%d_%H%M%S}.txt"
+            )
+            with open(dump_path, "w", encoding="utf-8") as fh:
+                fh.write(
+                    f"Thread stack dump ({reason}) at "
+                    f"{datetime.now().isoformat()}\n\n"
+                )
+                faulthandler.dump_traceback(file=fh, all_threads=True)
+            logger.error(
+                "WebEngine watchdog: %s — wrote thread stack dump to %s",
+                reason,
+                dump_path,
+            )
+        except Exception as e:
+            logger.error(
+                "WebEngine watchdog: failed to write thread dump (%s): %s",
+                reason,
+                e,
+            )
+
+    # --- Auto-recovery (supervisor + restart) --------------------------------
+
+    _RESTART_COOLDOWN_SEC = 30.0
+    _SUPERVISOR_POLL_SEC = 15.0
+    _FREEZE_RESTART_THRESHOLD_SEC = 60.0
+    _MAX_RESTART_ATTEMPTS = 5
+
+    def start_supervisor(self) -> None:
+        """Start the native supervisor that keeps the overlay server alive.
+
+        Detects the two failure modes that leave the NiceGUI window working
+        while OBS sources, Stream Deck, and alerts go dead: the WebEngine
+        thread exiting, and the gevent hub freezing. Both trigger an automatic
+        restart attempt.
+        """
+        if (
+            self._supervisor_thread is not None
+            and self._supervisor_thread.is_alive()
+        ):
+            return
+        self._supervisor_thread = threading.Thread(
+            target=self._supervisor_loop,
+            name="WebEngineSupervisor",
+            daemon=True,
+        )
+        self._supervisor_thread.start()
+        logger.info("WebEngine supervisor thread started")
+
+    def _supervisor_loop(self) -> None:
+        from .shutdown import is_shutdown_in_progress
+
+        # Give the server a moment to bind before judging its health.
+        time.sleep(self._SUPERVISOR_POLL_SEC)
+        while True:
+            if is_shutdown_in_progress():
+                return
+            try:
+                thread_alive = (
+                    self.server_thread is not None
+                    and self.server_thread.is_alive()
+                )
+                if not thread_alive and not self.is_running:
+                    self.request_restart("WebEngine thread is no longer running")
+                else:
+                    last = self._last_gevent_heartbeat
+                    if (
+                        self.is_running
+                        and last is not None
+                        and (time.time() - last)
+                        > self._FREEZE_RESTART_THRESHOLD_SEC
+                    ):
+                        self.request_restart(
+                            "WebEngine gevent hub stopped responding "
+                            f"({time.time() - last:.0f}s without heartbeat)"
+                        )
+            except Exception as e:
+                logger.debug("WebEngine supervisor check failed: %s", e)
+            time.sleep(self._SUPERVISOR_POLL_SEC)
+
+    def request_restart(self, reason: str) -> None:
+        """Schedule a best-effort server restart (cooldown- and limit-gated)."""
+        from .shutdown import is_shutdown_in_progress
+
+        if is_shutdown_in_progress():
+            return
+        with self._restart_lock:
+            now = time.time()
+            if now - self._last_restart_ts < self._RESTART_COOLDOWN_SEC:
+                return
+            if self._restart_attempts >= self._MAX_RESTART_ATTEMPTS:
+                if not self._restart_giveup_notified:
+                    self._restart_giveup_notified = True
+                    self._notify_restart_giveup()
+                return
+            self._last_restart_ts = now
+            self._restart_attempts += 1
+            attempt = self._restart_attempts
+        threading.Thread(
+            target=self._do_restart,
+            args=(reason, attempt),
+            name="WebEngineRestart",
+            daemon=True,
+        ).start()
+
+    def _do_restart(self, reason: str, attempt: int) -> None:
+        logger.error("WebEngine auto-restart (attempt %s): %s", attempt, reason)
+        self._notify_restart_attempt()
+
+        # Best-effort stop of the existing (possibly frozen) server.
+        try:
+            self.stop()
+        except Exception as e:
+            logger.warning("WebEngine restart: stop() failed: %s", e)
+
+        old_thread = self.server_thread
+        if old_thread is not None and old_thread.is_alive():
+            old_thread.join(timeout=8.0)
+
+        # Re-arm the lazily-started gevent workers so they restart when a
+        # client (e.g. an OBS browser source) reconnects.
+        with self._heartbeat_lock:
+            self._heartbeat_task_started = False
+        with self._template_control_emit_worker_lock:
+            self._template_control_emit_worker_started = False
+        self._last_gevent_heartbeat = None
+
+        # Start a fresh server thread. This fails to bind if the old hub is
+        # frozen and still holding the port; that case is handled below.
+        try:
+            self._start_server_thread()
+        except Exception as e:
+            logger.error("WebEngine restart: failed to start new thread: %s", e)
+
+        time.sleep(3.0)
+        if self.is_alive():
+            logger.warning(
+                "WebEngine auto-restart succeeded (attempt %s)", attempt
+            )
+            with self._restart_lock:
+                self._restart_attempts = 0
+                self._restart_giveup_notified = False
+            self._notify_restart_recovered()
+        else:
+            logger.error(
+                "WebEngine auto-restart did not recover (attempt %s)", attempt
+            )
+            with self._restart_lock:
+                give_up = (
+                    self._restart_attempts >= self._MAX_RESTART_ATTEMPTS
+                )
+            if give_up and not self._restart_giveup_notified:
+                self._restart_giveup_notified = True
+                self._notify_restart_giveup()
+
+    def _start_server_thread(self) -> None:
+        global web_engine_instance
+        self.server_thread = threading.Thread(
+            target=self.run, name="WebEngine", daemon=True
+        )
+        self.server_thread.start()
+        web_engine_instance = self
+
+    def _notify_restart_attempt(self) -> None:
+        try:
+            from .notification_engine import notify_critical
+
+            notify_critical(
+                "The overlay server (OBS browser sources, Stream Deck, and "
+                "alerts) stopped responding and is being restarted "
+                "automatically.",
+                dedupe_key="web_engine:restart_attempt",
+                dedupe_cooldown_sec=60.0,
+            )
+        except Exception as e:
+            logger.debug("WebEngine restart notification failed: %s", e)
+
+    def _notify_restart_recovered(self) -> None:
+        try:
+            from .notification_engine import notify
+
+            notify(
+                "The overlay server recovered. OBS sources, Stream Deck, and "
+                "alerts should be working again.",
+                type="positive",
+                dedupe_key="web_engine:restart_recovered",
+                dedupe_cooldown_sec=60.0,
+            )
+        except Exception as e:
+            logger.debug("WebEngine recovery notification failed: %s", e)
+
+    def _notify_restart_giveup(self) -> None:
+        try:
+            from .notification_engine import notify_critical
+
+            notify_critical(
+                "The overlay server stopped responding and could not be "
+                "restarted automatically. Please restart Mycelian to restore "
+                "OBS sources, Stream Deck, and alerts.",
+                dedupe_key="web_engine:restart_giveup",
+                dedupe_cooldown_sec=300.0,
+            )
+        except Exception as e:
+            logger.debug("WebEngine give-up notification failed: %s", e)
 
     def register_routes(self):
         """Register dynamic routes based on HTML templates in the template directory"""
@@ -6810,7 +7088,26 @@ class WebEngine:
                         if in_request_context:
                             logger.debug("In request context, skipping socketio.stop()")
                         else:
-                            self.socketio.stop()
+                            # If the underlying WSGI server never finished starting,
+                            # flask-socketio's stop() dereferences a None server
+                            # ("'NoneType' object has no attribute 'close'"). Skip
+                            # the call in that case to avoid the harmless error.
+                            wsgi_server = getattr(
+                                self.socketio, "wsgi_server", None
+                            )
+                            server_alive = (
+                                self.server_thread is not None
+                                and self.server_thread.is_alive()
+                            )
+                            if wsgi_server is None and not server_alive:
+                                logger.debug(
+                                    "socketio.stop() skipped: no running WSGI server"
+                                )
+                            else:
+                                self.socketio.stop()
+                    except AttributeError as e:
+                        # Harmless shutdown race when the server was already torn down.
+                        logger.debug("socketio.stop() no-op during shutdown: %s", e)
                     except Exception as e:
                         logger.error(f"Error stopping socketio: {str(e)}")
 

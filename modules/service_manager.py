@@ -67,6 +67,7 @@ class DeferredServiceManager:
 
             total_services = len(sorted_services)
             completed_services = 0
+            failed_services: list[str] = []
 
             for name, service in sorted_services:
                 if self._shutdown:
@@ -89,12 +90,13 @@ class DeferredServiceManager:
 
                     except Exception as e:
                         logger.error(f"Deferred init failed for {name}: {e}")
-                        notify_critical(
-                            f"A background service failed to start ({name}). Check logs.",
-                            dedupe_key=f"deferred_init:{name}",
-                            actions=nav_actions_settings("App Settings"),
-                        )
+                        failed_services.append(name)
                         # Continue with other services even if one fails
+
+            # Retry any that failed (transient errors: DB busy, network, a
+            # dependency not yet ready) before bothering the user.
+            if failed_services and not self._shutdown:
+                self._retry_failed_services(failed_services)
 
             if not self._shutdown:
                 logger.info("Deferred initialization completed for all services")
@@ -110,6 +112,63 @@ class DeferredServiceManager:
             target=init_worker, daemon=True, name="DeferredInit"
         )
         self._thread.start()
+
+    def _retry_failed_services(self, failed: list) -> None:
+        """Retry services that failed to initialize, with backoff.
+
+        Many deferred-init failures are transient (database briefly busy, a
+        network blip, or a dependency that was not ready yet). Retrying avoids a
+        whole integration staying dead for the session over a one-off error.
+        """
+        max_attempts = 3
+
+        def _worker() -> None:
+            attempts = {name: 0 for name in failed}
+            pending = list(failed)
+            delay = 10.0
+            while pending and not self._shutdown:
+                time.sleep(delay)
+                if self._shutdown:
+                    return
+                still_pending = []
+                for name in pending:
+                    if self.initialized.get(name):
+                        continue
+                    attempts[name] += 1
+                    try:
+                        logger.info(
+                            "Retrying deferred init (attempt %s/%s): %s",
+                            attempts[name],
+                            max_attempts,
+                            name,
+                        )
+                        self.services[name]["init"]()
+                        self.initialized[name] = True
+                        logger.info("Deferred init recovered on retry: %s", name)
+                    except Exception as e:
+                        logger.error(
+                            "Deferred init retry failed for %s: %s", name, e
+                        )
+                        if attempts[name] < max_attempts:
+                            still_pending.append(name)
+                        else:
+                            logger.error(
+                                "Giving up on deferred init for %s after %s attempts",
+                                name,
+                                attempts[name],
+                            )
+                            notify_critical(
+                                f"A background service failed to start ({name}). "
+                                "Check logs.",
+                                dedupe_key=f"deferred_init:{name}",
+                                actions=nav_actions_settings("App Settings"),
+                            )
+                pending = still_pending
+                delay = min(delay * 2, 60.0)
+
+        threading.Thread(
+            target=_worker, daemon=True, name="DeferredInitRetry"
+        ).start()
 
     def is_initialized(self, name: str) -> bool:
         """Check if a service has been initialized"""

@@ -1128,28 +1128,39 @@ class Chatbot_API:
 
     def get_connection_status(self):
         """Get current chatbot connection status for UI display"""
+        from .twitch import build_token_timing_fields
+
         if self.using_fallback:
-            # Using main Twitch API as fallback
+            # Using main Twitch API as fallback — show main account token timing.
             from . import twitch
 
-            if twitch.twitch_api and twitch.twitch_api.is_connected:
-                return {
+            main_api = twitch.twitch_api
+            if main_api and main_api.is_connected:
+                status = {
                     "status": "Connected (Fallback Mode)",
                     "is_valid": True,
                     "last_update": "Using main Twitch API",
-                    "user_name": twitch.twitch_api.user.display_name
-                    if twitch.twitch_api.user
+                    "user_name": main_api.user.display_name
+                    if main_api.user
                     else "Main Account",
                 }
             else:
-                return {
+                status = {
                     "status": "Disconnected (Fallback Mode)",
                     "is_valid": False,
                     "last_update": "Main API unavailable",
                     "user_name": "None",
                 }
-        elif self.is_connected and self.twitch:
-            return {
+            status.update(
+                build_token_timing_fields(
+                    token_expiry=main_api.token_expiry if main_api else None,
+                    has_auth_token=bool(main_api and main_api.auth_token),
+                )
+            )
+            return status
+
+        if self.is_connected and self.twitch:
+            status = {
                 "status": "Connected (Dedicated)",
                 "is_valid": True,
                 "last_update": self.last_health_check.strftime("%Y-%m-%d %H:%M:%S")
@@ -1158,26 +1169,34 @@ class Chatbot_API:
                 "user_name": self.user.display_name if self.user else "Unknown",
             }
         elif self.auth_token and self.refresh_token:
-            return {
+            status = {
                 "status": "Authenticated but Disconnected",
                 "is_valid": False,
                 "last_update": "Connection Lost",
                 "user_name": self.user.display_name if self.user else "Unknown",
             }
         elif self.client_id and self.client_secret:
-            return {
+            status = {
                 "status": "Configured but Not Authenticated",
                 "is_valid": False,
                 "last_update": "Never",
                 "user_name": "None",
             }
         else:
-            return {
+            status = {
                 "status": "Not Configured (Using Fallback)",
                 "is_valid": False,
                 "last_update": "Will use main Twitch API",
                 "user_name": "None",
             }
+
+        status.update(
+            build_token_timing_fields(
+                token_expiry=self.token_expiry,
+                has_auth_token=bool(self.auth_token),
+            )
+        )
+        return status
 
     def get_token_status(self):
         """Get detailed chatbot token status for debugging"""

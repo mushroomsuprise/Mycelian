@@ -38,6 +38,11 @@ from typing import Any, Dict, List, Optional
 from nicegui import app, events, ui
 
 from modules import updater
+from modules.nicegui_outbox_patch import ensure_outbox_snapshot_patch
+
+# Make the NiceGUI per-client outbox loop resilient to the weakref/GC race that
+# raises "dictionary changed size during iteration" before any client connects.
+ensure_outbox_snapshot_patch()
 
 
 # Version information

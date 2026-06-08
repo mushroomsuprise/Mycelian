@@ -86,37 +86,80 @@ class ConnectorManager:
             self.processing_task = None
 
     def start_connector_thread(self):
-        """Start connector processing in a separate thread with its own event loop"""
+        """Start connector processing in a separate thread with its own event loop.
+
+        The loop is supervised: if it stops because of an unexpected error (not a
+        normal shutdown), it is restarted with backoff so connectors, Stream Deck
+        connector buttons, and OBS-driven triggers come back without the user
+        having to restart the whole app.
+        """
         import threading
 
         def run_connector_loop():
-            """Run the connector event processing in a separate event loop"""
-            try:
-                # Create a new event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                self.connector_loop = loop
+            """Run the connector event processing, restarting on unexpected exit."""
+            from .shutdown import is_shutdown_in_progress
 
+            backoff = 1.0
+            max_backoff = 30.0
+            crashed_once = False
+
+            while not is_shutdown_in_progress():
+                loop = None
                 try:
-                    from .obs_service import obs_service as _obs_svc
+                    # Create a fresh event loop for this run
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    self.connector_loop = loop
 
-                    _obs_svc.set_connector_loop(loop)
-                except Exception:
-                    pass
+                    try:
+                        from .obs_service import obs_service as _obs_svc
 
-                # Start the processing task
-                self.processing_task = loop.create_task(self._process_events())
+                        _obs_svc.set_connector_loop(loop)
+                    except Exception:
+                        pass
 
-                # Run the event loop
-                loop.run_forever()
+                    # Start the processing task and run the loop
+                    self.processing_task = loop.create_task(self._process_events())
+                    backoff = 1.0  # healthy start resets backoff
+                    loop.run_forever()
+                except Exception as e:
+                    logger.error(f"Error in connector thread: {e}", exc_info=True)
+                finally:
+                    self.connector_loop = None
+                    try:
+                        from .obs_service import obs_service as _obs_svc
 
-            except Exception as e:
-                logger.error(f"Error in connector thread: {e}", exc_info=True)
+                        _obs_svc.set_connector_loop(None)
+                    except Exception:
+                        pass
+                    if loop is not None:
+                        try:
+                            loop.close()
+                        except Exception:
+                            pass
+
+                # Clean shutdown: stop without restarting.
+                if is_shutdown_in_progress():
+                    break
+
+                crashed_once = True
+                logger.warning(
+                    "Connector processing loop stopped unexpectedly; "
+                    "restarting in %.0fs",
+                    backoff,
+                )
                 notify_critical(
-                    "Connector background processing crashed. Connectors may not run until you restart the app.",
-                    dedupe_key="connector:thread_crash",
+                    "Connector background processing stopped and is restarting "
+                    "automatically. If connectors keep failing, restart the app.",
+                    dedupe_key="connector:thread_restart",
+                    dedupe_cooldown_sec=120.0,
                     actions=nav_actions_main_tab("Connectors"),
                 )
+                time.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
+
+            if crashed_once:
+                logger.info("Connector processing thread exiting after shutdown")
 
         # Start the connector processing in a background thread
         self.connector_thread = threading.Thread(

@@ -616,10 +616,16 @@ def _service_status_notify_type(service_key: str, status: str) -> str:
         if s == "connected":
             return "positive"
         return "warning"
+    if service_key == "webengine":
+        if s == "connected":
+            return "positive"
+        if "frozen" in s or "stopped" in s:
+            return "negative"
+        return "warning"
     return "info"
 
 
-_SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs")
+_SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs", "webengine")
 
 _SERVICE_LABELS: Dict[str, str] = {
     "twitch": "Twitch",
@@ -627,6 +633,7 @@ _SERVICE_LABELS: Dict[str, str] = {
     "youtube": "YouTube",
     "psn": "PSN",
     "obs": "OBS",
+    "webengine": "Overlay Server",
 }
 
 _SERVICE_SUBTABS: Dict[str, str] = {
@@ -635,6 +642,7 @@ _SERVICE_SUBTABS: Dict[str, str] = {
     "youtube": "YouTube",
     "psn": "PSN",
     "obs": "OBS",
+    "webengine": "App Settings",
 }
 
 _service_last: Dict[str, str] = {}
@@ -660,10 +668,16 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
     s = (status_raw or "").strip().lower()
     if not s:
         return "Unknown"
+    if "frozen" in s:
+        return "Frozen"
+    if "degraded" in s or "stale" in s or "no recent events" in s:
+        return "Degraded"
     if s == "connected" or s.startswith("connected") or s.startswith("partial"):
         return "Connected"
     if s in ("connecting", "disconnecting"):
         return status_raw.strip().title() or "Connecting"
+    if "stopped" in s:
+        return "Stopped"
     if any(
         x in s
         for x in (
@@ -701,9 +715,9 @@ def footer_status_tier(service_key: str, status_raw: str) -> str:
         return "success"
     if display in ("connecting", "disconnecting"):
         return "warning"
-    if display == "idle":
+    if display in ("idle", "degraded"):
         return "warning"
-    if display in ("disconnected", "error"):
+    if display in ("disconnected", "error", "frozen", "stopped"):
         return "error"
     return "info"
 

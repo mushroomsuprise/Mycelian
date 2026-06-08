@@ -80,6 +80,66 @@ ensure_channel_chat_notification_watch_streak_patch()
 
 logger = logging.getLogger(__name__)
 
+# Twitch user access tokens live ~4 hours (not 60 days). Used as a conservative
+# fallback when the OAuth validate endpoint can't be reached, so the proactive
+# refresh in ``_health_check_loop`` still runs before the token actually dies.
+ACCESS_TOKEN_FALLBACK_LIFETIME = timedelta(hours=3, minutes=30)
+# Proactive refresh in ``is_token_expired`` / ``_health_check_loop`` fires this
+# many minutes before the access token actually expires.
+TOKEN_PROACTIVE_REFRESH_BUFFER = timedelta(minutes=5)
+
+
+def format_token_countdown(delta: timedelta) -> str:
+    """Format a timedelta as a human-readable countdown (e.g. ``2h 14m 32s``)."""
+    total = int(delta.total_seconds())
+    if total <= 0:
+        return "Due now"
+    hours, rem = divmod(total, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes > 0:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+def build_token_timing_fields(
+    *,
+    token_expiry: Optional[datetime],
+    has_auth_token: bool,
+) -> dict:
+    """Countdown / clock fields for the Twitch settings tab token timers."""
+    empty = {
+        "token_refresh_countdown": "—",
+        "token_refresh_at": "—",
+        "token_expires_countdown": "—",
+        "token_expires_at": "—",
+        "token_refresh_due": False,
+        "token_expired": False,
+    }
+    if not has_auth_token:
+        return empty
+    if not token_expiry:
+        return {
+            **empty,
+            "token_refresh_countdown": "Unknown",
+            "token_refresh_at": "Unknown",
+            "token_expires_countdown": "Unknown",
+            "token_expires_at": "Unknown",
+        }
+    now = datetime.now()
+    refresh_at = token_expiry - TOKEN_PROACTIVE_REFRESH_BUFFER
+    until_refresh = refresh_at - now
+    until_expiry = token_expiry - now
+    return {
+        "token_refresh_countdown": format_token_countdown(until_refresh),
+        "token_refresh_at": refresh_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "token_expires_countdown": format_token_countdown(until_expiry),
+        "token_expires_at": token_expiry.strftime("%Y-%m-%d %H:%M:%S"),
+        "token_refresh_due": until_refresh.total_seconds() <= 0,
+        "token_expired": until_expiry.total_seconds() <= 0,
+    }
+
 
 class TwitchSessionNotReadyError(Exception):
     """Helix call cannot run yet (missing auth or Twitch library client)."""
@@ -304,6 +364,19 @@ class Twitch_API:
         self._last_refresh_attempt = None
         self._connection_epoch = 0
 
+        # EventSub liveness / revocation recovery
+        self.last_event_time = None
+        self._last_revocation_reconnect = None
+        # Serializes reconnect() so health-check, revocation, and 401 paths
+        # don't spawn overlapping init threads.
+        self._reconnect_lock = threading.Lock()
+        self._reconnect_in_progress = False
+        # A live websocket session that stops delivering events for this long is
+        # treated as a "silent death" zombie and rebuilt (subscriptions revoked
+        # without a revocation message reaching us). Long enough that an ordinary
+        # quiet stream rarely trips it; a rebuild costs only a few seconds.
+        self.event_staleness_timeout = 45 * 60
+
     def _apply_api_credentials_from_store(self) -> None:
         """Merge Twitch app client id/secret from api_credentials.json (Settings source of truth)."""
         try:
@@ -478,6 +551,36 @@ class Twitch_API:
             # Continue without saving
             return False
 
+    async def _compute_token_expiry(self, token: str) -> datetime:
+        """Resolve the real expiry for a Twitch user access token.
+
+        Queries the OAuth validate endpoint for the exact ``expires_in`` (Twitch
+        user tokens last ~4h, not 60 days). Falls back to a conservative ~3.5h if
+        validation is unavailable, so ``is_token_expired()`` becomes True in time
+        for the health-check loop to refresh proactively.
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://id.twitch.tv/oauth2/validate",
+                    headers={"Authorization": f"OAuth {token}"},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json()
+                        expires_in = int(payload.get("expires_in", 0) or 0)
+                        if expires_in > 0:
+                            return datetime.now() + timedelta(seconds=expires_in)
+                        # expires_in == 0 means a non-expiring token; keep using it.
+                        return datetime.now() + timedelta(days=60)
+                    logger.warning(
+                        "Twitch token validate returned %s; using fallback expiry",
+                        resp.status,
+                    )
+        except Exception as e:
+            logger.warning("Could not validate Twitch token expiry: %s", e)
+        return datetime.now() + ACCESS_TOKEN_FALLBACK_LIFETIME
+
     def is_token_expired(self):
         """Check if the current auth token is expired"""
         if not self.auth_token:
@@ -583,8 +686,8 @@ class Twitch_API:
             self.auth_token = new_auth_token
             self.refresh_token = new_refresh_token
 
-            # Set token expiry (Twitch tokens typically expire in 60 days)
-            self.token_expiry = datetime.now() + timedelta(days=60)
+            # Resolve the real (~4h) expiry so proactive refresh fires in time.
+            self.token_expiry = await self._compute_token_expiry(self.auth_token)
 
             # Save new tokens to database
             save_success = self.save_auth_data()
@@ -675,8 +778,8 @@ class Twitch_API:
             self.user = await first(self.twitch.get_users())
             self.user_id = self.user.id
 
-            # Set token expiry (Twitch tokens typically expire in 60 days)
-            self.token_expiry = datetime.now() + timedelta(days=60)
+            # Resolve the real (~4h) expiry so proactive refresh fires in time.
+            self.token_expiry = await self._compute_token_expiry(self.auth_token)
 
             # Save new tokens to Firebase
             self.save_auth_data()
@@ -747,6 +850,13 @@ class Twitch_API:
                         f"Successfully authenticated with existing tokens as user: {self.user.display_name}"
                     )
 
+                    # Refresh the stored expiry from Twitch so the proactive
+                    # health-check refresh fires in time (older sessions saved a
+                    # bogus 60-day expiry that disabled proactive refresh).
+                    self.token_expiry = await self._compute_token_expiry(
+                        self.auth_token
+                    )
+
                     # Save the verified auth data to ensure it's persisted
                     self.save_auth_data()
 
@@ -768,6 +878,7 @@ class Twitch_API:
             return False  # Return False instead of raising exception
 
     async def on_chat_message(self, data: ChannelChatMessageEvent):
+        self._note_event_received()
         username = data.event.chatter_user_name
         message = data.event.message.text
         logger.debug(
@@ -1042,6 +1153,7 @@ class Twitch_API:
 
     async def on_chat_notification(self, data: ChannelChatNotificationEvent):
         """Handle channel chat notifications; only watch streaks trigger alerts."""
+        self._note_event_received()
         ev = data.event
 
         notice_raw = getattr(ev, "notice_type", None)
@@ -1164,6 +1276,7 @@ class Twitch_API:
             logger.debug("Watch streak statistics update failed: %s", e)
 
     async def on_moderate(self, data: ChannelModerateEvent):
+        self._note_event_received()
         logger.debug(f"Moderation event received: {data.event}")
         warning = data.event.warn
         timeout = data.event.timeout
@@ -1235,6 +1348,7 @@ class Twitch_API:
             )
 
     async def on_update(self, data: ChannelUpdateEvent):
+        self._note_event_received()
         logger.debug(
             f"Channel update event: Category changed to {data.event.category_name}"
         )
@@ -1322,6 +1436,7 @@ class Twitch_API:
             )
 
     async def on_follow(self, data: ChannelFollowEvent):
+        self._note_event_received()
         logger.debug(f"New follower: {data.event.user_name}")
         alert = alertutils.fetch_follow_alert()
         alert.username = data.event.user_name
@@ -1403,6 +1518,7 @@ class Twitch_API:
         )
 
     async def on_sub(self, data: ChannelSubscriptionMessageEvent):
+        self._note_event_received()
         logger.debug(
             f"Subscription message from {data.event.user_name}, cumulative months: {data.event.cumulative_months}"
         )
@@ -1518,6 +1634,7 @@ class Twitch_API:
 
     async def on_resub(self, data: ChannelSubscriptionMessageEvent):
         """Handle resubscription events (cumulative_months > 1)"""
+        self._note_event_received()
         logger.debug(
             f"Resubscription from {data.event.user_name} for {data.event.cumulative_months} months"
         )
@@ -1627,6 +1744,7 @@ class Twitch_API:
 
     async def on_new_sub(self, data: ChannelSubscribeEvent):
         """Handle channel.subscribe events (subs without a shared chat message)."""
+        self._note_event_received()
         if getattr(data.event, "is_gift", False):
             logger.debug(
                 "Skipping channel.subscribe for gift recipient %s (handled via gift sub)",
@@ -1740,6 +1858,7 @@ class Twitch_API:
         )
 
     async def on_sub_gift(self, data: ChannelSubscriptionGiftEvent):
+        self._note_event_received()
         logger.debug(
             f"Gift subscription from {data.event.user_name} for {data.event.total} months"
         )
@@ -1845,6 +1964,7 @@ class Twitch_API:
         )
 
     async def on_bits_use(self, data: ChannelBitsUseEvent):
+        self._note_event_received()
         logger.debug(f"Bits cheered by {data.event.user_name}: {data.event.bits}")
         event_type = str(getattr(data.event, "type", "") or "").lower()
         bits_amount = int(str(data.event.bits))
@@ -1970,6 +2090,7 @@ class Twitch_API:
             )
 
     async def on_cheer(self, data: ChannelCheerEvent):
+        self._note_event_received()
         logger.debug(f"Bits cheered by {data.event.user_name}: {data.event.bits}")
         alert = alertutils.fetch_cheer_alert(data.event.bits)
         username_display = (
@@ -2080,6 +2201,7 @@ class Twitch_API:
         )
 
     async def on_raid(self, data: ChannelRaidEvent):
+        self._note_event_received()
         logger.debug(
             f"Raid from {data.event.from_broadcaster_user_name} with {data.event.viewers} viewers"
         )
@@ -2266,6 +2388,7 @@ class Twitch_API:
         )
 
     async def on_points(self, data: ChannelPointsCustomRewardRedemptionAddEvent):
+        self._note_event_received()
         logger.debug(
             f"Channel points redemption by {data.event.user_name} for {data.event.reward.title}"
         )
@@ -2354,6 +2477,7 @@ class Twitch_API:
     async def on_hype_train_start(
         self, data: HypeTrainEvent
     ):  # data.event is HypeTrainBeginEventData
+        self._note_event_received()
         # Correctly access conductor_user_name for HypeTrainBeginEventData
         conductor_name = getattr(data.event, "conductor_user_name", None) or "A viewer"
         level = data.event.level
@@ -2406,6 +2530,7 @@ class Twitch_API:
             )
 
     async def on_hype_train_progress(self, data: HypeTrainEvent):
+        self._note_event_received()
         logger.debug(
             f"Hype train progress: Level {data.event.level}, Progress: {data.event.progress}/{data.event.goal}"
         )
@@ -2452,6 +2577,7 @@ class Twitch_API:
     async def on_hype_train_end(
         self, data: HypeTrainEndEvent
     ):  # data.event is HypeTrainEndEventData
+        self._note_event_received()
         logger.debug(f"Hype train ended at level {data.event.level}")
         event_data = data.event
         level = event_data.level
@@ -2605,7 +2731,36 @@ class Twitch_API:
                     self.last_health_check = datetime.now()
                     self.is_connected = True
                     twitch_connected = True
-                    logger.debug("Twitch connection health check passed")
+                    if self.last_event_time is not None:
+                        idle_s = (
+                            datetime.now() - self.last_event_time
+                        ).total_seconds()
+                        logger.debug(
+                            "Twitch connection health check passed (%.0fs since last event)",
+                            idle_s,
+                        )
+                        # Silent death: the websocket session stays open (so this
+                        # check keeps passing) but no events arrive because the
+                        # subscriptions were revoked without a revocation message
+                        # reaching us. Rebuild after a long idle stretch.
+                        if (
+                            idle_s > self.event_staleness_timeout
+                            and self._auto_reconnect_enabled()
+                            and not is_shutdown_in_progress()
+                        ):
+                            logger.warning(
+                                "No Twitch events for %.0fs while session is open; "
+                                "rebuilding EventSub (possible silent death)",
+                                idle_s,
+                            )
+                            # Reset so a genuinely quiet channel only triggers one
+                            # rebuild per staleness window instead of looping.
+                            self.last_event_time = datetime.now()
+                            self._schedule_eventsub_rebuild("event staleness")
+                    else:
+                        logger.debug(
+                            "Twitch connection health check passed (no events yet)"
+                        )
                 else:
                     # Check if we've exceeded the timeout
                     if (
@@ -2650,23 +2805,16 @@ class Twitch_API:
                                 # IMPORTANT: Sync refreshed tokens back to state manager
                                 self._sync_tokens_to_state_manager()
 
-                                # Update the existing Twitch instance with new authentication if connected
-                                if self.twitch and self.is_connected:
-                                    try:
-                                        loop.run_until_complete(
-                                            self.twitch.set_user_authentication(
-                                                self.auth_token,
-                                                self.authscope,
-                                                self.refresh_token,
-                                            )
-                                        )
-                                        logger.debug(
-                                            "Updated existing Twitch instance with refreshed tokens"
-                                        )
-                                    except Exception as auth_error:
-                                        logger.warning(
-                                            f"Failed to update Twitch instance auth after proactive refresh: {str(auth_error)}"
-                                        )
+                                # Rebuild the EventSub connection with the new
+                                # token. Subscriptions were created with the old
+                                # token and Twitch revokes them once it expires,
+                                # so set_user_authentication alone is not enough —
+                                # we must re-subscribe to keep receiving events.
+                                if not is_shutdown_in_progress():
+                                    logger.info(
+                                        "Reconnecting EventSub to re-subscribe with refreshed token"
+                                    )
+                                    self.reconnect()
                             else:
                                 logger.warning(
                                     "Token refresh failed during health check - authentication may be required"
@@ -2718,12 +2866,97 @@ class Twitch_API:
                 f"Error syncing tokens to state manager: {str(e)}", exc_info=True
             )
 
+    async def _on_eventsub_revocation(self, data) -> None:
+        """Handle an EventSub subscription revocation.
+
+        Twitch revokes subscriptions when the user access token they were created
+        with expires or is revoked. The websocket session stays open (so the
+        active_session health check keeps passing), but no events arrive — the
+        silent death this app used to hit after a few hours. We refresh the token
+        and rebuild every subscription, debounced so a burst of revocations
+        (one per subscription) only triggers a single reconnect.
+        """
+        from .shutdown import is_shutdown_in_progress
+
+        logger.warning("EventSub subscription revoked by Twitch: %s", data)
+
+        if is_shutdown_in_progress():
+            return
+
+        now = datetime.now()
+        if (
+            self._last_revocation_reconnect
+            and (now - self._last_revocation_reconnect).total_seconds() < 30
+        ):
+            logger.debug("Revocation reconnect already in progress, skipping duplicate")
+            return
+        self._last_revocation_reconnect = now
+
+        # Most revocations are authorization_revoked (token expired/invalid), so
+        # refresh before reconnecting; reconnect() also re-stages auth as a guard.
+        try:
+            if self.refresh_token:
+                refreshed = await self.refresh_auth_token()
+                if refreshed:
+                    self._sync_tokens_to_state_manager()
+        except Exception as e:
+            logger.error(
+                "Token refresh after EventSub revocation failed: %s", e, exc_info=True
+            )
+
+        if not is_shutdown_in_progress() and self._auto_reconnect_enabled():
+            self.reconnect()
+
+    def _auto_reconnect_enabled(self) -> bool:
+        """Whether automatic EventSub reconnect/rebuild is allowed (user setting)."""
+        try:
+            return bool(dataobjects.state_manager.get_app_settings().auto_reconnect)
+        except Exception:
+            return True
+
+    def _note_event_received(self) -> None:
+        """Record that a Twitch EventSub event arrived (liveness signal)."""
+        self.last_event_time = datetime.now()
+
+    def _schedule_eventsub_rebuild(self, reason: str) -> None:
+        """Rebuild EventSub subscriptions, debounced and gated by the setting.
+
+        Shared entry point for the revocation handler, the Helix 401 refresh
+        path, and the health-check staleness check so a burst of triggers only
+        causes a single reconnect.
+        """
+        from .shutdown import is_shutdown_in_progress
+
+        if is_shutdown_in_progress():
+            return
+        if not self._auto_reconnect_enabled():
+            logger.debug("Skipping EventSub rebuild (auto_reconnect disabled): %s", reason)
+            return
+        now = datetime.now()
+        if (
+            self._last_revocation_reconnect
+            and (now - self._last_revocation_reconnect).total_seconds() < 30
+        ):
+            logger.debug("EventSub rebuild already in progress, skipping (%s)", reason)
+            return
+        self._last_revocation_reconnect = now
+        logger.info("Rebuilding EventSub subscriptions: %s", reason)
+        self.reconnect()
+
     def reconnect(self):
         """Attempt to reconnect to Twitch"""
         from .shutdown import is_shutdown_in_progress
 
         if is_shutdown_in_progress():
             return
+
+        # Serialize reconnects: if one is already running, don't spawn another
+        # init thread on top of it.
+        with self._reconnect_lock:
+            if self._reconnect_in_progress:
+                logger.debug("Reconnect already in progress, skipping duplicate")
+                return
+            self._reconnect_in_progress = True
 
         try:
             logger.debug("Attempting to reconnect to Twitch")
@@ -2756,17 +2989,23 @@ class Twitch_API:
             self.last_health_check = None
 
             if is_shutdown_in_progress():
+                self._reconnect_in_progress = False
                 return
 
+            def _run_reconnect() -> None:
+                try:
+                    asyncio.run(self.intialize_twitch_api())
+                finally:
+                    self._reconnect_in_progress = False
+
             # Create a new thread for the async reconnection
-            reconnect_thread = threading.Thread(
-                target=lambda: asyncio.run(self.intialize_twitch_api())
-            )
+            reconnect_thread = threading.Thread(target=_run_reconnect)
             reconnect_thread.daemon = True
             reconnect_thread.start()
 
             logger.debug("Twitch reconnection thread started")
         except Exception as e:
+            self._reconnect_in_progress = False
             logger.error(
                 f"Failed to initiate Twitch reconnection: {str(e)}", exc_info=True
             )
@@ -2792,8 +3031,22 @@ class Twitch_API:
             if is_shutdown_in_progress() or self._connection_epoch != epoch:
                 return False
 
-            # Initialize the EventSub websocket
-            self.eventsub = EventSubWebsocket(self.twitch)
+            # Initialize the EventSub websocket with a revocation handler so a
+            # token-expiry revocation triggers a refresh + re-subscribe instead
+            # of silently leaving an open-but-empty session.
+            try:
+                self.eventsub = EventSubWebsocket(
+                    self.twitch, revocation_handler=self._on_eventsub_revocation
+                )
+            except TypeError:
+                # Older twitchAPI without the revocation_handler kwarg.
+                self.eventsub = EventSubWebsocket(self.twitch)
+                try:
+                    self.eventsub.revocation_handler = self._on_eventsub_revocation
+                except Exception:
+                    logger.debug(
+                        "EventSubWebsocket does not support revocation_handler"
+                    )
             eventsub = self.eventsub
 
             # Start the websocket connection first
@@ -3096,6 +3349,15 @@ class Twitch_API:
                                             f"Failed to update Twitch instance auth: {str(auth_error)}"
                                         )
 
+                                # The refreshed token invalidates the EventSub
+                                # subscriptions created with the old one (Twitch
+                                # revokes them once it expires), so rebuild them —
+                                # otherwise events silently stop while Helix calls
+                                # keep working. Debounced + setting-gated.
+                                self._schedule_eventsub_rebuild(
+                                    "Helix 401 token refresh"
+                                )
+
                                 # NOTE: Token sync to state manager is now handled in refresh_auth_token method
 
                                 # Retry the request
@@ -3326,35 +3588,49 @@ class Twitch_API:
     def get_connection_status(self):
         """Get current connection status for UI display"""
         if self.is_connected and self.eventsub:
-            return {
-                "status": "Connected",
+            stale = (
+                self.last_event_time is not None
+                and (datetime.now() - self.last_event_time).total_seconds()
+                > self.event_staleness_timeout
+            )
+            status = {
+                "status": "Degraded (no recent events)" if stale else "Connected",
                 "is_valid": True,
+                "degraded": stale,
                 "last_update": self.last_health_check.strftime("%Y-%m-%d %H:%M:%S")
                 if self.last_health_check
                 else "Unknown",
                 "user_name": self.user.display_name if self.user else "Unknown",
             }
         elif self.auth_token and self.refresh_token:
-            return {
+            status = {
                 "status": "Authenticated but Disconnected",
                 "is_valid": False,
                 "last_update": "Connection Lost",
                 "user_name": self.user.display_name if self.user else "Unknown",
             }
         elif self.client_id and self.client_secret:
-            return {
+            status = {
                 "status": "Configured but Not Authenticated",
                 "is_valid": False,
                 "last_update": "Never",
                 "user_name": "None",
             }
         else:
-            return {
+            status = {
                 "status": "Not Configured",
                 "is_valid": False,
                 "last_update": "Never",
                 "user_name": "None",
             }
+
+        status.update(
+            build_token_timing_fields(
+                token_expiry=self.token_expiry,
+                has_auth_token=bool(self.auth_token),
+            )
+        )
+        return status
 
 
 # Point reward API functions
@@ -3779,10 +4055,6 @@ def get_twitch_token_status():
         if not twitch_api:
             return {"status": "Not Initialized", "error": "Twitch API not initialized"}
 
-        return twitch_api.get_token_status()
-    except Exception as e:
-        logger.error(f"Error getting Twitch token status: {str(e)}", exc_info=True)
-        return {"status": "Error", "error": str(e)}
         return twitch_api.get_token_status()
     except Exception as e:
         logger.error(f"Error getting Twitch token status: {str(e)}", exc_info=True)

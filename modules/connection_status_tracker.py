@@ -13,7 +13,7 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs")
+SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs", "webengine")
 
 
 def twitch_configured() -> bool:
@@ -95,6 +95,9 @@ def service_configured(key: str) -> bool:
         return psn_configured()
     if key == "obs":
         return obs_configured()
+    if key == "webengine":
+        # The overlay server always runs (OBS sources / Stream Deck / alerts).
+        return True
     return False
 
 # Minimum seconds between heavier probes per service (main poll is ~2s).
@@ -103,7 +106,11 @@ _PROBE_INTERVAL_SEC: Dict[str, float] = {
     "spotify": 15.0,
     "youtube": 30.0,
     "psn": 12.0,
+    "webengine": 5.0,
 }
+
+# A WebEngine heartbeat older than this means the gevent hub is stalled.
+_WEBENGINE_FREEZE_SEC = 60.0
 
 _last_probe_mono: Dict[str, float] = {}
 
@@ -208,5 +215,16 @@ def get_connection_status(key: str) -> str:
         if phase == "disconnecting":
             return "Disconnecting"
         return "Disconnected"
+
+    if key == "webengine":
+        from . import web_engine
+
+        if not getattr(web_engine, "web_engine_running", False):
+            return "Stopped"
+        inst = getattr(web_engine, "web_engine_instance", None)
+        last = getattr(inst, "_last_gevent_heartbeat", None) if inst else None
+        if last is not None and (time.time() - last) > _WEBENGINE_FREEZE_SEC:
+            return "Frozen"
+        return "Connected"
 
     return "Unknown"

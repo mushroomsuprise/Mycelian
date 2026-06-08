@@ -979,6 +979,31 @@ class StateManager:
                 logger.error("Error updating OBS data: %s", e, exc_info=True)
                 return False
 
+    def _persist_unlocked(self, path: str, data: dict, changed_prefix: str) -> bool:
+        """Write a single payload to the database WITHOUT holding ``_lock``.
+
+        Setters update in-memory state under the lock, then call this to perform
+        the (potentially blocking / network) write with the lock released, so a
+        slow database write cannot stall state getters running on the web engine
+        gevent hub or the Twitch threads. On success the persisted changed-field
+        entries are pruned under the lock.
+        """
+        try:
+            from . import database_manager
+
+            database_manager.set_data(path, data)
+        except Exception as e:
+            logger.error(
+                "Error writing %s to database: %s", changed_prefix, e, exc_info=True
+            )
+            return False
+
+        with self._lock:
+            self._changed_fields = {
+                f for f in self._changed_fields if not f.startswith(changed_prefix)
+            }
+        return True
+
     def set_chatbot_data(self, chatbot_data: dict) -> bool:
         """Set Chatbot data and sync with database
 
@@ -1010,22 +1035,18 @@ class StateManager:
                         encrypted_data["refresh_token"]
                     )
 
-                # Sync with database using encrypted data
-                from . import database_manager
-
-                database_manager.set_data(self._paths["chatbot_data"], encrypted_data)
-
                 # Update the local object
                 self._update_local_objects()
-
-                self._changed_fields = {
-                    f for f in self._changed_fields if not f.startswith("chatbot_data")
-                }
-                logger.debug("Updated Chatbot data")
-                return True
+                path = self._paths["chatbot_data"]
             except Exception as e:
                 logger.error(f"Error setting Chatbot data: {str(e)}", exc_info=True)
                 return False
+
+        # Perform the (potentially blocking) write without holding the lock.
+        if not self._persist_unlocked(path, encrypted_data, "chatbot_data"):
+            return False
+        logger.debug("Updated Chatbot data")
+        return True
 
     def set_twitch_data(self, twitch_data: dict) -> bool:
         """Set Twitch data and sync with database
@@ -1058,22 +1079,18 @@ class StateManager:
                         encrypted_data["client_secret"]
                     )
 
-                # Sync with database using encrypted data
-                from . import database_manager
-
-                database_manager.set_data(self._paths["twitch_data"], encrypted_data)
-
                 # Update the local object
                 self._update_local_objects()
-
-                self._changed_fields = {
-                    f for f in self._changed_fields if not f.startswith("twitch_data")
-                }
-                logger.debug("Updated Twitch data")
-                return True
+                path = self._paths["twitch_data"]
             except Exception as e:
                 logger.error(f"Error setting Twitch data: {str(e)}", exc_info=True)
                 return False
+
+        # Perform the (potentially blocking) write without holding the lock.
+        if not self._persist_unlocked(path, encrypted_data, "twitch_data"):
+            return False
+        logger.debug("Updated Twitch data")
+        return True
 
     def set_app_settings(self, app_settings: dict) -> bool:
         """Set application settings and sync with database
@@ -1102,26 +1119,23 @@ class StateManager:
                             f"Skipping {key} update - this field uses hardcoded values from AppSettings dataclass"
                         )
 
-                # Sync with database
-                from . import database_manager
-
-                database_manager.set_data(
-                    self._paths["app_settings"], self._state["app_settings"]
-                )
+                # Snapshot payload for the unlocked write
+                app_settings_payload = self._state["app_settings"].copy()
 
                 # Update the local object
                 self._update_local_objects()
-
-                self._changed_fields = {
-                    f for f in self._changed_fields if not f.startswith("app_settings")
-                }
-                logger.debug("Updated application settings")
-                return True
+                path = self._paths["app_settings"]
             except Exception as e:
                 logger.error(
                     f"Error setting application settings: {str(e)}", exc_info=True
                 )
                 return False
+
+        # Perform the (potentially blocking) write without holding the lock.
+        if not self._persist_unlocked(path, app_settings_payload, "app_settings"):
+            return False
+        logger.debug("Updated application settings")
+        return True
 
     def set_psn_settings_data(self, psn_settings_data: dict) -> bool:
         """Set PSN settings data and sync with database
@@ -1143,28 +1157,25 @@ class StateManager:
                         self._state["psn_settings_data"][key] = value
                         self._changed_fields.add(f"psn_settings_data.{key}")
 
-                # Sync with database
-                from . import database_manager
-
-                database_manager.set_data(
-                    self._paths["psn_settings_data"], self._state["psn_settings_data"]
-                )
+                # Snapshot payload for the unlocked write
+                psn_settings_payload = self._state["psn_settings_data"].copy()
 
                 # Update the local object
                 self._update_local_objects()
-
-                self._changed_fields = {
-                    f
-                    for f in self._changed_fields
-                    if not f.startswith("psn_settings_data")
-                }
-                logger.debug("Updated PSN settings data")
-                return True
+                path = self._paths["psn_settings_data"]
             except Exception as e:
                 logger.error(
                     f"Error setting PSN settings data: {str(e)}", exc_info=True
                 )
                 return False
+
+        # Perform the (potentially blocking) write without holding the lock.
+        if not self._persist_unlocked(
+            path, psn_settings_payload, "psn_settings_data"
+        ):
+            return False
+        logger.debug("Updated PSN settings data")
+        return True
 
     def set_spotify_data(self, spotify_data: dict) -> bool:
         """Set Spotify data and sync with database
@@ -1197,22 +1208,18 @@ class StateManager:
                         encrypted_data["client_secret"]
                     )
 
-                # Sync with database using encrypted data
-                from . import database_manager
-
-                database_manager.set_data(self._paths["spotify_data"], encrypted_data)
-
                 # Update the local object
                 self._update_local_objects()
-
-                self._changed_fields = {
-                    f for f in self._changed_fields if not f.startswith("spotify_data")
-                }
-                logger.debug("Updated Spotify data")
-                return True
+                path = self._paths["spotify_data"]
             except Exception as e:
                 logger.error(f"Error setting Spotify data: {str(e)}", exc_info=True)
                 return False
+
+        # Perform the (potentially blocking) write without holding the lock.
+        if not self._persist_unlocked(path, encrypted_data, "spotify_data"):
+            return False
+        logger.debug("Updated Spotify data")
+        return True
 
     def set_database_settings(self, database_settings: dict) -> bool:
         """Set Database settings and sync with database
@@ -1234,28 +1241,25 @@ class StateManager:
                         self._state["database_settings"][key] = value
                         self._changed_fields.add(f"database_settings.{key}")
 
-                # Sync with database
-                from . import database_manager
-
-                database_manager.set_data(
-                    self._paths["database_settings"], self._state["database_settings"]
-                )
+                # Snapshot payload for the unlocked write
+                database_settings_payload = self._state["database_settings"].copy()
 
                 # Update the local object
                 self._update_local_objects()
-
-                self._changed_fields = {
-                    f
-                    for f in self._changed_fields
-                    if not f.startswith("database_settings")
-                }
-                logger.debug("Updated Database settings")
-                return True
+                path = self._paths["database_settings"]
             except Exception as e:
                 logger.error(
                     f"Error setting Database settings: {str(e)}", exc_info=True
                 )
                 return False
+
+        # Perform the (potentially blocking) write without holding the lock.
+        if not self._persist_unlocked(
+            path, database_settings_payload, "database_settings"
+        ):
+            return False
+        logger.debug("Updated Database settings")
+        return True
 
     def set_live_psn_data(self, data: PSNData) -> bool:
         """Set the live PSN data in memory. This does not save to Firebase.
@@ -1645,22 +1649,44 @@ class StateManager:
                 return False
 
     def save_changes(self) -> bool:
-        """Save all pending changes to Firebase
+        """Save all pending changes to the database.
+
+        The encrypted write payloads are assembled while holding ``_lock``, but
+        the actual (potentially blocking / network) database writes are performed
+        WITHOUT the lock held. This prevents a slow or stalled database write
+        from blocking every state getter — those getters run on the web engine's
+        gevent Socket.IO hub and on the Twitch threads, so a lock held across a
+        slow Firebase write would otherwise freeze OBS sources, Stream Deck, and
+        Twitch all at once.
 
         Returns:
             bool: True if successful, False otherwise
         """
+        from . import database_manager
+
+        writes = []  # list of (path, data) to persist outside the lock
+        db_config_to_apply = None
+
         with self._lock:
             if not self._initialized:
                 self.initialize()
 
+            # Snapshot exactly the fields we are about to persist so we can clear
+            # only those after a successful write — any changes that arrive while
+            # the unlocked write is in flight are preserved for the next save.
+            fields_being_saved = set(self._changed_fields)
+            if not fields_being_saved:
+                self._changes_pending = False
+                return True
+
+            def _changed(prefix: str) -> bool:
+                return any(f.startswith(prefix) for f in fields_being_saved)
+
             try:
-                from . import database_manager
+                logger.debug("Preparing changes to save to database")
 
-                logger.debug("Saving all changes to database")
-
-                # Save Twitch data with encryption
-                if any(f.startswith("twitch_data") for f in self._changed_fields):
+                # Twitch data with encryption
+                if _changed("twitch_data"):
                     encrypted_twitch_data = self._state["twitch_data"].copy()
                     if "client_id" in encrypted_twitch_data:
                         encrypted_twitch_data["client_id"] = ensure_encrypted(
@@ -1670,25 +1696,30 @@ class StateManager:
                         encrypted_twitch_data["client_secret"] = ensure_encrypted(
                             encrypted_twitch_data["client_secret"]
                         )
-                    database_manager.set_data(
-                        self._paths["twitch_data"], encrypted_twitch_data
+                    writes.append(
+                        (self._paths["twitch_data"], encrypted_twitch_data)
                     )
 
-                # Save app settings
-                if any(f.startswith("app_settings") for f in self._changed_fields):
-                    database_manager.set_data(
-                        self._paths["app_settings"], self._state["app_settings"]
+                # App settings
+                if _changed("app_settings"):
+                    writes.append(
+                        (
+                            self._paths["app_settings"],
+                            self._state["app_settings"].copy(),
+                        )
                     )
 
-                # Save PSN settings data
-                if any(f.startswith("psn_settings_data") for f in self._changed_fields):
-                    database_manager.set_data(
-                        self._paths["psn_settings_data"],
-                        self._state["psn_settings_data"],
+                # PSN settings data
+                if _changed("psn_settings_data"):
+                    writes.append(
+                        (
+                            self._paths["psn_settings_data"],
+                            self._state["psn_settings_data"].copy(),
+                        )
                     )
 
-                # Save Spotify data with encryption
-                if any(f.startswith("spotify_data") for f in self._changed_fields):
+                # Spotify data with encryption
+                if _changed("spotify_data"):
                     encrypted_spotify_data = self._state["spotify_data"].copy()
                     if "client_id" in encrypted_spotify_data:
                         encrypted_spotify_data["client_id"] = ensure_encrypted(
@@ -1698,38 +1729,39 @@ class StateManager:
                         encrypted_spotify_data["client_secret"] = ensure_encrypted(
                             encrypted_spotify_data["client_secret"]
                         )
-                    database_manager.set_data(
-                        self._paths["spotify_data"], encrypted_spotify_data
+                    writes.append(
+                        (self._paths["spotify_data"], encrypted_spotify_data)
                     )
 
-                # Save YouTube data with encryption
-                if any(f.startswith("youtube_data") for f in self._changed_fields):
+                # YouTube data with encryption
+                if _changed("youtube_data"):
                     encrypted_youtube_data = self._state["youtube_data"].copy()
                     if "api_key" in encrypted_youtube_data:
                         encrypted_youtube_data["api_key"] = ensure_encrypted(
                             encrypted_youtube_data["api_key"]
                         )
-                    database_manager.set_data(
-                        self._paths["youtube_data"], encrypted_youtube_data
+                    writes.append(
+                        (self._paths["youtube_data"], encrypted_youtube_data)
                     )
 
                 # OBS WebSocket settings (encrypt password like YouTube API key)
-                if any(f.startswith("obs_data") for f in self._changed_fields):
+                if _changed("obs_data"):
                     encrypted_obs = self._state["obs_data"].copy()
                     if "password" in encrypted_obs:
                         encrypted_obs["password"] = ensure_encrypted(
                             encrypted_obs["password"]
                         )
-                    database_manager.set_data(self._paths["obs_data"], encrypted_obs)
+                    writes.append((self._paths["obs_data"], encrypted_obs))
 
-                # Save Database settings
-                if any(f.startswith("database_settings") for f in self._changed_fields):
-                    database_manager.set_data(
-                        self._paths["database_settings"],
-                        self._state["database_settings"],
+                # Database settings
+                if _changed("database_settings"):
+                    writes.append(
+                        (
+                            self._paths["database_settings"],
+                            self._state["database_settings"].copy(),
+                        )
                     )
 
-                    # If database settings changed, update the database manager configuration
                     try:
                         database_settings_data = self._state["database_settings"]
                         temp_db_settings = DatabaseSettings(
@@ -1739,44 +1771,25 @@ class StateManager:
                                 if k in DatabaseSettings.__dataclass_fields__
                             }
                         )
-
-                        # Get streamer name from app settings or use default
-                        streamer_name = (
-                            "mycelian"  # Always use mycelian for database consistency
-                        )
-                        # Removed dynamic streamer_name lookup to prevent database fragmentation
-
-                        # Update database manager configuration
-                        config = database_manager.DatabaseConfig(
+                        # Always use mycelian for database consistency
+                        db_config_to_apply = database_manager.DatabaseConfig(
                             database_type=temp_db_settings.database_type,
                             sql_database_path=temp_db_settings.sql_database_path,
                             firebase_service_account_path=temp_db_settings.firebase_service_account_path,
                             firebase_database_url=temp_db_settings.firebase_database_url,
                             mongodb_connection_string=temp_db_settings.mongodb_connection_string,
                             mongodb_database_name=temp_db_settings.mongodb_database_name,
-                            streamer_name=streamer_name,
+                            streamer_name="mycelian",
                             connection_timeout=temp_db_settings.connection_timeout,
                             retry_attempts=temp_db_settings.retry_attempts,
                         )
-
-                        # Update the database manager with the new configuration
-                        database_manager.update_config(**config.__dict__)
-                        logger.debug(
-                            f"Updated database manager configuration after save: {temp_db_settings.database_type}"
-                        )
-
                     except Exception as e:
                         logger.warning(
-                            f"Could not update database manager config after save: {e}"
+                            f"Could not prepare database manager config after save: {e}"
                         )
-
-                self._changed_fields.clear()
-                self._changes_pending = False
-                logger.debug("Changes saved to database")
-                return True
             except Exception as e:
                 logger.error(
-                    f"Error saving changes to database: {str(e)}", exc_info=True
+                    f"Error preparing changes to save: {str(e)}", exc_info=True
                 )
                 notify_critical(
                     "Could not save changes to the database. Your edits may be lost.",
@@ -1784,6 +1797,41 @@ class StateManager:
                     actions=nav_actions_settings("Database"),
                 )
                 return False
+
+        # --- Perform the (potentially blocking) writes WITHOUT holding _lock ---
+        try:
+            for path, data in writes:
+                database_manager.set_data(path, data)
+
+            if db_config_to_apply is not None:
+                try:
+                    database_manager.update_config(**db_config_to_apply.__dict__)
+                    logger.debug(
+                        "Updated database manager configuration after save: %s",
+                        db_config_to_apply.database_type,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not update database manager config after save: {e}"
+                    )
+        except Exception as e:
+            logger.error(
+                f"Error saving changes to database: {str(e)}", exc_info=True
+            )
+            notify_critical(
+                "Could not save changes to the database. Your edits may be lost.",
+                dedupe_key="state:save_changes",
+                actions=nav_actions_settings("Database"),
+            )
+            return False
+
+        # Clear only the fields we persisted; preserve anything changed mid-write.
+        with self._lock:
+            self._changed_fields -= fields_being_saved
+            self._changes_pending = len(self._changed_fields) > 0
+
+        logger.debug("Changes saved to database")
+        return True
 
     def discard_changes(self):
         """Discard all pending changes and reload from Firebase"""

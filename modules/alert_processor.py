@@ -243,6 +243,9 @@ def initialize():
         target=web_engine_instance.run, daemon=True, name="WebEngine"
     )
     web_thread.start()
+    # Track the thread on the instance so the supervisor can detect a crash
+    # and restart it.
+    web_engine_instance.server_thread = web_thread
     logger.info("Web engine thread started")
 
     # Verify web thread is running
@@ -250,6 +253,14 @@ def initialize():
         logger.info("Web thread status - alive: True")
     else:
         logger.warning("Web thread failed to start")
+
+    # Start the supervisor that auto-restarts the overlay server if its thread
+    # exits or the gevent hub freezes (OBS sources / Stream Deck / alerts dead
+    # while the main UI keeps working).
+    try:
+        web_engine_instance.start_supervisor()
+    except Exception as e:
+        logger.warning("Could not start WebEngine supervisor: %s", e)
 
     # Start alert queue processor
     logger.info("Starting alert queue processor")
