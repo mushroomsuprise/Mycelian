@@ -2026,7 +2026,9 @@ Templates are HTML/CSS/JavaScript files served by Mycelian that you add to
 ## Visual Template Editor (Spore Studio)
 
 Use the **Spore Studio** main tab to design custom browser sources visually: drag blocks,
-wire [event bindings](help:spore_studio_bindings), and **Save** to generate HTML and JSON configs.
+wire [event bindings](help:spore_studio_bindings), set up [counters](help:spore_studio_counters) and
+[data displays](help:spore_studio_data_sources), add [Stream Deck actions](help:spore_studio_streamdeck)
+and [dynamic controls](help:spore_studio_dynamic_controls), then **Save** to generate HTML and JSON configs.
 See [Spore Studio Overview](help:spore_studio_overview) for the full workflow.
 
 ## Adding Templates to OBS
@@ -2117,6 +2119,8 @@ socket.on('alert', (data) => {
             "template_websocket",
             "source_controls",
             "spore_studio_overview",
+            "spore_studio_counters",
+            "spore_studio_dynamic_controls",
         ],
     ),
     "template_configuration": HelpTopic(
@@ -2280,7 +2284,8 @@ Show/hide elements based on conditions:
 
 **Recommended:** Use [Spore Studio](help:spore_studio_overview) to build overlays visually. Fields you mark
 **Expose in Source Settings (JSON)** appear here automatically — see
-[Designing Templates in Spore Studio](help:spore_studio_design).
+[Designing Templates in Spore Studio](help:spore_studio_design). Author live stream buttons in
+[Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls).
 
 **Advanced / legacy:** Create templates manually:
 1. Copy existing template structure
@@ -2310,6 +2315,7 @@ Create reusable themes:
             "source_controls",
             "template_custom_css",
             "spore_studio_design",
+            "spore_studio_dynamic_controls",
         ],
     ),
     "template_custom_css": HelpTopic(
@@ -2748,9 +2754,34 @@ Controls that only work under certain conditions:
 - Avoid excessive real-time updates
 - Use batch operations when possible
 - Monitor browser source performance
+
+## Authoring Controls in Spore Studio
+
+This topic covers **using** controls during a stream. To **create** controls (buttons, toggles,
+counter shortcuts, pause alerts), use Spore Studio's **Source Controls** inspector tab:
+
+[Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls)
+
+| Tab | When |
+|-----|------|
+| **Spore Studio → Source Controls** | Design-time: define what controls exist |
+| **Mycelian → Source Controls** | Stream-time: click controls live in OBS |
         """,
-        keywords=["controls", "real-time", "live", "stream", "interactive"],
-        related_topics=["templates_intro", "template_configuration"],
+        keywords=[
+            "controls",
+            "real-time",
+            "live",
+            "stream",
+            "interactive",
+            "dynamic controls",
+            "spore studio",
+        ],
+        related_topics=[
+            "templates_intro",
+            "template_configuration",
+            "spore_studio_dynamic_controls",
+            "spore_studio_overview",
+        ],
     ),
     "spore_studio_overview": HelpTopic(
         id="spore_studio_overview",
@@ -2835,6 +2866,7 @@ Switching templates with unsaved edits prompts: *Discard unsaved changes?*
 │ Blocks      │                      │ Properties      │
 │ Outline     │      Canvas          │ Bindings        │
 │ Assets      │   (transparent)      │ Stream Deck     │
+│             │                      │ Source Controls │
 │             │                      │ Advanced JS     │
 │             │                      │ Canvas          │
 ├─────────────┴──────────────────────┴─────────────────┤
@@ -2897,6 +2929,21 @@ The canvas uses a **transparent** background by design so overlays composite cle
 
 > **Note:** Spore Studio does not connect to OBS directly. You add the generated URL as a normal browser source, same as built-in templates.
 
+## Creating Your First Template
+
+Quick walkthrough from blank canvas to OBS:
+
+1. Open the **Spore Studio** tab and wait for the editor iframe (or click **Retry**).
+2. Click **+ New** → enter a name (e.g. `my_first_overlay`), pick **Queue** or **Instant**, set width/height → **Create**.
+3. Drag a **Text** block onto the canvas → pick a category → style in **Properties**.
+4. Optional: drop images into `assets/my_first_overlay/` and assign via the **Assets** panel.
+5. Wire behavior: **Bindings** for show/hide, **Counter** mode for HUD totals — see topic links below.
+6. Click **Preview** to test with mock events.
+7. Click **Save** (Ctrl/Cmd+S).
+8. Add OBS Browser Source: `http://127.0.0.1:{port}/my_first_overlay`.
+
+> **Tip:** Clone faster by choosing **Copy from existing** in the New dialog (e.g. `bitcounter`).
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
@@ -2913,7 +2960,11 @@ The canvas uses a **transparent** background by design so overlays composite cle
 | Goal | Read |
 |------|------|
 | Blocks, properties, assets | [Designing Templates in Spore Studio](help:spore_studio_design) |
+| Counters and counter rules | [Counters in Spore Studio](help:spore_studio_counters) |
+| Data displays and live values | [Data Sources & Data Displays](help:spore_studio_data_sources) |
 | Websocket triggers and actions | [Event Bindings & Actions](help:spore_studio_bindings) |
+| Stream Deck button mapping | [Stream Deck Actions in Spore Studio](help:spore_studio_streamdeck) |
+| Live stream control buttons | [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls) |
 | Preview, Advanced JS, legacy | [Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced) |
 | Step-by-step builds | [Spore Studio Examples & Recipes](help:spore_studio_examples) |
         """,
@@ -2925,10 +2976,18 @@ The canvas uses a **transparent** background by design so overlays composite cle
             "canvas",
             "blocks",
             "browser source",
+            "counter",
+            "data source",
+            "dynamic controls",
+            "stream deck",
         ],
         related_topics=[
             "templates_intro",
             "spore_studio_design",
+            "spore_studio_counters",
+            "spore_studio_data_sources",
+            "spore_studio_streamdeck",
+            "spore_studio_dynamic_controls",
             "template_configuration",
             "obs_setup",
         ],
@@ -3162,34 +3221,22 @@ For **text** elements, **Text mode** in Properties selects one of:
 | Mode | Purpose |
 |------|---------|
 | **Static text** | Classic fixed or Jinja-backed label |
-| **Counter** | Numeric value with rules (increment/decrement/set/reset) from events, Stream Deck, or bindings |
-| **Data display** | Read-only value from a data source (alert fields, chat, session stats, Twitch API, etc.) |
+| **Counter** | Numeric value with rules — see [Counters in Spore Studio](help:spore_studio_counters) |
+| **Data display** | Read-only live values — see [Data Sources & Data Displays](help:spore_studio_data_sources) |
 
-**Counters** support optional **Persist (database)** — values load/save via `get_data` / `set_data`
-at `{template_name}/counters` (customizable path/key). When persistence is off, the value resets on reload.
+**Counter** and **Data display** modes add a **value change animation** section (`tick_up`, fade-in,
+etc.) separate from per-element **Entrance / Exit** animations on Show/Hide bindings.
 
-**Data displays** refresh when selected socket events fire; use **Refresh on events** to pick triggers.
-
-Use the **counter_adjust** binding action to change counters from the Bindings tab without duplicating rules.
-
-### Value change animation (counter & data display)
-
-When **Text mode** is **Counter** or **Data display**, an extra section appears:
-
-| Field | Purpose |
-|-------|---------|
-| **Enable on value update** | Animate the text when the displayed value changes |
-| **Animation type** | `tick_up` (count from previous value, memecalc-style), `fade-in`, `slide-in`, or `bounce` |
-| **Duration (ms)** / **Easing** | Timing for the one-shot animation |
-| **Continuous pulse** | Optional looping pulse (can be busy on fast updates) |
-
-This is separate from per-element **Entrance / Exit** animations used by Show/Hide bindings.
+**Image** elements can use **From counter (ranges)** to swap art by threshold — covered in
+[Counters in Spore Studio](help:spore_studio_counters).
 
 ## Source Controls Tab
 
-The **Source Controls** inspector tab writes `dynamic_controls` into your template JSON.
-Those controls appear in the [Source Controls](help:source_controls) overlay (pause alerts, counter
-buttons, toggles, custom `{template}_{action}` sockets, etc.).
+The **Source Controls** inspector tab authors `dynamic_controls` for the Mycelian
+[Source Controls](help:source_controls) runtime tab — pause buttons, counter controls, toggles,
+and custom socket actions.
+
+Full authoring guide: [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls).
 
 ## What to Do Next
 
@@ -3209,9 +3256,14 @@ After layout and styling, open the **Bindings** tab — covered in
             "video",
             "expose",
             "source settings",
+            "counter",
+            "data display",
         ],
         related_topics=[
             "spore_studio_overview",
+            "spore_studio_counters",
+            "spore_studio_data_sources",
+            "spore_studio_dynamic_controls",
             "spore_studio_bindings",
             "template_configuration",
             "source_controls",
@@ -3254,7 +3306,7 @@ Curated Mycelian socket events safe for overlay authors (not internal plumbing).
 ### Stream Deck action
 
 Runs when a button mapped to this template's Stream Deck action fires. Configure actions on the
-**Stream Deck** inspector tab first — see [Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced).
+**Stream Deck** inspector tab first — see [Stream Deck Actions in Spore Studio](help:spore_studio_streamdeck).
 
 ## Payload Filters
 
@@ -3351,6 +3403,7 @@ paused = true
 | `set_transform` | Set CSS transform | `translate_x`, `translate_y`, `rotate_deg`, `scale` (blank skipped) |
 | `transform_jitter` | Random transform jitter | `rotate_range`, `translate_range`, `scale_min`, `scale_max` |
 | `flash_class` | Play CSS class animation | `class_name` (e.g. `sporeShake`, `sporePop`), `duration_ms` (default 420) |
+| `counter_adjust` | Adjust counter | `counter_id`, `operation` (`increment`/`decrement`/`set`/`reset`), `delta_kind` (`fixed`/`random_int`/`random_float`/`data_source`), `delta_value`, `delta_source`, `delta_min`, `delta_max` |
 
 ### Action examples
 
@@ -3376,6 +3429,22 @@ paused = true
 
 - Action: **Randomize position within bounds**
 - `x_min`: `0`, `x_max`: `-1`, `y_min`: `400`, `y_max`: `-1`
+
+## Counter Adjustments from Bindings
+
+Use **Adjust counter** when a binding should change a numeric counter without adding a
+[counter rule](help:spore_studio_counters).
+
+**Example:** On `instant_alert` with filter `alert_type` = `bit`:
+
+- Action: **Adjust counter**
+- `counter_id`: `bit_count`
+- `operation`: `increment`
+- `delta_kind`: `data_source`
+- `delta_source`: `alert.amt_cheered`
+
+Prefer **counter rules** on the text element for event-driven math; use **counter_adjust** when
+the adjustment is part of a binding chain or tied to a different trigger (e.g. Stream Deck).
 
 ## Twitch API Bindings
 
@@ -3421,10 +3490,13 @@ Enable **Start hidden until shown** on the element (Properties tab) when using *
             "instant_alert",
             "stream deck",
             "twitch api",
+            "counter_adjust",
         ],
         related_topics=[
             "spore_studio_design",
+            "spore_studio_counters",
             "spore_studio_advanced",
+            "spore_studio_streamdeck",
             "template_websocket",
             "connector_examples",
         ],
@@ -3536,22 +3608,13 @@ Prefer **Twitch API bindings** in the inspector when you only need request/respo
 
 ## Stream Deck Tab
 
-Configure buttons that appear in Mycelian's Stream Deck integration for this template.
+Define per-template Stream Deck actions on the **Stream Deck** inspector tab. Each action gets
+an id, display name, socket event, and optional `default_data` JSON.
 
-| Field | Purpose |
-|-------|---------|
-| **Action id** | Stable id referenced by bindings (**Stream Deck action** trigger) |
-| **Display name** | Label on the button |
-| **Description** | Subtitle / tooltip text |
-| **Socket event** | Event name emitted when pressed (often matches a registry event or custom name) |
-| **default_data (JSON)** | Default payload object merged on press |
+Full workflow (plugin mapping, payload merge, binding patterns):
+[Stream Deck Actions in Spore Studio](help:spore_studio_streamdeck).
 
-Click **+ Add Stream Deck action** for each button.
-
-Empty states:
-
-- *Load a template to configure Stream Deck actions.*
-- Legacy templates: actions are not edited here.
+Legacy templates: Stream Deck actions are not edited in Spore Studio.
 
 ## Legacy Templates
 
@@ -3609,6 +3672,7 @@ Legacy templates **cannot** receive new blocks from the palette — toast: *Lega
         ],
         related_topics=[
             "spore_studio_bindings",
+            "spore_studio_streamdeck",
             "spore_studio_examples",
             "template_websocket",
             "alerts_overview",
@@ -3660,26 +3724,20 @@ socket.on('next_alert', function (data) {
 
 ## Recipe 2: Instant Sub Counter Bar
 
-**Goal:** HUD that updates on every sub without blocking the alert queue.
+**Goal:** HUD that increments a sub total on every sub without blocking the alert queue.
 
 1. **+ New** → `sub_counter`, Alert system: **Instant**, 600×80.
-2. One **Text** element: `Subs today: 0`.
-3. Binding on `instant_alert`:
+2. Add **Text** → category `Counter` → **Text mode**: **Counter**.
+3. Set **Counter id**: `sub_count`, **Format**: `Subs: {value}`, **Initial value**: `0`.
+4. **+ Add counter rule**:
+   - Event: `instant_alert`
    - Filter: `alert_type` = `sub`
-   - Action: **Set text content** → `literal`: `Subs today: ` *(or chain two text elements)*
-   - Better: **Set text content** → `from_payload`: `username` on a second line, or use Advanced JS to increment a counter.
-4. **Save** — no `alert_complete` required.
+   - Operation: **increment**
+   - Delta kind: **fixed** → `1`
+5. Optional: enable **tick_up** value change animation.
+6. **Save** — no `alert_complete` required. Test with **Preview** → sub mock.
 
-Example binding filter JSON shape (conceptual):
-
-```json
-{
-  "event": "instant_alert",
-  "filter": { "alert_type": "sub" },
-  "action": "set_text",
-  "args": { "from_payload": "username" }
-}
-```
+See [Counters in Spore Studio](help:spore_studio_counters) for persistence and Stream Deck triggers.
 
 ## Recipe 3: Chat Message Pop
 
@@ -3727,6 +3785,8 @@ Example binding filter JSON shape (conceptual):
    - Action: **Toggle visibility**
 3. **Preview** → **SD:** `toggle_logo` to test.
 
+See [Stream Deck Actions in Spore Studio](help:spore_studio_streamdeck) for plugin mapping.
+
 ## Recipe 7: Twitch API Follower Check
 
 **Goal:** Show element only when Helix reports success.
@@ -3750,12 +3810,46 @@ On `next_alert` (any type), primary **Show**, then chain:
 
 > **Note:** You cannot add more than 15 chained steps per binding.
 
+## Recipe 9: Bit Counter HUD (bitcounter pattern)
+
+**Goal:** Running bit total with tiered cheer GIF and tick-up animation.
+
+1. **+ New** → `my_bits`, Alert system: **Instant**, 300×55 (or copy from `bitcounter`).
+2. **Text** → **Counter** mode → `counter_id`: `bit_count`, format `{value}`, initial `0`.
+3. Counter rule: `instant_alert`, filter `alert_type` = `bit`, **increment**, delta **data_source** → `alert.amt_cheered`.
+4. Enable **tick_up** value change animation (~1000 ms).
+5. **Image** → **From counter (ranges)** → counter `bit_count`:
+   - 0–99 → `/assets/my_bits/cheer1.gif`
+   - 100–999 → `/assets/my_bits/cheer100.gif`
+   - 1000+ → `/assets/my_bits/cheer1000.gif`
+6. Optional **counter image transition**: roll, 600 ms.
+7. **Save** → **Preview** → bits mock.
+
+Full counter details: [Counters in Spore Studio](help:spore_studio_counters).
+
+## Recipe 10: Dynamic Controls on Stream
+
+**Goal:** Pause alerts and manually bump a game score from Mycelian's Source Controls tab.
+
+1. Create or open a game HUD template with a **Counter** text element (`game_score`).
+2. **Source Controls** inspector tab → **+ Add control**:
+   - Type **button**, label `Pause alerts`, action `toggle_alerts`.
+3. **+ Add control**:
+   - Type **counter_control**, label `Score`, target counter `game_score`.
+4. **Save**.
+5. During stream: Mycelian **Source Controls** tab → select template → use the new buttons.
+
+See [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls).
+
 ## Testing Checklist
 
 - [ ] **Preview** mocks for each event you bind
 - [ ] **Save** then reload template in OBS
 - [ ] Queue templates emit `alert_complete` when appropriate
-- [ ] [Source Controls](help:source_controls) adjust exposed fields live
+- [ ] Counters persist (or reset) as expected — [Counters](help:spore_studio_counters)
+- [ ] Data displays refresh on chosen events — [Data Sources](help:spore_studio_data_sources)
+- [ ] Stream Deck **SD:** mocks and physical buttons match — [Stream Deck](help:spore_studio_streamdeck)
+- [ ] [Source Controls](help:source_controls) and [dynamic controls](help:spore_studio_dynamic_controls) work live
 
 ## See Also
 
@@ -3767,14 +3861,611 @@ On `next_alert` (any type), primary **Show**, then chain:
             "recipes",
             "tutorial",
             "follow alert",
+            "bit counter",
+            "sub counter",
             "walkthrough",
             "spore studio",
         ],
         related_topics=[
             "spore_studio_overview",
             "spore_studio_bindings",
+            "spore_studio_counters",
+            "spore_studio_dynamic_controls",
             "first_alert_setup",
             "source_controls",
+        ],
+    ),
+    "spore_studio_counters": HelpTopic(
+        id="spore_studio_counters",
+        title="Counters in Spore Studio",
+        category=HelpCategory.TEMPLATES,
+        summary="Set up numeric counters, rules, persistence, image ranges, and binding adjustments",
+        content="""
+# Counters in Spore Studio
+
+Counters are numeric values on **text** elements that update automatically from live events,
+Stream Deck buttons, or [bindings](help:spore_studio_bindings). Use them for bit totals, sub
+counts, game scores, and any HUD that should persist or animate as numbers change.
+
+For canvas basics see [Designing Templates in Spore Studio](help:spore_studio_design).
+For [data sources](help:spore_studio_data_sources) used in counter deltas, see that topic.
+
+## When to Use Counter Mode
+
+| Approach | Best for |
+|----------|----------|
+| **Counter mode** | Running totals, increment/decrement on events, persistence, tick-up animation |
+| **Static text** + **set_text** binding | One-off labels that mirror a single payload field (e.g. username) |
+| **Data display** mode | Read-only values (session stats, last cheer amount) without arithmetic |
+
+Use **Instant** alert system on the [Canvas tab](help:spore_studio_design) for counter HUDs so
+`instant_alert` events do not block the [alert queue](help:alerts_overview).
+
+## Step-by-Step Setup
+
+1. Drag a **Text** block onto the canvas and assign a category (e.g. `Counter`).
+2. In **Properties**, set **Text mode** to **Counter**.
+3. Configure the counter fields:
+
+| Field | Purpose |
+|-------|---------|
+| **Counter id** | Unique id within this template (e.g. `bit_count`, `sub_count`) — used in bindings and image ranges |
+| **Format** | Display string; use `{value}` for the number (e.g. `Bits: {value}`) |
+| **Initial value** | Starting number when the overlay loads (often `0`) |
+
+4. Click **+ Add counter rule** for each event that should change the value.
+5. **Save** and test with **Preview** → mock **instant_alert** (bits/sub).
+
+## Counter Rules
+
+Each rule defines *when* and *how* the counter changes.
+
+| Field | Options / notes |
+|-------|-----------------|
+| **Trigger** | **Registry event** or **Stream Deck action** |
+| **Event** | e.g. `instant_alert`, `next_alert`, `new-message` |
+| **Payload filters** | Optional rows (e.g. `alert_type` = `bit`) — same syntax as [bindings](help:spore_studio_bindings) |
+| **Operation** | `increment`, `decrement`, `set`, `reset` |
+| **Delta kind** | `fixed`, `random_int`, `random_float`, or `data_source` |
+| **Delta value / min / max** | For fixed or random deltas |
+| **Data source** | When delta kind is `data_source` — e.g. `alert.amt_cheered` for bits cheered |
+
+### Example: bits counter on cheer
+
+- Event: `instant_alert`
+- Filter: `alert_type` = `bit`
+- Operation: **increment**
+- Delta kind: **data_source** → `alert.amt_cheered`
+
+This matches the built-in `bitcounter` template pattern.
+
+### Example: +1 per sub
+
+- Event: `instant_alert`
+- Filter: `alert_type` = `sub`
+- Operation: **increment**
+- Delta kind: **fixed** → `1`
+
+## Persist (Database)
+
+Enable **Persist (database)** to save the counter across overlay reloads and stream sessions.
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| **Database path** | `{template_name}/counters` | `get_data` / `set_data` path segment |
+| **Database key** | Same as counter id | Key within that path |
+
+When persistence is **off**, the counter resets to **Initial value** every time the browser source reloads.
+
+> **Tip:** Use persistence for marathon totals; leave it off for per-stream counters you reset manually.
+
+## Value Change Animation
+
+Separate from element **Entrance / Exit** animations (Show/Hide bindings):
+
+| Field | Purpose |
+|-------|---------|
+| **Enable on value update** | Animate when the displayed number changes |
+| **Animation type** | `tick_up` (count from previous value), `fade-in`, `slide-in`, `bounce` |
+| **Duration (ms)** / **Easing** | Timing for the one-shot effect |
+| **Continuous pulse** | Looping pulse on every update — can be distracting on fast cheers |
+
+`tick_up` is ideal for bit/sub counters that jump by variable amounts.
+
+## Image: From Counter (Ranges)
+
+Tie an **Image** element's source to a counter value so art changes at thresholds.
+
+1. Select an **Image** element → **Image source mode**: **From counter (ranges)**.
+2. Pick the **Counter** (counter id from a text element in Counter mode).
+3. Add **ranges**: min–max value → image URL from `assets/{template_name}/`.
+4. Set **Default src** for values outside all ranges.
+
+Optional **counter image transition** (roll, fade) animates swaps when the counter crosses a range boundary.
+
+**Example (`bitcounter`):**
+
+| Range | Image |
+|-------|-------|
+| 0–99 | `/assets/bitcounter/cheer1.gif` |
+| 100–999 | `/assets/bitcounter/cheer100.gif` |
+| 1000+ | `/assets/bitcounter/cheer1000.gif` |
+
+## counter_adjust Binding Action
+
+Use the **Adjust counter** binding action when you want to change a counter from the
+[Bindings tab](help:spore_studio_bindings) without adding a counter rule — e.g. show/hide an
+element and bump a counter in one binding chain.
+
+| Arg | Purpose |
+|-----|---------|
+| `counter_id` | Target counter id from the text element |
+| `operation` | `increment`, `decrement`, `set`, `reset` |
+| `delta_kind` | `fixed`, `random_int`, `random_float`, `data_source` |
+| `delta_value` | Fixed delta or fallback |
+| `delta_source` | Data source id when delta kind is `data_source` |
+| `delta_min`, `delta_max` | Random range bounds |
+
+**Rules vs bindings:** Prefer **counter rules** for event-driven math (every cheer adds bits).
+Use **counter_adjust** when the trigger is an element binding (e.g. chained after **Show**)
+or a one-off adjustment from a different event than your main rules.
+
+## Preview and Testing
+
+1. **Save** (or use **Preview** with unsaved draft).
+2. Open **Preview** → **Alerts:** → pick a bits or sub mock.
+3. Confirm the number updates and any tick-up animation plays.
+4. Reload the preview iframe to verify persistence settings.
+
+## See Also
+
+- [Data Sources & Data Displays](help:spore_studio_data_sources) — delta sources like `alert.amt_cheered`
+- [Event Bindings & Actions](help:spore_studio_bindings) — `counter_adjust` and filters
+- [Spore Studio Examples & Recipes](help:spore_studio_examples) — Recipe 2, Recipe 9
+        """,
+        keywords=[
+            "counter",
+            "counters",
+            "bit counter",
+            "sub counter",
+            "increment",
+            "persist",
+            "counter rules",
+            "counter_adjust",
+            "tick_up",
+            "spore studio",
+        ],
+        related_topics=[
+            "spore_studio_design",
+            "spore_studio_data_sources",
+            "spore_studio_bindings",
+            "spore_studio_examples",
+        ],
+    ),
+    "spore_studio_data_sources": HelpTopic(
+        id="spore_studio_data_sources",
+        title="Data Sources & Data Displays",
+        category=HelpCategory.TEMPLATES,
+        summary="Read-only live values from alerts, chat, stats, config, and runtime database",
+        content="""
+# Data Sources & Data Displays
+
+Data sources are curated live values from alerts, chat, session stats, and more. Use them in
+**Data display** text elements (read-only) or as **counter deltas** (numeric adjustments).
+
+See [Counters in Spore Studio](help:spore_studio_counters) for counter rules that consume data sources.
+
+## Data Display Workflow
+
+1. Add a **Text** block → **Text mode**: **Data display**.
+2. Pick a **Data source** from the categorized dropdown.
+3. Set **Format** — use `{value}` for the resolved value (e.g. `Cheered: {value} bits`).
+4. Under **Refresh on events**, select socket events that should re-read the source
+   (e.g. `instant_alert`, `new-message`, `pause_status_update`).
+5. **Save** and test in **Preview**.
+
+Data displays are **read-only** — they do not increment counters or fire side effects.
+
+## Format Strings
+
+| Pattern | Example output |
+|---------|----------------|
+| `{value}` | Raw resolved value |
+| `User: {value}` | Prefix/suffix around value |
+| `Tier {value}` | Works with string sources like `alert.tier` |
+
+Value types follow the source: numbers, strings, or booleans (`alerts.paused`).
+
+## Delta-Only vs Display Sources
+
+| Flag | Meaning |
+|------|---------|
+| **Delta-only** (`fixed`, `random_int`, `random_float`) | For counter rule deltas only — not shown in data display picker |
+| **Display sources** | All other registry entries — usable in data displays and as `data_source` counter deltas |
+
+## Source Catalog
+
+### Delta (counter deltas only)
+
+| Id | Label | Notes |
+|----|-------|-------|
+| `fixed` | Fixed value | Use delta value field |
+| `random_int` | Random integer | Inclusive min/max |
+| `random_float` | Random float | Inclusive min/max, optional decimals |
+
+### Alert payload
+
+| Id | Label | Type |
+|----|-------|------|
+| `alert.amount` | Alert amount | number |
+| `alert.quantity` | Alert quantity | number |
+| `alert.tier` | Sub tier | string |
+| `alert.amt_cheered` | Bits cheered | number |
+| `alert.cumulative_months` | Cumulative months | number |
+| `alert.raider_count` | Raider count | number |
+| `alert.username` | Username | string |
+| `alert.message` | Message | string |
+| `alert.alert_type` | Alert type | string |
+| `alert.currency` | Currency | string |
+| `alert.queue_seq` | Queue sequence | number |
+
+### Chat
+
+| Id | Label | Type |
+|----|-------|------|
+| `chat.username` | Chat username | string |
+| `chat.message` | Chat message | string |
+| `chat.message_length` | Chat message length | number |
+| `chat.userid` | Chat user ID | string |
+| `chat.badges` | Chat badges | string |
+| `chat.color` | Chat color | string |
+| `chat.message_text` | Connector message text | string |
+
+### Alert system
+
+| Id | Label | Type |
+|----|-------|------|
+| `alerts.paused` | Alerts paused | boolean |
+
+### Session stats
+
+| Id | Label |
+|----|-------|
+| `stats.total_gift_subs` | Total gift subs (session) |
+| `stats.total_bits` | Total bits (session) |
+| `stats.follows` | Follows (session) |
+| `stats.subs` | Subs (session) |
+| `stats.raids` | Raids (session) |
+| `stats.cheers` | Cheers (session) |
+
+### Chatbot
+
+| Id | Label |
+|----|-------|
+| `chatbot.gift_sub_quantity` | Gift sub quantity |
+| `chatbot.gift_sub_tier` | Gift sub tier |
+| `chatbot.raid_viewer_count` | Raid viewer count |
+
+### Template
+
+| Id | Label | Usage |
+|----|-------|-------|
+| `counter.{id}` | Another counter in this template | Use `counter.bit_count` etc. |
+| `config.{id}` | Source Settings field | Reads exposed config by field id |
+
+### Runtime database
+
+| Id | Label | Usage |
+|----|-------|-------|
+| `runtime.{path}.{key}` | Runtime database field | User-defined path and key |
+
+### Twitch API
+
+| Id | Label | Usage |
+|----|-------|-------|
+| `twitch.{binding_id}.{path}` | Twitch API response field | Dot path into last `twitch-api-response` for a binding id |
+
+Configure the binding id and Helix call in [Event Bindings & Actions](help:spore_studio_bindings)
+under **Twitch API Bindings**, then reference response fields here.
+
+## Counter Deltas vs Data Displays
+
+| Use case | Mechanism |
+|----------|-----------|
+| Show last cheer amount (read-only) | Data display → `alert.amt_cheered`, refresh on `instant_alert` |
+| Add cheer amount to running total | Counter rule → delta kind `data_source` → `alert.amt_cheered` |
+| Show session sub count | Data display → `stats.subs`, refresh on `instant_alert` |
+| Paused indicator | Data display → `alerts.paused`, refresh on `pause_status_update` |
+
+## Common Patterns
+
+**Last cheer username**
+
+- Data display → `alert.username`
+- Refresh on: `instant_alert`
+- Format: `{value}`
+
+**Session bits total (read-only)**
+
+- Data display → `stats.total_bits`
+- Refresh on: `instant_alert`, `refresh-alerts`
+
+**Live config value**
+
+- Data display → `config.my_color_field`
+- Refresh on events that change Source Settings
+
+## See Also
+
+- [Counters in Spore Studio](help:spore_studio_counters)
+- [Event Bindings & Actions](help:spore_studio_bindings) — Twitch API bindings
+- [Configuring Template Settings](help:template_configuration) — exposed `config.{id}` fields
+        """,
+        keywords=[
+            "data source",
+            "data display",
+            "alert payload",
+            "session stats",
+            "stats.total_bits",
+            "alert.amt_cheered",
+            "refresh on events",
+            "spore studio",
+        ],
+        related_topics=[
+            "spore_studio_counters",
+            "spore_studio_design",
+            "spore_studio_bindings",
+            "template_configuration",
+        ],
+    ),
+    "spore_studio_streamdeck": HelpTopic(
+        id="spore_studio_streamdeck",
+        title="Stream Deck Actions in Spore Studio",
+        category=HelpCategory.TEMPLATES,
+        summary="Define template actions, wire bindings, and map physical Stream Deck buttons",
+        content="""
+# Stream Deck Actions in Spore Studio
+
+Stream Deck actions let physical Elgato buttons trigger your overlay — toggle logos, bump
+counters, or emit custom socket events. Define actions in Spore Studio, wire them in
+[Bindings](help:spore_studio_bindings), then map buttons in Mycelian's Stream Deck plugin.
+
+## End-to-End Workflow
+
+1. **Spore Studio** → open your template → **Stream Deck** inspector tab.
+2. Click **+ Add Stream Deck action** and fill in each field (see table below).
+3. **Save** the template so `streamdeck_options` is written to `template_configs/{name}.json`.
+4. Select target elements → **Bindings** tab → trigger **Stream Deck action** → pick the action id.
+5. In Mycelian's **Stream Deck plugin**: add a **Template Action** button → choose this template
+   and the action (by id or display name).
+6. Test with **Preview** → **SD:** mock buttons (one per defined action).
+
+> **Important:** The plugin sends `actionName` that must match your **Action id** (or resolve
+> via display name). Mismatched ids mean bindings never fire.
+
+## Field Reference
+
+| Field | Purpose |
+|-------|---------|
+| **Action id** | Stable key — referenced by bindings and the plugin (`actionName`) |
+| **Display name** | Human label on the Stream Deck button picker |
+| **Description** | Subtitle / tooltip in the plugin UI |
+| **Socket event** | Event name emitted to the overlay when pressed |
+| **default_data (JSON)** | Default payload object (e.g. `{}` or `{"visible": true}`) |
+
+### Payload merge
+
+When a button fires, Mycelian merges payloads:
+
+1. Start with **default_data** from the action definition.
+2. Overlay any fields sent from the plugin's **actionData** (if the user configured extra JSON).
+
+Template config is authoritative for the **socket event** name when the action exists in
+`streamdeck_options.actions`.
+
+## Registry Events vs Custom Socket Events
+
+| Choice | When to use |
+|--------|-------------|
+| **Registry event** as socket event | Reuse curated events like `instant_alert` with a custom filter |
+| **Custom event name** (e.g. `toggle_logo`) | Simple toggle/hide logic bound only to Stream Deck |
+
+Custom events do not need to appear in the event registry — bindings listen for the exact
+**Socket event** string you define.
+
+## Binding Patterns
+
+### Toggle overlay visibility
+
+1. Stream Deck action: id `toggle_logo`, socket event `toggle_logo`.
+2. Image element binding: trigger **Stream Deck action** → `toggle_logo` → action **Toggle visibility**.
+
+### Adjust counter on button press
+
+1. Define Stream Deck action (any socket event, or reuse a registry event).
+2. Binding on a container or dummy element: trigger **Stream Deck action** → action **Adjust counter**
+   → `counter_id`, `operation`, delta fields. See [Counters](help:spore_studio_counters).
+
+### Chained show + hide
+
+Primary **Show**, chained **Hide** after `delay_ms` — triggered by Stream Deck action instead of
+a registry event.
+
+## Plugin Mapping (Mycelian Stream Deck Plugin)
+
+1. Install the Mycelian Stream Deck plugin (`com.mushroomsuprise.mycelian`).
+2. Add a **Template Action** key.
+3. Select **Template** = your overlay name (e.g. `my_hud`).
+4. Select **Action** = the action id or display name from the **Stream Deck** tab.
+5. Optional: set extra JSON in the property inspector — merged over `default_data`.
+
+After **Save** in Spore Studio, reload the plugin property inspector if the action list looks stale.
+
+## Dynamic Controls Integration
+
+A [dynamic control](help:spore_studio_dynamic_controls) can **Forward Stream Deck action**
+(`streamdeck_forward`) so a Source Controls overlay button triggers the same socket event as a
+physical Stream Deck key.
+
+## Preview SD Section
+
+The **Preview** mock toolbar shows an **SD:** row with one button per defined action. Click to
+fire the same socket event and merged payload as production — no physical Stream Deck required.
+
+## See Also
+
+- [Event Bindings & Actions](help:spore_studio_bindings) — Stream Deck trigger type
+- [Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced) — Preview mocks
+- [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls) — `streamdeck_forward`
+- [Spore Studio Examples & Recipes](help:spore_studio_examples) — Recipe 6, Recipe 10
+        """,
+        keywords=[
+            "stream deck",
+            "streamdeck",
+            "action id",
+            "default_data",
+            "actionName",
+            "template action",
+            "spore studio",
+        ],
+        related_topics=[
+            "spore_studio_bindings",
+            "spore_studio_advanced",
+            "spore_studio_dynamic_controls",
+            "spore_studio_examples",
+        ],
+    ),
+    "spore_studio_dynamic_controls": HelpTopic(
+        id="spore_studio_dynamic_controls",
+        title="Dynamic Controls (Source Controls Tab)",
+        category=HelpCategory.TEMPLATES,
+        summary="Author live stream controls that appear in Mycelian's Source Controls overlay",
+        content="""
+# Dynamic Controls (Source Controls Tab)
+
+The **Source Controls** inspector tab in Spore Studio authors `dynamic_controls` — buttons,
+toggles, sliders, and more that appear in Mycelian's **[Source Controls](help:source_controls)**
+main tab during your stream.
+
+| Layer | Where | Purpose |
+|-------|-------|---------|
+| **Authoring** | Spore Studio → **Source Controls** tab | Define controls and wire actions |
+| **Runtime** | Mycelian → **Source Controls** tab | Click controls live on stream |
+
+Controls are saved into `templates/template_configs/{name}.json` on **Save**.
+
+## Authoring Workflow
+
+1. Open a Spore template (not legacy-only).
+2. Go to the **Source Controls** inspector tab.
+3. Click **+ Add control**.
+4. Choose **Control type**, **Label**, and **Action**.
+5. Fill action-specific parameters (counter id, element id, field id, etc.).
+6. **Save** the template.
+7. During stream: Mycelian **Source Controls** tab → select your template → use the new controls.
+
+Empty state: *Source Controls are available for Spore Studio templates.*
+
+Hint in editor: *Controls appear in the Source Controls overlay and emit template socket events.*
+
+## Control Types
+
+| Type | User interaction |
+|------|------------------|
+| **button** | Click fires the action once |
+| **toggle** | On/off state sent with the action |
+| **text_input** | User types text; value sent on confirm |
+| **number_input** | Numeric entry |
+| **slider** | Drag to set a numeric value |
+| **select** | Pick from predefined options |
+| **counter_control** | Shortcut UI for increment/decrement/set/reset on a counter |
+
+## Actions Reference
+
+### Global alert system
+
+| Action | Effect |
+|--------|--------|
+| `pause_alerts` | Pause the alert processor |
+| `resume_alerts` | Resume alerts |
+| `toggle_alerts` | Toggle pause state |
+| `skip_alert` | Skip current queued alert |
+| `clear_alert_queue` | Empty the alert queue |
+| `refresh_alerts` | Reload alert settings in overlays |
+
+### Template elements and counters
+
+| Action | Params | Effect |
+|--------|--------|--------|
+| `counter_adjust` | `target_counter_id`, `operation` | Increment/decrement/set/reset a counter |
+| `element_show` | `element_id` | Show element by id |
+| `element_hide` | `element_id` | Hide element |
+| `element_toggle` | `element_id` | Toggle visibility |
+
+### Source Settings
+
+| Action | Params | Effect |
+|--------|--------|--------|
+| `set_config_value` | `field_id`, `value_key` | Update an exposed Source Settings field |
+
+Requires the field to be **Expose in Source Settings (JSON)** in Spore Studio — see
+[Designing Templates](help:spore_studio_design).
+
+### Integrations
+
+| Action | Params | Effect |
+|--------|--------|--------|
+| `twitch_api_request` | `endpoint`, `method` | Fire a Helix request from the overlay |
+| `websocket_emit` | `event_name`, `payload_json` | Emit a custom socket event |
+| `streamdeck_forward` | `action_name` | Trigger a [Stream Deck action](help:spore_studio_streamdeck) by id |
+| `custom_template_action` | `action`, `payload_json` | Emits `{template_name}_{action}` |
+
+## counter_control vs counter_adjust
+
+| Approach | When |
+|----------|------|
+| **counter_control** type | Quick +1/−1/reset buttons with minimal setup |
+| **button** + `counter_adjust` action | Custom labels, set-to-value, or combined with other params |
+
+Both target a **counter id** from a text element in **Counter** mode.
+
+## Example: Game Overlay Controls
+
+1. **button** — Label `Pause alerts` → action `toggle_alerts`.
+2. **counter_control** — Label `Score` → target counter `game_score` (increment/decrement buttons).
+3. **button** — Label `Show bonus` → action `element_show` → `element_id`: `bonus_banner`.
+4. **slider** — Label `Title size` → action `set_config_value` → `field_id`: `title_font_size`.
+
+**Save**, then open **Source Controls** during stream to operate these without reopening Spore Studio.
+
+## Runtime Usage
+
+For how to use controls on stream (hotkeys, grouping, performance), see
+[Real-time Source Controls](help:source_controls).
+
+## See Also
+
+- [Configuring Template Settings](help:template_configuration) — JSON config structure
+- [Counters in Spore Studio](help:spore_studio_counters) — counter ids for `counter_adjust`
+- [Stream Deck Actions in Spore Studio](help:spore_studio_streamdeck) — `streamdeck_forward`
+- [Spore Studio Examples & Recipes](help:spore_studio_examples) — Recipe 10
+        """,
+        keywords=[
+            "dynamic controls",
+            "source controls tab",
+            "dynamic_controls",
+            "pause alerts",
+            "counter control",
+            "button",
+            "toggle",
+            "spore studio",
+        ],
+        related_topics=[
+            "source_controls",
+            "spore_studio_design",
+            "spore_studio_counters",
+            "spore_studio_streamdeck",
+            "template_configuration",
         ],
     ),
     # =========================================
