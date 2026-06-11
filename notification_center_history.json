@@ -28,5 +28,33 @@
         "settings_subtab": "Twitch"
       }
     ]
+  },
+  {
+    "id": "e69718bc-14ce-41f4-b65f-4e97403a6438",
+    "ts": 1781221658.541568,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "c0c7c857-2c09-4730-baea-24abc26abcca",
+    "ts": 1781221662.5461586,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
   }
 ]

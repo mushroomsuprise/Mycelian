@@ -101,8 +101,8 @@ class AppSettings:
 
     streamer_name: str = "mycelian"
     streamer_id: str = ""
-    version: str = "1.10.2"
-    build_date: str = "May 27th 2026"
+    version: str = "1.10.4"
+    build_date: str = "June 11th 2026"
     alert_volume: float = 0.5
     auto_reconnect: bool = True
     current_theme: str = "dark"

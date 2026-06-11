@@ -94,8 +94,8 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.10.2"
-BUILD_DATE = "May 27th 2026"
+VERSION = "1.10.4"
+BUILD_DATE = "June 11th 2026"
 
 # Stream Deck plugin version (manifest.json "Version"; Elgato semver, e.g. 0.2.2.0)
 STREAMDECK_PLUGIN_VERSION = "1.0.0.0"
