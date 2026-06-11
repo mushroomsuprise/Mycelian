@@ -388,7 +388,9 @@ class Twitch_API:
             if creds.get("client_secret"):
                 self.client_secret = creds["client_secret"]
         except Exception as e:
-            logger.debug("Could not load Twitch credentials from credential store: %s", e)
+            logger.debug(
+                "Could not load Twitch credentials from credential store: %s", e
+            )
 
     def sync_helix_credentials_from_state(self) -> None:
         """Merge tokens and client credentials from state/credential store into this instance.
@@ -722,9 +724,7 @@ class Twitch_API:
                     e,
                 )
                 return False
-            logger.error(
-                "Failed to refresh authentication token: %s", e, exc_info=True
-            )
+            logger.error("Failed to refresh authentication token: %s", e, exc_info=True)
             self._clear_tokens_after_refresh_failure()
             return False
         finally:
@@ -1158,9 +1158,7 @@ class Twitch_API:
 
         notice_raw = getattr(ev, "notice_type", None)
         notice_type = (
-            notice_raw.value
-            if hasattr(notice_raw, "value")
-            else str(notice_raw or "")
+            notice_raw.value if hasattr(notice_raw, "value") else str(notice_raw or "")
         )
         if str(notice_type) != "watch_streak":
             return
@@ -1754,6 +1752,12 @@ class Twitch_API:
 
         logger.debug(f"New subscription from {data.event.user_name}")
 
+        if getattr(data.event, "cumulative_months", 1) > 1:
+            logger.debug(
+                f"Ignoring new subscription for {data.event.user_name} with {data.event.cumulative_months} cumulative months, handled by subscription_message callback."
+            )
+            return
+
         username = data.event.user_name
         tier_str = str(data.event.tier)
         tier = int(tier_str[:-3]) if tier_str else 1  # Default to 1 if tier is weird
@@ -1969,7 +1973,11 @@ class Twitch_API:
         event_type = str(getattr(data.event, "type", "") or "").lower()
         bits_amount = int(str(data.event.bits))
 
-        if event_type == "cheer" and hasattr(data.event, "message") and data.event.message:
+        if (
+            event_type == "cheer"
+            and hasattr(data.event, "message")
+            and data.event.message
+        ):
             user_id = str(getattr(data.event, "user_id", "") or "anonymous")
             msg = data.event.message
             text = getattr(msg, "text", "") or ""
@@ -2732,9 +2740,7 @@ class Twitch_API:
                     self.is_connected = True
                     twitch_connected = True
                     if self.last_event_time is not None:
-                        idle_s = (
-                            datetime.now() - self.last_event_time
-                        ).total_seconds()
+                        idle_s = (datetime.now() - self.last_event_time).total_seconds()
                         logger.debug(
                             "Twitch connection health check passed (%.0fs since last event)",
                             idle_s,
@@ -2930,7 +2936,9 @@ class Twitch_API:
         if is_shutdown_in_progress():
             return
         if not self._auto_reconnect_enabled():
-            logger.debug("Skipping EventSub rebuild (auto_reconnect disabled): %s", reason)
+            logger.debug(
+                "Skipping EventSub rebuild (auto_reconnect disabled): %s", reason
+            )
             return
         now = datetime.now()
         if (
@@ -3120,9 +3128,7 @@ class Twitch_API:
 
                 # Subscribe to channel update events (critical for category updates)
                 try:
-                    await eventsub.listen_channel_update(
-                        self.user.id, self.on_update
-                    )
+                    await eventsub.listen_channel_update(self.user.id, self.on_update)
                     logger.info(
                         "Successfully subscribed to channel update events - category changes will be detected"
                     )
@@ -3176,12 +3182,8 @@ class Twitch_API:
                     self.user.id, self.on_sub_gift
                 )
                 await eventsub.listen_channel_cheer(self.user.id, self.on_cheer)
-                await eventsub.listen_channel_bits_use(
-                    self.user.id, self.on_bits_use
-                )
-                await eventsub.listen_channel_raid(
-                    self.on_raid, self.user.id, None
-                )
+                await eventsub.listen_channel_bits_use(self.user.id, self.on_bits_use)
+                await eventsub.listen_channel_raid(self.on_raid, self.user.id, None)
                 await eventsub.listen_channel_points_custom_reward_redemption_add(
                     self.user.id, self.on_points
                 )
