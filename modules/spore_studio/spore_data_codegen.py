@@ -392,6 +392,7 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
 
     # Dynamic controls: listen for template_action events
     dc = model.get("dynamic_controls")
+    emitted_control_events: set[str] = set()
     if isinstance(dc, dict):
         for ctrl in dc.get("elements") or []:
             if not isinstance(ctrl, dict):
@@ -404,16 +405,24 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
                 handler_action = "counter_adjust"
             payload: Dict[str, Any] = {}
             if handler_action == "counter_adjust":
-                payload = {
-                    "target_counter_id": ctrl.get("target_counter_id") or "",
-                    "operation": ctrl.get("operation") or "increment",
-                    "delta": ctrl.get("delta") if isinstance(ctrl.get("delta"), dict) else {"kind": "fixed", "value": 1},
-                }
+                if ctrl.get("type") == "counter_control":
+                    payload = {
+                        "target_counter_id": ctrl.get("target_counter_id") or "",
+                    }
+                else:
+                    payload = {
+                        "target_counter_id": ctrl.get("target_counter_id") or "",
+                        "operation": ctrl.get("operation") or "increment",
+                        "delta": ctrl.get("delta") if isinstance(ctrl.get("delta"), dict) else {"kind": "fixed", "value": 1},
+                    }
             elif ctrl.get("type") in ("text_input", "number_input", "slider"):
                 payload = {"value": "{{value}}"}
             elif isinstance(ctrl.get("data"), dict):
                 payload = dict(ctrl["data"])
             ev_name = f"{template_name}_{action}"
+            if ev_name in emitted_control_events:
+                continue
+            emitted_control_events.add(ev_name)
             lines.append(
                 f"(function () {{\n"
                 f"    var __tn = {_js_string(template_name)};\n"

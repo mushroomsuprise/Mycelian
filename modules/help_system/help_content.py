@@ -3835,7 +3835,7 @@ Full counter details: [Counters in Spore Studio](help:spore_studio_counters).
 2. **Source Controls** inspector tab → **+ Add control**:
    - Type **button**, label `Pause alerts`, action `toggle_alerts`.
 3. **+ Add control**:
-   - Type **counter_control**, label `Score`, target counter `game_score`.
+   - Type **counter_control**, label `Score`, counter `game_score`, default step `1`.
 4. **Save**.
 5. During stream: Mycelian **Source Controls** tab → select template → use the new buttons.
 
@@ -4378,7 +4378,7 @@ Hint in editor: *Controls appear in the Source Controls overlay and emit templat
 | **number_input** | Numeric entry |
 | **slider** | Drag to set a numeric value |
 | **select** | Pick from predefined options |
-| **counter_control** | Shortcut UI for increment/decrement/set/reset on a counter |
+| **counter_control** | One Source Controls box per counter: editable step amount, − / + / Reset |
 
 ## Actions Reference
 
@@ -4424,15 +4424,17 @@ Requires the field to be **Expose in Source Settings (JSON)** in Spore Studio �
 
 | Approach | When |
 |----------|------|
-| **counter_control** type | Quick +1/−1/reset buttons with minimal setup |
-| **button** + `counter_adjust` action | Custom labels, set-to-value, or combined with other params |
+| **counter_control** type | One dock widget per counter: pick the counter from a dropdown, set a default step, then use − / + / Reset in Source Controls |
+| **button** + `counter_adjust` action | A single labeled button for one fixed operation (e.g. “Add 100 bits”) |
 
-Both target a **counter id** from a text element in **Counter** mode.
+Both target a **counter id** from a text element in **Counter** mode. The **counter_control**
+type always uses the `counter_adjust` action under the hood; operation and delta are chosen
+when you click −, +, or Reset in Source Controls.
 
 ## Example: Game Overlay Controls
 
 1. **button** — Label `Pause alerts` → action `toggle_alerts`.
-2. **counter_control** — Label `Score` → target counter `game_score` (increment/decrement buttons).
+2. **counter_control** — Label `Score` → pick counter `game_score`, default step `1` (− / + / Reset in Source Controls).
 3. **button** — Label `Show bonus` → action `element_show` → `element_id`: `bonus_banner`.
 4. **slider** — Label `Title size` → action `set_config_value` → `field_id`: `title_font_size`.
 

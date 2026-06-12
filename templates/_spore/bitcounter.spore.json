@@ -7,7 +7,16 @@
   },
   "duration_seconds": 5.0,
   "dynamic_controls": {
-    "elements": []
+    "elements": [
+      {
+        "action": "counter_adjust",
+        "id": "bit_counter_controls",
+        "label": "Increment Counter",
+        "step": 1,
+        "target_counter_id": "bit_count",
+        "type": "counter_control"
+      }
+    ]
   },
   "elements": [
     {
@@ -114,7 +123,8 @@
         "enabled": true,
         "pulse": false,
         "type": "tick_up"
-      }
+      },
+      "start_hidden": true
     },
     {
       "animations": {

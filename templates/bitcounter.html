@@ -156,7 +156,7 @@
     <div id="sporeRoot" data-mycelian-template="bitcounter">
         <!-- SPORE_STUDIO:dom-begin -->
         <div id="container1" class="spore-element" style="left: 0px; top: 0px; width: 300px; height: 50px; background-color: transparent" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="container">
-            <div id="bit_counter" class="spore-element" style="left: 60px; top: 13px; width: 200px; height: 40px; color: #ffffff; font-family: spore-el-bit_counter; font-size: 40px; display: flex; flex-direction: column; justify-content: center" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="text" data-spore-text-mode="counter">{{ bit_counter_format|default("0")|safe }}</div>
+            <div id="bit_counter" class="spore-element" style="left: 60px; top: 13px; width: 200px; height: 40px; color: #ffffff; font-family: spore-el-bit_counter; font-size: 40px; display: flex; flex-direction: column; justify-content: center" data-spore-hidden="true" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="text" data-spore-text-mode="counter">{{ bit_counter_format|default("0")|safe }}</div>
             <img id="image3" class="spore-element" style="left: 0px; top: 0px; width: 50px; height: 50px" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="image" data-spore-src-mode="counter" data-spore-counter-id="bit_count" src="{{ image3_counter_default_src|default("") }}" alt="" /></div>
 <!-- SPORE_STUDIO:dom-end -->
     </div>
@@ -1161,6 +1161,21 @@ if (typeof socket !== 'undefined' && socket && socket.on) {
         sporeRefreshAllDataDisplays();
     });
 }
+(function () {
+    var __tn = "bitcounter";
+    var __act = "counter_adjust";
+    var __base = {"target_counter_id": "bit_count"};
+    if (typeof socket !== 'undefined' && socket && socket.on) {
+        socket.on("bitcounter_counter_adjust", function (data) {
+            var __d = {};
+            for (var k in __base) { if (__base.hasOwnProperty(k)) __d[k] = __base[k]; }
+            if (data && typeof data === 'object') {
+                for (var k2 in data) { if (data.hasOwnProperty(k2)) __d[k2] = data[k2]; }
+            }
+            sporeDispatchControlAction(__act, __d, __tn);
+        });
+    }
+})();
 // SPORE_STUDIO:auto-end
 
         (function () {

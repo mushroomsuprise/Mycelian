@@ -1724,6 +1724,17 @@
             });
             typeSel.addEventListener("change", function () {
                 ctrl.type = typeSel.value;
+                if (ctrl.type === "counter_control") {
+                    ctrl.action = "counter_adjust";
+                    if (!ctrl.target_counter_id) {
+                        var counters = listCountersInModel();
+                        if (counters.length) { ctrl.target_counter_id = counters[0].id; }
+                    }
+                    if (ctrl.step == null || ctrl.step < 1) { ctrl.step = 1; }
+                    delete ctrl.operation;
+                    delete ctrl.button_text;
+                    delete ctrl.delta;
+                }
                 renderSourceControlsPanel();
                 modelTouch();
             });
@@ -1733,28 +1744,60 @@
                 pushHistoryDebounced();
                 modelTouch();
             })));
-            var actSel = document.createElement("select");
-            actions.forEach(function (a) {
-                var op = document.createElement("option");
-                op.value = a.action;
-                op.textContent = a.label || a.action;
-                if ((ctrl.action || "") === a.action) { op.selected = true; }
-                actSel.appendChild(op);
-            });
-            actSel.addEventListener("change", function () {
-                ctrl.action = actSel.value;
-                pushHistoryDebounced();
-                modelTouch();
-            });
-            card.appendChild(formRow("Action", actSel));
-            if (ctrl.type === "button" || ctrl.type === "counter_control") {
+            if (ctrl.type === "counter_control") {
+                ctrl.action = "counter_adjust";
+                if (ctrl.step == null || ctrl.step < 1) { ctrl.step = 1; }
+            }
+            if (ctrl.type !== "counter_control") {
+                var actSel = document.createElement("select");
+                actions.forEach(function (a) {
+                    var op = document.createElement("option");
+                    op.value = a.action;
+                    op.textContent = a.label || a.action;
+                    if ((ctrl.action || "") === a.action) { op.selected = true; }
+                    actSel.appendChild(op);
+                });
+                actSel.addEventListener("change", function () {
+                    ctrl.action = actSel.value;
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Action", actSel));
+            }
+            if (ctrl.type === "button") {
                 card.appendChild(formRow("Button text", inputEl("text", ctrl.button_text || "Run", function (v) {
                     ctrl.button_text = v;
                     pushHistoryDebounced();
                     modelTouch();
                 })));
             }
-            if (ctrl.action === "counter_adjust" || ctrl.type === "counter_control") {
+            if (ctrl.type === "counter_control") {
+                var counters = listCountersInModel();
+                var cidSel = document.createElement("select");
+                var blank = document.createElement("option");
+                blank.value = "";
+                blank.textContent = counters.length ? "(select counter)" : "(no counters in template)";
+                cidSel.appendChild(blank);
+                counters.forEach(function (c) {
+                    var op = document.createElement("option");
+                    op.value = c.id;
+                    op.textContent = c.label;
+                    if (String(ctrl.target_counter_id || "") === String(c.id)) { op.selected = true; }
+                    cidSel.appendChild(op);
+                });
+                cidSel.addEventListener("change", function () {
+                    ctrl.target_counter_id = cidSel.value;
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Counter", cidSel));
+                card.appendChild(formRow("Default step", numberEl(ctrl.step != null ? ctrl.step : 1, function (v) {
+                    var n = parseInt(String(v), 10);
+                    ctrl.step = isNaN(n) || n < 1 ? 1 : n;
+                    pushHistoryDebounced();
+                    modelTouch();
+                })));
+            } else if (ctrl.action === "counter_adjust") {
                 card.appendChild(formRow("Counter id", inputEl("text", ctrl.target_counter_id || "", function (v) {
                     ctrl.target_counter_id = v;
                     pushHistoryDebounced();

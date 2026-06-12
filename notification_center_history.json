@@ -1,1 +1,196 @@
-[]
+[
+  {
+    "id": "bc3709d2-53eb-4c7a-b505-52186f7ec896",
+    "ts": 1781281357.2223783,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "cfd4532b-6c74-4307-96ba-d3152577e474",
+    "ts": 1781281359.2215962,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "eca42c2b-d6e3-407d-9732-42e058401e74",
+    "ts": 1781281363.2289739,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "e3bd98c5-0f38-42a4-ac02-9ed382e2d3c2",
+    "ts": 1781281405.3949258,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "022b2140-53f2-45f1-a744-cbce8b08e51d",
+    "ts": 1781281423.4491873,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "36d52577-8762-473d-add9-fb5b202f0748",
+    "ts": 1781281451.5390654,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "04346e90-69fe-4413-8432-ade1a3fe4b17",
+    "ts": 1781281481.637388,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "5a7de6d4-d87c-4be4-a79f-3dd4d2028939",
+    "ts": 1781281500.525966,
+    "message": "Saved bitcounter",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "7f834d5a-ac0e-4e1d-b074-c9d5a6fedc29",
+    "ts": 1781281527.8114583,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "20c24259-3598-4006-966c-4a010d039d0a",
+    "ts": 1781281529.8214748,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "c58fdb76-2bda-4f8b-8dee-4a1b8ed77839",
+    "ts": 1781281558.5790422,
+    "message": "Saved bitcounter",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "f98f4730-8017-4426-bfd8-be97bced2df8",
+    "ts": 1781281576.0234284,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "63127f3b-b82e-46f1-adfc-35b25d0def27",
+    "ts": 1781281611.9762638,
+    "message": "Copied: http://127.0.0.1:5000/bitcounter",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "8ae585cf-6de9-4715-8ab6-defe9cf01473",
+    "ts": 1781282279.5542886,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "9616f222-1d10-457c-8ad0-4c9fab4ef82d",
+    "ts": 1781282305.0544856,
+    "message": "Saved bitcounter",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "5093bb54-ac3c-4855-809b-7063a09792d2",
+    "ts": 1781282403.869351,
+    "message": "Saved bitcounter",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  }
+]

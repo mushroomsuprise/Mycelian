@@ -99,6 +99,34 @@ from .theme_manager import generate_css_variables, get_theme_manager
 
 logger = logging.getLogger(__name__)
 
+
+def _dynamic_counter_control_default_data(element: Dict[str, Any]) -> Dict[str, Any]:
+    """Default socket payload for counter_control dynamic controls (connectors / Stream Deck)."""
+    target_id = element.get("target_counter_id")
+    if target_id:
+        try:
+            step = max(1, int(element.get("step", 1)))
+        except (TypeError, ValueError):
+            step = 1
+        return {
+            "target_counter_id": target_id,
+            "operation": "increment",
+            "delta": {"kind": "fixed", "value": step},
+        }
+    action_name = str(element.get("action") or "")
+    if action_name in ("increment", "counter_increment") or action_name.endswith(
+        "_increment"
+    ):
+        return {"action": "increment"}
+    if action_name in ("decrement", "counter_decrement") or action_name.endswith(
+        "_decrement"
+    ):
+        return {"action": "decrement"}
+    if action_name in ("reset", "counter_reset") or action_name.endswith("_reset"):
+        return {"action": "reset"}
+    return {}
+
+
 # Explicit MIME types for media under /assets — OS mimetypes may miss extensions
 # (e.g. .wav on Windows), yielding application/octet-stream and breaking <audio>
 # in strict embedded browsers (OBS Browser Source / CEF).
@@ -1444,31 +1472,11 @@ class WebEngine:
 
                                                 # Add type-specific data based on element configuration
                                                 if element_type == "counter_control":
-                                                    if action_name in [
-                                                        "increment",
-                                                        "counter_increment",
-                                                    ] or action_name.endswith(
-                                                        "_increment"
-                                                    ):
-                                                        action_info["default_data"] = {
-                                                            "action": "increment"
-                                                        }
-                                                    elif action_name in [
-                                                        "decrement",
-                                                        "counter_decrement",
-                                                    ] or action_name.endswith(
-                                                        "_decrement"
-                                                    ):
-                                                        action_info["default_data"] = {
-                                                            "action": "decrement"
-                                                        }
-                                                    elif action_name in [
-                                                        "reset",
-                                                        "counter_reset",
-                                                    ] or action_name.endswith("_reset"):
-                                                        action_info["default_data"] = {
-                                                            "action": "reset"
-                                                        }
+                                                    action_info[
+                                                        "default_data"
+                                                    ] = _dynamic_counter_control_default_data(
+                                                        element
+                                                    )
                                                 elif element_type in [
                                                     "number_input",
                                                     "text_input",
@@ -1800,27 +1808,11 @@ class WebEngine:
 
                                         # Add type-specific data based on element configuration
                                         if element_type == "counter_control":
-                                            if action_name in [
-                                                "increment",
-                                                "counter_increment",
-                                            ] or action_name.endswith("_increment"):
-                                                action_info["default_data"] = {
-                                                    "action": "increment"
-                                                }
-                                            elif action_name in [
-                                                "decrement",
-                                                "counter_decrement",
-                                            ] or action_name.endswith("_decrement"):
-                                                action_info["default_data"] = {
-                                                    "action": "decrement"
-                                                }
-                                            elif action_name in [
-                                                "reset",
-                                                "counter_reset",
-                                            ] or action_name.endswith("_reset"):
-                                                action_info["default_data"] = {
-                                                    "action": "reset"
-                                                }
+                                            action_info[
+                                                "default_data"
+                                            ] = _dynamic_counter_control_default_data(
+                                                element
+                                            )
                                         elif element_type in [
                                             "number_input",
                                             "text_input",
@@ -5753,14 +5745,16 @@ class WebEngine:
             actions_to_register = []
 
             if element_type == "counter_control":
-                # Counter controls have multiple actions
-                actions_to_register.extend(
-                    [
-                        element.get("action_increment", "counter_increment"),
-                        element.get("action_decrement", "counter_decrement"),
-                        element.get("action_reset", "counter_reset"),
-                    ]
-                )
+                if element.get("target_counter_id") and element.get("action"):
+                    actions_to_register.append(element.get("action"))
+                else:
+                    actions_to_register.extend(
+                        [
+                            element.get("action_increment", "counter_increment"),
+                            element.get("action_decrement", "counter_decrement"),
+                            element.get("action_reset", "counter_reset"),
+                        ]
+                    )
             elif element_type in [
                 "button",
                 "spin_control",
@@ -6780,27 +6774,11 @@ class WebEngine:
 
                                         # Add type-specific data based on element configuration
                                         if element_type == "counter_control":
-                                            if action_name in [
-                                                "increment",
-                                                "counter_increment",
-                                            ] or action_name.endswith("_increment"):
-                                                action_info["default_data"] = {
-                                                    "action": "increment"
-                                                }
-                                            elif action_name in [
-                                                "decrement",
-                                                "counter_decrement",
-                                            ] or action_name.endswith("_decrement"):
-                                                action_info["default_data"] = {
-                                                    "action": "decrement"
-                                                }
-                                            elif action_name in [
-                                                "reset",
-                                                "counter_reset",
-                                            ] or action_name.endswith("_reset"):
-                                                action_info["default_data"] = {
-                                                    "action": "reset"
-                                                }
+                                            action_info[
+                                                "default_data"
+                                            ] = _dynamic_counter_control_default_data(
+                                                element
+                                            )
                                         elif element_type in [
                                             "number_input",
                                             "text_input",

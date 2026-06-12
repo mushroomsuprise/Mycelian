@@ -403,8 +403,31 @@ def create_toggle_control(template_name, element):
     ui.switch(value=value, on_change=handle_toggle_change)
 
 
+def _counter_step_value(element) -> int:
+    raw = element.get("step", element.get("value", 1))
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _spore_counter_payload(element, operation: str, amount: int) -> dict:
+    target_counter_id = element.get("target_counter_id", "")
+    if operation == "reset":
+        return {"target_counter_id": target_counter_id, "operation": "reset"}
+    return {
+        "target_counter_id": target_counter_id,
+        "operation": operation,
+        "delta": {"kind": "fixed", "value": max(1, amount)},
+    }
+
+
 def create_counter_control(template_name, element):
     """Create counter increment/decrement controls"""
+    if element.get("target_counter_id"):
+        _create_spore_counter_control(template_name, element)
+        return
+
     action_increment = element.get("action_increment", "counter_increment")
     action_decrement = element.get("action_decrement", "counter_decrement")
     action_reset = element.get("action_reset", "counter_reset")
@@ -429,6 +452,57 @@ def create_counter_control(template_name, element):
         apply_flat_btn_props(inc_btn, dense=True)
         reset_btn = ui.button("Reset", on_click=reset).classes(
             "grow btn-cancel text-xs py-1"
+        )
+        apply_flat_btn_props(reset_btn)
+
+
+def _create_spore_counter_control(template_name, element):
+    """Spore Studio counter_control: amount field plus increment/decrement/reset."""
+    action = element.get("action", "counter_adjust")
+    step = _counter_step_value(element)
+    amount_input = None
+
+    def current_amount() -> int:
+        if amount_input is None:
+            return step
+        try:
+            return max(1, int(amount_input.value))
+        except (TypeError, ValueError):
+            return step
+
+    def increment():
+        send_websocket_event(
+            template_name, action, _spore_counter_payload(element, "increment", current_amount())
+        )
+
+    def decrement():
+        send_websocket_event(
+            template_name, action, _spore_counter_payload(element, "decrement", current_amount())
+        )
+
+    def reset():
+        send_websocket_event(
+            template_name, action, _spore_counter_payload(element, "reset", current_amount())
+        )
+
+    with ui.row().classes("gap-1 w-full items-center"):
+        amount_input = form_number(
+            tooltip="Amount to increment or decrement",
+            value=step,
+            min=1,
+            max=999999999,
+            classes="grow text-xs",
+        )
+        dec_btn = ui.button("-", on_click=decrement).classes(
+            "w-6 h-6 btn-danger text-xs"
+        )
+        apply_flat_btn_props(dec_btn, dense=True)
+        inc_btn = ui.button("+", on_click=increment).classes(
+            "w-6 h-6 btn-success text-xs"
+        )
+        apply_flat_btn_props(inc_btn, dense=True)
+        reset_btn = ui.button("Reset", on_click=reset).classes(
+            "btn-cancel text-xs py-1"
         )
         apply_flat_btn_props(reset_btn)
 

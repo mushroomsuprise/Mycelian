@@ -1315,7 +1315,16 @@ def _clone_dynamic_controls(dc: Dict[str, Any]) -> Dict[str, Any]:
         cleaned["type"] = ctype
         if not cleaned.get("id"):
             continue
-        if not cleaned.get("action") and ctype != "counter_control":
+        if ctype == "counter_control":
+            cleaned["action"] = str(cleaned.get("action") or "counter_adjust").strip()
+            try:
+                step = int(cleaned.get("step", 1))
+            except (TypeError, ValueError):
+                step = 1
+            cleaned["step"] = max(1, step)
+            for obsolete in ("operation", "button_text", "delta"):
+                cleaned.pop(obsolete, None)
+        elif not cleaned.get("action"):
             cleaned["action"] = _slugify_id(str(cleaned.get("id")))
         out["elements"].append(cleaned)
     return out

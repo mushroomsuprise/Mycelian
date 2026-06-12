@@ -250,6 +250,18 @@
         .counter-controls {
             display: flex;
             gap: 4px;
+            align-items: center;
+        }
+
+        .counter-step-input {
+            flex: 1;
+            min-width: 48px;
+            padding: 6px 8px;
+            border: 1px solid var(--color-border, #333);
+            border-radius: 4px;
+            background: var(--color-surface, #1a1a1a);
+            color: var(--color-text, #fff);
+            font-size: 0.7rem;
         }
 
         .counter-btn {
@@ -868,17 +880,64 @@
             `;
         }
 
+        function getCounterStepValue(element) {
+            const raw = element.step != null ? element.step : (element.value != null ? element.value : 1);
+            const n = parseInt(String(raw), 10);
+            return isNaN(n) || n < 1 ? 1 : n;
+        }
+
+        function sendSporeCounterEvent(templateName, action, targetCounterId, operation, inputId, defaultStep) {
+            action = action || 'counter_adjust';
+            let payload;
+            if (operation === 'reset') {
+                payload = { target_counter_id: targetCounterId, operation: 'reset' };
+            } else {
+                const inputEl = document.getElementById(inputId);
+                let amount = defaultStep != null ? defaultStep : 1;
+                if (inputEl) {
+                    const n = parseInt(String(inputEl.value), 10);
+                    if (!isNaN(n) && n >= 1) { amount = n; }
+                }
+                payload = {
+                    target_counter_id: targetCounterId,
+                    operation: operation,
+                    delta: { kind: 'fixed', value: amount }
+                };
+            }
+            sendWebSocketEvent(templateName, action, payload);
+        }
+
         function createCounterControl(templateName, element) {
+            if (element.target_counter_id) {
+                const step = getCounterStepValue(element);
+                const action = element.action || 'counter_adjust';
+                const targetCounterId = element.target_counter_id;
+                const inputId = `sc-counter-step-${templateName}-${element.id || 'counter'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+                const esc = (s) => String(s).replace(/'/g, "\\'");
+                return `
+                    <div class="counter-controls">
+                        <input type="number" id="${inputId}" class="counter-step-input"
+                               min="1" value="${step}" title="Increment/decrement amount">
+                        <button class="counter-btn decrement"
+                                onclick="sendSporeCounterEvent('${esc(templateName)}', '${esc(action)}', '${esc(targetCounterId)}', 'decrement', '${inputId}', ${step})">-</button>
+                        <button class="counter-btn increment"
+                                onclick="sendSporeCounterEvent('${esc(templateName)}', '${esc(action)}', '${esc(targetCounterId)}', 'increment', '${inputId}', ${step})">+</button>
+                        <button class="counter-btn reset"
+                                onclick="sendSporeCounterEvent('${esc(templateName)}', '${esc(action)}', '${esc(targetCounterId)}', 'reset', '${inputId}', ${step})">Reset</button>
+                    </div>
+                `;
+            }
+
             const actionIncrement = element.action_increment || 'counter_increment';
             const actionDecrement = element.action_decrement || 'counter_decrement';
             const actionReset = element.action_reset || 'counter_reset';
-            
+
             return `
                 <div class="counter-controls">
                     <button class="counter-btn decrement" 
                             onclick="sendWebSocketEvent('${templateName}', '${actionDecrement}', {})">-</button>
                     <button class="counter-btn increment" 
-                            onclick="sendWebSocketEvent('${templateName}', '${actionIncrement}', {})"">+</button>
+                            onclick="sendWebSocketEvent('${templateName}', '${actionIncrement}', {})">+</button>
                     <button class="counter-btn reset" 
                             onclick="sendWebSocketEvent('${templateName}', '${actionReset}', {})">Reset</button>
                 </div>

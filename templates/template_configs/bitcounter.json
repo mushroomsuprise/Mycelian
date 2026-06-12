@@ -315,5 +315,17 @@
             "label": "Hype train",
             "alert_type": "hype_train"
         }
-    ]
+    ],
+    "dynamic_controls": {
+        "elements": [
+            {
+                "action": "counter_adjust",
+                "id": "bit_counter_controls",
+                "label": "Increment Counter",
+                "step": 1,
+                "target_counter_id": "bit_count",
+                "type": "counter_control"
+            }
+        ]
+    }
 }
