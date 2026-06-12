@@ -32,20 +32,21 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from nicegui import ui
-from ..notification_engine import notify
-from ..ui_form_controls import form_input, form_number, form_select, form_textarea
-from ..ui_timer import layout_schedule
-from ..ui_buttons import destructive_button, outline_button, primary_button
-from ..path_utils import get_assets_path, get_template_path
+
+from .. import web_engine as web_engine_module
 
 # Use proper relative import for template_config_parser
 from ..custom_sources_preview_mocks import get_mock_actions
+from ..notification_engine import notify
+from ..path_utils import get_assets_path, get_template_path
 from ..template_config_parser import TemplateConfigParser
-from .. import web_engine as web_engine_module
 from ..template_preview_settings import (
     load_template_preview_settings,
     save_template_preview_settings,
 )
+from ..ui_buttons import destructive_button, outline_button, primary_button
+from ..ui_form_controls import form_input, form_number, form_select, form_textarea
+from ..ui_timer import layout_schedule
 
 logger = logging.getLogger(__name__)
 

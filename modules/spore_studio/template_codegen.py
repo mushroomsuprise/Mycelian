@@ -29,6 +29,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..path_utils import get_template_path
 from .behavior_blocks import compile_bindings
 from .fonts_registry import (
     exposed_element_font_family,
@@ -47,7 +48,6 @@ from .spore_data_codegen import (
     inject_data_runtime_block,
 )
 from .timing import effective_duration_seconds
-from ..path_utils import get_template_path
 
 logger = logging.getLogger(__name__)
 

@@ -252,5 +252,91 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "49523b8b-c695-46b3-b1d5-233f3e040e76",
+    "ts": 1781283398.718571,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "1b2f573c-b756-44e7-8d64-4f12ea8a66d3",
+    "ts": 1781284024.6658754,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "95e0391e-c002-42c7-92ba-6daf00d36971",
+    "ts": 1781284243.5162125,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "8beb6009-9438-49bc-b4d1-65a541a97c38",
+    "ts": 1781284268.9779222,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "15d9d982-ef42-4529-b6d7-fcbc427fcabe",
+    "ts": 1781284268.9954138,
+    "message": "Creating new alert...",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "9726f51b-070f-4f66-ab42-c06c40bfa1cf",
+    "ts": 1781284481.1807358,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "dff56a7f-c08a-45cc-aecc-94f8308a24eb",
+    "ts": 1781284519.1982882,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
   }
 ]

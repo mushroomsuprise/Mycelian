@@ -28,12 +28,12 @@ import logging
 import os
 
 from nicegui import ui
+
+from .. import template_config_parser, web_engine
 from ..notification_engine import notify
 from ..ui_buttons import apply_flat_btn_props
 from ..ui_form_controls import form_input, form_number
 from ..ui_timer import layout_schedule
-
-from .. import template_config_parser, web_engine
 
 logger = logging.getLogger(__name__)
 
