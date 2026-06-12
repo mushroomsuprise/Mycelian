@@ -32,6 +32,7 @@ import logging
 import os
 import queue
 import random
+import re
 import sys
 import faulthandler
 import threading
@@ -3018,6 +3019,40 @@ class WebEngine:
                             element["value"] = mock_values[eid]
 
     @staticmethod
+    def _color_with_opacity(color: Any, opacity: Any) -> str:
+        """Return *color* as rgba with alpha multiplied by *opacity* (0–1)."""
+        try:
+            opacity_f = max(0.0, min(1.0, float(opacity)))
+        except (TypeError, ValueError):
+            opacity_f = 1.0
+        if opacity_f >= 1.0:
+            return str(color) if color is not None else "transparent"
+        if opacity_f <= 0.0:
+            return "transparent"
+        c = str(color or "").strip()
+        if not c or c.lower() == "transparent":
+            return "transparent"
+        hex_m = re.match(r"^#([0-9a-f]{3}|[0-9a-f]{6})$", c, re.I)
+        if hex_m:
+            h = hex_m.group(1)
+            if len(h) == 3:
+                h = "".join(ch * 2 for ch in h)
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return f"rgba({r},{g},{b},{opacity_f})"
+        rgb_m = re.match(
+            r"^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$",
+            c,
+            re.I,
+        )
+        if rgb_m:
+            a = float(rgb_m.group(4)) if rgb_m.group(4) is not None else 1.0
+            return (
+                f"rgba({rgb_m.group(1)},{rgb_m.group(2)},"
+                f"{rgb_m.group(3)},{a * opacity_f})"
+            )
+        return c
+
+    @staticmethod
     def _template_variable_map(template_config: Dict[str, Any]) -> Dict[str, Any]:
         from .spore_studio.fonts_registry import resolve_font_filename
 
@@ -3035,6 +3070,10 @@ class WebEngine:
                     if resolved:
                         val = resolved
                 out[eid] = val
+        if "BGColor" in out and "BGOpacity" in out:
+            out["BGColorWithOpacity"] = WebEngine._color_with_opacity(
+                out["BGColor"], out["BGOpacity"]
+            )
         return out
 
     def _merge_preview_session_into_config(

@@ -39,8 +39,7 @@
         }
 
         #chat {
-            background-color: {{ BGColor }};
-            opacity: {{ BGOpacity }};
+            background-color: {{ BGColorWithOpacity }};
             width: 100vw;
             height: 100vh;
             overflow-y: auto;
@@ -2555,11 +2554,35 @@
             return (v !== undefined && v !== null && v !== '') ? v : fallback;
         }
 
+        function _chatBgColorWithOpacity(color, opacity) {
+            var op = Math.max(0, Math.min(1, Number(opacity)));
+            if (isNaN(op)) { op = 1; }
+            if (op >= 1) { return color; }
+            if (op <= 0 || !color || color === 'transparent') { return 'transparent'; }
+            var c = String(color).trim();
+            var hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c);
+            if (hex) {
+                var h = hex[1];
+                if (h.length === 3) {
+                    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+                }
+                return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) + ',' + parseInt(h.slice(4, 6), 16) + ',' + op + ')';
+            }
+            var rgb = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i.exec(c);
+            if (rgb) {
+                var a = rgb[4] !== undefined ? parseFloat(rgb[4]) : 1;
+                return 'rgba(' + rgb[1] + ',' + rgb[2] + ',' + rgb[3] + ',' + (a * op) + ')';
+            }
+            return c;
+        }
+
         function buildChatPreviewCss(config) {
             var fontName = _chatCfg(config, 'FontName', 'Renogare.ttf');
             var eventFontName = _chatCfg(config, 'EventFontName', 'Roboto-Italic.ttf');
-            var bgColor = _chatCfg(config, 'BGColor', 'transparent');
-            var bgOpacity = _chatCfg(config, 'BGOpacity', 1);
+            var bgColor = _chatBgColorWithOpacity(
+                _chatCfg(config, 'BGColor', 'transparent'),
+                _chatCfg(config, 'BGOpacity', 1)
+            );
             var chatPadding = _chatCfg(config, 'ChatPadding', 10);
             var messageBG = _chatCfg(config, 'MessageBG', 'transparent');
             var messagePadding = _chatCfg(config, 'MessagePadding', 3);
@@ -2602,7 +2625,7 @@
                 '@font-face { font-family: chat-font; src: url("/assets/default_assets/fonts/' + fontName + '"); }' +
                 '@font-face { font-family: event-font; src: url("/assets/default_assets/fonts/' + eventFontName + '"); }' +
                 'html, body { font-family: chat-font, Arial, sans-serif; }' +
-                '#chat { background-color: ' + bgColor + '; opacity: ' + bgOpacity + '; padding: ' + chatPadding + 'px; }' +
+                '#chat { background-color: ' + bgColor + '; padding: ' + chatPadding + 'px; }' +
                 '.chat-message { background-color: ' + messageBG + '; padding: ' + messagePadding + 'px; margin: ' + messageMargin + 'px 0; ' +
                 'font-size: ' + fontSize + 'px; color: ' + fontColor + '; border-radius: ' + messageRadius + 'px; ' +
                 'border: ' + messageBorder + 'px solid ' + messageBorderColor + '; ' + animRule +

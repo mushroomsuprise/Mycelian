@@ -1,5 +1,9 @@
 Legacy Templates:
     [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
-Spore Studio:
-    [] - Expand interactive help system's content for Spore Studio. Detail out how to create templates, setup counters, data sources, streamdeck actions, bindings, source controls, and anything else not mentioned here.
+Source Controls:
+    [] - Update Source Controls dock and in-app UI to allow items to be compressed better. IE: multiple template controls can be shown in a single row.
+    [] - Update button names for all templates to not just be "Action".
+
+Source Settings:
+    [] - Update color picker to be a proper color picker, not just a palette of fixed options.

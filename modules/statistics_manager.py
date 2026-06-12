@@ -4227,16 +4227,18 @@ def start_statistics_saving():
 def shutdown_statistics():
     """Shutdown the statistics manager"""
     global _statistics_manager
-    print(" shutdown_statistics() called")
+    # print(" shutdown_statistics() called")
 
     if _statistics_manager:
-        print(" Statistics manager found, shutting down...")
+        # print(" Statistics manager found, shutting down...")
         try:
             _statistics_manager.stop_periodic_saving()
             _statistics_manager.save_on_close()
             _statistics_manager = None
-            print(" Statistics manager shutdown complete")
+            # print(" Statistics manager shutdown complete")
         except Exception as e:
-            print(f" Error during statistics manager shutdown: {str(e)}")
+            logger.error(f" Error during statistics manager shutdown: {str(e)}")
+            # print(f" Error during statistics manager shutdown: {str(e)}")
     else:
-        print(" No statistics manager to shutdown")
+        logger.warning(" No statistics manager to shutdown")
+        # print(" No statistics manager to shutdown")
