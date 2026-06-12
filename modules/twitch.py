@@ -3165,18 +3165,18 @@ class Twitch_API:
                     raise
 
                 # Subscribe to channel subscription events
-                try:
-                    await eventsub.listen_channel_subscribe(
-                        self.user.id, self.on_new_sub
-                    )
-                    logger.debug(
-                        "Successfully subscribed to channel subscription events"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to subscribe to channel subscription events: {str(e)}"
-                    )
-                    raise
+                # try:
+                #     await eventsub.listen_channel_subscribe(
+                #         self.user.id, self.on_new_sub
+                #     )
+                #     logger.debug(
+                #         "Successfully subscribed to channel subscription events"
+                #     )
+                # except Exception as e:
+                #     logger.error(
+                #         f"Failed to subscribe to channel subscription events: {str(e)}"
+                #     )
+                #     raise
 
                 await eventsub.listen_channel_subscription_gift(
                     self.user.id, self.on_sub_gift
@@ -3187,15 +3187,15 @@ class Twitch_API:
                 await eventsub.listen_channel_points_custom_reward_redemption_add(
                     self.user.id, self.on_points
                 )
-                # await eventsub.listen_hype_train_begin(
-                #     self.user.id, self.on_hype_train_start
-                # )
-                # await self.eventsub.listen_hype_train_progress(
-                #     self.user.id, self.on_hype_train_progress
-                # )
-                # await self.eventsub.listen_hype_train_end(
-                #     self.user.id, self.on_hype_train_end
-                # )
+                await eventsub.listen_hype_train_begin(
+                    self.user.id, self.on_hype_train_start
+                )
+                await self.eventsub.listen_hype_train_progress(
+                    self.user.id, self.on_hype_train_progress
+                )
+                await self.eventsub.listen_hype_train_end(
+                    self.user.id, self.on_hype_train_end
+                )
             except Exception as e:
                 logger.error(f"Error subscribing to events: {str(e)}", exc_info=True)
                 self.is_connected = False
