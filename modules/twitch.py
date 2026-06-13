@@ -2713,6 +2713,15 @@ class Twitch_API:
             self.health_check_thread.start()
             logger.debug("Started Twitch connection health check thread")
 
+    def is_eventsub_live(self) -> bool:
+        """True when EventSub reports an active websocket session."""
+        return (
+            self.eventsub is not None
+            and hasattr(self.eventsub, "active_session")
+            and self.eventsub.active_session is not None
+            and self.is_connected
+        )
+
     def stop_health_check(self):
         """Stop the health check thread"""
         if self.health_check_thread and self.health_check_thread.is_alive():
@@ -2768,25 +2777,12 @@ class Twitch_API:
                             "Twitch connection health check passed (no events yet)"
                         )
                 else:
-                    # Check if we've exceeded the timeout
-                    if (
-                        self.last_health_check
-                        and (datetime.now() - self.last_health_check).total_seconds()
-                        > self.connection_timeout
-                    ):
-                        logger.warning(
-                            "Twitch connection appears to be dead, attempting to reconnect"
-                        )
-                        self.is_connected = False
-                        twitch_connected = False
-                        if not is_shutdown_in_progress():
-                            self.reconnect()
-                    else:
-                        logger.warning(
-                            "Twitch connection health check failed, will retry"
-                        )
-                        self.is_connected = False
-                        twitch_connected = False
+                    logger.warning(
+                        "Twitch EventSub session missing or inactive; "
+                        "connection monitor will attempt reconnect"
+                    )
+                    self.is_connected = False
+                    twitch_connected = False
 
                 # Proactive token expiry check
                 if self.auth_token and self.refresh_token and self.is_token_expired():
@@ -2940,6 +2936,20 @@ class Twitch_API:
                 "Skipping EventSub rebuild (auto_reconnect disabled): %s", reason
             )
             return
+        try:
+            from .connection_monitor import (
+                is_internet_available,
+                is_service_reachable,
+            )
+
+            if not is_internet_available() or not is_service_reachable("twitch"):
+                logger.debug(
+                    "Skipping EventSub rebuild (%s) — connectivity check failed",
+                    reason,
+                )
+                return
+        except Exception:
+            logger.debug("Connectivity check unavailable for EventSub rebuild", exc_info=True)
         now = datetime.now()
         if (
             self._last_revocation_reconnect
@@ -2958,6 +2968,20 @@ class Twitch_API:
         if is_shutdown_in_progress():
             return
 
+        try:
+            from .connection_monitor import (
+                is_internet_available,
+                is_service_reachable,
+            )
+
+            if not is_internet_available() or not is_service_reachable("twitch"):
+                logger.debug(
+                    "Skipping Twitch reconnect — internet or Twitch host unreachable"
+                )
+                return
+        except Exception:
+            logger.debug("Connectivity check unavailable for Twitch reconnect", exc_info=True)
+
         # Serialize reconnects: if one is already running, don't spawn another
         # init thread on top of it.
         with self._reconnect_lock:
@@ -2973,8 +2997,6 @@ class Twitch_API:
             if self.eventsub:
                 try:
                     # Create a temporary event loop to properly await the stop
-                    import asyncio
-
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
@@ -3210,6 +3232,14 @@ class Twitch_API:
             self.start_health_check()
 
             logger.info("Twitch API websocket connection established successfully")
+            try:
+                from . import web_engine
+
+                web_engine.broadcast_overlay_recovery("twitch", "reconnected")
+            except Exception as broadcast_err:
+                logger.debug(
+                    "overlay recovery broadcast failed: %s", broadcast_err
+                )
             return True
         except Exception as e:
             logger.error(f"Failed to initialize Twitch API: {str(e)}", exc_info=True)
@@ -3450,10 +3480,21 @@ class Twitch_API:
         except (TwitchSessionNotReadyError, TwitchPermissionError):
             raise
         except aiohttp.ClientError as e:
-            logger.error(
-                f"aiohttp.ClientError during generic API call to {url}: {str(e)}",
-                exc_info=True,
-            )
+            try:
+                from .connection_monitor import is_internet_available
+
+                offline = not is_internet_available()
+            except Exception:
+                offline = False
+            if offline:
+                logger.warning(
+                    "Network unavailable during API call to %s: %s", url, e
+                )
+            else:
+                logger.error(
+                    f"aiohttp.ClientError during generic API call to {url}: {str(e)}",
+                    exc_info=True,
+                )
             raise Exception(f"Network error during API call: {str(e)}") from e
         except Exception as e:
             if isinstance(e, TwitchSessionNotReadyError):
@@ -3589,7 +3630,7 @@ class Twitch_API:
 
     def get_connection_status(self):
         """Get current connection status for UI display"""
-        if self.is_connected and self.eventsub:
+        if self.is_eventsub_live():
             stale = (
                 self.last_event_time is not None
                 and (datetime.now() - self.last_event_time).total_seconds()
@@ -4033,14 +4074,18 @@ def get_twitch_connection_status():
     """Get current Twitch connection status (sync wrapper)"""
     try:
         if not twitch_api:
-            return {
+            info = {
                 "status": "Not Initialized",
                 "is_valid": False,
                 "last_update": "Never",
                 "user_name": "None",
             }
+        else:
+            info = twitch_api.get_connection_status()
 
-        return twitch_api.get_connection_status()
+        from .connection_status_tracker import apply_connectivity_overlay_to_info
+
+        return apply_connectivity_overlay_to_info("twitch", info)
     except Exception as e:
         logger.error(f"Error getting Twitch connection status: {str(e)}", exc_info=True)
         return {
@@ -4049,6 +4094,61 @@ def get_twitch_connection_status():
             "last_update": "Error",
             "user_name": "Error",
         }
+
+
+def twitch_has_tokens_configured() -> bool:
+    """True when Twitch client credentials and user tokens are present."""
+    try:
+        from .api_credentials_manager import api_credentials_manager
+        from .dataobjects import state_manager
+
+        creds = api_credentials_manager.get_twitch_credentials()
+        if not (
+            (creds.get("client_id") or "").strip()
+            and (creds.get("client_secret") or "").strip()
+        ):
+            return False
+        twitch_data = state_manager.get_twitch_data()
+        if not twitch_data:
+            return False
+        return bool(
+            (getattr(twitch_data, "auth_token", "") or "").strip()
+            and (getattr(twitch_data, "refresh_token", "") or "").strip()
+        )
+    except Exception:
+        return False
+
+
+def is_twitch_disconnected_for_monitor() -> bool:
+    """True when Twitch should be auto-reconnected by the connection monitor."""
+    if not twitch_has_tokens_configured():
+        return False
+    if twitch_api is None:
+        return True
+    if not twitch_api.is_eventsub_live():
+        return True
+    return not twitch_api.is_connected
+
+
+def attempt_auto_reconnect() -> bool:
+    """Monitor-driven Twitch reconnect entry point."""
+    if not twitch_has_tokens_configured():
+        return False
+    api = twitch_api
+    if api is None:
+        return False
+    try:
+        from .connection_monitor import (
+            is_internet_available,
+            is_service_reachable,
+        )
+
+        if not is_internet_available() or not is_service_reachable("twitch"):
+            return False
+    except Exception:
+        return False
+    api.reconnect()
+    return True
 
 
 def get_twitch_token_status():

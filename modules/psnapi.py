@@ -27,6 +27,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 
+import requests
+from requests.exceptions import ConnectionError as RequestsConnectionError
 from psnawp_api.core.psnawp_exceptions import (
     PSNAWPAuthenticationError,
     PSNAWPBadRequestError,
@@ -593,10 +595,20 @@ class PSNClient:
             logger.error(
                 f"API error while fetching presence for {target_online_id}: {e}"
             )
-        except Exception as e:
-            logger.exception(
-                f"Unexpected error fetching presence for {target_online_id}: {e}"
+        except (RequestsConnectionError, OSError) as e:
+            logger.warning(
+                "Network error fetching presence for %s: %s",
+                target_online_id,
+                e,
             )
+            self.authenticated = False
+        except Exception as e:
+            logger.warning(
+                "Unexpected error fetching presence for %s: %s",
+                target_online_id,
+                e,
+            )
+            self.authenticated = False
         return None
 
     def get_trophy_target_account_id(self) -> str | None:

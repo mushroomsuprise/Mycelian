@@ -370,6 +370,12 @@ if __name__ == "__main__":
 
         service_manager.register("obs", _start_obs_ws, priority=5)
 
+        from modules.connection_monitor import start as start_connection_monitor
+
+        service_manager.register(
+            "connection_monitor", start_connection_monitor, priority=8
+        )
+
         # Start deferred init after UI is responsive
         service_manager.start_deferred_init(delay_seconds=1.0)
 

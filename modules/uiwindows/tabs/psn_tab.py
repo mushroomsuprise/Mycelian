@@ -541,6 +541,22 @@ class PSNTab:
     def _refresh_status(self) -> None:
         """Update PSN status labels in the UI."""
         try:
+            from ...connection_status_tracker import get_connectivity_overlay
+
+            overlay = get_connectivity_overlay("psn")
+            if overlay:
+                status_text = overlay
+                user_text = "N/A"
+                status_color = "text-theme-error"
+                if "status_label" in self.ui_elements:
+                    self.ui_elements["status_label"].set_text(status_text)
+                    self.ui_elements["status_label"].classes(
+                        replace=f"font-semibold {status_color}"
+                    )
+                if "user_label" in self.ui_elements:
+                    self.ui_elements["user_label"].set_text(user_text)
+                return
+
             from ...dataobjects import state_manager
 
             live_psn_data = state_manager.get_live_psn_data()

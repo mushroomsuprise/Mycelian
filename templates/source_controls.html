@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Source Controls</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
     <style>
         * {
             margin: 0;
@@ -500,7 +501,7 @@
                 // Initialize WebSocket for broadcasting to other sources
                 // This will broadcast events to templates that are listening
                 // Use the same connection format as other templates for consistency
-                broadcastSocket = io.connect('http://' + document.domain + ':' + location.port);
+                broadcastSocket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port);
                 
                 broadcastSocket.on('connect', function() {
                     console.log('Broadcast socket connected');

@@ -37,6 +37,7 @@ from .fonts_registry import (
     is_font_filename,
     resolve_font_filename,
 )
+from .overlay_recovery_inject import inject_overlay_recovery
 from .spore_data_codegen import (
     DESIGN_CANVAS_MIN_PX,
     compile_spore_data_features,
@@ -1381,6 +1382,7 @@ def compile_model(
     advanced_js = str(model.get("advanced_js") or "").rstrip()
 
     base_html = inject_data_runtime_block(base_html)
+    base_html = inject_overlay_recovery(base_html)
 
     out_html = _replace_block(base_html, _DOM_BEGIN, _DOM_END, dom_html)
 
@@ -1416,6 +1418,7 @@ def compile_model(
         out_html = _replace_block(out_html, _STYLES_BEGIN, _STYLES_END, "")
 
     json_config = _derived_json_config(model)
+    out_html = inject_overlay_recovery(out_html)
     return out_html, json_config
 
 

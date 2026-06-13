@@ -5035,6 +5035,27 @@ class WebEngine:
                                 endpoint,
                                 err,
                             )
+                        elif "Network error during API call" in err:
+                            try:
+                                from .connection_monitor import (
+                                    is_internet_available,
+                                )
+
+                                offline = not is_internet_available()
+                            except Exception:
+                                offline = False
+                            if offline:
+                                logger.warning(
+                                    "Twitch API request failed while offline (%s): %s",
+                                    endpoint,
+                                    err,
+                                )
+                            else:
+                                logger.error(
+                                    "Error in async twitch-api-request handler: %s",
+                                    e,
+                                    exc_info=True,
+                                )
                         else:
                             logger.error(
                                 "Error in async twitch-api-request handler: %s",
@@ -6528,6 +6549,23 @@ class WebEngine:
             logger.error(f"Error sending new-message: {str(e)}", exc_info=True)
             return False
 
+    def broadcast_overlay_recovery(
+        self, service: str = "twitch", reason: str = "reconnected"
+    ) -> bool:
+        """Tell overlay browser sources to re-sync after a service reconnects."""
+        try:
+            payload = {"service": service, "reason": reason}
+            self.socketio.emit("overlay-recovery", payload)
+            logger.info(
+                "Broadcast overlay-recovery for %s (%s)", service, reason
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                "Error broadcasting overlay-recovery: %s", e, exc_info=True
+            )
+            return False
+
     def message_moderation(self, moderation_data):
         """
         Trigger a 'message_moderation' websocket event
@@ -7286,23 +7324,12 @@ class WebEngine:
             logger.error(f"Error sending remove-messages: {str(e)}", exc_info=True)
             return False
 
-            logger.debug(f"Sent remove-messages: {message_ids}")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending remove-messages: {str(e)}", exc_info=True)
-            return False
 
-            return True
-        except Exception as e:
-            logger.error(f"Error sending remove-messages: {str(e)}", exc_info=True)
-            return False
-
-            return True
-        except Exception as e:
-            logger.error(f"Error sending remove-messages: {str(e)}", exc_info=True)
-            return False
-
-            return True
-        except Exception as e:
-            logger.error(f"Error sending remove-messages: {str(e)}", exc_info=True)
-            return False
+def broadcast_overlay_recovery(
+    service: str = "twitch", reason: str = "reconnected"
+) -> bool:
+    """Module helper: notify overlay templates that a service recovered."""
+    global web_engine_instance
+    if web_engine_instance is None:
+        return False
+    return web_engine_instance.broadcast_overlay_recovery(service, reason)

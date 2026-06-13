@@ -1778,6 +1778,34 @@ def test_connection() -> bool:
     return database_manager.test_connection()
 
 
+def database_needs_remote_monitor() -> bool:
+    """True when the active database backend is remote (not local SQLite)."""
+    try:
+        return database_manager.get_config().database_type in ("firebase", "mongodb")
+    except Exception:
+        return False
+
+
+def attempt_auto_reconnect() -> bool:
+    """Re-initialize remote database connection when probe fails."""
+    try:
+        cfg = database_manager.get_config()
+    except Exception:
+        return False
+    if cfg.database_type == "sql":
+        return True
+    try:
+        from .connection_monitor import is_internet_available
+
+        if not is_internet_available():
+            return False
+    except Exception:
+        return False
+    if database_manager.test_connection():
+        return True
+    return bool(database_manager.initialize(cfg))
+
+
 def get_all_paths() -> List[str]:
     """Get all data paths stored in the database"""
     return database_manager.get_all_paths()

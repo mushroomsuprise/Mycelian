@@ -221,6 +221,12 @@ def _stop_chatbot() -> None:
         api.stop_health_check()
 
 
+def _stop_connection_monitor() -> None:
+    from .connection_monitor import stop as stop_connection_monitor
+
+    stop_connection_monitor()
+
+
 def _stop_deferred_services() -> None:
     try:
         from .service_manager import get_service_manager
@@ -333,6 +339,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
 
     try:
         _run_step("pause_alerts", _pause_alerts_and_activity_feed, timeout=2.0)
+        _run_step("connection_monitor", _stop_connection_monitor, timeout=3.0)
         # Stops web engine, game hooks, alert threads (no separate web_engine step).
         _run_step("alert_processor", _stop_alert_processor, timeout=6.0)
         _run_step("connectors", _stop_connector_system, timeout=4.0)

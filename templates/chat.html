@@ -7,6 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
         integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
         crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
     <style>
         @font-face {
             font-family: chat-font;
@@ -479,7 +480,25 @@
 
     <script>
         // Global variables
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        function resetChatClientState() {
+            emoteFetchInProgress = false;
+            badgeFetchInProgress = false;
+        }
+
+        function recoverChatOverlay() {
+            resetChatClientState();
+            requestStreamerInfo();
+            setTimeout(function () {
+                if (streamerID) {
+                    fetchAllEmotesAndBadges();
+                }
+            }, 400);
+        }
+
+        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port, {
+            services: ['twitch'],
+            onRecovery: recoverChatOverlay
+        });
         var messageCount = 0;
         var maxMessages = {{ MaxMessages | tojson }};
         var showTimestamps = {{ ShowTimestamps | tojson }};
@@ -643,7 +662,11 @@
         // Socket event listeners
         socket.on('connect', function () {
             chatLog('Connected to chat server');
-            requestStreamerInfo();
+            recoverChatOverlay();
+        });
+
+        socket.on('disconnect', function (reason) {
+            chatLog('Disconnected from chat server:', reason);
         });
 
         socket.on('template_config_updated', function (data) {
@@ -791,7 +814,9 @@
                         data.requestId &&
                         data.requestId.indexOf('twitch-') === 0 &&
                         (errText.indexOf('not initialized') !== -1 ||
-                            errText.indexOf('not ready') !== -1);
+                            errText.indexOf('not ready') !== -1 ||
+                            errText.indexOf('network error') !== -1 ||
+                            errText.indexOf('cannot connect') !== -1);
                     if (retryableTwitch) {
                         chatLog('Scheduling Twitch API retry for', data.requestId);
                         setTimeout(function () {
@@ -807,6 +832,8 @@
                                 fetchAllEmotesAndBadges();
                             }
                         }, 2000);
+                    } else {
+                        emoteFetchInProgress = false;
                     }
                     return;
                 }

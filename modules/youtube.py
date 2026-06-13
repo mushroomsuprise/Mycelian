@@ -59,6 +59,10 @@ class YouTubeClient:
         # Load existing data from state manager
         self.load_youtube_data()
 
+    def is_quota_blocked(self) -> bool:
+        """True while YouTube API quota backoff is active."""
+        return time.time() < self._quota_exceeded_until
+
     def load_youtube_data(self):
         """Load YouTube data from state manager"""
         try:
@@ -1108,24 +1112,34 @@ def get_youtube_client() -> Optional[YouTubeClient]:
 
 def get_youtube_status() -> Dict[str, Any]:
     """Get current YouTube connection status"""
-    if not youtube_client:
-        return {
-            "status": "Not Initialized",
-            "is_connected": False,
-            "latest_video": "N/A",
-        }
+    from .connection_status_tracker import apply_connectivity_overlay_to_info
 
-    return {
-        "status": youtube_client.youtube_data.connection_status,
-        "is_connected": youtube_client.is_connected,
-        "latest_video": youtube_client.youtube_data.latest_video_title
-        or "No video found",
-        "channel_count": len(youtube_client.youtube_data.channels)
-        if youtube_client.youtube_data.channels
-        else 0,
-        "latest_video_channel": youtube_client.youtube_data.latest_video_channel
-        or "N/A",
-    }
+    if not youtube_client:
+        return apply_connectivity_overlay_to_info(
+            "youtube",
+            {
+                "status": "Not Initialized",
+                "is_connected": False,
+                "latest_video": "N/A",
+            },
+            valid_field="is_connected",
+        )
+
+    return apply_connectivity_overlay_to_info(
+        "youtube",
+        {
+            "status": youtube_client.youtube_data.connection_status,
+            "is_connected": youtube_client.is_connected,
+            "latest_video": youtube_client.youtube_data.latest_video_title
+            or "No video found",
+            "channel_count": len(youtube_client.youtube_data.channels)
+            if youtube_client.youtube_data.channels
+            else 0,
+            "latest_video_channel": youtube_client.youtube_data.latest_video_channel
+            or "N/A",
+        },
+        valid_field="is_connected",
+    )
 
 
 def update_youtube_settings(
@@ -1177,3 +1191,31 @@ def trigger_authentication() -> bool:
 def test_connection() -> bool:
     """Test YouTube connection (wrapper for UI compatibility)"""
     return trigger_authentication()
+
+
+def youtube_configured_for_monitor() -> bool:
+    from .connection_status_tracker import youtube_configured
+
+    return youtube_configured()
+
+
+def attempt_auto_reconnect() -> bool:
+    if not youtube_client:
+        return False
+    if not youtube_configured_for_monitor():
+        return False
+    if youtube_client.is_quota_blocked():
+        return False
+    if not (youtube_client.youtube_data.api_key or "").strip():
+        return False
+    try:
+        from .connection_monitor import (
+            is_internet_available,
+            is_service_reachable,
+        )
+
+        if not is_internet_available() or not is_service_reachable("youtube"):
+            return False
+    except Exception:
+        return False
+    return youtube_client.authenticate()

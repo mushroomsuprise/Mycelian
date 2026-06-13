@@ -102,12 +102,16 @@ def service_configured(key: str) -> bool:
 
 # Minimum seconds between heavier probes per service (main poll is ~2s).
 _PROBE_INTERVAL_SEC: Dict[str, float] = {
+    "internet": 5.0,
     "twitch": 5.0,
     "spotify": 15.0,
     "youtube": 30.0,
     "psn": 12.0,
     "webengine": 5.0,
 }
+
+# Remote integrations whose footer/settings status reflects connectivity probes.
+REMOTE_SERVICE_KEYS = frozenset({"twitch", "spotify", "youtube", "psn"})
 
 # A WebEngine heartbeat older than this means the gevent hub is stalled.
 _WEBENGINE_FREEZE_SEC = 60.0
@@ -139,10 +143,13 @@ def probe_configured_services(*, force: bool = False) -> None:
     Service startup is owned by ``DeferredServiceManager`` in ``main.py``.
     Footer and notifications read live state via :func:`get_connection_status` only.
     """
-    for key in SERVICE_KEYS:
-        if key != "twitch" and not _configured(key):
+    for key in ("internet",) + SERVICE_KEYS:
+        if key == "internet":
+            if not _should_probe(key, force=force):
+                continue
+        elif key != "twitch" and not _configured(key):
             continue
-        if not _should_probe(key, force=force):
+        elif not _should_probe(key, force=force):
             continue
         try:
             get_connection_status(key)
@@ -150,44 +157,104 @@ def probe_configured_services(*, force: bool = False) -> None:
             logger.debug("connection status read failed for %s", key, exc_info=True)
 
 
+def get_connectivity_overlay(key: str) -> Optional[str]:
+    """Return a connectivity-based status override for remote services, if any."""
+    if key not in REMOTE_SERVICE_KEYS:
+        return None
+    try:
+        from .connection_monitor import (
+            get_internet_status,
+            is_internet_available,
+            is_service_reachable,
+        )
+
+        is_internet_available()
+        inet = get_internet_status()
+        if inet == "Offline":
+            return "No Internet"
+        if inet == "Checking":
+            return "Checking Internet"
+        if not is_service_reachable(key):
+            return "Service Unreachable"
+    except Exception:
+        logger.debug("connectivity overlay failed for %s", key, exc_info=True)
+    return None
+
+
+def apply_connectivity_overlay(key: str, status: str) -> str:
+    """Apply connectivity overlay to a status string when appropriate."""
+    overlay = get_connectivity_overlay(key)
+    return overlay if overlay else status
+
+
+def apply_connectivity_overlay_to_info(
+    key: str,
+    info: Dict[str, object],
+    *,
+    status_field: str = "status",
+    valid_field: Optional[str] = "is_valid",
+) -> Dict[str, object]:
+    """Apply connectivity overlay to a status dict (settings tabs)."""
+    overlay = get_connectivity_overlay(key)
+    if not overlay:
+        return info
+    out = dict(info)
+    out[status_field] = overlay
+    if valid_field and valid_field in out:
+        out[valid_field] = False
+    return out
+
+
 def get_connection_status(key: str) -> str:
     """Return the current connection status label for an integration."""
+    if key == "internet":
+        from .connection_monitor import get_internet_status, is_internet_available
+
+        is_internet_available()
+        return get_internet_status()
+
+    base_status: Optional[str] = None
+
     if key == "twitch":
         from . import twitch
 
         info = twitch.get_twitch_connection_status()
         st = info.get("status")
-        return str(st).strip() if st is not None else "Unknown"
+        base_status = str(st).strip() if st is not None else "Unknown"
 
-    if key == "spotify":
+    elif key == "spotify":
         from . import spotify
 
         st = spotify.get_spotify_status()
         status = str(st.get("status", "") or "").strip()
         if status and status != "Not Initialized":
-            return status
-        from .dataobjects import state_manager
+            base_status = status
+        else:
+            from .dataobjects import state_manager
 
-        s = state_manager.get_spotify_data()
-        if s:
-            return (getattr(s, "connection_status", "") or "Unknown").strip()
-        return "Unknown"
+            s = state_manager.get_spotify_data()
+            if s:
+                base_status = (getattr(s, "connection_status", "") or "Unknown").strip()
+            else:
+                base_status = "Unknown"
 
-    if key == "youtube":
+    elif key == "youtube":
         from . import youtube
 
         st = youtube.get_youtube_status()
         status = str(st.get("status", "") or "").strip()
         if status and status != "Not Initialized":
-            return status
-        from .dataobjects import state_manager
+            base_status = status
+        else:
+            from .dataobjects import state_manager
 
-        y = state_manager.get_youtube_data()
-        if not y:
-            return "Unknown"
-        return (getattr(y, "connection_status", "") or "Unknown").strip()
+            y = state_manager.get_youtube_data()
+            if not y:
+                base_status = "Unknown"
+            else:
+                base_status = (getattr(y, "connection_status", "") or "Unknown").strip()
 
-    if key == "psn":
+    elif key == "psn":
         from .dataobjects import state_manager
 
         live = state_manager.get_live_psn_data()
@@ -199,32 +266,120 @@ def get_connection_status(key: str) -> str:
         if live and getattr(live, "npsso_code", None):
             token_in_live = str(live.npsso_code or "").strip()
         if not (token_in_settings or token_in_live):
-            return "Not Connected"
-        if live and getattr(live, "is_online", False):
-            return "Connected"
-        return "Configured but Offline"
+            base_status = "Not Connected"
+        elif live and getattr(live, "is_online", False):
+            base_status = "Connected"
+        else:
+            base_status = "Configured but Offline"
 
-    if key == "obs":
+    elif key == "obs":
         from .obs_service import obs_service
 
         phase = obs_service.get_connection_phase()
         if phase == "connected":
-            return "Connected"
-        if phase == "connecting":
-            return "Connecting"
-        if phase == "disconnecting":
-            return "Disconnecting"
-        return "Disconnected"
+            base_status = "Connected"
+        elif phase == "connecting":
+            base_status = "Connecting"
+        elif phase == "disconnecting":
+            base_status = "Disconnecting"
+        else:
+            base_status = "Disconnected"
 
-    if key == "webengine":
+    elif key == "webengine":
         from . import web_engine
 
         if not getattr(web_engine, "web_engine_running", False):
-            return "Stopped"
-        inst = getattr(web_engine, "web_engine_instance", None)
-        last = getattr(inst, "_last_gevent_heartbeat", None) if inst else None
-        if last is not None and (time.time() - last) > _WEBENGINE_FREEZE_SEC:
-            return "Frozen"
-        return "Connected"
+            base_status = "Stopped"
+        else:
+            inst = getattr(web_engine, "web_engine_instance", None)
+            last = getattr(inst, "_last_gevent_heartbeat", None) if inst else None
+            if last is not None and (time.time() - last) > _WEBENGINE_FREEZE_SEC:
+                base_status = "Frozen"
+            else:
+                base_status = "Connected"
 
-    return "Unknown"
+    else:
+        base_status = "Unknown"
+
+    if base_status is None:
+        base_status = "Unknown"
+    return apply_connectivity_overlay(key, base_status)
+
+
+# Status labels that warrant auto-reconnect for Spotify (not auth/OAuth in-progress).
+_SPOTIFY_RECONNECTABLE = frozenset(
+    {
+        "Disconnected",
+        "Token Refresh Failed",
+        "Token Refresh Error",
+    }
+)
+
+_SPOTIFY_SKIP_RECONNECT = frozenset(
+    {
+        "Authorization Required",
+        "Not Configured",
+        "Awaiting Authorization",
+        "Opening Browser...",
+        "Not Initialized",
+    }
+)
+
+
+def is_remote_service_disconnected(key: str) -> bool:
+    """True when a remote service should be considered disconnected for auto-reconnect."""
+    if key == "twitch":
+        from . import twitch
+
+        return twitch.is_twitch_disconnected_for_monitor()
+
+    if key == "spotify":
+        from . import spotify
+
+        client = spotify.get_spotify_client()
+        if client is None:
+            return False
+        if not spotify.spotify_has_stored_tokens():
+            return False
+        status = (client.spotify_data.connection_status or "").strip()
+        if status in _SPOTIFY_SKIP_RECONNECT:
+            return False
+        if status in _SPOTIFY_RECONNECTABLE:
+            return True
+        return not client.is_authenticated
+
+    if key == "youtube":
+        from . import youtube
+
+        client = youtube.get_youtube_client()
+        if client is None:
+            return False
+        if not youtube_configured():
+            return False
+        if client.is_quota_blocked():
+            return False
+        return not client.is_connected
+
+    if key == "psn":
+        from . import psn_service
+
+        return psn_service.is_psn_api_disconnected()
+
+    if key == "chatbot":
+        from . import chatbot
+
+        if not chatbot.chatbot_has_dedicated_credentials():
+            return False
+        api = chatbot.get_chatbot_api()
+        if api is None or getattr(api, "using_fallback", True):
+            return False
+        return not getattr(api, "is_connected", False)
+
+    if key == "database":
+        from . import database_manager
+
+        if not database_manager.database_needs_remote_monitor():
+            return False
+        return not database_manager.test_connection()
+
+    return False

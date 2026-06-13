@@ -7,6 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
         integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
         crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
     <style>
         @font-face {
             font-family: alertFont;
@@ -636,7 +637,14 @@
     <audio id="alertAudio" preload="none"></audio>
 
     <script>
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port, {
+            onRecovery: function () {
+                alertEmoteFetchInProgress = false;
+                if (socket && socket.connected) {
+                    socket.emit('get-streamer-info');
+                }
+            }
+        });
         var currentAlert = null;
         var alertTimeout = null;
         var animationTimeouts = [];

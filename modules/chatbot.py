@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 # Global flag to track initialization status
 _initialized = False
 _init_lock = threading.Lock()
+_chatbot_reconnect_lock = threading.Lock()
+_chatbot_reconnect_in_progress = False
 
 # Global flag to track Chatbot connection status
 chatbot_connected = False
@@ -608,13 +610,33 @@ class Chatbot_API:
         while True:
             try:
                 # Check if connection is alive (simplified check for chatbot)
-                if self.is_connected and self.twitch and self.auth_token:
+                if self.using_fallback:
+                    from . import twitch
+
+                    main_ok = (
+                        twitch.twitch_api is not None
+                        and twitch.twitch_api.is_connected
+                    )
+                    chatbot_connected = main_ok
+                    if main_ok:
+                        logger.debug(
+                            "Chatbot fallback mode: main Twitch connection healthy"
+                        )
+                    else:
+                        logger.debug(
+                            "Chatbot fallback mode: main Twitch disconnected "
+                            "(monitor handles Twitch reconnect)"
+                        )
+                elif self.is_connected and self.twitch and self.auth_token:
                     self.last_health_check = datetime.now()
                     self.is_connected = True
                     chatbot_connected = True
                     logger.debug("Chatbot connection health check passed")
                 else:
-                    logger.warning("Chatbot connection health check failed")
+                    logger.warning(
+                        "Chatbot connection health check failed; "
+                        "connection monitor will attempt reconnect"
+                    )
                     self.is_connected = False
                     chatbot_connected = False
 
@@ -1230,6 +1252,58 @@ class Chatbot_API:
 
 # Global instance
 chatbot_api = None
+
+
+def chatbot_has_dedicated_credentials() -> bool:
+    """True when separate chatbot OAuth credentials are configured."""
+    creds = get_chatbot_credentials()
+    return bool(
+        (creds.get("client_id") or "").strip()
+        and (creds.get("client_secret") or "").strip()
+    )
+
+
+def attempt_auto_reconnect() -> bool:
+    """Monitor-driven chatbot reconnect (dedicated credentials only)."""
+    global _chatbot_reconnect_in_progress
+
+    if not chatbot_has_dedicated_credentials():
+        return False
+    if chatbot_api is None or chatbot_api.using_fallback:
+        return False
+    if chatbot_api.is_connected:
+        return True
+    try:
+        from .connection_monitor import (
+            is_internet_available,
+            is_service_reachable,
+        )
+
+        if not is_internet_available() or not is_service_reachable("chatbot"):
+            return False
+    except Exception:
+        return False
+
+    with _chatbot_reconnect_lock:
+        if _chatbot_reconnect_in_progress:
+            return False
+        _chatbot_reconnect_in_progress = True
+
+    def _run_reconnect() -> None:
+        global _chatbot_reconnect_in_progress
+        try:
+            asyncio.run(chatbot_api.stage_chatbot_api())
+        except Exception:
+            logger.error("Chatbot auto-reconnect failed", exc_info=True)
+        finally:
+            _chatbot_reconnect_in_progress = False
+
+    threading.Thread(
+        target=_run_reconnect,
+        name="ChatbotAutoReconnect",
+        daemon=True,
+    ).start()
+    return True
 
 
 def initialize() -> None:

@@ -219,6 +219,25 @@ def psn_data_update_loop():
                 logger.info(
                     "PSNClient not connected. Attempting to connect in update loop..."
                 )
+                try:
+                    from .connection_monitor import (
+                        is_internet_available,
+                        is_service_reachable,
+                    )
+
+                    if not is_internet_available() or not is_service_reachable("psn"):
+                        logger.debug(
+                            "Skipping PSN reconnect in update loop — connectivity check failed"
+                        )
+                        state_manager.set_live_psn_data(psn_client_instance.psn_data)
+                        stop_psn_thread_event.wait(SLEEP_NO_GAME)
+                        continue
+                except Exception:
+                    logger.debug(
+                        "Connectivity check unavailable for PSN update loop",
+                        exc_info=True,
+                    )
+
                 connection_result = psn_client_instance.connect()
                 logger.info(f"Reconnection attempt result: {connection_result}")
 
@@ -844,3 +863,35 @@ def handle_psn_settings_change():
         logger.exception(f"Exception while handling PSN settings change: {e}")
 
     logger.info("=== PSN SETTINGS CHANGE HANDLING COMPLETE ===")
+
+
+def psn_configured_for_monitor() -> bool:
+    from .connection_status_tracker import psn_configured
+
+    return psn_configured()
+
+
+def is_psn_api_disconnected() -> bool:
+    if not psn_client_instance:
+        return False
+    if not (psn_client_instance.psn_data.npsso_code or "").strip():
+        return False
+    return not psn_client_instance.is_connected()
+
+
+def attempt_auto_reconnect() -> bool:
+    if not psn_client_instance:
+        return False
+    if not (psn_client_instance.psn_data.npsso_code or "").strip():
+        return False
+    try:
+        from .connection_monitor import (
+            is_internet_available,
+            is_service_reachable,
+        )
+
+        if not is_internet_available() or not is_service_reachable("psn"):
+            return False
+    except Exception:
+        return False
+    return bool(psn_client_instance.connect())

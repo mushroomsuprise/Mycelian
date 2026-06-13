@@ -7,6 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
         integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
         crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
     <style>
         @font-face {
             font-family: 'FF7Reactor';
@@ -2289,9 +2290,13 @@
         applyTemplateConfig({});
 
         var socketUrl = window.location.protocol + '//' + window.location.host;
-        socket = typeof io !== 'undefined'
-            ? io(socketUrl, { path: '/socket.io', transports: ['polling', 'websocket'] })
-            : null;
+        socket = typeof MycelianOverlay !== 'undefined'
+            ? MycelianOverlay.connect(socketUrl, {
+                socketOptions: { path: '/socket.io', transports: ['polling', 'websocket'] }
+            })
+            : (typeof io !== 'undefined'
+                ? io(socketUrl, { path: '/socket.io', transports: ['polling', 'websocket'] })
+                : null);
 
         if (socket) {
             socket.on('connect', function () {

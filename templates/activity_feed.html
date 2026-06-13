@@ -7,6 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
         integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
         crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         /* 
@@ -1178,7 +1179,21 @@
         };
 
         // Connect to WebSocket
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        function syncActivityFeedState() {
+            clearFeed();
+            activityFeedState.currentPage = 1;
+            activityFeedState.totalPages = 1;
+            activityFeedState.restoredAlertsLoaded = false;
+            setTimeout(function () {
+                socket.emit('get_pause_status');
+                socket.emit('get_current_theme');
+                console.log('Requested initial pause status and theme from activity feed');
+            }, 150);
+        }
+
+        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port, {
+            onRecovery: syncActivityFeedState
+        });
 
         // State management
         var activityFeedState = {
@@ -2521,24 +2536,7 @@
         // WebSocket event handlers
         socket.on('connect', function () {
             console.log('Connected to WebSocket');
-
-            // Clear existing feed to prevent duplicates on reconnection
-            clearFeed();
-
-            // Reset pagination state
-            activityFeedState.currentPage = 1;
-            activityFeedState.totalPages = 1;
-            activityFeedState.restoredAlertsLoaded = false;
-
-            // Request initial data with a slight delay to ensure server is ready
-            setTimeout(function () {
-                socket.emit('get_pause_status');
-                socket.emit('get_current_theme');
-                console.log('Requested initial pause status and theme from activity feed');
-            }, 150);
-
-            // Initialize on current alerts tab (no need to load stored alerts)
-            // The pagination is initially hidden
+            syncActivityFeedState();
         });
 
         // Theme update handler - applies theme CSS variables in real-time

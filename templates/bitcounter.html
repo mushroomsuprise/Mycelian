@@ -9,6 +9,7 @@
     <meta charset="utf-8">
     <title>Mycelian {{ TemplateTitle }}</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
     <style id="spore-studio-styles">
         body {
             margin: 0;
@@ -162,7 +163,7 @@
     </div>
 
     <script>
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port);
 
         var SPORE_ANIM_CLASS_MAP = {
             fade: { in: 'spore-anim-fade-in', out: 'spore-anim-fade-out' },

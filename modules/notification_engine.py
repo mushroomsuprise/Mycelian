@@ -622,12 +622,21 @@ def _service_status_notify_type(service_key: str, status: str) -> str:
         if "frozen" in s or "stopped" in s:
             return "negative"
         return "warning"
+    if service_key == "internet":
+        if s == "online":
+            return "positive"
+        if s == "offline":
+            return "negative"
+        if "no internet" in s or "unreachable" in s:
+            return "negative"
+        return "warning"
     return "info"
 
 
-_SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs", "webengine")
+_SERVICE_KEYS = ("internet", "twitch", "spotify", "youtube", "psn", "obs", "webengine")
 
 _SERVICE_LABELS: Dict[str, str] = {
+    "internet": "Internet",
     "twitch": "Twitch",
     "spotify": "Spotify",
     "youtube": "YouTube",
@@ -678,6 +687,16 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
         return status_raw.strip().title() or "Connecting"
     if "stopped" in s:
         return "Stopped"
+    if "no internet" in s:
+        return "No Internet"
+    if "service unreachable" in s:
+        return "Unreachable"
+    if "checking internet" in s:
+        return "Checking"
+    if s == "online":
+        return "Online"
+    if s == "offline":
+        return "Offline"
     if any(
         x in s
         for x in (
@@ -717,7 +736,7 @@ def footer_status_tier(service_key: str, status_raw: str) -> str:
         return "warning"
     if display in ("idle", "degraded"):
         return "warning"
-    if display in ("disconnected", "error", "frozen", "stopped"):
+    if display in ("disconnected", "error", "frozen", "stopped", "no internet", "unreachable", "offline"):
         return "error"
     return "info"
 
@@ -736,7 +755,9 @@ def iter_service_footer_entries() -> List[ServiceFooterEntry]:
     """Build footer row entries for all integration services."""
     entries: List[ServiceFooterEntry] = []
     for key in _SERVICE_KEYS:
-        if key == "twitch":
+        if key == "internet":
+            visible = True
+        elif key == "twitch":
             visible = True
         else:
             visible = _service_configured(key)
@@ -868,6 +889,8 @@ def create_service_status_footer() -> None:
 
 
 def _on_footer_item_click(service_key: str) -> None:
+    if service_key == "internet":
+        return
     try:
         from .help_system.contextual_help import navigate_to_settings_subtab
 
@@ -940,7 +963,7 @@ def poll_service_status_changes() -> None:
 
     if _notifications_enabled():
         for key in _SERVICE_KEYS:
-            if not _service_configured(key):
+            if key != "internet" and key != "twitch" and not _service_configured(key):
                 _service_last.pop(key, None)
                 continue
 
@@ -961,22 +984,25 @@ def poll_service_status_changes() -> None:
 
             _service_last[key] = status
             label = _SERVICE_LABELS[key]
-            sub = _SERVICE_SUBTABS[key]
+            sub = _SERVICE_SUBTABS.get(key)
             msg = f"{label}: {status}"
             ntype = _service_status_notify_type(key, status)
             dk = f"svc:{key}:{status}"
-            notify(
-                msg,
-                type=ntype,
-                dedupe_key=dk,
-                dedupe_cooldown_sec=_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC,
-                actions=[
+            actions = []
+            if sub:
+                actions.append(
                     {
                         "kind": "navigate",
                         "main_tab": "Settings",
                         "settings_subtab": sub,
                     }
-                ],
+                )
+            notify(
+                msg,
+                type=ntype,
+                dedupe_key=dk,
+                dedupe_cooldown_sec=_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC,
+                actions=actions or None,
             )
 
     refresh_service_status_footer()

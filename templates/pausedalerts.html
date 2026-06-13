@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <title>Mycelian Paused Alerts</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js" integrity="sha512-YeeA/Qxn5hYdkukScTCNNOhTrv1C2RubAGButJ1rmgQwZf/HdRaCGl+JAVkqsqaNRaYNHdheiuKKuPf9mDcqKg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
     <style>
         body {
             margin: 0;
@@ -122,6 +123,7 @@
             }
         }
     </style>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
 </head>
 <body>
     <div class="relative">
@@ -135,7 +137,13 @@
 
     <script>
         // Global variables
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        function syncPausedAlerts() {
+            socket.emit('pause-loaded');
+        }
+
+        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port, {
+            onRecovery: syncPausedAlerts
+        });
         var pauseData = {
             isPaused: {{DefaultPaused|tojson}},
             lastUpdate: Date.now()
@@ -156,9 +164,7 @@
         // Socket event listeners
         socket.on('connect', function() {
             console.log('Connected to pausedalerts server');
-            
-            // Emit pause-loaded signal (like original)
-            socket.emit('pause-loaded');
+            syncPausedAlerts();
             
             // Request current pause status with a slight delay to ensure server is ready
             // setTimeout(function() {

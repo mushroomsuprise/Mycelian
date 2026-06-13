@@ -1175,18 +1175,28 @@ def get_spotify_client() -> Optional[SpotifyClient]:
 
 def get_spotify_status() -> Dict[str, Any]:
     """Get current Spotify connection status"""
-    if not spotify_client:
-        return {
-            "status": "Not Initialized",
-            "is_authenticated": False,
-            "current_track": "N/A",
-        }
+    from .connection_status_tracker import apply_connectivity_overlay_to_info
 
-    return {
-        "status": spotify_client.spotify_data.connection_status,
-        "is_authenticated": spotify_client.is_authenticated,
-        "current_track": f"{spotify_client.spotify_data.artist_name} - {spotify_client.spotify_data.track_name}",
-    }
+    if not spotify_client:
+        return apply_connectivity_overlay_to_info(
+            "spotify",
+            {
+                "status": "Not Initialized",
+                "is_authenticated": False,
+                "current_track": "N/A",
+            },
+            valid_field="is_authenticated",
+        )
+
+    return apply_connectivity_overlay_to_info(
+        "spotify",
+        {
+            "status": spotify_client.spotify_data.connection_status,
+            "is_authenticated": spotify_client.is_authenticated,
+            "current_track": f"{spotify_client.spotify_data.artist_name} - {spotify_client.spotify_data.track_name}",
+        },
+        valid_field="is_authenticated",
+    )
 
 
 def trigger_oauth_flow() -> str:
@@ -1329,3 +1339,46 @@ def diagnose_token_storage() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in diagnose_token_storage: {str(e)}", exc_info=True)
         return diagnosis
+
+
+def spotify_configured_for_monitor() -> bool:
+    from .connection_status_tracker import spotify_configured
+
+    return spotify_configured()
+
+
+def spotify_has_stored_tokens() -> bool:
+    if not spotify_client:
+        return False
+    data = spotify_client.spotify_data
+    return bool(
+        (data.access_token or "").strip() or (data.refresh_token or "").strip()
+    )
+
+
+def attempt_auto_reconnect() -> bool:
+    if not spotify_client:
+        return False
+    if spotify_client.is_in_auth_cooldown() or spotify_client.is_in_api_backoff():
+        return False
+    if not spotify_has_stored_tokens():
+        return False
+    try:
+        from .connection_monitor import (
+            is_internet_available,
+            is_service_reachable,
+        )
+
+        if not is_internet_available() or not is_service_reachable("spotify"):
+            return False
+    except Exception:
+        return False
+    if spotify_client.authenticate():
+        try:
+            from . import web_engine
+
+            web_engine.broadcast_overlay_recovery("spotify", "reconnected")
+        except Exception:
+            pass
+        return True
+    return False

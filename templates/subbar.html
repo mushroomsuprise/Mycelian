@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <title>Mycelian Sub Bar</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
     <style>
         @font-face {
             font-family: subbar-font;
@@ -191,7 +192,7 @@
 
     <script>
         // Global variables
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port);
         var isEnabled = {{Enabled|tojson}};
         var subbarData = {
             currentSubs: {{DefaultCurrentSubs|tojson}},
