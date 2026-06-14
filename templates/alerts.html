@@ -757,6 +757,7 @@
         var videoFreezeTimeout = null;
         var activeSpeechUtterance = null;
         var ttsActive = false;
+        var alertsMuted = false;
         window.alertConfig = window.alertConfig || {
             ttsRate: {{ TtsRate | default(1.0) }},
             ttsPitch: {{ TtsPitch | default(1.0) }},
@@ -776,6 +777,17 @@
         socket.on('connect', function () {
             console.log('Socket connected successfully');
             socket.emit('get-streamer-info');
+            socket.emit('get_mute_status');
+        });
+
+        socket.on('mute_status_update', function (data) {
+            if (data && typeof data.muted === 'boolean') {
+                alertsMuted = data.muted;
+                console.log('Alerts template mute status updated:', alertsMuted);
+                if (alertsMuted) {
+                    stopAlertMediaPlayback();
+                }
+            }
         });
 
         socket.on('streamer-info', function (data) {
@@ -1010,6 +1022,9 @@
         }
 
         function shouldPlayTts(alertData) {
+            if (alertsMuted) {
+                return false;
+            }
             return Boolean(alertData.tts_enabled) && getTtsText(alertData) !== '';
         }
 
@@ -1816,6 +1831,11 @@
 
             if (currentAlert !== alertData) {
                 console.log('Alert changed before playback started, aborting stale playback');
+                return;
+            }
+
+            if (alertsMuted) {
+                console.log('Alerts are muted, skipping audio playback');
                 return;
             }
 

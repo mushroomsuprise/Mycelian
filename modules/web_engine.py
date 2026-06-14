@@ -379,6 +379,18 @@ MYCELIAN_PREVIEW_HELPER_HTML = """
 
 ALERT_PLAYING = False
 ALERTS_PAUSED = False
+ALERTS_MUTED = False
+
+
+def _sync_mute_button_state() -> None:
+    """Sync NiceGUI activity feed mute button with ALERTS_MUTED."""
+    try:
+        from modules.uiwindows.activity_feed import sync_mute_button_state
+
+        sync_mute_button_state()
+    except Exception as e:
+        logger.debug(f"Could not sync mute button state: {e}")
+
 
 # Monotonic id for the current queued alert; only matching client alert_complete advances the queue.
 _alert_queue_seq_lock = threading.Lock()
@@ -3329,7 +3341,7 @@ class WebEngine:
                     self.socketio.sleep(0.12)
                     if connect_sid in self._preview_iframe_tokens:
                         return
-                    global ALERTS_PAUSED
+                    global ALERTS_PAUSED, ALERTS_MUTED
                     logger.debug(
                         "Sending initial pause status to %s: paused=%s",
                         connect_sid,
@@ -3348,6 +3360,16 @@ class WebEngine:
                         self.socketio.emit(
                             "alerts_resumed", {"paused": False}, to=connect_sid
                         )
+                    logger.debug(
+                        "Sending initial mute status to %s: muted=%s",
+                        connect_sid,
+                        ALERTS_MUTED,
+                    )
+                    self.socketio.emit(
+                        "mute_status_update",
+                        {"muted": ALERTS_MUTED},
+                        to=connect_sid,
+                    )
                     theme_mgr = get_theme_manager()
                     theme = theme_mgr.get_theme()
                     if theme:
@@ -4133,6 +4155,45 @@ class WebEngine:
                 return {"success": True, "paused": new_status}
             except Exception as e:
                 logger.error(f"Error setting pause status: {str(e)}", exc_info=True)
+                return {"success": False, "error": str(e)}
+
+        @self.socketio.on("get_mute_status")
+        def handle_get_mute_status():
+            """Return the current mute status to the requesting client."""
+            client_sid = request.sid
+            global ALERTS_MUTED
+            logger.debug(f"Received get_mute_status request from {client_sid}")
+            self.socketio.emit(
+                "mute_status_update", {"muted": ALERTS_MUTED}, to=client_sid
+            )
+            return {"muted": ALERTS_MUTED}
+
+        @self.socketio.on("set_mute_status")
+        def handle_set_mute_status(data):
+            """Allow clients to set the alert audio mute status."""
+            global ALERTS_MUTED
+            try:
+                if not isinstance(data, dict) or "muted" not in data:
+                    logger.error(
+                        "Invalid data format received in set_mute_status event"
+                    )
+                    return {
+                        "success": False,
+                        "error": "Invalid data format: muted boolean required",
+                    }
+
+                new_status = bool(data["muted"])
+                old_status = ALERTS_MUTED
+                ALERTS_MUTED = new_status
+                logger.debug(
+                    f"Mute status changed from {old_status} to {new_status} by {request.sid}"
+                )
+
+                self.socketio.emit("mute_status_update", {"muted": new_status})
+                _sync_mute_button_state()
+                return {"success": True, "muted": new_status}
+            except Exception as e:
+                logger.error(f"Error setting mute status: {str(e)}", exc_info=True)
                 return {"success": False, "error": str(e)}
 
         @self.socketio.on("get_spotify_data")
@@ -5715,6 +5776,14 @@ class WebEngine:
         # Broadcast to all connected clients to ensure synchronization
         self.pause_status_update()
 
+    def toggle_mute(self):
+        global ALERTS_MUTED
+        old_status = ALERTS_MUTED
+        ALERTS_MUTED = not ALERTS_MUTED
+
+        logger.info(f"Toggling ALERTS_MUTED from {old_status} to {ALERTS_MUTED}")
+        self.mute_status_update()
+
     def register_dynamic_control_handlers(self):
         """Register websocket handlers for dynamic template controls"""
         # This method now calls register_additional_control_handlers to do the actual work
@@ -6628,6 +6697,24 @@ class WebEngine:
         except Exception as e:
             logger.error(
                 f"Error broadcasting pause status update: {str(e)}", exc_info=True
+            )
+            return False
+
+    def mute_status_update(self):
+        """Broadcast mute status update to all connected clients."""
+        try:
+            global ALERTS_MUTED
+
+            logger.info(f"Broadcasting mute status update: muted={ALERTS_MUTED}")
+            self.socketio.emit("mute_status_update", {"muted": ALERTS_MUTED})
+            _sync_mute_button_state()
+            logger.info(
+                f"Successfully broadcasted mute status update: muted={ALERTS_MUTED}"
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                f"Error broadcasting mute status update: {str(e)}", exc_info=True
             )
             return False
 

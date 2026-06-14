@@ -379,6 +379,7 @@ class ActivityFeedState:
         self.condensed_container: Optional[ui.element] = None
         self.alerts_muted: bool = False
         self.pause_btn: Optional[Any] = None
+        self.mute_btn: Optional[Any] = None
         self.pause_breath_phase: float = 0.0
         self.pause_breath_timer: Optional[ui.timer] = None
         # Filter dropdown reference
@@ -1652,18 +1653,43 @@ def create_activity_feed_tab():
             mute_btn = ui.button(icon="notifications_off", text="MUTE ALERTS").classes(
                 "control-button mute-alerts-btn"
             ).props(f"{_DOCK_BTN_PROPS} id=mute-alerts-btn")
+            activity_feed_state.mute_btn = mute_btn
 
-            def update_mute_button_state(is_muted: bool) -> None:
-                if is_muted:
-                    mute_btn.classes(add="muted")
-                else:
-                    mute_btn.classes(remove="muted")
+            def update_mute_button_state():
+                """Update mute button based on current ALERTS_MUTED status."""
+                try:
+                    muted = False
+                    try:
+                        if hasattr(web_engine, "ALERTS_MUTED"):
+                            muted = bool(web_engine.ALERTS_MUTED)
+                    except Exception as state_err:
+                        logger.debug(
+                            f"Error getting mute state: {state_err}, defaulting to False"
+                        )
+                    activity_feed_state.alerts_muted = muted
+                    if muted:
+                        mute_btn.classes(add="muted")
+                    else:
+                        mute_btn.classes(remove="muted")
+                except Exception as e:
+                    logger.error(
+                        f"Error updating mute button state: {str(e)}", exc_info=True
+                    )
 
             def on_mute_button_click():
-                activity_feed_state.alerts_muted = not activity_feed_state.alerts_muted
-                update_mute_button_state(activity_feed_state.alerts_muted)
+                from modules.mainuiwindow import toggle_mute
+
+                toggle_mute()
+                update_mute_button_state()
 
             mute_btn.on_click(on_mute_button_click)
+
+            try:
+                update_mute_button_state()
+            except Exception as e:
+                logger.error(
+                    f"Error initializing mute button state: {str(e)}", exc_info=True
+                )
             skip_btn = ui.button(icon="skip_next", text="SKIP ALERT").classes(
                 "control-button"
             )
@@ -1937,6 +1963,26 @@ def sync_pause_button_state():
     # With event-based system, button state is managed internally
     # This function remains for compatibility but no longer needs to do anything
     logger.debug("Pause button state sync requested - handled by event system")
+
+
+def sync_mute_button_state():
+    """Sync the mute button state from web_engine.ALERTS_MUTED."""
+    btn = activity_feed_state.mute_btn
+    if btn is None:
+        logger.debug("Mute button not initialized, skipping sync")
+        return
+    try:
+        from modules import web_engine
+
+        muted = bool(getattr(web_engine, "ALERTS_MUTED", False))
+        activity_feed_state.alerts_muted = muted
+        if muted:
+            btn.classes(add="muted")
+        else:
+            btn.classes(remove="muted")
+        ui.update()
+    except Exception as e:
+        logger.debug(f"Error syncing mute button state: {e}")
 
 
 def add_alert_direct(

@@ -1208,8 +1208,9 @@
             activityFeedState.restoredAlertsLoaded = false;
             setTimeout(function () {
                 socket.emit('get_pause_status');
+                socket.emit('get_mute_status');
                 socket.emit('get_current_theme');
-                console.log('Requested initial pause status and theme from activity feed');
+                console.log('Requested initial pause/mute status and theme from activity feed');
             }, 150);
         }
 
@@ -1883,6 +1884,24 @@
             showNotification(newPauseState ? 'Pausing alerts...' : 'Resuming alerts...', 'info');
         }
 
+        function toggleMute() {
+            console.log('Toggle mute clicked. Current mute status:', activityFeedState.muteStatus);
+            var newMuteState = !activityFeedState.muteStatus;
+
+            socket.emit('set_mute_status', { muted: newMuteState }, function (response) {
+                console.log('Mute status change response:', response);
+                if (response && response.success) {
+                    console.log('Mute status successfully changed to:', newMuteState);
+                    showNotification(newMuteState ? 'Alerts muted' : 'Alerts unmuted', 'success');
+                } else {
+                    console.error('Failed to change mute status:', response);
+                    showNotification('Failed to change mute status', 'error');
+                }
+            });
+
+            showNotification(newMuteState ? 'Muting alerts...' : 'Unmuting alerts...', 'info');
+        }
+
         function switchToTab(tabName) {
             activityFeedState.currentTab = tabName;
 
@@ -2488,10 +2507,7 @@
 
         // Event handlers
         pauseBtn.onclick = togglePause;
-        muteBtn.onclick = function () {
-            activityFeedState.muteStatus = !activityFeedState.muteStatus;
-            updateMuteButton();
-        };
+        muteBtn.onclick = toggleMute;
         currentTabBtn.onclick = function () { switchToTab("current"); };
         previousTabBtn.onclick = function () { switchToTab("previous"); };
         condenseToggle.onchange = toggleCondenseList;
@@ -2608,6 +2624,14 @@
             updatePauseButton();
         });
 
+        socket.on('mute_status_update', function (data) {
+            console.log('Activity feed received mute_status_update:', data);
+            if (data && typeof data.muted === 'boolean') {
+                activityFeedState.muteStatus = data.muted;
+                updateMuteButton();
+            }
+        });
+
         // Function to update pause button state
         var pauseBorderBreathFrame = null;
 
@@ -2661,6 +2685,8 @@
                 muteBtn.classList.remove('muted');
             }
         }
+
+        updateMuteButton();
 
         // New socket listener specifically for condensed view alerts
         socket.on('condensed_view_alerts', function (data) {

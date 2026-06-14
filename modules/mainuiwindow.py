@@ -1688,3 +1688,55 @@ def toggle_alerts():
         from .notification_engine import notify as app_notify
 
         app_notify("Error toggling alerts", type="negative")
+
+
+def toggle_mute():
+    """Toggle alert audio mute state."""
+    try:
+        if web_engine.web_engine_instance:
+            web_engine.web_engine_instance.toggle_mute()
+            logger.debug("Toggled mute via web engine instance")
+        else:
+            web_engine.ALERTS_MUTED = not web_engine.ALERTS_MUTED
+            logger.debug(
+                f"Toggled mute directly - ALERTS_MUTED: {web_engine.ALERTS_MUTED}"
+            )
+
+            def try_broadcast():
+                if web_engine.web_engine_instance:
+                    try:
+                        web_engine.web_engine_instance.mute_status_update()
+                        logger.debug("Broadcasted mute status update via websocket")
+                        return True
+                    except Exception as broadcast_error:
+                        logger.debug(
+                            f"Error broadcasting mute websocket update: {str(broadcast_error)}"
+                        )
+                        return False
+                return False
+
+            if not try_broadcast():
+                logger.debug(
+                    "Web engine not ready, scheduling retry mute broadcast in 1 second"
+                )
+                app_schedule(1.0, try_broadcast, once=True)
+
+        try:
+            from modules.uiwindows.activity_feed import sync_mute_button_state
+
+            sync_mute_button_state()
+        except Exception as sync_error:
+            logger.debug(f"Could not sync mute button state: {str(sync_error)}")
+
+        ui.update()
+
+        from .notification_engine import notify as app_notify
+
+        state_text = "muted" if web_engine.ALERTS_MUTED else "unmuted"
+        app_notify(f"Alerts {state_text}", type="info")
+
+    except Exception as e:
+        logger.error(f"Error toggling mute: {str(e)}", exc_info=True)
+        from .notification_engine import notify as app_notify
+
+        app_notify("Error toggling mute", type="negative")
