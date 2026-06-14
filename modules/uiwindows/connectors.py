@@ -529,10 +529,10 @@ def create_connectors_tab():
     with ui.element("div").classes("tab-surface w-full h-full flex flex-col p-4"):
         # Compact header section - single row layout
         with ui.column().classes("w-full gap-3 p-4 flex-none"):
-            # Top row: Title/description on left, buttons on right
-            with ui.row().classes("w-full items-center justify-between"):
+            # Top row: title left, expanding search center, buttons right
+            with ui.row().classes("w-full items-center gap-3"):
                 # Left side - title and description
-                with ui.column().classes("gap-1"):
+                with ui.column().classes("gap-1 shrink-0"):
                     ui.label("Connectors").classes(
                         "text-xl font-medium fade-in text-theme-primary"
                     )
@@ -540,45 +540,49 @@ def create_connectors_tab():
                         "Create trigger-action automations for your stream"
                     ).classes("text-sm opacity-75 fade-in")
 
-                # Right side - search and action buttons
-                with ui.row().classes("items-center gap-3 slide-in"):
-                    # Search input
-                    global search_input
+                # Search grows into available space between title and buttons
+                global search_input
+                with ui.element("div").classes("flex-1 min-w-48 slide-in"):
                     search_input = (
-                        ui.input(
+                        form_input(
+                            tooltip="Filter connectors by name or description",
+                            label="🔍 Search connectors",
                             placeholder="Search connectors...",
+                            value="",
                             on_change=on_search_change,
                         )
-                        .classes("w-64 search-input")
-                        .props("clearable dense")
+                        .classes("bg-theme-base")
+                        .props("clearable")
                     )
 
+                # Action buttons stay fixed on the right
+                with ui.row().classes("items-center gap-3 flex-nowrap shrink-0"):
                     primary_button(
                         "New Connector",
                         show_create_connector_dialog,
                         icon="add",
-                        extra_classes="px-4 py-2",
+                        extra_classes="px-4 py-2 shrink-0",
                     )
 
                     outline_button(
                         "Examples",
                         create_examples,
                         icon="auto_awesome",
-                        extra_classes="px-3 py-2",
+                        extra_classes="px-3 py-2 shrink-0",
                     )
 
                     outline_button(
                         "Refresh",
                         refresh_connectors,
                         icon="refresh",
-                        extra_classes="px-3 py-2",
+                        extra_classes="px-3 py-2 shrink-0",
                     )
 
                     outline_button(
                         "Help",
                         show_help_dialog,
                         icon="help",
-                        extra_classes="px-3 py-2",
+                        extra_classes="px-3 py-2 shrink-0",
                     )
 
         # Main content area - flexible height

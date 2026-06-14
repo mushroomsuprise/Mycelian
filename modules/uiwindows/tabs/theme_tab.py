@@ -929,6 +929,13 @@ class ThemeTab:
             f"{theme_type} ({display_name})"
         )
 
+    def _build_theme_select_options(self, available_themes):
+        """Build {internal_name: display_label} dict for the theme dropdown."""
+        return {
+            name: (display_name or name.replace("_", " ").title())
+            for name, display_name in available_themes
+        }
+
     def _update_theme_select_options(self, available_themes=None):
         """Update theme select dropdown options safely"""
         try:
@@ -943,12 +950,11 @@ class ThemeTab:
             if "theme_select" not in self.ui_elements:
                 return False
 
-            # Use simple string list for NiceGUI select (this works reliably)
-            select_options = [name for name, display_name in available_themes]
+            select_options = self._build_theme_select_options(available_themes)
             self.ui_elements["theme_select"].options = select_options
 
             # Safely set current value if valid
-            available_values = select_options  # Already the names
+            available_values = list(select_options)
             if self.buffer and self.buffer in available_values:
                 self.ui_elements["theme_select"].value = self.buffer
             elif available_values:
@@ -1007,16 +1013,16 @@ class ThemeTab:
                         # Load themes and create select element
                         theme_manager = self._get_theme_manager()
                         available_themes = self._get_available_themes(theme_manager)
-                        select_options = [
-                            name for name, display_name in available_themes
-                        ]
+                        select_options = self._build_theme_select_options(
+                            available_themes
+                        )
 
                         # Determine valid initial value
                         valid_value = None
                         if self.buffer and self.buffer in select_options:
                             valid_value = self.buffer
                         elif select_options:
-                            valid_value = select_options[0]
+                            valid_value = next(iter(select_options))
                             self.buffer = valid_value
 
                         # Theme selector
@@ -1474,7 +1480,7 @@ class ThemeTab:
         if not theme_manager:
             return
         available_themes = self._get_available_themes(theme_manager)
-        select_options = [name for name, _display in available_themes]
+        select_options = self._build_theme_select_options(available_themes)
         if "theme_select" not in self.ui_elements:
             return
         self.ui_elements["theme_select"].options = select_options
@@ -1483,8 +1489,9 @@ class ThemeTab:
             self.ui_elements["theme_select"].value = target
             self.buffer = target
         elif select_options:
-            self.ui_elements["theme_select"].value = select_options[0]
-            self.buffer = select_options[0]
+            first = next(iter(select_options))
+            self.ui_elements["theme_select"].value = first
+            self.buffer = first
         self.ui_elements["theme_select"].update()
         self._update_delete_button_state()
         self._update_theme_type_label()

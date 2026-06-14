@@ -1291,7 +1291,7 @@ class StatisticsTab:
                 known_users = stats_manager.get_all_tracked_usernames()
                 self._user_search_input = form_input(
                     tooltip="Twitch username to look up in saved statistics",
-                    label="Username",
+                    label="🔍 Search username",
                     placeholder="Type a username...",
                     classes="flex-1",
                     autocomplete=known_users,

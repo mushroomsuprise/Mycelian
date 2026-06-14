@@ -756,14 +756,14 @@ def create_custom_sources_tab():
             with ui.row().classes("w-full items-center gap-2"):
                 search_input = form_input(
                     tooltip="Filter configuration properties by label",
-                    label="Search properties",
+                    label="🔍 Search properties",
                     placeholder="Type to search by property label...",
                     classes="grow bg-theme-base",
                     on_change=lambda e: on_search_changed(
                         e, config_parser, config_select, config_container
                     ),
                 )
-                search_input.props('clearable prepend-icon="search"')
+                search_input.props("clearable")
 
             # Action buttons
             with ui.row().classes("w-full items-center gap-2"):

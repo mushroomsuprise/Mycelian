@@ -1,1 +1,52 @@
-[]
+[
+  {
+    "id": "e5c06c41-c2ea-4c82-856b-1e76e0a6e2d8",
+    "ts": 1781411905.9129002,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "c01eb9f6-172a-4dee-ab60-9c66fe732a48",
+    "ts": 1781412030.832215,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "9dc43334-fd1b-4b51-9d7e-9f97f76df540",
+    "ts": 1781412098.570783,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "1acbd861-d274-4513-af7b-b4e6cb3d1deb",
+    "ts": 1781412105.7730901,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  }
+]
