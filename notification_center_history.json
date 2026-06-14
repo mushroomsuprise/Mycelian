@@ -260,5 +260,143 @@
         "settings_subtab": "Twitch"
       }
     ]
+  },
+  {
+    "id": "f380e259-fcec-4375-8517-f590d1549763",
+    "ts": 1781414201.5876079,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "c7ece9b6-32c9-4d4e-9c6d-5f6d62e8f7db",
+    "ts": 1781414204.9103749,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "39cf8221-ff86-4472-b3e0-d3ebad51e15b",
+    "ts": 1781414208.9361577,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "19a202dc-ffd5-4677-a22c-426bbb5855bd",
+    "ts": 1781414224.5925028,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "621ea33c-0cdc-42b0-b9cb-9ada8cc3d862",
+    "ts": 1781414226.5941155,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "021cd055-353c-4710-8e28-be247bf420db",
+    "ts": 1781414229.453131,
+    "message": "Alerts muted",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "8510c332-e5a9-42b1-b5d0-6e3d3d2914e3",
+    "ts": 1781414230.6041424,
+    "message": "OBS: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "e564a681-c79a-472a-ad69-ee654b2709ca",
+    "ts": 1781414230.6274054,
+    "message": "Alerts unmuted",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "85492411-0dee-46d6-a9e0-96964bb67c34",
+    "ts": 1781414231.3519106,
+    "message": "Alerts paused",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "d386d2d5-9036-40f2-8d1b-7e4913158c1b",
+    "ts": 1781414233.2358875,
+    "message": "Alerts resumed",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "3a388a3b-bc7a-4c4f-95f2-25f77b38dd23",
+    "ts": 1781414266.9680328,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "b1cbb4aa-b34c-49cf-be4a-04cfdb757b32",
+    "ts": 1781414272.749636,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
   }
 ]
