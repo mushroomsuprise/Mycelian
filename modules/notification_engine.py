@@ -911,30 +911,35 @@ def create_service_status_footer() -> None:
                 for key in _SERVICE_KEYS:
                     svg = SERVICE_BRAND_SVG.get(key, "")
                     with ui.element("div").classes(
-                        "service-status-item cursor-pointer select-none"
-                    ).style("display: none;") as item:
+                        "service-status-item service-status-item--hidden "
+                        "cursor-pointer select-none"
+                    ) as item:
                         item.on(
                             "click",
                             lambda _e, k=key: _on_footer_item_click(k),
                         )
                         if svg:
-                            ui.html(
-                                f'<span class="service-status-brand-icon">{svg}</span>'
+                            ui.html(svg, tag="span", sanitize=False).classes(
+                                "service-status-brand-icon"
                             )
-                        ui.label(_SERVICE_LABELS[key]).classes(
-                            "service-status-name text-xs"
-                        )
+                        ui.html(
+                            _SERVICE_LABELS[key],
+                            tag="span",
+                            sanitize=False,
+                        ).classes("service-status-name")
                         with ui.element("div").classes(
                             "service-status-status-cluster"
                         ):
                             dot = ui.element("span").classes(
                                 "service-status-dot muted"
                             )
-                            badge_wrap = ui.element("span").classes(
+                            badge_wrap = ui.element("div").classes(
                                 "service-status-badge info"
                             )
                             with badge_wrap:
-                                badge_label = ui.label("…").classes("text-xs")
+                                badge_label = ui.html(
+                                    "…", tag="span", sanitize=False
+                                ).classes("service-status-badge-label")
                         _footer_item_refs[key] = {
                             "container": item,
                             "dot": dot,
@@ -968,9 +973,10 @@ def refresh_service_status_footer() -> None:
 
     enabled = _status_footer_enabled()
     try:
-        _footer_container.style(
-            replace=f"display: {'flex' if enabled else 'none'};"
-        )
+        if enabled:
+            _footer_container.classes(remove="service-status-footer--hidden")
+        else:
+            _footer_container.classes(add="service-status-footer--hidden")
     except Exception:
         pass
 
@@ -986,12 +992,12 @@ def refresh_service_status_footer() -> None:
         container = refs["container"]
         if entry is None:
             try:
-                container.style(replace="display: none;")
+                container.classes(add="service-status-item--hidden")
             except Exception:
                 pass
             continue
         try:
-            container.style(replace="display: inline-flex;")
+            container.classes(remove="service-status-item--hidden")
         except Exception:
             pass
         dot = refs["dot"]
@@ -1002,7 +1008,7 @@ def refresh_service_status_footer() -> None:
         except Exception:
             pass
         try:
-            badge.set_text(entry.display)
+            badge.set_content(entry.display)
             badge_wrap = refs.get("badge_wrap")
             if badge_wrap is not None:
                 badge_wrap.classes(replace=f"service-status-badge {tier}")

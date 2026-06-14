@@ -1716,31 +1716,36 @@ button.btn-primary {
     box-sizing: border-box;
 }
 
-/* Global connection status footer (main shell) */
-.service-status-footer {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    flex-shrink: 0;
-    box-sizing: border-box;
-    background: var(--color-bg-surface);
-    border-top: 1px solid var(--color-border-subtle);
-    padding: 7px 12px 8px;
-    margin-top: 4px;
-    margin-bottom: 0;
-    border-radius: 6px;
-    overflow: visible;
-    min-height: 0;
+.service-status-footer--hidden {
+    display: none !important;
 }
 
-.service-status-footer-inner {
+/* Global connection status footer (main shell) */
+.service-status-footer {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
     gap: 10px 16px;
-    min-height: 0;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-accent);
+    height: 36px;
+    padding: 0 12px;
+    margin-top: 4px;
+    margin-bottom: 0;
+    border-radius: 10px;
+    overflow: visible;
     line-height: 1;
+}
+
+.service-status-footer-inner {
+    display: contents;
+}
+
+.service-status-footer .service-status-item {
+    transform: translateY(-4px);
 }
 
 .service-status-item {
@@ -1748,11 +1753,14 @@ button.btn-primary {
     align-items: center;
     gap: 6px;
     line-height: 1;
-    min-height: 0;
     border-radius: 4px;
-    padding: 2px 4px;
+    padding: 0 4px;
     box-sizing: border-box;
     transition: background 0.15s ease;
+}
+
+.service-status-item--hidden {
+    display: none !important;
 }
 
 .service-status-item:hover {
@@ -1786,14 +1794,30 @@ button.btn-primary {
 }
 
 .service-status-name {
+    display: inline;
     color: var(--color-text-primary);
     font-weight: 500;
     font-size: 12px;
-    line-height: 1.2 !important;
+    height: 12px;
+    line-height: 12px !important;
     padding: 0 !important;
     margin: 0 !important;
     min-height: 0 !important;
-    align-self: center;
+    vertical-align: middle;
+}
+
+.service-status-badge-label {
+    display: inline;
+    font-size: 10px;
+    font-weight: 600;
+    height: 10px;
+    line-height: 10px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
 }
 
 .service-status-dot {
@@ -1867,24 +1891,34 @@ button.btn-primary {
 }
 
 .service-status-badge .text-xs,
-.service-status-footer .service-status-badge > *,
+.service-status-footer .service-status-badge-label,
 .service-status-footer .service-status-name {
     color: inherit !important;
     font-size: inherit !important;
     font-weight: inherit !important;
     text-transform: inherit;
     letter-spacing: inherit;
-    line-height: 1.2 !important;
     padding: 0 !important;
     margin: 0 !important;
     min-height: 0 !important;
 }
 
-.service-status-footer .service-status-name.text-xs {
+.service-status-footer .service-status-name {
     font-size: 12px !important;
+    height: 12px !important;
+    line-height: 12px !important;
     color: var(--color-text-primary) !important;
     text-transform: none !important;
     letter-spacing: normal !important;
+}
+
+.service-status-footer .service-status-badge-label {
+    font-size: 10px !important;
+    height: 10px !important;
+    line-height: 10px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.3px !important;
 }
 """
 
