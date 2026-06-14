@@ -72,6 +72,41 @@ NOTIFICATION_LEAVE_PIN_SCRIPT = """
             .forEach(pinLeavePosition);
     }
 
+    function wireToastInteractions(el) {
+        if (!el || !el.classList || !el.classList.contains('mycelian-toast')) {
+            return;
+        }
+        if (el.dataset.mycelianToastWired === '1') {
+            return;
+        }
+        el.dataset.mycelianToastWired = '1';
+
+        var mainTab = el.getAttribute('data-mycelian-nav-main-tab');
+        var settingsSubtab = el.getAttribute('data-mycelian-nav-settings-subtab');
+        if (!mainTab && !settingsSubtab) {
+            return;
+        }
+
+        el.addEventListener('click', function (e) {
+            if (e.target.closest('.q-notification__actions')) {
+                return;
+            }
+            var msgEl = el.querySelector('.q-notification__message');
+            var message = msgEl ? (msgEl.textContent || '') : '';
+            if (typeof emitEvent === 'function') {
+                emitEvent('mycelian-toast-navigate', {
+                    main_tab: mainTab || '',
+                    settings_subtab: settingsSubtab || '',
+                    message: message,
+                });
+            }
+        });
+    }
+
+    function wireAllToasts() {
+        document.querySelectorAll('.q-notification.mycelian-toast').forEach(wireToastInteractions);
+    }
+
     var tracking = false;
     var trackRaf = null;
 
@@ -111,6 +146,7 @@ NOTIFICATION_LEAVE_PIN_SCRIPT = """
                 });
                 snapshotPositions();
                 scanLeaving();
+                wireAllToasts();
                 ensureTracking();
             });
             observer.observe(list, {
@@ -125,6 +161,7 @@ NOTIFICATION_LEAVE_PIN_SCRIPT = """
     function boot() {
         attachLists();
         snapshotPositions();
+        wireAllToasts();
         ensureTracking();
     }
 
@@ -143,6 +180,7 @@ NOTIFICATION_LEAVE_PIN_SCRIPT = """
 """
 
 _notification_leave_script_injected = False
+_toast_nav_handler_registered = False
 
 _last_emit_monotonic: Dict[str, float] = {}
 _history: List[Dict[str, Any]] = []
@@ -342,6 +380,7 @@ def _build_toast_opts(
     *,
     position: str = "top-right",
     timeout: Optional[float] = None,
+    actions: Optional[List[Dict[str, Any]]] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Build Quasar Notify options aligned with notification-center history cards.
@@ -350,20 +389,37 @@ def _build_toast_opts(
     (bright fills, white text, type icons). History cards use themed ``nc-history-card--*``
     classes instead — floating toasts mirror that via ``mycelian-toast--*``.
     """
+    class_parts = ["mycelian-toast", f"mycelian-toast--{ntype}"]
+    extra = dict(kwargs)
+    extra.pop("type", None)
+    extra.pop("actions", None)
+    if "timeout" in extra:
+        extra["timeout"] = _normalize_timeout_ms(extra.get("timeout"))
+    close_btn = extra.get("close_button", extra.get("closeBtn"))
+    if close_btn is not False:
+        extra["close_button"] = (
+            "\u00d7" if close_btn in (None, True) else close_btn
+        )
+
+    nav_action = _pick_navigate_action(actions)
+    if nav_action:
+        class_parts.append("mycelian-toast--clickable")
+        attrs = dict(extra.get("attrs") or {})
+        main_tab = nav_action.get("main_tab")
+        settings_subtab = nav_action.get("settings_subtab")
+        if main_tab:
+            attrs["data-mycelian-nav-main-tab"] = str(main_tab)
+        if settings_subtab:
+            attrs["data-mycelian-nav-settings-subtab"] = str(settings_subtab)
+        extra["attrs"] = attrs
+
     opts: Dict[str, Any] = {
         "position": position,
-        "classes": f"mycelian-toast mycelian-toast--{ntype}",
+        "classes": " ".join(class_parts),
         "group": False,
         "ignoreDefaults": True,
         "timeout": _normalize_timeout_ms(timeout),
     }
-    extra = dict(kwargs)
-    extra.pop("type", None)
-    if "timeout" in extra:
-        extra["timeout"] = _normalize_timeout_ms(extra.get("timeout"))
-    close_btn = extra.get("close_button", extra.get("closeBtn"))
-    if close_btn is True:
-        extra["close_button"] = "\u00d7"
     opts.update(extra)
     return opts
 
@@ -448,7 +504,11 @@ def notify(
 
     if not skip_toast:
         opts = _build_toast_opts(
-            ntype, position=position, timeout=timeout, **kwargs
+            ntype,
+            position=position,
+            timeout=timeout,
+            actions=actions,
+            **kwargs,
         )
         if not _deliver_toast(message, opts):
             _pending_toasts.append((message, dict(opts)))
@@ -1179,11 +1239,34 @@ def inject_notification_ui_assets() -> None:
     _notification_leave_script_injected = True
 
 
+def _on_toast_navigate_event(e: Any) -> None:
+    args = getattr(e, "args", None) or {}
+    if not isinstance(args, dict):
+        return
+    action: Dict[str, Any] = {"kind": "navigate"}
+    if args.get("main_tab"):
+        action["main_tab"] = args["main_tab"]
+    if args.get("settings_subtab"):
+        action["settings_subtab"] = args["settings_subtab"]
+    if not action.get("main_tab") and not action.get("settings_subtab"):
+        return
+    run_action(action, message=str(args.get("message") or ""))
+
+
+def _ensure_toast_nav_handler() -> None:
+    global _toast_nav_handler_registered
+    if _toast_nav_handler_registered:
+        return
+    ui.on("mycelian-toast-navigate", _on_toast_navigate_event)
+    _toast_nav_handler_registered = True
+
+
 def create_notification_tray_button() -> None:
     """Place inside the main header row (next to tabs). Opens notification center."""
     global _history_column, _history_scroll_area, _notification_dialog, _tray_badge_ref
 
     inject_notification_ui_assets()
+    _ensure_toast_nav_handler()
 
     def refresh() -> None:
         _render_history_cards()

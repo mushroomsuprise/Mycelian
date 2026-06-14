@@ -689,6 +689,25 @@ body:not(.body--dark) .text-grey {
     color: var(--color-text-primary) !important;
 }
 
+.q-notification.mycelian-toast .q-notification__actions {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+.q-notification.mycelian-toast:hover .q-notification__actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.q-notification.mycelian-toast--clickable {
+    cursor: pointer;
+}
+
+.q-notification.mycelian-toast--clickable:hover {
+    filter: brightness(1.06);
+}
+
 .q-notification.mycelian-toast .q-notification__actions .q-btn {
     min-width: 1.75rem !important;
     min-height: 1.75rem !important;
