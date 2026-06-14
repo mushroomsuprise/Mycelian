@@ -230,7 +230,7 @@ def apply_theme(theme_name: str):
             f"<style id='mycelian-theme-vars'>{theme_css}</style>", shared=True
         )
         # Then add base CSS that references variables
-        base_css = get_full_theme_css() + ACTIVITY_FEED_CSS
+        base_css = get_full_theme_css() + ACTIVITY_FEED_CSS + SOURCE_CONTROLS_CSS
         ui.add_head_html(
             f"<style id='mycelian-base-css'>{base_css}</style>", shared=True
         )
@@ -687,6 +687,201 @@ ACTIVITY_FEED_CSS = """
     border: 1px solid var(--color-border-default) !important;
     border-radius: 4px !important;
     z-index: 9998 !important;
+}
+"""
+
+SOURCE_CONTROLS_CSS = """
+/* Source Controls tab — OBS sort + equal-width flex columns (full width) */
+.source-controls-tab.content-section {
+    align-self: stretch;
+    flex: 1 1 auto;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0;
+    box-sizing: border-box;
+}
+
+.source-controls-tab .source-controls-scroll {
+    width: 100% !important;
+    align-self: stretch;
+    flex: 1 1 auto;
+    box-sizing: border-box;
+}
+
+.source-controls-tab .source-controls-scroll .q-scrollarea__content {
+    width: 100% !important;
+    display: block !important;
+}
+
+.source-controls-tab .source-controls-masonry {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+.source-controls-tab .sc-masonry-col {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.source-controls-tab .source-controls-template-card {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    display: block;
+}
+
+.source-controls-tab .source-controls-template-card.q-card,
+.source-controls-tab .source-controls-template-card.content-card {
+    background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05)) !important;
+    border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.12)) !important;
+    border-radius: 8px !important;
+    padding: 10px !important;
+    box-shadow: none !important;
+    transition: all 0.2s ease-in-out;
+}
+
+.source-controls-tab .source-controls-template-card .q-card__section {
+    width: 100%;
+    min-width: 0;
+    padding: 0 !important;
+}
+
+.source-controls-tab .source-controls-template-card.q-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2) !important;
+    border-color: var(--color-border-accent, rgba(115, 0, 255, 0.3)) !important;
+}
+
+.source-controls-tab .sc-header-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.source-controls-tab .sc-group-title {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--color-text-secondary, rgba(255, 255, 255, 0.8));
+    margin-bottom: 6px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+    width: 100%;
+}
+
+.source-controls-tab .sc-control-count-badge .q-badge {
+    background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7)) !important;
+    color: white !important;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    font-weight: 500;
+}
+
+.source-controls-tab .sc-controls-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+}
+
+.source-controls-tab .sc-control-input-wrap {
+    background: var(--color-bg-surface, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+    border-radius: 6px;
+    padding: 8px;
+    box-sizing: border-box;
+    min-width: 0;
+    width: 100%;
+}
+
+.source-controls-tab .sc-stretch-field,
+.source-controls-tab .sc-stretch-field.q-field,
+.source-controls-tab .sc-control-input-wrap .q-field,
+.source-controls-tab .sc-control-input-wrap .q-slider {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0;
+}
+
+.source-controls-tab .sc-stretch-field .q-field__inner,
+.source-controls-tab .sc-stretch-field .q-field__control,
+.source-controls-tab .sc-control-input-wrap .q-field__inner,
+.source-controls-tab .sc-control-input-wrap .q-field__control {
+    width: 100% !important;
+}
+
+.source-controls-tab .sc-control-cell {
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.source-controls-tab .sc-counter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+}
+
+.source-controls-tab .sc-counter-row .q-btn {
+    flex: 1 1 2.5rem;
+    min-width: 0;
+}
+
+.source-controls-tab .sc-counter-row .q-field {
+    flex: 2 1 4rem;
+    min-width: 0;
+}
+
+.source-controls-tab .sc-grid-span-all {
+    grid-column: 1 / -1;
+}
+
+.source-controls-tab .q-btn.btn-primary {
+    background: linear-gradient(135deg, var(--color-primary, #7300ff), var(--color-primary-hover, #a855f7)) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.source-controls-tab .q-btn.btn-primary:hover {
+    opacity: 0.95;
+    box-shadow: 0 2px 8px var(--color-primary-light, rgba(115, 0, 255, 0.4));
+}
+
+.source-controls-tab .q-btn.btn-warning {
+    background: linear-gradient(135deg, #f59e0b, #f97316) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.source-controls-tab .q-btn.btn-danger {
+    background: linear-gradient(135deg, #dc2626, #ef4444) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.source-controls-tab .q-btn.btn-success {
+    background: linear-gradient(135deg, #16a34a, #22c55e) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.source-controls-tab .q-btn.btn-cancel {
+    background: linear-gradient(135deg, #6b7280, #9ca3af) !important;
+    color: white !important;
+    border: none !important;
 }
 """
 

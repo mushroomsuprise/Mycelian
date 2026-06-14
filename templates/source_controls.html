@@ -22,12 +22,13 @@
         }
 
         .container {
-            max-width: 1200px;
+            width: 100%;
             margin: 0 auto;
             padding: 10px;
             height: 100vh;
             display: flex;
             flex-direction: column;
+            box-sizing: border-box;
         }
 
         .header {
@@ -122,12 +123,29 @@
             border-radius: 4px;
         }
 
-        .template-section {
+        .source-controls-masonry {
+            column-width: 180px;
+            column-gap: 12px;
+            column-fill: auto;
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            display: block;
+        }
+
+        .template-section,
+        .source-controls-template-card {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            display: inline-block;
+            width: 100%;
+            margin-bottom: 12px;
+            min-width: 0;
+            box-sizing: border-box;
             background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05));
             border-radius: 8px;
             border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
-            margin-bottom: 12px;
-            padding: 12px;
+            padding: 10px;
             transition: all 0.3s ease;
         }
 
@@ -141,7 +159,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }
 
         .template-title {
@@ -159,31 +177,67 @@
             font-weight: 500;
         }
 
-        .control-group {
-            margin-bottom: 15px;
+        .control-group-section {
+            margin-bottom: 10px;
         }
 
         .group-title {
             font-size: 0.8rem;
             font-weight: 500;
             color: var(--color-text-secondary, rgba(255, 255, 255, 0.8));
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             padding-bottom: 3px;
             border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+            width: 100%;
+            flex: 1 1 100%;
         }
 
         .controls-grid {
             display: grid;
-            gap: 8px;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
+            width: 100%;
         }
 
         .control-item {
             background: var(--color-bg-surface, rgba(255, 255, 255, 0.03));
             border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
             border-radius: 6px;
-            padding: 10px;
+            padding: 8px;
             transition: all 0.2s ease;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+
+        .control-item-compact {
+            padding: 2px;
+            background: transparent;
+            border: none;
+            min-width: 0;
+        }
+
+        .control-item-wide {
+            grid-column: 1 / -1;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .control-item-input {
+            grid-column: 1 / -1;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .control-item-input .control-input,
+        .control-item-input .slider-container {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        .control-item-compact:hover {
+            background: transparent;
+            border: none;
         }
 
         .control-item:hover {
@@ -248,15 +302,59 @@
             transform: translateY(0);
         }
 
-        .counter-controls {
-            display: flex;
-            gap: 4px;
-            align-items: center;
+        /* CSS tooltips — native title is unreliable in OBS browser panels */
+        [data-tooltip] {
+            position: relative;
         }
 
-        .counter-step-input {
-            flex: 1;
-            min-width: 48px;
+        [data-tooltip]::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 6px);
+            transform: translateX(-50%);
+            background: var(--color-bg-elevated, #2a2a2a);
+            color: var(--color-text-primary, #fff);
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.2));
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 0.65rem;
+            font-weight: 400;
+            line-height: 1.3;
+            white-space: normal;
+            width: max-content;
+            max-width: 220px;
+            text-align: center;
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.15s ease, visibility 0.15s ease;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        }
+
+        [data-tooltip]:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .counter-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            align-items: center;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .counter-controls .counter-btn {
+            flex: 1 1 2.5rem;
+            min-width: 0;
+        }
+
+        .counter-controls .counter-step-input {
+            flex: 2 1 4rem;
+            min-width: 0;
             padding: 6px 8px;
             border: 1px solid var(--color-border, #333);
             border-radius: 4px;
@@ -266,7 +364,6 @@
         }
 
         .counter-btn {
-            flex: 1;
             padding: 6px;
             border: none;
             border-radius: 4px;
@@ -438,8 +535,12 @@
                 gap: 8px;
             }
 
+            .source-controls-masonry {
+                column-width: 100%;
+            }
+
             .controls-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
             .header-text h1 {
@@ -718,9 +819,13 @@
                 return;
             }
             
-            let html = '';
+            const sortedTemplates = Object.entries(templateConfigs).sort(
+                (a, b) => (a[1].elements || []).length - (b[1].elements || []).length
+            );
+
+            let html = '<div class="source-controls-masonry">';
             
-            Object.entries(templateConfigs).forEach(([templateName, controlsConfig]) => {
+            sortedTemplates.forEach(([templateName, controlsConfig]) => {
                 const elements = controlsConfig.elements || [];
                 const groupedControls = groupControlsByType(elements);
                 
@@ -748,6 +853,8 @@
                 
                 html += '</div>';
             });
+            
+            html += '</div>';
             
             container.innerHTML = html;
             
@@ -794,6 +901,52 @@
             return groups;
         }
 
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function resolveButtonText(element) {
+            if (element.button_text) {
+                return element.button_text;
+            }
+            if (element.label) {
+                return element.label;
+            }
+            const action = String(element.action || '').trim();
+            if (action) {
+                return action.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+            }
+            return 'Run';
+        }
+
+        function counterTooltip(element) {
+            return element.description || element.label || 'Increment or decrement the counter';
+        }
+
+        function buttonTooltip(element) {
+            if (element.description) {
+                return element.description;
+            }
+            const label = element.label || '';
+            const text = resolveButtonText(element);
+            if (label && label !== text) {
+                return label;
+            }
+            return '';
+        }
+
+        function tooltipAttr(text) {
+            if (!text) {
+                return '';
+            }
+            return ` data-tooltip="${escapeHtml(text)}"`;
+        }
+
         function createControlElement(templateName, element) {
             const elementType = element.type || 'unknown';
             const elementId = element.id || 'unknown';
@@ -827,24 +980,50 @@
                 default:
                     controlHtml = `<div class="control-input" style="color: #ef4444;">Unknown control type: ${elementType}</div>`;
             }
+
+            if (elementType === 'button' || elementType === 'spin_control') {
+                return `
+                    <div class="control-item control-item-compact slide-in">
+                        ${controlHtml}
+                    </div>
+                `;
+            }
+
+            if (elementType === 'counter_control') {
+                return `
+                    <div class="control-item control-item-compact control-item-wide slide-in">
+                        ${controlHtml}
+                    </div>
+                `;
+            }
+
+            const inputTypes = ['text_input', 'number_input', 'slider', 'toggle'];
+            if (inputTypes.includes(elementType)) {
+                return `
+                    <div class="control-item control-item-input slide-in">
+                        <div class="control-label">${escapeHtml(label)}</div>
+                        ${controlHtml}
+                    </div>
+                `;
+            }
             
             return `
                 <div class="control-item slide-in">
-                    <div class="control-label">${label}</div>
-                    ${description ? `<div class="control-description">${description}</div>` : ''}
+                    <div class="control-label">${escapeHtml(label)}</div>
                     ${controlHtml}
                 </div>
             `;
         }
 
         function createButtonControl(templateName, element) {
-            const buttonText = element.button_text || 'Action';
+            const buttonText = escapeHtml(resolveButtonText(element));
             const action = element.action || '';
             const isSpinButton = element.type === 'spin_control' || action === 'spin';
             const buttonClass = isSpinButton ? 'control-button spin-button' : 'control-button';
+            const tipAttr = tooltipAttr(buttonTooltip(element));
             
             return `
-                <button class="${buttonClass}" 
+                <button class="${buttonClass}"${tipAttr}
                         onclick="sendWebSocketEvent('${templateName}', '${action}', ${JSON.stringify(element.data || {})})">
                     ${buttonText}
                 </button>
@@ -857,9 +1036,10 @@
             const value = element.value || min;
             const step = element.step || 1;
             const action = element.action || '';
+            const tipAttr = tooltipAttr(element.description || element.label || '');
             
             return `
-                <div class="slider-container">
+                <div class="slider-container"${tipAttr}>
                     <input type="range" class="slider" 
                            min="${min}" max="${max}" value="${value}" step="${step}"
                            oninput="sendWebSocketEvent('${templateName}', '${action}', {value: this.value})">
@@ -871,9 +1051,10 @@
             const value = element.value !== undefined ? element.value : (element.default_state !== undefined ? element.default_state : false);
             const action = element.action || '';
             const checked = value ? 'checked' : '';
+            const tipAttr = tooltipAttr(element.description || element.label || '');
             
             return `
-                <label class="toggle-switch">
+                <label class="toggle-switch"${tipAttr}>
                     <input type="checkbox" ${checked}
                            onchange="sendWebSocketEvent('${templateName}', '${action}', {enabled: this.checked})">
                     <span class="toggle-slider"></span>
@@ -909,6 +1090,8 @@
         }
 
         function createCounterControl(templateName, element) {
+            const tipAttr = tooltipAttr(counterTooltip(element));
+
             if (element.target_counter_id) {
                 const step = getCounterStepValue(element);
                 const action = element.action || 'counter_adjust';
@@ -916,9 +1099,9 @@
                 const inputId = `sc-counter-step-${templateName}-${element.id || 'counter'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
                 const esc = (s) => String(s).replace(/'/g, "\\'");
                 return `
-                    <div class="counter-controls">
+                    <div class="counter-controls"${tipAttr}>
                         <input type="number" id="${inputId}" class="counter-step-input"
-                               min="1" value="${step}" title="Increment/decrement amount">
+                               min="1" value="${step}" data-tooltip="Increment/decrement amount">
                         <button class="counter-btn decrement"
                                 onclick="sendSporeCounterEvent('${esc(templateName)}', '${esc(action)}', '${esc(targetCounterId)}', 'decrement', '${inputId}', ${step})">-</button>
                         <button class="counter-btn increment"
@@ -934,7 +1117,7 @@
             const actionReset = element.action_reset || 'counter_reset';
 
             return `
-                <div class="counter-controls">
+                <div class="counter-controls"${tipAttr}>
                     <button class="counter-btn decrement" 
                             onclick="sendWebSocketEvent('${templateName}', '${actionDecrement}', {})">-</button>
                     <button class="counter-btn increment" 
@@ -947,9 +1130,10 @@
 
         function createSpinControl(templateName, element) {
             const action = element.action || 'spin';
+            const tipAttr = tooltipAttr(element.description || element.label || 'Spin the wheel');
             
             return `
-                <button class="control-button spin-button" 
+                <button class="control-button spin-button"${tipAttr}
                         onclick="sendWebSocketEvent('${templateName}', '${action}', {})">
                     Spin
                 </button>
@@ -960,10 +1144,11 @@
             const placeholder = element.placeholder || '';
             const action = element.action || '';
             const inputId = `sc-text-${templateName}-${element.id || action}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const tipAttr = tooltipAttr(element.description || element.label || placeholder);
 
             return `
                 <input type="text" id="${inputId}" class="control-input" placeholder="${placeholder}"
-                       autocomplete="off" spellcheck="false"
+                       autocomplete="off" spellcheck="false"${tipAttr}
                        oninput="sendTextInputEvent('${templateName}', '${action}', '${inputId}')">
             `;
         }
@@ -973,9 +1158,10 @@
             const max = element.max || 999999;
             const value = element.value || 0;
             const action = element.action || '';
+            const tipAttr = tooltipAttr(element.description || element.label || '');
             
             return `
-                <input type="number" class="control-input" 
+                <input type="number" class="control-input"${tipAttr}
                        min="${min}" max="${max}" value="${value}"
                        oninput="sendWebSocketEvent('${templateName}', '${action}', {value: parseInt(this.value)})">
             `;
