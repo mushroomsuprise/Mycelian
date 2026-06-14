@@ -1368,7 +1368,7 @@ def create_ui_elements():
     # (tab strip height + calc(100vh) panel height) past the native window edge.
     with StartupTimer("create_ui_elements.shell"), ui.column().classes(
         "mycelian-main-shell w-full box-border flex flex-col overflow-hidden "
-        "gap-0 min-h-0 p-2"
+        "gap-0 min-h-0 pt-1 px-1 pb-2"
     ):
         from .help_system.contextual_help import help_button, register_main_tabs
         from .notification_engine import (
