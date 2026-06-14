@@ -1007,15 +1007,6 @@ CUSTOM_CSS = """
     padding-bottom: 4px;
 }
 
-.giveaway-options-card .q-field__control {
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-.giveaway-options-card .q-field--focused .q-field__control {
-    box-shadow: none !important;
-}
-
 .control-button {
     transition: all 0.2s ease;
 }
@@ -1082,50 +1073,6 @@ CUSTOM_CSS = """
     background: rgba(59, 130, 246, 0.2);
     border-color: rgba(59, 130, 246, 0.5);
     color: var(--color-info);
-}
-
-/* Search field styling - matching connectors theme */
-.search-container {
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    padding: 0;
-    transition: none;
-}
-
-.search-container:focus-within {
-    border: none;
-    background: transparent;
-}
-
-.search-input .q-field__control::before {
-    border-color: rgba(55, 65, 81, 0.4) !important;
-}
-
-.search-input .q-field__control::after {
-    border-color: rgba(55, 55, 70, 0.8) !important;
-}
-
-.search-input .q-field__control {
-    background: rgba(55, 55, 70, 0.9) !important;
-    border-radius: 6px !important;
-}
-
-.search-input .q-field__native {
-    color: var(--color-text-primary) !important;
-}
-
-.search-input .q-field__label {
-    color: rgba(255, 255, 255, 0.7) !important;
-}
-
-.search-input .q-field__control:hover {
-    border-color: rgba(90, 90, 90, 0.6) !important;
-}
-
-.search-input .q-field__control:focus {
-    border-color: #60a5fa !important;
-    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2) !important;
 }
 
 .response-preview {
@@ -1326,7 +1273,9 @@ def create_chatbot_tab():
     global giveaways_container
 
     # Add custom CSS to the page
-    ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
+    ui.add_head_html(
+        f"<style id='chatbot-custom-css'>{CUSTOM_CSS}</style>", shared=True
+    )
 
     # Create a card for the entire tab content with flex layout
     with ui.element("div").classes(
@@ -1382,7 +1331,7 @@ def create_chatbot_tab():
                                     placeholder="Search by name, command, aliases, or description...",
                                     value="",
                                 )
-                                .classes("search-input w-full")
+                                .classes("w-full bg-theme-base")
                                 .props("clearable")
                             )
 
@@ -1434,7 +1383,7 @@ def create_chatbot_tab():
                                     placeholder="Search by name, event type, or description...",
                                     value="",
                                 )
-                                .classes("search-input w-full")
+                                .classes("w-full bg-theme-base")
                                 .props("clearable")
                             )
 
@@ -1493,7 +1442,7 @@ def create_chatbot_tab():
                                     placeholder="Search by text, author, or ID...",
                                     value="",
                                 )
-                                .classes("search-input w-full")
+                                .classes("w-full bg-theme-base")
                                 .props("clearable")
                             )
 
@@ -1552,7 +1501,7 @@ def create_chatbot_tab():
                                     placeholder="Search by username or greeting text...",
                                     value="",
                                 )
-                                .classes("search-input w-full")
+                                .classes("w-full bg-theme-base")
                                 .props("clearable")
                             )
 
@@ -1615,16 +1564,21 @@ def render_giveaways_tab(container_el) -> None:
         refresh_tab_content("giveaways")
 
     def _giveaway_switch(text: str, tooltip: str, field: str, default=False):
-        sw = ui.switch(
-            text=text,
-            value=bool(cfg.get(field, default)),
-            on_change=lambda e, f=field: (
-                gm.set_config_field(f, bool(e.value)),
-                reload_giveaways(),
-            ),
-        ).classes("w-full")
-        sw.tooltip(tooltip).classes("bg-theme-surface")
-        return sw
+        from nicegui.elements.tooltip import Tooltip
+
+        with ui.row().classes("items-center gap-2 w-full giveaway-option-row") as option_row:
+            ui.switch(
+                value=bool(cfg.get(field, default)),
+                on_change=lambda e, f=field: (
+                    gm.set_config_field(f, bool(e.value)),
+                    reload_giveaways(),
+                ),
+            ).props("dense")
+            ui.label(text)
+        if tooltip:
+            tip = Tooltip(tooltip)
+            tip.classes("bg-theme-surface")
+            tip.props["target"] = f"#{option_row.html_id}"
 
     with container_el:
         with ui.column().classes("w-full gap-3 p-4"):
@@ -2017,7 +1971,7 @@ def refresh_tab_content(tab_type: str):
                         button_text,
                         lambda: show_create_chatbot_dialog(tab_type[:-1]),
                         icon="add",
-                        extra_classes="btn-secondary px-6 py-3 mt-4",
+                        extra_classes="btn-primary px-6 py-3 mt-4",
                     )
             else:
                 # Display items in a grid
@@ -2088,7 +2042,7 @@ def load_chatbot_items():
                             "Create First Command",
                             lambda: show_create_chatbot_dialog("command"),
                             icon="add",
-                            extra_classes="btn-secondary px-6 py-3 mt-4",
+                            extra_classes="btn-primary px-6 py-3 mt-4",
                         )
                 else:
                     # Display items in a grid
@@ -2128,7 +2082,7 @@ def load_chatbot_items():
                             "Create First Event",
                             lambda: show_create_chatbot_dialog("event"),
                             icon="add",
-                            extra_classes="btn-secondary px-6 py-3 mt-4",
+                            extra_classes="btn-primary px-6 py-3 mt-4",
                         )
                 else:
                     # Display items in a grid
@@ -2168,7 +2122,7 @@ def load_chatbot_items():
                             "Create First Quote",
                             lambda: show_create_chatbot_dialog("quote"),
                             icon="add",
-                            extra_classes="btn-secondary px-6 py-3 mt-4",
+                            extra_classes="btn-primary px-6 py-3 mt-4",
                         )
                 else:
                     # Display items in a grid
@@ -2214,7 +2168,7 @@ def load_chatbot_items():
                             "Create First Greeting",
                             lambda: show_create_greeting_dialog(),
                             icon="add",
-                            extra_classes="btn-secondary px-6 py-3 mt-4",
+                            extra_classes="btn-primary px-6 py-3 mt-4",
                         )
                 else:
                     # Display items in a grid
