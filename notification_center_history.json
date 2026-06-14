@@ -1,1 +1,128 @@
-[]
+[
+  {
+    "id": "b2467cc2-0f34-4ca7-b711-c1c82474bc06",
+    "ts": 1781406496.9875462,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "79dee266-baaa-4227-9ddf-ee4cc1ed7ba2",
+    "ts": 1781406496.992098,
+    "message": "Creating new alert...",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "88e260ae-0890-48fc-bf7f-71f8ddcb108e",
+    "ts": 1781406899.785156,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "2be97df8-2473-4407-a0b2-40500f4586b1",
+    "ts": 1781406901.719817,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "ffd721e2-36d7-4c18-9980-78e87d3be520",
+    "ts": 1781406993.945641,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "fa9c26a7-e002-4a36-9b23-6e21913293eb",
+    "ts": 1781406995.146483,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "5c555513-d53b-4a5f-97c6-4b4280ca892f",
+    "ts": 1781407056.1403039,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "8d0dbf5e-6f25-4c55-a405-ea91f3b3d095",
+    "ts": 1781407061.6037781,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "6fc547b9-a712-4f58-b9c9-25b4eae639c1",
+    "ts": 1781407112.3971462,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "3e5b40f2-e75c-4489-a00c-bf949b838e04",
+    "ts": 1781407113.102226,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "a3c3c788-0615-4ed4-bbd7-1866dcc8a3ae",
+    "ts": 1781407211.594021,
+    "message": "Theme 'forest_glade' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "6d9cc45d-a98a-47c8-9be6-48a25fff4ad0",
+    "ts": 1781407281.519306,
+    "message": "Theme 'dark' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  }
+]
