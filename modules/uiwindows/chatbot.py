@@ -1330,276 +1330,271 @@ def create_chatbot_tab():
 
     # Create a card for the entire tab content with flex layout
     with ui.element("div").classes(
-        "content-section w-full h-full flex flex-col relative"
+        "tab-surface w-full h-full flex flex-col relative p-4"
     ):
-        # Tabs at the very top
-        with ui.tabs().classes("w-full bg-theme-base rounded-lg p-1") as chatbot_tabs:
-            commands_tab = ui.tab("Commands").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            events_tab = ui.tab("Events").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            quotes_tab = ui.tab("Quotes").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            greetings_tab = ui.tab("Greetings").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            giveaways_tab = ui.tab("Giveaways").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-
-        set_chatbot_ui_references(chatbot_tabs)
-
-        # Main content area with tab panels - each panel contains its own buttons and content
-        with ui.tab_panels(chatbot_tabs, value=commands_tab).classes(
-            "w-full grow"
+        with ui.element("div").classes(
+            "mycelian-sub-tab-shell w-full flex-1 min-h-0 flex flex-col"
         ):
-            # Commands Tab
-            with ui.tab_panel(commands_tab).classes(
-                "transition-all duration-300 w-full h-full flex flex-col"
+            with ui.tabs().classes("w-full settings-tabs mycelian-sub-tabs") as chatbot_tabs:
+                commands_tab = ui.tab("Commands")
+                events_tab = ui.tab("Events")
+                quotes_tab = ui.tab("Quotes")
+                greetings_tab = ui.tab("Greetings")
+                giveaways_tab = ui.tab("Giveaways")
+
+            set_chatbot_ui_references(chatbot_tabs)
+
+            with ui.tab_panels(chatbot_tabs, value=commands_tab).classes(
+                "w-full grow flex-1 min-h-0"
             ):
-                # Tab-specific header with buttons and search
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
+                # Commands Tab
+                with ui.tab_panel(commands_tab).classes(
+                    "transition-all duration-300 w-full h-full flex flex-col"
                 ):
-                    # Left side - tab-specific action buttons
-                    with ui.row().classes("items-center gap-2"):
-                        primary_button(
-                            "New Command",
-                            lambda: show_create_chatbot_dialog("command"),
-                            icon="add",
-                            extra_classes="px-4 py-2",
-                        )
-
-                        outline_button(
-                            "Refresh",
-                            lambda: refresh_tab_content("commands"),
-                            icon="refresh",
-                            extra_classes="px-3 py-2",
-                        )
-
-                    # Right side - Tab-specific search box
+                    # Tab-specific header with buttons and search
                     with ui.row().classes(
-                        "items-center gap-2 flex-1 justify-end max-w-md"
+                        "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
                     ):
-                        search_input_commands = (
-                            form_input(
-                                tooltip="Filter commands by name, alias, or description",
-                                label="🔍 Search commands",
-                                placeholder="Search by name, command, aliases, or description...",
-                                value="",
+                        # Left side - tab-specific action buttons
+                        with ui.row().classes("items-center gap-2"):
+                            primary_button(
+                                "New Command",
+                                lambda: show_create_chatbot_dialog("command"),
+                                icon="add",
+                                extra_classes="px-4 py-2",
                             )
-                            .classes("search-input w-full")
-                            .props("clearable")
-                        )
 
-                        # Update search on input change for commands tab
-                        def on_commands_search_change(event):
-                            global search_term
-                            search_term = event.value or ""
-                            refresh_tab_content("commands")
+                            outline_button(
+                                "Refresh",
+                                lambda: refresh_tab_content("commands"),
+                                icon="refresh",
+                                extra_classes="px-3 py-2",
+                            )
 
-                        search_input_commands.on_value_change(on_commands_search_change)
+                        # Right side - Tab-specific search box
+                        with ui.row().classes(
+                            "items-center gap-2 flex-1 justify-end max-w-md"
+                        ):
+                            search_input_commands = (
+                                form_input(
+                                    tooltip="Filter commands by name, alias, or description",
+                                    label="🔍 Search commands",
+                                    placeholder="Search by name, command, aliases, or description...",
+                                    value="",
+                                )
+                                .classes("search-input w-full")
+                                .props("clearable")
+                            )
 
-                # Commands content area
-                global commands_container
-                with ui.scroll_area().classes("w-full grow"):
-                    commands_container = ui.element("div").classes("w-full p-4")
+                            # Update search on input change for commands tab
+                            def on_commands_search_change(event):
+                                global search_term
+                                search_term = event.value or ""
+                                refresh_tab_content("commands")
 
-            # Events Tab
-            with ui.tab_panel(events_tab).classes(
-                "transition-all duration-300 w-full h-full flex flex-col"
-            ):
-                # Tab-specific header with buttons and search
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
+                            search_input_commands.on_value_change(on_commands_search_change)
+
+                    # Commands content area
+                    global commands_container
+                    with ui.scroll_area().classes("w-full grow"):
+                        commands_container = ui.element("div").classes("w-full p-4")
+
+                # Events Tab
+                with ui.tab_panel(events_tab).classes(
+                    "transition-all duration-300 w-full h-full flex flex-col"
                 ):
-                    # Left side - tab-specific action buttons
-                    with ui.row().classes("items-center gap-2"):
-                        primary_button(
-                            "New Event",
-                            lambda: show_create_chatbot_dialog("event"),
-                            icon="celebration",
-                            extra_classes="px-4 py-2",
-                        )
-
-                        outline_button(
-                            "Refresh",
-                            lambda: refresh_tab_content("events"),
-                            icon="refresh",
-                            extra_classes="px-3 py-2",
-                        )
-
-                    # Right side - Tab-specific search box
+                    # Tab-specific header with buttons and search
                     with ui.row().classes(
-                        "items-center gap-2 flex-1 justify-end max-w-md"
+                        "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
                     ):
-                        search_input_events = (
-                            form_input(
-                                tooltip="Filter events by name or description",
-                                label="🔍 Search events",
-                                placeholder="Search by name, event type, or description...",
-                                value="",
+                        # Left side - tab-specific action buttons
+                        with ui.row().classes("items-center gap-2"):
+                            primary_button(
+                                "New Event",
+                                lambda: show_create_chatbot_dialog("event"),
+                                icon="celebration",
+                                extra_classes="px-4 py-2",
                             )
-                            .classes("search-input w-full")
-                            .props("clearable")
-                        )
 
-                        # Update search on input change for events tab
-                        def on_events_search_change(event):
-                            global search_term
-                            search_term = event.value or ""
-                            refresh_tab_content("events")
+                            outline_button(
+                                "Refresh",
+                                lambda: refresh_tab_content("events"),
+                                icon="refresh",
+                                extra_classes="px-3 py-2",
+                            )
 
-                        search_input_events.on_value_change(on_events_search_change)
+                        # Right side - Tab-specific search box
+                        with ui.row().classes(
+                            "items-center gap-2 flex-1 justify-end max-w-md"
+                        ):
+                            search_input_events = (
+                                form_input(
+                                    tooltip="Filter events by name or description",
+                                    label="🔍 Search events",
+                                    placeholder="Search by name, event type, or description...",
+                                    value="",
+                                )
+                                .classes("search-input w-full")
+                                .props("clearable")
+                            )
 
-                # Events content area
-                global events_container
-                with ui.scroll_area().classes("w-full grow"):
-                    events_container = ui.element("div").classes("w-full p-4")
+                            # Update search on input change for events tab
+                            def on_events_search_change(event):
+                                global search_term
+                                search_term = event.value or ""
+                                refresh_tab_content("events")
 
-            # Quotes Tab
-            with ui.tab_panel(quotes_tab).classes(
-                "transition-all duration-300 w-full h-full flex flex-col"
-            ):
-                # Tab-specific header with buttons and search
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
+                            search_input_events.on_value_change(on_events_search_change)
+
+                    # Events content area
+                    global events_container
+                    with ui.scroll_area().classes("w-full grow"):
+                        events_container = ui.element("div").classes("w-full p-4")
+
+                # Quotes Tab
+                with ui.tab_panel(quotes_tab).classes(
+                    "transition-all duration-300 w-full h-full flex flex-col"
                 ):
-                    # Left side - tab-specific action buttons
-                    with ui.row().classes("items-center gap-2"):
-                        primary_button(
-                            "New Quote",
-                            lambda: show_create_chatbot_dialog("quote"),
-                            icon="format_quote",
-                            extra_classes="px-4 py-2",
-                        )
-
-                        outline_button(
-                            "Refresh",
-                            lambda: refresh_tab_content("quotes"),
-                            icon="refresh",
-                            extra_classes="px-3 py-2",
-                        )
-
-                        outline_button(
-                            "Settings",
-                            show_quote_settings_dialog,
-                            icon="settings",
-                            extra_classes="px-3 py-2",
-                        )
-
-                    # Right side - Tab-specific search box
+                    # Tab-specific header with buttons and search
                     with ui.row().classes(
-                        "items-center gap-2 flex-1 justify-end max-w-md"
+                        "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
                     ):
-                        search_input_quotes = (
-                            form_input(
-                                tooltip="Filter quotes by text or author",
-                                label="🔍 Search quotes",
-                                placeholder="Search by text, author, or ID...",
-                                value="",
+                        # Left side - tab-specific action buttons
+                        with ui.row().classes("items-center gap-2"):
+                            primary_button(
+                                "New Quote",
+                                lambda: show_create_chatbot_dialog("quote"),
+                                icon="format_quote",
+                                extra_classes="px-4 py-2",
                             )
-                            .classes("search-input w-full")
-                            .props("clearable")
-                        )
 
-                        # Update search on input change for quotes tab
-                        def on_quotes_search_change(event):
-                            global search_term
-                            search_term = event.value or ""
-                            refresh_tab_content("quotes")
+                            outline_button(
+                                "Refresh",
+                                lambda: refresh_tab_content("quotes"),
+                                icon="refresh",
+                                extra_classes="px-3 py-2",
+                            )
 
-                        search_input_quotes.on_value_change(on_quotes_search_change)
+                            outline_button(
+                                "Settings",
+                                show_quote_settings_dialog,
+                                icon="settings",
+                                extra_classes="px-3 py-2",
+                            )
 
-                # Quotes content area
-                global quotes_container
-                with ui.scroll_area().classes("w-full grow"):
-                    quotes_container = ui.element("div").classes("w-full p-4")
+                        # Right side - Tab-specific search box
+                        with ui.row().classes(
+                            "items-center gap-2 flex-1 justify-end max-w-md"
+                        ):
+                            search_input_quotes = (
+                                form_input(
+                                    tooltip="Filter quotes by text or author",
+                                    label="🔍 Search quotes",
+                                    placeholder="Search by text, author, or ID...",
+                                    value="",
+                                )
+                                .classes("search-input w-full")
+                                .props("clearable")
+                            )
 
-            # Greetings Tab
-            with ui.tab_panel(greetings_tab).classes(
-                "transition-all duration-300 w-full h-full flex flex-col"
-            ):
-                # Tab-specific header with buttons and search
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
+                            # Update search on input change for quotes tab
+                            def on_quotes_search_change(event):
+                                global search_term
+                                search_term = event.value or ""
+                                refresh_tab_content("quotes")
+
+                            search_input_quotes.on_value_change(on_quotes_search_change)
+
+                    # Quotes content area
+                    global quotes_container
+                    with ui.scroll_area().classes("w-full grow"):
+                        quotes_container = ui.element("div").classes("w-full p-4")
+
+                # Greetings Tab
+                with ui.tab_panel(greetings_tab).classes(
+                    "transition-all duration-300 w-full h-full flex flex-col"
                 ):
-                    # Left side - tab-specific action buttons
-                    with ui.row().classes("items-center gap-2"):
-                        primary_button(
-                            "New Greeting",
-                            lambda: show_create_greeting_dialog(),
-                            icon="waving_hand",
-                            extra_classes="px-4 py-2",
-                        )
-
-                        outline_button(
-                            "Refresh",
-                            lambda: refresh_tab_content("greetings"),
-                            icon="refresh",
-                            extra_classes="px-3 py-2",
-                        )
-
-                        outline_button(
-                            "Settings",
-                            show_greeting_settings_dialog,
-                            icon="settings",
-                            extra_classes="px-3 py-2",
-                        )
-
-                    # Right side - Tab-specific search box
+                    # Tab-specific header with buttons and search
                     with ui.row().classes(
-                        "items-center gap-2 flex-1 justify-end max-w-md"
+                        "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
                     ):
-                        search_input_greetings = (
-                            form_input(
-                                tooltip="Filter greetings by name or message",
-                                label="🔍 Search greetings",
-                                placeholder="Search by username or greeting text...",
-                                value="",
+                        # Left side - tab-specific action buttons
+                        with ui.row().classes("items-center gap-2"):
+                            primary_button(
+                                "New Greeting",
+                                lambda: show_create_greeting_dialog(),
+                                icon="waving_hand",
+                                extra_classes="px-4 py-2",
                             )
-                            .classes("search-input w-full")
-                            .props("clearable")
-                        )
 
-                        # Update search on input change for greetings tab
-                        def on_greetings_search_change(event):
-                            global search_term
-                            search_term = event.value or ""
-                            refresh_tab_content("greetings")
+                            outline_button(
+                                "Refresh",
+                                lambda: refresh_tab_content("greetings"),
+                                icon="refresh",
+                                extra_classes="px-3 py-2",
+                            )
 
-                        search_input_greetings.on_value_change(
-                            on_greetings_search_change
-                        )
+                            outline_button(
+                                "Settings",
+                                show_greeting_settings_dialog,
+                                icon="settings",
+                                extra_classes="px-3 py-2",
+                            )
 
-                # Greetings content area
-                global greetings_container
-                with ui.scroll_area().classes("w-full grow"):
-                    greetings_container = ui.element("div").classes("w-full p-4")
+                        # Right side - Tab-specific search box
+                        with ui.row().classes(
+                            "items-center gap-2 flex-1 justify-end max-w-md"
+                        ):
+                            search_input_greetings = (
+                                form_input(
+                                    tooltip="Filter greetings by name or message",
+                                    label="🔍 Search greetings",
+                                    placeholder="Search by username or greeting text...",
+                                    value="",
+                                )
+                                .classes("search-input w-full")
+                                .props("clearable")
+                            )
 
-            # Giveaways Tab
-            with ui.tab_panel(giveaways_tab).classes(
-                "transition-all duration-300 w-full h-full flex flex-col"
-            ):
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
+                            # Update search on input change for greetings tab
+                            def on_greetings_search_change(event):
+                                global search_term
+                                search_term = event.value or ""
+                                refresh_tab_content("greetings")
+
+                            search_input_greetings.on_value_change(
+                                on_greetings_search_change
+                            )
+
+                    # Greetings content area
+                    global greetings_container
+                    with ui.scroll_area().classes("w-full grow"):
+                        greetings_container = ui.element("div").classes("w-full p-4")
+
+                # Giveaways Tab
+                with ui.tab_panel(giveaways_tab).classes(
+                    "transition-all duration-300 w-full h-full flex flex-col"
                 ):
-                    with ui.row().classes("items-center gap-2"):
-                        outline_button(
-                            "Refresh",
-                            lambda: refresh_tab_content("giveaways"),
-                            icon="refresh",
-                            extra_classes="px-3 py-2",
-                        )
+                    with ui.row().classes(
+                        "w-full items-center justify-between p-4 pb-2 flex-none gap-2"
+                    ):
+                        with ui.row().classes("items-center gap-2"):
+                            outline_button(
+                                "Refresh",
+                                lambda: refresh_tab_content("giveaways"),
+                                icon="refresh",
+                                extra_classes="px-3 py-2",
+                            )
 
-                with ui.scroll_area().classes("w-full grow"):
-                    giveaways_container = ui.element("div").classes("w-full p-4")
+                    with ui.scroll_area().classes("w-full grow"):
+                        giveaways_container = ui.element("div").classes("w-full p-4")
 
-        # Load and display chatbot items for all tabs
-        load_chatbot_items()
+            # Load and display chatbot items for all tabs
+            load_chatbot_items()
+
+    ui.run_javascript(
+        "window.mycelianInitSubTabSeams && window.mycelianInitSubTabSeams()"
+    )
 
     # Load custom variables from persistent storage
     try:

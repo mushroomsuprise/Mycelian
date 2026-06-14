@@ -85,7 +85,7 @@ from modules.uiwindows.customsources import create_custom_sources_tab
 from . import alertutils, database_manager, dataobjects, web_engine
 from .theme_manager import get_theme_manager, generate_css_variables
 from .ui_font import apply_app_font, get_app_font_css_block
-from .ui_styles import get_full_theme_css
+from .ui_styles import get_full_theme_css, SUB_TAB_SEAM_SCRIPT
 from .ui_timer import app_schedule, layout_schedule
 
 logger = logging.getLogger(__name__)
@@ -243,6 +243,7 @@ def apply_theme(theme_name: str):
             f"<style id='mycelian-font-override'>{get_app_font_css_block()}</style>",
             shared=True,
         )
+        ui.add_head_html(SUB_TAB_SEAM_SCRIPT, shared=True)
 
         _base_css_injected = True
         logger.info(
@@ -692,7 +693,7 @@ ACTIVITY_FEED_CSS = """
 
 SOURCE_CONTROLS_CSS = """
 /* Source Controls tab — OBS sort + equal-width flex columns (full width) */
-.source-controls-tab.content-section {
+.source-controls-tab.tab-surface {
     align-self: stretch;
     flex: 1 1 auto;
     width: 100% !important;
@@ -1369,228 +1370,231 @@ def create_ui_elements():
         "mycelian-main-shell w-full box-border flex flex-col overflow-hidden "
         "gap-0 min-h-0 p-2"
     ):
-        # Top row: main tabs (flex) + notification bell
-        with ui.row().classes(
-            "w-full items-stretch gap-1 flex-nowrap shrink-0 flex-none"
+        from .help_system.contextual_help import help_button, register_main_tabs
+        from .notification_engine import (
+            create_notification_tray_button,
+            create_service_status_footer,
+            start_service_watcher_timer,
+        )
+
+        # Connected main tabs + content card share one shell (matches sub-tab pattern)
+        with ui.element("div").classes(
+            "mycelian-main-tab-shell flex-1 min-h-0 flex flex-col w-full min-w-0"
         ):
-            with ui.column().classes("grow min-w-0"):
-                with ui.tabs().classes("w-full") as tabs:
-                    activity_tab = ui.tab("Activity Feed")
-                    alerts_tab = ui.tab("Alerts")
-                    source_settings_tab = ui.tab("Source Settings")
-                    source_controls_tab = ui.tab("Source Controls")
-                    connectors_tab = ui.tab("Connectors")
-                    chatbot_tab = ui.tab("Chatbot")
-                    spore_studio_tab = ui.tab("Spore Studio")
-                    settings_tab = ui.tab("Settings")
-
-            from .help_system.contextual_help import help_button, register_main_tabs
-            from .notification_engine import (
-                create_notification_tray_button,
-                create_service_status_footer,
-                start_service_watcher_timer,
-            )
-
-            register_main_tabs(
-                {
-                    "Activity Feed": activity_tab,
-                    "Alerts": alerts_tab,
-                    "Source Settings": source_settings_tab,
-                    "Source Controls": source_controls_tab,
-                    "Connectors": connectors_tab,
-                    "Chatbot": chatbot_tab,
-                    "Settings": settings_tab,
-                    "Spore Studio": spore_studio_tab,
-                }
-            )
-            with ui.row().classes("items-center gap-0 shrink-0"):
-                help_button(tooltip="Help", size="sm")
-                create_notification_tray_button()
-
-        # Main content area with tab panels (flex child: fills remainder)
-        with ui.element("div").classes("main-content"):
-            # Initialize lazy tabs dictionary
-            lazy_tabs = {}
-
-            with ui.tab_panels(tabs, value=activity_tab).classes(
-                "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
-            ) as tab_panels:
-                # Set references for help system context detection
-                from .help_system.contextual_help import set_main_ui_references
-
-                set_main_ui_references(tabs, tab_panels)
-                # Activity Feed Tab - load immediately (it's the default view)
-                with StartupTimer("create_ui_elements.activity_feed"):
-                    with ui.tab_panel(activity_tab).classes(
-                        "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
-                    ):
-                        create_activity_feed_tab()
-
-                # Other tabs - lazy load
-                def build_alerts_tab():
-                    from .uiwindows.alertsettings import create_alert_settings_tab
-
-                    create_alert_settings_tab()
-
-                def build_source_controls_tab():
-                    from .uiwindows.sourcecontrols import create_source_controls_tab
-
-                    create_source_controls_tab()
-
-                def build_connectors_tab():
-                    from .uiwindows.connectors import create_connectors_tab
-
-                    create_connectors_tab()
-
-                def build_chatbot_tab():
-                    from .uiwindows.chatbot import create_chatbot_tab
-
-                    create_chatbot_tab()
-
-                def build_settings_tab():
-                    from .uiwindows.settings import create_settings_tab
-
-                    create_settings_tab()
-
-                def build_spore_studio_tab():
-                    from .uiwindows.spore_studio import create_spore_studio_tab
-
-                    create_spore_studio_tab()
-
-                tab_definitions = [
-                    ("Alerts", build_alerts_tab, alerts_tab),
-                    ("Source Settings", create_custom_sources_tab, source_settings_tab),
-                    ("Source Controls", build_source_controls_tab, source_controls_tab),
-                    ("Connectors", build_connectors_tab, connectors_tab),
-                    ("Chatbot", build_chatbot_tab, chatbot_tab),
-                    ("Spore Studio", build_spore_studio_tab, spore_studio_tab),
-                    ("Settings", build_settings_tab, settings_tab),
-                ]
-
-                with StartupTimer("create_ui_elements.lazy_panels"):
-                    for tab_name, build_func, tab_obj in tab_definitions:
-                        with ui.tab_panel(tab_obj).classes(
-                            "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
-                        ) as panel:
-                            lazy_tabs[tab_name] = LazyTabPanel(tab_name, build_func)
-                            lazy_tabs[tab_name].container = panel
-                            # Create spinner and store reference for later removal
-                            spinner = (
-                                ui.spinner("dots")
-                                .classes("mx-auto")
-                                .props("size=3rem")
-                            )
-                            lazy_tabs[tab_name].spinner = spinner
-
-            # Add tab change handler for unsaved changes warning and lazy loading
-            def on_main_tab_change(e):
-                new_tab = e.value
-                current_tab = tabs.value
-
-                # Check if leaving the Settings tab with unsaved changes
-                # tabs.value may be a string or object, compare appropriately
-                def is_settings_tab(tab):
-                    if isinstance(tab, str):
-                        return tab == "Settings"
-                    else:
-                        return (
-                            str(tab) == str(settings_tab)
-                            or getattr(tab, "text", "") == "Settings"
-                            or getattr(tab, "label", "") == "Settings"
-                            or getattr(tab, "name", "") == "Settings"
-                        )
-
-                current_is_settings = is_settings_tab(current_tab)
-                new_is_settings = is_settings_tab(new_tab)
-                if current_is_settings and not new_is_settings:
-                    # Import here to avoid circular imports
-                    from .uiwindows.settings import settings_ui
-
-                    if settings_ui.has_unsaved_changes():
-                        show_settings_unsaved_dialog(
-                            tabs, tab_panels, current_tab, new_tab
-                        )
-                        # Prevent the tab switch by reverting the selection
-                        tabs.value = current_tab
-                        return
-
-                # Allow the tab switch - set tabs.value to the new tab
-                tabs.value = new_tab
-
-                # Handle lazy loading for the new tab
-                def get_tab_name(tab):
-                    if isinstance(tab, str):
-                        return tab
-                    else:
-                        return (
-                            getattr(tab, "text", "")
-                            or getattr(tab, "label", "")
-                            or str(tab)
-                        )
-
-                new_tab_name = get_tab_name(new_tab)
-                if new_tab_name in lazy_tabs:
-                    lazy_tabs[new_tab_name].ensure_loaded()
-
-            # Monitor tab changes using a timer since tabs.on("change") may not work in native mode
-            previous_tab = tabs.value
-
-            def check_tab_changes():
-                nonlocal previous_tab
-                current_tab = tabs.value
-                if current_tab != previous_tab:
-                    from .ui_tab_transitions import (
-                        MAIN_TAB_ORDER,
-                        apply_tab_slide_direction,
-                    )
-
-                    apply_tab_slide_direction(
-                        tab_panels, previous_tab, current_tab, MAIN_TAB_ORDER
-                    )
-                    # The tab already changed, but we need to check if it should be allowed
-                    # Temporarily set tabs.value back to the old tab for the handler
-                    old_current = previous_tab
-                    tabs.value = old_current  # Set back to old tab
-                    # Create a mock event with the new tab
-                    mock_event = type("MockEvent", (), {"value": current_tab})()
-                    on_main_tab_change(mock_event)
-                    # The handler has now set tabs.value appropriately
-                    # Update previous_tab to the current value
-                    previous_tab = tabs.value
-
-            layout_schedule(0.5, check_tab_changes, active=True)  # Check every 500ms
-
-            start_service_watcher_timer()
-
-            def show_settings_unsaved_dialog(
-                tabs_component, tab_panels_component, current_tab, target_tab
+            with ui.row().classes(
+                "main-tab-header-row w-full items-end gap-1 flex-nowrap shrink-0"
             ):
-                """Show dialog when leaving settings tab with unsaved changes."""
-                with ui.dialog() as dialog, ui.card().classes("w-[420px] p-4"):
-                    ui.label("Unsaved changes").classes("text-lg font-bold mb-2")
-                    ui.label(
-                        "You have unsaved changes in the Settings tab. Do you want to discard them and leave the Settings tab?"
-                    ).classes("secondary-text mb-4")
+                with ui.column().classes("grow min-w-0"):
+                    with ui.tabs().classes("w-full mycelian-main-tabs") as tabs:
+                        activity_tab = ui.tab("Activity Feed")
+                        alerts_tab = ui.tab("Alerts")
+                        source_settings_tab = ui.tab("Source Settings")
+                        source_controls_tab = ui.tab("Source Controls")
+                        connectors_tab = ui.tab("Connectors")
+                        chatbot_tab = ui.tab("Chatbot")
+                        spore_studio_tab = ui.tab("Spore Studio")
+                        settings_tab = ui.tab("Settings")
 
-                    def confirm_leave():
+                register_main_tabs(
+                    {
+                        "Activity Feed": activity_tab,
+                        "Alerts": alerts_tab,
+                        "Source Settings": source_settings_tab,
+                        "Source Controls": source_controls_tab,
+                        "Connectors": connectors_tab,
+                        "Chatbot": chatbot_tab,
+                        "Settings": settings_tab,
+                        "Spore Studio": spore_studio_tab,
+                    }
+                )
+                with ui.row().classes("items-center gap-0 shrink-0 self-end mb-1"):
+                    help_button(tooltip="Help", size="sm")
+                    create_notification_tray_button()
+
+            # Main content area with tab panels (flex child: fills remainder)
+            with ui.element("div").classes("main-content"):
+                # Initialize lazy tabs dictionary
+                lazy_tabs = {}
+    
+                with ui.tab_panels(tabs, value=activity_tab).classes(
+                    "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
+                ) as tab_panels:
+                    # Set references for help system context detection
+                    from .help_system.contextual_help import set_main_ui_references
+    
+                    set_main_ui_references(tabs, tab_panels)
+                    # Activity Feed Tab - load immediately (it's the default view)
+                    with StartupTimer("create_ui_elements.activity_feed"):
+                        with ui.tab_panel(activity_tab).classes(
+                            "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
+                        ):
+                            create_activity_feed_tab()
+    
+                    # Other tabs - lazy load
+                    def build_alerts_tab():
+                        from .uiwindows.alertsettings import create_alert_settings_tab
+    
+                        create_alert_settings_tab()
+    
+                    def build_source_controls_tab():
+                        from .uiwindows.sourcecontrols import create_source_controls_tab
+    
+                        create_source_controls_tab()
+    
+                    def build_connectors_tab():
+                        from .uiwindows.connectors import create_connectors_tab
+    
+                        create_connectors_tab()
+    
+                    def build_chatbot_tab():
+                        from .uiwindows.chatbot import create_chatbot_tab
+    
+                        create_chatbot_tab()
+    
+                    def build_settings_tab():
+                        from .uiwindows.settings import create_settings_tab
+    
+                        create_settings_tab()
+    
+                    def build_spore_studio_tab():
+                        from .uiwindows.spore_studio import create_spore_studio_tab
+    
+                        create_spore_studio_tab()
+    
+                    tab_definitions = [
+                        ("Alerts", build_alerts_tab, alerts_tab),
+                        ("Source Settings", create_custom_sources_tab, source_settings_tab),
+                        ("Source Controls", build_source_controls_tab, source_controls_tab),
+                        ("Connectors", build_connectors_tab, connectors_tab),
+                        ("Chatbot", build_chatbot_tab, chatbot_tab),
+                        ("Spore Studio", build_spore_studio_tab, spore_studio_tab),
+                        ("Settings", build_settings_tab, settings_tab),
+                    ]
+    
+                    with StartupTimer("create_ui_elements.lazy_panels"):
+                        for tab_name, build_func, tab_obj in tab_definitions:
+                            with ui.tab_panel(tab_obj).classes(
+                                "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
+                            ) as panel:
+                                lazy_tabs[tab_name] = LazyTabPanel(tab_name, build_func)
+                                lazy_tabs[tab_name].container = panel
+                                # Create spinner and store reference for later removal
+                                spinner = (
+                                    ui.spinner("dots")
+                                    .classes("mx-auto")
+                                    .props("size=3rem")
+                                )
+                                lazy_tabs[tab_name].spinner = spinner
+    
+                # Add tab change handler for unsaved changes warning and lazy loading
+                def on_main_tab_change(e):
+                    new_tab = e.value
+                    current_tab = tabs.value
+    
+                    # Check if leaving the Settings tab with unsaved changes
+                    # tabs.value may be a string or object, compare appropriately
+                    def is_settings_tab(tab):
+                        if isinstance(tab, str):
+                            return tab == "Settings"
+                        else:
+                            return (
+                                str(tab) == str(settings_tab)
+                                or getattr(tab, "text", "") == "Settings"
+                                or getattr(tab, "label", "") == "Settings"
+                                or getattr(tab, "name", "") == "Settings"
+                            )
+    
+                    current_is_settings = is_settings_tab(current_tab)
+                    new_is_settings = is_settings_tab(new_tab)
+                    if current_is_settings and not new_is_settings:
                         # Import here to avoid circular imports
                         from .uiwindows.settings import settings_ui
-
-                        # Discard all unsaved changes in settings tabs
-                        for tab in settings_ui._tabs_by_name.values():
-                            if hasattr(tab, "dirty") and tab.dirty:
-                                tab.discard()
-                        # Switch to the target tab
-                        tabs_component.value = target_tab
-                        dialog.close()
-
-                    with ui.row().classes("w-full justify-end gap-2"):
-                        ui.button("Stay", on_click=dialog.close).props("outline")
-                        ui.button("Discard and leave", on_click=confirm_leave).props(
-                            "color=primary"
+    
+                        if settings_ui.has_unsaved_changes():
+                            show_settings_unsaved_dialog(
+                                tabs, tab_panels, current_tab, new_tab
+                            )
+                            # Prevent the tab switch by reverting the selection
+                            tabs.value = current_tab
+                            return
+    
+                    # Allow the tab switch - set tabs.value to the new tab
+                    tabs.value = new_tab
+    
+                    # Handle lazy loading for the new tab
+                    def get_tab_name(tab):
+                        if isinstance(tab, str):
+                            return tab
+                        else:
+                            return (
+                                getattr(tab, "text", "")
+                                or getattr(tab, "label", "")
+                                or str(tab)
+                            )
+    
+                    new_tab_name = get_tab_name(new_tab)
+                    if new_tab_name in lazy_tabs:
+                        lazy_tabs[new_tab_name].ensure_loaded()
+    
+                # Monitor tab changes using a timer since tabs.on("change") may not work in native mode
+                previous_tab = tabs.value
+    
+                def check_tab_changes():
+                    nonlocal previous_tab
+                    current_tab = tabs.value
+                    if current_tab != previous_tab:
+                        from .ui_tab_transitions import (
+                            MAIN_TAB_ORDER,
+                            apply_tab_slide_direction,
                         )
-
-                    dialog.open()  # Explicitly open the dialog
+    
+                        apply_tab_slide_direction(
+                            tab_panels, previous_tab, current_tab, MAIN_TAB_ORDER
+                        )
+                        # The tab already changed, but we need to check if it should be allowed
+                        # Temporarily set tabs.value back to the old tab for the handler
+                        old_current = previous_tab
+                        tabs.value = old_current  # Set back to old tab
+                        # Create a mock event with the new tab
+                        mock_event = type("MockEvent", (), {"value": current_tab})()
+                        on_main_tab_change(mock_event)
+                        # The handler has now set tabs.value appropriately
+                        # Update previous_tab to the current value
+                        previous_tab = tabs.value
+    
+                layout_schedule(0.5, check_tab_changes, active=True)  # Check every 500ms
+    
+                start_service_watcher_timer()
+    
+                def show_settings_unsaved_dialog(
+                    tabs_component, tab_panels_component, current_tab, target_tab
+                ):
+                    """Show dialog when leaving settings tab with unsaved changes."""
+                    with ui.dialog() as dialog, ui.card().classes("w-[420px] p-4"):
+                        ui.label("Unsaved changes").classes("text-lg font-bold mb-2")
+                        ui.label(
+                            "You have unsaved changes in the Settings tab. Do you want to discard them and leave the Settings tab?"
+                        ).classes("secondary-text mb-4")
+    
+                        def confirm_leave():
+                            # Import here to avoid circular imports
+                            from .uiwindows.settings import settings_ui
+    
+                            # Discard all unsaved changes in settings tabs
+                            for tab in settings_ui._tabs_by_name.values():
+                                if hasattr(tab, "dirty") and tab.dirty:
+                                    tab.discard()
+                            # Switch to the target tab
+                            tabs_component.value = target_tab
+                            dialog.close()
+    
+                        with ui.row().classes("w-full justify-end gap-2"):
+                            ui.button("Stay", on_click=dialog.close).props("outline")
+                            ui.button("Discard and leave", on_click=confirm_leave).props(
+                                "color=primary"
+                            )
+    
+                        dialog.open()  # Explicitly open the dialog
 
         with StartupTimer("create_ui_elements.service_footer"):
             create_service_status_footer()

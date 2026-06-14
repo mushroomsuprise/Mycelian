@@ -169,6 +169,29 @@ body:not(.body--dark) .text-grey {
     width: 100%;
 }
 
+/* Top-level tab body — fills .main-content without a nested card frame */
+.tab-surface {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.tab-surface > .q-tab-panels {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.tab-surface .q-tab-panel {
+    min-height: 0;
+}
+
 /* Content section styling */
 .content-section {
     background: var(--color-bg-elevated);
@@ -255,14 +278,9 @@ body:not(.body--dark) .text-grey {
 .scroll-content {
     overflow-y: auto !important;
     overflow-x: hidden !important;
-    padding: 0.5rem !important;
-    background: var(--color-bg-elevated);
-    border-radius: 6px;
-    border: 1px solid var(--color-border-subtle);
-    margin: 8px;
     flex: 1;
-    width: calc(100% - 16px);
-    max-height: calc(100% - 16px);
+    min-height: 0;
+    width: 100%;
 }
 
 /* Status badges */
@@ -336,41 +354,42 @@ body:not(.body--dark) .text-grey {
     border-color: var(--color-border-accent) !important;
 }
 
-/* Activity feed tab row (segmented, OBS-dock style) */
+/* =========================================
+   Tab Navigation — Tier 3 segmented toggle
+   (Activity Feed CURRENT / PREVIOUS)
+   ========================================= */
+
 .tab-row {
     display: flex;
     width: 100%;
     margin-bottom: 16px;
     gap: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--color-border-subtle);
 }
 
 .q-btn.tab-button,
 .tab-button:not(.q-btn) {
     flex: 1;
     padding: 8px 16px;
+    min-height: 32px;
     font-size: 14px;
     font-weight: 500;
     background-color: var(--color-bg-surface) !important;
     color: var(--color-text-muted) !important;
-    border: 1px solid var(--color-border-subtle) !important;
+    border: none !important;
+    border-right: 1px solid var(--color-border-subtle) !important;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
     text-align: center;
     border-radius: 0 !important;
     margin: 0 !important;
 }
 
-.q-btn.tab-button:first-child,
-.tab-button:not(.q-btn):first-child {
-    border-top-left-radius: 6px !important;
-    border-bottom-left-radius: 6px !important;
-}
-
 .q-btn.tab-button:last-child,
 .tab-button:not(.q-btn):last-child {
-    border-top-right-radius: 6px !important;
-    border-bottom-right-radius: 6px !important;
-    border-left: none !important;
+    border-right: none !important;
 }
 
 .q-btn.tab-button:hover,
@@ -382,8 +401,10 @@ body:not(.body--dark) .text-grey {
 .q-btn.tab-button.active,
 .tab-button:not(.q-btn).active {
     background-color: var(--color-primary-light) !important;
-    color: var(--color-text-primary) !important;
-    border-color: var(--color-primary) !important;
+    color: var(--color-primary) !important;
+    border-color: var(--color-border-accent) !important;
+    font-weight: 600 !important;
+    box-shadow: inset 0 0 0 1px var(--color-border-accent);
 }
 
 .mycelian-btn {
@@ -437,6 +458,157 @@ body:not(.body--dark) .text-grey {
 
 .q-tab__indicator {
     background: var(--color-primary) !important;
+}
+
+/* =========================================
+   Tab Navigation — Tier 1 connected main tabs
+   (.mycelian-main-tab-shell)
+   ========================================= */
+
+.mycelian-main-tab-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+}
+
+.mycelian-main-tab-shell .mycelian-main-tabs.q-tabs {
+    flex-shrink: 0;
+    margin-bottom: 0;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+    border: none;
+}
+
+.mycelian-main-tab-shell .q-tabs__content {
+    gap: 2px;
+    padding: 0;
+    align-items: flex-end;
+    background: transparent !important;
+    overflow-x: auto;
+}
+
+/* =========================================
+   Tab Navigation — Tier 2 connected sub-tabs
+   Tabs + content share a border frame (.mycelian-sub-tab-shell)
+   ========================================= */
+
+.mycelian-sub-tab-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+}
+
+.mycelian-sub-tab-shell > .mycelian-sub-tabs.q-tabs,
+.mycelian-sub-tab-shell > .settings-tabs.mycelian-sub-tabs.q-tabs {
+    flex-shrink: 0;
+    margin-bottom: 0;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+    border-bottom: none;
+}
+
+.mycelian-sub-tab-shell .q-tabs__content {
+    gap: 2px;
+    padding: 0;
+    align-items: flex-end;
+    background: transparent !important;
+}
+
+/* Shared connected tab chrome (main + sub) */
+.mycelian-main-tab-shell .mycelian-main-tabs .q-tab,
+.mycelian-sub-tab-shell .q-tab {
+    border-radius: 8px 8px 0 0 !important;
+    padding: 0 14px;
+    margin-bottom: 0;
+    border: none !important;
+    border-bottom: 1px solid var(--color-border-subtle) !important;
+    background: var(--color-bg-surface);
+    color: var(--color-text-muted) !important;
+    font-weight: 500 !important;
+    position: relative;
+    z-index: 1;
+}
+
+.mycelian-main-tab-shell .mycelian-main-tabs .q-tab {
+    min-height: 36px;
+}
+
+.mycelian-sub-tab-shell .q-tab {
+    min-height: 34px;
+    font-size: 0.8125rem;
+}
+
+.mycelian-main-tab-shell .mycelian-main-tabs .q-tab:hover,
+.mycelian-sub-tab-shell .q-tab:hover {
+    background: color-mix(in srgb, var(--color-hover-overlay) 70%, var(--color-bg-surface));
+    color: var(--color-text-secondary) !important;
+}
+
+.mycelian-main-tab-shell .mycelian-main-tabs .q-tab--active,
+.mycelian-sub-tab-shell .q-tab--active {
+    background: var(--color-bg-elevated) !important;
+    border-top: 1px solid var(--color-border-accent) !important;
+    border-left: 1px solid var(--color-border-accent) !important;
+    border-right: 1px solid var(--color-border-accent) !important;
+    border-bottom: none !important;
+    color: var(--color-primary) !important;
+    font-weight: 600 !important;
+    z-index: 6;
+    margin-bottom: -1px;
+    padding-bottom: 1px;
+}
+
+.mycelian-main-tab-shell .mycelian-main-tabs .q-tab__indicator,
+.mycelian-sub-tab-shell .q-tab__indicator {
+    display: none !important;
+}
+
+.mycelian-sub-tab-shell .q-tab__icon {
+    width: 1.25em;
+    height: 1.25em;
+}
+
+.mycelian-sub-tab-shell .q-tab--active .q-tab__icon {
+    color: var(--color-primary) !important;
+}
+
+/* Full frame; top segment under active tab is masked via ::before + JS-set CSS vars */
+.mycelian-main-tab-shell > .main-content,
+.mycelian-sub-tab-shell > .q-tab-panels {
+    flex: 1 1 auto;
+    min-height: 0;
+    border: 1px solid var(--color-border-accent) !important;
+    border-radius: 10px;
+    background: var(--color-bg-elevated) !important;
+    overflow: hidden;
+    position: relative;
+    z-index: 2;
+    margin-top: -1px;
+    box-sizing: border-box;
+}
+
+/* Erase only the top-border segment beneath the active tab (seamless join) */
+.mycelian-main-tab-shell > .main-content::before,
+.mycelian-sub-tab-shell > .q-tab-panels::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--mycelian-subtab-mask-left, 0px);
+    width: var(--mycelian-subtab-mask-width, 0px);
+    height: 2px;
+    background: var(--color-bg-elevated);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.mycelian-sub-tab-shell > .q-tab-panels > .q-tab-panel {
+    min-height: 0;
 }
 
 /* Tab panels */
@@ -838,6 +1010,11 @@ body:not(.body--dark) .content-section {
 
 body:not(.body--dark) .q-tabs__content {
     background: var(--color-bg-surface) !important;
+}
+
+body:not(.body--dark) .mycelian-main-tab-shell .q-tabs__content,
+body:not(.body--dark) .mycelian-sub-tab-shell .q-tabs__content {
+    background: transparent !important;
 }
 
 /* Cards and panels in light mode */
@@ -1715,3 +1892,86 @@ button.btn-primary {
 def get_full_theme_css() -> str:
     """Get combined base and component CSS"""
     return BASE_CSS + COMPONENT_CSS
+
+
+SUB_TAB_SEAM_SCRIPT = """
+<script id="mycelian-subtab-seam-js">
+(function () {
+    if (window.__mycelianSubTabSeamInit) return;
+    window.__mycelianSubTabSeamInit = true;
+
+    var SHELL_SELECTOR = '.mycelian-main-tab-shell, .mycelian-sub-tab-shell';
+
+    function contentFrame(shell) {
+        return shell.querySelector(':scope > .main-content')
+            || shell.querySelector(':scope > .q-tab-panels');
+    }
+
+    function activeTab(shell) {
+        if (shell.classList.contains('mycelian-main-tab-shell')) {
+            var mainTabs = shell.querySelector('.mycelian-main-tabs');
+            return mainTabs ? mainTabs.querySelector('.q-tab.q-tab--active') : null;
+        }
+        var strip = shell.querySelector(':scope > .q-tabs');
+        return strip ? strip.querySelector('.q-tab.q-tab--active') : null;
+    }
+
+    function updateSeam(shell) {
+        if (!shell) return;
+        var active = activeTab(shell);
+        var frame = contentFrame(shell);
+        if (!frame) return;
+        if (!active) {
+            frame.style.setProperty('--mycelian-subtab-mask-width', '0px');
+            return;
+        }
+        var frameRect = frame.getBoundingClientRect();
+        var tabRect = active.getBoundingClientRect();
+        var left = Math.max(0, tabRect.left - frameRect.left);
+        frame.style.setProperty('--mycelian-subtab-mask-left', left + 'px');
+        frame.style.setProperty('--mycelian-subtab-mask-width', tabRect.width + 'px');
+    }
+
+    function updateAll() {
+        document.querySelectorAll(SHELL_SELECTOR).forEach(updateSeam);
+    }
+
+    window.mycelianUpdateTabSeams = updateAll;
+    window.mycelianUpdateSubTabSeams = updateAll;
+
+    function watchShell(shell) {
+        if (!shell || shell.__mycelianSeamWatched) return;
+        shell.__mycelianSeamWatched = true;
+        var tabs = shell.querySelector('.q-tabs');
+        if (!tabs) return;
+        var obs = new MutationObserver(function () { updateSeam(shell); });
+        obs.observe(tabs, {
+            attributes: true,
+            subtree: true,
+            attributeFilter: ['class'],
+            childList: true,
+        });
+        updateSeam(shell);
+    }
+
+    function initAll() {
+        document.querySelectorAll(SHELL_SELECTOR).forEach(watchShell);
+        updateAll();
+    }
+
+    window.mycelianInitTabSeams = initAll;
+    window.mycelianInitSubTabSeams = initAll;
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAll);
+    } else {
+        initAll();
+    }
+
+    window.addEventListener('resize', updateAll);
+
+    var bodyObs = new MutationObserver(function () { initAll(); });
+    bodyObs.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+"""

@@ -125,40 +125,40 @@
             display: flex;
             margin-bottom: var(--content-padding, 8px);
             width: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
         }
 
         .tab-button {
             flex: 1;
             padding: calc(var(--control-button-padding, 4px) * 1.5) calc(var(--control-button-padding, 4px) * 3);
+            min-height: 32px;
             font-size: calc(var(--control-font-size, 11px) + 1px);
             font-weight: 500;
-            background-color: var(--color-hover-overlay, rgba(255, 255, 255, 0.05));
+            background-color: var(--color-bg-surface, rgba(255, 255, 255, 0.05));
             color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
-            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+            border: none;
+            border-right: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
             cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .tab-button:first-child {
-            border-top-left-radius: 6px;
-            border-bottom-left-radius: 6px;
+            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
         }
 
         .tab-button:last-child {
-            border-top-right-radius: 6px;
-            border-bottom-right-radius: 6px;
-            border-left: none;
+            border-right: none;
         }
 
         .tab-button:hover {
-            background-color: var(--color-active-overlay, rgba(255, 255, 255, 0.1));
+            background-color: var(--color-hover-overlay, rgba(255, 255, 255, 0.08));
             color: var(--color-text-secondary, rgba(255, 255, 255, 0.8));
         }
 
         .tab-button.active {
             background-color: var(--color-primary-light, rgba(var(--primary-color-rgb, 115, 0, 255), 0.3));
-            color: var(--color-text-primary, white);
+            color: var(--color-primary, rgb(var(--primary-color-rgb, 115, 0, 255)));
             border-color: var(--color-border-accent, rgba(var(--primary-color-rgb, 115, 0, 255), 0.5));
+            font-weight: 600;
+            box-shadow: inset 0 0 0 1px var(--color-border-accent, rgba(var(--primary-color-rgb, 115, 0, 255), 0.5));
         }
 
         /* Filter dropdown styling */

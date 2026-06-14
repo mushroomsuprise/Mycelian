@@ -166,20 +166,30 @@ body .theme-preview-container .q-spinner {
    Mock UI - Tab Bar
    ============================================ */
 
+.mock-main-tab-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
 .mock-tab-bar-row {
     display: flex;
-    align-items: stretch;
-    background: var(--preview-color-bg-elevated);
-    border-bottom: 1px solid var(--preview-color-border-default);
+    align-items: flex-end;
+    gap: 4px;
+    background: transparent;
+    padding: 0;
 }
 
 .mock-tab-bar {
     display: flex;
-    gap: 0;
+    gap: 2px;
     flex: 1;
     min-width: 0;
-    padding: 0 6px;
+    align-items: flex-end;
     overflow-x: auto;
+    background: transparent;
+    border: none;
+    padding: 0;
 }
 
 .mock-notification-btn {
@@ -188,7 +198,7 @@ body .theme-preview-container .q-spinner {
     justify-content: center;
     flex-shrink: 0;
     width: 32px;
-    margin: 4px 6px 4px 0;
+    margin-bottom: 4px;
     border-radius: 50%;
     background: var(--preview-color-bg-surface);
     border: 1px solid var(--preview-color-border-subtle);
@@ -208,24 +218,43 @@ body .theme-preview-container .q-spinner {
     padding: 7px 10px;
     font-size: 11px;
     font-weight: 500;
-    color: var(--preview-color-text-secondary) !important;
-    border-bottom: 2px solid transparent;
+    color: var(--preview-color-text-muted, var(--preview-color-text-secondary)) !important;
+    border-radius: 8px 8px 0 0;
+    border: none;
+    border-bottom: 1px solid var(--preview-color-border-subtle);
+    background: var(--preview-color-bg-surface);
     white-space: nowrap;
     cursor: default;
     user-select: none;
+    position: relative;
+    z-index: 1;
 }
 
 .mock-tab.active {
+    background: var(--preview-color-bg-elevated);
+    border-top: 1px solid var(--preview-color-border-accent);
+    border-left: 1px solid var(--preview-color-border-accent);
+    border-right: 1px solid var(--preview-color-border-accent);
+    border-bottom: none;
     color: var(--preview-color-primary) !important;
-    border-bottom-color: var(--preview-color-primary);
+    font-weight: 600;
+    z-index: 6;
+    margin-bottom: -1px;
+}
+
+.mock-sub-tab-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
 }
 
 .mock-sub-tab-bar {
     display: flex;
-    gap: 0;
-    background: var(--preview-color-bg-surface);
-    border-bottom: 1px solid var(--preview-color-border-subtle);
-    padding: 0 4px;
+    gap: 2px;
+    align-items: flex-end;
+    background: transparent;
+    border-bottom: none;
+    padding: 0;
     overflow-x: auto;
 }
 
@@ -233,19 +262,56 @@ body .theme-preview-container .q-spinner {
     display: flex;
     align-items: center;
     gap: 3px;
-    padding: 5px 8px;
+    padding: 5px 10px;
     font-size: 10px;
     font-weight: 500;
-    color: var(--preview-color-text-secondary) !important;
-    border-bottom: 2px solid transparent;
+    color: var(--preview-color-text-muted, var(--preview-color-text-secondary)) !important;
+    border-radius: 6px 6px 0 0;
+    border: none;
+    border-bottom: 1px solid var(--preview-color-border-subtle);
+    background: var(--preview-color-bg-surface);
+    margin-bottom: 0;
     white-space: nowrap;
     cursor: default;
     user-select: none;
+    position: relative;
+    z-index: 1;
 }
 
 .mock-sub-tab.active {
+    background: var(--preview-color-bg-elevated);
+    border-top: 1px solid var(--preview-color-border-accent);
+    border-left: 1px solid var(--preview-color-border-accent);
+    border-right: 1px solid var(--preview-color-border-accent);
+    border-bottom: none;
     color: var(--preview-color-primary) !important;
-    border-bottom-color: var(--preview-color-primary);
+    font-weight: 600;
+    z-index: 6;
+    margin-bottom: -1px;
+}
+
+.mock-sub-tab-content {
+    border: 1px solid var(--preview-color-border-accent);
+    border-radius: 8px;
+    background: var(--preview-color-bg-elevated);
+    padding: 10px;
+    position: relative;
+    z-index: 2;
+    margin-top: -1px;
+    box-sizing: border-box;
+}
+
+/* Theme preview: mask top border under active mock tab (Theme is ~8th tab) */
+.mock-sub-tab-shell .mock-sub-tab-content::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 42%;
+    width: 14%;
+    height: 2px;
+    background: var(--preview-color-bg-elevated);
+    z-index: 5;
+    pointer-events: none;
 }
 
 .mock-sub-tab .icon {
@@ -275,8 +341,27 @@ body .theme-preview-container .q-spinner {
    ============================================ */
 
 .mock-content-area {
+    border: 1px solid var(--preview-color-border-accent);
+    border-radius: 10px;
     background: var(--preview-color-bg-elevated);
     padding: 10px;
+    position: relative;
+    z-index: 2;
+    margin-top: -1px;
+    box-sizing: border-box;
+}
+
+/* Theme preview: mask top border under active main tab (Settings is last) */
+.mock-main-tab-shell > .mock-content-area::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 78%;
+    width: 14%;
+    height: 2px;
+    background: var(--preview-color-bg-elevated);
+    z-index: 5;
+    pointer-events: none;
 }
 
 .mock-settings-card {
@@ -1002,24 +1087,26 @@ class ThemeTab:
             return
 
         with container:
-            # 1. Mock app tab bar
-            self._build_mock_tab_bar()
-            self._build_mock_notification_chips()
+            with ui.element("div").classes("mock-main-tab-shell"):
+                # 1. Mock app tab bar
+                self._build_mock_tab_bar()
 
-            # 2. Mock content area with settings sub-tabs and content
-            with ui.element("div").classes("mock-content-area"):
-                self._build_mock_sub_tabs()
+                # 2. Mock content area with settings sub-tabs and content
+                with ui.element("div").classes("mock-content-area"):
+                    self._build_mock_notification_chips()
 
-                with ui.element("div").classes("preview-grid-2col").style(
-                    "margin-top: 8px;"
-                ):
-                    # Left: settings card with form elements
-                    self._build_mock_settings_card()
-                    # Right: connection status card
-                    self._build_mock_status_card()
+                    with ui.element("div").classes("mock-sub-tab-shell"):
+                        self._build_mock_sub_tabs()
 
-                # Button showcase row
-                self._build_mock_buttons()
+                        with ui.element("div").classes("mock-sub-tab-content"):
+                            with ui.element("div").classes("preview-grid-2col"):
+                                # Left: settings card with form elements
+                                self._build_mock_settings_card()
+                                # Right: connection status card
+                                self._build_mock_status_card()
+
+                            # Button showcase row
+                            self._build_mock_buttons()
 
     def _build_palette_section(self) -> None:
         """Build the color palette and editor toolbar below the mock preview."""

@@ -526,7 +526,7 @@ def create_connectors_tab():
     ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
 
     # Create a card for the entire tab content with flex layout
-    with ui.element("div").classes("content-section w-full h-full flex flex-col"):
+    with ui.element("div").classes("tab-surface w-full h-full flex flex-col p-4"):
         # Compact header section - single row layout
         with ui.column().classes("w-full gap-3 p-4 flex-none"):
             # Top row: Title/description on left, buttons on right

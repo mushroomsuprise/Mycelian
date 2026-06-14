@@ -717,7 +717,7 @@ def create_custom_sources_tab():
 
     # Create a card for the entire tab content with flex layout
     with ui.element("div").classes(
-        "content-section w-full h-full flex flex-col relative"
+        "tab-surface w-full h-full flex flex-col relative p-4"
     ):
         # Header section with title and controls - fixed height
         with ui.column().classes("w-full gap-4 p-4 flex-none"):

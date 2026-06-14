@@ -152,7 +152,7 @@ def create_source_controls_tab():
     global source_controls_container
 
     with ui.element("div").classes(
-        "source-controls-tab content-section w-full h-full flex flex-col relative self-stretch"
+        "source-controls-tab tab-surface w-full h-full flex flex-col relative self-stretch p-4"
     ):
         with ui.column().classes("w-full gap-2 p-3 flex-none"):
             with ui.column().classes("w-full gap-1"):

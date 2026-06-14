@@ -343,138 +343,127 @@ def create_alert_settings_tab():
     # Add the CSS for basic styling - no animations
     ui.add_head_html(f"<style>{CSS}</style>")
 
-    with ui.element("div").classes("content-section w-full h-full relative"):
-        # Create tabs for different alert types with a more modern style
-        with ui.tabs().classes("w-full bg-theme-base rounded-lg p-1") as alert_tabs:
-            bits_tab = ui.tab("Bits").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            subs_tab = ui.tab("Subscriptions").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            streaks_tab = ui.tab("Streaks").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            giftsubs_tab = ui.tab("Gift Subs").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            donations_tab = ui.tab("Donations").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            raids_tab = ui.tab("Raids").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            follows_tab = ui.tab("Follows").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
-            )
-            points_tab = ui.tab("Channel Points").classes(
-                "transition-all duration-200 hover-theme-surface rounded-md"
+    with ui.element("div").classes("tab-surface w-full flex-1 min-h-0 flex flex-col p-4"):
+        with ui.element("div").classes("mycelian-sub-tab-shell w-full flex-1 min-h-0 flex flex-col"):
+            # Create tabs for different alert types
+            with ui.tabs().classes("w-full settings-tabs mycelian-sub-tabs") as alert_tabs:
+                bits_tab = ui.tab("Bits")
+                subs_tab = ui.tab("Subscriptions")
+                streaks_tab = ui.tab("Streaks")
+                giftsubs_tab = ui.tab("Gift Subs")
+                donations_tab = ui.tab("Donations")
+                raids_tab = ui.tab("Raids")
+                follows_tab = ui.tab("Follows")
+                points_tab = ui.tab("Channel Points")
+
+            set_alerts_ui_references(alert_tabs)
+
+            # Add an on_change handler to the tabs to initialize values when tab changes
+            alert_tabs.on(
+                "change",
+                lambda e: initialize_tab_values(e.args["value"])
+                if e.args and "value" in e.args
+                else None,
             )
 
-        set_alerts_ui_references(alert_tabs)
+            # Add a simple handler for Channel Points tab to load rewards immediately
+            def simple_tab_handler(e):
+                if e.value == "Channel Points":
+                    logger.debug("Channel Points tab selected, loading rewards immediately")
 
-        # Add an on_change handler to the tabs to initialize values when tab changes
-        alert_tabs.on(
-            "change",
-            lambda e: initialize_tab_values(e.args["value"])
-            if e.args and "value" in e.args
-            else None,
-        )
+                    # Simple direct load with short delay
+                    def direct_load():
+                        try:
+                            load_twitch_point_rewards()
+                        except Exception as load_err:
+                            logger.error(f"Error in direct load: {str(load_err)}")
 
-        # Add a simple handler for Channel Points tab to load rewards immediately
-        def simple_tab_handler(e):
-            if e.value == "Channel Points":
-                logger.debug("Channel Points tab selected, loading rewards immediately")
+                    layout_schedule(0.1, direct_load, once=True)
 
-                # Simple direct load with short delay
-                def direct_load():
-                    try:
-                        load_twitch_point_rewards()
-                    except Exception as load_err:
-                        logger.error(f"Error in direct load: {str(load_err)}")
+            alert_tabs.on("change", simple_tab_handler)
 
-                layout_schedule(0.1, direct_load, once=True)
-
-        alert_tabs.on("change", simple_tab_handler)
-
-        # Main content area with tab panels
-        with ui.tab_panels(alert_tabs, value=bits_tab).classes(
-            "w-full h-[calc(100%-48px)] grow"
-        ):
-            # Bits Alerts Tab
-            with ui.tab_panel(bits_tab).classes(
-                "transition-all duration-300 w-full h-full"
+            # Main content area with tab panels
+            with ui.tab_panels(alert_tabs, value=bits_tab).classes(
+                "w-full flex-1 min-h-0 grow"
             ):
-                create_alert_type_panel("bits")
+                # Bits Alerts Tab
+                with ui.tab_panel(bits_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    create_alert_type_panel("bits")
 
-            # Subscription Alerts Tab
-            with ui.tab_panel(subs_tab).classes(
-                "transition-all duration-300 w-full h-full"
-            ):
-                create_alert_type_panel("subs")
+                # Subscription Alerts Tab
+                with ui.tab_panel(subs_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    create_alert_type_panel("subs")
 
-            with ui.tab_panel(streaks_tab).classes(
-                "transition-all duration-300 w-full h-full"
-            ):
-                create_alert_type_panel("streaks")
+                with ui.tab_panel(streaks_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    create_alert_type_panel("streaks")
 
-            # Gift Sub Alerts Tab
-            with ui.tab_panel(giftsubs_tab).classes(
-                "transition-all duration-300 w-full h-full"
-            ):
-                create_alert_type_panel("giftsubs")
+                # Gift Sub Alerts Tab
+                with ui.tab_panel(giftsubs_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    create_alert_type_panel("giftsubs")
 
-            # Donation Alerts Tab
-            with ui.tab_panel(donations_tab).classes(
-                "transition-all duration-300 w-full h-full"
-            ):
-                create_alert_type_panel("donations")
+                # Donation Alerts Tab
+                with ui.tab_panel(donations_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    create_alert_type_panel("donations")
 
-            # Raid Alerts Tab
-            with ui.tab_panel(raids_tab).classes(
-                "transition-all duration-300 w-full h-full"
-            ):
-                create_alert_type_panel("raids")
+                # Raid Alerts Tab
+                with ui.tab_panel(raids_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    create_alert_type_panel("raids")
 
-            # Follow Alerts Tab
-            with ui.tab_panel(follows_tab).classes(
-                "transition-all duration-300 w-full h-full"
-            ):
-                create_alert_type_panel("follows")
+                # Follow Alerts Tab
+                with ui.tab_panel(follows_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    create_alert_type_panel("follows")
 
-            # Channel Points Tab
-            with ui.tab_panel(points_tab).classes(
-                "transition-all duration-300 w-full h-full"
-            ):
-                create_points_alert_panel()
+                # Channel Points Tab
+                with ui.tab_panel(points_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    create_points_alert_panel()
 
-                # Add a simple visibility-based loader for points tab
-                def load_points_when_visible():
-                    try:
-                        # Simple check - if we're on points tab and select exists, load rewards
-                        if alert_settings_state.current_tab == "points":
-                            select_element = alert_settings_state.get_elements(
-                                "points"
-                            ).get("alert_select")
-                            if select_element:
-                                logger.debug(
-                                    "Points tab panel visible, loading rewards directly"
-                                )
-                                load_twitch_point_rewards()
-                            else:
-                                logger.debug(
-                                    "Points tab visible but select element not found yet"
-                                )
-                    except Exception as e:
-                        logger.error(f"Error in load_points_when_visible: {str(e)}")
+                    # Add a simple visibility-based loader for points tab
+                    def load_points_when_visible():
+                        try:
+                            # Simple check - if we're on points tab and select exists, load rewards
+                            if alert_settings_state.current_tab == "points":
+                                select_element = alert_settings_state.get_elements(
+                                    "points"
+                                ).get("alert_select")
+                                if select_element:
+                                    logger.debug(
+                                        "Points tab panel visible, loading rewards directly"
+                                    )
+                                    load_twitch_point_rewards()
+                                else:
+                                    logger.debug(
+                                        "Points tab visible but select element not found yet"
+                                    )
+                        except Exception as e:
+                            logger.error(f"Error in load_points_when_visible: {str(e)}")
 
-                # Schedule multiple attempts to load when this panel is created
-                layout_schedule(0.5, load_points_when_visible, once=True)
-                layout_schedule(1.5, load_points_when_visible, once=True)
-                layout_schedule(3.0, load_points_when_visible, once=True)
+                    # Schedule multiple attempts to load when this panel is created
+                    layout_schedule(0.5, load_points_when_visible, once=True)
+                    layout_schedule(1.5, load_points_when_visible, once=True)
+                    layout_schedule(3.0, load_points_when_visible, once=True)
 
-        # Initialize first tab immediately
-        layout_schedule(0.5, lambda: initialize_tab_values("Bits"), once=True)
+            # Initialize first tab immediately
+            layout_schedule(0.5, lambda: initialize_tab_values("Bits"), once=True)
+
+    ui.run_javascript(
+        "window.mycelianInitSubTabSeams && window.mycelianInitSubTabSeams()"
+    )
 
 
 def initialize_tab_values(tab_name):

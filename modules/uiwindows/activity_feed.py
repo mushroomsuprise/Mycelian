@@ -1547,7 +1547,7 @@ def create_activity_feed_tab():
 
     _DOCK_BTN_PROPS = "flat no-caps dense"
 
-    with ui.element("div").classes("content-section w-full h-full relative"):
+    with ui.element("div").classes("tab-surface w-full h-full relative flex flex-col p-4"):
         # Control buttons row (nowrap + horizontal scroll avoids clipping toggle on narrow/scaled windows)
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 flex-nowrap overflow-x-auto"

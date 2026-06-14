@@ -184,16 +184,6 @@ CSS = """
 .settings-toolbar {
     gap: 0.5rem;
 }
-
-/* Style for the tabs */
-.settings-tabs {
-    margin-bottom: 0.75rem;
-}
-
-.settings-tabs .q-tab__icon {
-    width: 1.25em;
-    height: 1.25em;
-}
 """
 
 
@@ -337,9 +327,8 @@ class SettingsUI:
         # Create a scroll container for the entire content
         scroll_container = ui.scroll_area().classes("w-full h-full")
         with scroll_container:
-            with ui.column().classes("w-full gap-4 p-4"):
-                # Create tabs for the different sections
-                with ui.tabs().classes("w-full settings-tabs") as tabs:
+            with ui.element("div").classes("mycelian-sub-tab-shell w-full"):
+                with ui.tabs().classes("w-full settings-tabs mycelian-sub-tabs") as tabs:
                     ui.tab("App Settings", icon="tune")
                     ui.tab("Theme", icon="palette")
                     ui.tab("Twitch", icon="stream")
@@ -350,11 +339,11 @@ class SettingsUI:
                     ui.tab("Statistics", icon="analytics")
                     ui.tab("About", icon="info")
 
-                # Add tab change handler to update styling when tabs change
                 tabs.on("change", lambda _: self.update_all_fields_styling())
 
-                # Tab panels container
-                with ui.tab_panels(tabs, value="App Settings").classes("w-full"):
+                with ui.tab_panels(tabs, value="App Settings").classes(
+                    "w-full flex-1 min-h-0"
+                ):
                     # App Settings Tab
                     with ui.tab_panel("App Settings").classes("tab-content"):
                         with ui.card().classes("content-section w-full"):
@@ -4999,186 +4988,185 @@ class SettingsUI:
         with StartupTimer("settings_css"):
             ui.add_head_html(f"<style>{CSS}</style>")
 
-        # Create a scroll container for the entire content
+        # Match Alerts/Chatbot layout: tab-surface padding outside the connected sub-tab shell
         with StartupTimer("settings_ui_structure"):
-            with StartupTimer("settings_create_scroll_container"):
-                scroll_container = ui.scroll_area().classes("w-full h-full relative")
+            with ui.element("div").classes(
+                "tab-surface w-full flex-1 min-h-0 flex flex-col p-4"
+            ):
+                with ui.element("div").classes(
+                    "mycelian-sub-tab-shell w-full flex-1 min-h-0 flex flex-col"
+                ):
+                    with ui.tabs().classes("w-full settings-tabs mycelian-sub-tabs") as tabs:
+                        ui.tab("Twitch", icon=service_tab_icon("twitch"))
+                        ui.tab("OBS", icon=service_tab_icon("obs"))
+                        ui.tab("PSN", icon=service_tab_icon("psn"))
+                        ui.tab("Spotify", icon=service_tab_icon("spotify"))
+                        ui.tab("YouTube", icon=service_tab_icon("youtube"))
+                        ui.tab("Game Hooks", icon="memory")
+                        ui.tab("Database", icon="storage")
+                        ui.tab("Statistics", icon="analytics")
+                        ui.tab("Theme", icon="palette")
+                        ui.tab("App Settings", icon="tune")
+                        ui.tab("About", icon="info")
 
-            with scroll_container:
-                with ui.column().classes("w-full gap-4 p-4 relative"):
-                    # Tabs header
-                    with StartupTimer("settings_create_tabs_header"):
-                        with ui.tabs().classes("w-full settings-tabs") as tabs:
-                            ui.tab("Twitch", icon=service_tab_icon("twitch"))
-                            ui.tab("OBS", icon=service_tab_icon("obs"))
-                            ui.tab("PSN", icon=service_tab_icon("psn"))
-                            ui.tab("Spotify", icon=service_tab_icon("spotify"))
-                            ui.tab("YouTube", icon=service_tab_icon("youtube"))
-                            ui.tab("Game Hooks", icon="memory")
-                            ui.tab("Database", icon="storage")
-                            ui.tab("Statistics", icon="analytics")
-                            ui.tab("Theme", icon="palette")
-                            ui.tab("App Settings", icon="tune")
-                            ui.tab("About", icon="info")
+                    # Panels for each tab
+                    with StartupTimer("settings_tab_panels"):
+                        with StartupTimer("settings_create_tab_panels_container"):
+                            tab_panels_container = ui.tab_panels(
+                                tabs, value=self._active_tab_name
+                            ).classes("w-full flex-1 min-h-0")
 
-                # Panels for each tab
-                with StartupTimer("settings_tab_panels"):
-                    with StartupTimer("settings_create_tab_panels_container"):
-                        tab_panels_container = ui.tab_panels(
-                            tabs, value=self._active_tab_name
-                        ).classes("w-full")
-
-                        # Set references for help system context detection
-                        from ..help_system.contextual_help import (
-                            set_settings_ui_references,
-                        )
-
-                        set_settings_ui_references(tabs, tab_panels_container)
-
-                    # Initialize lazy loading state
-                    self._settings_loaded_tabs = set()
-
-                    def load_tab_content(tab_name):
-                        """Load content for a specific tab"""
-                        if tab_name in self._settings_loaded_tabs:
-                            return  # Already loaded
-
-                        container = self._settings_tab_containers.get(tab_name)
-                        if not container:
-                            return
-
-                        # Mark as loaded immediately to prevent the timer
-                        # from retrying on error (every 200ms)
-                        self._settings_loaded_tabs.add(tab_name)
-
-                        with StartupTimer(
-                            f"settings_{tab_name.lower().replace(' ', '_')}_tab"
-                        ):
-                            # Safely remove loading elements before adding content
-                            try:
-                                if hasattr(container, "_loading_spinner"):
-                                    container.remove(container._loading_spinner)
-                                if hasattr(container, "_loading_label"):
-                                    container.remove(container._loading_label)
-                            except (ValueError, Exception):
-                                pass  # Already removed or not in children
-
-                            # Load actual content
-                            with container:
-                                if tab_name == "App Settings":
-                                    self._tabs_by_name["App Settings"].build(container)
-                                elif tab_name == "Theme":
-                                    self._tabs_by_name["Theme"].build(container)
-                                elif tab_name == "Twitch":
-                                    self._tabs_by_name["Twitch"].build(container)
-                                elif tab_name == "PSN":
-                                    self._tabs_by_name["PSN"].build(container)
-                                elif tab_name == "Spotify":
-                                    self._tabs_by_name["Spotify"].build(container)
-                                elif tab_name == "YouTube":
-                                    self._tabs_by_name["YouTube"].build(container)
-                                elif tab_name == "OBS":
-                                    self._tabs_by_name["OBS"].build(container)
-                                elif tab_name == "Game Hooks":
-                                    self._tabs_by_name["Game Hooks"].build(container)
-                                elif tab_name == "Database":
-                                    self._tabs_by_name["Database"].build(container)
-                                elif tab_name == "Statistics":
-                                    self._tabs_by_name["Statistics"].build(container)
-                                elif tab_name == "About":
-                                    self._build_about_tab(container)
-
-                    # Create tab panels with lazy loading
-                    self._settings_tab_containers = {}
-
-                    # Panel DOM order matches tab strip (for correct slide direction)
-                    settings_panel_order = [
-                        "Twitch",
-                        "OBS",
-                        "PSN",
-                        "Spotify",
-                        "YouTube",
-                        "Game Hooks",
-                        "Database",
-                        "Statistics",
-                        "Theme",
-                        "App Settings",
-                        "About",
-                    ]
-
-                    with tab_panels_container:
-                        for tab_name in settings_panel_order:
-                            with ui.tab_panel(tab_name).classes("tab-content"):
-                                container = ui.column().classes("w-full gap-4")
-                                self._settings_tab_containers[tab_name] = container
-                                if tab_name == "App Settings":
-                                    with StartupTimer("settings_app_settings_tab"):
-                                        self._tabs_by_name["App Settings"].build(
-                                            container
-                                        )
-                                    self._settings_loaded_tabs.add("App Settings")
-                                else:
-                                    spinner = (
-                                        ui.spinner("dots")
-                                        .classes("mx-auto")
-                                        .props("size=2rem")
-                                    )
-                                    label = ui.label("Loading...").classes(
-                                        "text-center muted-text"
-                                    )
-                                    container._loading_spinner = spinner
-                                    container._loading_label = label
-
-                    # Add tab change handler for lazy loading
-                    def on_settings_tab_change(e):
-                        new_tab = e.value
-                        if (
-                            new_tab in self._settings_tab_containers
-                            and new_tab not in self._settings_loaded_tabs
-                        ):
-                            load_tab_content(new_tab)
-
-                    # Use timer-based tab change detection since tabs.on("change") may not work reliably
-                    previous_settings_tab = tabs.value
-
-                    def check_settings_tab_changes():
-                        nonlocal previous_settings_tab
-                        current_tab = tabs.value
-                        if current_tab != previous_settings_tab:
-                            from ..ui_tab_transitions import (
-                                SETTINGS_TAB_ORDER,
-                                apply_tab_slide_direction,
+                            # Set references for help system context detection
+                            from ..help_system.contextual_help import (
+                                set_settings_ui_references,
                             )
 
-                            apply_tab_slide_direction(
-                                tab_panels_container,
-                                previous_settings_tab,
-                                current_tab,
-                                SETTINGS_TAB_ORDER,
-                            )
-                            if (
-                                current_tab in self._settings_tab_containers
-                                and current_tab not in self._settings_loaded_tabs
+                            set_settings_ui_references(tabs, tab_panels_container)
+
+                        # Initialize lazy loading state
+                        self._settings_loaded_tabs = set()
+
+                        def load_tab_content(tab_name):
+                            """Load content for a specific tab"""
+                            if tab_name in self._settings_loaded_tabs:
+                                return  # Already loaded
+
+                            container = self._settings_tab_containers.get(tab_name)
+                            if not container:
+                                return
+
+                            # Mark as loaded immediately to prevent the timer
+                            # from retrying on error (every 200ms)
+                            self._settings_loaded_tabs.add(tab_name)
+
+                            with StartupTimer(
+                                f"settings_{tab_name.lower().replace(' ', '_')}_tab"
                             ):
-                                load_tab_content(current_tab)
-                            # Update the active tab name
-                            self._active_tab_name = current_tab
-                            previous_settings_tab = current_tab
+                                # Safely remove loading elements before adding content
+                                try:
+                                    if hasattr(container, "_loading_spinner"):
+                                        container.remove(container._loading_spinner)
+                                    if hasattr(container, "_loading_label"):
+                                        container.remove(container._loading_label)
+                                except (ValueError, Exception):
+                                    pass  # Already removed or not in children
 
-                    # Check for tab changes every 200ms
-                    layout_schedule(0.2, check_settings_tab_changes, active=True)
+                                # Load actual content
+                                with container:
+                                    if tab_name == "App Settings":
+                                        self._tabs_by_name["App Settings"].build(container)
+                                    elif tab_name == "Theme":
+                                        self._tabs_by_name["Theme"].build(container)
+                                    elif tab_name == "Twitch":
+                                        self._tabs_by_name["Twitch"].build(container)
+                                    elif tab_name == "PSN":
+                                        self._tabs_by_name["PSN"].build(container)
+                                    elif tab_name == "Spotify":
+                                        self._tabs_by_name["Spotify"].build(container)
+                                    elif tab_name == "YouTube":
+                                        self._tabs_by_name["YouTube"].build(container)
+                                    elif tab_name == "OBS":
+                                        self._tabs_by_name["OBS"].build(container)
+                                    elif tab_name == "Game Hooks":
+                                        self._tabs_by_name["Game Hooks"].build(container)
+                                    elif tab_name == "Database":
+                                        self._tabs_by_name["Database"].build(container)
+                                    elif tab_name == "Statistics":
+                                        self._tabs_by_name["Statistics"].build(container)
+                                    elif tab_name == "About":
+                                        self._build_about_tab(container)
 
-                    # Lazy-loaded default tab never fires a change event on first open
-                    initial_settings_tab = tabs.value or self._active_tab_name
-                    if (
-                        initial_settings_tab
-                        and initial_settings_tab not in self._settings_loaded_tabs
-                    ):
-                        layout_schedule(
-                            0.05,
-                            lambda t=initial_settings_tab: load_tab_content(t),
-                            once=True,
-                        )
+                        # Create tab panels with lazy loading
+                        self._settings_tab_containers = {}
+
+                        # Panel DOM order matches tab strip (for correct slide direction)
+                        settings_panel_order = [
+                            "Twitch",
+                            "OBS",
+                            "PSN",
+                            "Spotify",
+                            "YouTube",
+                            "Game Hooks",
+                            "Database",
+                            "Statistics",
+                            "Theme",
+                            "App Settings",
+                            "About",
+                        ]
+
+                        with tab_panels_container:
+                            for tab_name in settings_panel_order:
+                                with ui.tab_panel(tab_name).classes("tab-content"):
+                                    container = ui.column().classes("w-full gap-4")
+                                    self._settings_tab_containers[tab_name] = container
+                                    if tab_name == "App Settings":
+                                        with StartupTimer("settings_app_settings_tab"):
+                                            self._tabs_by_name["App Settings"].build(
+                                                container
+                                            )
+                                        self._settings_loaded_tabs.add("App Settings")
+                                    else:
+                                        spinner = (
+                                            ui.spinner("dots")
+                                            .classes("mx-auto")
+                                            .props("size=2rem")
+                                        )
+                                        label = ui.label("Loading...").classes(
+                                            "text-center muted-text"
+                                        )
+                                        container._loading_spinner = spinner
+                                        container._loading_label = label
+
+                        # Add tab change handler for lazy loading
+                        def on_settings_tab_change(e):
+                            new_tab = e.value
+                            if (
+                                new_tab in self._settings_tab_containers
+                                and new_tab not in self._settings_loaded_tabs
+                            ):
+                                load_tab_content(new_tab)
+
+                        # Use timer-based tab change detection since tabs.on("change") may not work reliably
+                        previous_settings_tab = tabs.value
+
+                        def check_settings_tab_changes():
+                            nonlocal previous_settings_tab
+                            current_tab = tabs.value
+                            if current_tab != previous_settings_tab:
+                                from ..ui_tab_transitions import (
+                                    SETTINGS_TAB_ORDER,
+                                    apply_tab_slide_direction,
+                                )
+
+                                apply_tab_slide_direction(
+                                    tab_panels_container,
+                                    previous_settings_tab,
+                                    current_tab,
+                                    SETTINGS_TAB_ORDER,
+                                )
+                                if (
+                                    current_tab in self._settings_tab_containers
+                                    and current_tab not in self._settings_loaded_tabs
+                                ):
+                                    load_tab_content(current_tab)
+                                # Update the active tab name
+                                self._active_tab_name = current_tab
+                                previous_settings_tab = current_tab
+
+                        # Check for tab changes every 200ms
+                        layout_schedule(0.2, check_settings_tab_changes, active=True)
+
+                        # Lazy-loaded default tab never fires a change event on first open
+                        initial_settings_tab = tabs.value or self._active_tab_name
+                        if (
+                            initial_settings_tab
+                            and initial_settings_tab not in self._settings_loaded_tabs
+                        ):
+                            layout_schedule(
+                                0.05,
+                                lambda t=initial_settings_tab: load_tab_content(t),
+                                once=True,
+                            )
 
                 # Unsaved-changes guard
                 def on_tab_change(e):
@@ -5212,10 +5200,12 @@ class SettingsUI:
 
                 layout_schedule(0.5, check_subtab_changes, active=True)  # Check every 500ms
 
+        ui.run_javascript(
+            "window.mycelianInitSubTabSeams && window.mycelianInitSubTabSeams()"
+        )
+
         # Log timing summary
         # log_startup_summary()
-
-        return scroll_container
 
     def _build_about_tab(self, container):
         """Build the About tab content"""
