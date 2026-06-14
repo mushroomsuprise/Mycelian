@@ -1753,7 +1753,7 @@ button.btn-primary {
 }
 
 .service-status-footer .service-status-item {
-    transform: translateY(-4px);
+    transform: translateY(-3.5px);
 }
 
 .service-status-item {

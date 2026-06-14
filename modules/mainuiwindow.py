@@ -1370,7 +1370,7 @@ def create_ui_elements():
         StartupTimer("create_ui_elements.shell"),
         ui.column().classes(
             "mycelian-main-shell w-full box-border flex flex-col overflow-hidden "
-            "gap-0 min-h-0 pt-0.25 px-0.5 pb-0.5"
+            "gap-0 min-h-0 pt-0.25 px-0.5 pb-2"
         ),
     ):
         from .help_system.contextual_help import help_button, register_main_tabs

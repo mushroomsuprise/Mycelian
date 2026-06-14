@@ -693,7 +693,7 @@ def _service_status_notify_type(service_key: str, status: str) -> str:
     return "info"
 
 
-_SERVICE_KEYS = ("internet", "twitch", "spotify", "youtube", "psn", "obs", "webengine")
+_SERVICE_KEYS = ("internet", "webengine", "twitch", "obs", "psn", "spotify", "youtube")
 
 _SERVICE_LABELS: Dict[str, str] = {
     "internet": "Internet",
