@@ -100,15 +100,15 @@
         },
         {
             "type": "text",
-            "id": "image3_counter_default_src",
-            "label": "image3 default image",
+            "id": "bit_image_counter_default_src",
+            "label": "bit_image default image",
             "value": "",
-            "description": "Image URL when no counter range matches 'image3'."
+            "description": "Image URL when no counter range matches 'bit_image'."
         },
         {
             "type": "number",
-            "id": "image3_range_0_min",
-            "label": "image3 range 1 min",
+            "id": "bit_image_range_0_min",
+            "label": "bit_image range 1 min",
             "value": 0,
             "min": -9999999999,
             "max": 9999999999,
@@ -116,8 +116,8 @@
         },
         {
             "type": "number",
-            "id": "image3_range_0_max",
-            "label": "image3 range 1 max",
+            "id": "bit_image_range_0_max",
+            "label": "bit_image range 1 max",
             "value": 99,
             "min": -9999999999,
             "max": 9999999999,
@@ -125,15 +125,15 @@
         },
         {
             "type": "text",
-            "id": "image3_range_0_src",
-            "label": "image3 range 1 image",
+            "id": "bit_image_range_0_src",
+            "label": "bit_image range 1 image",
             "value": "/assets/bitcounter/cheer1.gif",
-            "description": "Image URL when counter is between min and max for 'image3'."
+            "description": "Image URL when counter is between min and max for 'bit_image'."
         },
         {
             "type": "number",
-            "id": "image3_range_1_min",
-            "label": "image3 range 2 min",
+            "id": "bit_image_range_1_min",
+            "label": "bit_image range 2 min",
             "value": 100,
             "min": -9999999999,
             "max": 9999999999,
@@ -141,8 +141,8 @@
         },
         {
             "type": "number",
-            "id": "image3_range_1_max",
-            "label": "image3 range 2 max",
+            "id": "bit_image_range_1_max",
+            "label": "bit_image range 2 max",
             "value": 999,
             "min": -9999999999,
             "max": 9999999999,
@@ -150,15 +150,15 @@
         },
         {
             "type": "text",
-            "id": "image3_range_1_src",
-            "label": "image3 range 2 image",
+            "id": "bit_image_range_1_src",
+            "label": "bit_image range 2 image",
             "value": "/assets/bitcounter/cheer100.gif",
-            "description": "Image URL when counter is between min and max for 'image3'."
+            "description": "Image URL when counter is between min and max for 'bit_image'."
         },
         {
             "type": "number",
-            "id": "image3_range_2_min",
-            "label": "image3 range 3 min",
+            "id": "bit_image_range_2_min",
+            "label": "bit_image range 3 min",
             "value": 1000,
             "min": -9999999999,
             "max": 9999999999,
@@ -166,8 +166,8 @@
         },
         {
             "type": "number",
-            "id": "image3_range_2_max",
-            "label": "image3 range 3 max",
+            "id": "bit_image_range_2_max",
+            "label": "bit_image range 3 max",
             "value": 4999,
             "min": -9999999999,
             "max": 9999999999,
@@ -175,15 +175,15 @@
         },
         {
             "type": "text",
-            "id": "image3_range_2_src",
-            "label": "image3 range 3 image",
+            "id": "bit_image_range_2_src",
+            "label": "bit_image range 3 image",
             "value": "/assets/bitcounter/cheer1000.gif",
-            "description": "Image URL when counter is between min and max for 'image3'."
+            "description": "Image URL when counter is between min and max for 'bit_image'."
         },
         {
             "type": "number",
-            "id": "image3_range_3_min",
-            "label": "image3 range 4 min",
+            "id": "bit_image_range_3_min",
+            "label": "bit_image range 4 min",
             "value": 5000,
             "min": -9999999999,
             "max": 9999999999,
@@ -191,8 +191,8 @@
         },
         {
             "type": "number",
-            "id": "image3_range_3_max",
-            "label": "image3 range 4 max",
+            "id": "bit_image_range_3_max",
+            "label": "bit_image range 4 max",
             "value": 9999,
             "min": -9999999999,
             "max": 9999999999,
@@ -200,15 +200,15 @@
         },
         {
             "type": "text",
-            "id": "image3_range_3_src",
-            "label": "image3 range 4 image",
+            "id": "bit_image_range_3_src",
+            "label": "bit_image range 4 image",
             "value": "/assets/bitcounter/cheer5000.gif",
-            "description": "Image URL when counter is between min and max for 'image3'."
+            "description": "Image URL when counter is between min and max for 'bit_image'."
         },
         {
             "type": "number",
-            "id": "image3_range_4_min",
-            "label": "image3 range 5 min",
+            "id": "bit_image_range_4_min",
+            "label": "bit_image range 5 min",
             "value": 10000,
             "min": -9999999999,
             "max": 9999999999,
@@ -216,8 +216,8 @@
         },
         {
             "type": "number",
-            "id": "image3_range_4_max",
-            "label": "image3 range 5 max",
+            "id": "bit_image_range_4_max",
+            "label": "bit_image range 5 max",
             "value": 99999,
             "min": -9999999999,
             "max": 9999999999,
@@ -225,15 +225,15 @@
         },
         {
             "type": "text",
-            "id": "image3_range_4_src",
-            "label": "image3 range 5 image",
+            "id": "bit_image_range_4_src",
+            "label": "bit_image range 5 image",
             "value": "/assets/bitcounter/cheer10000.gif",
-            "description": "Image URL when counter is between min and max for 'image3'."
+            "description": "Image URL when counter is between min and max for 'bit_image'."
         },
         {
             "type": "number",
-            "id": "image3_range_5_min",
-            "label": "image3 range 6 min",
+            "id": "bit_image_range_5_min",
+            "label": "bit_image range 6 min",
             "value": 100000,
             "min": -9999999999,
             "max": 9999999999,
@@ -241,8 +241,8 @@
         },
         {
             "type": "number",
-            "id": "image3_range_5_max",
-            "label": "image3 range 6 max",
+            "id": "bit_image_range_5_max",
+            "label": "bit_image range 6 max",
             "value": 9999999999,
             "min": -9999999999,
             "max": 9999999999,
@@ -250,10 +250,10 @@
         },
         {
             "type": "text",
-            "id": "image3_range_5_src",
-            "label": "image3 range 6 image",
+            "id": "bit_image_range_5_src",
+            "label": "bit_image range 6 image",
             "value": "/assets/bitcounter/cheer100000.gif",
-            "description": "Image URL when counter is between min and max for 'image3'."
+            "description": "Image URL when counter is between min and max for 'bit_image'."
         }
     ],
     "streamdeck_options": {

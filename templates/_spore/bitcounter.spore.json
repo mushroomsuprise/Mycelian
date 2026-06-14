@@ -115,6 +115,7 @@
         "text_align": true,
         "vertical_align": true
       },
+      "start_hidden": true,
       "text_mode": "counter",
       "type": "text",
       "value_animation": {
@@ -123,8 +124,7 @@
         "enabled": true,
         "pulse": false,
         "type": "tick_up"
-      },
-      "start_hidden": true
+      }
     },
     {
       "animations": {
@@ -179,7 +179,7 @@
           }
         ]
       },
-      "id": "image3",
+      "id": "bit_image",
       "parent_id": "container1",
       "placement": {
         "anchor_h": "left",
