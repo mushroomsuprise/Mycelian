@@ -126,6 +126,23 @@ body:not(.body--dark) .q-item__label {
     color: var(--color-text-primary) !important;
 }
 
+/* Restore semantic status colors (broad span/div rule above wins on specificity) */
+body:not(.body--dark) .text-theme-success {
+    color: var(--color-success) !important;
+}
+
+body:not(.body--dark) .text-theme-error {
+    color: var(--color-error) !important;
+}
+
+body:not(.body--dark) .text-theme-warning {
+    color: var(--color-warning) !important;
+}
+
+body:not(.body--dark) .text-theme-info {
+    color: var(--color-info) !important;
+}
+
 /* Light mode secondary text */
 body:not(.body--dark) .text-caption,
 body:not(.body--dark) .text-subtitle2,
@@ -695,6 +712,19 @@ body:not(.body--dark) .text-grey {
     color: var(--color-text-primary) !important;
 }
 
+.q-field--outlined .q-field__control:before,
+.q-field--outlined .q-field__control:after {
+    border-radius: inherit !important;
+}
+
+.q-field--outlined .q-field__control:before {
+    border-color: var(--color-border-subtle) !important;
+}
+
+.q-field--outlined .q-field__control:hover:before {
+    border-color: var(--color-primary) !important;
+}
+
 .q-field__native,
 .q-field__input {
     color: var(--color-text-primary) !important;
@@ -1088,7 +1118,16 @@ body.q-ios-padding .q-notifications__list.q-notifications__list--top.items-end {
 body:not(.body--dark) .main-content,
 body:not(.body--dark) .content-section {
     background: var(--color-bg-elevated) !important;
+}
+
+body:not(.body--dark) .content-section {
     border-color: var(--color-border-subtle) !important;
+}
+
+/* Connected tab frames keep accent border in light mode */
+body:not(.body--dark) .mycelian-main-tab-shell > .main-content,
+body:not(.body--dark) .mycelian-sub-tab-shell > .q-tab-panels {
+    border-color: var(--color-border-accent) !important;
 }
 
 body:not(.body--dark) .q-tabs__content {
@@ -1117,19 +1156,25 @@ body:not(.body--dark) .control-card {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
+/* Flat cards inside Settings subtabs (overrides light-mode shadows above) */
+body:not(.body--dark) .mycelian-sub-tab-shell .q-card,
+body:not(.body--dark) .mycelian-sub-tab-shell .content-card,
+body:not(.body--dark) .mycelian-sub-tab-shell .content-section,
+body:not(.body--dark) .mycelian-sub-tab-shell .settings-card,
+body:not(.body--dark) .mycelian-sub-tab-shell .statistics-section,
+body:not(.body--dark) .mycelian-sub-tab-shell .statistics-metric-card,
+body:not(.body--dark) .mycelian-sub-tab-shell .config-card,
+body:not(.body--dark) .mycelian-sub-tab-shell .connector-card,
+body:not(.body--dark) .mycelian-sub-tab-shell .chatbot-card,
+body:not(.body--dark) .mycelian-sub-tab-shell .control-card {
+    box-shadow: none !important;
+    filter: none !important;
+}
+
 /* Input fields in light mode */
 body:not(.body--dark) .q-field__control {
     background: var(--color-bg-surface) !important;
     color: var(--color-text-primary) !important;
-}
-
-body:not(.body--dark) .q-field--outlined .q-field__control {
-    border: 1px solid var(--color-border-default) !important;
-    background: var(--color-bg-surface) !important;
-}
-
-body:not(.body--dark) .q-field--outlined .q-field__control:hover {
-    border-color: var(--color-primary) !important;
 }
 
 body:not(.body--dark) .q-field__native,
@@ -1387,6 +1432,34 @@ COMPONENT_CSS = """
 
 .connector-card.connector-card-disabled:hover {
     border-color: var(--color-error);
+}
+
+/* Settings subtabs: flat cards without hover glow */
+.mycelian-sub-tab-shell .content-card,
+.mycelian-sub-tab-shell .settings-inner-panel,
+.mycelian-sub-tab-shell .q-card,
+.mycelian-sub-tab-shell .content-section,
+.mycelian-sub-tab-shell .settings-card,
+.mycelian-sub-tab-shell .statistics-section,
+.mycelian-sub-tab-shell .statistics-metric-card {
+    box-shadow: none !important;
+    transform: none !important;
+    filter: none !important;
+}
+
+.mycelian-sub-tab-shell .content-card:hover,
+.mycelian-sub-tab-shell .control-card:hover,
+.mycelian-sub-tab-shell .connector-card:hover,
+.mycelian-sub-tab-shell .config-card:hover,
+.mycelian-sub-tab-shell .chatbot-card:hover,
+.mycelian-sub-tab-shell .q-card:hover,
+.mycelian-sub-tab-shell .content-section:hover,
+.mycelian-sub-tab-shell .settings-card:hover,
+.mycelian-sub-tab-shell .statistics-section:hover,
+.mycelian-sub-tab-shell .statistics-metric-card:hover {
+    box-shadow: none !important;
+    transform: none !important;
+    filter: none !important;
 }
 
 /* Disabled state */
@@ -1796,7 +1869,7 @@ button.btn-primary {
     color: var(--color-text-primary);
 }
 
-.content-section.settings-tab-surface {
+.settings-tab-content {
     flex: 0 0 auto;
     width: 100%;
     max-width: 100%;
@@ -1804,6 +1877,75 @@ button.btn-primary {
     max-height: none;
     overflow: visible;
     box-sizing: border-box;
+}
+
+/* Notification tray badge (header bell) */
+.main-tab-header-row {
+    overflow: visible !important;
+    padding-top: 6px !important;
+    padding-right: 2px !important;
+    box-sizing: border-box;
+}
+
+.notification-tray-wrap {
+    position: relative !important;
+    overflow: visible !important;
+}
+
+.notification-tray-badge {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    transform: none !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 1.125rem !important;
+    min-height: 1.125rem !important;
+    margin: 0 !important;
+    padding: 0 0.35rem !important;
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    background: color-mix(
+        in srgb,
+        var(--color-error) 32%,
+        var(--color-bg-elevated)
+    ) !important;
+    color: var(--color-error) !important;
+    border: 1px solid color-mix(in srgb, var(--color-error) 48%, transparent) !important;
+    border-radius: 9999px !important;
+    box-shadow: none !important;
+    pointer-events: none !important;
+    box-sizing: border-box !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+}
+
+body:not(.body--dark) .notification-tray-badge {
+    color: var(--color-error) !important;
+}
+
+.notification-tray-badge.hidden {
+    display: none !important;
+}
+
+.notification-tray-badge.badge-digits-1 {
+    width: 1.125rem !important;
+    min-width: 1.125rem !important;
+    padding: 0 !important;
+}
+
+.notification-tray-badge.badge-digits-2 {
+    min-width: 1.375rem !important;
+}
+
+.notification-tray-badge.badge-digits-3 {
+    min-width: 1.75rem !important;
+}
+
+.notification-tray-badge.badge-digits-4 {
+    min-width: 2.125rem !important;
 }
 
 .service-status-footer--hidden {

@@ -112,6 +112,26 @@ CSS = """
     box-shadow: 0 4px 8px var(--color-bg-overlay);
 }
 
+/* Flat cards inside Settings subtabs (no hover lift/glow) */
+.mycelian-sub-tab-shell .q-card,
+.mycelian-sub-tab-shell .content-section,
+.mycelian-sub-tab-shell .settings-card,
+.mycelian-sub-tab-shell .statistics-section,
+.mycelian-sub-tab-shell .statistics-metric-card {
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+.mycelian-sub-tab-shell .settings-card:hover,
+.mycelian-sub-tab-shell .q-card:hover,
+.mycelian-sub-tab-shell .content-section:hover,
+.mycelian-sub-tab-shell .statistics-section:hover,
+.mycelian-sub-tab-shell .statistics-metric-card:hover {
+    transform: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+}
+
 .button-row {
     display: flex;
     justify-content: flex-end;

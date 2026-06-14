@@ -1778,6 +1778,28 @@ class ChatbotManager:
                     return self.delete_quote(quote_id)
             return False
 
+    def update_quote(
+        self, quote_id: str, text: str = None, author: str = None
+    ) -> bool:
+        """Update an existing quote's text and/or author."""
+        with self._lock:
+            if quote_id not in self.quotes:
+                return False
+
+            quote = self.quotes[quote_id]
+
+            if text is not None:
+                if not text.strip():
+                    return False
+                quote.text = text.strip()
+
+            if author is not None:
+                quote.author = author.strip()
+
+            self._save_data()
+            logger.info(f"Updated quote #{quote.quote_number}")
+            return True
+
     def toggle_quotes_enabled(self, enabled: bool) -> bool:
         """Toggle whether the quote system is enabled"""
         with self._lock:

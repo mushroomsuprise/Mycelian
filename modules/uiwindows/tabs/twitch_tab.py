@@ -278,7 +278,6 @@ class TwitchTab:
     def build(self, parent_container) -> None:
         self._load_from_state()
         with settings_surface(parent_container):
-            ui.label("Twitch Integration").classes("text-lg font-bold")
 
             with ui.grid(columns=2).classes("w-full gap-3"):
                 self._build_account_panel(

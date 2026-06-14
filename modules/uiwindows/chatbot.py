@@ -34,7 +34,9 @@ from typing import Any, Dict, Optional
 from nicegui import ui
 from ..notification_engine import notify
 from ..ui_buttons import apply_flat_btn_props, outline_button, primary_button, themed_control_button
+from ..ui_dialog_layout import app_form_dialog
 from ..ui_form_controls import form_input, form_number, form_textarea
+from ..ui_settings_layout import settings_inner_panel
 from ..ui_timer import layout_schedule
 
 from ..help_system.contextual_help import set_chatbot_ui_references
@@ -2626,60 +2628,43 @@ def show_create_quote_dialog():
         create_dialog.close()
         create_dialog = None
 
-    # Create the dialog
-    create_dialog = ui.dialog().props("persistent")
+    def _clear_create_dialog() -> None:
+        global create_dialog
+        create_dialog = None
 
-    with create_dialog:
-        with ui.card().classes("w-[500px]"):
-            with ui.column().classes("w-full"):
-                # Dialog header
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
-                ):
-                    ui.label("Add New Quote").classes(
-                        "text-lg font-semibold text-theme-primary"
-                    )
-                    ui.button(icon="close", on_click=create_dialog.close).props(
-                        "flat round"
-                    ).classes("secondary-text")
-
-                # Dialog content
-                with ui.column().classes("p-4 gap-4"):
-                    # Quote text input
-                    quote_text = ui.textarea(
-                        label="Quote Text",
-                        placeholder="Enter the quote text...",
-                        value="",
-                    ).classes("w-full")
-
-                    # Author input
-                    author_input = form_input(
-        tooltip="Author (optional)",
-                        label="Author (optional)",
-                        placeholder="Who said this quote?",
-                        value="",
-                    ).classes("w-full")
-
-                    # Form buttons
-                    with ui.row().classes("w-full items-center justify-end gap-2 mt-4"):
-                        ui.button(text="Cancel", on_click=create_dialog.close).props(
-                            "flat"
-                        ).classes("secondary-text")
-
-                        themed_control_button(
-                            "Add Quote",
-                            lambda: save_new_quote(
-                                quote_text.value, author_input.value
-                            ),
-                            icon="save",
-                            extra_classes="btn-primary px-4 py-2",
-                        )
+    with app_form_dialog("Add New Quote", on_close=_clear_create_dialog) as slots:
+        create_dialog = slots.dialog
+        with slots.body:
+            quote_text = form_textarea(
+                tooltip="Quote text",
+                label="Quote Text",
+                placeholder="Enter the quote text...",
+                value="",
+                rows=6,
+            ).classes("w-full")
+            author_input = form_input(
+                tooltip="Author (optional)",
+                label="Author (optional)",
+                placeholder="Who said this quote?",
+                value="",
+            ).classes("w-full")
+        with slots.footer:
+            ui.button(text="Cancel", on_click=slots.close).props("flat").classes(
+                "secondary-text"
+            )
+            themed_control_button(
+                "Add Quote",
+                lambda: save_new_quote(quote_text.value, author_input.value),
+                icon="save",
+                extra_classes="btn-primary px-4 py-2",
+            )
 
     create_dialog.open()
 
 
 def save_new_quote(text: str, author: str):
     """Save a new quote"""
+    global create_dialog
     try:
         if not text.strip():
             notify("Quote text cannot be empty", type="negative")
@@ -2694,6 +2679,7 @@ def save_new_quote(text: str, author: str):
             notify(f"Quote #{quote_number} added successfully!", type="positive")
             if create_dialog:
                 create_dialog.close()
+                create_dialog = None
             refresh_chatbot_items()
         else:
             notify(f"Error adding quote: {error}", type="negative")
@@ -7158,7 +7144,80 @@ def show_edit_chatbot_dialog(item_id: str, item_type: str):
 
 def show_edit_quote_dialog(quote_id: str):
     """Show the edit quote dialog"""
-    show_chatbot_dialog(quote_id, "quote")
+    global edit_dialog
+
+    if edit_dialog:
+        edit_dialog.close()
+        edit_dialog = None
+
+    manager = get_chatbot_manager()
+    quote = manager.get_quote_by_id(quote_id)
+    if not quote:
+        notify("Quote not found", type="negative")
+        return
+
+    with app_form_dialog(
+        f"Edit Quote #{quote.quote_number}", on_close=close_edit_dialog
+    ) as slots:
+        edit_dialog = slots.dialog
+        with slots.body:
+            with settings_inner_panel():
+                ui.label(f"Quote #{quote.quote_number}").classes(
+                    "text-sm font-semibold"
+                )
+                if quote.added_by:
+                    ui.label(f"Added by {quote.added_by}").classes(
+                        "text-xs secondary-text"
+                    )
+            quote_text = form_textarea(
+                tooltip="Quote text",
+                label="Quote Text",
+                placeholder="Enter the quote text...",
+                value=quote.text,
+                rows=6,
+            ).classes("w-full")
+            author_input = form_input(
+                tooltip="Author (optional)",
+                label="Author (optional)",
+                placeholder="Who said this quote?",
+                value=quote.author or "",
+            ).classes("w-full")
+        with slots.footer:
+            ui.button(text="Cancel", on_click=slots.close).props("flat").classes(
+                "secondary-text"
+            )
+            themed_control_button(
+                "Update Quote",
+                lambda: update_quote(
+                    quote_id, quote_text.value, author_input.value
+                ),
+                icon="save",
+                extra_classes="btn-primary px-4 py-2",
+            )
+
+    edit_dialog.open()
+
+
+def update_quote(quote_id: str, text: str, author: str):
+    """Update an existing quote"""
+    try:
+        if not text.strip():
+            notify("Quote text cannot be empty", type="negative")
+            return
+
+        manager = get_chatbot_manager()
+        success = manager.update_quote(quote_id, text.strip(), author.strip())
+
+        if success:
+            notify("Quote updated successfully!", type="positive")
+            close_edit_dialog()
+            refresh_chatbot_items()
+        else:
+            notify("Failed to update quote", type="negative")
+
+    except Exception as e:
+        logger.error(f"Error updating quote: {e}", exc_info=True)
+        notify(f"Error updating quote: {str(e)}", type="negative")
 
 
 def test_chatbot_item(item_id: str, item_type: str):
@@ -7375,67 +7434,48 @@ def show_create_greeting_dialog():
         create_dialog.close()
         create_dialog = None
 
-    # Create the dialog
-    create_dialog = ui.dialog().props("persistent")
+    def _clear_create_dialog() -> None:
+        global create_dialog
+        create_dialog = None
 
-    with create_dialog:
-        with ui.card().classes("w-[500px]"):
-            with ui.column().classes("w-full"):
-                # Dialog header
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
-                ):
-                    ui.label("Add New Greeting").classes(
-                        "text-lg font-semibold text-cyan-400"
-                    )
-                    ui.button(icon="close", on_click=create_dialog.close).props(
-                        "flat round"
-                    ).classes("secondary-text")
-
-                # Dialog content
-                with ui.column().classes("p-4 gap-4"):
-                    # Username input
-                    username_input = form_input(
-        tooltip="Username (required)",
-                        label="Username (required)",
-                        placeholder="e.g., mycostreamer",
-                        value="",
-                    ).classes("w-full")
-
-                    # Greeting text input
-                    greeting_text_input = ui.textarea(
-                        label="Greeting Text",
-                        placeholder="Enter custom greeting message...",
-                        value="",
-                    ).classes("w-full")
-
-                    # Enabled toggle
-                    enabled_toggle = ui.switch(text="Enabled", value=True).classes(
-                        "w-full"
-                    )
-
-                    # Form buttons
-                    with ui.row().classes("w-full items-center justify-end gap-2 mt-4"):
-                        ui.button(text="Cancel", on_click=create_dialog.close).props(
-                            "flat"
-                        ).classes("secondary-text")
-
-                        themed_control_button(
-                            "Add Greeting",
-                            lambda: handle_greeting_save(
-                                username_input.value,
-                                greeting_text_input.value,
-                                enabled_toggle.value,
-                            ),
-                            icon="save",
-                            extra_classes="btn-secondary px-4 py-2",
-                        )
+    with app_form_dialog("Add New Greeting", on_close=_clear_create_dialog) as slots:
+        create_dialog = slots.dialog
+        with slots.body:
+            username_input = form_input(
+                tooltip="Username (required)",
+                label="Username (required)",
+                placeholder="e.g., mycostreamer",
+                value="",
+            ).classes("w-full")
+            greeting_text_input = form_textarea(
+                tooltip="Greeting message",
+                label="Greeting Text",
+                placeholder="Enter custom greeting message...",
+                value="",
+                rows=5,
+            ).classes("w-full")
+            enabled_toggle = ui.switch(text="Enabled", value=True).classes("w-full")
+        with slots.footer:
+            ui.button(text="Cancel", on_click=slots.close).props("flat").classes(
+                "secondary-text"
+            )
+            themed_control_button(
+                "Add Greeting",
+                lambda: handle_greeting_save(
+                    username_input.value,
+                    greeting_text_input.value,
+                    enabled_toggle.value,
+                ),
+                icon="save",
+                extra_classes="btn-primary px-4 py-2",
+            )
 
     create_dialog.open()
 
 
 def handle_greeting_save(username: str, greeting_text: str, enabled: bool):
     """Handle greeting save synchronously"""
+    global create_dialog
     try:
         # Validate inputs first
         if not username.strip():
@@ -7459,6 +7499,7 @@ def handle_greeting_save(username: str, greeting_text: str, enabled: bool):
             )
             if create_dialog:
                 create_dialog.close()
+                create_dialog = None
             refresh_chatbot_items()
         elif result:
             notify(f"Error: {result.get('error', 'Unknown error')}", type="negative")
@@ -7550,7 +7591,6 @@ def show_edit_greeting_dialog(greeting_id: str):
         edit_dialog.close()
         edit_dialog = None
 
-    # Get existing greeting
     manager = get_chatbot_manager()
     greeting = manager.get_greeting(greeting_id)
 
@@ -7558,63 +7598,46 @@ def show_edit_greeting_dialog(greeting_id: str):
         notify("Greeting not found", type="negative")
         return
 
-    # Create the dialog
-    edit_dialog = ui.dialog().props("persistent")
-
-    with edit_dialog:
-        with ui.card().classes("w-[500px]"):
-            with ui.column().classes("w-full"):
-                # Dialog header
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
-                ):
-                    ui.label("Edit Greeting").classes(
-                        "text-lg font-semibold text-cyan-400"
-                    )
-                    ui.button(icon="close", on_click=lambda: close_edit_dialog()).props(
-                        "flat round"
-                    ).classes("secondary-text")
-
-                # Dialog content
-                with ui.column().classes("p-4 gap-4"):
-                    # User ID (read-only)
-                    ui.input(label="User ID", value=greeting.user_id).classes(
-                        "w-full"
-                    ).props("readonly")
-
-                    # Username (read-only)
-                    ui.input(label="Username", value=greeting.username).classes(
-                        "w-full"
-                    ).props("readonly")
-
-                    # Greeting text input
-                    greeting_text_input = ui.textarea(
-                        label="Greeting Text",
-                        placeholder="Enter custom greeting message...",
-                        value=greeting.greeting_text,
-                    ).classes("w-full")
-
-                    # Enabled toggle
-                    enabled_toggle = ui.switch(
-                        text="Enabled", value=greeting.enabled
-                    ).classes("w-full")
-
-                    # Form buttons
-                    with ui.row().classes("w-full items-center justify-end gap-2 mt-4"):
-                        ui.button(text="Cancel", on_click=edit_dialog.close).props(
-                            "flat"
-                        ).classes("secondary-text")
-
-                        themed_control_button(
-                            "Update Greeting",
-                            lambda: update_greeting(
-                                greeting_id,
-                                greeting_text_input.value,
-                                enabled_toggle.value,
-                            ),
-                            icon="save",
-                            extra_classes="btn-secondary px-4 py-2",
-                        )
+    with app_form_dialog("Edit Greeting", on_close=close_edit_dialog) as slots:
+        edit_dialog = slots.dialog
+        with slots.body:
+            with settings_inner_panel():
+                form_input(
+                    tooltip="User ID",
+                    label="User ID",
+                    value=greeting.user_id,
+                    readonly=True,
+                ).classes("w-full")
+                form_input(
+                    tooltip="Username",
+                    label="Username",
+                    value=greeting.username,
+                    readonly=True,
+                ).classes("w-full")
+            greeting_text_input = form_textarea(
+                tooltip="Greeting message",
+                label="Greeting Text",
+                placeholder="Enter custom greeting message...",
+                value=greeting.greeting_text,
+                rows=5,
+            ).classes("w-full")
+            enabled_toggle = ui.switch(text="Enabled", value=greeting.enabled).classes(
+                "w-full"
+            )
+        with slots.footer:
+            ui.button(text="Cancel", on_click=slots.close).props("flat").classes(
+                "secondary-text"
+            )
+            themed_control_button(
+                "Update Greeting",
+                lambda: update_greeting(
+                    greeting_id,
+                    greeting_text_input.value,
+                    enabled_toggle.value,
+                ),
+                icon="save",
+                extra_classes="btn-primary px-4 py-2",
+            )
 
     edit_dialog.open()
 

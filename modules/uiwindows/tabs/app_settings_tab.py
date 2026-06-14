@@ -123,7 +123,6 @@ class AppSettingsTab:
         initial_status = get_plugin_status()
 
         with settings_surface(parent_container):
-            ui.label("Application Settings").classes("text-lg font-bold")
 
             with ui.column().classes("w-full gap-3"):
                 with settings_inner_panel():

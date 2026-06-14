@@ -1002,11 +1002,7 @@ class ThemeTab:
             )
 
         with parent_container:
-            with ui.element("div").classes("content-section w-full p-3"):
-                # Header row
-                with ui.row().classes("w-full justify-between items-center mb-2"):
-                    ui.label("Theme").classes("text-lg font-bold")
-
+            with ui.column().classes("w-full gap-3 settings-tab-content p-3"):
                 # Theme selection row - compact
                 with ui.card().classes("w-full p-3 mb-2"):
                     with ui.row().classes("w-full items-center gap-3"):

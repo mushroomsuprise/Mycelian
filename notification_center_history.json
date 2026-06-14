@@ -1,7 +1,7 @@
 [
   {
-    "id": "e5c06c41-c2ea-4c82-856b-1e76e0a6e2d8",
-    "ts": 1781411905.9129002,
+    "id": "76c06e84-838e-4c39-8066-d6910b7a37cf",
+    "ts": 1781444050.835721,
     "message": "Twitch: Connected",
     "type": "positive",
     "dedupe_key": "svc:twitch:Connected",
@@ -14,242 +14,24 @@
     ]
   },
   {
-    "id": "c01eb9f6-172a-4dee-ab60-9c66fe732a48",
-    "ts": 1781412030.832215,
-    "message": "Twitch: Connected",
+    "id": "d3aaf0ed-c2b2-4b15-bbc3-25d6bdf14f09",
+    "ts": 1781444062.2674,
+    "message": "Theme 'forest_glade' applied successfully!",
     "type": "positive",
-    "dedupe_key": "svc:twitch:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "Twitch"
-      }
-    ]
+    "dedupe_key": null,
+    "actions": []
   },
   {
-    "id": "9dc43334-fd1b-4b51-9d7e-9f97f76df540",
-    "ts": 1781412098.570783,
-    "message": "Twitch: Connected",
+    "id": "c2a7fa67-6eeb-4b8b-8980-a179935e4266",
+    "ts": 1781444071.588922,
+    "message": "Theme 'dark' applied successfully!",
     "type": "positive",
-    "dedupe_key": "svc:twitch:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "Twitch"
-      }
-    ]
-  },
-  {
-    "id": "1acbd861-d274-4513-af7b-b4e6cb3d1deb",
-    "ts": 1781412105.7730901,
-    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
-    "type": "warning",
     "dedupe_key": null,
     "actions": []
   },
   {
-    "id": "7ad0fdda-23bc-4b4a-9b28-b8036121c00d",
-    "ts": 1781412493.9465542,
-    "message": "Twitch: Connected",
-    "type": "positive",
-    "dedupe_key": "svc:twitch:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "Twitch"
-      }
-    ]
-  },
-  {
-    "id": "47d368e6-bc4b-4410-a58e-4011e70a78b2",
-    "ts": 1781412498.0564868,
-    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
-    "type": "warning",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "c21c0af0-94a5-4081-8046-ed0a326b9c90",
-    "ts": 1781412510.5733812,
-    "message": "Alerts paused",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "2a3708d5-8b5e-47e3-abf6-b57cfbab66e8",
-    "ts": 1781412513.1986,
-    "message": "Alerts resumed",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "3a2bcf8e-def3-40e8-98d0-c9a97b3a8704",
-    "ts": 1781412793.670398,
-    "message": "Twitch: Connected",
-    "type": "positive",
-    "dedupe_key": "svc:twitch:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "Twitch"
-      }
-    ]
-  },
-  {
-    "id": "048325e0-3870-4a09-8469-279cfef49a74",
-    "ts": 1781412811.819871,
-    "message": "Alerts paused",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "2f6e2fda-49e1-4d7b-923e-e662f10581f7",
-    "ts": 1781412815.988637,
-    "message": "Alerts resumed",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "25f3c6fd-d3e6-434f-8b37-8ad26d0b28e6",
-    "ts": 1781412841.6996,
-    "message": "OBS: Connected",
-    "type": "positive",
-    "dedupe_key": "svc:obs:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
-  },
-  {
-    "id": "fc8db48f-c5e9-4ae1-b2ed-d845a1de1816",
-    "ts": 1781412877.697193,
-    "message": "OBS: Disconnected",
-    "type": "warning",
-    "dedupe_key": "svc:obs:Disconnected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
-  },
-  {
-    "id": "cc2b1726-d9e4-4cc3-b867-5680606cc4a3",
-    "ts": 1781413152.306848,
-    "message": "Twitch: Connected",
-    "type": "positive",
-    "dedupe_key": "svc:twitch:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "Twitch"
-      }
-    ]
-  },
-  {
-    "id": "4447ab12-7743-4890-b78d-b0d929a18704",
-    "ts": 1781413161.1988192,
-    "message": "Alerts paused",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "ae909887-d5a0-43ce-865e-d13773697b8e",
-    "ts": 1781413166.536213,
-    "message": "Alerts resumed",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "2bc82f83-a088-4416-84e1-768c2981691a",
-    "ts": 1781413200.352083,
-    "message": "OBS: Connected",
-    "type": "positive",
-    "dedupe_key": "svc:obs:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
-  },
-  {
-    "id": "6de200f4-1c2e-4700-aa99-dd7614df068e",
-    "ts": 1781413210.650926,
-    "message": "OBS: Disconnected",
-    "type": "warning",
-    "dedupe_key": "svc:obs:Disconnected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
-  },
-  {
-    "id": "f348c5dd-278f-463d-b1a4-014a5019c0f0",
-    "ts": 1781413335.626348,
-    "message": "Twitch: Connected",
-    "type": "positive",
-    "dedupe_key": "svc:twitch:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "Twitch"
-      }
-    ]
-  },
-  {
-    "id": "20ff562d-00d3-4c59-8388-29711bb64f08",
-    "ts": 1781413353.263117,
-    "message": "Alerts paused",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "b398d3b0-3656-4d68-906e-d29eb05de813",
-    "ts": 1781413355.749314,
-    "message": "Alerts resumed",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "e06bbe2f-389b-4f19-9d70-fbcc234a5c7b",
-    "ts": 1781413367.648403,
-    "message": "OBS: Connected",
-    "type": "positive",
-    "dedupe_key": "svc:obs:Connected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
-  },
-  {
-    "id": "f5372baf-874f-4935-baf5-e29b1db0b06d",
-    "ts": 1781413527.564737,
+    "id": "73bdda9e-77b6-4965-95c8-b5171b287179",
+    "ts": 1781444109.846103,
     "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
     "type": "warning",
     "dedupe_key": "twitch:connect_failed",
@@ -262,11 +44,19 @@
     ]
   },
   {
-    "id": "f380e259-fcec-4375-8517-f590d1549763",
-    "ts": 1781414201.5876079,
-    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "id": "8b412b06-b7a1-42d5-86ba-94eac6ecd823",
+    "ts": 1781444153.807869,
+    "message": "Theme 'forest_glade' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "e3a77d0f-979a-4785-9afa-70089344cdcc",
+    "ts": 1781444164.7920141,
+    "message": "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
     "type": "warning",
-    "dedupe_key": "twitch:connect_failed",
+    "dedupe_key": null,
     "actions": [
       {
         "kind": "navigate",
@@ -276,36 +66,8 @@
     ]
   },
   {
-    "id": "c7ece9b6-32c9-4d4e-9c6d-5f6d62e8f7db",
-    "ts": 1781414204.9103749,
-    "message": "OBS: Disconnected",
-    "type": "warning",
-    "dedupe_key": "svc:obs:Disconnected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
-  },
-  {
-    "id": "39cf8221-ff86-4472-b3e0-d3ebad51e15b",
-    "ts": 1781414208.9361577,
-    "message": "OBS: Connecting",
-    "type": "warning",
-    "dedupe_key": "svc:obs:Connecting",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
-  },
-  {
-    "id": "19a202dc-ffd5-4677-a22c-426bbb5855bd",
-    "ts": 1781414224.5925028,
+    "id": "6b57e1bd-f4b3-4162-9c72-564d606c143b",
+    "ts": 1781444327.669687,
     "message": "Twitch: Connected",
     "type": "positive",
     "dedupe_key": "svc:twitch:Connected",
@@ -318,85 +80,41 @@
     ]
   },
   {
-    "id": "621ea33c-0cdc-42b0-b9cb-9ada8cc3d862",
-    "ts": 1781414226.5941155,
-    "message": "OBS: Disconnected",
-    "type": "warning",
-    "dedupe_key": "svc:obs:Disconnected",
+    "id": "1069826d-feb5-4c59-9028-fa656890d767",
+    "ts": 1781444343.4944682,
+    "message": "Theme 'dark' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "62822730-e6ae-4a2b-bc76-3497be5bbad5",
+    "ts": 1781444403.120239,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
     "actions": [
       {
         "kind": "navigate",
         "main_tab": "Settings",
-        "settings_subtab": "OBS"
+        "settings_subtab": "Twitch"
       }
     ]
   },
   {
-    "id": "021cd055-353c-4710-8e28-be247bf420db",
-    "ts": 1781414229.453131,
-    "message": "Alerts muted",
-    "type": "info",
+    "id": "dd3fc2c3-328e-4203-8d1c-d39a45a42882",
+    "ts": 1781444409.8091068,
+    "message": "Theme 'forest_glade' applied successfully!",
+    "type": "positive",
     "dedupe_key": null,
     "actions": []
   },
   {
-    "id": "8510c332-e5a9-42b1-b5d0-6e3d3d2914e3",
-    "ts": 1781414230.6041424,
-    "message": "OBS: Connecting",
-    "type": "warning",
-    "dedupe_key": "svc:obs:Connecting",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
-  },
-  {
-    "id": "e564a681-c79a-472a-ad69-ee654b2709ca",
-    "ts": 1781414230.6274054,
-    "message": "Alerts unmuted",
-    "type": "info",
+    "id": "756733b7-c23c-42de-91d7-0fa409ef3c37",
+    "ts": 1781444415.090465,
+    "message": "Theme 'dark' applied successfully!",
+    "type": "positive",
     "dedupe_key": null,
     "actions": []
-  },
-  {
-    "id": "85492411-0dee-46d6-a9e0-96964bb67c34",
-    "ts": 1781414231.3519106,
-    "message": "Alerts paused",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "d386d2d5-9036-40f2-8d1b-7e4913158c1b",
-    "ts": 1781414233.2358875,
-    "message": "Alerts resumed",
-    "type": "info",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "3a388a3b-bc7a-4c4f-95f2-25f77b38dd23",
-    "ts": 1781414266.9680328,
-    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
-    "type": "warning",
-    "dedupe_key": null,
-    "actions": []
-  },
-  {
-    "id": "b1cbb4aa-b34c-49cf-be4a-04cfdb757b32",
-    "ts": 1781414272.749636,
-    "message": "OBS: Disconnected",
-    "type": "warning",
-    "dedupe_key": "svc:obs:Disconnected",
-    "actions": [
-      {
-        "kind": "navigate",
-        "main_tab": "Settings",
-        "settings_subtab": "OBS"
-      }
-    ]
   }
 ]

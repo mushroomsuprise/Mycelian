@@ -23,13 +23,20 @@ THEME_CHIP_CLASSES = (
 
 @contextmanager
 def settings_surface(parent: Any) -> Generator[None, None, None]:
-    """Outer card: content-height, theme elevated surface."""
+    """Outer layout wrapper for settings subtabs (no card frame)."""
     with parent:
-        with ui.card().classes(
-            "content-section settings-tab-surface w-full max-w-none"
-        ):
-            with ui.column().classes("w-full gap-3"):
-                yield
+        with ui.column().classes("w-full gap-3 settings-tab-content"):
+            yield
+
+
+@contextmanager
+def settings_inner_panel() -> Generator[None, None, None]:
+    """Nested panel (e.g. Twitch account blocks)."""
+    with ui.element("div").classes(
+        "content-card settings-inner-panel w-full p-3 border border-theme-subtle rounded-lg"
+    ):
+        with ui.column().classes("w-full gap-2"):
+            yield
 
 
 @contextmanager
@@ -83,16 +90,6 @@ def settings_toolbar() -> Generator[None, None, None]:
         "settings-toolbar w-full flex-wrap gap-2 items-center"
     ):
         yield
-
-
-@contextmanager
-def settings_inner_panel() -> Generator[None, None, None]:
-    """Nested panel (e.g. Twitch account blocks)."""
-    with ui.element("div").classes(
-        "content-card w-full p-3 border border-theme-subtle rounded-lg"
-    ):
-        with ui.column().classes("w-full gap-2"):
-            yield
 
 
 def settings_divider() -> ui.separator:

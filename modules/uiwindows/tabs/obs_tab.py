@@ -121,7 +121,6 @@ class ObsTab:
     def build(self, parent_container) -> None:
         self._load_from_state()
         with settings_surface(parent_container):
-            ui.label("OBS Studio (WebSocket)").classes("text-lg font-bold")
 
             with settings_status_band():
                 with ui.row().classes("items-center gap-2"):

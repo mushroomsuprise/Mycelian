@@ -1111,7 +1111,6 @@ class DatabaseTab:
     def build(self, parent_container) -> None:
         self._load_from_config()
         with settings_surface(parent_container):
-            ui.label("Database Configuration").classes("text-lg font-bold")
 
             with settings_status_band():
                 with ui.column().classes("gap-0"):

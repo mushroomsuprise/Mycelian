@@ -300,7 +300,6 @@ class YouTubeTab:
     def build(self, parent_container) -> None:
         self._load_from_state()
         with settings_surface(parent_container):
-            ui.label("YouTube Integration").classes("text-lg font-bold")
 
             with settings_status_band():
                 with ui.column().classes("gap-0"):

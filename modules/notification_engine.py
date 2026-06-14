@@ -1116,6 +1116,23 @@ def _compute_tray_badge_count() -> int:
     return sum(1 for e in _history if float(e.get("ts") or 0.0) > cut)
 
 
+def _tray_badge_display_text(count: int) -> str:
+    if count > 999:
+        return "999+"
+    return str(count)
+
+
+def _tray_badge_digit_class(text: str) -> str:
+    length = len(text)
+    if length <= 1:
+        return "badge-digits-1"
+    if length == 2:
+        return "badge-digits-2"
+    if length == 3:
+        return "badge-digits-3"
+    return "badge-digits-4"
+
+
 def _update_tray_badge() -> None:
     ref = _tray_badge_ref
     if ref is None:
@@ -1127,11 +1144,16 @@ def _update_tray_badge() -> None:
         return
     n = _compute_tray_badge_count()
     if n <= 0:
-        ref.text = ""
+        ref.set_text("")
         ref.classes(add="hidden")
         return
     ref.classes(remove="hidden")
-    ref.text = str(n) if n < 100 else "99+"
+    display = _tray_badge_display_text(n)
+    ref.set_text(display)
+    ref.classes(
+        remove="badge-digits-1 badge-digits-2 badge-digits-3 badge-digits-4",
+        add=_tray_badge_digit_class(display),
+    )
 
 
 def _bump_history_read_watermark() -> None:
@@ -1320,12 +1342,14 @@ def create_notification_tray_button() -> None:
             _history_scroll_area = history_scroll
             _history_column = ui.column().classes("nc-history-list w-full gap-2")
 
-    with ui.row().classes("relative inline-flex items-center shrink-0"):
+    with ui.row().classes(
+        "notification-tray-wrap relative inline-flex items-center justify-center "
+        "shrink-0 overflow-visible"
+    ):
         ui.button(icon="notifications", on_click=toggle_panel).props(
             "flat round dense"
         ).tooltip("Notifications")
-        _tray_badge_ref = ui.badge("", color="negative").classes(
-            "absolute -top-0.5 -right-0.5 min-w-[1.125rem] text-[0.65rem] "
-            "leading-none px-1 py-0.5 pointer-events-none hidden"
-        ).props("rounded")
+        _tray_badge_ref = ui.label("").classes(
+            "notification-tray-badge badge-digits-1 hidden"
+        )
     refresh()

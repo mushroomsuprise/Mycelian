@@ -192,9 +192,7 @@ class GameHooksTab:
         self._load_from_db()
         hook_metas = list_hooks_for_ui()
         with parent_container:
-            with ui.card().classes("content-section w-full"):
-                with ui.row().classes("w-full items-center gap-2 mb-2"):
-                    ui.label("Game Hooks").classes("text-xl font-bold")
+            with ui.column().classes("w-full gap-3 settings-tab-content"):
                 ui.label(
                     "When enabled, Mycelian reads live data from supported PC games "
                     "and broadcasts it to browser templates."

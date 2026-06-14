@@ -741,24 +741,25 @@ SOURCE_CONTROLS_CSS = """
 
 .source-controls-tab .source-controls-template-card.q-card,
 .source-controls-tab .source-controls-template-card.content-card {
-    background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05)) !important;
-    border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.12)) !important;
+    background: var(--color-bg-surface, rgba(255, 255, 255, 0.05)) !important;
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.12)) !important;
     border-radius: 8px !important;
     padding: 10px !important;
     box-shadow: none !important;
-    transition: all 0.2s ease-in-out;
+    transition: border-color 0.2s ease-in-out;
+}
+
+.source-controls-tab .source-controls-template-card.q-card:hover {
+    transform: none;
+    box-shadow: none !important;
+    border-color: var(--color-border-accent, rgba(115, 0, 255, 0.3)) !important;
 }
 
 .source-controls-tab .source-controls-template-card .q-card__section {
     width: 100%;
     min-width: 0;
     padding: 0 !important;
-}
-
-.source-controls-tab .source-controls-template-card.q-card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2) !important;
-    border-color: var(--color-border-accent, rgba(115, 0, 255, 0.3)) !important;
+    background: transparent !important;
 }
 
 .source-controls-tab .sc-header-title {
@@ -797,13 +798,18 @@ SOURCE_CONTROLS_CSS = """
 }
 
 .source-controls-tab .sc-control-input-wrap {
-    background: var(--color-bg-surface, rgba(255, 255, 255, 0.03));
-    border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+    background: transparent;
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
     border-radius: 6px;
     padding: 8px;
     box-sizing: border-box;
     min-width: 0;
     width: 100%;
+}
+
+.source-controls-tab .source-controls-template-card .q-field__control,
+.source-controls-tab .source-controls-template-card .q-slider__track-container {
+    background: transparent !important;
 }
 
 .source-controls-tab .sc-stretch-field,
