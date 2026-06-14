@@ -46,12 +46,11 @@
             "description": "Border width around avatar in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "AvatarBorderColor",
             "label": "Avatar Border Color",
             "value": "#6d28d9",
             "description": "Color of the avatar border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -110,12 +109,11 @@
             "description": "CSS box shadow for avatar"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "AvatarBG",
             "label": "Avatar Background",
             "value": "#ffffff",
             "description": "Background color for avatar container",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -202,12 +200,11 @@
             "description": "Font weight for boss name"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "NameColor",
             "label": "Boss Name Color",
             "value": "#ffffff",
             "description": "Color of the boss name text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -291,12 +288,11 @@
             "description": "Height of the HP bar in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BarBG",
             "label": "HP Bar Background",
             "value": "#475569",
             "description": "Background color of the HP bar container",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -366,12 +362,11 @@
             "description": "Border width around HP bar in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BarBorderColor",
             "label": "HP Bar Border Color",
             "value": "transparent",
             "description": "Color of the HP bar border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -437,12 +432,11 @@
             "description": "Enable gradient color transitions for HP bar based on health percentage"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BarColor",
             "label": "HP Bar Color (Static)",
             "value": "#dc2626",
             "description": "Static color of the HP bar fill (used when dynamic colors are disabled)",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -586,12 +580,11 @@
             "description": "Font weight for HP text"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "HPTextColor",
             "label": "HP Text Color",
             "value": "#ffffff",
             "description": "Color of the HP text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -688,12 +681,11 @@
             "description": "CSS text shadow for damage indicator"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "HealColor",
             "label": "Heal Color",
             "value": "#16a34a",
             "description": "Color for positive damage (healing)",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -745,12 +737,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "DamageColor",
             "label": "Damage Color",
             "value": "#991b1b",
             "description": "Color for negative damage",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -836,12 +827,11 @@
             "description": "How long damage indicator stays visible in seconds"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "DefeatOverlayBG",
             "label": "Defeat Overlay Background",
             "value": "transparent",
             "description": "Background color for defeat overlay",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -924,12 +914,11 @@
             "description": "Font weight for defeat text"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "DefeatColor",
             "label": "Defeat Text Color",
             "value": "#ffffff",
             "description": "Color of the defeat text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1018,12 +1007,11 @@
             "description": "Speed of pulse animation for low HP in seconds"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "HealGlowColor",
             "label": "Heal Glow Color",
             "value": "#d97706",
             "description": "Color of glow effect during healing",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

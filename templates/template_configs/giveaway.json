@@ -44,12 +44,11 @@
             "description": "Font weight for entry text"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "FontColor",
             "label": "Font Color",
             "value": "#e2e8f0",
             "description": "Default color for entry usernames",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -135,12 +134,11 @@
             "description": "Font size for the keyword header in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "KeywordFontColor",
             "label": "Keyword Font Color",
             "value": "#ffffff",
             "description": "Color for the keyword header text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -192,12 +190,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "KeywordHighlightColor",
             "label": "Keyword Highlight Color",
             "value": "#7c3aed",
             "description": "Color for the highlighted keyword text itself",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -249,12 +246,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "KeywordBGColor",
             "label": "Keyword Background Color",
             "value": "transparent",
             "description": "Background color behind the keyword header",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -317,12 +313,11 @@
             "label": "Container / Background"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BGColor",
             "label": "Background Color",
             "value": "transparent",
             "description": "Background color of the giveaway container",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -411,12 +406,11 @@
             "description": "Border width of the outer container in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BorderColor",
             "label": "Border Color",
             "value": "transparent",
             "description": "Border color of the outer container",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -481,12 +475,11 @@
             "description": "Font size for entry usernames in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "EntryFontColor",
             "label": "Entry Font Color",
             "value": "#e2e8f0",
             "description": "Color for entry username text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -538,12 +531,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "EntryBGColor",
             "label": "Entry Background Color",
             "value": "transparent",
             "description": "Background color for each entry row",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -661,12 +653,11 @@
             "description": "Display a running count of total entries"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "EntryCountColor",
             "label": "Entry Counter Color",
             "value": "#94a3b8",
             "description": "Color for the entry counter text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -738,12 +729,11 @@
             "description": "Font size for the winner congratulations heading in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "WinnerFontColor",
             "label": "Winner Heading Color",
             "value": "#ffffff",
             "description": "Color for the winner congratulations heading",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -804,12 +794,11 @@
             "description": "Font size for the winner username(s) in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "WinnerNameColor",
             "label": "Winner Name Color",
             "value": "#7c3aed",
             "description": "Color for the winner username text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -861,12 +850,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "WinnerBGColor",
             "label": "Winner Overlay Background",
             "value": "#000000",
             "description": "Background color for the winner overlay",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -915,7 +903,7 @@
                 "#000000",
                 "transparent"
             ],
-            "transparent": true
+            "transparent": false
         },
         {
             "type": "number",
@@ -1073,12 +1061,11 @@
             "description": "Text shown when the giveaway stops accepting entries"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ClosedMessageColor",
             "label": "Closed Message Color",
             "value": "#94a3b8",
             "description": "Color for the entries-closed message",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

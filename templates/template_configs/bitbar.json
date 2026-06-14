@@ -64,12 +64,11 @@
             "description": "Padding inside the container in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ContainerBG",
             "label": "Container Background",
             "value": "transparent",
             "description": "Background color of the container",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -139,12 +138,11 @@
             "description": "Border width around container in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ContainerBorderColor",
             "label": "Container Border Color",
             "value": "#9333ea",
             "description": "Color of the container border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -238,12 +236,11 @@
             "description": "Font weight for the title"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "TitleColor",
             "label": "Title Color",
             "value": "#ffffff",
             "description": "Color of the title text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -336,12 +333,11 @@
             "description": "Height of the progress bar in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BarBG",
             "label": "Progress Bar Background",
             "value": "#334155",
             "description": "Background color of the progress bar container",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -411,12 +407,11 @@
             "description": "Border width around progress bar in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BarBorderColor",
             "label": "Progress Bar Border Color",
             "value": "#ffffff",
             "description": "Color of the progress bar border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -484,12 +479,11 @@
             "description": "Bottom margin after progress bar in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BarColor",
             "label": "Progress Bar Color",
             "value": "#9333ea",
             "description": "Color of the progress bar fill",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -603,12 +597,11 @@
             "description": "Font weight for progress text"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ProgressTextColor",
             "label": "Progress Text Color",
             "value": "#ffffff",
             "description": "Color of the progress text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -698,12 +691,11 @@
             "description": "Font weight for message text"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "MessageColor",
             "label": "Message Color",
             "value": "#ffffff",
             "description": "Color of the message text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -823,12 +815,11 @@
             "description": "Font weight for bit indicator"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BitIndicatorColor",
             "label": "Bit Indicator Color",
             "value": "#ffffff",
             "description": "Color of the bit indicator text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -930,12 +921,11 @@
             "description": "How long bit indicator stays visible in seconds"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "GoalOverlayBG",
             "label": "Goal Overlay Background",
             "value": "transparent",
             "description": "Background color for goal reached overlay",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1018,12 +1008,11 @@
             "description": "Font weight for goal reached text"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "GoalColor",
             "label": "Goal Text Color",
             "value": "#ffffff",
             "description": "Color of the goal reached text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1112,12 +1101,11 @@
             "description": "Speed of pulse animation when near goal in seconds"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "GoalGlowColor",
             "label": "Goal Glow Color",
             "value": "#9333ea",
             "description": "Color of glow effect when goal is reached",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

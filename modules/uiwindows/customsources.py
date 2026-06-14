@@ -45,6 +45,7 @@ from ..template_preview_settings import (
     save_template_preview_settings,
 )
 from ..ui_buttons import destructive_button, outline_button, primary_button
+from ..ui_color_control import is_color_transparent, render_color_field
 from ..ui_form_controls import form_input, form_number, form_select, form_textarea
 from ..ui_timer import layout_schedule
 
@@ -140,50 +141,6 @@ CUSTOM_CSS = """
 .config-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 6px -1px var(--color-bg-overlay);
-}
-
-.color-preview {
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    margin-right: 8px;
-    transition: transform 0.2s ease;
-}
-
-.color-preview:hover {
-    transform: scale(1.1);
-}
-
-.color-swatch {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: 2px solid transparent;
-    position: relative;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.color-swatch:hover {
-    transform: scale(1.1);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-
-.color-swatch.selected {
-    border-color: var(--color-primary) !important;
-    box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
-    transform: scale(1.05) !important;
-}
-
-.color-grid {
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    gap: 8px;
-    padding: 8px;
-    background-color: var(--color-bg-surface);
-    border-radius: 8px;
-    border: 1px solid var(--color-border-default);
 }
 
 """
@@ -1484,78 +1441,17 @@ def render_form_element(
                 display_type = element.get("display", "dropdown")
 
                 if display_type == "color_grid":
-                    # Render as a color grid
-                    selected_color = element_value
-
-                    # Create a hidden input to store the selected value
-                    hidden_input = ui.input(value=selected_color).classes("hidden")
-                    element_ui_map[element_id] = hidden_input
-
-                    # Store swatch references for this element
-                    swatch_refs = {}
-
-                    # Create the visual color grid
-                    with ui.element("div").classes("color-grid"):
-                        for color_option in options:
-                            # Create a color swatch
-                            swatch_classes = "color-swatch"
-                            if color_option == selected_color:
-                                swatch_classes += " selected"
-
-                            # Handle transparent option differently
-                            if color_option == "transparent":
-                                # Create a checkerboard pattern for transparent
-                                with ui.element("div").classes(
-                                    swatch_classes
-                                ) as swatch:
-                                    swatch.style("""
-                                        background: linear-gradient(45deg, #ccc 25%, transparent 25%), 
-                                                   linear-gradient(-45deg, #ccc 25%, transparent 25%), 
-                                                   linear-gradient(45deg, transparent 75%, #ccc 75%), 
-                                                   linear-gradient(-45deg, transparent 75%, #ccc 75%);
-                                        background-size: 8px 8px;
-                                        background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
-                                    """)
-                                    # Store reference to this swatch
-                                    swatch_refs[color_option] = swatch
-
-                                    swatch.on(
-                                        "click",
-                                        lambda color=color_option: select_color_from_grid(
-                                            color,
-                                            element_id,
-                                            form_data,
-                                            hidden_input,
-                                            swatch_refs,
-                                        ),
-                                    )
-
-                                    # Add tooltip
-                                    swatch.tooltip("Transparent")
-                            else:
-                                with (
-                                    ui.element("div")
-                                    .classes(swatch_classes)
-                                    .style(
-                                        f"background-color: {color_option}"
-                                    ) as swatch
-                                ):
-                                    # Store reference to this swatch
-                                    swatch_refs[color_option] = swatch
-
-                                    swatch.on(
-                                        "click",
-                                        lambda color=color_option: select_color_from_grid(
-                                            color,
-                                            element_id,
-                                            form_data,
-                                            hidden_input,
-                                            swatch_refs,
-                                        ),
-                                    )
-
-                                    # Add tooltip with color value
-                                    swatch.tooltip(color_option)
+                    preset_options = list(element.get("options", []))
+                    input_element = render_color_field(
+                        element_id=element_id,
+                        value=element_value,
+                        tooltip=tip,
+                        preset_options=preset_options or None,
+                        on_change=lambda v, id=element_id: update_form_data(
+                            form_data, id, v
+                        ),
+                    )
+                    element_ui_map[element_id] = input_element
                 else:
                     # Render as normal dropdown
                     input_element = form_select(
@@ -1639,57 +1535,19 @@ def render_form_element(
                 # For checkboxes, add a custom wrapper to make styling work better
                 input_element.classes("q-switch")
             elif element_type == "color":
-                # Extract current color and transparency values
-                is_transparent = element.get("transparent", False)
-                base_color = element_value
-
-                if element_value.startswith("rgba"):
-                    try:
-                        rgba_parts = (
-                            element_value.replace("rgba(", "")
-                            .replace(")", "")
-                            .split(",")
-                        )
-                        r, g, b = map(int, rgba_parts[:3])
-                        alpha = float(rgba_parts[3])
-                        is_transparent = alpha < 1.0
-                        base_color = f"#{r:02x}{g:02x}{b:02x}"
-                    except:
-                        base_color = "#ffffff"
-
-                # Create a row for the color picker and transparency toggle
-                with ui.row().classes("w-full items-center gap-2"):
-                    # Create the transparency switch first
-                    transparency_switch = ui.switch(value=is_transparent).props(
-                        'label="Transparent"'
-                    )
-                    transparency_switch.classes("q-switch")
-
-                    # Color input that shows the NiceGUI color picker
-                    with ui.column().classes("w-full"):
-                        ui.label("Color").classes("text-xs opacity-75 mb-1")
-                        color_input = ui.color_input(value=base_color).classes("w-full")
-                        element_ui_map[element_id] = color_input
-
-                        # Store references for closure
-                        color_ref = color_input
-                        trans_ref = transparency_switch
-
-                        # Set up event handlers after both elements are created
-                        def handle_color_change():
-                            update_color_with_transparency(
-                                color_ref.value, trans_ref.value, element_id, form_data
-                            )
-
-                        def handle_transparency_change():
-                            update_color_with_transparency(
-                                color_ref.value, trans_ref.value, element_id, form_data
-                            )
-
-                        color_input.on("change", lambda _: handle_color_change())
-                        transparency_switch.on(
-                            "change", lambda _: handle_transparency_change()
-                        )
+                preset_options = element.get("options")
+                if preset_options:
+                    preset_options = list(preset_options)
+                input_element = render_color_field(
+                    element_id=element_id,
+                    value=element_value,
+                    tooltip=tip,
+                    preset_options=preset_options,
+                    on_change=lambda v, id=element_id: update_form_data(
+                        form_data, id, v
+                    ),
+                )
+                element_ui_map[element_id] = input_element
             else:
                 input_element = ui.input(
                     value=element_value,
@@ -1701,39 +1559,6 @@ def render_form_element(
 
             # Store the initial value in the form data
             form_data[element_id] = element_value
-
-
-def update_color_with_transparency(color, is_transparent, element_id, form_data):
-    """Update the color with transparency in the form data"""
-    try:
-        if is_transparent:
-            # Convert hex to RGBA with 0 alpha
-            if color.startswith("#"):
-                color = color.lstrip("#")
-                if len(color) == 3:
-                    color = "".join(c + c for c in color)
-                r = int(color[0:2], 16)
-                g = int(color[2:4], 16)
-                b = int(color[4:6], 16)
-                rgba_color = f"rgba({r}, {g}, {b}, 0)"
-            elif color.startswith("rgb"):
-                # Convert RGB to RGBA with 0 alpha
-                rgba_color = f"rgba{color[3:-1]}, 0)"
-            else:
-                rgba_color = color
-        else:
-            # Convert to RGB if it's RGBA
-            if color.startswith("rgba"):
-                rgba_parts = color.replace("rgba(", "").replace(")", "").split(",")
-                r, g, b = map(int, rgba_parts[:3])
-                rgba_color = f"rgb({r}, {g}, {b})"
-            else:
-                rgba_color = color
-
-        # Update the form data
-        update_form_data(form_data, element_id, rgba_color)
-    except Exception as e:
-        logger.error(f"Error updating color with transparency: {str(e)}")
 
 
 def update_roulette_expansion_title(option_num, option_name):
@@ -1943,31 +1768,16 @@ def save_config(config_parser, config_select, config_container):
 
                 # Update transparency property for color elements
                 if element.get("type") == "color":
-                    # Check if the color is transparent (rgba with alpha < 1)
                     color_value = form_data[element_id]
-                    if color_value == "transparent":
-                        element["transparent"] = True
-                    elif color_value.startswith("rgba"):
-                        try:
-                            rgba_parts = (
-                                color_value.replace("rgba(", "")
-                                .replace(")", "")
-                                .split(",")
-                            )
-                            alpha = float(rgba_parts[3])
-                            element["transparent"] = alpha < 1.0
-                        except:
-                            element["transparent"] = False
-                    else:
-                        element["transparent"] = False
+                    element["transparent"] = is_color_transparent(color_value)
 
-                # Update transparency property for select elements with color grids
+                # Legacy: select elements with color_grid display
                 if (
                     element.get("type") == "select"
                     and element.get("display") == "color_grid"
                 ):
                     color_value = form_data[element_id]
-                    element["transparent"] = color_value == "transparent"
+                    element["transparent"] = is_color_transparent(color_value)
             else:
                 # Element is missing from form data - this is a potential issue
                 missing_element_ids.append(element_id)
@@ -2185,27 +1995,3 @@ def update_field_styling():
             else:
                 logger.debug(f"No change in {element_id}")
                 logger.debug(f"No change in {element_id}")
-
-
-def select_color_from_grid(color, element_id, form_data, hidden_input, swatch_refs):
-    """Handle selection from a color grid"""
-    # Update the hidden input with the selected color
-    hidden_input.value = color
-
-    # Update the form data
-    update_form_data(form_data, element_id, color)
-
-    # Update visual selection in all swatches
-    for swatch_color, swatch_element in swatch_refs.items():
-        # Clear all classes first
-        swatch_element._classes.clear()
-
-        if swatch_color == color:
-            # This is the selected swatch
-            swatch_element._classes.extend(["color-swatch", "selected"])
-        else:
-            # This is not selected
-            swatch_element._classes.append("color-swatch")
-
-        # Force a UI update
-        swatch_element.update()

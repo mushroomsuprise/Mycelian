@@ -10,12 +10,11 @@
             "description": "This is an example text field"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "example_color",
             "label": "Example Color",
             "value": "#ffffff",
             "description": "This is an example color field",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -63,7 +62,8 @@
                 "#1a1a1a",
                 "#000000",
                 "transparent"
-            ]
+            ],
+            "transparent": false
         }
     ]
 }

@@ -361,12 +361,11 @@
             "label": "Background Settings"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BackgroundColor",
             "label": "Background Color",
             "value": "transparent",
             "description": "Background color of the alert",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -437,12 +436,11 @@
             "description": "Width of the alert border in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BorderColor",
             "label": "Border Color",
             "value": "transparent",
             "description": "Color of the alert border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -648,12 +646,11 @@
             "description": "Height of the GIF in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "GifBackgroundColor",
             "label": "GIF Background Color",
             "value": "#000000",
             "description": "Background color behind the GIF",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -714,12 +711,11 @@
             "description": "Width of the GIF border in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "GifBorderColor",
             "label": "GIF Border Color",
             "value": "transparent",
             "description": "Color of the GIF border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -870,12 +866,11 @@
             "description": "Font size for the username in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "UsernameColor",
             "label": "Username Color",
             "value": "#991b1b",
             "description": "Color of the username text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -969,12 +964,11 @@
             "description": "Font size for the alert text in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "TextColor",
             "label": "Text Color",
             "value": "#ffffff",
             "description": "Color of the alert text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1116,12 +1110,11 @@
             "description": "Font size for the user message in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "MessageColor",
             "label": "Message Color",
             "value": "#ffffff",
             "description": "Color of the user message text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

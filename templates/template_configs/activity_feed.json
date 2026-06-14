@@ -156,12 +156,11 @@
             "description": "Padding around the main content area (px)"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "primary_color",
             "label": "Primary Accent Color",
             "value": "#7300ff",
             "description": "Primary color for highlights and accents",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

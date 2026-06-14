@@ -89,12 +89,11 @@
             "description": "Border width around the pause icon in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "IconBorderColor",
             "label": "Icon Border Color",
             "value": "#ffffff",
             "description": "Color of the pause icon border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -196,12 +195,11 @@
             "description": "Whether to show a background behind the pause icon"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BackgroundColor",
             "label": "Background Color",
             "value": "transparent",
             "description": "Background color behind the pause icon",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -280,12 +278,11 @@
             "description": "Border width around the background in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BackgroundBorderColor",
             "label": "Background Border Color",
             "value": "#334155",
             "description": "Color of the background border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

@@ -44,12 +44,11 @@
             "description": "Font weight for title text"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "FontColor",
             "label": "Font Color",
             "value": "#ffffff",
             "description": "Color of the title text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -170,12 +169,11 @@
             "description": "Horizontal alignment of title text (flex-start=left, center=center, flex-end=right)"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ContainerBG",
             "label": "Container Background",
             "value": "transparent",
             "description": "Background color of the container",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -245,12 +243,11 @@
             "description": "Border width around container in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ContainerBorderColor",
             "label": "Container Border Color",
             "value": "#9333ea",
             "description": "Color of the container border",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -335,7 +332,6 @@
             "value": "",
             "description": "Text placed after the category name when Show Category is on"
         },
-
         {
             "type": "separator",
             "label": "Behavior Settings"
@@ -396,12 +392,11 @@
             "description": "Enable glow effect around the title text"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "GlowColor",
             "label": "Glow Color",
             "value": "#9333ea",
             "description": "Color of the glow effect",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

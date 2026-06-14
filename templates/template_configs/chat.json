@@ -42,12 +42,11 @@
             "label": "Container Settings"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BGColor",
             "label": "Background Color",
             "value": "#000000",
             "description": "Background color of the chat container",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -122,12 +121,11 @@
             "label": "Message Settings"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "MessageBG",
             "label": "Message Background",
             "value": "transparent",
             "description": "Background color of individual messages",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -179,12 +177,11 @@
             "transparent": true
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "FontColor",
             "label": "Font Color",
             "value": "#ffffff",
             "description": "Default color for chat message text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -236,12 +233,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "MessageBorderColor",
             "label": "Message Border Color",
             "value": "transparent",
             "description": "Border color for message containers",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -427,12 +423,11 @@
             "label": "Event Message Settings"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "EventBG",
             "label": "Event Message Background",
             "value": "transparent",
             "description": "Background color for event messages (follows, subs, etc.)",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -484,12 +479,11 @@
             "transparent": true
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "EventColor",
             "label": "Event Message Color",
             "value": "#475569",
             "description": "Text color for event messages",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -541,12 +535,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "EventBorderColor",
             "label": "Event Border Color",
             "value": "transparent",
             "description": "Left border color for event messages",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -719,12 +712,11 @@
             "label": "Username Settings"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "UsernameColor",
             "label": "Default Username Color",
             "value": "#4287f5",
             "description": "Default color for usernames (overridden by user's color if available)",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -776,12 +768,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "DefaultUsernameColor",
             "label": "Fallback Username Color",
             "value": "#ffffff",
             "description": "Fallback color when user has no color set",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -986,12 +977,11 @@
             "description": "Opacity of timestamps"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "TimestampColor",
             "label": "Timestamp Color",
             "value": "transparent",
             "description": "Color for timestamps",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

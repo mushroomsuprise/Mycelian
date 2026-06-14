@@ -57,12 +57,11 @@
             "label": "Background & Colors"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BackgroundColor1",
             "label": "Background Gradient Start",
             "value": "transparent",
             "description": "Starting color for the background gradient",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -114,12 +113,11 @@
             "transparent": true
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "BackgroundColor2",
             "label": "Background Gradient End",
             "value": "transparent",
             "description": "Ending color for the background gradient",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -287,12 +285,11 @@
             "description": "Font size for artist name in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "TrackNameColor",
             "label": "Track Name Color",
             "value": "#ffffff",
             "description": "Color of the track name text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -344,12 +341,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ArtistNameColor",
             "label": "Artist Name Color",
             "value": "#ffffff",
             "description": "Color of the artist name text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -418,12 +414,11 @@
             "description": "Add shadow effect to text for better readability"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "TextShadowColor",
             "label": "Text Shadow Color",
             "value": "#000000",
             "description": "Color of the text shadow",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -525,12 +520,11 @@
             "description": "Height of the progress bar in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ProgressBarBackground",
             "label": "Progress Bar Background",
             "value": "#64748b",
             "description": "Background color of the progress bar",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -592,12 +586,11 @@
             "description": "Opacity of the progress bar background"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ProgressBarFillStart",
             "label": "Progress Fill Start Color",
             "value": "#ffc107",
             "description": "Starting color for progress bar gradient",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -649,12 +642,11 @@
             "transparent": false
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "ProgressBarFillEnd",
             "label": "Progress Fill End Color",
             "value": "#ffc107",
             "description": "Ending color for progress bar gradient",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -726,12 +718,11 @@
             "description": "Font size for time display in pixels"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "TimeColor",
             "label": "Time Text Color",
             "value": "#ffffff",
             "description": "Color of the time text",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",

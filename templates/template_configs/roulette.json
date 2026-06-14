@@ -818,11 +818,10 @@
             "description": "Text displayed for option 1"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option1Color",
             "label": "Option 1 Color",
             "value": "#e11d48",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -921,11 +920,10 @@
             "description": "Text displayed for option 2"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option2Color",
             "label": "Option 2 Color",
             "value": "#0891b2",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1024,11 +1022,10 @@
             "description": "Text displayed for option 3"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option3Color",
             "label": "Option 3 Color",
             "value": "#16a34a",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1127,11 +1124,10 @@
             "description": "Text displayed for option 4"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option4Color",
             "label": "Option 4 Color",
             "value": "#9333ea",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1230,11 +1226,10 @@
             "description": "Text displayed for option 5"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option5Color",
             "label": "Option 5 Color",
             "value": "#ea580c",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1333,11 +1328,10 @@
             "description": "Text displayed for option 6"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option6Color",
             "label": "Option 6 Color",
             "value": "#ca8a04",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1436,11 +1430,10 @@
             "description": "Text displayed for option 7"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option7Color",
             "label": "Option 7 Color",
             "value": "#2563eb",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1539,11 +1532,10 @@
             "description": "Text displayed for option 8"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option8Color",
             "label": "Option 8 Color",
             "value": "#db2777",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1642,11 +1634,10 @@
             "description": "Text displayed for option 9"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option9Color",
             "label": "Option 9 Color",
             "value": "#059669",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1745,11 +1736,10 @@
             "description": "Text displayed for option 10"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option10Color",
             "label": "Option 10 Color",
             "value": "#c026d3",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1848,11 +1838,10 @@
             "description": "Text displayed for option 11"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option11Color",
             "label": "Option 11 Color",
             "value": "#7e22ce",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -1951,11 +1940,10 @@
             "description": "Text displayed for option 12"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option12Color",
             "label": "Option 12 Color",
             "value": "#0284c7",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2054,11 +2042,10 @@
             "description": "Text displayed for option 13"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option13Color",
             "label": "Option 13 Color",
             "value": "#a21caf",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2157,11 +2144,10 @@
             "description": "Text displayed for option 14"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option14Color",
             "label": "Option 14 Color",
             "value": "#be185d",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2260,11 +2246,10 @@
             "description": "Text displayed for option 15"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option15Color",
             "label": "Option 15 Color",
             "value": "#65a30d",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2363,11 +2348,10 @@
             "description": "Text displayed for option 16"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option16Color",
             "label": "Option 16 Color",
             "value": "#d97706",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2466,11 +2450,10 @@
             "description": "Text displayed for option 17"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option17Color",
             "label": "Option 17 Color",
             "value": "#4f46e5",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2569,11 +2552,10 @@
             "description": "Text displayed for option 18"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option18Color",
             "label": "Option 18 Color",
             "value": "#0369a1",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2672,11 +2654,10 @@
             "description": "Text displayed for option 19"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option19Color",
             "label": "Option 19 Color",
             "value": "#15803d",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2775,11 +2756,10 @@
             "description": "Text displayed for option 20"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option20Color",
             "label": "Option 20 Color",
             "value": "#92400e",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2878,11 +2858,10 @@
             "description": "Text displayed for option 21"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option21Color",
             "label": "Option 21 Color",
             "value": "#1d4ed8",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -2981,11 +2960,10 @@
             "description": "Text displayed for option 22"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option22Color",
             "label": "Option 22 Color",
             "value": "#991b1b",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -3084,11 +3062,10 @@
             "description": "Text displayed for option 23"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option23Color",
             "label": "Option 23 Color",
             "value": "#3730a3",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -3187,11 +3164,10 @@
             "description": "Text displayed for option 24"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option24Color",
             "label": "Option 24 Color",
             "value": "#047857",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -3290,11 +3266,10 @@
             "description": "Text displayed for option 25"
         },
         {
-            "type": "select",
+            "type": "color",
             "id": "Option25Color",
             "label": "Option 25 Color",
             "value": "#6d28d9",
-            "display": "color_grid",
             "options": [
                 "#e11d48",
                 "#dc2626",
