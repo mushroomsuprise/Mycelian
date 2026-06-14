@@ -354,6 +354,33 @@ body:not(.body--dark) .text-grey {
     border-color: var(--color-border-accent) !important;
 }
 
+/* Activity feed pause/mute button state indicators */
+.q-btn.control-button.pause-alerts-btn.paused:not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel),
+#pause-alerts-btn.paused {
+    box-shadow: none !important;
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: var(--color-error, #ef4444) !important;
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out !important;
+}
+
+.q-btn.control-button.pause-alerts-btn.alerts-playing:not(.btn-primary):not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-cancel),
+#pause-alerts-btn.alerts-playing {
+    border-color: transparent !important;
+}
+
+#mute-alerts-btn.muted {
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: var(--color-error, #ef4444) !important;
+    background-color: rgba(127, 29, 29, 0.55) !important;
+    color: #fecaca !important;
+}
+
+#mute-alerts-btn.muted:hover {
+    background-color: rgba(127, 29, 29, 0.65) !important;
+}
+
 /* =========================================
    Tab Navigation — Tier 3 segmented toggle
    (Activity Feed CURRENT / PREVIOUS)

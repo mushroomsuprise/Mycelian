@@ -25,6 +25,7 @@ SOFTWARE.
 
 import asyncio
 import logging
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -376,6 +377,10 @@ class ActivityFeedState:
         self.condense_list: bool = False
         self.condense_toggle: Optional[ui.element] = None
         self.condensed_container: Optional[ui.element] = None
+        self.alerts_muted: bool = False
+        self.pause_btn: Optional[Any] = None
+        self.pause_breath_phase: float = 0.0
+        self.pause_breath_timer: Optional[ui.timer] = None
         # Filter dropdown reference
         self.filter_dropdown: Optional[ui.element] = None
         # Timer for click-outside detection
@@ -386,6 +391,27 @@ class ActivityFeedState:
 
 # Global instance
 activity_feed_state = ActivityFeedState()
+
+
+def _animate_pause_button_border() -> None:
+    """Drive the playing-state border breathe via inline inset ring (CSS animation blocked by Quasar)."""
+    btn = activity_feed_state.pause_btn
+    if btn is None:
+        return
+    try:
+        from modules import web_engine
+
+        if getattr(web_engine, "ALERTS_PAUSED", False):
+            btn.style("box-shadow: none")
+            return
+        activity_feed_state.pause_breath_phase = (
+            activity_feed_state.pause_breath_phase + 0.05
+        ) % 3.0
+        phase = activity_feed_state.pause_breath_phase / 3.0
+        alpha = 0.2 + 0.8 * (0.5 - 0.5 * math.cos(phase * math.pi * 2))
+        btn.style(f"box-shadow: inset 0 0 0 1px rgba(34, 197, 94, {alpha:.3f})")
+    except Exception:
+        pass
 
 
 def replay_alert(alert_data):
@@ -1561,8 +1587,14 @@ def create_activity_feed_tab():
 
             pause_btn = ui.button(
                 icon="pause", text="PAUSE ALERTS", on_click=on_pause_button_click
-            ).classes("control-button")
-            pause_btn.props(_DOCK_BTN_PROPS)
+            ).classes("control-button pause-alerts-btn alerts-playing").props(
+                f"{_DOCK_BTN_PROPS} id=pause-alerts-btn"
+            )
+            activity_feed_state.pause_btn = pause_btn
+            if activity_feed_state.pause_breath_timer is None:
+                activity_feed_state.pause_breath_timer = ui.timer(
+                    0.05, _animate_pause_button_border, active=True
+                )
 
             def update_pause_button_state():
                 """Update the pause button state based on current ALERTS_PAUSED status"""
@@ -1588,17 +1620,18 @@ def create_activity_feed_tab():
                     logger.debug(f"Final pause state: paused={paused}")
 
                     if paused:
-                        pause_btn.props(f"{_DOCK_BTN_PROPS} icon=play_arrow")
+                        pause_btn.props(f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=play_arrow")
                         pause_btn.text = "RESUME ALERTS"
-                        pause_btn.classes(remove="control-button")
-                        pause_btn.classes(add="control-button paused")
+                        pause_btn.classes(remove="alerts-playing")
+                        pause_btn.classes(add="paused")
+                        pause_btn.style("box-shadow: none")
                         logger.debug("Updated button to RESUME ALERTS state")
 
                     else:
-                        pause_btn.props(f"{_DOCK_BTN_PROPS} icon=pause")
+                        pause_btn.props(f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=pause")
                         pause_btn.text = "PAUSE ALERTS"
                         pause_btn.classes(remove="paused")
-                        pause_btn.classes(add="control-button")
+                        pause_btn.classes(add="alerts-playing")
                         logger.debug("Updated button to PAUSE ALERTS state")
 
                 except Exception as e:
@@ -1617,9 +1650,20 @@ def create_activity_feed_tab():
                 )
 
             mute_btn = ui.button(icon="notifications_off", text="MUTE ALERTS").classes(
-                "control-button"
-            )
-            mute_btn.props(_DOCK_BTN_PROPS)
+                "control-button mute-alerts-btn"
+            ).props(f"{_DOCK_BTN_PROPS} id=mute-alerts-btn")
+
+            def update_mute_button_state(is_muted: bool) -> None:
+                if is_muted:
+                    mute_btn.classes(add="muted")
+                else:
+                    mute_btn.classes(remove="muted")
+
+            def on_mute_button_click():
+                activity_feed_state.alerts_muted = not activity_feed_state.alerts_muted
+                update_mute_button_state(activity_feed_state.alerts_muted)
+
+            mute_btn.on_click(on_mute_button_click)
             skip_btn = ui.button(icon="skip_next", text="SKIP ALERT").classes(
                 "control-button"
             )

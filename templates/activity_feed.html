@@ -93,7 +93,7 @@
             font-size: var(--control-font-size, 11px);
             font-weight: 500;
             color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
-            transition: all 0.2s ease-in-out;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
             border: none;
             display: flex;
             align-items: center;
@@ -110,6 +110,28 @@
         .control-button.paused {
             background-color: rgba(var(--primary-color-rgb, 115, 0, 255), 0.2);
             color: var(--primary-color, #7300ff);
+        }
+
+        /* Pause button — paused: thin solid red border (playing border animated via JS) */
+        #pauseBtn.paused {
+            box-shadow: none !important;
+            border-width: 1px !important;
+            border-style: solid !important;
+            border-color: var(--color-error, #ef4444) !important;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+        }
+
+        /* Mute button — muted */
+        #muteBtn.muted {
+            border-width: 1px !important;
+            border-style: solid !important;
+            border-color: var(--color-error, #ef4444) !important;
+            background-color: rgba(127, 29, 29, 0.55) !important;
+            color: #fecaca !important;
+        }
+
+        #muteBtn.muted:hover {
+            background-color: rgba(127, 29, 29, 0.65) !important;
         }
 
         .control-button i {
@@ -961,11 +983,11 @@
         <div class="content-section">
             <!-- Control buttons row -->
             <div class="control-row">
-                <button id="pauseBtn" class="control-button">
+                <button id="pauseBtn" class="control-button pause-alerts-btn alerts-playing">
                     <i class="material-icons">pause</i>
                     <span>PAUSE ALERTS</span>
                 </button>
-                <button id="muteBtn" class="control-button">
+                <button id="muteBtn" class="control-button mute-alerts-btn">
                     <i class="material-icons">notifications_off</i>
                     <span>MUTE ALERTS</span>
                 </button>
@@ -1217,6 +1239,7 @@
             paginationLimit: 25,
             restoredAlertsLoaded: false,
             pauseStatus: false,
+            muteStatus: false,
             condenseList: false,  // Track condense list toggle state
             loadingForCondensedView: false  // Track if we're loading data for condensed view
         };
@@ -2465,6 +2488,10 @@
 
         // Event handlers
         pauseBtn.onclick = togglePause;
+        muteBtn.onclick = function () {
+            activityFeedState.muteStatus = !activityFeedState.muteStatus;
+            updateMuteButton();
+        };
         currentTabBtn.onclick = function () { switchToTab("current"); };
         previousTabBtn.onclick = function () { switchToTab("previous"); };
         condenseToggle.onchange = toggleCondenseList;
@@ -2582,14 +2609,56 @@
         });
 
         // Function to update pause button state
+        var pauseBorderBreathFrame = null;
+
+        function stopPauseBorderBreathing() {
+            if (pauseBorderBreathFrame !== null) {
+                cancelAnimationFrame(pauseBorderBreathFrame);
+                pauseBorderBreathFrame = null;
+            }
+            pauseBtn.style.boxShadow = '';
+        }
+
+        function startPauseBorderBreathing() {
+            stopPauseBorderBreathing();
+            var breathStart = null;
+            function step(ts) {
+                if (!pauseBtn.classList.contains('alerts-playing')) {
+                    return;
+                }
+                if (breathStart === null) {
+                    breathStart = ts;
+                }
+                var phase = ((ts - breathStart) % 3000) / 3000;
+                var alpha = 0.2 + 0.8 * (0.5 - 0.5 * Math.cos(phase * Math.PI * 2));
+                pauseBtn.style.boxShadow = 'inset 0 0 0 1px rgba(34, 197, 94, ' + alpha.toFixed(3) + ')';
+                pauseBorderBreathFrame = requestAnimationFrame(step);
+            }
+            pauseBorderBreathFrame = requestAnimationFrame(step);
+        }
+
         function updatePauseButton() {
             console.log('Updating pause button state. Paused:', activityFeedState.pauseStatus);
             if (activityFeedState.pauseStatus) {
                 pauseBtn.innerHTML = '<i class="material-icons">play_arrow</i><span>RESUME ALERTS</span>';
                 pauseBtn.classList.add('paused');
+                pauseBtn.classList.remove('alerts-playing');
+                stopPauseBorderBreathing();
             } else {
                 pauseBtn.innerHTML = '<i class="material-icons">pause</i><span>PAUSE ALERTS</span>';
                 pauseBtn.classList.remove('paused');
+                pauseBtn.classList.add('alerts-playing');
+                startPauseBorderBreathing();
+            }
+        }
+
+        updatePauseButton();
+
+        function updateMuteButton() {
+            if (activityFeedState.muteStatus) {
+                muteBtn.classList.add('muted');
+            } else {
+                muteBtn.classList.remove('muted');
             }
         }
 
