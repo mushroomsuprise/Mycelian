@@ -2330,7 +2330,7 @@ def create_command_card(command_id: str, command: ChatCommand):
 
         # Statistics
         with ui.row().classes(
-            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
+            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-theme-subtle"
         ):
             if command.command_type == CommandType.COUNTER:
                 ui.label(f"Count: {command.counter_value}")
@@ -2437,7 +2437,7 @@ def create_event_card(event_id: str, event: ChatEvent):
 
         # Statistics
         with ui.row().classes(
-            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
+            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-theme-subtle"
         ):
             ui.label(f"Triggered: {event.trigger_count}x")
             if event.last_triggered > 0:
@@ -2516,7 +2516,7 @@ def create_quote_card(quote_id: str, quote):
 
         # Statistics
         with ui.row().classes(
-            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
+            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-theme-subtle"
         ):
             if quote.added_by:
                 ui.label(f"Added by: {quote.added_by}")
@@ -2580,7 +2580,7 @@ def create_greeting_card(greeting_id: str, greeting):
 
         # Statistics
         with ui.row().classes(
-            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
+            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-theme-subtle"
         ):
             if greeting.last_greeted > 0:
                 import datetime
@@ -2680,7 +2680,7 @@ def show_create_quote_dialog():
             with ui.column().classes("w-full"):
                 # Dialog header
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label("Add New Quote").classes(
                         "text-lg font-semibold text-theme-primary"
@@ -2808,7 +2808,7 @@ def show_chatbot_dialog(item_id: Optional[str] = None, item_type: Optional[str] 
                 )
 
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label(title).classes("text-lg font-semibold text-blue-400")
                     ui.button(icon="close", on_click=create_dialog.close).props(
@@ -2854,7 +2854,7 @@ def update_api_endpoint_info(
             # Display endpoint information
             with info_container:
                 with ui.element("div").classes(
-                    "bg-theme-surface rounded p-3 border border-gray-600"
+                    "bg-theme-surface rounded p-3 border border-theme-default"
                 ):
                     ui.label("Endpoint Information:").classes(
                         "text-sm font-medium text-yellow-400 mb-2"
@@ -3579,7 +3579,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                 if event_type in events_with_settings:
                     with event_settings_container:
                         with ui.element("div").classes(
-                            "form-section mb-4 border border-gray-600 rounded-lg bg-theme-surface-30 p-4"
+                            "form-section mb-4 border border-theme-default rounded-lg bg-theme-surface-30 p-4"
                         ):
                             ui.label("Event Settings").classes(
                                 "form-section-title mb-4"
@@ -3696,7 +3696,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
         if item_type == "command":
             # Command Settings Section (Collapsible)
             with ui.expansion("Settings", icon="settings").classes(
-                "w-full mb-4 border border-gray-600 rounded-lg bg-theme-surface-30 hover-bg-theme-surface-50 transition-colors"
+                "w-full mb-4 border border-theme-default rounded-lg bg-theme-surface-30 hover-bg-theme-surface-50 transition-colors"
             ) as command_expansion:
                 with command_expansion.add_slot("default"):
                     with ui.element("div").classes("form-section p-4 w-full"):
@@ -3778,7 +3778,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
 
                         # Argument Mappings Section
                         with ui.element("div").classes(
-                            "mt-6 pt-4 border-t border-gray-600"
+                            "mt-6 pt-4 border-t border-theme-default"
                         ):
                             ui.label("Argument Mappings").classes(
                                 "text-sm font-medium secondary-text mb-3"
@@ -4561,7 +4561,7 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
 
         # Form buttons
         with ui.row().classes(
-            "w-full items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-700"
+            "w-full items-center justify-end gap-2 mt-6 pt-4 border-t border-theme-subtle"
         ):
             ui.button(
                 text="Cancel",
@@ -4996,7 +4996,7 @@ def show_custom_variable_dialog(
             with ui.column().classes("w-full h-auto"):
                 # Dialog header
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     dialog_title = (
                         "Edit Custom Variable"
@@ -5053,7 +5053,7 @@ def show_custom_variable_dialog(
 
                         # Help text in a fixed height scrollable container
                         with ui.element("div").classes(
-                            "h-40 overflow-y-auto bg-theme-surface-50 p-3 rounded border border-gray-600"
+                            "h-40 overflow-y-auto bg-theme-surface-50 p-3 rounded border border-theme-default"
                         ):
                             ui.label("💡 Expression Examples:").classes(
                                 "text-xs font-medium text-indigo-400 mb-2 block"
@@ -5082,7 +5082,7 @@ def show_custom_variable_dialog(
 
                         # Form buttons - fixed at bottom with no flex issues
                         with ui.row().classes(
-                            "w-full items-center justify-end gap-2 pt-3 border-t border-gray-600"
+                            "w-full items-center justify-end gap-2 pt-3 border-t border-theme-default"
                         ):
                             ui.button(
                                 text="Cancel", on_click=custom_variable_dialog.close
@@ -6307,7 +6307,7 @@ def show_custom_variable_help_dialog():
             with ui.column().classes("w-full"):
                 # Dialog header
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label("Custom Variables Help Guide").classes(
                         "text-xl font-semibold text-indigo-400"
@@ -6822,7 +6822,7 @@ def show_custom_variable_help_dialog():
 
                 # Dialog footer
                 with ui.row().classes(
-                    "w-full justify-end p-4 border-t border-gray-700"
+                    "w-full justify-end p-4 border-t border-theme-subtle"
                 ):
                     ui.button(text="Close", on_click=help_dialog.close).classes(
                         "btn-cancel px-4 py-2"
@@ -7429,7 +7429,7 @@ def show_create_greeting_dialog():
             with ui.column().classes("w-full"):
                 # Dialog header
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label("Add New Greeting").classes(
                         "text-lg font-semibold text-cyan-400"
@@ -7612,7 +7612,7 @@ def show_edit_greeting_dialog(greeting_id: str):
             with ui.column().classes("w-full"):
                 # Dialog header
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label("Edit Greeting").classes(
                         "text-lg font-semibold text-cyan-400"
@@ -7802,7 +7802,7 @@ def show_greeting_settings_dialog():
             with ui.column().classes("w-full"):
                 # Dialog header
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label("Greeting Settings").classes(
                         "text-lg font-semibold text-cyan-400"
@@ -7980,7 +7980,7 @@ def show_quote_settings_dialog():
             with ui.column().classes("w-full"):
                 # Dialog header
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label("Quote Settings").classes(
                         "text-lg font-semibold text-cyan-400"

@@ -124,5 +124,159 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "034d3dcf-d9f3-4253-b63f-352555be3b92",
+    "ts": 1781407797.178396,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "13215d02-43f9-411b-92bc-665e7f4a2ca0",
+    "ts": 1781407829.427401,
+    "message": "Theme 'forest_glade' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "a30fb80e-2df0-4f03-9137-b9fae244749e",
+    "ts": 1781407832.2331982,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "3496614e-341e-407f-aae1-4e9d2545a278",
+    "ts": 1781407867.570088,
+    "message": "Theme 'dark' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "e4290df5-1c54-4df9-9dd9-e0ebe1ee8b5e",
+    "ts": 1781407990.053389,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "926e9d0e-f5a6-4740-ad40-5d9eae72da63",
+    "ts": 1781407991.966124,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "8a4f809d-61db-4eae-a7b8-1384787dbb8a",
+    "ts": 1781408009.878529,
+    "message": "Theme 'forest_glade' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "e6f25140-de3e-44ea-9deb-aeaf74329de4",
+    "ts": 1781408072.0400262,
+    "message": "Theme 'dark' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "e8728a88-a54b-4756-a7c9-39015f68f0dc",
+    "ts": 1781408266.749075,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "89be42bb-3113-4d75-8bb1-1741f7af88a1",
+    "ts": 1781408281.140366,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "522ef5bb-4a10-41c6-b6bf-6b839e7a69b6",
+    "ts": 1781408307.429537,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "3a1f6dab-b24f-4a96-a151-8911a895ef95",
+    "ts": 1781408373.569912,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "3b564d8b-bdd0-46b8-984b-530c306f8d91",
+    "ts": 1781408383.5939672,
+    "message": "OBS: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:obs:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
+  },
+  {
+    "id": "86e09ed3-844b-41cf-97dd-b588537e48dd",
+    "ts": 1781408389.597495,
+    "message": "OBS: Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:obs:Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "OBS"
+      }
+    ]
   }
 ]

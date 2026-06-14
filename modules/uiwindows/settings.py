@@ -74,21 +74,8 @@ _FILE_BROWSER_CARD_CLASSES = (
 )
 _FILE_BROWSER_DIALOG_PROPS = "content-class=mycelian-wide-file-dialog"
 
-# CSS for basic styling - uses theme CSS variables
+# CSS for settings-specific styling - shared card/section rules live in ui_styles.py
 CSS = """
-.content-section {
-    padding: 1rem;
-    margin: 0.5rem 0;
-    border-radius: 8px;
-    background: var(--color-bg-elevated);
-}
-
-.content-card {
-    background: var(--color-bg-surface);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
 .header-section {
     padding: 1rem;
     margin-bottom: 1rem;

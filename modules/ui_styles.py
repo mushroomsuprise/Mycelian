@@ -655,9 +655,15 @@ body:not(.body--dark) .text-grey {
     --input-border-radius: 10px;
 }
 
+.q-field--outlined .q-field__inner {
+    border-radius: var(--input-border-radius);
+    overflow: hidden;
+}
+
 .q-field--outlined .q-field__control,
 .q-field__control {
     border-radius: var(--input-border-radius) !important;
+    overflow: hidden !important;
     background: var(--color-bg-surface) !important;
     color: var(--color-text-primary) !important;
 }
@@ -676,9 +682,59 @@ body:not(.body--dark) .text-grey {
     box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
 }
 
+/* Recessed inputs (e.g. alert settings fields with bg-theme-base) */
+.q-field.bg-theme-base,
+.q-field.bg-theme-elevated,
+.q-field.bg-theme-surface {
+    background-color: transparent !important;
+}
+
+.q-field.bg-theme-base .q-field__control {
+    background: var(--color-bg-base) !important;
+}
+
+.q-field.bg-theme-elevated .q-field__control {
+    background: var(--color-bg-elevated) !important;
+}
+
+.q-field.bg-theme-surface .q-field__control {
+    background: var(--color-bg-surface) !important;
+}
+
+/* Sliders */
+.q-slider__track {
+    color: var(--color-border-subtle) !important;
+}
+
+.q-slider__inner {
+    background: var(--color-bg-surface) !important;
+}
+
+.q-slider__selection {
+    background: var(--color-primary) !important;
+}
+
+.q-slider__thumb {
+    color: var(--color-primary) !important;
+}
+
+.q-slider__thumb-shape {
+    fill: currentColor !important;
+}
+
 /* Expansion panels */
 .q-expansion-item__container {
     background: var(--color-bg-surface) !important;
+}
+
+.q-expansion-item__header {
+    background: var(--color-bg-surface) !important;
+    color: var(--color-text-primary) !important;
+    border-bottom: 1px solid var(--color-border-subtle) !important;
+}
+
+.q-expansion-item__header:hover {
+    background: color-mix(in srgb, var(--color-hover-overlay) 70%, var(--color-bg-surface)) !important;
 }
 
 .q-expansion-item__toggle-icon {
@@ -1019,8 +1075,7 @@ body:not(.body--dark) .mycelian-sub-tab-shell .q-tabs__content {
 
 /* Cards and panels in light mode */
 body:not(.body--dark) .q-card,
-body:not(.body--dark) .q-tab-panel,
-body:not(.body--dark) .q-expansion-item__container {
+body:not(.body--dark) .q-tab-panel {
     background: var(--color-bg-elevated) !important;
     color: var(--color-text-primary) !important;
 }
@@ -1037,13 +1092,13 @@ body:not(.body--dark) .control-card {
 
 /* Input fields in light mode */
 body:not(.body--dark) .q-field__control {
-    background: var(--color-bg-elevated) !important;
+    background: var(--color-bg-surface) !important;
     color: var(--color-text-primary) !important;
 }
 
 body:not(.body--dark) .q-field--outlined .q-field__control {
     border: 1px solid var(--color-border-default) !important;
-    background: var(--color-bg-elevated) !important;
+    background: var(--color-bg-surface) !important;
 }
 
 body:not(.body--dark) .q-field--outlined .q-field__control:hover {
@@ -1702,8 +1757,8 @@ button.btn-primary {
 }
 
 .hint-error {
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.05)) !important;
-    border: 1px solid rgba(239, 68, 68, 0.3) !important;
+    background: color-mix(in srgb, var(--color-error) 10%, var(--color-bg-surface)) !important;
+    border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent) !important;
     border-radius: 8px;
 }
 

@@ -703,7 +703,7 @@ def _open_folder_floating_window(folder_id: str) -> None:
     with _folder_dialog_host:
         shell = ui.element("div").classes(
             "connector-folder-floating pointer-events-auto rounded-lg flex flex-col "
-            "border border-gray-700 min-h-0"
+            "border border-theme-subtle min-h-0"
         )
         shell.style(
             "position:fixed;"
@@ -722,7 +722,7 @@ def _open_folder_floating_window(folder_id: str) -> None:
         with shell:
             head = ui.row().classes(
                 "w-full items-center justify-between gap-2 flex-none "
-                "border-b border-gray-600 px-2 py-1 cursor-move"
+                "border-b border-theme-default px-2 py-1 cursor-move"
             )
             head.on(
                 "mousedown.capture",
@@ -1093,7 +1093,7 @@ def load_connectors():
 
             wrapper = ui.element("div").classes(
                 "connector-folder connector-folder-tile p-4 rounded-lg fade-in "
-                "flex flex-col gap-3 border border-gray-600/60 bg-[var(--color-bg-surface)]"
+                "flex flex-col gap-3 border border-theme-subtle bg-[var(--color-bg-surface)]"
             )
             wrapper.props(f'data-folder-id="{folder_id}"')
             folder_cards[folder_id] = wrapper
@@ -1346,7 +1346,7 @@ def create_connector_card(
 
         # Statistics
         with ui.row().classes(
-            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-gray-700"
+            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-theme-subtle"
         ):
             ui.label(f"Triggered: {connector.trigger_count}x")
             if connector.last_triggered > 0:
@@ -1496,7 +1496,7 @@ def show_connector_dialog(connector_id: str = None):
                 title = "Edit Connector" if is_edit else "Create New Connector"
 
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label(title).classes("text-xl font-semibold text-theme-primary")
                     ui.button(icon="close", on_click=create_dialog.close).props(
@@ -1754,7 +1754,7 @@ def create_connector_form(connector_id: str = None):
 
         # Form buttons
         with ui.row().classes(
-            "w-full items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-700"
+            "w-full items-center justify-end gap-2 mt-6 pt-4 border-t border-theme-subtle"
         ):
             ui.button(text="Cancel", on_click=create_dialog.close).props(
                 "flat"
@@ -5665,7 +5665,7 @@ def show_help_dialog():
             with ui.column().classes("w-full h-full"):
                 # Header
                 with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-gray-700"
+                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label("Connectors Help & Guide").classes(
                         "text-xl font-semibold text-theme-primary"

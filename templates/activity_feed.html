@@ -882,7 +882,7 @@
             font-size: 11px;
         }
 
-        .condensed-view .text-gray-400 {
+        .condensed-view .text-muted {
             color: var(--color-text-muted, rgba(255, 255, 255, 0.4));
         }
 
@@ -2263,7 +2263,7 @@
                 // Add indicator showing historical alerts are being used
                 if (historicalCount > 0) {
                     var indicator = document.createElement('div');
-                    indicator.className = 'text-xs text-gray-400 mb-2 italic';
+                    indicator.className = 'text-xs text-muted mb-2 italic';
                     indicator.textContent = 'Showing ' + historicalCount + ' historical alerts from past ' + condenseHistoricalHours + ' hours';
                     condensedViewContainer.appendChild(indicator);
                 }

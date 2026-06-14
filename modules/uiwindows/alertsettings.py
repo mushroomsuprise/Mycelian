@@ -3046,11 +3046,7 @@ def create_points_alert_panel():
             channel_points_banner = (
                 ui.card()
                 .props("flat")
-                .classes("w-full p-3 rounded-lg border border-theme-error")
-                .style(
-                    "background: transparent !important; "
-                    "box-shadow: none !important;"
-                )
+                .classes("w-full p-3 rounded-lg hint-error")
             )
             with channel_points_banner:
                 ui.label(

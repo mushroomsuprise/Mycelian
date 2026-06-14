@@ -15,7 +15,7 @@ from ...theme_manager import (
 )
 from ..service_brand_icons import SERVICE_BRAND_SVG
 from ...notification_engine import notify
-from ...ui_buttons import outline_button, primary_button
+from ...ui_buttons import apply_flat_btn_props, outline_button, primary_button
 from ...ui_form_controls import form_input, form_select
 from .base import TabBase
 
@@ -448,6 +448,19 @@ body .theme-preview-container .q-spinner {
 /* ============================================
    Preview Button Styles
    ============================================ */
+
+/* Neutralize Quasar semantic fills so preview vars win over applied --q-* */
+body .theme-preview-container .q-btn.bg-primary,
+body .theme-preview-container .q-btn.bg-positive,
+body .theme-preview-container .q-btn.bg-negative,
+body .theme-preview-container .q-btn.bg-warning,
+body .theme-preview-container .q-btn.bg-info {
+    background: unset !important;
+}
+
+body .theme-preview-container .q-btn .q-focus-helper {
+    background: transparent !important;
+}
 
 body .theme-preview-container .theme-button-primary,
 body .theme-preview-container .q-btn.theme-button-primary {
@@ -1248,13 +1261,15 @@ class ThemeTab:
         with ui.element("div").style(
             "display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;"
         ):
-            ui.button("Primary").classes("theme-button-primary").props("dense size=sm")
-            ui.button("Secondary").classes("theme-button-secondary").props(
-                "dense size=sm"
-            )
-            ui.button("Success").classes("theme-button-success").props("dense size=sm")
-            ui.button("Warning").classes("theme-button-warning").props("dense size=sm")
-            ui.button("Error").classes("theme-button-error").props("dense size=sm")
+            for label, cls in (
+                ("Primary", "theme-button-primary"),
+                ("Secondary", "theme-button-secondary"),
+                ("Success", "theme-button-success"),
+                ("Warning", "theme-button-warning"),
+                ("Error", "theme-button-error"),
+            ):
+                btn = ui.button(label).classes(cls).props("dense size=sm")
+                apply_flat_btn_props(btn, dense=True)
 
     def _build_color_palette(self, current_theme):
         """Build clickable color palette swatches."""
