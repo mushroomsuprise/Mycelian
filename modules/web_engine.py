@@ -776,8 +776,32 @@ class WebEngine:
             if not os.path.isfile(editor_path):
                 return ("Spore Studio editor bundle missing.", 500)
             try:
-                directory = os.path.dirname(editor_path)
-                return send_from_directory(directory, "editor.html")
+                with open(editor_path, encoding="utf-8") as f:
+                    html = f.read()
+                theme_mgr = get_theme_manager()
+                theme = theme_mgr.get_theme()
+                if theme:
+                    theme_css = generate_css_variables(theme)
+                    theme_type = theme.theme_type or "dark"
+                    theme_block = (
+                        f'<style id="mycelian-theme-vars">{theme_css}</style>'
+                    )
+                    if 'id="mycelian-theme-vars"' not in html:
+                        if "</head>" in html:
+                            html = html.replace(
+                                "</head>", f"    {theme_block}\n</head>", 1
+                            )
+                        else:
+                            html = theme_block + html
+                    if 'data-theme-type="' not in html:
+                        html = html.replace(
+                            "<html",
+                            f'<html data-theme-type="{theme_type}"',
+                            1,
+                        )
+                response = make_response(html)
+                response.headers["Content-Type"] = "text/html; charset=utf-8"
+                return response
             except Exception as e:
                 logger.error("Error serving Spore Studio editor: %s", e)
                 return (f"Error serving editor: {e}", 500)

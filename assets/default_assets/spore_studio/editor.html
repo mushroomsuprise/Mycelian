@@ -6,6 +6,7 @@
     <link rel="stylesheet" href="/assets/default_assets/spore_studio/editor.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
             crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
 </head>
 <body>
     <div id="ss-root">
@@ -115,7 +116,7 @@
                         HTML. Persists across saves.
                     </p>
                     <textarea id="ss-advanced-js" rows="20"
-                              style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#0b0d12;color:#d8e0ec;border:1px solid var(--ss-border);border-radius:var(--ss-radius);padding:8px;"
+                              style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--ss-bg-input);color:var(--ss-text);border:1px solid var(--ss-border);border-radius:var(--ss-radius);padding:8px;"
                               placeholder="// Place advanced custom JavaScript here.\n// You can call sporeShow(id), sporeHide(id), sporeSetText(id, value),\n// sporePlayMediaAudio(id, { volume?, fade_in_ms? }),\n// or attach additional socket.on(...) handlers."></textarea>
                 </div>
             </div>

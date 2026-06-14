@@ -3501,7 +3501,7 @@
         });
         if (dupEvents.length) {
             var dupWarn = document.createElement("p");
-            dupWarn.style.cssText = "color:#e6a700;font-size:11px;margin:0 0 8px;";
+            dupWarn.style.cssText = "color:var(--ss-warn);font-size:11px;margin:0 0 8px;";
             dupWarn.textContent = (
                 "Multiple actions share socket event(s): " + dupEvents.join(", ") + ". " +
                 "Bindings on that event will all fire when any of those actions is pressed."
@@ -5245,9 +5245,30 @@
         });
     }
 
+    function applyMycelianTheme(data) {
+        if (!data || !data.css) { return; }
+        var style = document.getElementById("mycelian-theme-vars");
+        if (!style) {
+            style = document.createElement("style");
+            style.id = "mycelian-theme-vars";
+            document.head.insertBefore(style, document.head.firstChild);
+        }
+        style.textContent = data.css;
+        if (data.theme_type) {
+            document.documentElement.dataset.themeType = data.theme_type;
+        }
+    }
+
     function setupSocket() {
         try {
-            state.socket = io.connect("http://" + document.domain + ":" + location.port);
+            var connectFn = (typeof MycelianOverlay !== "undefined" && MycelianOverlay.connect)
+                ? MycelianOverlay.connect
+                : io.connect;
+            state.socket = connectFn("http://" + document.domain + ":" + location.port);
+            state.socket.on("connect", function () {
+                state.socket.emit("get_current_theme");
+            });
+            state.socket.on("theme_update", applyMycelianTheme);
             state.socket.on("spore_studio_assets_changed", function (data) {
                 if (!state.model) { return; }
                 var t = data && data.template;

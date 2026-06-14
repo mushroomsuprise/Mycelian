@@ -6,18 +6,21 @@
  */
 
 :root {
-    --ss-bg: #0f1115;
-    --ss-bg-elevated: #1a1d24;
-    --ss-bg-input: #232730;
-    --ss-border: rgba(255, 255, 255, 0.1);
-    --ss-text: #e7e9ee;
-    --ss-text-muted: rgba(231, 233, 238, 0.65);
-    --ss-accent: #7300ff;
-    --ss-accent-hover: #8a33ff;
-    --ss-success: #22c55e;
-    --ss-warn: #f59e0b;
-    --ss-error: #ef4444;
+    --ss-bg: var(--color-bg-base, #0f1115);
+    --ss-bg-elevated: var(--color-bg-elevated, #1a1d24);
+    --ss-bg-input: var(--color-bg-surface, #232730);
+    --ss-border: var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+    --ss-text: var(--color-text-primary, #e7e9ee);
+    --ss-text-muted: var(--color-text-muted, rgba(231, 233, 238, 0.65));
+    --ss-accent: var(--color-primary, #7300ff);
+    --ss-accent-hover: var(--color-primary-hover, #8a33ff);
+    --ss-success: var(--color-success, #22c55e);
+    --ss-warn: var(--color-warning, #f59e0b);
+    --ss-error: var(--color-error, #ef4444);
     --ss-radius: 6px;
+    --ss-checker-a: color-mix(in srgb, var(--ss-text) 5%, transparent);
+    --ss-checker-b: transparent;
+    --ss-checker-border: color-mix(in srgb, var(--ss-text) 18%, transparent);
 }
 
 html, body {
@@ -86,18 +89,25 @@ html, body {
     font-size: 12px;
     transition: background 0.12s ease, border-color 0.12s ease;
 }
-.ss-btn:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.18); }
-.ss-btn--primary { background: var(--ss-accent); border-color: var(--ss-accent); color: white; }
+.ss-btn:hover {
+    background: var(--color-hover-overlay, rgba(255, 255, 255, 0.06));
+    border-color: var(--color-border-default, rgba(255, 255, 255, 0.18));
+}
+.ss-btn--primary {
+    background: var(--ss-accent);
+    border-color: var(--ss-accent);
+    color: var(--color-text-inverse, #fff);
+}
 .ss-btn--primary:hover { background: var(--ss-accent-hover); border-color: var(--ss-accent-hover); }
 .ss-btn--ghost { background: transparent; }
 .ss-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .ss-btn--danger {
     color: var(--ss-error);
-    border-color: rgba(239, 68, 68, 0.35);
+    border-color: color-mix(in srgb, var(--ss-error) 35%, transparent);
 }
 .ss-btn--danger:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.12);
-    border-color: rgba(239, 68, 68, 0.5);
+    background: color-mix(in srgb, var(--ss-error) 12%, transparent);
+    border-color: color-mix(in srgb, var(--ss-error) 50%, transparent);
 }
 
 .ss-toolbar-icon {
@@ -117,7 +127,10 @@ html, body {
 
 .ss-panel-canvas {
     grid-area: canvas;
-    background: repeating-conic-gradient(#1a1d24 0% 25%, #14171c 0% 50%) 50% / 24px 24px;
+    background: repeating-conic-gradient(
+        var(--ss-bg-elevated) 0% 25%,
+        var(--ss-bg-input) 0% 50%
+    ) 50% / 24px 24px;
     overflow: hidden;
     position: relative;
     min-height: 0;
@@ -294,8 +307,8 @@ html, body {
     z-index: 5000;
 }
 .ss-toast.visible { opacity: 1; transform: translateX(-50%) translateY(-4px); }
-.ss-toast--success { border-color: rgba(34, 197, 94, 0.6); }
-.ss-toast--error { border-color: rgba(239, 68, 68, 0.6); }
+.ss-toast--success { border-color: color-mix(in srgb, var(--ss-success) 60%, transparent); }
+.ss-toast--error { border-color: color-mix(in srgb, var(--ss-error) 60%, transparent); }
 
 /* Canvas */
 .ss-canvas-wrap {
@@ -318,7 +331,7 @@ html, body {
     padding: 2px 6px;
     border-radius: 4px;
     color: var(--ss-text-muted);
-    background: rgba(15, 17, 21, 0.72);
+    background: var(--color-bg-overlay, color-mix(in srgb, var(--ss-bg) 72%, transparent));
     border: 1px solid var(--ss-border);
     pointer-events: none;
     user-select: none;
@@ -333,9 +346,9 @@ html, body {
      */
     position: relative;
     background:
-        linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.05) 75%) 0 0 / 16px 16px,
-        linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.05) 75%) 8px 8px / 16px 16px;
-    border: 1px dashed rgba(255,255,255,0.18);
+        linear-gradient(45deg, var(--ss-checker-a) 25%, var(--ss-checker-b) 25%, var(--ss-checker-b) 75%, var(--ss-checker-a) 75%) 0 0 / 16px 16px,
+        linear-gradient(45deg, var(--ss-checker-a) 25%, var(--ss-checker-b) 25%, var(--ss-checker-b) 75%, var(--ss-checker-a) 75%) 8px 8px / 16px 16px;
+    border: 1px dashed var(--ss-checker-border);
 }
 
 .ss-element {
@@ -359,7 +372,7 @@ html, body {
     padding: 1px 4px;
     border-radius: 3px;
     background: var(--ss-accent);
-    color: #fff;
+    color: var(--color-text-inverse, #fff);
     opacity: 0.85;
     pointer-events: none;
     z-index: 5;
@@ -394,18 +407,18 @@ html, body {
 .ss-element__handle--br { right: -4px; bottom: -4px; cursor: nwse-resize; }
 
 .ss-element[data-spore-type="text"] {
-    color: white;
+    color: var(--ss-text);
     padding: 4px;
-    background: rgba(115, 0, 255, 0.05);
+    background: var(--color-primary-light, color-mix(in srgb, var(--ss-accent) 5%, transparent));
 }
 .ss-element[data-spore-type="image"],
 .ss-element[data-spore-type="video"] {
-    background: rgba(115, 0, 255, 0.08);
-    background-image: linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%, rgba(255,255,255,0.04)),
-                       linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%, rgba(255,255,255,0.04));
+    background: var(--color-primary-light, color-mix(in srgb, var(--ss-accent) 8%, transparent));
+    background-image: linear-gradient(45deg, var(--ss-checker-a) 25%, var(--ss-checker-b) 25%, var(--ss-checker-b) 75%, var(--ss-checker-a) 75%),
+                       linear-gradient(45deg, var(--ss-checker-a) 25%, var(--ss-checker-b) 25%, var(--ss-checker-b) 75%, var(--ss-checker-a) 75%);
     background-size: 16px 16px;
     background-position: 0 0, 8px 8px;
-    color: white;
+    color: var(--ss-text);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -414,8 +427,8 @@ html, body {
     padding: 4px;
 }
 .ss-element[data-spore-type="audio"] {
-    background: rgba(115, 0, 255, 0.2);
-    color: white;
+    background: color-mix(in srgb, var(--ss-accent) 20%, transparent);
+    color: var(--ss-text);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -423,8 +436,8 @@ html, body {
     border-radius: 4px;
 }
 .ss-element[data-spore-type="container"] {
-    background: rgba(115, 0, 255, 0.04);
-    border: 1px dashed rgba(255,255,255,0.18);
+    background: color-mix(in srgb, var(--ss-accent) 4%, transparent);
+    border: 1px dashed var(--ss-checker-border);
     min-width: 40px;
     min-height: 24px;
 }
@@ -433,7 +446,7 @@ html, body {
 .ss-element.ss-drop-target {
     outline: 2px solid var(--ss-accent);
     outline-offset: 1px;
-    box-shadow: 0 0 0 3px rgba(115, 0, 255, 0.28);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ss-accent) 28%, transparent);
 }
 .ss-stage.ss-drop-target-root {
     box-shadow: inset 0 0 0 2px var(--ss-accent);
@@ -526,9 +539,9 @@ html, body {
     font-size: 12px;
     user-select: none;
 }
-.ss-outline-row:hover { background: rgba(255,255,255,0.04); }
+.ss-outline-row:hover { background: var(--color-hover-overlay, rgba(255, 255, 255, 0.04)); }
 .ss-outline-row.selected {
-    background: rgba(115, 0, 255, 0.15);
+    background: var(--color-primary-light, color-mix(in srgb, var(--ss-accent) 15%, transparent));
     outline: 1px solid var(--ss-accent);
 }
 .ss-outline-row__id {
@@ -674,8 +687,8 @@ html, body {
     flex: 1;
     min-height: 0;
     background:
-        linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%) 0 0 / 16px 16px,
-        linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%) 8px 8px / 16px 16px;
+        linear-gradient(45deg, var(--ss-checker-a) 25%, var(--ss-checker-b) 25%, var(--ss-checker-b) 75%, var(--ss-checker-a) 75%) 0 0 / 16px 16px,
+        linear-gradient(45deg, var(--ss-checker-a) 25%, var(--ss-checker-b) 25%, var(--ss-checker-b) 75%, var(--ss-checker-a) 75%) 8px 8px / 16px 16px;
     overflow: auto;
     position: relative;
 }
@@ -703,13 +716,13 @@ html, body {
     height: 14px;
     cursor: nwse-resize;
     background:
-        linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.4) 50%);
+        linear-gradient(135deg, transparent 50%, var(--ss-checker-border) 50%);
 }
 
 .ss-create-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--color-bg-overlay, rgba(0, 0, 0, 0.7));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -736,5 +749,11 @@ html, body {
     border-radius: var(--ss-radius);
     padding: 8px;
     margin-bottom: 10px;
+}
+
+/* Light-theme checkerboard: use darker hints so transparency grid stays visible */
+html[data-theme-type="light"] {
+    --ss-checker-a: color-mix(in srgb, var(--ss-text) 8%, transparent);
+    --ss-checker-border: color-mix(in srgb, var(--ss-text) 22%, transparent);
 }
 

@@ -31,17 +31,17 @@ logger = logging.getLogger(__name__)
 
 _TAB_CSS = """
 .spore-studio-host {
-    background: #0f1115;
-    color: #e7e9ee;
+    background: var(--color-bg-base);
+    color: var(--color-text-primary);
 }
 .spore-studio-host iframe {
     width: 100%;
     height: 100%;
     border: 0;
-    background: #0f1115;
+    background: var(--color-bg-base);
 }
 .spore-studio-empty {
-    color: #b8bec9;
+    color: var(--color-text-secondary);
     text-align: center;
 }
 """
