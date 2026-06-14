@@ -70,6 +70,7 @@ from .chatbot_manager import get_manager as get_chatbot_manager
 from .template_config_parser import match_point_reward_dedicated_template
 from .text_safe import safe_console_str
 from .twitch_eventsub_patch import ensure_channel_chat_notification_watch_streak_patch
+from .twitch_oauth import run_user_authentication, stop_active_oauth
 from .uiwindows.activity_feed import (
     add_alert_to_feed,
     format_raid_activity_message,
@@ -156,6 +157,7 @@ class TwitchPermissionError(Exception):
 # Global flag to track initialization status
 _initialized = False
 _init_lock = threading.Lock()
+_staging_complete = threading.Event()
 
 # Global flag to track Twitch API connection status
 twitch_connected = False
@@ -761,15 +763,13 @@ class Twitch_API:
                 self.twitch, self.authscope, force_verify=False
             )
 
-            # Get tokens through OAuth
+            # Get tokens through OAuth (serialized app-wide on port 17563)
             (
                 self.auth_token,
                 self.refresh_token,
-            ) = await self.authenticator.authenticate()
+            ) = await run_user_authentication(self.authenticator)
 
             # Set user authentication with the tokens we just received
-            print(f"Auth token: {self.auth_token}")
-            print(f"Refresh token: {self.refresh_token}")
             await self.twitch.set_user_authentication(
                 self.auth_token, self.authscope, self.refresh_token
             )
@@ -862,14 +862,34 @@ class Twitch_API:
 
                 except Exception as e:
                     logger.warning(f"Existing tokens failed validation: {str(e)}")
-                    # Try OAuth flow as fallback
-                    notify_twitch_connect_failed()
-                    oauth_success = await self.authenticate_with_oauth()
-                    if not oauth_success:
-                        logger.error(
-                            "Failed to authenticate with OAuth after token validation failure"
-                        )
-                        return False  # Return False instead of raising exception
+                    logger.info(
+                        "Attempting token refresh before OAuth after validation failure"
+                    )
+                    refresh_success = await self.refresh_auth_token()
+                    if refresh_success:
+                        try:
+                            self.user = await first(self.twitch.get_users())
+                            self.user_id = self.user.id
+                            self.token_expiry = await self._compute_token_expiry(
+                                self.auth_token
+                            )
+                            self.save_auth_data()
+                            logger.info(
+                                "Recovered Twitch session after token refresh"
+                            )
+                        except Exception as retry_err:
+                            logger.warning(
+                                "Tokens still invalid after refresh: %s", retry_err
+                            )
+                            refresh_success = False
+                    if not refresh_success:
+                        notify_twitch_connect_failed()
+                        oauth_success = await self.authenticate_with_oauth()
+                        if not oauth_success:
+                            logger.error(
+                                "Failed to authenticate with OAuth after token validation failure"
+                            )
+                            return False
 
             return True  # Successfully staged
 
@@ -2729,6 +2749,12 @@ class Twitch_API:
             # since it's a daemon thread
             logger.debug("Stopping Twitch connection health check thread")
 
+    def cancel_oauth(self) -> None:
+        """Stop an in-flight OAuth callback server for this integration."""
+        if self.authenticator is not None:
+            stop_active_oauth()
+        self.authenticator = None
+
     def _health_check_loop(self):
         """Background thread that periodically checks connection health and token expiry"""
         from .shutdown import is_shutdown_in_progress
@@ -3980,7 +4006,8 @@ def initialize() -> None:
         # alert_init_thread.start()
 
         init_thread = threading.Thread(
-            target=lambda: asyncio.run(twitch_api.intialize_twitch_api())
+            target=_run_twitch_init,
+            name="TwitchInit",
         )
         init_thread.daemon = True
         init_thread.start()
@@ -3988,6 +4015,19 @@ def initialize() -> None:
 
         # Mark as initialized
         _initialized = True
+
+
+def _run_twitch_init() -> None:
+    """Run Twitch API init and signal staging completion for chatbot ordering."""
+    try:
+        asyncio.run(twitch_api.intialize_twitch_api())
+    finally:
+        _staging_complete.set()
+
+
+def wait_for_staging_complete(timeout: float = 120.0) -> bool:
+    """Wait until the first Twitch API init/staging pass finishes."""
+    return _staging_complete.wait(timeout=timeout)
 
 
 def get_twitch_api():

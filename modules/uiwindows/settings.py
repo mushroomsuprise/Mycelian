@@ -3457,7 +3457,7 @@ class SettingsUI:
                                 with ui.column().classes("flex-1 gap-2"):
                                     for url_info in column_urls:
                                         with ui.card().classes(
-                                            "w-full p-2 bg-theme-surface transition-colors"
+                                            "w-full p-2 settings-tab-card transition-colors"
                                         ):
                                             # Template name and type
                                             with ui.row().classes(

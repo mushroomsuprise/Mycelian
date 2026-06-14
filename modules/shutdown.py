@@ -207,18 +207,24 @@ def _stop_psn() -> None:
 
 def _stop_twitch() -> None:
     from . import twitch
+    from .twitch_oauth import stop_active_oauth
 
     api = twitch.get_twitch_api()
     if api is not None:
+        api.cancel_oauth()
         api.stop_connection()
+    stop_active_oauth()
 
 
 def _stop_chatbot() -> None:
     from . import chatbot
+    from .twitch_oauth import stop_active_oauth
 
     api = chatbot.get_chatbot_api()
     if api is not None:
+        api.cancel_oauth()
         api.stop_health_check()
+    stop_active_oauth()
 
 
 def _stop_connection_monitor() -> None:

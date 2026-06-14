@@ -41,6 +41,7 @@ from twitchAPI.type import AuthScope
 
 from . import dataobjects
 from .api_credentials_manager import get_chatbot_credentials
+from .twitch_oauth import run_user_authentication, stop_active_oauth
 
 logger = logging.getLogger(__name__)
 
@@ -265,8 +266,11 @@ class Chatbot_API:
 
     def is_token_expired(self):
         """Check if the current auth token is expired"""
-        if not self.token_expiry:
+        if not self.auth_token:
             return True
+        if not self.token_expiry:
+            # Unknown expiry — use token until Helix returns 401
+            return False
         # Consider token expired if less than 5 minutes remaining
         return datetime.now() + timedelta(minutes=5) >= self.token_expiry
 
@@ -433,15 +437,13 @@ class Chatbot_API:
                 self.twitch, self.authscope, force_verify=False
             )
 
-            # Get tokens through OAuth
+            # Get tokens through OAuth (serialized app-wide on port 17563)
             (
                 self.auth_token,
                 self.refresh_token,
-            ) = await self.authenticator.authenticate()
+            ) = await run_user_authentication(self.authenticator)
 
             # Set user authentication with the tokens we just received
-            print(f"Chatbot Auth token: {self.auth_token}")
-            print(f"Chatbot Refresh token: {self.refresh_token}")
             await self.twitch.set_user_authentication(
                 self.auth_token, self.authscope, self.refresh_token
             )
@@ -542,13 +544,31 @@ class Chatbot_API:
                     logger.warning(
                         f"Existing chatbot tokens failed validation: {str(e)}"
                     )
-                    # Try OAuth flow as fallback
-                    oauth_success = await self.authenticate_with_oauth()
-                    if not oauth_success:
-                        logger.error(
-                            "Failed to authenticate chatbot with OAuth after token validation failure"
-                        )
-                        return False  # Return False instead of raising exception
+                    logger.info(
+                        "Attempting chatbot token refresh before OAuth after validation failure"
+                    )
+                    refresh_success = await self.refresh_auth_token()
+                    if refresh_success:
+                        try:
+                            self.user = await first(self.twitch.get_users())
+                            self.user_id = self.user.id
+                            self.save_auth_data()
+                            logger.info(
+                                "Recovered chatbot session after token refresh"
+                            )
+                        except Exception as retry_err:
+                            logger.warning(
+                                "Chatbot tokens still invalid after refresh: %s",
+                                retry_err,
+                            )
+                            refresh_success = False
+                    if not refresh_success:
+                        oauth_success = await self.authenticate_with_oauth()
+                        if not oauth_success:
+                            logger.error(
+                                "Failed to authenticate chatbot with OAuth after token validation failure"
+                            )
+                            return False
 
             # Explicitly set connection status and start health check after successful staging
             global chatbot_connected
@@ -603,6 +623,12 @@ class Chatbot_API:
             # The thread will exit on its own when the main thread exits
             # since it's a daemon thread
             logger.debug("Stopping chatbot connection health check thread")
+
+    def cancel_oauth(self) -> None:
+        """Stop an in-flight OAuth callback server for this integration."""
+        if self.authenticator is not None:
+            stop_active_oauth()
+        self.authenticator = None
 
     def _health_check_loop(self):
         """Background thread that periodically checks connection health and token expiry"""
@@ -1335,9 +1361,10 @@ def initialize() -> None:
         # Create a new instance
         chatbot_api = Chatbot_API()
 
-        # Create a new thread for the async initialization
+        # Create a new thread for the async initialization (after main Twitch staging)
         init_thread = threading.Thread(
-            target=lambda: asyncio.run(chatbot_api.stage_chatbot_api())
+            target=_run_chatbot_init,
+            name="ChatbotInit",
         )
         init_thread.daemon = True
         init_thread.start()
@@ -1345,6 +1372,17 @@ def initialize() -> None:
 
         # Mark as initialized
         _initialized = True
+
+
+def _run_chatbot_init() -> None:
+    """Stage chatbot after main Twitch init so OAuth flows do not race on port 17563."""
+    from . import twitch
+
+    if not twitch.wait_for_staging_complete(timeout=120.0):
+        logger.warning(
+            "Timed out waiting for Twitch staging; proceeding with chatbot init"
+        )
+    asyncio.run(chatbot_api.stage_chatbot_api())
 
 
 def get_chatbot_api():

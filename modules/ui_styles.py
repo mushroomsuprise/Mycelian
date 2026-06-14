@@ -1809,6 +1809,53 @@ button.btn-primary {
     min-height: 0 !important;
 }
 
+/* Statistics tab card surfaces (matches Source Controls pattern) */
+.statistics-dashboard .q-card.statistics-section,
+.statistics-dashboard > .q-card.content-section {
+    background: var(--color-bg-surface) !important;
+    border: 1px solid var(--color-border-accent) !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+}
+
+.statistics-dashboard .statistics-metric-card,
+.statistics-dashboard .statistics-section .settings-card,
+.statistics-dashboard .content-section .settings-card,
+.statistics-dashboard .statistics-stat-cell {
+    background: transparent !important;
+    border: 1px solid var(--color-border-accent) !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+}
+
+.statistics-dashboard .statistics-section .q-card__section,
+.statistics-dashboard .content-section .q-card__section,
+.statistics-dashboard .statistics-metric-card .q-card__section {
+    background: transparent !important;
+}
+
+/* Light mode: nested stat cards must beat global .q-card / .settings-card fills */
+body:not(.body--dark) .statistics-dashboard .q-card.statistics-section,
+body:not(.body--dark) .statistics-dashboard > .q-card.content-section {
+    background: var(--color-bg-surface) !important;
+    box-shadow: none !important;
+}
+
+body:not(.body--dark) .statistics-dashboard .statistics-metric-card.q-card,
+body:not(.body--dark) .statistics-dashboard .statistics-stat-cell.q-card,
+body:not(.body--dark) .statistics-dashboard .statistics-section .settings-card,
+body:not(.body--dark) .statistics-dashboard .content-section .settings-card {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+body:not(.body--dark) .statistics-dashboard .statistics-section .q-card__section,
+body:not(.body--dark) .statistics-dashboard .content-section .q-card__section,
+body:not(.body--dark) .statistics-dashboard .statistics-metric-card .q-card__section,
+body:not(.body--dark) .statistics-dashboard .statistics-stat-cell .q-card__section {
+    background: transparent !important;
+}
+
 .statistics-metric-card .text-2xl {
     font-size: 1.125rem !important;
     line-height: 1.5rem !important;
@@ -1832,6 +1879,27 @@ button.btn-primary {
 
 .statistics-dashboard {
     gap: 0.5rem !important;
+}
+
+/* Settings subtab cards — accent border (Twitch, Theme, App Settings, etc.) */
+.mycelian-sub-tab-shell .settings-tab-content .settings-inner-panel {
+    border: 1px solid var(--color-border-accent) !important;
+}
+
+.mycelian-sub-tab-shell .settings-tab-content .settings-tab-card.q-card {
+    background: var(--color-bg-surface) !important;
+    border: 1px solid var(--color-border-accent) !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+}
+
+.mycelian-sub-tab-shell .settings-tab-content .settings-tab-card .q-card__section {
+    background: transparent !important;
+}
+
+body:not(.body--dark) .mycelian-sub-tab-shell .settings-tab-content .settings-tab-card.q-card {
+    background: var(--color-bg-surface) !important;
+    box-shadow: none !important;
 }
 
 /* =========================================

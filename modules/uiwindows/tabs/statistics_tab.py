@@ -114,7 +114,7 @@ class StatisticsTab:
     @contextmanager
     def _stat_card(self, title: str) -> Generator[None, None, None]:
         """Compact metric card with title top-left and horizontal metrics row."""
-        with ui.card().classes("settings-card statistics-metric-card w-full"):
+        with ui.card().classes("statistics-metric-card w-full"):
             ui.label(title).classes(
                 "font-semibold text-sm mb-1 w-full text-left shrink-0"
             )
@@ -1192,7 +1192,7 @@ class StatisticsTab:
                                         "custom_stats"
                                     ].items():
                                         with ui.card().classes(
-                                            "text-center p-2 bg-theme-surface rounded"
+                                            "text-center p-2 statistics-stat-cell rounded"
                                         ):
                                             ui.label(
                                                 stat_name.replace("_", " ").title()
@@ -1247,7 +1247,7 @@ class StatisticsTab:
                                 "text-theme-muted",
                             )
 
-                    with ui.card().classes("settings-card statistics-metric-card p-2"):
+                    with ui.card().classes("statistics-metric-card p-2"):
                         ui.label("⚙️ Controls").classes("font-semibold mb-2")
                         with ui.row().classes("w-full gap-2"):
                             ui.button(
@@ -1279,7 +1279,7 @@ class StatisticsTab:
 
     def _build_per_user_section(self, stats_manager):
         """Build the per-user statistics lookup section."""
-        with ui.card().classes("content-section w-full"):
+        with ui.card().classes("content-section statistics-section w-full"):
             ui.label("👤 Per-User Statistics").classes("text-xl font-bold mb-4")
             ui.label(
                 "Date range shows the timestamped event log (alerts, chat messages, connectors, "
@@ -1509,7 +1509,7 @@ class StatisticsTab:
                             ("Total Alerts", alert_stats.get("total_alerts", 0), "text-theme-primary"),
                         ]
                         for label, value, color in lifetime_items:
-                            with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                                 ui.label(label).classes("text-xs secondary-text mb-1")
                                 ui.label(f"{value:,}").classes(f"text-lg font-bold {color}")
 
@@ -1529,12 +1529,12 @@ class StatisticsTab:
                 if chat_stats:
                     ui.label("Chat").classes("text-sm font-semibold mb-2 mt-4 text-indigo-300")
                     with ui.grid(columns=4).classes("w-full gap-3"):
-                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                             ui.label("Twitch messages").classes("text-xs secondary-text mb-1")
                             ui.label(f"{int(chat_stats.get('twitch_messages_received', 0) or 0):,}").classes(
                                 "text-lg font-bold text-indigo-400"
                             )
-                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                             ui.label("Total messages").classes("text-xs secondary-text mb-1")
                             ui.label(f"{int(chat_stats.get('total_messages', 0) or 0):,}").classes(
                                 "text-lg font-bold text-indigo-300"
@@ -1542,7 +1542,7 @@ class StatisticsTab:
                         fs = chat_stats.get("first_seen")
                         ls = chat_stats.get("last_seen")
                         if fs:
-                            with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                                 ui.label("Activity window").classes("text-xs secondary-text mb-1")
                                 fs_s = datetime.fromtimestamp(fs).strftime("%b %d, %Y %H:%M")
                                 ls_s = (
@@ -1556,19 +1556,19 @@ class StatisticsTab:
                 if conn_stats:
                     ui.label("Connectors").classes("text-sm font-semibold mb-2 mt-4 text-emerald-300")
                     with ui.grid(columns=3).classes("w-full gap-3"):
-                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                             ui.label("Unique triggered").classes("text-xs secondary-text mb-1")
                             ui.label(f"{int(conn_stats.get('connectors_triggered', 0) or 0):,}").classes(
                                 "text-lg font-bold text-emerald-400"
                             )
-                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                             ui.label("Total triggers").classes("text-xs secondary-text mb-1")
                             ui.label(f"{int(conn_stats.get('total_triggers', 0) or 0):,}").classes(
                                 "text-lg font-bold text-green-400"
                             )
                         fs, ls = conn_stats.get("first_seen"), conn_stats.get("last_seen")
                         if fs:
-                            with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                                 ui.label("First / last").classes("text-xs secondary-text mb-1")
                                 ui.label(
                                     datetime.fromtimestamp(fs).strftime("%b %d, %Y")
@@ -1584,7 +1584,7 @@ class StatisticsTab:
                             ("Events used", "events_triggered"),
                             ("Total interactions", "total_interactions"),
                         ):
-                            with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                            with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                                 ui.label(lbl).classes("text-xs secondary-text mb-1")
                                 ui.label(f"{int(bot_stats.get(key, 0) or 0):,}").classes(
                                     "text-lg font-bold text-theme-primary"
@@ -1594,7 +1594,7 @@ class StatisticsTab:
                 if quote_stats:
                     ui.label("Quotes").classes("text-sm font-semibold mb-2 mt-4 text-pink-300")
                     with ui.grid(columns=2).classes("w-full gap-3"):
-                        with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                             ui.label("Total redeemed").classes("text-xs secondary-text mb-1")
                             ui.label(f"{int(quote_stats.get('total_quotes_redeemed', 0) or 0):,}").classes(
                                 "text-lg font-bold text-pink-400"
@@ -1603,7 +1603,7 @@ class StatisticsTab:
                 gw_stats = user_stats.get("giveaways") or {}
                 if gw_stats:
                     ui.label("Giveaways").classes("text-sm font-semibold mb-2 mt-4 text-rose-300")
-                    with ui.card().classes("text-center p-2 bg-theme-surface rounded"):
+                    with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
                         ui.label("Giveaway wins").classes("text-xs secondary-text mb-1")
                         ui.label(f"{int(gw_stats.get('giveaway_wins', 0) or 0):,}").classes(
                             "text-lg font-bold text-rose-400"
@@ -1659,7 +1659,7 @@ class StatisticsTab:
 
     def _build_export_section(self):
         """Build the export highlights section with date range pickers and export button."""
-        with ui.card().classes("content-section w-full"):
+        with ui.card().classes("content-section statistics-section w-full"):
             ui.label("📸 Export Highlights").classes("text-xl font-bold mb-4")
             ui.label(
                 "Generate a vibrant highlights image for the selected dates. "

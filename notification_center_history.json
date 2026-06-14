@@ -116,5 +116,113 @@
     "type": "positive",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "418c1d02-6f7e-4348-8876-3f420d819146",
+    "ts": 1781444683.979699,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "0ab64adf-8a27-423c-9d63-e6c5d8565592",
+    "ts": 1781444691.785447,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "98efd1dc-cd98-40bb-8ea6-32853f72149e",
+    "ts": 1781444784.763595,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "d27e2904-bc5f-4445-87ad-b1a4a46eeaad",
+    "ts": 1781444832.0449762,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "018f30ff-1b11-435e-953a-b7a96fd92916",
+    "ts": 1781444849.032405,
+    "message": "Theme 'forest_glade' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "bfa3397f-2e00-4b8b-a03d-cd71e1ed55c8",
+    "ts": 1781444930.150372,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "11ad2ec4-923e-40c5-ae72-d270648824aa",
+    "ts": 1781444939.7994828,
+    "message": "Theme 'dark' applied successfully!",
+    "type": "positive",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "1cc3bd65-c955-45ed-9e50-064485914a08",
+    "ts": 1781445034.4291148,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "683fd861-b701-42f2-a847-ff9c1eb4a9de",
+    "ts": 1781445128.558454,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
   }
 ]

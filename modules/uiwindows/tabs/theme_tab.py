@@ -640,8 +640,8 @@ body .theme-preview-container .typography-muted {
 /* Editor chrome below mock preview — uses live app theme, not preview vars */
 .theme-editor-panel {
     background: var(--color-bg-surface);
-    border: 1px solid var(--color-border-default);
-    border-radius: 4px;
+    border: 1px solid var(--color-border-accent);
+    border-radius: 8px;
     margin-top: 12px;
     padding: 12px 14px;
 }
@@ -1004,7 +1004,7 @@ class ThemeTab:
         with parent_container:
             with ui.column().classes("w-full gap-3 settings-tab-content p-3"):
                 # Theme selection row - compact
-                with ui.card().classes("w-full p-3 mb-2"):
+                with ui.card().classes("w-full p-3 mb-2 settings-tab-card"):
                     with ui.row().classes("w-full items-center gap-3"):
                         # Load themes and create select element
                         theme_manager = self._get_theme_manager()
