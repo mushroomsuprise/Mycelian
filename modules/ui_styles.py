@@ -1664,6 +1664,13 @@ button.btn-primary {
 }
 
 .statistics-section.content-section {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    box-sizing: border-box;
     padding: 0.75rem 1rem !important;
     margin: 0.25rem 0 !important;
 }
@@ -1713,6 +1720,7 @@ button.btn-primary {
     max-width: 100%;
     height: auto;
     max-height: none;
+    overflow: visible;
     box-sizing: border-box;
 }
 

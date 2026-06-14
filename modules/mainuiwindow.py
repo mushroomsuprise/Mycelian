@@ -1366,9 +1366,12 @@ def create_ui_elements():
 
     # Tabs + panels share one viewport-high flex column so the frame never stacks
     # (tab strip height + calc(100vh) panel height) past the native window edge.
-    with StartupTimer("create_ui_elements.shell"), ui.column().classes(
-        "mycelian-main-shell w-full box-border flex flex-col overflow-hidden "
-        "gap-0 min-h-0 pt-1 px-1 pb-2"
+    with (
+        StartupTimer("create_ui_elements.shell"),
+        ui.column().classes(
+            "mycelian-main-shell w-full box-border flex flex-col overflow-hidden "
+            "gap-0 min-h-0 pt-0.25 px-0.5 pb-0.5"
+        ),
     ):
         from .help_system.contextual_help import help_button, register_main_tabs
         from .notification_engine import (
@@ -1415,13 +1418,13 @@ def create_ui_elements():
             with ui.element("div").classes("main-content"):
                 # Initialize lazy tabs dictionary
                 lazy_tabs = {}
-    
+
                 with ui.tab_panels(tabs, value=activity_tab).classes(
                     "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
                 ) as tab_panels:
                     # Set references for help system context detection
                     from .help_system.contextual_help import set_main_ui_references
-    
+
                     set_main_ui_references(tabs, tab_panels)
                     # Activity Feed Tab - load immediately (it's the default view)
                     with StartupTimer("create_ui_elements.activity_feed"):
@@ -1429,48 +1432,56 @@ def create_ui_elements():
                             "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
                         ):
                             create_activity_feed_tab()
-    
+
                     # Other tabs - lazy load
                     def build_alerts_tab():
                         from .uiwindows.alertsettings import create_alert_settings_tab
-    
+
                         create_alert_settings_tab()
-    
+
                     def build_source_controls_tab():
                         from .uiwindows.sourcecontrols import create_source_controls_tab
-    
+
                         create_source_controls_tab()
-    
+
                     def build_connectors_tab():
                         from .uiwindows.connectors import create_connectors_tab
-    
+
                         create_connectors_tab()
-    
+
                     def build_chatbot_tab():
                         from .uiwindows.chatbot import create_chatbot_tab
-    
+
                         create_chatbot_tab()
-    
+
                     def build_settings_tab():
                         from .uiwindows.settings import create_settings_tab
-    
+
                         create_settings_tab()
-    
+
                     def build_spore_studio_tab():
                         from .uiwindows.spore_studio import create_spore_studio_tab
-    
+
                         create_spore_studio_tab()
-    
+
                     tab_definitions = [
                         ("Alerts", build_alerts_tab, alerts_tab),
-                        ("Source Settings", create_custom_sources_tab, source_settings_tab),
-                        ("Source Controls", build_source_controls_tab, source_controls_tab),
+                        (
+                            "Source Settings",
+                            create_custom_sources_tab,
+                            source_settings_tab,
+                        ),
+                        (
+                            "Source Controls",
+                            build_source_controls_tab,
+                            source_controls_tab,
+                        ),
                         ("Connectors", build_connectors_tab, connectors_tab),
                         ("Chatbot", build_chatbot_tab, chatbot_tab),
                         ("Spore Studio", build_spore_studio_tab, spore_studio_tab),
                         ("Settings", build_settings_tab, settings_tab),
                     ]
-    
+
                     with StartupTimer("create_ui_elements.lazy_panels"):
                         for tab_name, build_func, tab_obj in tab_definitions:
                             with ui.tab_panel(tab_obj).classes(
@@ -1485,12 +1496,12 @@ def create_ui_elements():
                                     .props("size=3rem")
                                 )
                                 lazy_tabs[tab_name].spinner = spinner
-    
+
                 # Add tab change handler for unsaved changes warning and lazy loading
                 def on_main_tab_change(e):
                     new_tab = e.value
                     current_tab = tabs.value
-    
+
                     # Check if leaving the Settings tab with unsaved changes
                     # tabs.value may be a string or object, compare appropriately
                     def is_settings_tab(tab):
@@ -1503,13 +1514,13 @@ def create_ui_elements():
                                 or getattr(tab, "label", "") == "Settings"
                                 or getattr(tab, "name", "") == "Settings"
                             )
-    
+
                     current_is_settings = is_settings_tab(current_tab)
                     new_is_settings = is_settings_tab(new_tab)
                     if current_is_settings and not new_is_settings:
                         # Import here to avoid circular imports
                         from .uiwindows.settings import settings_ui
-    
+
                         if settings_ui.has_unsaved_changes():
                             show_settings_unsaved_dialog(
                                 tabs, tab_panels, current_tab, new_tab
@@ -1517,10 +1528,10 @@ def create_ui_elements():
                             # Prevent the tab switch by reverting the selection
                             tabs.value = current_tab
                             return
-    
+
                     # Allow the tab switch - set tabs.value to the new tab
                     tabs.value = new_tab
-    
+
                     # Handle lazy loading for the new tab
                     def get_tab_name(tab):
                         if isinstance(tab, str):
@@ -1531,14 +1542,14 @@ def create_ui_elements():
                                 or getattr(tab, "label", "")
                                 or str(tab)
                             )
-    
+
                     new_tab_name = get_tab_name(new_tab)
                     if new_tab_name in lazy_tabs:
                         lazy_tabs[new_tab_name].ensure_loaded()
-    
+
                 # Monitor tab changes using a timer since tabs.on("change") may not work in native mode
                 previous_tab = tabs.value
-    
+
                 def check_tab_changes():
                     nonlocal previous_tab
                     current_tab = tabs.value
@@ -1547,7 +1558,7 @@ def create_ui_elements():
                             MAIN_TAB_ORDER,
                             apply_tab_slide_direction,
                         )
-    
+
                         apply_tab_slide_direction(
                             tab_panels, previous_tab, current_tab, MAIN_TAB_ORDER
                         )
@@ -1561,11 +1572,13 @@ def create_ui_elements():
                         # The handler has now set tabs.value appropriately
                         # Update previous_tab to the current value
                         previous_tab = tabs.value
-    
-                layout_schedule(0.5, check_tab_changes, active=True)  # Check every 500ms
-    
+
+                layout_schedule(
+                    0.5, check_tab_changes, active=True
+                )  # Check every 500ms
+
                 start_service_watcher_timer()
-    
+
                 def show_settings_unsaved_dialog(
                     tabs_component, tab_panels_component, current_tab, target_tab
                 ):
@@ -1575,11 +1588,11 @@ def create_ui_elements():
                         ui.label(
                             "You have unsaved changes in the Settings tab. Do you want to discard them and leave the Settings tab?"
                         ).classes("secondary-text mb-4")
-    
+
                         def confirm_leave():
                             # Import here to avoid circular imports
                             from .uiwindows.settings import settings_ui
-    
+
                             # Discard all unsaved changes in settings tabs
                             for tab in settings_ui._tabs_by_name.values():
                                 if hasattr(tab, "dirty") and tab.dirty:
@@ -1587,13 +1600,13 @@ def create_ui_elements():
                             # Switch to the target tab
                             tabs_component.value = target_tab
                             dialog.close()
-    
+
                         with ui.row().classes("w-full justify-end gap-2"):
                             ui.button("Stay", on_click=dialog.close).props("outline")
-                            ui.button("Discard and leave", on_click=confirm_leave).props(
-                                "color=primary"
-                            )
-    
+                            ui.button(
+                                "Discard and leave", on_click=confirm_leave
+                            ).props("color=primary")
+
                         dialog.open()  # Explicitly open the dialog
 
         with StartupTimer("create_ui_elements.service_footer"):

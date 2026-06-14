@@ -180,7 +180,9 @@ class StatisticsTab:
 
         except Exception as e:
             print(f"Error building statistics dashboard: {str(e)}", exc_info=True)
-            with ui.card().classes("content-section w-full"):
+            with ui.card().classes(
+                "content-section statistics-section w-full"
+            ):
                 ui.label("❌ Error Loading Statistics").classes(
                     "text-xl font-bold mb-4 text-red-400"
                 )
@@ -1263,7 +1265,9 @@ class StatisticsTab:
 
         except Exception as e:
             print(f"Error rebuilding statistics content: {str(e)}", exc_info=True)
-            with ui.card().classes("content-section w-full"):
+            with ui.card().classes(
+                "content-section statistics-section w-full"
+            ):
                 ui.label("❌ Error Loading Statistics").classes(
                     "text-xl font-bold mb-4 text-red-400"
                 )
