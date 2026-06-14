@@ -2220,6 +2220,99 @@ body:not(.body--dark) .notification-tray-badge {
     text-transform: uppercase !important;
     letter-spacing: 0.3px !important;
 }
+
+/* About tab — compact source URL card grid */
+.source-url-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 8px;
+    width: 100%;
+}
+
+.source-url-card {
+    padding: 6px 8px !important;
+}
+
+.source-url-card.q-card .q-card__section {
+    padding: 0 !important;
+}
+
+.source-url-card .source-url-card-header {
+    flex-wrap: nowrap;
+    min-width: 0;
+    gap: 6px;
+}
+
+.source-url-card .source-url-card-header-info {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.source-url-card .source-url-card-title {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+}
+
+.source-url-card .source-url-card-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 28px;
+    min-height: 28px;
+    padding: 0 8px;
+    margin-left: auto;
+    background: transparent !important;
+    color: var(--color-text-primary) !important;
+    border: 1px solid var(--color-primary) !important;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.source-url-card .source-url-card-copy.q-btn {
+    height: 28px !important;
+    min-height: 28px !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    padding: 0 !important;
+    flex-shrink: 0;
+}
+
+.source-url-card .source-url-card-copy.q-btn--outline:before {
+    border: 1px solid var(--color-primary) !important;
+}
+
+.source-url-card .q-field {
+    width: 100%;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+.source-url-card .q-field__bottom {
+    display: none !important;
+}
+
+.source-url-card .q-field__control {
+    min-height: 28px !important;
+    height: 28px !important;
+}
+
+.source-url-card .q-field__control-container {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
 """
 
 

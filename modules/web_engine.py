@@ -7278,6 +7278,53 @@ class WebEngine:
             and self.server_thread.is_alive()
         )
 
+    _DYNAMIC_CONTROL_ELEMENT_TYPES = frozenset(
+        {
+            "button",
+            "slider",
+            "toggle",
+            "counter_control",
+            "spin_control",
+            "text_input",
+            "number_input",
+        }
+    )
+
+    def _get_template_control_count(self, template_name: str) -> int:
+        """Count interactive control elements for a template (matches Source Controls tab)."""
+        if not getattr(self, "template_config_parser", None):
+            return 0
+        try:
+            config = self.template_config_parser.load_config(
+                template_name, include_dynamic_controls=True
+            )
+            if not isinstance(config, dict):
+                return 0
+            if "dynamic_controls" in config:
+                elements = config["dynamic_controls"].get("elements", [])
+                return len(elements) if isinstance(elements, list) else 0
+            elements = config.get("elements", [])
+            if not isinstance(elements, list):
+                return 0
+            control_elements = [
+                elem
+                for elem in elements
+                if isinstance(elem, dict)
+                and elem.get("type") in self._DYNAMIC_CONTROL_ELEMENT_TYPES
+                and (
+                    elem.get("action")
+                    or elem.get("action_increment")
+                    or elem.get("action_decrement")
+                    or elem.get("action_reset")
+                )
+            ]
+            return len(control_elements)
+        except Exception as e:
+            logger.debug(
+                "Could not get control count for %s: %s", template_name, e
+            )
+            return 0
+
     def get_available_source_urls(self):
         """Get a list of all available source URLs (excluding hidden templates)"""
         urls = []
@@ -7338,6 +7385,9 @@ class WebEngine:
                             f"HTML template with controls: {template_name}.html"
                         )
                         existing_template["has_dynamic_controls"] = True
+                        existing_template["control_count"] = (
+                            self._get_template_control_count(template_name)
+                        )
                     else:
                         # Template not in registered routes but has dynamic controls
                         # This might happen if the template file was deleted but handlers remain

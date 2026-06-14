@@ -3403,6 +3403,19 @@ class SettingsUI:
                 type="negative",
             )
 
+    @staticmethod
+    def _format_source_url_title(name: str) -> str:
+        return name.replace("_", " ").title()
+
+    @staticmethod
+    def _format_source_url_control_badge(url_info: dict) -> str:
+        if url_info.get("type") == "template":
+            count = 0
+        else:
+            count = int(url_info.get("control_count", 0))
+        noun = "Control" if count == 1 else "Controls"
+        return f"{count} {noun}"
+
     def refresh_source_urls(self):
         """Refresh the list of available source URLs"""
         urls = []  # Initialize urls variable at the start
@@ -3437,76 +3450,60 @@ class SettingsUI:
                         and not str(u.get("name", "")).startswith("_")
                     ]
                     with container:
-                        # Create a grid layout with dynamic columns (max 4)
-                        num_urls = len(display_urls)
-                        num_columns = min(
-                            4, max(1, num_urls)
-                        )  # 1-4 columns based on number of URLs
-
-                        # Split URLs into columns
-                        urls_per_column = (
-                            num_urls + num_columns - 1
-                        ) // num_columns  # Ceiling division
-                        url_columns = [
-                            display_urls[i : i + urls_per_column]
-                            for i in range(0, num_urls, urls_per_column)
-                        ]
-
-                        with ui.row().classes("w-full gap-3"):
-                            for column_urls in url_columns:
-                                with ui.column().classes("flex-1 gap-2"):
-                                    for url_info in column_urls:
-                                        with ui.card().classes(
-                                            "w-full p-2 settings-tab-card transition-colors"
+                        with ui.element("div").classes("source-url-cards-grid"):
+                            for url_info in display_urls:
+                                description = url_info["description"]
+                                with ui.card().classes(
+                                    "w-full source-url-card settings-tab-card transition-colors"
+                                ):
+                                    with ui.column().classes("w-full gap-1"):
+                                        with ui.row().classes(
+                                            "items-center w-full source-url-card-header"
                                         ):
-                                            # Template name and type
-                                            with ui.row().classes(
-                                                "items-center gap-2 mb-1"
+                                            with ui.element(
+                                                "div"
+                                            ).classes(
+                                                "source-url-card-header-info"
+                                            ).tooltip(description).classes(
+                                                "bg-theme-surface"
                                             ):
-                                                ui.label(url_info["name"]).classes(
-                                                    "text-base font-semibold"
+                                                ui.label(
+                                                    self._format_source_url_title(
+                                                        url_info["name"]
+                                                    )
+                                                ).classes(
+                                                    "text-sm font-semibold source-url-card-title"
+                                                )
+                                                ui.label(
+                                                    self._format_source_url_control_badge(
+                                                        url_info
+                                                    )
+                                                ).classes(
+                                                    "source-url-card-badge text-xs"
                                                 )
 
-                                                # Type badge
-                                                badge_color = (
-                                                    "btn-secondary"
-                                                    if url_info["type"] == "template"
-                                                    else "btn-success"
-                                                )
-                                                ui.label(url_info["type"]).classes(
-                                                    f"px-2 py-1 rounded text-xs {badge_color}"
-                                                )
-
-                                            # Description
-                                            ui.label(url_info["description"]).classes(
-                                                "text-sm secondary-text mb-2"
+                                            copy_btn = ui.button(
+                                                "",
+                                                on_click=lambda _=None,
+                                                url=url_info[
+                                                    "url"
+                                                ]: self._copy_url_to_clipboard(
+                                                    url
+                                                ),
+                                            ).props(
+                                                "size=sm icon=content_copy outline color=primary"
+                                            ).classes("source-url-card-copy")
+                                            copy_btn.tooltip(
+                                                "Copy URL to clipboard"
                                             )
 
-                                            # URL (selectable)
-                                            with ui.row().classes("items-center gap-2"):
-                                                url_input = ui.input(
-                                                    value=url_info["url"]
-                                                ).classes("flex-1 font-mono text-xs")
-                                                url_input.props(
-                                                    "outlined dense readonly"
-                                                )
-                                                url_input.tooltip(
-                                                    "Browser source URL for OBS"
-                                                ).classes("bg-theme-surface")
-
-                                                # Copy button with improved functionality
-                                                copy_btn = ui.button(
-                                                    "",
-                                                    on_click=lambda _=None,
-                                                    url=url_info[
-                                                        "url"
-                                                    ]: self._copy_url_to_clipboard(url),
-                                                ).props(
-                                                    "size=sm icon=content_copy outline"
-                                                )
-                                                copy_btn.tooltip(
-                                                    "Copy URL to clipboard"
-                                                )
+                                        url_input = ui.input(
+                                            value=url_info["url"]
+                                        ).classes("w-full font-mono text-xs")
+                                        url_input.props("outlined dense readonly")
+                                        url_input.tooltip(
+                                            "Browser source URL for OBS"
+                                        ).classes("bg-theme-surface")
                 else:
                     with container:
                         ui.label(
