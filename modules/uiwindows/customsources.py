@@ -1667,6 +1667,18 @@ def on_search_changed(e, config_parser, config_select, config_container):
         )
 
 
+def _build_form_data(config_name: str, config: dict) -> dict:
+    """Build complete form data, preserving in-session edits across search re-renders."""
+    form_data = dict(form_data_store.get(config_name, {}))
+    for element in config.get("elements", []):
+        if element.get("type") == "separator":
+            continue
+        element_id = element.get("id", "")
+        if element_id and element_id not in form_data:
+            form_data[element_id] = element.get("value", "")
+    return form_data
+
+
 def render_config_ui(config_parser, config_name, container, search_term=""):
     """Render the config as interactive UI elements"""
     # Clear the container
@@ -1689,8 +1701,8 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
 
             # Scrollable content area - flexible height
             with ui.scroll_area().classes("w-full grow"):
-                # Create a form for the elements
-                form_data = {}
+                # Preserve full form state even when search hides some controls
+                form_data = _build_form_data(config_name, config)
 
                 # Filter elements based on search term
                 elements = config.get("elements", [])
@@ -2000,8 +2012,10 @@ def render_form_element(
     element_type = element.get("type", "text")
     element_id = element.get("id", "")
     element_label = element.get("label", element_id)
-    element_value = element.get("value", "")
     element_description = element.get("description", "")
+
+    # Prefer in-session value (e.g. after search re-filter) over config file value
+    element_value = form_data.get(element_id, element.get("value", ""))
 
     # Store config_name and container for potential re-rendering
     global current_config_name, current_container, current_search_term
@@ -2012,8 +2026,6 @@ def render_form_element(
     # Store original value for later comparison
     original_values[element_id] = element_value
 
-    # CRITICAL: Initialize form_data with the current element value
-    # This ensures ALL config values are tracked, not just changed ones
     form_data[element_id] = element_value
 
     # The main container for the element, designed to fit in a grid cell
@@ -2455,6 +2467,9 @@ def reset_config(config_parser, config_select, config_container):
     element_ui_map.clear()
 
     _invalidate_preview_route_cache(config_name)
+
+    # Discard in-memory edits so re-render loads values from disk
+    form_data_store.pop(config_name, None)
 
     # Re-render the config UI
     render_config_ui(config_parser, config_name, config_container, "")
