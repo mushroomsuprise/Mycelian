@@ -1878,7 +1878,13 @@ body:not(.body--dark) .statistics-dashboard .statistics-stat-cell .q-card__secti
 }
 
 .statistics-dashboard {
-    gap: 0.5rem !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem !important;
+}
+
+.statistics-dashboard > .statistics-section-full {
+    grid-column: 1 / -1;
 }
 
 /* Settings subtab cards — accent border (Twitch, Theme, App Settings, etc.) */

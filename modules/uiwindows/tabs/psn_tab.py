@@ -10,7 +10,7 @@ from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_timer import layout_schedule
-from ...ui_form_controls import form_input, form_select
+from ...ui_form_controls import form_input, form_select, form_sensitive_input
 from ...ui_settings_layout import (
     THEME_CHIP_CLASSES,
     settings_divider,
@@ -132,20 +132,18 @@ class PSNTab:
                 subtitle="Use Connect for automatic NPSSO, or enter credentials below.",
             ):
                 with settings_form_grid(columns=2):
-                    self.ui_elements["npsso_code"] = form_input(
+                    self.ui_elements["npsso_code"] = form_sensitive_input(
                         tooltip="Sony NPSSO token for PlayStation Network API access",
                         label="NPSSO code",
                         value=self.buffer.npsso_code or "",
-                        password=True,
                         placeholder="Required for PSN API access",
                     )
-                    self.ui_elements["npsso_code"].props("password-toggle-button")
                     self.ui_elements["npsso_code"].on_value_change(
                         lambda e: self._set(
                             "npsso_code", self._str_from_value_event(e)
                         )
                     )
-                    self.ui_elements["psn_username"] = form_input(
+                    self.ui_elements["psn_username"] = form_sensitive_input(
                         tooltip="PSN online ID to query; leave empty to use your own account",
                         label="PSN username",
                         value=self.buffer.psn_username or "",

@@ -40,7 +40,7 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 # Eventlet emits a deprecation warning on import. Flask-SocketIO still relies on
@@ -450,7 +450,7 @@ class WebEngine:
         # mock-event endpoint resolve which client to emit to). Inverse
         # mapping (sid -> token) is maintained so disconnect cleanup is
         # O(1) without scanning the dict.
-        self._preview_iframe_sids: Dict[str, str] = {}
+        self._preview_iframe_sids: Dict[str, Set[str]] = {}
         self._preview_iframe_tokens: Dict[str, str] = {}
         # template_name -> {mtime, cfg} for Stream Deck hot-path config resolution
         self._streamdeck_config_cache: Dict[str, Dict[str, Any]] = {}
@@ -2899,6 +2899,24 @@ class WebEngine:
                 exc_info=True,
             )
 
+    def _register_preview_iframe_sid(self, token: str, sid: str) -> None:
+        """Associate a preview iframe websocket sid with a preview token."""
+        tok = str(token)
+        if not tok or not sid:
+            return
+        bucket = self._preview_iframe_sids.get(tok)
+        if bucket is None:
+            bucket = set()
+            self._preview_iframe_sids[tok] = bucket
+        bucket.add(sid)
+        self._preview_iframe_tokens[sid] = tok
+
+    def _preview_iframe_sid_list(self, token: str) -> List[str]:
+        sids = self._preview_iframe_sids.get(str(token))
+        if not sids:
+            return []
+        return list(sids)
+
     def push_preview_overrides(
         self, token: str, template_name: str, overrides: Dict[str, Any]
     ) -> None:
@@ -2934,8 +2952,8 @@ class WebEngine:
         Returns:
             ``(ok, error_message, emitted_event_name)``.
         """
-        sid = self._preview_iframe_sids.get(str(token))
-        if not sid:
+        sid_list = self._preview_iframe_sid_list(token)
+        if not sid_list:
             return (
                 False,
                 "No preview iframe registered for that token (open preview first).",
@@ -2943,7 +2961,8 @@ class WebEngine:
             )
         try:
             if custom is not None:
-                self.socketio.emit(str(event_name), custom, to=sid)
+                for sid in sid_list:
+                    self.socketio.emit(str(event_name), custom, to=sid)
                 return True, None, str(event_name)
             from .spore_studio import preview_mocks as _pm
 
@@ -2954,7 +2973,8 @@ class WebEngine:
             if spec is None:
                 return False, f"No mock payload defined for '{event_name}'.", None
             socket_event, body = spec
-            self.socketio.emit(socket_event, body, to=sid)
+            for sid in sid_list:
+                self.socketio.emit(socket_event, body, to=sid)
             return True, None, str(socket_event)
         except Exception as e:
             logger.error("emit_preview_mock failed: %s", e, exc_info=True)
@@ -2962,27 +2982,30 @@ class WebEngine:
 
     def emit_preview_settings_to_iframe(self, token: str) -> None:
         """Push persisted preview-only settings (sounds, toolbar) to one iframe."""
-        sid = self._preview_iframe_sids.get(str(token))
-        if not sid:
+        sid_list = self._preview_iframe_sid_list(token)
+        if not sid_list:
             return
         try:
             from .template_preview_settings import load_template_preview_settings
 
-            self.socketio.emit(
-                "mycelian_preview_settings",
-                load_template_preview_settings(),
-                to=sid,
-            )
+            payload = load_template_preview_settings()
+            for sid in sid_list:
+                self.socketio.emit(
+                    "mycelian_preview_settings",
+                    payload,
+                    to=sid,
+                )
         except Exception as e:
             logger.debug("emit_preview_settings_to_iframe skipped: %s", e)
 
     def emit_preview_config_refresh(self, token: str) -> None:
         """Ask a preview iframe to reload config via ``loadTemplateConfig`` if present."""
-        sid = self._preview_iframe_sids.get(str(token))
-        if not sid:
+        sid_list = self._preview_iframe_sid_list(token)
+        if not sid_list:
             return
         try:
-            self.socketio.emit("mycelian_preview_config_refresh", {}, to=sid)
+            for sid in sid_list:
+                self.socketio.emit("mycelian_preview_config_refresh", {}, to=sid)
         except Exception as e:
             logger.debug("emit_preview_config_refresh skipped: %s", e)
 
@@ -3149,8 +3172,7 @@ class WebEngine:
             ) or request.args.get("__preview_token")
             if not token:
                 return
-            self._preview_iframe_sids[token] = sid
-            self._preview_iframe_tokens[sid] = token
+            self._register_preview_iframe_sid(token, sid)
         except Exception as e:
             logger.warning("preview iframe register failed: %s", e, exc_info=True)
 
@@ -3439,8 +3461,7 @@ class WebEngine:
                 if not tok:
                     return
                 tok = str(tok)
-                self._preview_iframe_sids[tok] = request.sid
-                self._preview_iframe_tokens[request.sid] = tok
+                self._register_preview_iframe_sid(tok, request.sid)
                 with self._preview_sessions_lock:
                     sess = self._preview_sessions.get(tok)
                 if isinstance(sess, dict) and sess.get("template"):
@@ -3509,11 +3530,11 @@ class WebEngine:
                 request.sid, None
             )
             if stale_token is not None:
-                # Only drop the token mapping when it still points at
-                # this sid — a stale entry could otherwise nuke a fresh
-                # iframe that re-registered the same token.
-                if self._preview_iframe_sids.get(stale_token) == request.sid:
-                    self._preview_iframe_sids.pop(stale_token, None)
+                sids = self._preview_iframe_sids.get(stale_token)
+                if sids:
+                    sids.discard(request.sid)
+                    if not sids:
+                        self._preview_iframe_sids.pop(stale_token, None)
 
         @self.socketio.on("game_hook_command")
         def handle_game_hook_command(data):

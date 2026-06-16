@@ -39,7 +39,6 @@ from ..ui_form_controls import form_input, form_number, form_select
 
 from .. import (
     connector_actions,
-    connector_examples,
     connector_integration,
     connector_layout_store,
     connector_manager,
@@ -450,6 +449,10 @@ CUSTOM_CSS = """
     cursor: pointer;
     border-radius: 0.35rem;
     transition: background 0.15s ease;
+    flex: 1;
+    min-height: 3.5rem;
+    max-height: 4.5rem;
+    overflow: hidden;
 }
 
 .connector-folder-open-zone:hover {
@@ -470,15 +473,17 @@ CUSTOM_CSS = """
 
 .connector-folder-preview-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
-    gap: 0.45rem;
+    grid-template-columns: repeat(auto-fill, minmax(3.5rem, 1fr));
+    gap: 0.35rem;
     width: 100%;
+    overflow: hidden;
+    max-height: 4.5rem;
 }
 
 .connector-folder-preview-tile {
     aspect-ratio: 1;
-    min-height: 4.25rem;
-    max-height: 5.5rem;
+    min-height: 3.25rem;
+    max-height: 4rem;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -529,18 +534,7 @@ def create_connectors_tab():
     with ui.element("div").classes("tab-surface w-full h-full flex flex-col p-4"):
         # Compact header section - single row layout
         with ui.column().classes("w-full gap-3 p-4 flex-none"):
-            # Top row: title left, expanding search center, buttons right
             with ui.row().classes("w-full items-center gap-3"):
-                # Left side - title and description
-                with ui.column().classes("gap-1 shrink-0"):
-                    ui.label("Connectors").classes(
-                        "text-xl font-medium fade-in text-theme-primary"
-                    )
-                    ui.label(
-                        "Create trigger-action automations for your stream"
-                    ).classes("text-sm opacity-75 fade-in")
-
-                # Search grows into available space between title and buttons
                 global search_input
                 with ui.element("div").classes("flex-1 min-w-48 slide-in"):
                     search_input = (
@@ -555,7 +549,6 @@ def create_connectors_tab():
                         .props("clearable")
                     )
 
-                # Action buttons stay fixed on the right
                 with ui.row().classes("items-center gap-3 flex-nowrap shrink-0"):
                     primary_button(
                         "New Connector",
@@ -565,23 +558,9 @@ def create_connectors_tab():
                     )
 
                     outline_button(
-                        "Examples",
-                        create_examples,
-                        icon="auto_awesome",
-                        extra_classes="px-3 py-2 shrink-0",
-                    )
-
-                    outline_button(
                         "Refresh",
                         refresh_connectors,
                         icon="refresh",
-                        extra_classes="px-3 py-2 shrink-0",
-                    )
-
-                    outline_button(
-                        "Help",
-                        show_help_dialog,
-                        icon="help",
                         extra_classes="px-3 py-2 shrink-0",
                     )
 
@@ -1096,8 +1075,8 @@ def load_connectors():
             fold_state = _folder_members_enabled_state(member_ids, connectors)
 
             wrapper = ui.element("div").classes(
-                "connector-folder connector-folder-tile p-4 rounded-lg fade-in "
-                "flex flex-col gap-3 border border-theme-subtle bg-[var(--color-bg-surface)]"
+                "connector-folder connector-folder-tile connector-card p-4 rounded-lg fade-in "
+                "flex flex-col gap-2 border border-theme-subtle bg-[var(--color-bg-surface)]"
             )
             wrapper.props(f'data-folder-id="{folder_id}"')
             folder_cards[folder_id] = wrapper
@@ -1142,7 +1121,7 @@ def load_connectors():
                             on_click=lambda f=folder_id: show_delete_folder_dialog(f),
                         ).props("flat dense round").tooltip("Delete folder")
 
-                open_zone = ui.column().classes(
+                open_zone = ui.element("div").classes(
                     "connector-folder-open-zone w-full grow min-w-0 p-1 -m-1"
                 )
                 open_zone.on(
@@ -5662,443 +5641,6 @@ def delete_connector(connector_id: str):
     dialog.open()
 
 
-def show_help_dialog():
-    """Show help information about connectors"""
-    with ui.dialog().props("maximized") as help_dialog:
-        with ui.card().classes("w-full h-full"):
-            with ui.column().classes("w-full h-full"):
-                # Header
-                with ui.row().classes(
-                    "w-full items-center justify-between p-4 border-b border-theme-subtle"
-                ):
-                    ui.label("Connectors Help & Guide").classes(
-                        "text-xl font-semibold text-theme-primary"
-                    )
-                    ui.button(icon="close", on_click=help_dialog.close).props(
-                        "flat round"
-                    ).classes("secondary-text")
-
-                # Content
-                with ui.scroll_area().classes("grow p-6"):
-                    with ui.column().classes("w-full max-w-4xl mx-auto gap-6"):
-                        # What are Connectors?
-                        with ui.element("div").classes("form-section"):
-                            ui.label("What are Connectors?").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-                            ui.label("""
-Connectors are automated trigger-action systems that respond to events in your stream. 
-Think of them as "if this happens, then do that" rules. They let you create custom automations 
-without any programming knowledge.
-                            """).classes("text-sm secondary-text mb-4")
-
-                            ui.label("Examples:").classes(
-                                "text-sm font-medium secondary-text"
-                            )
-                            ui.label(
-                                "• When someone cheers 100+ bits → increment counter"
-                            ).classes("text-xs secondary-text")
-                            ui.label(
-                                "• When someone follows → spin the roulette wheel"
-                            ).classes("text-xs secondary-text")
-                            ui.label(
-                                "• When someone types !hello → respond in chat"
-                            ).classes("text-xs secondary-text")
-                            ui.label(
-                                "• When someone donates $5+ → log to file"
-                            ).classes("text-xs secondary-text")
-
-                        # How to Create
-                        with ui.element("div").classes("form-section"):
-                            ui.label("How to Create a Connector").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-                            ui.label(
-                                "1. Click 'New Connector' to open the creation dialog"
-                            ).classes("text-sm secondary-text")
-                            ui.label(
-                                "2. Give your connector a name and description"
-                            ).classes("text-sm secondary-text")
-                            ui.label(
-                                "3. Choose a trigger type (what event to watch for)"
-                            ).classes("text-sm secondary-text")
-                            ui.label(
-                                "4. Add conditions to make the trigger more specific (optional)"
-                            ).classes("text-sm secondary-text")
-                            ui.label(
-                                "5. Add one or more actions to execute when triggered"
-                            ).classes("text-sm secondary-text")
-                            ui.label("6. Save and enable your connector").classes(
-                                "text-sm secondary-text"
-                            )
-
-                        # Available Triggers
-                        with ui.element("div").classes("form-section"):
-                            ui.label("Available Triggers").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-
-                            with ui.grid(columns=2).classes("gap-4"):
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🎬 Twitch Events:").classes(
-                                        "text-sm font-medium text-blue-400"
-                                    )
-                                    ui.label("• Bits/Cheers").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label(
-                                        "• Subscriptions & Resubscriptions"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label("• Gift Subscriptions").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• New Followers").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Raids").classes("text-xs secondary-text")
-                                    ui.label("• Channel Point Redemptions").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Chat Messages & Commands").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Hype Train Events").classes(
-                                        "text-xs secondary-text"
-                                    )
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label("💰 Other Events:").classes(
-                                        "text-sm font-medium text-green-400"
-                                    )
-                                    ui.label("• Donations / tips").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Timer-based triggers").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Manual triggers").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Webhook events").classes(
-                                        "text-xs secondary-text"
-                                    )
-
-                        # Available Actions
-                        with ui.element("div").classes("form-section"):
-                            ui.label("Available Actions").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-
-                            with ui.grid(columns=2).classes("gap-4"):
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🎮 Template Controls:").classes(
-                                        "text-sm font-medium text-theme-primary"
-                                    )
-                                    ui.label(
-                                        "• Counter increment/decrement/reset"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label("• Roulette wheel spin").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Timer controls").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Any template action").classes(
-                                        "text-xs secondary-text"
-                                    )
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🌐 External Actions:").classes(
-                                        "text-sm font-medium text-orange-400"
-                                    )
-                                    ui.label("• Send chat messages").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Write to log files").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Make API calls").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Execute system commands").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Custom WebSocket events").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label(
-                                        "• Audio control (volume, mute, duration)"
-                                    ).classes("text-xs secondary-text")
-
-                        # Audio Control Permissions
-                        with ui.element("div").classes("form-section"):
-                            ui.label("Audio Control Permissions").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-
-                            ui.label(
-                                "Audio Control actions require specific permissions on each operating system:"
-                            ).classes("text-sm secondary-text mb-3")
-
-                            with ui.grid(columns=1).classes("gap-3"):
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🍎 macOS:").classes(
-                                        "text-sm font-medium text-blue-400"
-                                    )
-                                    ui.label(
-                                        "• Microphone access for audio device control"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Check: System Preferences > Security & Privacy > Microphone"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• The app will automatically request permissions when needed"
-                                    ).classes("text-xs secondary-text")
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🪟 Windows:").classes(
-                                        "text-sm font-medium text-green-400"
-                                    )
-                                    ui.label(
-                                        "• Administrator privileges for full audio control"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Right-click the app and select 'Run as administrator'"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Some audio operations work without admin, but full control requires it"
-                                    ).classes("text-xs secondary-text")
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🐧 Linux:").classes(
-                                        "text-sm font-medium text-orange-400"
-                                    )
-                                    ui.label(
-                                        "• User must be in the 'audio' group"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Command: sudo usermod -a -G audio $USER"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Restart the application after adding to group"
-                                    ).classes("text-xs secondary-text")
-
-                            ui.label(
-                                "💡 Tip: The Audio Control UI will show your current permission status and provide request buttons when applicable."
-                            ).classes("text-xs text-yellow-400 mt-3")
-
-                        # Audio Control Duration Feature
-                        with ui.element("div").classes("form-section"):
-                            ui.label("Audio Control Duration Feature").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-
-                            ui.label(
-                                "The Audio Control action now supports temporary changes with automatic restoration:"
-                            ).classes("text-sm secondary-text mb-3")
-
-                            with ui.grid(columns=1).classes("gap-3"):
-                                with ui.column().classes("gap-2"):
-                                    ui.label("⏱️ Duration Setting:").classes(
-                                        "text-sm font-medium text-blue-400"
-                                    )
-                                    ui.label(
-                                        "• Set duration in seconds (0 = permanent change)"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• After the duration expires, audio settings automatically restore to original values"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Perfect for temporary effects like muting during alerts"
-                                    ).classes("text-xs secondary-text")
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🔄 Auto-Restoration:").classes(
-                                        "text-sm font-medium text-green-400"
-                                    )
-                                    ui.label(
-                                        "• Stores original volume and mute state before applying changes"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Restores both volume level and mute/unmute state"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Handles multiple overlapping duration changes gracefully"
-                                    ).classes("text-xs secondary-text")
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🎯 Use Cases:").classes(
-                                        "text-sm font-medium text-orange-400"
-                                    )
-                                    ui.label(
-                                        "• Temporary volume reduction during important alerts"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Brief mute for notification sounds"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Random volume effects for fun interactions"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Application-specific temporary audio changes"
-                                    ).classes("text-xs secondary-text")
-
-                            ui.label(
-                                "💡 Example: Set volume to 20% for 5 seconds, then automatically restore to original volume."
-                            ).classes("text-xs text-yellow-400 mt-3")
-
-                        # Audio Control Duration Stacking
-                        with ui.element("div").classes("form-section"):
-                            ui.label("Audio Control Duration Stacking").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-
-                            ui.label(
-                                "When multiple duration actions target the same audio source:"
-                            ).classes("text-sm secondary-text mb-3")
-
-                            with ui.grid(columns=1).classes("gap-3"):
-                                with ui.column().classes("gap-2"):
-                                    ui.label(
-                                        "🔄 Non-Random Actions (Stacking):"
-                                    ).classes("text-sm font-medium text-green-400")
-                                    ui.label(
-                                        "• Durations add up when multiple actions trigger"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Action 1: Set volume to 20% for 5 seconds"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Action 2: Set volume to 30% for 3 seconds (2 seconds later)"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Result: Volume stays at 30% for 6 more seconds total"
-                                    ).classes("text-xs secondary-text")
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label(
-                                        "🎲 Random Actions (Immediate Reset):"
-                                    ).classes("text-sm font-medium text-orange-400")
-                                    ui.label(
-                                        "• Random volume actions immediately change volume and reset duration"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Action 1: Set random volume for 5 seconds"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Action 2: Set random volume for 3 seconds"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Result: Immediately set new random volume, reset to 3 seconds"
-                                    ).classes("text-xs secondary-text")
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🎯 Smart Behavior:").classes(
-                                        "text-sm font-medium text-blue-400"
-                                    )
-                                    ui.label(
-                                        "• Only applies new values if they differ from current values"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Tracks original baseline values for accurate restoration"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Handles concurrent actions gracefully without conflicts"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Cleans up automatically when application shuts down"
-                                    ).classes("text-xs secondary-text")
-
-                            ui.label(
-                                "💡 Tip: Use stacking for gradual audio changes, random reset for instant variety effects."
-                            ).classes("text-xs text-yellow-400 mt-3")
-
-                        # Conditions & Placeholders
-                        with ui.element("div").classes("form-section"):
-                            ui.label("Conditions & Placeholders").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-
-                            with ui.grid(columns=2).classes("gap-4"):
-                                with ui.column().classes("gap-2"):
-                                    ui.label("📋 Conditions:").classes(
-                                        "text-sm font-medium text-blue-400"
-                                    )
-                                    ui.label(
-                                        "Make triggers more specific by adding conditions:"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• Amount >= 100 (for bits/donations)"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label("• Username contains 'VIP'").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Message starts with 'Hello'").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label("• Command equals 'test'").classes(
-                                        "text-xs secondary-text"
-                                    )
-
-                                with ui.column().classes("gap-2"):
-                                    ui.label("🔤 Placeholders:").classes(
-                                        "text-sm font-medium text-green-400"
-                                    )
-                                    ui.label(
-                                        "Use {{field}} to insert event data:"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• {{username}} - who triggered it"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label(
-                                        "• {{amount}} - bits/donation amount"
-                                    ).classes("text-xs secondary-text")
-                                    ui.label("• {{message}} - chat message").classes(
-                                        "text-xs secondary-text"
-                                    )
-                                    ui.label(
-                                        "• {{timestamp}} - when it happened"
-                                    ).classes("text-xs secondary-text")
-
-                        # Tips
-                        with ui.element("div").classes("form-section"):
-                            ui.label("Tips & Best Practices").classes(
-                                "text-lg font-semibold text-theme-primary mb-3"
-                            )
-                            ui.label(
-                                "💡 Start with examples - click 'Examples' to see pre-made connectors"
-                            ).classes("text-sm text-yellow-400")
-                            ui.label(
-                                "🧪 Test your connectors - use the 'Test' button to verify they work"
-                            ).classes("text-sm text-yellow-400")
-                            ui.label(
-                                "⏸️ Start disabled - new connectors start disabled so you can review them first"
-                            ).classes("text-sm text-yellow-400")
-                            ui.label(
-                                " Monitor statistics - check the stats to see how often your connectors trigger"
-                            ).classes("text-sm text-yellow-400")
-                            ui.label(
-                                "🔄 Use cooldowns - add cooldown seconds to prevent spam triggering"
-                            ).classes("text-sm text-yellow-400")
-                            ui.label(
-                                "📝 Be descriptive - good names and descriptions help you manage many connectors"
-                            ).classes("text-sm text-yellow-400")
-
-    help_dialog.open()
-
-
-def create_examples():
-    """Create example connectors"""
-    try:
-        connector_examples.create_example_connectors()
-        notify(
-            "Example connectors created! Check them out below (they start disabled).",
-            type="positive",
-        )
-        refresh_connectors()
-    except Exception as e:
-        logger.error(f"Error creating example connectors: {e}", exc_info=True)
-        notify(f"Error creating examples: {str(e)}", type="negative")
 
 
 def refresh_connectors():

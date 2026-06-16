@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional, List
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import form_input, form_number, form_select
+from ...ui_form_controls import form_input, form_number, form_select, form_sensitive_input
 from ...ui_timer import layout_schedule
 from ...ui_settings_layout import (
     settings_form_grid,
@@ -1140,7 +1140,7 @@ class DatabaseTab:
 
             with settings_section("Configuration"):
                 with settings_form_grid(columns=3):
-                    self.ui_elements["sql_database_path"] = form_input(
+                    self.ui_elements["sql_database_path"] = form_sensitive_input(
                         tooltip="Path to the SQLite database file",
                         label="SQLite path",
                         value=self.buffer.sql_database_path,
@@ -1154,7 +1154,7 @@ class DatabaseTab:
                             or "mycelian.db",
                         ),
                     )
-                    self.ui_elements["firebase_service_account_path"] = form_input(
+                    self.ui_elements["firebase_service_account_path"] = form_sensitive_input(
                         tooltip="Path to Firebase service account JSON key file",
                         label="Firebase key file",
                         value=self.buffer.firebase_service_account_path,
@@ -1167,7 +1167,7 @@ class DatabaseTab:
                             getattr(e, "args", [getattr(e, "value", "")])[0] or "",
                         ),
                     )
-                    self.ui_elements["firebase_database_url"] = form_input(
+                    self.ui_elements["firebase_database_url"] = form_sensitive_input(
                         tooltip="Firebase Realtime Database URL",
                         label="Firebase URL",
                         value=self.buffer.firebase_database_url,
@@ -1180,7 +1180,7 @@ class DatabaseTab:
                             getattr(e, "args", [getattr(e, "value", "")])[0] or "",
                         ),
                     )
-                    self.ui_elements["mongodb_connection_string"] = form_input(
+                    self.ui_elements["mongodb_connection_string"] = form_sensitive_input(
                         tooltip="MongoDB connection URI",
                         label="Mongo URI",
                         value=self.buffer.mongodb_connection_string,
@@ -1193,7 +1193,7 @@ class DatabaseTab:
                             getattr(e, "args", [getattr(e, "value", "")])[0] or "",
                         ),
                     )
-                    self.ui_elements["mongodb_database_name"] = form_input(
+                    self.ui_elements["mongodb_database_name"] = form_sensitive_input(
                         tooltip="MongoDB database name",
                         label="Mongo DB name",
                         value=self.buffer.mongodb_database_name,

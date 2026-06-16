@@ -45,6 +45,7 @@ from ..database_manager import (
     is_valid_firebase_rtdb_url,
 )
 from ..dataobjects import YouTubeData, state_manager
+from ..build_info import resolve_build_number
 from ..path_utils import get_working_directory
 from ..startup_profiler import StartupTimer, log_startup_summary
 from ..ui_settings_layout import settings_header, settings_section, settings_surface
@@ -5263,9 +5264,11 @@ class SettingsUI:
                     on_click=self.check_for_updates_manual,
                 ).props("icon=system_update color=primary dense")
                 ui.button(
-                    "Open Documentation",
-                    on_click=self.open_documentation,
-                ).props("icon=help_outline color=secondary dense")
+                    "View on GitHub",
+                    on_click=lambda: webbrowser.open(
+                        "https://github.com/mushroomsuprise/mycelian"
+                    ),
+                ).props("icon=code color=secondary dense")
                 ui.button(
                     "View Changelog",
                     on_click=self.show_changelog_modal,
@@ -5274,25 +5277,29 @@ class SettingsUI:
                 ui.label(f"Version {self.app_settings.version}").classes(
                     "secondary-text text-sm"
                 )
-                ui.label(f"Build {self.app_settings.build_date}").classes(
+                ui.label(
+                    f"Build Number {resolve_build_number(getattr(self.app_settings, 'build_number', 'dev'))}"
+                ).classes("secondary-text text-sm")
+                ui.label(f"Built on {self.app_settings.build_date}").classes(
                     "secondary-text text-sm"
                 )
 
         with settings_surface(container):
-            with settings_section(
-                "Available Source URLs",
-                subtitle=(
-                    "Copy these URLs to use as Browser Sources in OBS "
-                    "or other streaming software."
-                ),
-            ):
-                self.ui_elements["source_urls_container"] = ui.column().classes(
-                    "w-full gap-2"
-                )
-                with ui.row().classes("w-full justify-end mt-4"):
-                    ui.button("Refresh URLs", on_click=self.refresh_source_urls).props(
-                        "icon=refresh outline"
+            with ui.row().classes("w-full items-start justify-between gap-3"):
+                with ui.column().classes("gap-1 min-w-0"):
+                    ui.label("Available Source URLs").classes(
+                        "text-base font-semibold"
                     )
+                    ui.label(
+                        "Copy these URLs to use as Browser Sources in OBS "
+                        "or other streaming software."
+                    ).classes("secondary-text text-sm")
+                ui.button("Refresh URLs", on_click=self.refresh_source_urls).props(
+                    "icon=refresh outline dense"
+                )
+            self.ui_elements["source_urls_container"] = ui.column().classes(
+                "w-full gap-2 mt-2"
+            )
             layout_schedule(0.1, lambda: self.refresh_source_urls(), once=True)
 
     def _show_unsaved_changes_dialog(

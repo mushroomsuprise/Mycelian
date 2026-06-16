@@ -14,7 +14,7 @@ from ...ui_settings_layout import (
 from ...dataobjects import OBSData, state_manager
 from ...notification_engine import notify
 from ...obs_service import obs_service
-from ...ui_form_controls import form_input, form_number
+from ...ui_form_controls import form_sensitive_input, form_sensitive_number
 from ...ui_timer import layout_schedule
 
 
@@ -135,7 +135,7 @@ class ObsTab:
                 )
 
             with settings_form_grid(columns=2):
-                self.ui_elements["host"] = form_input(
+                self.ui_elements["host"] = form_sensitive_input(
                     tooltip="Hostname or IP where OBS WebSocket server listens",
                     label="Host",
                     value=getattr(self.buffer, "host", ""),
@@ -147,10 +147,10 @@ class ObsTab:
                         ("" if e.value is None else str(e.value)).strip(),
                     ),
                 )
-                self.ui_elements["port"] = form_number(
+                self.ui_elements["port"] = form_sensitive_number(
                     tooltip="OBS WebSocket server port (default 4455)",
                     label="Port",
-                    value=float(getattr(self.buffer, "port", 4455)),
+                    value=int(getattr(self.buffer, "port", 4455) or 4455),
                     min=1,
                     max=65535,
                     classes="w-full",
@@ -161,13 +161,11 @@ class ObsTab:
                         int(float(e.value if e.value is not None else 4455)),
                     ),
                 )
-            self.ui_elements["password"] = form_input(
+            self.ui_elements["password"] = form_sensitive_input(
                 tooltip="Password configured in OBS WebSocket server settings",
                 label="WebSocket password",
                 value=getattr(self.buffer, "password", ""),
-                password=True,
             )
-            self.ui_elements["password"].props("password-toggle-button")
             self.ui_elements["password"].on_value_change(
                 lambda e: self._set(
                     "password",
@@ -210,7 +208,10 @@ class ObsTab:
             el = self.ui_elements.get(key)
             if el is not None and hasattr(el, "value"):
                 v = getattr(self.buffer, key)
-                el.value = v
+                if key == "port":
+                    el.value = str(int(v or 4455))
+                else:
+                    el.value = v
         sw = self.ui_elements.get("enabled")
         if sw is not None and hasattr(sw, "value"):
             sw.value = bool(self.buffer.enabled)

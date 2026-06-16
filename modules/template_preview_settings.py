@@ -23,6 +23,7 @@ _FILENAME = "template_preview_settings.json"
 _DEFAULTS: Dict[str, Any] = {
     "enable_preview_sounds": True,
     "show_mock_toolbar": True,
+    "show_inline_preview": True,
 }
 
 
@@ -47,6 +48,8 @@ def load_template_preview_settings() -> Dict[str, Any]:
         data["enable_preview_sounds"] = bool(data["enable_preview_sounds"])
     if "show_mock_toolbar" in data:
         data["show_mock_toolbar"] = bool(data["show_mock_toolbar"])
+    if "show_inline_preview" in data:
+        data["show_inline_preview"] = bool(data["show_inline_preview"])
     return data
 
 

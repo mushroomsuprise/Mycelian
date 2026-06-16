@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 
@@ -96,6 +97,7 @@ def get_os_specific_icon_path(os_name):
 # Version and Build Date - Update these for new releases
 VERSION = "1.11.2"
 BUILD_DATE = "June 14th 2026"
+BUILD_NUMBER = "dev"
 
 # Stream Deck plugin version (manifest.json "Version"; Elgato semver, e.g. 0.2.2.0)
 STREAMDECK_PLUGIN_VERSION = "1.0.0.0"
@@ -1237,8 +1239,14 @@ def post_build_tasks(dist_dir):
 
 def update_version_across_files():
     """Update version and build date across all relevant project files"""
-
+    global BUILD_NUMBER
     project_root = get_project_root()
+
+    sys.path.insert(0, str(project_root))
+    from modules.build_info import get_git_commit
+
+    BUILD_NUMBER = get_git_commit(project_root) or "dev"
+
     files_updated = []
 
     try:
@@ -1311,6 +1319,9 @@ def update_version_across_files():
             content = re.sub(
                 r"'build_date': '.*',", f"'build_date': '{BUILD_DATE}',", content
             )
+            content = re.sub(
+                r"'build_number': '.*',", f"'build_number': '{BUILD_NUMBER}',", content
+            )
 
             with open(db_init_path, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -1328,6 +1339,11 @@ def update_version_across_files():
             )
             content = re.sub(
                 r'build_date: str = ".*"', f'build_date: str = "{BUILD_DATE}"', content
+            )
+            content = re.sub(
+                r'build_number: str = ".*"',
+                f'build_number: str = "{BUILD_NUMBER}"',
+                content,
             )
 
             with open(dataobjects_path, "w", encoding="utf-8") as f:

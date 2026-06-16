@@ -982,7 +982,9 @@ class StatisticsTab:
             }
 
             # Always show the hype train section
-            with ui.card().classes("content-section statistics-section w-full"):
+            with ui.card().classes(
+                "content-section statistics-section statistics-section-full w-full"
+            ):
                 ui.label("🚂 Hype Train Statistics").classes("text-base font-bold mb-2")
 
                 with ui.grid(columns=5).classes("w-full gap-2"):
@@ -1041,8 +1043,51 @@ class StatisticsTab:
                             "text-red-400",
                         )
 
-            # Chatbot Statistics Section
+            # Quote Statistics Section
             with ui.card().classes("content-section statistics-section w-full"):
+                ui.label("💬 Quote Statistics").classes("text-base font-bold mb-2")
+
+                top_quote_user = stats_manager.get_top_users_by_statistic(
+                    "quotes_redeemed", limit=1
+                )
+
+                with ui.grid(columns=2).classes("w-full gap-2"):
+                    with self._stat_card("📚 Total Quotes"):
+                        self._quotes_created_label = self._stat_value(
+                            f"{stats_data['quotes']['quotes_created']:,}",
+                            "In database",
+                            "text-indigo-400",
+                        )
+                        individual_quote_usage = stats_data["quotes"].get(
+                            "individual_quote_usage", {}
+                        )
+                        if individual_quote_usage:
+                            quote_id, quote_count = max(
+                                individual_quote_usage.items(), key=lambda x: x[1]
+                            )
+                            self._stat_footer(
+                                f"Most redeemed: {quote_id}",
+                                f"({quote_count:,} redemptions)",
+                            )
+
+                    with self._stat_card("🎯 Quotes Redeemed"):
+                        self._quotes_redeemed_label = self._stat_value(
+                            f"{stats_data['quotes']['total_quotes_redeemed']:,}",
+                            "Total uses",
+                            "text-pink-400",
+                        )
+                        if top_quote_user:
+                            user_name = top_quote_user[0]["username"]
+                            user_count = top_quote_user[0]["value"]
+                            self._stat_footer(
+                                f"Top user: {user_name}",
+                                f"({user_count:,} redemptions)",
+                            )
+
+            # Chatbot Statistics Section
+            with ui.card().classes(
+                "content-section statistics-section statistics-section-full w-full"
+            ):
                 ui.label("🤖 Chatbot Statistics").classes("text-base font-bold mb-2")
 
                 # Get chatbot insights
@@ -1125,48 +1170,6 @@ class StatisticsTab:
                             "text-fuchsia-400",
                         )
 
-            # Quote Statistics Section
-            with ui.card().classes("content-section statistics-section w-full"):
-                ui.label("💬 Quote Statistics").classes("text-base font-bold mb-2")
-
-                # Get quote insights
-                top_quote_user = stats_manager.get_top_users_by_statistic(
-                    "quotes_redeemed", limit=1
-                )
-
-                with ui.grid(columns=2).classes("w-full gap-2"):
-                    with self._stat_card("📚 Total Quotes"):
-                        self._quotes_created_label = self._stat_value(
-                            f"{stats_data['quotes']['quotes_created']:,}",
-                            "In database",
-                            "text-indigo-400",
-                        )
-                        individual_quote_usage = stats_data["quotes"].get(
-                            "individual_quote_usage", {}
-                        )
-                        if individual_quote_usage:
-                            quote_id, quote_count = max(
-                                individual_quote_usage.items(), key=lambda x: x[1]
-                            )
-                            self._stat_footer(
-                                f"Most redeemed: {quote_id}",
-                                f"({quote_count:,} redemptions)",
-                            )
-
-                    with self._stat_card("🎯 Quotes Redeemed"):
-                        self._quotes_redeemed_label = self._stat_value(
-                            f"{stats_data['quotes']['total_quotes_redeemed']:,}",
-                            "Total uses",
-                            "text-pink-400",
-                        )
-                        if top_quote_user:
-                            user_name = top_quote_user[0]["username"]
-                            user_count = top_quote_user[0]["value"]
-                            self._stat_footer(
-                                f"Top user: {user_name}",
-                                f"({user_count:,} redemptions)",
-                            )
-
             # Template Statistics Section (if any templates have stats)
             if stats_data["templates"]:
                 with ui.card().classes("content-section statistics-section w-full"):
@@ -1213,56 +1216,6 @@ class StatisticsTab:
             # Export Highlights Section
             self._build_export_section()
 
-            # Session Information Section
-            with ui.card().classes("content-section statistics-section w-full"):
-                ui.label("⏱️ Session Information").classes("text-base font-bold mb-2")
-
-                session_duration = time.time() - stats_data["session"]["start_time"]
-                hours = int(session_duration // 3600)
-                minutes = int((session_duration % 3600) // 60)
-                seconds = int(session_duration % 60)
-
-                with ui.grid(columns=3).classes("w-full gap-2"):
-                    with self._stat_card("🕐 Session"):
-                        self._session_duration_label = self._stat_value(
-                            f"{hours:02d}:{minutes:02d}:{seconds:02d}",
-                            "H:M:S",
-                            "text-teal-400",
-                        )
-
-                    with self._stat_card("💾 Last Saved"):
-                        if stats_data["session"]["last_save_time"]:
-                            last_save = datetime.fromtimestamp(
-                                stats_data["session"]["last_save_time"]
-                            )
-                            self._last_save_label = self._stat_value(
-                                last_save.strftime("%H:%M:%S"),
-                                "Today",
-                                "text-theme-muted",
-                            )
-                        else:
-                            self._last_save_label = self._stat_value(
-                                "Never",
-                                "No saves yet",
-                                "text-theme-muted",
-                            )
-
-                    with ui.card().classes("statistics-metric-card p-2"):
-                        ui.label("⚙️ Controls").classes("font-semibold mb-2")
-                        with ui.row().classes("w-full gap-2"):
-                            ui.button(
-                                "🔄 Refresh",
-                                on_click=lambda: self._refresh_statistics(),
-                            ).classes(
-                                "btn-primary px-3 py-2 rounded-lg font-semibold flex-1"
-                            )
-                            ui.button(
-                                "💾 Force Save",
-                                on_click=lambda: self._force_save_statistics(),
-                            ).classes(
-                                "btn-success px-3 py-2 rounded-lg font-semibold flex-1"
-                            )
-
         except Exception as e:
             print(f"Error rebuilding statistics content: {str(e)}", exc_info=True)
             with ui.card().classes(
@@ -1279,7 +1232,9 @@ class StatisticsTab:
 
     def _build_per_user_section(self, stats_manager):
         """Build the per-user statistics lookup section."""
-        with ui.card().classes("content-section statistics-section w-full"):
+        with ui.card().classes(
+            "content-section statistics-section statistics-section-full w-full"
+        ):
             ui.label("👤 Per-User Statistics").classes("text-xl font-bold mb-4")
             ui.label(
                 "Date range shows the timestamped event log (alerts, chat messages, connectors, "
@@ -1659,12 +1614,15 @@ class StatisticsTab:
 
     def _build_export_section(self):
         """Build the export highlights section with date range pickers and export button."""
-        with ui.card().classes("content-section statistics-section w-full"):
+        with ui.card().classes(
+            "content-section statistics-section statistics-section-full w-full"
+        ):
             ui.label("📸 Export Highlights").classes("text-xl font-bold mb-4")
             ui.label(
-                "Generate a vibrant highlights image for the selected dates. "
-                "Totals and leaders (top bit donor, top chatter, etc.) are computed from the "
-                "timestamped event log for that range only—not from stored highlight records."
+                "Export a shareable PNG summary of alert, social, and chatbot stats "
+                "for the selected date range. Totals and leaders (top bit donor, top "
+                "chatter, etc.) are computed from the timestamped event log for that "
+                "range only—not from stored highlight records."
             ).classes("secondary-text mb-4")
 
             with ui.row().classes("w-full gap-4 items-end"):

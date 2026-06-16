@@ -100,6 +100,7 @@ roulette_expansions = {}
 CUSTOM_SOURCES_PREVIEW_TOKEN = str(uuid.uuid4())
 _custom_sources_preview_gen: list[int] = [0]
 _custom_sources_ctx: Dict[str, Any] = {}
+_popout_preview_is_open = False
 
 # Maps config file stem -> overlay HTML route (JSON ``template_name``).
 _preview_route_cache: Dict[str, str] = {}
@@ -143,14 +144,159 @@ CUSTOM_CSS = """
     box-shadow: 0 4px 6px -1px var(--color-bg-overlay);
 }
 
+/* Pop-out preview — modeless, draggable, resizable (Spore Studio parity) */
+.mycelian-cs-popout-dialog {
+    position: fixed;
+    top: 80px;
+    left: 80px;
+    width: min(96vw, 720px);
+    height: min(92vh, 520px);
+    min-width: 280px;
+    min-height: 200px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    display: none;
+    flex-direction: column;
+    z-index: 9000;
+    overflow: hidden;
+}
+.mycelian-cs-popout-dialog--active {
+    user-select: none;
+}
+.mycelian-cs-popout-dialog__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border-default);
+    cursor: move;
+    user-select: none;
+    flex: 0 0 auto;
+}
+.mycelian-cs-popout-dialog__mocktools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border-default);
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+.mycelian-cs-popout-dialog__body {
+    flex: 1 1 0;
+    min-height: 220px;
+    position: relative;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.08);
+}
+.mycelian-cs-popout-dialog__preview-outer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+.mycelian-cs-popout-dialog__preview-inner {
+    position: absolute;
+    left: 0;
+    top: 0;
+    overflow: hidden;
+}
+.mycelian-cs-popout-dialog__resize {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    background: linear-gradient(
+        135deg,
+        transparent 50%,
+        var(--color-border-default) 50%
+    );
+    z-index: 2;
+}
+
 """
 
 
 def _template_html_exists(config_name: str) -> bool:
     if not config_name:
         return False
+    return _route_html_exists(_effective_preview_route(config_name))
+
+
+def _route_html_exists(route: str) -> bool:
+    if not route:
+        return False
     stem = get_template_path()
-    return os.path.isfile(os.path.join(stem, f"{config_name}.html"))
+    return os.path.isfile(os.path.join(stem, f"{route}.html"))
+
+
+def _assign_preview_iframe_src(
+    inner_id: str,
+    src: str,
+    design_w: int,
+    design_h: int,
+    *,
+    scale_outer_id: Optional[str] = None,
+    zoom_pct: int = 100,
+) -> None:
+    """Set iframe src/size via the browser DOM (reliable across NiceGUI updates)."""
+    onload_scale = ""
+    if scale_outer_id:
+        onload_scale = (
+            "iframe.onload=function(){"
+            "if(window.mycelianCsPreviewScale){"
+            f"window.mycelianCsPreviewScale({json.dumps(scale_outer_id)},"
+            f"{json.dumps(inner_id)},{int(design_w)},{int(design_h)},"
+            f"{int(zoom_pct)},false);"
+            "}};"
+        )
+    js = (
+        "(function(){"
+        f"var inner=document.getElementById({json.dumps(inner_id)});"
+        "if(!inner){return;}"
+        "var iframe=inner.querySelector('iframe');"
+        "if(!iframe){return;}"
+        f"iframe.src={json.dumps(src)};"
+        f"iframe.width={int(design_w)};"
+        f"iframe.height={int(design_h)};"
+        f"iframe.style.width='{int(design_w)}px';"
+        f"iframe.style.height='{int(design_h)}px';"
+        f"{onload_scale}"
+        "})();"
+    )
+    try:
+        ui.run_javascript(js)
+        layout_schedule(0.05, lambda j=js: ui.run_javascript(j), once=True)
+    except Exception as e:
+        logger.debug("Preview iframe src JS skipped: %s", e)
+
+
+def _clear_preview_iframe(inner_id: Optional[str]) -> None:
+    if not inner_id:
+        return
+    js = (
+        "(function(){"
+        f"var inner=document.getElementById({json.dumps(inner_id)});"
+        "if(!inner){return;}"
+        "var iframe=inner.querySelector('iframe');"
+        "if(!iframe){return;}"
+        "iframe.src='about:blank';"
+        "})();"
+    )
+    try:
+        ui.run_javascript(js)
+    except Exception as e:
+        logger.debug("Preview iframe clear JS skipped: %s", e)
 
 
 def _estimate_design_size(form_data: Dict[str, Any]) -> Tuple[int, int]:
@@ -322,6 +468,10 @@ _PREVIEW_SCALE_IIFE = r"""
     outer._mycelianCsRo = new ResizeObserver(function () { applyTransform(outer); });
     outer._mycelianCsRo.observe(outer);
   };
+  window.mycelianCsPreviewRefreshOuter = function (outerId) {
+    var outer = document.getElementById(outerId);
+    if (outer) { applyTransform(outer); }
+  };
   window.mycelianCsPreviewSetZoom = function (outerId, zoomPct, resetPan) {
     var outer = document.getElementById(outerId);
     if (!outer) { return; }
@@ -394,6 +544,186 @@ _PREVIEW_SCALE_IIFE = r"""
 })();
 """
 
+_POPOUT_DIALOG_IIFE = r"""
+(function () {
+  if (window.mycelianCsPopoutLoadPreview) { return; }
+  function popoutVisible(dlg) {
+    return dlg && dlg.style.display === "flex";
+  }
+  window.mycelianCsPopoutSetup = function (dialogId) {
+    var dlg = document.getElementById(dialogId);
+    if (!dlg || dlg._mycelianPopoutBound) { return; }
+    dlg._mycelianPopoutBound = true;
+    var head = dlg.querySelector("[data-popout-drag-handle]");
+    var resize = dlg.querySelector("[data-popout-resize-handle]");
+    if (!head || !resize) { return; }
+    var dragData = null;
+    var resizeData = null;
+    function endInteraction() {
+      dragData = null;
+      resizeData = null;
+      dlg.classList.remove("mycelian-cs-popout-dialog--active");
+    }
+    head.addEventListener("mousedown", function (ev) {
+      if (ev.button !== 0 || ev.target.closest("button")) { return; }
+      var rect = dlg.getBoundingClientRect();
+      dragData = {
+        startX: ev.clientX,
+        startY: ev.clientY,
+        origLeft: rect.left,
+        origTop: rect.top
+      };
+      dlg.classList.add("mycelian-cs-popout-dialog--active");
+      ev.preventDefault();
+    });
+    resize.addEventListener("mousedown", function (ev) {
+      if (ev.button !== 0) { return; }
+      var rect = dlg.getBoundingClientRect();
+      resizeData = {
+        startX: ev.clientX,
+        startY: ev.clientY,
+        origW: rect.width,
+        origH: rect.height
+      };
+      dlg.classList.add("mycelian-cs-popout-dialog--active");
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+    document.addEventListener("mousemove", function (ev) {
+      if (dragData) {
+        var dlgW = dlg.offsetWidth || 280;
+        var dlgH = dlg.offsetHeight || 200;
+        var x = dragData.origLeft + (ev.clientX - dragData.startX);
+        var y = dragData.origTop + (ev.clientY - dragData.startY);
+        x = Math.max(0, Math.min(window.innerWidth - dlgW, x));
+        y = Math.max(0, Math.min(window.innerHeight - dlgH, y));
+        dlg.style.left = x + "px";
+        dlg.style.top = y + "px";
+        return;
+      }
+      if (resizeData) {
+        var rect = dlg.getBoundingClientRect();
+        var maxW = Math.max(280, window.innerWidth - rect.left);
+        var maxH = Math.max(200, window.innerHeight - rect.top);
+        var w = Math.max(280, resizeData.origW + (ev.clientX - resizeData.startX));
+        var h = Math.max(200, resizeData.origH + (ev.clientY - resizeData.startY));
+        dlg.style.width = Math.min(w, maxW) + "px";
+        dlg.style.height = Math.min(h, maxH) + "px";
+        var outer = dlg.querySelector("[data-mycelian-cs-popout-preview]");
+        if (outer && window.mycelianCsPopoutFitPreview) {
+          var dw = parseInt(outer.getAttribute("data-design-w") || "1920", 10);
+          var dh = parseInt(outer.getAttribute("data-design-h") || "1080", 10);
+          var z = parseInt(outer.getAttribute("data-zoom-pct") || "100", 10);
+          var iid = outer.getAttribute("data-inner-id") || "";
+          window.mycelianCsPopoutFitPreview(outer.id, iid, dw, dh, z);
+        }
+      }
+    });
+    document.addEventListener("mouseup", endInteraction);
+  };
+  window.mycelianCsPopoutFitPreview = function (outerId, innerId, designW, designH, zoomPct) {
+    var outer = document.getElementById(outerId);
+    var inner = innerId ? document.getElementById(innerId) : null;
+    if (!outer || !inner) { return; }
+    var iframe = inner.querySelector("iframe") || outer.querySelector("iframe");
+    if (!iframe) { return; }
+    var cw = outer.clientWidth;
+    var ch = outer.clientHeight;
+    if (cw < 4 || ch < 4) {
+      setTimeout(function () {
+        window.mycelianCsPopoutFitPreview(outerId, innerId, designW, designH, zoomPct);
+      }, 50);
+      return;
+    }
+    var zoom = Number(zoomPct) || 100;
+    var sFit = Math.min(cw / designW, ch / designH);
+    if (!isFinite(sFit) || sFit <= 0) { sFit = 1; }
+    var eff = sFit * (zoom / 100);
+    var sw = Math.max(1, Math.round(designW * eff));
+    var sh = Math.max(1, Math.round(designH * eff));
+    inner.style.position = "absolute";
+    inner.style.left = Math.round((cw - sw) / 2) + "px";
+    inner.style.top = Math.round((ch - sh) / 2) + "px";
+    inner.style.width = sw + "px";
+    inner.style.height = sh + "px";
+    inner.style.overflow = "hidden";
+    inner.style.transform = "none";
+    iframe.style.display = "block";
+    iframe.style.border = "none";
+    iframe.style.width = designW + "px";
+    iframe.style.height = designH + "px";
+    iframe.style.transform = "scale(" + eff + ")";
+    iframe.style.transformOrigin = "top left";
+    var panOverlay = outer.querySelector(".mycelian-cs-pan-overlay");
+    if (panOverlay) { panOverlay.remove(); }
+  };
+  window.mycelianCsPopoutLoadPreview = function (
+    dialogId, outerId, innerId, src, designW, designH, zoomPct
+  ) {
+    var dlg = document.getElementById(dialogId);
+    if (dlg) {
+      window.mycelianCsPopoutSetup(dialogId);
+      dlg.style.display = "flex";
+    }
+    var outer = document.getElementById(outerId);
+    if (outer) {
+      outer.setAttribute("data-design-w", String(designW));
+      outer.setAttribute("data-design-h", String(designH));
+      outer.setAttribute("data-zoom-pct", String(zoomPct));
+      outer.setAttribute("data-inner-id", innerId);
+    }
+    function locateIframe() {
+      var dlg = document.getElementById(dialogId);
+      if (dlg) {
+        var scoped = dlg.querySelector("[data-mycelian-cs-popout-preview] iframe");
+        if (scoped) { return scoped; }
+        var any = dlg.querySelector("iframe");
+        if (any) { return any; }
+      }
+      var inner = document.getElementById(innerId);
+      if (inner) {
+        var inFrame = inner.querySelector("iframe");
+        if (inFrame) { return inFrame; }
+      }
+      return outer ? outer.querySelector("iframe") : null;
+    }
+    function fit() {
+      window.mycelianCsPopoutFitPreview(outerId, innerId, designW, designH, zoomPct);
+    }
+    function applySrc() {
+      var iframe = locateIframe();
+      if (!iframe) {
+        setTimeout(applySrc, 40);
+        return;
+      }
+      iframe.onload = fit;
+      iframe.src = src;
+      iframe.setAttribute("width", String(designW));
+      iframe.setAttribute("height", String(designH));
+      requestAnimationFrame(function () { requestAnimationFrame(fit); });
+      setTimeout(fit, 80);
+      setTimeout(fit, 250);
+    }
+    requestAnimationFrame(function () { requestAnimationFrame(applySrc); });
+  };
+  window.mycelianCsPopoutOpen = function (dialogId) {
+    var dlg = document.getElementById(dialogId);
+    if (!dlg) { return; }
+    window.mycelianCsPopoutSetup(dialogId);
+    dlg.style.display = "flex";
+  };
+  window.mycelianCsPopoutClose = function (dialogId) {
+    var dlg = document.getElementById(dialogId);
+    if (!dlg) { return; }
+    dlg.style.display = "none";
+    var iframe = dlg.querySelector("[data-mycelian-cs-popout-preview] iframe")
+      || dlg.querySelector("iframe");
+    if (iframe) { iframe.src = "about:blank"; }
+  };
+  window.mycelianCsPopoutIsOpen = popoutVisible;
+})();
+"""
+
 
 def _ensure_preview_scale_script() -> None:
     """Define the preview JS helpers on `window` via run_javascript (eval).
@@ -408,8 +738,115 @@ def _ensure_preview_scale_script() -> None:
     """
     try:
         ui.run_javascript(_PREVIEW_SCALE_IIFE)
+        ui.run_javascript(_POPOUT_DIALOG_IIFE)
     except Exception as e:
         logger.debug("Preview scale JS injection skipped: %s", e)
+
+
+def _popout_preview_scale_args() -> Tuple[Optional[str], Optional[str], int, int, int]:
+    ctx = _custom_sources_ctx
+    sel = ctx.get("config_select")
+    popout_oid = ctx.get("popout_preview_outer_id")
+    popout_iid = ctx.get("popout_preview_inner_id")
+    dw, dh, z = 1920, 1080, 100
+    if sel and sel.value:
+        fd = form_data_store.get(sel.value, {})
+        dw, dh = _estimate_design_size(fd)
+        z = _current_preview_zoom_pct()
+    return popout_oid, popout_iid, dw, dh, z
+
+
+def _load_popout_preview(config_name: str, fd: dict) -> None:
+    """Show pop-out dialog and load the template iframe (Spore Studio-style fit)."""
+    if not _popout_preview_is_open:
+        return
+    ctx = _custom_sources_ctx
+    dialog_id = ctx.get("popout_preview_dialog_id")
+    outer_id = ctx.get("popout_preview_outer_id")
+    inner_id = ctx.get("popout_preview_inner_id")
+    ph = ctx.get("popout_preview_placeholder")
+    if not dialog_id or not outer_id or not inner_id:
+        return
+
+    if not config_name:
+        if ph:
+            ph.text = "Select a configuration to preview."
+            ph.visible = True
+        _clear_preview_iframe(inner_id)
+        return
+
+    route = _effective_preview_route(config_name)
+    inst = getattr(web_engine_module, "web_engine_instance", None)
+    if not inst or not getattr(inst, "is_running", False):
+        if ph:
+            ph.text = (
+                "Overlay server is not ready yet. It starts with the alert system."
+            )
+            ph.visible = True
+        return
+
+    if not _route_html_exists(route):
+        if ph:
+            ph.text = (
+                f"No browser template at templates/{route}.html — preview unavailable."
+            )
+            ph.visible = True
+        return
+
+    port = getattr(inst, "port", 5000) or 5000
+    cache_bust = time.time()
+    src = (
+        f"http://127.0.0.1:{port}/{route}"
+        f"?__preview_token={CUSTOM_SOURCES_PREVIEW_TOKEN}&_cb={cache_bust}"
+    )
+    dw, dh = _estimate_design_size(fd)
+    z = _current_preview_zoom_pct()
+
+    if ph:
+        ph.text = ""
+        ph.visible = False
+
+    _ensure_preview_scale_script()
+    js = (
+        "window.mycelianCsPopoutLoadPreview && window.mycelianCsPopoutLoadPreview("
+        f"{json.dumps(dialog_id)}, {json.dumps(outer_id)}, {json.dumps(inner_id)}, "
+        f"{json.dumps(src)}, {int(dw)}, {int(dh)}, {int(z)})"
+    )
+    try:
+        ui.run_javascript(js)
+        layout_schedule(0.15, lambda j=js: ui.run_javascript(j), once=True)
+        layout_schedule(0.4, lambda j=js: ui.run_javascript(j), once=True)
+    except Exception as e:
+        logger.debug("Popout preview load JS skipped: %s", e)
+
+
+def _open_popout_preview_dialog(dialog_id: str) -> None:
+    _ensure_preview_scale_script()
+    js = (
+        "window.mycelianCsPopoutOpen && "
+        f"window.mycelianCsPopoutOpen({json.dumps(dialog_id)})"
+    )
+    try:
+        ui.run_javascript(js)
+    except Exception as e:
+        logger.debug("Popout open JS skipped: %s", e)
+
+
+def _close_popout_preview_dialog(dialog_id: str) -> None:
+    global _popout_preview_is_open
+    _popout_preview_is_open = False
+    _close_popout_preview_dialog_js(dialog_id)
+
+
+def _close_popout_preview_dialog_js(dialog_id: str) -> None:
+    js = (
+        "window.mycelianCsPopoutClose && "
+        f"window.mycelianCsPopoutClose({json.dumps(dialog_id)})"
+    )
+    try:
+        ui.run_javascript(js)
+    except Exception as e:
+        logger.debug("Popout close JS skipped: %s", e)
 
 
 def _current_preview_zoom_pct() -> int:
@@ -463,6 +900,90 @@ def _run_preview_zoom_js(reset_pan: bool) -> None:
         ui.run_javascript(js)
     except Exception as e:
         logger.debug("Preview zoom JS skipped: %s", e)
+
+
+def _apply_inline_preview_visibility(show: bool) -> None:
+    """Show or hide the inline preview pane and expand the editor when hidden."""
+    ctx = _custom_sources_ctx
+    panel = ctx.get("preview_panel")
+    divider = ctx.get("split_divider")
+    editor_id = ctx.get("preview_editor_panel_id")
+    if panel is not None:
+        panel.set_visibility(show)
+    if divider is not None:
+        divider.set_visibility(show)
+    if editor_id:
+        flex = "100" if not show else "62"
+        js = (
+            f"var el=document.getElementById({json.dumps(editor_id)});"
+            f"if(el){{el.style.flex='{flex} {flex} 0%';}}"
+        )
+        try:
+            ui.run_javascript(js)
+        except Exception as e:
+            logger.debug("Inline preview visibility JS skipped: %s", e)
+    save_template_preview_settings({"show_inline_preview": bool(show)})
+
+
+def _sync_preview_iframe(
+    inner_id: Optional[str],
+    ph_el: Any,
+    config_name: str,
+    fd: dict,
+    *,
+    scale_outer_id: Optional[str] = None,
+    zoom_pct: Optional[int] = None,
+) -> None:
+    """Load preview URL into the iframe nested under ``inner_id``."""
+    if not config_name:
+        if ph_el:
+            ph_el.text = "Select a configuration to preview."
+            ph_el.visible = True
+        _clear_preview_iframe(inner_id)
+        return
+
+    route = _effective_preview_route(config_name)
+    inst = getattr(web_engine_module, "web_engine_instance", None)
+    if not inst or not getattr(inst, "is_running", False):
+        if ph_el:
+            ph_el.text = (
+                "Overlay server is not ready yet. It starts with the alert system."
+            )
+            ph_el.visible = True
+        _clear_preview_iframe(inner_id)
+        return
+
+    if not _route_html_exists(route):
+        if ph_el:
+            ph_el.text = (
+                f"No browser template at templates/{route}.html — preview unavailable."
+            )
+            ph_el.visible = True
+        _clear_preview_iframe(inner_id)
+        return
+
+    port = getattr(inst, "port", 5000) or 5000
+    cache_bust = time.time()
+    src = (
+        f"http://127.0.0.1:{port}/{route}"
+        f"?__preview_token={CUSTOM_SOURCES_PREVIEW_TOKEN}&_cb={cache_bust}"
+    )
+    design_w, design_h = _estimate_design_size(fd)
+    z = zoom_pct if zoom_pct is not None else _current_preview_zoom_pct()
+
+    if inner_id:
+        _assign_preview_iframe_src(
+            inner_id,
+            src,
+            design_w,
+            design_h,
+            scale_outer_id=scale_outer_id,
+            zoom_pct=z,
+        )
+
+    if ph_el:
+        ph_el.text = ""
+        ph_el.visible = False
 
 
 def _bind_split_divider_js() -> None:
@@ -564,11 +1085,12 @@ def _push_hot_preview_overrides() -> None:
     inst = getattr(web_engine_module, "web_engine_instance", None)
     if not inst or not getattr(inst, "is_running", False):
         return
-    if not _template_html_exists(config_name):
+    if not _route_html_exists(_effective_preview_route(config_name)):
         return
     fd = form_data_store.get(config_name, {})
+    route = _effective_preview_route(config_name)
     try:
-        inst.push_preview_overrides(CUSTOM_SOURCES_PREVIEW_TOKEN, config_name, fd)
+        inst.push_preview_overrides(CUSTOM_SOURCES_PREVIEW_TOKEN, route, fd)
         inst.emit_preview_config_refresh(CUSTOM_SOURCES_PREVIEW_TOKEN)
     except Exception as e:
         logger.warning("Hot preview config push failed: %s", e)
@@ -615,73 +1137,89 @@ def _rebuild_preview_mock_toolbar(config_name: str) -> None:
             )
 
 
+def _rebuild_popout_mock_toolbar(config_name: str) -> None:
+    row = _custom_sources_ctx.get("popout_mock_toolbar_row")
+    if row is None:
+        return
+    row.clear()
+    st = load_template_preview_settings()
+    row.visible = bool(st.get("show_mock_toolbar", True))
+    actions = get_mock_actions(config_name)
+    with row:
+        if not actions:
+            ui.label("No mock events for this template.").classes(
+                "text-xs opacity-60 shrink-0"
+            )
+            return
+        for act in actions:
+            ev = act["event"]
+            label = act.get("label", ev)
+            alert_type = act.get("alert_type")
+
+            def _emit_mock(
+                event_name: str = ev,
+                mock_alert_type: Any = alert_type,
+            ) -> None:
+                eng = getattr(web_engine_module, "web_engine_instance", None)
+                if not eng or not getattr(eng, "is_running", False):
+                    notify("Overlay server is not ready.", type="warning")
+                    return
+                ok, err, _ = eng.emit_preview_mock(
+                    CUSTOM_SOURCES_PREVIEW_TOKEN,
+                    event_name,
+                    None,
+                    alert_type=mock_alert_type,
+                )
+                if not ok:
+                    notify(str(err or "Mock emit failed"), type="negative")
+
+            ui.button(label, on_click=_emit_mock).props("dense flat size=sm").tooltip(
+                str(act.get("tooltip") or f"Emit mock «{ev}»")
+            )
+
+
 def _flush_template_preview() -> None:
     """Push form data to WebEngine and reload the preview iframe."""
+    global _popout_preview_is_open
     ctx = _custom_sources_ctx
     sel = ctx.get("config_select")
-    iframe_el = ctx.get("preview_iframe")
+    inline_inner_id = ctx.get("preview_inner_id")
     ph = ctx.get("preview_placeholder")
+    popout_inner_id = ctx.get("popout_preview_inner_id")
+    popout_ph = ctx.get("popout_preview_placeholder")
     if not sel:
         return
     config_name = sel.value
-    if not config_name:
-        if ph:
-            ph.text = "Select a configuration to preview."
-        if iframe_el:
-            iframe_el.props("src=")
-        return
 
     _refresh_preview_dirty_label(config_name)
 
-    inst = getattr(web_engine_module, "web_engine_instance", None)
-    if not inst or not getattr(inst, "is_running", False):
-        if ph:
-            ph.text = (
-                "Overlay server is not ready yet. It starts with the alert system."
-            )
-            ph.visible = True
-        if iframe_el:
-            iframe_el.props("src=")
-        return
-
-    if not _template_html_exists(config_name):
-        if ph:
-            ph.text = f"No browser template at templates/{config_name}.html — preview unavailable."
-            ph.visible = True
-        if iframe_el:
-            iframe_el.props("src=")
-        return
-
-    fd = form_data_store.get(config_name, {})
-    try:
-        inst.push_preview_overrides(CUSTOM_SOURCES_PREVIEW_TOKEN, config_name, fd)
-    except Exception as e:
-        logger.warning("Template preview push failed: %s", e)
-
-    port = getattr(inst, "port", 5000) or 5000
-    cache_bust = time.time()
-    src = (
-        f"http://127.0.0.1:{port}/{config_name}"
-        f"?__preview_token={CUSTOM_SOURCES_PREVIEW_TOKEN}&_cb={cache_bust}"
-    )
-    design_w, design_h = _estimate_design_size(fd)
-
-    if iframe_el:
-        iframe_el.props(f'src="{src}"')
-        iframe_el.props(f"width={design_w}")
-        iframe_el.props(f"height={design_h}")
-        iframe_el.style(
-            f"width:{design_w}px;height:{design_h}px;display:block;border:none;background:transparent"
-        )
-        iframe_el.update()
+    if config_name:
+        route = _effective_preview_route(config_name)
+        inst = getattr(web_engine_module, "web_engine_instance", None)
+        if inst and getattr(inst, "is_running", False) and _route_html_exists(route):
+            fd = form_data_store.get(config_name, {})
+            try:
+                inst.push_preview_overrides(
+                    CUSTOM_SOURCES_PREVIEW_TOKEN, route, fd
+                )
+            except Exception as e:
+                logger.warning("Template preview push failed: %s", e)
+            _sync_preview_iframe(inline_inner_id, ph, config_name, fd)
+            if _popout_preview_is_open and popout_inner_id:
+                _load_popout_preview(config_name, fd)
+        else:
+            _sync_preview_iframe(inline_inner_id, ph, config_name, {})
+            if _popout_preview_is_open and popout_inner_id:
+                _sync_preview_iframe(popout_inner_id, popout_ph, config_name, {})
+    else:
+        _sync_preview_iframe(inline_inner_id, ph, "", {})
+        if _popout_preview_is_open and popout_inner_id:
+            _sync_preview_iframe(popout_inner_id, popout_ph, "", {})
 
     _run_preview_scale_js(True)
-
-    if ph:
-        ph.text = ""
-        ph.visible = False
-
-    _rebuild_preview_mock_toolbar(config_name)
+    _rebuild_preview_mock_toolbar(config_name or "")
+    if _popout_preview_is_open:
+        _rebuild_popout_mock_toolbar(config_name or "")
 
 
 def _schedule_template_preview_refresh() -> None:
@@ -719,96 +1257,111 @@ def create_custom_sources_tab():
     with ui.element("div").classes(
         "tab-surface w-full h-full flex flex-col relative p-4"
     ):
-        # Header section with title and controls - fixed height
-        with ui.column().classes("w-full gap-4 p-4 flex-none"):
-            # Header section with title and controls
-            with ui.row().classes("w-full items-center justify-between mb-6"):
-                with ui.column().classes("gap-1"):
-                    ui.label("Template Configurations").classes(
-                        "text-xl font-medium fade-in"
-                    )
-                    ui.label(
-                        "Manage your template settings and configurations"
-                    ).classes("text-sm opacity-75 fade-in")
+        # Header section with controls - fixed height
+        with ui.column().classes("w-full gap-2 p-4 flex-none"):
+            _pst_initial = load_template_preview_settings()
+            preview_outer_id = "mycelian-cs-pe-" + uuid.uuid4().hex[:12]
+            preview_inner_id = preview_outer_id + "-inner"
+            preview_split_row_id = "mycelian-cs-row-" + uuid.uuid4().hex[:12]
+            preview_editor_panel_id = "mycelian-cs-ed-" + uuid.uuid4().hex[:12]
+            preview_panel_id = "mycelian-cs-pv-" + uuid.uuid4().hex[:12]
+            popout_outer_id = "mycelian-cs-pop-" + uuid.uuid4().hex[:12]
+            popout_inner_id = popout_outer_id + "-inner"
+            popout_dialog_id = "mycelian-cs-popdlg-" + uuid.uuid4().hex[:12]
 
-                # Configuration selector and refresh button
-                with ui.row().classes("items-center gap-2 slide-in"):
-                    config_select = form_select(
-                        tooltip="Choose which template configuration to edit",
-                        options=[],
-                        label="Select Configuration",
-                        classes="w-48 bg-theme-base",
-                        on_change=lambda e: on_config_selected(
-                            e, config_parser, config_container
-                        ),
-                    )
+            def open_popout_preview() -> None:
+                global _popout_preview_is_open
+                _popout_preview_is_open = True
+                sel = _custom_sources_ctx.get("config_select")
+                if sel and sel.value:
+                    fd = form_data_store.get(sel.value, {})
+                    _load_popout_preview(sel.value, fd)
+                else:
+                    _open_popout_preview_dialog(popout_dialog_id)
 
-                    outline_button(
-                        "",
-                        lambda: load_config_files(
-                            config_parser, config_select, config_container
-                        ),
-                        icon="refresh",
-                        extra_classes="p-2",
-                    )
-
-            # Search input
+            # Row 1: configuration selector
             with ui.row().classes("w-full items-center gap-2"):
+                config_select = form_select(
+                    tooltip="Choose which template configuration to edit",
+                    options=[],
+                    label=None,
+                    classes="w-56 bg-theme-base",
+                    on_change=lambda e: on_config_selected(
+                        e, config_parser, config_container
+                    ),
+                )
+
+                outline_button(
+                    "",
+                    lambda: load_config_files(
+                        config_parser, config_select, config_container
+                    ),
+                    icon="refresh",
+                    extra_classes="p-2",
+                )
+
+            # Row 2: New, Delete, Search, Reset, Save
+            with ui.row().classes("w-full items-center gap-2"):
+                primary_button(
+                    "New",
+                    lambda: create_new_config(
+                        config_parser, config_select, config_container
+                    ),
+                    icon="add",
+                )
+
+                destructive_button(
+                    "Delete",
+                    lambda: delete_config(
+                        config_parser, config_select, config_container
+                    ),
+                    icon="delete",
+                )
+
                 search_input = form_input(
                     tooltip="Filter configuration properties by label",
                     label="🔍 Search properties",
                     placeholder="Type to search by property label...",
-                    classes="grow bg-theme-base",
+                    classes="grow bg-theme-base min-w-[12rem]",
                     on_change=lambda e: on_search_changed(
                         e, config_parser, config_select, config_container
                     ),
                 )
                 search_input.props("clearable")
 
-            # Action buttons
-            with ui.row().classes("w-full items-center gap-2"):
-                with ui.row().classes("gap-2"):
-                    primary_button(
-                        "New",
-                        lambda: create_new_config(
-                            config_parser, config_select, config_container
-                        ),
-                        icon="add",
-                    )
+                outline_button(
+                    "Reset",
+                    lambda: reset_config(
+                        config_parser, config_select, config_container
+                    ),
+                    icon="restart_alt",
+                )
 
-                    destructive_button(
-                        "Delete",
-                        lambda: delete_config(
-                            config_parser, config_select, config_container
-                        ),
-                        icon="delete",
-                    )
+                primary_button(
+                    "Save",
+                    lambda: save_config(
+                        config_parser, config_select, config_container
+                    ),
+                    icon="save",
+                )
 
-                ui.element("div").classes("grow")
-
-                with ui.row().classes("gap-2"):
-                    outline_button(
-                        "Reset",
-                        lambda: reset_config(
-                            config_parser, config_select, config_container
-                        ),
-                        icon="restart_alt",
-                    )
-
-                    primary_button(
-                        "Save",
-                        lambda: save_config(
-                            config_parser, config_select, config_container
-                        ),
-                        icon="save",
-                    )
-
-        # Adjustable split: editor (left) vs preview (right)
-        preview_outer_id = "mycelian-cs-pe-" + uuid.uuid4().hex[:12]
-        preview_inner_id = preview_outer_id + "-inner"
-        preview_split_row_id = "mycelian-cs-row-" + uuid.uuid4().hex[:12]
-        preview_editor_panel_id = "mycelian-cs-ed-" + uuid.uuid4().hex[:12]
-        preview_panel_id = "mycelian-cs-pv-" + uuid.uuid4().hex[:12]
+            # Row 3: preview controls (right-aligned, below action buttons)
+            with ui.row().classes("w-full items-center gap-3 justify-end"):
+                inline_preview_switch = ui.switch(
+                    "Show preview",
+                    value=bool(_pst_initial.get("show_inline_preview", True)),
+                ).props("dense left-label").classes("shrink-0")
+                inline_preview_switch.tooltip(
+                    "Show or hide inline preview panel"
+                )
+                popout_preview_btn = ui.button(
+                    "Pop out preview",
+                    icon="open_in_new",
+                ).props("dense flat size=sm")
+                popout_preview_btn.tooltip(
+                    "Open preview in a floating window"
+                )
+                popout_preview_btn.on_click(open_popout_preview)
 
         with (
             ui.element("div")
@@ -846,7 +1399,6 @@ def create_custom_sources_tab():
                 config_container = ui.element("div").classes(
                     "flex-1 min-h-0 overflow-auto w-full"
                 )
-            _pst_initial = load_template_preview_settings()
             with ui.dialog() as preview_settings_dialog, ui.card():
                 ui.label("Preview settings").classes("text-lg font-medium mb-2")
                 preview_sound_switch = ui.switch(
@@ -877,6 +1429,9 @@ def create_custom_sources_tab():
                         mr = _custom_sources_ctx.get("mock_toolbar_row")
                         if mr is not None:
                             mr.visible = bool(preview_toolbar_switch.value)
+                        pmr = _custom_sources_ctx.get("popout_mock_toolbar_row")
+                        if pmr is not None:
+                            pmr.visible = bool(preview_toolbar_switch.value)
                         notify("Preview settings saved.", type="positive")
                     else:
                         notify("Could not save preview settings.", type="negative")
@@ -944,6 +1499,11 @@ def create_custom_sources_tab():
                             "block border-0 bg-transparent pointer-events-none"
                         )
 
+            def on_inline_preview_toggle(e) -> None:
+                _apply_inline_preview_visibility(bool(e.value))
+
+            inline_preview_switch.on_value_change(on_inline_preview_toggle)
+
             def apply_preview_zoom(_: Any = None) -> None:
                 try:
                     z = int(preview_zoom_slider.value)
@@ -961,6 +1521,56 @@ def create_custom_sources_tab():
             preview_zoom_slider.on_value_change(apply_preview_zoom)
             preview_zoom_reset_btn.on_click(reset_preview_zoom)
 
+        popout_preview_iframe = None
+        popout_preview_placeholder = None
+        with ui.element("div").props(f"id={popout_dialog_id}").classes(
+            "mycelian-cs-popout-dialog"
+        ):
+            with ui.element("div").props("data-popout-drag-handle").classes(
+                "mycelian-cs-popout-dialog__head"
+            ):
+                ui.label("Live preview").classes("text-sm font-medium")
+                with ui.row().classes("items-center gap-1"):
+                    ui.button(
+                        icon="refresh",
+                        on_click=lambda: _flush_template_preview(),
+                    ).props("flat dense round").tooltip("Reload preview")
+                    ui.button(
+                        icon="close",
+                        on_click=lambda: _close_popout_preview_dialog(
+                            popout_dialog_id
+                        ),
+                    ).props("flat dense round").tooltip("Close")
+            popout_mock_toolbar_row = ui.row().classes(
+                "mycelian-cs-popout-dialog__mocktools w-full shrink-0 "
+                "flex-nowrap gap-1 items-center"
+            )
+            with ui.element("div").classes("mycelian-cs-popout-dialog__body"):
+                popout_preview_placeholder = ui.label(
+                    "Waiting for overlay server…"
+                ).classes("text-xs opacity-60 absolute top-2 left-2 z-10")
+                popout_preview_outer = (
+                    ui.element("div")
+                    .props(
+                        f"id={popout_outer_id} "
+                        "data-mycelian-cs-popout-preview=true"
+                    )
+                    .classes("mycelian-cs-popout-dialog__preview-outer")
+                )
+                with popout_preview_outer:
+                    popout_preview_inner = (
+                        ui.element("div")
+                        .props(f"id={popout_inner_id}")
+                        .classes("mycelian-cs-popout-dialog__preview-inner")
+                    )
+                    with popout_preview_inner:
+                        popout_preview_iframe = ui.element("iframe").classes(
+                            "block border-0 bg-transparent pointer-events-none"
+                        )
+            ui.element("div").props("data-popout-resize-handle").classes(
+                "mycelian-cs-popout-dialog__resize"
+            )
+
         _custom_sources_ctx.clear()
         _custom_sources_ctx.update(
             {
@@ -976,11 +1586,22 @@ def create_custom_sources_tab():
                 "preview_split_row_id": preview_split_row_id,
                 "preview_editor_panel_id": preview_editor_panel_id,
                 "preview_panel_id": preview_panel_id,
+                "preview_panel": preview_panel,
+                "split_divider": split_divider,
                 "mock_toolbar_row": mock_toolbar_row,
+                "popout_preview_iframe": popout_preview_iframe,
+                "popout_preview_placeholder": popout_preview_placeholder,
+                "popout_preview_outer_id": popout_outer_id,
+                "popout_preview_inner_id": popout_inner_id,
+                "popout_preview_dialog_id": popout_dialog_id,
+                "popout_mock_toolbar_row": popout_mock_toolbar_row,
             }
         )
 
         _bind_split_divider_js()
+        _apply_inline_preview_visibility(
+            bool(_pst_initial.get("show_inline_preview", True))
+        )
 
         # Load the config files initially
         load_config_files(config_parser, config_select, config_container)

@@ -54,6 +54,7 @@ def _create_default_data():
                 "streamer_name": "",
                 "streamer_id": "",
                 "version": "1.3.11",
+                "build_number": "dev",
                 "build_date": "November 29th 2025",
                 "alert_volume": 0.5,
                 "auto_reconnect": True,

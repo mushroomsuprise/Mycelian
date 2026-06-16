@@ -124,7 +124,7 @@ class AppSettingsTab:
 
         with settings_surface(parent_container):
 
-            with ui.column().classes("w-full gap-3"):
+            with ui.grid(columns=2).classes("w-full gap-2"):
                 with settings_inner_panel():
                     ui.label("General").classes("text-base font-semibold")
                     with settings_form_grid(columns=3):
@@ -145,7 +145,6 @@ class AppSettingsTab:
                             )
                         )
                         with ui.row().classes("items-center gap-2"):
-                            ui.label("Notifications").classes("text-sm")
                             self.ui_elements["notifications_enabled"] = (
                                 ui.switch(value=self.buffer.notifications_enabled)
                                 .classes("q-switch")
@@ -155,10 +154,8 @@ class AppSettingsTab:
                                     )
                                 )
                             )
+                            ui.label("Notifications").classes("text-sm")
                         with ui.row().classes("items-center gap-2"):
-                            ui.label("Show connection status footer").classes(
-                                "text-sm"
-                            )
                             self.ui_elements["status_footer_enabled"] = (
                                 ui.switch(value=self.buffer.status_footer_enabled)
                                 .classes("q-switch")
@@ -168,8 +165,10 @@ class AppSettingsTab:
                                     )
                                 )
                             )
+                            ui.label("Show connection status footer").classes(
+                                "text-sm"
+                            )
                         with ui.row().classes("items-center gap-2"):
-                            ui.label("Auto update").classes("text-sm")
                             self.ui_elements["auto_update"] = (
                                 ui.switch(value=self.buffer.auto_update)
                                 .classes("q-switch")
@@ -177,8 +176,8 @@ class AppSettingsTab:
                                     lambda e: self._set("auto_update", bool(e.value))
                                 )
                             )
+                            ui.label("Auto update").classes("text-sm")
                         with ui.row().classes("items-center gap-2"):
-                            ui.label("Start maximized").classes("text-sm")
                             self.ui_elements["start_maximized"] = (
                                 ui.switch(value=self.buffer.start_maximized)
                                 .classes("q-switch")
@@ -188,6 +187,7 @@ class AppSettingsTab:
                                     )
                                 )
                             )
+                            ui.label("Start maximized").classes("text-sm")
                         ui.label("Applies on next launch").classes(
                             "secondary-text text-sm self-center"
                         )
@@ -225,7 +225,7 @@ class AppSettingsTab:
 
                 with settings_inner_panel():
                     ui.label("Activity feed").classes("text-base font-semibold")
-                    with settings_form_grid(columns=3):
+                    with settings_form_grid(columns=2):
                         with ui.row().classes("items-center gap-2"):
                             ui.label("History limit").classes("text-sm shrink-0")
                             self.ui_elements["activity_feed_limit"] = form_number(
@@ -273,28 +273,29 @@ class AppSettingsTab:
                             )
                             ui.label("to load").classes("secondary-text text-sm")
 
-                with settings_inner_panel():
-                    ui.label("Stream Deck plugin").classes("text-base font-semibold")
-                    with ui.row().classes(
-                        "w-full items-start justify-between gap-3 flex-wrap"
-                    ):
-                        with ui.column().classes("gap-1 min-w-0"):
-                            with ui.row().classes("items-center gap-2 flex-wrap"):
-                                ui.label("Status").classes("text-sm secondary-text")
-                                self.ui_elements["plugin_status_primary"] = ui.label(
-                                    get_plugin_status_display(initial_status).status_text
-                                ).classes("font-semibold text-sm")
-                            self.ui_elements["plugin_installed_version"] = ui.label(
-                                ""
-                            ).classes("text-sm secondary-text")
-                            self.ui_elements["plugin_new_version"] = ui.label(
-                                ""
-                            ).classes("text-sm text-amber-400 font-medium")
-                        self.ui_elements["install_plugin_button"] = primary_button(
-                            get_install_button_label(initial_status),
-                            self._install_streamdeck_plugin,
-                        )
-                    self._apply_plugin_status_display(initial_status)
+                with ui.element("div").classes("col-span-2 w-full"):
+                    with settings_inner_panel():
+                        ui.label("Stream Deck plugin").classes("text-base font-semibold")
+                        with ui.row().classes(
+                            "w-full items-start justify-between gap-3 flex-wrap"
+                        ):
+                            with ui.column().classes("gap-1 min-w-0"):
+                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                                    ui.label("Status").classes("text-sm secondary-text")
+                                    self.ui_elements["plugin_status_primary"] = ui.label(
+                                        get_plugin_status_display(initial_status).status_text
+                                    ).classes("font-semibold text-sm")
+                                self.ui_elements["plugin_installed_version"] = ui.label(
+                                    ""
+                                ).classes("text-sm secondary-text")
+                                self.ui_elements["plugin_new_version"] = ui.label(
+                                    ""
+                                ).classes("text-sm text-amber-400 font-medium")
+                            self.ui_elements["install_plugin_button"] = primary_button(
+                                get_install_button_label(initial_status),
+                                self._install_streamdeck_plugin,
+                            )
+                        self._apply_plugin_status_display(initial_status)
 
             settings_action_row(discard=self.discard, save=self.save)
 
@@ -333,7 +334,7 @@ class AppSettingsTab:
             return
         self._sync_font_from_ui()
         # persist buffered values to state_manager (skip hardcoded metadata fields)
-        _skip_save = frozenset({"version", "build_date"})
+        _skip_save = frozenset({"version", "build_number", "build_date"})
         for field in self.buffer.__dataclass_fields__.keys():
             if field in _skip_save:
                 continue

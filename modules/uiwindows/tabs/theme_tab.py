@@ -186,7 +186,8 @@ body .theme-preview-container .q-spinner {
     flex: 1;
     min-width: 0;
     align-items: flex-end;
-    overflow-x: auto;
+    overflow: hidden;
+    flex-wrap: wrap;
     background: transparent;
     border: none;
     padding: 0;
@@ -252,10 +253,11 @@ body .theme-preview-container .q-spinner {
     display: flex;
     gap: 2px;
     align-items: flex-end;
+    flex-wrap: wrap;
     background: transparent;
     border-bottom: none;
     padding: 0;
-    overflow-x: auto;
+    overflow: hidden;
 }
 
 .mock-sub-tab {
@@ -299,6 +301,7 @@ body .theme-preview-container .q-spinner {
     z-index: 2;
     margin-top: -1px;
     box-sizing: border-box;
+    overflow: hidden;
 }
 
 /* Theme preview: mask top border under active mock tab (Theme is ~8th tab) */
@@ -443,6 +446,17 @@ body .theme-preview-container .q-spinner {
 
 .mock-nc-chip.info {
     border-left-color: var(--preview-color-notify-info);
+}
+
+.mock-button-preview-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+body .theme-preview-container .service-status-footer {
+    margin-top: 8px;
 }
 
 /* ============================================
@@ -1108,20 +1122,15 @@ class ThemeTab:
 
                 # 2. Mock content area with settings sub-tabs and content
                 with ui.element("div").classes("mock-content-area"):
-                    self._build_mock_notification_chips()
-
                     with ui.element("div").classes("mock-sub-tab-shell"):
                         self._build_mock_sub_tabs()
 
                         with ui.element("div").classes("mock-sub-tab-content"):
                             with ui.element("div").classes("preview-grid-2col"):
-                                # Left: settings card with form elements
                                 self._build_mock_settings_card()
-                                # Right: connection status card
-                                self._build_mock_status_card()
+                                self._build_mock_showcase_card()
 
-                            # Button showcase row
-                            self._build_mock_buttons()
+                    self._build_mock_status_footer()
 
     def _build_palette_section(self) -> None:
         """Build the color palette and editor toolbar below the mock preview."""
@@ -1159,18 +1168,6 @@ class ThemeTab:
                         ui.html(tab_name)
             with ui.element("div").classes("mock-notification-btn"):
                 ui.html('<span class="icon">notifications</span>')
-
-    def _build_mock_notification_chips(self):
-        """Preview notification toast accents (theme notify colors)."""
-        with ui.element("div").classes("mock-nc-preview-row"):
-            for cls, label in (
-                ("success", "Saved"),
-                ("info", "Info"),
-                ("warning", "Warning"),
-                ("error", "Error"),
-            ):
-                with ui.element("div").classes(f"mock-nc-chip {cls}"):
-                    ui.html(label)
 
     def _build_mock_sub_tabs(self):
         """Build mock settings sub-tab bar matching build_ui_v2 order and icons."""
@@ -1230,48 +1227,79 @@ class ThemeTab:
                     ui.switch("Auto-connect", value=True)
                     ui.checkbox("Enable notifications", value=True)
 
-    def _build_mock_status_card(self):
-        """Build mock connection status card"""
+    def _build_mock_showcase_card(self):
+        """Mock card for notification chips and button variants."""
         with ui.element("div").classes("mock-settings-card"):
-            ui.label("Connections").classes(
+            ui.label("UI samples").classes(
                 "text-sm font-semibold typography-primary"
             ).style("margin-bottom: 6px;")
+            with ui.element("div").classes("mock-nc-preview-row"):
+                for cls, label in (
+                    ("success", "Saved"),
+                    ("info", "Info"),
+                    ("warning", "Warning"),
+                    ("error", "Error"),
+                ):
+                    with ui.element("div").classes(f"mock-nc-chip {cls}"):
+                        ui.html(label)
+            with ui.element("div").classes("mock-button-preview-row"):
+                for label, cls in (
+                    ("Primary", "theme-button-primary"),
+                    ("Secondary", "theme-button-secondary"),
+                    ("Success", "theme-button-success"),
+                    ("Warning", "theme-button-warning"),
+                    ("Error", "theme-button-error"),
+                ):
+                    btn = ui.button(label).classes(cls).props("dense size=sm")
+                    apply_flat_btn_props(btn, dense=True)
 
-            connections = [
-                ("Twitch", "connected", "Connected"),
-                ("Spotify", "connected", "Connected"),
-                ("OBS WebSocket", "connected", "Connected"),
-                ("PSN", "idle", "Idle"),
-            ]
-            for service, status, label in connections:
-                with ui.element("div").classes("mock-connector-row"):
-                    ui.label(service).classes("text-xs typography-primary")
-                    with ui.row().classes("items-center gap-0"):
-                        ui.element("span").classes(f"mock-status-dot {status}")
-                        badge_class = {
-                            "connected": "success",
-                            "disconnected": "error",
-                            "idle": "warning",
-                        }.get(status, "info")
-                        with ui.element("span").classes(
-                            f"status-badge-preview {badge_class}"
+    def _build_mock_status_footer(self):
+        """Mock connection status footer matching the real app footer."""
+        from ...notification_engine import _SERVICE_LABELS
+
+        footer_items = (
+            ("internet", "Online", "success"),
+            ("webengine", "Running", "info"),
+            ("twitch", "Connected", "success"),
+            ("obs", "Connected", "success"),
+            ("psn", "Idle", "warning"),
+            ("spotify", "Connected", "success"),
+            ("youtube", "Connected", "success"),
+        )
+        dot_tier = {
+            "success": "connected",
+            "warning": "idle",
+            "error": "disconnected",
+            "info": "connected",
+        }
+        with ui.element("div").classes("service-status-footer w-full"):
+            with ui.element("div").classes("service-status-footer-inner w-full"):
+                for key, badge_label, tier in footer_items:
+                    svg = SERVICE_BRAND_SVG.get(key, "")
+                    with ui.element("div").classes("service-status-item"):
+                        if svg:
+                            ui.html(svg, tag="span", sanitize=False).classes(
+                                "service-status-brand-icon"
+                            )
+                        ui.html(
+                            _SERVICE_LABELS.get(key, key),
+                            tag="span",
+                            sanitize=False,
+                        ).classes("service-status-name")
+                        with ui.element("div").classes(
+                            "service-status-status-cluster"
                         ):
-                            ui.label(label).classes("text-xs")
-
-    def _build_mock_buttons(self):
-        """Build button variant showcase row"""
-        with ui.element("div").style(
-            "display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;"
-        ):
-            for label, cls in (
-                ("Primary", "theme-button-primary"),
-                ("Secondary", "theme-button-secondary"),
-                ("Success", "theme-button-success"),
-                ("Warning", "theme-button-warning"),
-                ("Error", "theme-button-error"),
-            ):
-                btn = ui.button(label).classes(cls).props("dense size=sm")
-                apply_flat_btn_props(btn, dense=True)
+                            ui.element("span").classes(
+                                f"service-status-dot {dot_tier.get(tier, 'muted')}"
+                            )
+                            with ui.element("div").classes(
+                                f"service-status-badge {tier}"
+                            ):
+                                ui.html(
+                                    badge_label,
+                                    tag="span",
+                                    sanitize=False,
+                                ).classes("service-status-badge-label")
 
     def _build_color_palette(self, current_theme):
         """Build clickable color palette swatches."""

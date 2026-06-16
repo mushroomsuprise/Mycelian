@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import form_input
+from ...ui_form_controls import form_sensitive_input
 from ...ui_timer import layout_schedule
 from ...ui_settings_layout import (
     settings_footer,
@@ -252,7 +252,7 @@ class TwitchTab:
                         "—"
                     ).classes("secondary-text text-xs")
             with settings_form_grid(columns=2):
-                self.ui_elements[client_id_key] = form_input(
+                self.ui_elements[client_id_key] = form_sensitive_input(
                     tooltip="Twitch application Client ID from the developer console",
                     label="Client ID",
                     value=self._creds.get(client_id_key, ""),
@@ -262,14 +262,12 @@ class TwitchTab:
                     "change",
                     lambda e, k=client_id_key: self._set_cred(k, e.args or ""),
                 )
-                self.ui_elements[client_secret_key] = form_input(
+                self.ui_elements[client_secret_key] = form_sensitive_input(
                     tooltip="Twitch application Client Secret (keep private)",
                     label="Client Secret",
                     value=self._creds.get(client_secret_key, ""),
-                    password=True,
                     placeholder=client_secret_placeholder,
                 )
-                self.ui_elements[client_secret_key].props("password-toggle-button")
                 self.ui_elements[client_secret_key].on(
                     "change",
                     lambda e, k=client_secret_key: self._set_cred(k, e.args or ""),

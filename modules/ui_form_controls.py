@@ -45,6 +45,7 @@ def form_input(
     placeholder: Optional[str] = None,
     classes: str = _DEFAULT_CLASSES,
     password: bool = False,
+    password_toggle_button: bool = False,
     readonly: bool = False,
     on_change: Optional[Callable] = None,
     **kwargs: Any,
@@ -54,6 +55,7 @@ def form_input(
         value=value,
         placeholder=placeholder,
         password=password,
+        password_toggle_button=password_toggle_button,
         on_change=on_change,
         **kwargs,
     )
@@ -61,6 +63,71 @@ def form_input(
     if readonly:
         el.props("readonly")
     return _with_tooltip(el, tooltip)
+
+
+def form_sensitive_input(
+    *,
+    tooltip: str,
+    label: Optional[str] = None,
+    value: Any = None,
+    placeholder: Optional[str] = None,
+    classes: str = _DEFAULT_CLASSES,
+    password: bool = True,
+    readonly: bool = False,
+    on_change: Optional[Callable] = None,
+    **kwargs: Any,
+) -> Any:
+    """Text input masked by default with a visibility toggle."""
+    return form_input(
+        tooltip=tooltip,
+        label=label,
+        value=value,
+        placeholder=placeholder,
+        classes=classes,
+        password=password,
+        password_toggle_button=True,
+        readonly=readonly,
+        on_change=on_change,
+        **kwargs,
+    )
+
+
+def form_sensitive_number(
+    *,
+    tooltip: str,
+    label: Optional[str] = None,
+    value: Any = None,
+    min: Optional[float] = None,
+    max: Optional[float] = None,
+    step: Optional[float] = None,
+    classes: str = _DEFAULT_CLASSES,
+    on_change: Optional[Callable] = None,
+    **kwargs: Any,
+) -> Any:
+    """Numeric input masked by default with a visibility toggle."""
+    if value is None:
+        display = ""
+    elif isinstance(value, float) and value == int(value):
+        display = str(int(value))
+    elif isinstance(value, int):
+        display = str(value)
+    else:
+        display = str(value)
+    el = form_sensitive_input(
+        tooltip=tooltip,
+        label=label,
+        value=display,
+        classes=classes,
+        on_change=on_change,
+        **kwargs,
+    )
+    if min is not None:
+        el.props(f"min={min}")
+    if max is not None:
+        el.props(f"max={max}")
+    if step is not None:
+        el.props(f"step={step}")
+    return el
 
 
 def form_number(

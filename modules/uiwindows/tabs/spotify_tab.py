@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import form_input, form_select
+from ...ui_form_controls import form_input, form_select, form_sensitive_input
 from ...ui_timer import layout_schedule
 from ...ui_settings_layout import (
     settings_action_row,
@@ -150,7 +150,7 @@ class SpotifyTab:
                 "CA": "CA",
             }
             with settings_form_grid(columns=3):
-                self.ui_elements["client_id"] = form_input(
+                self.ui_elements["client_id"] = form_sensitive_input(
                     tooltip="Spotify application Client ID from the developer dashboard",
                     label="Client ID",
                     value=self._creds.get("client_id", ""),
@@ -161,14 +161,12 @@ class SpotifyTab:
                         "client_id", self._str_from_value_event(e)
                     )
                 )
-                self.ui_elements["client_secret"] = form_input(
+                self.ui_elements["client_secret"] = form_sensitive_input(
                     tooltip="Spotify application Client Secret",
                     label="Client Secret",
                     value=self._creds.get("client_secret", ""),
-                    password=True,
                     placeholder="Spotify API Client Secret",
                 )
-                self.ui_elements["client_secret"].props("password-toggle-button")
                 self.ui_elements["client_secret"].on_value_change(
                     lambda e: self._set_cred(
                         "client_secret", self._str_from_value_event(e)

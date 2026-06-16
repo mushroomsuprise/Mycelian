@@ -102,6 +102,7 @@ class AppSettings:
     streamer_name: str = "mycelian"
     streamer_id: str = ""
     version: str = "1.11.2"
+    build_number: str = "dev"
     build_date: str = "June 14th 2026"
     alert_volume: float = 0.5
     auto_reconnect: bool = True
@@ -638,7 +639,7 @@ class StateManager:
             filtered_dict = {
                 k: v
                 for k, v in settings_dict.items()
-                if k in valid_keys and k not in ["version", "build_date"]
+                if k in valid_keys and k not in ["version", "build_number", "build_date"]
             }
 
             # Create a new AppSettings object with the filtered data
@@ -654,7 +655,7 @@ class StateManager:
             field.name: getattr(self._app_settings, field.name)
             for field in AppSettings.__dataclass_fields__.values()
             if not field.name.startswith("_")
-            and field.name not in ["version", "build_date"]
+            and field.name not in ["version", "build_number", "build_date"]
         }
 
         # Update PSN Settings data
@@ -1110,11 +1111,12 @@ class StateManager:
                 for key, value in app_settings.items():
                     if hasattr(self._app_settings, key) and key not in [
                         "version",
+                        "build_number",
                         "build_date",
                     ]:
                         self._state["app_settings"][key] = value
                         self._changed_fields.add(f"app_settings.{key}")
-                    elif key in ["version", "build_date"]:
+                    elif key in ["version", "build_number", "build_date"]:
                         logger.warning(
                             f"Skipping {key} update - this field uses hardcoded values from AppSettings dataclass"
                         )
@@ -1348,7 +1350,7 @@ class StateManager:
                     return False
 
                 # Prevent updating version and build_date - these should always use hardcoded values
-                if field in ["version", "build_date"]:
+                if field in ["version", "build_number", "build_date"]:
                     logger.warning(
                         f"Cannot update {field} - this field uses hardcoded values from AppSettings dataclass"
                     )
