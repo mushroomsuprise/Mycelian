@@ -124,24 +124,34 @@
         }
 
         .source-controls-masonry {
-            column-width: 180px;
-            column-gap: 12px;
-            column-fill: auto;
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 12px;
             width: 100%;
             padding: 8px;
             box-sizing: border-box;
-            display: block;
+            min-width: 0;
+        }
+
+        .sc-masonry-col {
+            flex: 1 1 0;
+            min-width: 0;
+            max-width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
         .template-section,
         .source-controls-template-card {
-            break-inside: avoid;
-            page-break-inside: avoid;
-            display: inline-block;
+            display: block;
             width: 100%;
-            margin-bottom: 12px;
             min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
             box-sizing: border-box;
+            container-type: inline-size;
             background: var(--color-bg-surface, rgba(255, 255, 255, 0.05));
             border-radius: 8px;
             border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
@@ -159,13 +169,20 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 8px;
             margin-bottom: 8px;
+            min-width: 0;
         }
 
         .template-title {
             font-size: 1rem;
             font-weight: 600;
             color: var(--color-text-primary, #ffffff);
+            min-width: 0;
+            flex: 1 1 auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .control-count {
@@ -175,6 +192,8 @@
             border-radius: 12px;
             font-size: 0.65rem;
             font-weight: 500;
+            flex-shrink: 0;
+            white-space: nowrap;
         }
 
         .control-group-section {
@@ -197,6 +216,13 @@
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 6px;
             width: 100%;
+            min-width: 0;
+        }
+
+        @container (max-width: 200px) {
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .control-item {
@@ -250,6 +276,7 @@
             font-weight: 500;
             margin-bottom: 3px;
             color: var(--color-text-primary, #ffffff);
+            overflow-wrap: anywhere;
         }
 
         .control-description {
@@ -282,6 +309,7 @@
 
         .control-button {
             width: 100%;
+            max-width: 100%;
             padding: 6px;
             border: none;
             border-radius: 4px;
@@ -291,6 +319,10 @@
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
+            box-sizing: border-box;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .control-button:hover {
@@ -372,6 +404,11 @@
             cursor: pointer;
             transition: all 0.2s ease;
             font-size: 0.7rem;
+            min-width: 0;
+            box-sizing: border-box;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .counter-btn.decrement {
@@ -535,10 +572,6 @@
                 gap: 8px;
             }
 
-            .source-controls-masonry {
-                column-width: 100%;
-            }
-
             .controls-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -590,6 +623,12 @@
         
         // Template configurations cache
         let templateConfigs = {};
+        let lastSortedTemplates = null;
+        let layoutResizeObserver = null;
+
+        const MASONRY_COL_GAP = 12;
+        const MASONRY_PAD = 16;
+        const MIN_COLUMN_WIDTH = 220;
         
         // Initialize the application
         document.addEventListener('DOMContentLoaded', function() {
@@ -806,10 +845,229 @@
             console.log('Loaded embedded template configs:', Object.keys(templateConfigs));
         }
 
+        // Keep in sync with modules/uiwindows/sourcecontrols.py (_masonry_column_count,
+        // _estimate_card_height, _distribute_balanced, _distribute_to_columns).
+        function clearLayoutObserver() {
+            if (layoutResizeObserver) {
+                layoutResizeObserver.disconnect();
+                layoutResizeObserver = null;
+            }
+            lastSortedTemplates = null;
+        }
+
+        function masonryColumnCount(cardCount) {
+            if (cardCount <= 1) {
+                return 1;
+            }
+            return Math.max(1, Math.min(cardCount, Math.floor((cardCount + 2) / 3)));
+        }
+
+        function maxColumnsForWidth(containerWidth) {
+            const available = Math.max(0, containerWidth - MASONRY_PAD);
+            return Math.max(1, Math.floor((available + MASONRY_COL_GAP) / (MIN_COLUMN_WIDTH + MASONRY_COL_GAP)));
+        }
+
+        function effectiveColumnCount(cardCount, containerWidth) {
+            return Math.min(
+                masonryColumnCount(cardCount),
+                maxColumnsForWidth(containerWidth),
+                cardCount
+            );
+        }
+
+        function measureLayoutWidth(container) {
+            const contentEl = container.closest('.content');
+            if (contentEl && contentEl.clientWidth > 0) {
+                return contentEl.clientWidth;
+            }
+            if (container.clientWidth > 0) {
+                return container.clientWidth;
+            }
+            return window.innerWidth || MIN_COLUMN_WIDTH;
+        }
+
+        function estimateCardHeight(config) {
+            const elements = config.elements || [];
+            let height = 1.2;
+            let buttonCount = 0;
+            elements.forEach(function (element) {
+                const etype = element.type || '';
+                if (etype === 'button' || etype === 'spin_control') {
+                    buttonCount += 1;
+                } else if (etype === 'counter_control') {
+                    height += element.target_counter_id ? 1.15 : 0.95;
+                } else if (etype === 'text_input' || etype === 'number_input') {
+                    height += 1.15;
+                } else if (etype === 'slider' || etype === 'toggle') {
+                    height += 1.0;
+                } else {
+                    height += 0.8;
+                }
+            });
+            if (buttonCount) {
+                height += Math.floor((buttonCount + 1) / 2) * 0.55;
+            }
+            return height;
+        }
+
+        function distributeBalanced(templates, nCols) {
+            const columns = Array.from({ length: nCols }, function () { return []; });
+            if (!templates.length) {
+                return columns;
+            }
+
+            const weights = templates.map(function (entry) { return estimateCardHeight(entry[1]); });
+            let colIdx = 0;
+            let colHeight = 0.0;
+            const n = templates.length;
+
+            templates.forEach(function (item, i) {
+                columns[colIdx].push(item);
+                colHeight += weights[i];
+
+                if (colIdx >= nCols - 1) {
+                    return;
+                }
+
+                const remainingCards = n - i - 1;
+                const remainingCols = nCols - colIdx - 1;
+                if (remainingCards < remainingCols) {
+                    return;
+                }
+
+                let remainingWeight = 0;
+                for (let j = i + 1; j < n; j++) {
+                    remainingWeight += weights[j];
+                }
+                const target = remainingWeight / remainingCols;
+
+                if (colHeight >= target) {
+                    colIdx += 1;
+                    colHeight = 0.0;
+                }
+            });
+
+            return columns;
+        }
+
+        function distributeToColumns(sortedTemplates, nColsOverride) {
+            const n = sortedTemplates.length;
+            if (n === 0) {
+                return [];
+            }
+
+            const nCols = nColsOverride != null
+                ? Math.min(nColsOverride, n)
+                : masonryColumnCount(n);
+            if (nCols <= 1 || n === 1) {
+                return [sortedTemplates.slice()];
+            }
+
+            const isolateLargest = nCols >= 3 && n > nCols;
+            if (isolateLargest) {
+                const body = sortedTemplates.slice(0, -1);
+                const tail = [sortedTemplates[n - 1]];
+                const bodyCols = Math.max(1, nCols - 1);
+                const columns = distributeBalanced(body, bodyCols);
+                columns.push(tail);
+                return columns;
+            }
+
+            return distributeBalanced(sortedTemplates, nCols);
+        }
+
+        function buildMasonryHtml(sortedTemplates, columnCount) {
+            const columns = distributeToColumns(sortedTemplates, columnCount);
+            let html = '<div class="source-controls-masonry">';
+
+            columns.forEach(function (colItems) {
+                html += '<div class="sc-masonry-col">';
+                colItems.forEach(function ([templateName, controlsConfig]) {
+                    html += renderTemplateCard(templateName, controlsConfig);
+                });
+                html += '</div>';
+            });
+
+            html += '</div>';
+            return html;
+        }
+
+        function layoutControlsMasonry(container, sortedTemplates) {
+            lastSortedTemplates = sortedTemplates;
+            const columnCount = effectiveColumnCount(
+                sortedTemplates.length,
+                measureLayoutWidth(container)
+            );
+            container.innerHTML = buildMasonryHtml(sortedTemplates, columnCount);
+
+            if (layoutResizeObserver) {
+                layoutResizeObserver.disconnect();
+                layoutResizeObserver = null;
+            }
+
+            const observeTarget = container.closest('.content') || container;
+            if (typeof ResizeObserver === 'undefined') {
+                return;
+            }
+
+            layoutResizeObserver = new ResizeObserver(function (entries) {
+                if (!lastSortedTemplates || !entries.length) {
+                    return;
+                }
+
+                const width = entries[0].contentRect.width;
+                if (width <= 0) {
+                    return;
+                }
+
+                const newColumnCount = effectiveColumnCount(lastSortedTemplates.length, width);
+                const masonry = container.querySelector('.source-controls-masonry');
+                const currentColumnCount = masonry
+                    ? masonry.querySelectorAll('.sc-masonry-col').length
+                    : 0;
+
+                if (currentColumnCount !== newColumnCount) {
+                    container.innerHTML = buildMasonryHtml(lastSortedTemplates, newColumnCount);
+                }
+            });
+            layoutResizeObserver.observe(observeTarget);
+        }
+
+        function renderTemplateCard(templateName, controlsConfig) {
+            const elements = controlsConfig.elements || [];
+            const groupedControls = groupControlsByType(elements);
+
+            let html = `
+                <div class="template-section fade-in">
+                    <div class="template-header">
+                        <h2 class="template-title">${templateName.charAt(0).toUpperCase() + templateName.slice(1)} Controls</h2>
+                        <span class="control-count">${elements.length} controls</span>
+                    </div>
+            `;
+
+            Object.entries(groupedControls).forEach(function ([groupName, groupElements]) {
+                if (groupName !== 'Other') {
+                    html += `<div class="group-title">${groupName}</div>`;
+                }
+
+                html += '<div class="controls-grid">';
+
+                groupElements.forEach(function (element) {
+                    html += createControlElement(templateName, element);
+                });
+
+                html += '</div>';
+            });
+
+            html += '</div>';
+            return html;
+        }
+
         function renderControls() {
             const container = document.getElementById('controlsContainer');
             
             if (Object.keys(templateConfigs).length === 0) {
+                clearLayoutObserver();
                 container.innerHTML = `
                     <div class="no-controls fade-in">
                         <h3>No dynamic controls found</h3>
@@ -823,40 +1081,7 @@
                 (a, b) => (a[1].elements || []).length - (b[1].elements || []).length
             );
 
-            let html = '<div class="source-controls-masonry">';
-            
-            sortedTemplates.forEach(([templateName, controlsConfig]) => {
-                const elements = controlsConfig.elements || [];
-                const groupedControls = groupControlsByType(elements);
-                
-                html += `
-                    <div class="template-section fade-in">
-                        <div class="template-header">
-                            <h2 class="template-title">${templateName.charAt(0).toUpperCase() + templateName.slice(1)} Controls</h2>
-                            <span class="control-count">${elements.length} controls</span>
-                        </div>
-                `;
-                
-                Object.entries(groupedControls).forEach(([groupName, groupElements]) => {
-                    if (groupName !== 'Other') {
-                        html += `<div class="group-title">${groupName}</div>`;
-                    }
-                    
-                    html += '<div class="controls-grid">';
-                    
-                    groupElements.forEach(element => {
-                        html += createControlElement(templateName, element);
-                    });
-                    
-                    html += '</div>';
-                });
-                
-                html += '</div>';
-            });
-            
-            html += '</div>';
-            
-            container.innerHTML = html;
+            layoutControlsMasonry(container, sortedTemplates);
             
             // Add event listeners after rendering
             addEventListeners();
@@ -1246,6 +1471,7 @@
 
         function refreshControls() {
             templateConfigs = {};
+            clearLayoutObserver();
             document.getElementById('controlsContainer').innerHTML = `
                 <div class="loading">
                     <h3>Refreshing controls...</h3>
@@ -1268,6 +1494,7 @@
         }
 
         function showError(message) {
+            clearLayoutObserver();
             document.getElementById('controlsContainer').innerHTML = `
                 <div class="no-controls fade-in">
                     <h3>Error</h3>
