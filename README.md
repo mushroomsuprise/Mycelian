@@ -64,12 +64,18 @@ Mycelian brings your stream's alerts, overlays, chatbot, and automation into a s
 - Trigger → condition → action automation workflows
 - Chain Twitch events, OBS actions, template updates, and more
 
+### Game Hooks
+
+- Read live game data from supported PC games and broadcast it to browser templates
+- Use live game data to trigger connectors and actions, or use it to control the game itself
+- Supported games: Final Fantasy VII (2013)
+
 ### Integrations
 
 - **Twitch** — OAuth, EventSub, chat, channel points
 - **Spotify** — Now playing with album artwork
 - **PlayStation Network** — Trophy and game-status alerts
-- **YouTube** — Channel monitoring and chatbot support
+- **YouTube** — Channel playlist and video monitoring
 - **OBS Studio** — WebSocket scene and source control
 - **Stream Deck** — Plugin for alerts, connectors, and template actions
 
