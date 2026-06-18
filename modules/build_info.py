@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Build metadata helpers (git commit, stamped build number)."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 # Third-party service brand marks for Settings tabs (inline SVG).
 # Path geometry: Simple Icons — CC0-1.0 — https://github.com/simple-icons/simple-icons
 # Brand colors from Simple Icons palette.

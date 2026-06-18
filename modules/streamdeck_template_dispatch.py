@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Pure helpers for Stream Deck template action HTTP dispatch (testable without Flask)."""
 
 from __future__ import annotations

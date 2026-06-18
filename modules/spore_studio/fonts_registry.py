@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """List fonts shipped under assets/default_assets/fonts for Spore Studio."""
 
 from __future__ import annotations

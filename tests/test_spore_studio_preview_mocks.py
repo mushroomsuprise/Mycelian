@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Tests for Spore Studio preview mock payloads and preview_mocks derivation."""
 
 from __future__ import annotations

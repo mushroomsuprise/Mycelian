@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Tests for Spore Studio duration calculation."""
 
 from modules.spore_studio.timing import (

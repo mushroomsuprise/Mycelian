@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Compile Spore Studio editor bindings into the JavaScript snippet that
 lives between the ``SPORE_STUDIO:auto-begin`` and ``SPORE_STUDIO:auto-end``

@@ -1,4 +1,5 @@
 {
+    "license": "MIT",
     "scripts": {
         "build": "rollup -c",
         "build:deploy": "rollup -c && rsync -a --delete com.mushroomsuprise.mycelian.sdPlugin/ ../../sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/",

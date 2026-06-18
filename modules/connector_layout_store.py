@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Persisted layout for Connectors tab: root-level folders and connector ordering.
 

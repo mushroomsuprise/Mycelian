@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Compute minimum overlay duration from a Spore Studio editor model.
 

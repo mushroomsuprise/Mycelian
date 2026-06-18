@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """OBS Studio WebSocket (v5) integration — ReqClient requests and EventClient subscriptions.
 
 All obsws-python socket I/O runs on this module's daemon thread. Connector actions enqueue

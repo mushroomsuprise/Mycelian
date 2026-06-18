@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Live integration connection status — probed on a schedule, independent of Settings tab UI.
 

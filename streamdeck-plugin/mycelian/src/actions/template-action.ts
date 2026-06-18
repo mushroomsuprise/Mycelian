@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Mycelian. SPDX-License-Identifier: MIT
+
 import { action, DidReceiveSettingsEvent, KeyDownEvent, SingletonAction, WillAppearEvent } from "@elgato/streamdeck";
 import { apiUrl, DEFAULT_SERVER_URL, parseServerConfig } from "../lib/server-config";
 

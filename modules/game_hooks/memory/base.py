@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Platform-agnostic process memory access protocol."""
 
 from __future__ import annotations

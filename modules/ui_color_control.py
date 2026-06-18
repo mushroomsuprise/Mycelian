@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Unified color field with swatch preview, text input, and custom alpha-aware picker."""
 
 from __future__ import annotations

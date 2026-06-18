@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """OBS connector action catalog — operations and argument metadata for the Connectors UI.
 
 Scene/source names populate from :mod:`modules.obs_service` snapshots at UI time.

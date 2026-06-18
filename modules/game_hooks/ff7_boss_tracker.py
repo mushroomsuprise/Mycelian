@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """FF7 boss defeat tracking for game hook payloads (newest-first name list)."""
 
 from __future__ import annotations

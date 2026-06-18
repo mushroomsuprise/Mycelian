@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Safe string helpers for logging and console output on Windows (cp1252)."""
 
 from typing import Any

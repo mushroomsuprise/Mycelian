@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """OBS Studio integration (WebSocket).
 
 All socket I/O runs on :mod:`modules.obs_service`'s ``ObsWebSocket`` daemon thread;

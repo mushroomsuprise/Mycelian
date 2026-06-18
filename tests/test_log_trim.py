@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Regression tests for byte-safe mycelian.log trimming (Windows CRLF)."""
 
 from __future__ import annotations

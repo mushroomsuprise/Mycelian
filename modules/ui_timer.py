@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Lifecycle-safe timer scheduling for NiceGUI 3.x.
 
 NiceGUI 3 made ``ui.timer`` a strict child of whatever slot is active when it is

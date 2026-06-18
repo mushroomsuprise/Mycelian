@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Tests that multiple Stream Deck bindings compile distinct socket listeners."""
 
 from __future__ import annotations

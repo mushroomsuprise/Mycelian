@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Shared NiceGUI form controls with tooltips and consistent styling."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Per-tab settings components for Mycelian Settings UI.
 
 Each tab module exposes a class implementing the following minimal API:

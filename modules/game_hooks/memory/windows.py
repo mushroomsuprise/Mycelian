@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Windows process memory read/write via kernel32."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Platform-specific process memory backends."""
 
 from __future__ import annotations

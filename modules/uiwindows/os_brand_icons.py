@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 # OS brand marks: colored variants when supported, flat grey when unsupported.
 # Apple + Linux path data: Simple Icons v9.14.0 — CC0-1.0 — https://github.com/simple-icons/simple-icons
 # Windows four-pane: Microsoft-style brand colors (public logo geometry).

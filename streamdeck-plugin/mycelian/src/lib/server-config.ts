@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Mycelian. SPDX-License-Identifier: MIT
+
 export type ServerConfig = {
 	host: string;
 	port: number;

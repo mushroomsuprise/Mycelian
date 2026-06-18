@@ -2,7 +2,7 @@
 """
 MIT License
 
-Copyright (c) 2024 Mycelian
+Copyright (c) 2024-2026 Mycelian
 
 Statistics export module for generating highlights images from event-log data.
 Uses Pillow; colors follow ThemeManager when available.

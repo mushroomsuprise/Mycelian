@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Apply user-selected app font via injected CSS."""
 
 from __future__ import annotations

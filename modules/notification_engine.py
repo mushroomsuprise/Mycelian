@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Central notification API: toast (NiceGUI), persisted history, deduplication, actions.
 

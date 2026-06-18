@@ -2,7 +2,7 @@
 """
 MIT License
 
-Copyright (c) 2024 Mycelian
+Copyright (c) 2024-2026 Mycelian
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1530,11 +1530,6 @@ class SettingsUI:
                                     "Check for Updates",
                                     on_click=self.check_for_updates_manual,
                                 ).props("icon=system_update color=primary")
-
-                                ui.button(
-                                    "Open Documentation",
-                                    on_click=self.open_documentation,
-                                ).props("icon=help_outline color=secondary")
 
                                 ui.button(
                                     "View Changelog", on_click=self.show_changelog_modal
@@ -3596,21 +3591,6 @@ class SettingsUI:
         except Exception as e:
             logger.error(f"Error delegating manual update check: {e}", exc_info=True)
             notify("Failed to start update check.", type="negative")
-
-    def open_documentation(self):
-        """Open the documentation page in the default browser"""
-        try:
-            logger.info("User clicked Open Documentation button")
-            documentation_url = "https://mycelian.readthedocs.io/en/latest/"
-            webbrowser.open(documentation_url)
-            notify(
-                "Opening documentation in your default browser...",
-                type="info",
-                timeout=2000,
-            )
-        except Exception as e:
-            logger.error(f"Error opening documentation: {e}", exc_info=True)
-            notify(f"Error opening documentation: {str(e)}", type="negative")
 
     async def fetch_all_releases_from_github(self) -> List[Dict[str, str]]:
         """

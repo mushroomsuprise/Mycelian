@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Broadcast live game data to all Socket.IO clients on a fixed cadence.
 

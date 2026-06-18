@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Central connection monitor: Tier 1 external internet probes, Tier 2 per-service
 reachability, and coordinated auto-reconnect for remote integrations.

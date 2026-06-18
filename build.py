@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Improved PyInstaller build script for Mycelian
 Balances size optimization with proper NiceGUI and web engine support
@@ -1290,25 +1292,7 @@ def update_version_across_files():
                 f.writelines(lines)
             files_updated.append("uv.lock")
 
-        # 3. Update docs/conf.py
-        conf_path = project_root / "docs" / "conf.py"
-        if conf_path.exists():
-            with open(conf_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            # Update release line
-            content = re.sub(
-                r"^release = '.*'",
-                f"release = '{VERSION}'",
-                content,
-                flags=re.MULTILINE,
-            )
-
-            with open(conf_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            files_updated.append("docs/conf.py")
-
-        # 4. Update modules/database_init.py
+        # 3. Update modules/database_init.py
         db_init_path = project_root / "modules" / "database_init.py"
         if db_init_path.exists():
             with open(db_init_path, "r", encoding="utf-8") as f:
@@ -1327,7 +1311,7 @@ def update_version_across_files():
                 f.write(content)
             files_updated.append("modules/database_init.py")
 
-        # 5. Update modules/dataobjects.py
+        # 4. Update modules/dataobjects.py
         dataobjects_path = project_root / "modules" / "dataobjects.py"
         if dataobjects_path.exists():
             with open(dataobjects_path, "r", encoding="utf-8") as f:
@@ -1350,7 +1334,7 @@ def update_version_across_files():
                 f.write(content)
             files_updated.append("modules/dataobjects.py")
 
-        # 6. Update version.txt (Windows version info file)
+        # 5. Update version.txt (Windows version info file)
         if VERSION_FILE:
             version_file_path = project_root / VERSION_FILE
             if version_file_path.exists():
@@ -1389,7 +1373,7 @@ def update_version_across_files():
                     f.write(content)
                 files_updated.append(VERSION_FILE)
 
-        # 7. Update Inno Setup script (Mycelian.iss)
+        # 6. Update Inno Setup script (Mycelian.iss)
         iss_path = project_root / "Mycelian.iss"
         if iss_path.exists():
             with open(iss_path, "r", encoding="utf-8") as f:

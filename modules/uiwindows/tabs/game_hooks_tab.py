@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Settings tab: enable/disable game memory hooks (FF7, etc.)."""
 
 from __future__ import annotations

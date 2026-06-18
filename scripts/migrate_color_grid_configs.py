@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """One-off migration: select + color_grid -> type color (keeps options for presets)."""
 
 from __future__ import annotations

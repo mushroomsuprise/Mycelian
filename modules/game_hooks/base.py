@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """Game hook protocol and UI metadata."""
 
 from __future__ import annotations

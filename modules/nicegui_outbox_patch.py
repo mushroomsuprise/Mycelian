@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
-MIT License — same as repository root.
-
 Runtime guard for NiceGUI's per-client outbox loop.
 
 NiceGUI stores pending element updates in a ``weakref.WeakValueDictionary``. The

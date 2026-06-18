@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Connector placeholder substitution: single-brace `{token}` (no spaces inside).
 

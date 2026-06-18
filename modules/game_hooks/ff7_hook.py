@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 FF7 PC (English Steam, ff7_en.exe) live memory hook: reads, optional writes, menu colors.
 

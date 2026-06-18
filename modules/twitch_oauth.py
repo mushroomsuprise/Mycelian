@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Mycelian
+# SPDX-License-Identifier: MIT
 """
 Serialize Twitch UserAuthenticator OAuth flows and ensure callback servers stop on shutdown.
 
