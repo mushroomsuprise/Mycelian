@@ -109,15 +109,22 @@ uv run python main.py
 3. Copy browser source URLs from **Source Settings** into OBS
 4. Watch events roll in on the **Activity Feed** tab
 
-**Popular browser source URLs:**
+**Popular default browser source URLs:**
 
 | URL | Description |
 |-----|-------------|
-| `http://localhost:5000/activity_feed` | Real-time alert feed |
+| `http://localhost:5000/alerts` | Alert notifications |
 | `http://localhost:5000/bitboss` | Interactive boss battle |
 | `http://localhost:5000/chat` | Live chat overlay |
 | `http://localhost:5000/counter` | Interactive counters |
 | `http://localhost:5000/roulette` | Roulette wheel |
+
+**Built-in OBS dock URLs:**
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:5000/activity_feed` | Real-time alert feed |
+| `http://localhost:5000/source_controls` | Live overlay controls |
 
 For WebSocket API details, open the in-app **Help** browser and see the *WebSocket Events* topic.
 
@@ -138,7 +145,6 @@ The built app lands in the `builds/` directory.
 
 - **npm** is required to build the Stream Deck plugin (`streamdeck-plugin/mycelian/`)
 - **macOS:** Xcode command line tools must be installed (`xcode-select --install`)
-- **Windows:** An Inno Setup installer can be produced via `Mycelian.iss` after the PyInstaller build
 
 ---
 
@@ -156,6 +162,3 @@ Mycelian ships with a built-in, searchable help system that stays up to date wit
 
 [MIT License](LICENSE) — Copyright (c) 2024–2026 Mycelian
 
----
-
-<p align="center"><em>Built for the streaming community</em></p>
