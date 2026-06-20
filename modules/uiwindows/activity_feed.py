@@ -30,12 +30,190 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import current_process
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import app, ui
+
 from ..notification_engine import notify
+from ..ui_timer import app_schedule
 
 logger = logging.getLogger(__name__)
+
+_pause_breath_timer_started = False
+_recovery_scheduled = False
+
+
+def _is_stale_client_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "client" in msg and "deleted" in msg
+
+
+def _element_alive(el: Any) -> bool:
+    """Return True when a NiceGUI element still belongs to a live client."""
+    if el is None:
+        return False
+    try:
+        if getattr(el, "is_deleted", False):
+            return False
+        _ = el.client
+        return True
+    except RuntimeError as exc:
+        if _is_stale_client_error(exc):
+            return False
+        raise
+    except Exception:
+        return False
+
+
+def _containers_alive() -> bool:
+    return _element_alive(activity_feed_state.current_alerts_container)
+
+
+def _run_on_ui_loop(fn: Callable[[], Any]) -> None:
+    """Marshal UI mutations onto NiceGUI's asyncio loop (safe from worker threads)."""
+    try:
+        from nicegui import core
+
+        loop = getattr(core, "loop", None)
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(fn)
+            return
+    except Exception:
+        pass
+    try:
+        fn()
+    except Exception as exc:
+        logger.error("activity_feed UI callback failed: %s", exc, exc_info=True)
+
+
+def _handle_stale_client(reason: str) -> None:
+    """Mark feed stale and schedule recovery (idempotent)."""
+    global _recovery_scheduled
+
+    logger.warning("activity_feed: client_stale (%s)", reason)
+    activity_feed_state.is_initialized = False
+    if _recovery_scheduled:
+        return
+    _recovery_scheduled = True
+
+    def _recover() -> None:
+        global _recovery_scheduled
+        try:
+            recover_after_client_reconnect()
+        finally:
+            _recovery_scheduled = False
+
+    _run_on_ui_loop(_recover)
+
+
+def _escalate_page_reload(reason: str) -> None:
+    logger.warning("activity_feed: reload_escalation (%s)", reason)
+    try:
+        from nicegui import Client, background_tasks
+
+        client = None
+        for inst in Client.instances.values():
+            if getattr(inst, "has_socket_connection", False):
+                client = inst
+                break
+        if client is None:
+            logger.debug("activity_feed: reload skipped (no connected client)")
+            return
+
+        async def _reload() -> None:
+            try:
+                await client.run_javascript(
+                    "window.location.reload()", timeout=5.0
+                )
+            except Exception as exc:
+                logger.error("activity_feed: page reload failed: %s", exc, exc_info=True)
+
+        background_tasks.create(_reload(), name="activity_feed_reload")
+    except Exception as exc:
+        logger.error("activity_feed: page reload failed: %s", exc, exc_info=True)
+
+
+def recover_activity_feed_panel() -> bool:
+    """Rebuild visible feed content when containers are still bound to a live client."""
+    if not _containers_alive():
+        return False
+
+    try:
+        for alert_data in activity_feed_state.live_alerts:
+            alert_data["element"] = None
+            alert_data["new_badge"] = None
+            alert_data["timestamp_label"] = None
+
+        rebuild_current_alerts_feed()
+        if activity_feed_state.condense_list and activity_feed_state.current_tab == "current":
+            update_condensed_view()
+        update_alert_visibility()
+        activity_feed_state.is_initialized = True
+        logger.info("activity_feed: recovered (%d live alerts)", len(activity_feed_state.live_alerts))
+        return True
+    except Exception as exc:
+        logger.error("activity_feed: recover_activity_feed_panel failed: %s", exc, exc_info=True)
+        return False
+
+
+def recover_after_client_reconnect() -> None:
+    """Called after NiceGUI socket reconnect or stale-client detection."""
+    from ..shutdown import is_shutdown_in_progress
+
+    if is_shutdown_in_progress():
+        return
+
+    if recover_activity_feed_panel():
+        return
+
+    _escalate_page_reload("containers_dead_after_reconnect")
+
+
+_connect_recovery_enabled = False
+
+
+_hooks_registered_client_ids: set[str] = set()
+
+
+def register_client_lifecycle_hooks() -> None:
+    """Register connect/disconnect/delete handlers for Activity Feed recovery."""
+    global _connect_recovery_enabled
+    try:
+        from nicegui import context
+
+        client = context.client
+    except Exception as exc:
+        logger.debug("activity_feed: could not register lifecycle hooks: %s", exc)
+        return
+
+    if client.id in _hooks_registered_client_ids:
+        return
+    _hooks_registered_client_ids.add(client.id)
+
+    def _on_disconnect(_client=None) -> None:
+        logger.info("activity_feed: client_disconnected")
+        activity_feed_state.is_initialized = False
+
+    def _on_connect(_client=None) -> None:
+        if not _connect_recovery_enabled:
+            return
+        logger.info("activity_feed: client_connected — scheduling recovery")
+        app_schedule(0.5, recover_after_client_reconnect, once=True)
+
+    def _on_delete(_client=None) -> None:
+        logger.info("activity_feed: client_deleted — scheduling recovery")
+        _handle_stale_client("client_deleted")
+
+    client.on_disconnect(_on_disconnect)
+    client.on_connect(_on_connect)
+    client.on_delete(_on_delete)
+    app_schedule(3.0, _enable_connect_recovery, once=True)
+    logger.debug("activity_feed: client lifecycle hooks registered")
+
+
+def _enable_connect_recovery() -> None:
+    global _connect_recovery_enabled
+    _connect_recovery_enabled = True
 
 
 # Event-based system instead of continuous polling
@@ -68,20 +246,10 @@ class AlertEventHandler:
     def _process_alert_threadsafe(self, alert_data: Dict[str, Any]) -> None:
         """Process alert in a thread-safe manner (runs in thread pool)"""
         try:
-            # Only process if UI is initialized
-            if not (
-                activity_feed_state.is_initialized
-                and activity_feed_state.activity_feed_container
-            ):
-                logger.debug("UI not initialized, skipping alert processing")
-                return
-
-            # Check if alert is recent (within last 5 minutes)
             current_time = time.time()
             created_time = alert_data.get("created_at", current_time)
             is_recent = (current_time - float(created_time)) < 300  # 5 minutes
 
-            # Create new alert data
             new_alert_data = {
                 "type": alert_data["type"],
                 "message": alert_data["message"],
@@ -100,44 +268,48 @@ class AlertEventHandler:
                 "username": alert_data.get("username"),
             }
 
-            # Thread-safe UI update
-            with self._ui_update_lock:
-                # Always add new alerts to the live alerts list only
-                activity_feed_state.live_alerts.insert(0, new_alert_data)
-
-                # Only visually display the alert if we're on the current alerts tab
-                should_display_new_alert = activity_feed_state.current_tab == "current"
-
-                if should_display_new_alert:
-                    # Create and display the UI element
-                    create_alert_element(new_alert_data)
-
-                    # Apply initial visibility based on filter state
-                    self._apply_filter_visibility(new_alert_data, alert_data["type"])
-
-                    # Force a UI update
-                    ui.update()
-                    logger.debug(
-                        f"Displayed new alert: {alert_data['type']} (current tab: {activity_feed_state.current_tab})"
-                    )
-                else:
-                    # Alert added to state but not displayed visually
-                    logger.debug(
-                        f"New alert {alert_data['type']} added to state but not displayed - on {activity_feed_state.current_tab} tab"
-                    )
-
-                # Update condensed view if it's active
-                if (
-                    activity_feed_state.condense_list
-                    and activity_feed_state.current_tab == "current"
-                ):
-                    update_condensed_view()
-
-            # Trigger timestamp update cycle
+            _run_on_ui_loop(
+                lambda: self._apply_alert_on_ui(new_alert_data, alert_data["type"])
+            )
             self._trigger_timestamp_update()
 
         except Exception as e:
             logger.error(f"Error in thread-safe alert processing: {e}", exc_info=True)
+
+    def _apply_alert_on_ui(
+        self, new_alert_data: Dict[str, Any], alert_type: str
+    ) -> None:
+        """Apply a new alert to UI state (must run on NiceGUI loop)."""
+        if not (
+            activity_feed_state.is_initialized
+            and _containers_alive()
+        ):
+            logger.debug("UI not initialized or containers stale, skipping alert")
+            return
+
+        with self._ui_update_lock:
+            activity_feed_state.live_alerts.insert(0, new_alert_data)
+
+            should_display_new_alert = activity_feed_state.current_tab == "current"
+
+            if should_display_new_alert:
+                if not create_alert_element(new_alert_data):
+                    return
+                self._apply_filter_visibility(new_alert_data, alert_type)
+                ui.update()
+                logger.debug(
+                    f"Displayed new alert: {alert_type} (current tab: {activity_feed_state.current_tab})"
+                )
+            else:
+                logger.debug(
+                    f"New alert {alert_type} added to state but not displayed - on {activity_feed_state.current_tab} tab"
+                )
+
+            if (
+                activity_feed_state.condense_list
+                and activity_feed_state.current_tab == "current"
+            ):
+                update_condensed_view()
 
     def _apply_filter_visibility(
         self, new_alert_data: Dict[str, Any], alert_type: str
@@ -192,24 +364,23 @@ class AlertEventHandler:
         self._timestamp_update_timer.start()
 
     def _scheduled_timestamp_update(self) -> None:
-        """Perform scheduled timestamp update"""
+        """Perform scheduled timestamp update (threading.Timer callback)."""
         if self._should_stop:
             return
+        _run_on_ui_loop(self._run_scheduled_timestamp_update_ui)
 
+    def _run_scheduled_timestamp_update_ui(self) -> None:
         try:
-            # Only update if we're on current tab and have live alerts
             if (
                 activity_feed_state.current_tab == "current"
                 and len(activity_feed_state.live_alerts) > 0
+                and _containers_alive()
             ):
                 with self._ui_update_lock:
                     self._update_timestamps_and_recent_status()
-
-                # Schedule next update
                 self._trigger_timestamp_update()
             else:
                 logger.debug("No live alerts to update, skipping timestamp update")
-
         except Exception as e:
             logger.error(f"Error in scheduled timestamp update: {e}", exc_info=True)
 
@@ -261,8 +432,11 @@ class AlertEventHandler:
 
     def force_timestamp_update(self) -> None:
         """Force an immediate timestamp update (called when switching tabs, etc.)"""
+        _run_on_ui_loop(self._force_timestamp_update_ui)
+
+    def _force_timestamp_update_ui(self) -> None:
         try:
-            if activity_feed_state.current_tab == "current":
+            if activity_feed_state.current_tab == "current" and _containers_alive():
                 with self._ui_update_lock:
                     self._update_timestamps_and_recent_status()
         except Exception as e:
@@ -918,37 +1092,40 @@ def stop_alert_processor():
 def rebuild_alert_feed():
     """Rebuild the entire alert feed to ensure proper ordering and styling"""
     try:
-        if not activity_feed_state.activity_feed_container:
+        container = activity_feed_state.activity_feed_container
+        if not _element_alive(container):
+            _handle_stale_client("rebuild_alert_feed: container dead")
             return
 
-        # Clear the container
-        activity_feed_state.activity_feed_container.clear()
+        container.clear()
 
-        # Rebuild all alerts in order (newest first)
         for alert_data in activity_feed_state.alert_elements:
-            create_alert_element(alert_data)
+            if not create_alert_element(alert_data):
+                return
 
-        # Force UI update
         ui.update()
 
     except Exception as e:
-        logger.error(f"Error rebuilding alert feed: {str(e)}", exc_info=True)
+        if _is_stale_client_error(e):
+            _handle_stale_client(f"rebuild_alert_feed: {e}")
+        else:
+            logger.error(f"Error rebuilding alert feed: {str(e)}", exc_info=True)
 
 
 def rebuild_current_alerts_feed():
     """Rebuild the current alerts feed, showing only live alerts"""
     try:
-        if not activity_feed_state.current_alerts_container:
+        container = activity_feed_state.current_alerts_container
+        if not _element_alive(container):
+            _handle_stale_client("rebuild_current_alerts_feed: container dead")
             return
 
-        # Clear the current alerts container
-        activity_feed_state.current_alerts_container.clear()
+        container.clear()
 
-        # Rebuild only live alerts in order (newest first)
         for alert_data in activity_feed_state.live_alerts:
-            create_alert_element(alert_data)
+            if not create_alert_element(alert_data):
+                return
 
-        # Force UI update
         ui.update()
 
         logger.debug(
@@ -956,27 +1133,29 @@ def rebuild_current_alerts_feed():
         )
 
     except Exception as e:
-        logger.error(f"Error rebuilding current alerts feed: {str(e)}", exc_info=True)
+        if _is_stale_client_error(e):
+            _handle_stale_client(f"rebuild_current_alerts_feed: {e}")
+        else:
+            logger.error(f"Error rebuilding current alerts feed: {str(e)}", exc_info=True)
 
 
-def create_alert_element(alert_data):
-    """Create a single alert element in the feed
+def create_alert_element(alert_data) -> bool:
+    """Create a single alert element in the feed.
 
-    Args:
-        alert_data (dict): Alert data containing all necessary information
+    Returns:
+        True on success, False if the client is stale (recovery scheduled).
     """
     try:
-        # Determine if this is a restored alert
         is_restored = alert_data.get("is_restored", False)
 
-        # Choose the appropriate container based on alert type
         if is_restored:
             target_container = activity_feed_state.previous_alerts_container
         else:
             target_container = activity_feed_state.current_alerts_container
 
-        if not target_container:
-            return
+        if not _element_alive(target_container):
+            _handle_stale_client("create_alert_element: container dead")
+            return False
 
         # Recalculate if the alert is recent (within last 5 minutes) based on current time
         current_time = time.time()
@@ -1061,8 +1240,14 @@ def create_alert_element(alert_data):
                         "replay-button h-[24px] w-[24px] min-w-[24px] flex items-center justify-center"
                     ).tooltip("Skip Alert")
 
+        return True
+
     except Exception as e:
+        if _is_stale_client_error(e):
+            _handle_stale_client(f"create_alert_element: {e}")
+            return False
         logger.error(f"Error creating alert element: {str(e)}", exc_info=True)
+        return False
 
 
 def update_alert_visibility():
@@ -1592,10 +1777,10 @@ def create_activity_feed_tab():
                 f"{_DOCK_BTN_PROPS} id=pause-alerts-btn"
             )
             activity_feed_state.pause_btn = pause_btn
-            if activity_feed_state.pause_breath_timer is None:
-                activity_feed_state.pause_breath_timer = ui.timer(
-                    0.05, _animate_pause_button_border, active=True
-                )
+            global _pause_breath_timer_started
+            if not _pause_breath_timer_started:
+                _pause_breath_timer_started = True
+                app_schedule(0.1, _animate_pause_button_border, active=True)
 
             def update_pause_button_state():
                 """Update the pause button state based on current ALERTS_PAUSED status"""
@@ -2283,9 +2468,11 @@ def load_restored_alerts_for_time_window(cutoff_time: float):
 def clear_restored_alerts():
     """Clear all restored alerts from the previous alerts container"""
     try:
-        if activity_feed_state.previous_alerts_container:
-            # Clear the previous alerts container
-            activity_feed_state.previous_alerts_container.clear()
+        container = activity_feed_state.previous_alerts_container
+        if not _element_alive(container):
+            return
+
+        container.clear()
 
         # Clear all historical alerts (alert_elements is only for historical alerts now)
         activity_feed_state.alert_elements = []
@@ -2395,13 +2582,13 @@ def update_pagination_ui(pagination_info):
         pagination_info (dict): Pagination information from get_stored_alerts_paginated
     """
     try:
-        if not activity_feed_state.pagination_container:
+        container = activity_feed_state.pagination_container
+        if not _element_alive(container):
             return
 
-        # Clear existing pagination UI
-        activity_feed_state.pagination_container.clear()
+        container.clear()
 
-        with activity_feed_state.pagination_container:
+        with container:
             if pagination_info["total_count"] > 0:
                 with ui.row().classes("items-center gap-2 justify-center w-full"):
                     # Previous button
@@ -2515,11 +2702,11 @@ def update_condensed_view():
 def create_condensed_view():
     """Create the condensed view of alerts grouped by user (using historical data only)"""
     try:
-        if not activity_feed_state.condensed_container:
+        container = activity_feed_state.condensed_container
+        if not _element_alive(container):
             return
 
-        # Clear existing condensed view
-        activity_feed_state.condensed_container.clear()
+        container.clear()
 
         # Get template configuration for condensed view settings
         condense_historical_hours = 12

@@ -330,6 +330,15 @@ def register_native_window_close_handler() -> None:
     logger.debug("Registered native window closed shutdown handler")
 
 
+def _stop_ui_health_monitor() -> None:
+    try:
+        from .ui_health_monitor import stop_ui_health_monitor
+
+        stop_ui_health_monitor()
+    except Exception as e:
+        logger.debug("UI health monitor stop: %s", e)
+
+
 def shutdown_application(*, reason: str, force: bool = False) -> None:
     """
     Idempotent full-application teardown.
@@ -346,6 +355,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
     _start_shutdown_watchdog()
 
     try:
+        _run_step("ui_health_monitor", _stop_ui_health_monitor, timeout=1.0)
         _run_step("pause_alerts", _pause_alerts_and_activity_feed, timeout=2.0)
         _run_step("connection_monitor", _stop_connection_monitor, timeout=3.0)
         # Stops web engine, game hooks, alert threads (no separate web_engine step).

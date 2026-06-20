@@ -67,6 +67,7 @@ def get_version():
 
 # Global flag to track if UI elements have been created
 _ui_elements_created = False
+_ui_client_id: Optional[str] = None
 
 # Global splash screen references
 _splash_dialog = None
@@ -1050,56 +1051,39 @@ def _schedule_update_manager_init() -> None:
     layout_schedule(2.0, init_update_manager, once=True)
 
 
-def _configure_webview2_for_admin():
-    """Configure WebView2 to work properly when running as administrator (Windows only)"""
+def _configure_webview2():
+    """Configure WebView2 user data folder (all Windows users) and admin-only flags."""
     import platform
 
-    # Only configure WebView2 on Windows - skip on MacOS and Linux
     if platform.system() != "Windows":
         logger.debug("Skipping WebView2 configuration - not running on Windows")
         return
 
     try:
+        appdata_dir = os.path.join(os.environ.get("APPDATA", ""), "Mycelian")
+        webview_data_dir = os.path.join(appdata_dir, "WebView2Data")
+        os.makedirs(webview_data_dir, exist_ok=True)
+        os.environ["WEBVIEW2_USER_DATA_FOLDER"] = webview_data_dir
+        logger.info("WebView2 data directory set to: %s", webview_data_dir)
+
         import ctypes
 
-        # Check if running as administrator (Windows-specific)
         try:
             is_admin = ctypes.windll.shell32.IsUserAnAdmin()
         except (AttributeError, OSError) as e:
-            # Fallback for systems without IsUserAnAdmin or access issues
-            logger.debug(f"Could not check admin status: {e}")
+            logger.debug("Could not check admin status: %s", e)
             is_admin = False
 
         if is_admin:
             logger.info(
-                "Detected administrator privileges on Windows - configuring WebView2 data directory"
+                "Administrator on Windows — applying extra WebView2 browser arguments"
             )
-
-            # Create a custom data directory for WebView2 that admin can access
-            # Use the user's AppData directory instead of system temp
-            appdata_dir = os.path.join(os.environ.get("APPDATA", ""), "Mycelian")
-            webview_data_dir = os.path.join(appdata_dir, "WebView2Data")
-
-            # Create the directory if it doesn't exist
-            os.makedirs(webview_data_dir, exist_ok=True)
-
-            # Set WebView2 environment variables (Windows-specific)
-            os.environ["WEBVIEW2_USER_DATA_FOLDER"] = webview_data_dir
             os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
                 "--disable-web-security --disable-features=VizDisplayCompositor"
             )
 
-            logger.info(f"WebView2 data directory set to: {webview_data_dir}")
-        else:
-            logger.debug(
-                "Not running as administrator on Windows - using default WebView2 configuration"
-            )
-
     except Exception as e:
-        logger.warning(
-            f"Failed to configure WebView2 for administrator on Windows: {e}"
-        )
-        # Don't fail the entire startup if this fails
+        logger.warning("Failed to configure WebView2 on Windows: %s", e)
 
 
 def build_root_ui() -> None:
@@ -1110,7 +1094,15 @@ def build_root_ui() -> None:
     removed 2.x shared auto-index client where all UI used to be created before
     ``ui.run``.
     """
+    global _ui_elements_created, _ui_client_id
     from .startup_profiler import StartupTimer
+    from nicegui import context
+
+    client_id = context.client.id
+    if _ui_client_id != client_id:
+        _ui_elements_created = False
+        _ui_client_id = client_id
+        logger.info("New NiceGUI client %s — will rebuild UI shell", client_id)
 
     # Per-page Quasar primary color (was module scope in NiceGUI 2.x).
     ui.colors(primary="var(--color-primary)")
@@ -1166,6 +1158,13 @@ def build_root_ui() -> None:
             _schedule_update_manager_init()
             _schedule_streamdeck_plugin_version_check()
 
+    from .uiwindows.activity_feed import register_client_lifecycle_hooks
+    from .ui_health_monitor import arm_ui_health_monitor
+    from nicegui import context
+
+    register_client_lifecycle_hooks()
+    arm_ui_health_monitor(context.client)
+
 
 def start_ui():
     """Start the NiceGUI server (blocking call)"""
@@ -1173,8 +1172,8 @@ def start_ui():
     from .startup_profiler import StartupTimer
 
     try:
-        # Configure WebView2 data directory for administrator privileges
-        _configure_webview2_for_admin()
+        # Configure WebView2 data directory for long-running native sessions
+        _configure_webview2()
 
         logger.info("Starting NiceGUI server...")
         try:
@@ -1216,7 +1215,13 @@ def start_ui():
             # NiceGUI 3.x: pass the UI builder as the positional ``root`` so it runs
             # inside a real client context (the 2.x auto-index client is gone).
             try:
-                ui.run(build_root_ui, native=True, dark=True, reload=False)
+                ui.run(
+                    build_root_ui,
+                    native=True,
+                    dark=True,
+                    reload=False,
+                    reconnect_timeout=120,
+                )
             except Exception as run_err:
                 from .shutdown import is_shutdown_in_progress
 
