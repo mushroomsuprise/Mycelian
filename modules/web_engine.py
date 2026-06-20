@@ -5114,6 +5114,27 @@ class WebEngine:
                             except ValueError:
                                 pass
 
+                from .twitch import parse_helix_users_login, twitch_user_lookup_allowed
+
+                users_login = parse_helix_users_login(endpoint, params)
+                if users_login is not None and not twitch_user_lookup_allowed(
+                    users_login
+                ):
+                    logger.debug(
+                        "Skipping twitch-api-request helix/users for login=%r",
+                        users_login,
+                    )
+                    self.socketio.emit(
+                        "twitch-api-response",
+                        {
+                            "success": False,
+                            "error": "User lookup skipped (anonymous or invalid login)",
+                            "requestId": request_id,
+                        },
+                        to=client_sid,
+                    )
+                    return
+
                 async def handle_request():
                     try:
                         api_response = await twitch.twitch_api.generic_api_call(
@@ -5138,6 +5159,12 @@ class WebEngine:
                         if err.startswith("Authentication required"):
                             logger.warning(
                                 "Twitch API request skipped (%s): %s",
+                                endpoint,
+                                err,
+                            )
+                        elif "User lookup skipped" in err:
+                            logger.debug(
+                                "Twitch API user lookup skipped (%s): %s",
                                 endpoint,
                                 err,
                             )

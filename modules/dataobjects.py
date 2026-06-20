@@ -106,6 +106,8 @@ class AppSettings:
     build_date: str = "June 14th 2026"
     alert_volume: float = 0.5
     auto_reconnect: bool = True
+    auto_raid_helix_shoutout: bool = True
+    auto_raid_chat_shoutout: bool = True
     current_theme: str = "dark"
     notifications_enabled: bool = True
     status_footer_enabled: bool = True

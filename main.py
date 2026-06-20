@@ -143,6 +143,15 @@ class CappedFileHandler(logging.FileHandler):
 
 # Set up logging configuration
 def setup_logging():
+    # Prefer UTF-8 console output on Windows (matches frozen build behavior)
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
     # Create logs directory if it doesn't exist - use data path for exe
     log_dir = Path(get_data_path("logs"))
     log_dir.mkdir(exist_ok=True)
@@ -172,6 +181,7 @@ def setup_logging():
     # Set engineio and socketio to WARNING to reduce noise but capture "Too many packets" errors
     logging.getLogger("engineio.server").setLevel(logging.WARNING)
     logging.getLogger("socketio.server").setLevel(logging.WARNING)
+    logging.getLogger("pyrate_limiter").setLevel(logging.CRITICAL)
 
 
 # Set up logging first (timed for startup diagnosis)
@@ -424,8 +434,9 @@ if __name__ == "__main__":
         sys.exit(0)
     except Exception as e:
         from modules.shutdown import is_shutdown_in_progress, shutdown_application
+        from modules.mainuiwindow import _is_benign_shutdown_websocket_error
 
-        if is_shutdown_in_progress():
+        if is_shutdown_in_progress() or _is_benign_shutdown_websocket_error(e):
             logger.warning("UI server stopped during shutdown: %s", e)
             shutdown_application(reason="ui_run_returned", force=False)
             sys.exit(0)

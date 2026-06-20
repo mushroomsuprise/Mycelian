@@ -745,7 +745,7 @@ class ChatbotManager:
             if not message.startswith("!"):
                 return None
 
-            print(f"[CHATBOT] Processing command from {username}: {message}")
+            logger.debug("[CHATBOT] Processing command from %s: %s", username, message)
 
             # Extract command name and arguments
             parts = message[1:].split()
@@ -755,8 +755,10 @@ class ChatbotManager:
             command_name = parts[0].lower()
             arguments = parts[1:] if len(parts) > 1 else []
             command_message = " ".join(arguments)  # Full message after command name
-            print(
-                f"[CHATBOT] Extracted command: '{command_name}' with args: {arguments}"
+            logger.debug(
+                "[CHATBOT] Extracted command: '%s' with args: %s",
+                command_name,
+                arguments,
             )
 
             # Add command-specific data to message_data for variable processing
@@ -788,19 +790,24 @@ class ChatbotManager:
                         # Check if command can be used
                         can_use, reason = command.can_use(message_data)
                         if not can_use:
-                            print(
-                                f"[CHATBOT] Command '{command_name}' blocked: {reason}"
+                            logger.debug(
+                                "[CHATBOT] Command '%s' blocked: %s",
+                                command_name,
+                                reason,
                             )
-                            logger.debug(f"Command {command_name} blocked: {reason}")
                             return reason, command_name
 
                         # Use the command and get response
-                        print(
-                            f"[CHATBOT] Executing command '{command_name}' for {username}"
+                        logger.debug(
+                            "[CHATBOT] Executing command '%s' for %s",
+                            command_name,
+                            username,
                         )
                         response = command.use_command(message_data)
-                        print(
-                            f"[CHATBOT] Command '{command_name}' returned response: {response}"
+                        logger.debug(
+                            "[CHATBOT] Command '%s' returned response: %s",
+                            command_name,
+                            response,
                         )
 
                         # Save data after command use
@@ -1213,11 +1220,10 @@ class ChatbotManager:
 
             def repeating_thread():
                 try:
-                    print(
-                        f"=== THREAD STARTED: repeating thread for event {event.name} (ID: {event.event_id}) ==="
-                    )  # Use print to ensure visibility
-                    logger.info(
-                        f"=== THREAD STARTED: repeating thread for event {event.name} (ID: {event.event_id}) ==="
+                    logger.debug(
+                        "=== THREAD STARTED: repeating thread for event %s (ID: %s) ===",
+                        event.name,
+                        event.event_id,
                     )
                     logger.info(
                         f"Thread function called successfully - event: {event.name}"
@@ -1326,17 +1332,19 @@ class ChatbotManager:
                     )
 
             # Create and start the real thread directly
-            print(f"Creating thread for event {event.name}")
+            logger.debug("Creating thread for event %s", event.name)
             thread = threading.Thread(
                 target=repeating_thread, daemon=True, name=f"Event-{event.name}"
             )
-            print(f"Thread created: {thread.name}")
+            logger.debug("Thread created: %s", thread.name)
             thread.start()
-            print(f"Thread started: {thread.name}, is_alive: {thread.is_alive()}")
+            logger.debug(
+                "Thread started: %s, is_alive: %s", thread.name, thread.is_alive()
+            )
 
             # Store the thread reference (we'll use this for cleanup)
             self.repeating_tasks[event.event_id] = thread
-            print(f"Stored thread reference for event: {event.name}")
+            logger.debug("Stored thread reference for event: %s", event.name)
         except Exception as e:
             logger.error(
                 f"Exception in _start_repeating_event_with_thread thread creation for event {event.name}: {e}",

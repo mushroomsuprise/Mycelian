@@ -55,6 +55,8 @@ from twitchAPI.object.eventsub import (
     HypeTrainEvent,
 )
 from twitchAPI.twitch import Twitch
+from urllib.parse import parse_qs, urlparse
+
 from twitchAPI.type import AuthScope, InvalidRefreshTokenException
 
 from . import (
@@ -88,6 +90,44 @@ ACCESS_TOKEN_FALLBACK_LIFETIME = timedelta(hours=3, minutes=30)
 # Proactive refresh in ``is_token_expired`` / ``_health_check_loop`` fires this
 # many minutes before the access token actually expires.
 TOKEN_PROACTIVE_REFRESH_BUFFER = timedelta(minutes=5)
+
+_ANONYMOUS_USER_SENTINELS = frozenset({"anonymous", "anonymous gifter"})
+
+
+def twitch_user_lookup_allowed(username: str, *, anonymous: bool = False) -> bool:
+    """Return False when a Twitch helix/users lookup should be skipped."""
+    if anonymous:
+        return False
+    login = (username or "").strip()
+    if not login:
+        return False
+    if " " in login:
+        return False
+    if login.lower() in _ANONYMOUS_USER_SENTINELS:
+        return False
+    return True
+
+
+def parse_helix_users_login(
+    url: str, params: Optional[dict] = None
+) -> Optional[str]:
+    """Extract login from a helix/users URL or query params."""
+    if params and params.get("login") is not None:
+        login = params.get("login")
+        if isinstance(login, list):
+            login = login[0] if login else ""
+        return str(login).strip() or None
+    try:
+        parsed = urlparse(url)
+        if "/helix/users" not in parsed.path:
+            return None
+        qs = parse_qs(parsed.query)
+        logins = qs.get("login")
+        if logins:
+            return str(logins[0]).strip() or None
+    except Exception:
+        return None
+    return None
 
 
 def format_token_countdown(delta: timedelta) -> str:
@@ -1895,9 +1935,10 @@ class Twitch_API:
             alert = alertutils.AlertObj()
             alert.alert_type = "giftsub"
         gifter_name = (
-            data.event.user_name if not data.event.is_anonymous else "Anonymous Gifter"
+            data.event.user_name if not data.event.is_anonymous else "Anonymous"
         )
-        alert.username = gifter_name or "Anonymous Gifter"  # Ensure not None
+        alert.username = gifter_name or "Anonymous"
+        alert.anonymous = bool(data.event.is_anonymous)
         alert.alert_type = "giftsub"
         alert.tier = int(str(data.event.tier)[:-3])
         alert.gift_qty = int(str(data.event.total))
@@ -1918,6 +1959,7 @@ class Twitch_API:
                 alert_data = {
                     "type": "giftsub",
                     "username": gifter_name,
+                    "anonymous": alert.anonymous,
                     "tier": alert.tier,
                     "gift_qty": alert.gift_qty,
                     "alert_id": alert.alert_id,
@@ -2015,7 +2057,12 @@ class Twitch_API:
             return
 
         alert = alertutils.fetch_cheer_alert(data.event.bits)
-        alert.username = data.event.user_name
+        is_anonymous = bool(getattr(data.event, "is_anonymous", False))
+        username_display = (
+            data.event.user_name if not is_anonymous else "Anonymous"
+        )
+        alert.username = username_display or "Anonymous"
+        alert.anonymous = is_anonymous
         alert.alert_type = "bit"
         alert.amt_cheered = bits_amount
         alert.alert_id = f"Alert{round(time.time())}"
@@ -2044,6 +2091,7 @@ class Twitch_API:
                     alert_data = {
                         "type": "bits_use",
                         "username": alert.username,
+                        "anonymous": alert.anonymous,
                         "amt_cheered": alert.amt_cheered,
                         "message": alert.message,
                         "fragments": alert.fragments,
@@ -2121,10 +2169,12 @@ class Twitch_API:
         self._note_event_received()
         logger.debug(f"Bits cheered by {data.event.user_name}: {data.event.bits}")
         alert = alertutils.fetch_cheer_alert(data.event.bits)
+        is_anonymous = bool(getattr(data.event, "is_anonymous", False))
         username_display = (
-            data.event.user_name if not data.event.is_anonymous else "Anonymous"
+            data.event.user_name if not is_anonymous else "Anonymous"
         )
-        alert.username = username_display or "Anonymous"  # Ensure not None
+        alert.username = username_display or "Anonymous"
+        alert.anonymous = is_anonymous
         alert.alert_type = "bit"
         alert.amt_cheered = int(str(data.event.bits))
         cache_user_id = (
@@ -2158,6 +2208,7 @@ class Twitch_API:
                 alert_data = {
                     "type": "cheer",
                     "username": username_display,
+                    "anonymous": alert.anonymous,
                     "amt_cheered": alert.amt_cheered,
                     "message": alert.message,
                     "fragments": alert.fragments,
@@ -2293,10 +2344,14 @@ class Twitch_API:
 
         # Send shoutout to the raider
         try:
-            await self.send_shoutout(data.event.from_broadcaster_user_id)
             shoutout_game = game_name or "Unknown"
             shoutout_message = f"HEY CHAT! Check out @{data.event.from_broadcaster_user_name} 's channel: https://twitch.tv/{data.event.from_broadcaster_user_name} . How was {shoutout_game}?"
-            await self.send_chat_message(shoutout_message)
+            if self._raid_shoutout_enabled("helix"):
+                await self.send_shoutout(data.event.from_broadcaster_user_id)
+            if self._raid_shoutout_enabled("chat"):
+                from .chatbot import send_chatbot_message
+
+                send_chatbot_message(shoutout_message)
             logger.debug(f"Sent shoutout to {alert.username}")
         except Exception as e:
             logger.error(
@@ -2942,6 +2997,42 @@ class Twitch_API:
         except Exception:
             return True
 
+    def _raid_shoutout_enabled(self, kind: str) -> bool:
+        """Whether automatic raid shoutouts are enabled (Helix API vs chat message)."""
+        try:
+            settings = dataobjects.state_manager.get_app_settings()
+            if kind == "helix":
+                return bool(getattr(settings, "auto_raid_helix_shoutout", True))
+            if kind == "chat":
+                return bool(getattr(settings, "auto_raid_chat_shoutout", True))
+        except Exception:
+            pass
+        return True
+
+    def _stop_eventsub_safely(self) -> None:
+        """Stop EventSub without raising when the session is already dead."""
+        eventsub = self.eventsub
+        if eventsub is None:
+            return
+        try:
+            _run_twitch_coro_sync(eventsub.stop(), timeout=15)
+            logger.debug("EventSub connection stopped")
+        except AttributeError as e:
+            if "close" in str(e).lower() or "none" in str(e).lower():
+                logger.debug("EventSub stop skipped (session already closed): %s", e)
+            else:
+                logger.debug("EventSub stop AttributeError: %s", e)
+        except RuntimeError as e:
+            msg = str(e).lower()
+            if "not running" in msg or "event loop" in msg:
+                logger.debug("EventSub stop skipped: %s", e)
+            else:
+                logger.debug("EventSub stop RuntimeError: %s", e)
+        except Exception as e:
+            logger.debug("EventSub stop error (ignored): %s", e)
+        finally:
+            self.eventsub = None
+
     def _note_event_received(self) -> None:
         """Record that a Twitch EventSub event arrived (liveness signal)."""
         self.last_event_time = datetime.now()
@@ -3021,27 +3112,13 @@ class Twitch_API:
 
             # Stop the current connection if it exists
             if self.eventsub:
-                try:
-                    # Create a temporary event loop to properly await the stop
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        loop.run_until_complete(self.eventsub.stop())
-                        logger.debug("EventSub connection stopped for reconnection")
-                    finally:
-                        loop.close()
-                except Exception as e:
-                    logger.error(
-                        f"Error stopping current Twitch connection: {str(e)}",
-                        exc_info=True,
-                    )
+                self._stop_eventsub_safely()
 
             # Reset connection state
             self.is_connected = False
             global twitch_connected
             twitch_connected = False
             self._connection_epoch += 1
-            self.eventsub = None
             self.last_health_check = None
 
             if is_shutdown_in_progress():
@@ -3300,6 +3377,16 @@ class Twitch_API:
             f"Attempting generic API call: {method.upper()} {url} with params={params}, json_data={json_data}"
         )
 
+        users_login = parse_helix_users_login(url, params)
+        if users_login is not None and not twitch_user_lookup_allowed(users_login):
+            logger.debug(
+                "Skipping helix/users lookup for invalid or anonymous login: %r",
+                users_login,
+            )
+            raise Exception(
+                "User lookup skipped (anonymous or invalid login)"
+            )
+
         # Helix proxy may run on another thread before this instance was updated
         self.sync_helix_credentials_from_state()
 
@@ -3540,21 +3627,7 @@ class Twitch_API:
 
             # Stop the EventSub websocket connection
             if self.eventsub:
-                try:
-                    # Create a temporary event loop to properly await the stop
-                    import asyncio
-
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        loop.run_until_complete(self.eventsub.stop())
-                        logger.debug("EventSub connection stopped")
-                    finally:
-                        loop.close()
-                except Exception as e:
-                    logger.error(
-                        f"Error stopping EventSub connection: {str(e)}", exc_info=True
-                    )
+                self._stop_eventsub_safely()
 
             # Close the Twitch API session if it exists
             if (

@@ -193,6 +193,45 @@ class AppSettingsTab:
                         ui.label("Applies on next launch").classes(
                             "secondary-text text-sm self-center"
                         )
+                        with ui.row().classes(
+                            "items-center gap-6 col-span-3 flex-wrap"
+                        ):
+                            with ui.row().classes("items-center gap-2"):
+                                self.ui_elements["auto_raid_helix_shoutout"] = (
+                                    ui.switch(
+                                        value=bool(
+                                            self.buffer.auto_raid_helix_shoutout
+                                        )
+                                    )
+                                    .classes("q-switch")
+                                    .on_value_change(
+                                        lambda e: self._set(
+                                            "auto_raid_helix_shoutout",
+                                            bool(e.value),
+                                        )
+                                    )
+                                )
+                                ui.label("Send native Twitch Shoutout").classes(
+                                    "text-sm"
+                                )
+                            with ui.row().classes("items-center gap-2"):
+                                self.ui_elements["auto_raid_chat_shoutout"] = (
+                                    ui.switch(
+                                        value=bool(
+                                            self.buffer.auto_raid_chat_shoutout
+                                        )
+                                    )
+                                    .classes("q-switch")
+                                    .on_value_change(
+                                        lambda e: self._set(
+                                            "auto_raid_chat_shoutout",
+                                            bool(e.value),
+                                        )
+                                    )
+                                )
+                                ui.label("Send chat raid shoutout").classes(
+                                    "text-sm"
+                                )
                         with ui.row().classes("items-center gap-2 col-span-2"):
                             ui.label("Update check").classes("text-sm shrink-0")
                             self.ui_elements["update_check_interval_minutes"] = (

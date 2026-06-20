@@ -1223,22 +1223,14 @@ def start_ui():
                     reconnect_timeout=120,
                 )
             except Exception as run_err:
-                from .shutdown import is_shutdown_in_progress
-
-                if is_shutdown_in_progress() and _is_benign_shutdown_websocket_error(
-                    run_err
-                ):
-                    logger.warning(
-                        "Benign websocket close during shutdown: %s", run_err
-                    )
+                if _is_benign_shutdown_websocket_error(run_err):
+                    logger.warning("Benign websocket close: %s", run_err)
                 else:
                     raise
         logger.info("NiceGUI app started.")
     except Exception as e:
-        from .shutdown import is_shutdown_in_progress
-
-        if is_shutdown_in_progress() and _is_benign_shutdown_websocket_error(e):
-            logger.warning("Benign websocket close during shutdown: %s", e)
+        if _is_benign_shutdown_websocket_error(e):
+            logger.warning("Benign websocket close: %s", e)
             return
         logger.error(f"Error starting NiceGUI server: {str(e)}", exc_info=True)
         raise
@@ -1249,7 +1241,10 @@ def _is_benign_shutdown_websocket_error(exc: BaseException) -> bool:
         from wsproto.utilities import LocalProtocolError
     except ImportError:
         return False
-    return isinstance(exc, LocalProtocolError)
+    if not isinstance(exc, LocalProtocolError):
+        return False
+    msg = str(exc)
+    return "ConnectionState.CLOSED" in msg or "cannot be sent in state" in msg.lower()
 
 
 def cleanup_resources():

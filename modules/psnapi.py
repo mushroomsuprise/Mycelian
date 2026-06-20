@@ -35,6 +35,18 @@ from psnawp_api.core.psnawp_exceptions import (
     PSNAWPForbiddenError,
     PSNAWPNotFoundError,
 )
+try:
+    from psnawp_api.core.psnawp_exceptions import (
+        PSNAWPServerError,
+        PSNAWPUnauthorizedError,
+    )
+except ImportError:
+
+    class PSNAWPServerError(Exception):  # type: ignore[no-redef]
+        pass
+
+    class PSNAWPUnauthorizedError(Exception):  # type: ignore[no-redef]
+        pass
 from psnawp_api.models.trophies import PlatformType
 from psnawp_api.models.trophies.trophy_titles import TrophyTitleIterator
 from psnawp_api.psnawp import PSNAWP
@@ -45,6 +57,24 @@ logger = logging.getLogger(__name__)
 
 # Database path for PSN game data cache
 PSN_GAME_DATA_PATH = "PSNGameData/games"
+
+
+def _is_psn_auth_expired_error(exc: BaseException) -> bool:
+    if isinstance(exc, PSNAWPAuthenticationError):
+        return True
+    if isinstance(exc, PSNAWPUnauthorizedError):
+        return True
+    msg = str(exc).lower()
+    return "expired token" in msg or "expired access token" in msg
+
+
+def _is_psn_connection_error(exc: BaseException) -> bool:
+    if isinstance(exc, (RequestsConnectionError, OSError, TimeoutError)):
+        return True
+    if isinstance(exc, PSNAWPServerError):
+        return True
+    msg = str(exc).lower()
+    return "service unavailable" in msg
 
 
 def presence_format_to_platform_type(platform: str | None) -> PlatformType:
@@ -443,10 +473,7 @@ class PSNClient:
             )
             return True
         except PSNAWPAuthenticationError as e:
-            logger.error(
-                f"PSN Authentication Error: Invalid or expired NPSSO code. Details: {e}"
-            )
-            self.authenticated = False
+            self._on_psn_auth_expired("connect", e)
         except PSNAWPForbiddenError as e:
             logger.error(
                 f"PSN API Forbidden: Check permissions or IP restrictions. Details: {e}"
@@ -472,7 +499,18 @@ class PSNClient:
         """Checks if the client is authenticated."""
         return self.authenticated
 
-    def get_presence(self) -> dict | None:
+    def _on_psn_auth_expired(self, context: str, exc: BaseException) -> None:
+        self.authenticated = False
+        self.api = None
+        logger.warning("%s: NPSSO token expired or invalid: %s", context, exc)
+        try:
+            from .psn_service import notify_psn_npsso_expired
+
+            notify_psn_npsso_expired()
+        except Exception as notify_err:
+            logger.debug("PSN NPSSO expiry notification failed: %s", notify_err)
+
+    def get_presence(self, _allow_retry: bool = True) -> dict | None:
         """Fetches the current presence status of the user or specified PSN username."""
         if not self.is_connected() or not self.api:
             logger.warning("Cannot get presence, not connected.")
@@ -602,16 +640,32 @@ class PSNClient:
                 e,
             )
             self.authenticated = False
+            self.api = None
+            if _allow_retry and self.connect():
+                return self.get_presence(_allow_retry=False)
         except Exception as e:
-            logger.warning(
-                "Unexpected error fetching presence for %s: %s",
-                target_online_id,
-                e,
-            )
-            self.authenticated = False
+            if _is_psn_auth_expired_error(e):
+                self._on_psn_auth_expired(f"get_presence({target_online_id})", e)
+            elif _allow_retry and _is_psn_connection_error(e):
+                logger.warning(
+                    "Connection error fetching presence for %s, retrying: %s",
+                    target_online_id,
+                    e,
+                )
+                self.authenticated = False
+                self.api = None
+                if self.connect():
+                    return self.get_presence(_allow_retry=False)
+            else:
+                logger.warning(
+                    "Unexpected error fetching presence for %s: %s",
+                    target_online_id,
+                    e,
+                )
+                self.authenticated = False
         return None
 
-    def get_trophy_target_account_id(self) -> str | None:
+    def get_trophy_target_account_id(self, _allow_retry: bool = True) -> str | None:
         """Account ID used for trophy APIs (tracked PSN user or authenticating user)."""
         if not self.is_connected() or not self.api:
             logger.warning("Cannot resolve trophy account, not connected.")
@@ -629,9 +683,26 @@ class PSNClient:
                     f"Using PSN username {self.psn_username} with account_id {target_account_id}"
                 )
             except Exception as e:
-                logger.error(
-                    f"Failed to get account_id for PSN username {self.psn_username}: {e}"
-                )
+                if _is_psn_auth_expired_error(e):
+                    self._on_psn_auth_expired(
+                        f"get_trophy_target_account_id({self.psn_username})", e
+                    )
+                elif _allow_retry and _is_psn_connection_error(e):
+                    logger.warning(
+                        "Connection error resolving PSN account_id for %s, retrying: %s",
+                        self.psn_username,
+                        e,
+                    )
+                    self.authenticated = False
+                    self.api = None
+                    if self.connect():
+                        return self.get_trophy_target_account_id(_allow_retry=False)
+                else:
+                    logger.warning(
+                        "Failed to get account_id for PSN username %s: %s",
+                        self.psn_username,
+                        e,
+                    )
                 return None
         if not target_account_id:
             logger.warning("No trophy target account_id available.")
@@ -845,7 +916,7 @@ class PSNClient:
         return None
 
     # Placeholder for fetching overall trophy summary
-    def get_overall_trophy_summary(self) -> dict | None:
+    def get_overall_trophy_summary(self, _allow_retry: bool = True) -> dict | None:
         """Fetches the overall trophy summary for the user or specified PSN username."""
         if not self.is_connected() or not self.api:
             logger.warning("Cannot get trophy summary, not connected.")
@@ -867,9 +938,27 @@ class PSNClient:
                     f"Using PSN username {self.psn_username} for trophy summary with account_id {target_account_id}"
                 )
             except Exception as e:
-                logger.error(
-                    f"Failed to get account_id for PSN username {self.psn_username}: {e}"
-                )
+                if _is_psn_auth_expired_error(e):
+                    self._on_psn_auth_expired(
+                        f"get_overall_trophy_summary account lookup({self.psn_username})",
+                        e,
+                    )
+                elif _allow_retry and _is_psn_connection_error(e):
+                    logger.warning(
+                        "Connection error resolving account_id for %s, retrying: %s",
+                        self.psn_username,
+                        e,
+                    )
+                    self.authenticated = False
+                    self.api = None
+                    if self.connect():
+                        return self.get_overall_trophy_summary(_allow_retry=False)
+                else:
+                    logger.warning(
+                        "Failed to get account_id for PSN username %s: %s",
+                        self.psn_username,
+                        e,
+                    )
                 return None
 
         if not target_account_id:
@@ -960,9 +1049,27 @@ class PSNClient:
             target_desc = (
                 self.psn_username if self.psn_username else "authenticated user"
             )
-            logger.exception(
-                f"Unexpected error fetching trophy summary for {target_desc}: {e}"
-            )
+            if _is_psn_auth_expired_error(e):
+                self._on_psn_auth_expired(
+                    f"get_overall_trophy_summary({target_desc})", e
+                )
+            elif _allow_retry and _is_psn_connection_error(e):
+                logger.warning(
+                    "Connection error fetching trophy summary for %s, retrying: %s",
+                    target_desc,
+                    e,
+                )
+                self.authenticated = False
+                self.api = None
+                if self.connect():
+                    return self.get_overall_trophy_summary(_allow_retry=False)
+            else:
+                logger.warning(
+                    "Unexpected error fetching trophy summary for %s: %s",
+                    target_desc,
+                    e,
+                )
+                self.authenticated = False
         return None
 
     def get_game_trophy_groups(
@@ -1232,7 +1339,17 @@ class PSNClient:
                         break
 
             except Exception as e:
-                logger.warning(f"Error iterating through trophy titles: {e}")
+                if _is_psn_auth_expired_error(e):
+                    self._on_psn_auth_expired("trophy title iteration", e)
+                elif _is_psn_connection_error(e):
+                    logger.warning(
+                        "Connection error iterating trophy titles, retrying next cycle: %s",
+                        e,
+                    )
+                    self.authenticated = False
+                    self.api = None
+                else:
+                    logger.warning("Error iterating through trophy titles: %s", e)
 
             logger.debug(f"Final npCommunicationId to use: {correct_np_comm_id}")
             logger.debug(f"Using npServiceName: {np_service_name}")

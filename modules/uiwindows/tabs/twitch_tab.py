@@ -17,9 +17,8 @@ from ...ui_settings_layout import (
     settings_surface,
     settings_toolbar,
 )
-
-from ... import dataobjects
 from ...api_credentials_manager import api_credentials_manager
+from ... import dataobjects
 from ...dataobjects import state_manager
 
 

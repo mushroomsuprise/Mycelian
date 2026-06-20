@@ -148,11 +148,18 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                     return copy.deepcopy(cached_value)
 
     api_url = f"{GITHUB_API_BASE}/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
-    
+
+    cached_fallback: Optional[Dict[str, Any]] = None
+    with _github_release_cache_lock:
+        if _github_release_cache is not None:
+            _, cached_value = _github_release_cache
+            if cached_value is not None:
+                cached_fallback = copy.deepcopy(cached_value)
+
     result: Optional[Dict[str, Any]] = None
     try:
         # Set a reasonable timeout to prevent hanging
-        timeout = aiohttp.ClientTimeout(total=10.0)  # 10 second timeout
+        timeout = aiohttp.ClientTimeout(total=15.0)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(api_url) as response:
                 if response.status == 200:
@@ -196,10 +203,21 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                 else:
                     logger.error(f"GitHub API request failed with status {response.status}: {await response.text()}")
                     
+    except (asyncio.TimeoutError, aiohttp.ServerTimeoutError) as e:
+        logger.warning(
+            "Timed out fetching update info from GitHub after 15s: %s", e
+        )
+        if cached_fallback is not None:
+            return cached_fallback
     except aiohttp.ClientError as e:
         logger.error(f"Network error while fetching update info from GitHub: {e}", exc_info=True)
     except Exception as e:
-        logger.error(f"Unexpected error fetching update info from GitHub: {e}", exc_info=True)
+        if isinstance(e, asyncio.CancelledError):
+            logger.warning("GitHub update check cancelled or timed out")
+            if cached_fallback is not None:
+                return cached_fallback
+        else:
+            logger.error(f"Unexpected error fetching update info from GitHub: {e}", exc_info=True)
     finally:
         with _github_release_cache_lock:
             _github_release_cache = (time.monotonic(), result)

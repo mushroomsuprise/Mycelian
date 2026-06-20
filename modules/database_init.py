@@ -58,6 +58,8 @@ def _create_default_data():
                 "build_date": "November 29th 2025",
                 "alert_volume": 0.5,
                 "auto_reconnect": True,
+                "auto_raid_helix_shoutout": True,
+                "auto_raid_chat_shoutout": True,
                 "current_theme": "dark",
                 "notifications_enabled": True,
                 "status_footer_enabled": True,

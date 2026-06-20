@@ -64,6 +64,29 @@ _mismatch_notification_times: dict[
     str, float
 ] = {}  # Track last notification time per game
 
+_NPSSO_EXPIRED_NOTIFY_COOLDOWN_SEC = 45 * 60
+_npsso_expired_last_notified: float = 0.0
+
+
+def notify_psn_npsso_expired() -> None:
+    """Notify the user once per cooldown that their NPSSO token needs updating."""
+    global _npsso_expired_last_notified
+    now = time.time()
+    if now - _npsso_expired_last_notified < _NPSSO_EXPIRED_NOTIFY_COOLDOWN_SEC:
+        return
+    _npsso_expired_last_notified = now
+    try:
+        from .notification_engine import notify
+
+        notify(
+            "PSN NPSSO token expired — open Settings → PSN and click Connect to update.",
+            type="warning",
+            timeout=10000,
+        )
+    except Exception as e:
+        logger.debug("PSN NPSSO expiry notification failed: %s", e)
+
+
 # --- Initialization and Management Functions ---
 
 _psn_init_lock = threading.Lock()

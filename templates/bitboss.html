@@ -840,7 +840,7 @@
 
                     currentBoss.name = alert.username;
                     bossChanged = true;
-                    fetchBossAvatar(alert.username);
+                    fetchBossAvatar(alert.username, alert.anonymous);
                 }
             }
 
@@ -1200,7 +1200,29 @@
         }
 
         // Fetch boss avatar from Twitch API
-        function fetchBossAvatar(username) {
+        function isTwitchUserLookupAllowed(username, anonymous) {
+            if (anonymous) {
+                return false;
+            }
+            var login = (username || '').trim();
+            if (!login) {
+                return false;
+            }
+            if (login.indexOf(' ') !== -1) {
+                return false;
+            }
+            var lower = login.toLowerCase();
+            if (lower === 'anonymous' || lower === 'anonymous gifter') {
+                return false;
+            }
+            return true;
+        }
+
+        function fetchBossAvatar(username, anonymous) {
+            if (!isTwitchUserLookupAllowed(username, anonymous)) {
+                console.log('Skipping avatar fetch for anonymous or invalid username:', username);
+                return;
+            }
             console.log('Fetching avatar for:', username);
             socket.emit('twitch-api-request', {
                 endpoint: 'https://api.twitch.tv/helix/users?login=' + encodeURIComponent(username),
