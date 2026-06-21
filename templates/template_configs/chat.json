@@ -944,7 +944,9 @@
             "value": "12h",
             "options": [
                 "12h",
-                "24h"
+                "24h",
+                "12h_seconds",
+                "24h_seconds"
             ],
             "description": "Format for displaying timestamps"
         },
@@ -980,7 +982,7 @@
             "type": "color",
             "id": "TimestampColor",
             "label": "Timestamp Color",
-            "value": "transparent",
+            "value": "#94a3b8",
             "description": "Color for timestamps",
             "options": [
                 "#e11d48",
@@ -1031,6 +1033,89 @@
                 "transparent"
             ],
             "transparent": true
+        },
+        {
+            "type": "separator",
+            "label": "Reply Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowReplies",
+            "label": "Show Replies",
+            "value": true,
+            "description": "Display reply context above messages that are replies"
+        },
+        {
+            "type": "number",
+            "id": "ReplyMaxLength",
+            "label": "Reply Preview Max Length",
+            "value": 60,
+            "min": 20,
+            "max": 200,
+            "description": "Maximum characters for the parent message preview in reply headers"
+        },
+        {
+            "type": "color",
+            "id": "ReplyColor",
+            "label": "Reply Text Color",
+            "value": "#94a3b8",
+            "description": "Color for reply header text",
+            "options": [
+                "#94a3b8",
+                "#64748b",
+                "#cbd5e1",
+                "#ffffff",
+                "#e2e8f0",
+                "transparent"
+            ],
+            "transparent": true
+        },
+        {
+            "type": "number",
+            "id": "ReplyFontSize",
+            "label": "Reply Font Size",
+            "value": 11,
+            "min": 8,
+            "max": 16,
+            "description": "Font size for reply headers in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Channel Points Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowPointCost",
+            "label": "Show Point Cost",
+            "value": true,
+            "description": "Display channel point cost on redemption lines"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowPointIcon",
+            "label": "Show Point Icon",
+            "value": true,
+            "description": "Display the streamer's channel points currency icon on redemption lines"
+        },
+        {
+            "type": "number",
+            "id": "PointIconSize",
+            "label": "Point Icon Size",
+            "value": 14,
+            "min": 10,
+            "max": 28,
+            "description": "Size of the channel points icon in pixels"
+        },
+        {
+            "type": "separator",
+            "label": "Slash Command Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "FilterUnknownSlashCommands",
+            "label": "Filter Twitch Slash Commands",
+            "value": true,
+            "description": "Hide official Twitch slash commands (e.g. /ban, /mods) from chat. Non-commands and /me messages are always shown."
         },
         {
             "type": "separator",

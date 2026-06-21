@@ -4939,6 +4939,19 @@ class WebEngine:
                         "current_category": twitch_data.current_category
                         or "No Category",
                     }
+                    try:
+                        from . import twitch as twitch_module
+
+                        icon_urls = twitch_module.fetch_channel_points_currency_icon(
+                            str(twitch_data.user_id)
+                        )
+                        if icon_urls:
+                            streamer_info["channel_points_icon"] = icon_urls
+                    except Exception as icon_err:
+                        logger.debug(
+                            "Channel points icon not available for streamer-info: %s",
+                            icon_err,
+                        )
                     self.socketio.emit("streamer-info", streamer_info, to=client_sid)
                     logger.debug(
                         f"Sent streamer info to {client_sid}: {streamer_info['user_id']}"

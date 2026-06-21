@@ -827,6 +827,7 @@ def build_activity_feed_alert_payload(
     tier=None,
     user_message=None,
     alert_id=None,
+    point_cost=None,
 ):
     """
     Build the same dict that is sent over ``activity_feed_alert`` WebSocket events.
@@ -842,6 +843,12 @@ def build_activity_feed_alert_payload(
         "tier": tier,
         "user_message": user_message,
     }
+
+    if point_cost is not None:
+        try:
+            alert_data["point_cost"] = int(point_cost)
+        except (TypeError, ValueError):
+            pass
 
     if alert_id:
         try:
@@ -874,6 +881,12 @@ def build_activity_feed_alert_payload(
                     game_name = stored_alert_data.get("game_name")
                     if game_name:
                         alert_data["game_name"] = game_name
+                    point_cost = stored_alert_data.get("point_cost")
+                    if point_cost is not None and "point_cost" not in alert_data:
+                        try:
+                            alert_data["point_cost"] = int(point_cost)
+                        except (TypeError, ValueError):
+                            pass
             else:
                 logger.debug(f"No stored alert data found for alert_id {alert_id}")
 
@@ -982,13 +995,15 @@ def iter_activity_feed_preview_payloads():
         "Pick the next song",
         "Take a 5min break",
     ))
-    yield build_activity_feed_alert_payload(
+    points_payload = build_activity_feed_alert_payload(
         "Points",
         f"{points_user} redeemed '{point_reward}'!",
         "points",
         timestamp=ts,
         user_message=None,
+        point_cost=random.choice((100, 250, 500, 1100, 2500, 5000)),
     )
+    yield points_payload
 
     streak_user = pick()
     streak_count = random.randint(2, 50)
@@ -1018,6 +1033,7 @@ def add_alert_to_feed(
     tier=None,
     user_message=None,
     alert_id=None,
+    point_cost=None,
 ):
     """Add a new alert card to the activity feed container.
 
@@ -1038,6 +1054,7 @@ def add_alert_to_feed(
         tier=tier,
         user_message=user_message,
         alert_id=alert_id,
+        point_cost=point_cost,
     )
 
     # Process the alert immediately using the event-based system

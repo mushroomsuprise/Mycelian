@@ -86,9 +86,17 @@ def _alert_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _chat_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "username": random.choice(pools["usernames"]),
-        "message": random.choice(pools["chat"]),
+    uname = random.choice(pools["usernames"])
+    parent = random.choice(pools["usernames"])
+    if random.random() < 0.2:
+        message = "/me waves to chat"
+    elif random.random() < 0.15:
+        message = "/notacommand hello"
+    else:
+        message = random.choice(pools["chat"])
+    payload: Dict[str, Any] = {
+        "username": uname,
+        "message": message,
         "color": random.choice(pools["colors"]),
         "badges": None,
         "emotes": "",
@@ -100,6 +108,15 @@ def _chat_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
         "twmsgid": f"mock-{int(time.time() * 1000)}",
         "timestamp": time.time(),
     }
+    if random.random() < 0.25:
+        payload["reply"] = {
+            "parent_message_id": f"mock-parent-{int(time.time())}",
+            "parent_message_body": f"@{parent} " + random.choice(pools["chat"]),
+            "parent_user_name": parent,
+            "parent_user_login": parent.lower(),
+            "thread_message_id": f"mock-thread-{int(time.time())}",
+        }
+    return payload
 
 
 def _connector_chat_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
@@ -249,7 +266,15 @@ def _giveaway_winner_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _streamer_info_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
-    return {"streamer_name": "PreviewStreamer", "user_id": "0"}
+    return {
+        "streamer_name": "PreviewStreamer",
+        "user_id": "0",
+        "channel_points_icon": {
+            "url_1x": "https://static-cdn.jtvnw.net/custom-reward-images/default-1.png",
+            "url_2x": "https://static-cdn.jtvnw.net/custom-reward-images/default-2.png",
+            "url_4x": "https://static-cdn.jtvnw.net/custom-reward-images/default-4.png",
+        },
+    }
 
 
 def _twitch_category_payload(pools: Dict[str, Any]) -> Dict[str, Any]:

@@ -59,6 +59,8 @@ from urllib.parse import parse_qs, urlparse
 
 from twitchAPI.type import AuthScope, InvalidRefreshTokenException
 
+from .twitch_chat_commands import is_allowed_slash_message
+
 from . import (
     alert_processor,
     alertutils,
@@ -1079,6 +1081,16 @@ class Twitch_API:
                 )
                 msg_dict["fragments"] = None  # Fall back to None if conversion fails
 
+        reply = getattr(data.event, "reply", None)
+        if reply:
+            msg_dict["reply"] = {
+                "parent_message_id": reply.parent_message_id,
+                "parent_message_body": reply.parent_message_body,
+                "parent_user_name": reply.parent_user_name,
+                "parent_user_login": reply.parent_user_login,
+                "thread_message_id": reply.thread_message_id,
+            }
+
         # Process greetings for new users
         try:
             chatbot_manager = get_chatbot_manager()
@@ -1193,6 +1205,12 @@ class Twitch_API:
 
         # Send message to WebSocket clients via web engine
         try:
+            if not is_allowed_slash_message(message):
+                logger.debug(
+                    "Skipping Twitch slash command for overlay: %s",
+                    safe_console_str(message),
+                )
+                return
             if (
                 hasattr(web_engine, "web_engine_instance")
                 and web_engine.web_engine_instance
@@ -2408,6 +2426,7 @@ class Twitch_API:
         alert.username = data.event.user_name
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
+        alert.point_cost = int(data.event.reward.cost or 0)
         alertutils.alert_state_manager.store_completed_alert(
             alert.alert_id, alert.__dict__
         )
@@ -2448,6 +2467,7 @@ class Twitch_API:
                         "twitch_reward_id": alert.twitch_reward_id,
                         "alert_id": alert.alert_id,
                         "timestamp": alert.timestamp,
+                        "point_cost": int(data.event.reward.cost or 0),
                     }
                     web_engine.web_engine_instance.instant_alert(alert_data)
                     logger.debug(
@@ -2468,6 +2488,7 @@ class Twitch_API:
             timestamp=str(int(time.time())),
             user_message=data.event.user_input,
             alert_id=alert.alert_id,
+            point_cost=int(data.event.reward.cost or 0),
         )
 
     async def on_points(self, data: ChannelPointsCustomRewardRedemptionAddEvent):
@@ -2520,6 +2541,7 @@ class Twitch_API:
                     "twitch_reward_id": alert.twitch_reward_id,
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
+                    "point_cost": int(alert.point_cost or 0),
                 }
                 web_engine.web_engine_instance.instant_alert(alert_data)
                 logger.debug(
@@ -2555,6 +2577,7 @@ class Twitch_API:
             timestamp=str(int(alert.timestamp)),
             user_message=alert.message,
             alert_id=alert.alert_id,
+            point_cost=int(alert.point_cost or 0),
         )
 
     async def on_hype_train_start(
@@ -3776,6 +3799,143 @@ class Twitch_API:
 
 
 # Point reward API functions
+_CHANNEL_POINTS_ICON_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
+_CHANNEL_POINTS_ICON_CACHE_TTL = 3600.0
+
+_CHANNEL_POINTS_ICON_GQL = """
+query ChannelPointsChannelSettings($channelID: ID!) {
+  channel(id: $channelID) {
+    communityPoints {
+      settings {
+        image { url url2x url4x }
+        defaultImage { url url2x url4x }
+      }
+    }
+  }
+}
+"""
+
+
+def _normalize_points_image(img: Optional[dict]) -> Optional[dict[str, str]]:
+    if not img or not isinstance(img, dict):
+        return None
+    url_1x = img.get("url") or img.get("url_1x")
+    url_2x = img.get("url2x") or img.get("url_2x")
+    url_4x = img.get("url4x") or img.get("url_4x")
+    if not url_1x and not url_2x and not url_4x:
+        return None
+    primary = url_1x or url_2x or url_4x
+    return {
+        "url_1x": url_1x or primary,
+        "url_2x": url_2x or primary,
+        "url_4x": url_4x or primary,
+    }
+
+
+def clear_channel_points_icon_cache(broadcaster_id: Optional[str] = None) -> None:
+    """Clear cached channel points currency icon URLs."""
+    if broadcaster_id is None:
+        _CHANNEL_POINTS_ICON_CACHE.clear()
+        return
+    _CHANNEL_POINTS_ICON_CACHE.pop(str(broadcaster_id), None)
+
+
+async def _helix_fallback_channel_points_icon() -> Optional[dict[str, str]]:
+    """Fallback icon from Helix custom rewards default_image when GQL is unavailable."""
+    rewards, status = await _fetch_channel_point_rewards_async()
+    if status != "ok" or not rewards:
+        return None
+    for reward in rewards:
+        normalized = _normalize_points_image(reward.get("default_image"))
+        if normalized:
+            return normalized
+    return None
+
+
+async def fetch_channel_points_currency_icon_async(
+    broadcaster_id: str,
+) -> Optional[dict[str, str]]:
+    """Fetch per-channel community points currency icon URLs (GQL with Helix fallback)."""
+    if not broadcaster_id:
+        return None
+
+    cache_key = str(broadcaster_id)
+    now = time.time()
+    cached = _CHANNEL_POINTS_ICON_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    icon_urls: Optional[dict[str, str]] = None
+
+    if twitch_api and twitch_api.auth_token and twitch_api.client_id:
+        payload = [
+            {
+                "operationName": "ChannelPointsChannelSettings",
+                "variables": {"channelID": cache_key},
+                "query": _CHANNEL_POINTS_ICON_GQL,
+            }
+        ]
+        headers = {
+            "Client-Id": twitch_api.client_id,
+            "Authorization": f"Bearer {twitch_api.auth_token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://gql.twitch.tv/gql",
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if isinstance(data, list) and data:
+                            channel = (
+                                (data[0].get("data") or {}).get("channel") or {}
+                            )
+                            settings = (
+                                (channel.get("communityPoints") or {}).get("settings")
+                                or {}
+                            )
+                            icon_urls = _normalize_points_image(settings.get("image"))
+                            if not icon_urls:
+                                icon_urls = _normalize_points_image(
+                                    settings.get("defaultImage")
+                                )
+                    else:
+                        logger.debug(
+                            "Channel points GQL returned HTTP %s", response.status
+                        )
+        except Exception as e:
+            logger.debug(
+                "Channel points currency icon GQL failed: %s", e, exc_info=True
+            )
+
+    if not icon_urls:
+        icon_urls = await _helix_fallback_channel_points_icon()
+
+    if icon_urls:
+        _CHANNEL_POINTS_ICON_CACHE[cache_key] = (
+            now + _CHANNEL_POINTS_ICON_CACHE_TTL,
+            icon_urls,
+        )
+    return icon_urls
+
+
+def fetch_channel_points_currency_icon(
+    broadcaster_id: str,
+) -> Optional[dict[str, str]]:
+    """Sync wrapper for channel points currency icon fetch."""
+    try:
+        return _run_twitch_coro_sync(
+            fetch_channel_points_currency_icon_async(broadcaster_id)
+        )
+    except Exception as e:
+        logger.debug("fetch_channel_points_currency_icon failed: %s", e)
+        return None
+
+
 def _is_channel_points_forbidden(exc: BaseException) -> bool:
     """True when Twitch denies custom rewards (e.g. broadcaster not Affiliate/Partner)."""
     if isinstance(exc, TwitchPermissionError):
