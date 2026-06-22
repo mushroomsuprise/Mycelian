@@ -81,6 +81,14 @@ def counter_image_range_src_id(element_id: str, index: int) -> str:
     return f"{_slugify_id(element_id)}_range_{index}_src"
 
 
+def progress_bar_max_config_id(element_id: str) -> str:
+    return f"{_slugify_id(element_id)}_max"
+
+
+def progress_bar_max_kind_config_id(element_id: str) -> str:
+    return f"{_slugify_id(element_id)}_max_kind"
+
+
 def _jinja_tojson_default(var_name: str, default: Any) -> str:
     """Jinja expression embedded in generated JS (resolved at HTML render)."""
     return f"{{{{ {var_name}|default({json.dumps(default)})|tojson }}}}"
@@ -113,6 +121,20 @@ def _collect_counter_images(
         if not isinstance(cs, dict):
             continue
         out.append((el, cs))
+    return out
+
+
+def _collect_progress_bars(
+    elements: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for el in elements or []:
+        if not isinstance(el, dict) or (el.get("type") or "").lower() != "progress_bar":
+            continue
+        ps = el.get("progress_source")
+        if not isinstance(ps, dict):
+            continue
+        out.append(el)
     return out
 
 
@@ -248,6 +270,50 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
                 "});"
             )
 
+    progress_bars = _collect_progress_bars(elements)
+    if progress_bars:
+        lines.append("window.__sporeProgressBars = window.__sporeProgressBars || [];")
+        for el in progress_bars:
+            eid_slug = _slugify_id(str(el.get("id") or ""))
+            eid = str(el.get("id") or "")
+            ps = el.get("progress_source") if isinstance(el.get("progress_source"), dict) else {}
+            props = el.get("props") if isinstance(el.get("props"), dict) else {}
+            cid = _slugify_id(str(ps.get("counter_id") or ""))
+            max_kind = str(ps.get("max_kind") or "fixed").strip().lower()
+            if max_kind not in ("fixed", "counter"):
+                max_kind = "fixed"
+            max_counter_id = _slugify_id(str(ps.get("max_counter_id") or ""))
+            try:
+                max_default = int(float(ps.get("max", 100)))
+            except (TypeError, ValueError):
+                max_default = 100
+            max_var = progress_bar_max_config_id(eid_slug)
+            try:
+                threshold = int(float(props.get("near_goal_threshold", 90)))
+            except (TypeError, ValueError):
+                threshold = 90
+            threshold = max(0, min(100, threshold))
+            effect = str(props.get("near_goal_effect") or "none").strip().lower()
+            if effect not in ("none", "pulse", "shimmer", "scroll"):
+                effect = "pulse" if props.get("near_goal_pulse") else "none"
+            effect_var = f"{eid_slug}_near_goal_effect"
+            lines.append(
+                "window.__sporeProgressBars.push({"
+                f'"elementId": {_js_string(eid)}, '
+                f'"counter_id": {_js_string(cid)}, '
+                f'"max_kind": {_js_string(max_kind)}, '
+                f'"max": {_jinja_tojson_default(max_var, max_default)}, '
+                f'"max_counter_id": {_js_string(max_counter_id)}, '
+                f'"near_goal_threshold": {threshold}, '
+                f'"near_goal_effect": {_jinja_tojson_default(effect_var, effect)}'
+                "});"
+            )
+        if not _collect_counters(elements):
+            lines.append(
+                "if (typeof sporeUpdateAllProgressBars === 'function') { "
+                "sporeUpdateAllProgressBars(); }"
+            )
+
     # Counter metadata registration
     for el, cfg in _collect_counters(elements):
         eid = str(el.get("id") or "")
@@ -284,7 +350,13 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
         lines.append("    var __ids = " + _js_value(cid_list) + ";")
         lines.append("    var __i = 0;")
         lines.append("    function __next() {")
-        lines.append("        if (__i >= __ids.length) { return; }")
+        lines.append("        if (__i >= __ids.length) {")
+        lines.append(
+            "            if (typeof sporeUpdateAllProgressBars === 'function') { "
+            "sporeUpdateAllProgressBars(); }"
+        )
+        lines.append("            return;")
+        lines.append("        }")
         lines.append("        var __c = __ids[__i++];")
         lines.append("        sporeCounterHydrate(__c, __next);")
         lines.append("    }")

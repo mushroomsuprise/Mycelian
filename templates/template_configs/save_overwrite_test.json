@@ -1,0 +1,140 @@
+{
+    "template_name": "save_overwrite_test",
+    "spore_studio": true,
+    "alert_system": "instant",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Canvas"
+        },
+        {
+            "type": "number",
+            "id": "DesignWidth",
+            "label": "Design Width",
+            "value": 400,
+            "min": 50,
+            "max": 7680,
+            "description": "Logical canvas width in pixels."
+        },
+        {
+            "type": "number",
+            "id": "DesignHeight",
+            "label": "Design Height",
+            "value": 100,
+            "min": 50,
+            "max": 4320,
+            "description": "Logical canvas height in pixels."
+        },
+        {
+            "type": "text",
+            "id": "TemplateTitle",
+            "label": "Title",
+            "value": "save_overwrite_test",
+            "description": "Browser title for this overlay."
+        },
+        {
+            "type": "number",
+            "id": "Duration",
+            "label": "Duration",
+            "value": 5.0,
+            "min": 0.1,
+            "max": 600,
+            "step": 0.1,
+            "description": "Display/hold duration in seconds for alert queue integration (point-reward templates matching this name)."
+        },
+        {
+            "type": "checkbox",
+            "id": "Queued",
+            "label": "Queued",
+            "value": false,
+            "description": "When enabled, point redemptions whose reward title matches this template name can hold the main alert queue."
+        },
+        {
+            "type": "separator",
+            "label": "Counter"
+        },
+        {
+            "type": "text",
+            "id": "cnt_format",
+            "label": "cnt format",
+            "value": "{value}/{max}",
+            "description": "Display format for counter 'cnt'. Use {value}, {min}, and {max}."
+        },
+        {
+            "type": "color",
+            "id": "cnt_color",
+            "label": "cnt color",
+            "value": "#ff00ff",
+            "description": "Color for 'cnt'."
+        },
+        {
+            "type": "number",
+            "id": "cnt_font_size",
+            "label": "cnt font size",
+            "value": 48,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'cnt' (pixels)."
+        }
+    ],
+    "streamdeck_options": {
+        "description": "",
+        "actions": {}
+    },
+    "preview_mocks": [
+        {
+            "event": "instant_alert",
+            "label": "Random instant alert"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Follow",
+            "alert_type": "follow"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Sub",
+            "alert_type": "sub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Resub",
+            "alert_type": "resub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Gift sub",
+            "alert_type": "giftsub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Bits",
+            "alert_type": "bit"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Raid",
+            "alert_type": "raid"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Donation",
+            "alert_type": "donation"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Points",
+            "alert_type": "point"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Streak",
+            "alert_type": "streak"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Hype train",
+            "alert_type": "hype_train"
+        }
+    ]
+}

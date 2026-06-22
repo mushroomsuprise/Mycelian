@@ -1,3 +1,353 @@
+<!DOCTYPE html>
+<!--
+    Mycelian Spore Studio - instant_alert boilerplate
+    Generated for: subcounter
+    Alert system: instant (responds to instant_alert, no alert_complete handshake)
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Mycelian {{ TemplateTitle }}</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
+    <style id="spore-studio-styles">
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: Arial, sans-serif;
+        }
+
+        #sporeRoot {
+            position: relative;
+            width: {{ DesignWidth }}px;
+            height: {{ DesignHeight }}px;
+        }
+
+        .spore-element {
+            position: absolute;
+        }
+
+        .spore-element > .spore-video-visual {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .spore-element[data-spore-hidden="true"] {
+            display: none;
+        }
+    </style>
+    <!-- SPORE_STUDIO:styles-begin -->
+<style id="spore-studio-styles">
+@font-face { font-family: "spore-el-counter1"; src: url("/assets/default_assets/fonts/{{ counter1_font_family|default("Roboto-Regular.ttf") }}"); }
+@font-face { font-family: "spore-el-text5"; src: url("/assets/default_assets/fonts/{{ text5_font_family|default("Roboto-Regular.ttf") }}"); }
+
+.spore-progress-bar {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.spore-progress-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+.spore-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+@keyframes sporeProgressPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.25); }
+}
+.spore-progress-fill.spore-progress-near-pulse {
+  animation: sporeProgressPulse 1.5s ease-in-out infinite;
+}
+@keyframes sporeProgressShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.spore-progress-fill.spore-progress-near-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 100%
+  );
+  animation: sporeProgressShimmer 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes sporeProgressScroll {
+  from { background-position: 0 0; }
+  to { background-position: 16px 0; }
+}
+.spore-progress-fill.spore-progress-near-scroll::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 5px,
+    rgba(255, 255, 255, 0.22) 5px,
+    rgba(255, 255, 255, 0.22) 10px
+  );
+  background-size: 14px 14px;
+  animation: sporeProgressScroll 0.65s linear infinite;
+  pointer-events: none;
+}
+</style>
+<!-- SPORE_STUDIO:styles-end -->
+</head>
+<body>
+    <div id="sporeRoot" data-mycelian-template="subcounter">
+        <!-- SPORE_STUDIO:dom-begin -->
+        <div id="counter1" class="spore-element" style="left: 0px; top: 0px; width: 142px; height: 74px; color: #ffffff; font-family: spore-el-text5; font-size: 64px" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="text" data-spore-text-mode="counter">{{ counter1_format|default("0/75")|safe }}</div>
+        <div id="progress_bar3" class="spore-element spore-progress-bar" style="left: 8px; top: 81px; width: 129px; height: 12px; border-color: #000000; border-radius: 8px; border-width: 0px; label-color: #ffffff; label-font-size: 14; label-format:  ; show-label: True" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="progress_bar" data-spore-counter-id="counter1" data-spore-max-kind="fixed"><div class="spore-progress-track" style="background:{{ progress_bar3_track_color|default("#444444") }};border-radius:8px;overflow:hidden;"><div class="spore-progress-fill" style="width:0%;background:{{ progress_bar3_fill_color|default("#4f7a28") }};border-radius:8px;transition:width {{ progress_bar3_fill_animation_duration_ms|default(500) }}ms {{ progress_bar3_fill_animation_easing|default("ease-out") }};"></div></div></div>
+        <div id="text5" class="spore-element" style="left: 187px; top: 24px; width: 638px; height: 54px; color: #ffffff; font-family: spore-el-text5; font-size: 48px" data-spore-anim-in="none" data-spore-anim-out="none" data-spore-anim-in-ms="300" data-spore-anim-out-ms="300" data-spore-anim-delay-ms="0" data-spore-anim-easing="ease-out" data-spore-type="text" data-spore-text-mode="static">{{ text5Text|default("Subs = Gitaroo Man Plat Run")|safe }}</div>
+<!-- SPORE_STUDIO:dom-end -->
+    </div>
+
+    <script>
+        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port);
+
+        var SPORE_ANIM_CLASS_MAP = {
+            fade: { in: 'spore-anim-fade-in', out: 'spore-anim-fade-out' },
+            slideIn: { in: 'spore-anim-slidein', out: 'spore-anim-slideout' },
+            slideOut: { in: 'spore-anim-slidein', out: 'spore-anim-slideout' },
+            scaleIn: { in: 'spore-anim-scalein', out: 'spore-anim-scaleout' },
+            scaleOut: { in: 'spore-anim-scalein', out: 'spore-anim-scaleout' },
+            none: { in: '', out: '' }
+        };
+        function sporeAnimClassFor(type, dir) {
+            var m = SPORE_ANIM_CLASS_MAP[type] || SPORE_ANIM_CLASS_MAP.none;
+            return dir === 'in' ? (m.in || '') : (m.out || '');
+        }
+        function sporeReadAnimConfig(el, override) {
+            override = override || {};
+            var g = function (key, attr, def) {
+                if (override[key] !== undefined && override[key] !== null && override[key] !== '') {
+                    return String(override[key]);
+                }
+                var v = el.getAttribute(attr);
+                return v != null && v !== '' ? v : def;
+            };
+            var gi = function (key, attr, def) {
+                if (override[key] !== undefined && override[key] !== null && override[key] !== '') {
+                    var o = parseInt(String(override[key]), 10);
+                    return isNaN(o) ? def : o;
+                }
+                var v = el.getAttribute(attr);
+                var n = v != null && v !== '' ? parseInt(v, 10) : def;
+                return isNaN(n) ? def : n;
+            };
+            return {
+                animIn: g('animIn', 'data-spore-anim-in', 'none'),
+                animOut: g('animOut', 'data-spore-anim-out', 'none'),
+                animInMs: gi('animInMs', 'data-spore-anim-in-ms', 300),
+                animOutMs: gi('animOutMs', 'data-spore-anim-out-ms', 300),
+                delayMs: gi('delayMs', 'data-spore-anim-delay-ms', 0),
+                easing: g('easing', 'data-spore-anim-easing', 'ease-out')
+            };
+        }
+        function sporeAnimateIn(el, override, done) {
+            if (!el) { if (done) { done(); } return; }
+            var cfg = sporeReadAnimConfig(el, override);
+            var cls = sporeAnimClassFor(cfg.animIn, 'in');
+            if (!cls || cfg.animIn === 'none') { if (done) { done(); } return; }
+            var ms = Math.max(0, cfg.animInMs || 300);
+            el.classList.remove(cls);
+            void el.offsetWidth;
+            el.style.animationDuration = (ms / 1000) + 's';
+            el.style.animationTimingFunction = cfg.easing || 'ease-out';
+            el.classList.add(cls);
+            setTimeout(function () {
+                try { el.classList.remove(cls); } catch (e0) {}
+                el.style.animationDuration = '';
+                el.style.animationTimingFunction = '';
+                if (done) { done(); }
+            }, ms);
+        }
+        function sporeAnimateOut(el, override, done) {
+            if (!el) { if (done) { done(); } return; }
+            var cfg = sporeReadAnimConfig(el, override);
+            var cls = sporeAnimClassFor(cfg.animOut, 'out');
+            if (!cls || cfg.animOut === 'none') { if (done) { done(); } return; }
+            var ms = Math.max(0, cfg.animOutMs || 300);
+            el.classList.remove(cls);
+            void el.offsetWidth;
+            el.style.animationDuration = (ms / 1000) + 's';
+            el.style.animationTimingFunction = cfg.easing || 'ease-in';
+            el.classList.add(cls);
+            setTimeout(function () {
+                try { el.classList.remove(cls); } catch (e1) {}
+                el.style.animationDuration = '';
+                el.style.animationTimingFunction = '';
+                if (done) { done(); }
+            }, ms);
+        }
+        function sporeShow(id, override) {
+            var el = document.getElementById(id);
+            if (!el) { return; }
+            el.removeAttribute('data-spore-hidden');
+            var cfg = sporeReadAnimConfig(el, override);
+            var run = function () { sporeAnimateIn(el, override, null); };
+            if (cfg.delayMs > 0) {
+                setTimeout(run, cfg.delayMs);
+            } else {
+                run();
+            }
+        }
+        function sporeHide(id, override) {
+            var el = document.getElementById(id);
+            if (!el) { return; }
+            var au = null;
+            if (el.tagName === 'AUDIO') {
+                au = el;
+            } else {
+                au = el.querySelector('audio');
+            }
+            function applyHidden() {
+                var cfg = sporeReadAnimConfig(el, override);
+                var cls = sporeAnimClassFor(cfg.animOut, 'out');
+                if (!cls || cfg.animOut === 'none') {
+                    el.setAttribute('data-spore-hidden', 'true');
+                    return;
+                }
+                sporeAnimateOut(el, override, function () {
+                    el.setAttribute('data-spore-hidden', 'true');
+                });
+            }
+            if (!au) {
+                applyHidden();
+                return;
+            }
+            var fadeRaw = au.getAttribute('data-spore-audio-fade-out');
+            var fadeMs = fadeRaw ? parseInt(fadeRaw, 10) : 0;
+            if (!fadeMs || fadeMs <= 0 || isNaN(fadeMs)) {
+                try { au.pause(); } catch (e1) {}
+                applyHidden();
+                return;
+            }
+            var steps = Math.max(8, Math.floor(fadeMs / 40));
+            var iv = fadeMs / steps;
+            var startVol = (typeof au.volume === 'number' && !isNaN(au.volume)) ? au.volume : 1;
+            var step = startVol / steps;
+            var n = 0;
+            var t = setInterval(function () {
+                n += 1;
+                try {
+                    au.volume = Math.max(0, startVol - step * n);
+                } catch (e2) {}
+                if (n >= steps) {
+                    clearInterval(t);
+                    try {
+                        au.volume = startVol;
+                    } catch (e3) {}
+                    try { au.pause(); } catch (e4) {}
+                    applyHidden();
+                }
+            }, iv);
+        }
+        /**
+         * @param {?Object} overrides - optional volume / fade_in_ms from binding args
+         */
+        function sporePlayMediaAudio(domId, overrides) {
+            overrides = overrides || {};
+            var el = document.getElementById(domId);
+            var au = null;
+            if (el && el.tagName === 'AUDIO') {
+                au = el;
+            } else if (el) {
+                au = el.querySelector('audio');
+            }
+            if (!au || typeof au.play !== 'function') {
+                return;
+            }
+            var tgtVolRaw = overrides.volume;
+            if (tgtVolRaw === undefined || tgtVolRaw === '') {
+                var dv = au.getAttribute('data-spore-audio-volume');
+                tgtVolRaw = dv != null && dv !== '' ? parseFloat(dv) : 1;
+            }
+            var tgtVol = Math.max(0, Math.min(1, Number(tgtVolRaw)));
+            if (!isFinite(tgtVol)) {
+                tgtVol = 1;
+            }
+            var fadeInMs = overrides.fade_in_ms;
+            if (fadeInMs === undefined || fadeInMs === '') {
+                var fd = au.getAttribute('data-spore-audio-fade-in');
+                fadeInMs = fd ? parseInt(fd, 10) : 0;
+            }
+            fadeInMs = parseInt(String(fadeInMs), 10);
+            if (isNaN(fadeInMs) || fadeInMs < 0) {
+                fadeInMs = 0;
+            }
+            try {
+                au.currentTime = 0;
+            } catch (e5) {}
+            var doPlay = function () {
+                var p = au.play();
+                if (p && typeof p.catch === 'function') {
+                    p.catch(function () {});
+                }
+            };
+            if (fadeInMs > 0) {
+                try {
+                    au.volume = 0;
+                } catch (e6) {}
+                doPlay();
+                var stepsPi = Math.max(8, Math.floor(fadeInMs / 40));
+                var ivPi = fadeInMs / stepsPi;
+                var nPi = 0;
+                var tPi = setInterval(function () {
+                    nPi += 1;
+                    var v = tgtVol * (nPi / stepsPi);
+                    if (nPi >= stepsPi) {
+                        clearInterval(tPi);
+                        try {
+                            au.volume = tgtVol;
+                        } catch (e7) {}
+                    } else {
+                        try {
+                            au.volume = v;
+                        } catch (e8) {}
+                    }
+                }, ivPi);
+            } else {
+                try {
+                    au.volume = tgtVol;
+                } catch (e9) {}
+                doPlay();
+            }
+        }
+        function sporeSetText(id, value) {
+            var el = document.getElementById(id);
+            if (el) { el.textContent = (value == null ? '' : String(value)); }
+        }
+
+        function sporeMatchesFilter(payload, filter) {
+            if (!filter || typeof filter !== 'object') { return true; }
+            for (var k in filter) {
+                if (!Object.prototype.hasOwnProperty.call(filter, k)) { continue; }
+                if (payload == null) { return false; }
+                if (payload[k] !== filter[k]) { return false; }
+            }
+            return true;
+        }
+
+        // SPORE_STUDIO:data-runtime-begin
 /* Spore Studio shared data/counter/control runtime (injected into overlays). */
 (function () {
     if (typeof window === 'undefined') { return; }
@@ -890,3 +1240,138 @@
     window.sporeLoadStatsCache = sporeLoadStatsCache;
     window.sporeDispatchControlAction = sporeDispatchControlAction;
 })();
+// SPORE_STUDIO:data-runtime-end
+
+        // SPORE_STUDIO:auto-begin
+function sporeApplyBindings(eventName, payload) {
+    try {
+        console.log('[spore-studio] sporeApplyBindings', eventName, payload);
+    } catch (__sporeLog) {}
+}
+
+window.__sporeAlertPayloadKeys = {"alert.amount": "amount", "alert.quantity": "quantity", "alert.tier": "tier", "alert.amt_cheered": "amt_cheered", "alert.cumulative_months": "cumulative_months", "alert.raider_count": "raider_count", "alert.username": "username", "alert.message": "message", "alert.alert_type": "alert_type", "alert.currency": "currency", "alert.queue_seq": "queue_seq", "alert.gift_qty": "gift_qty"};
+window.__sporeChatPayloadKeys = {"chat.username": "username", "chat.message": "message", "chat.userid": "userid", "chat.badges": "badges", "chat.color": "color", "chat.message_text": "message_text"};
+window.__sporeTemplateName = "subcounter";
+window.__sporeProgressBars = window.__sporeProgressBars || [];
+window.__sporeProgressBars.push({"elementId": "progress_bar3", "counter_id": "counter1", "max_kind": "fixed", "max": {{ progress_bar3_max|default(75)|tojson }}, "max_counter_id": "counter1", "near_goal_threshold": 85, "near_goal_effect": {{ progress_bar3_near_goal_effect|default("shimmer")|tojson }}});
+window.__sporeCounterMeta["counter1"] = Object.assign({"elementId": "counter1", "counter_id": "counter1", "initial_value": 0, "min": 0, "max": 75, "persist": false, "database_path": "subcounter/counters", "database_key": "counter1"}, {"format": {{ counter1_format|default("{value}/{max}")|tojson }}});
+(function () {
+    var __ids = ["counter1"];
+    var __i = 0;
+    function __next() {
+        if (__i >= __ids.length) {
+            if (typeof sporeUpdateAllProgressBars === 'function') { sporeUpdateAllProgressBars(); }
+            return;
+        }
+        var __c = __ids[__i++];
+        sporeCounterHydrate(__c, __next);
+    }
+    __next();
+})();
+(function () {
+    var __ev = "instant_alert";
+    var __cid = "counter1";
+    var __op = "increment";
+    var __delta = {"fallback": 0, "kind": "data_source", "source": "sub.gift_sub", "tier_filter": "any", "value": 1};
+    var __filter = {};
+    if (typeof socket !== 'undefined' && socket && socket.on) {
+        socket.on(__ev, function (data) {
+            if (!sporeMatchesFilter(data || {}, __filter)) { return; }
+            window.__sporeLastPayload.event = data || {};
+            sporeCounterAdjust(__cid, __op, __delta, data);
+        });
+    }
+})();
+(function () {
+    var __ev = "instant_alert";
+    var __cid = "counter1";
+    var __op = "increment";
+    var __delta = {"fallback": 0, "kind": "data_source", "source": "sub.new_sub", "tier_filter": "any", "value": 1};
+    var __filter = {};
+    if (typeof socket !== 'undefined' && socket && socket.on) {
+        socket.on(__ev, function (data) {
+            if (!sporeMatchesFilter(data || {}, __filter)) { return; }
+            window.__sporeLastPayload.event = data || {};
+            sporeCounterAdjust(__cid, __op, __delta, data);
+        });
+    }
+})();
+(function () {
+    var __ev = "instant_alert";
+    var __cid = "counter1";
+    var __op = "increment";
+    var __delta = {"fallback": 0, "kind": "data_source", "source": "sub.resub", "tier_filter": "any", "value": 1};
+    var __filter = {};
+    if (typeof socket !== 'undefined' && socket && socket.on) {
+        socket.on(__ev, function (data) {
+            if (!sporeMatchesFilter(data || {}, __filter)) { return; }
+            window.__sporeLastPayload.event = data || {};
+            sporeCounterAdjust(__cid, __op, __delta, data);
+        });
+    }
+})();
+if (typeof socket !== 'undefined' && socket && socket.on) {
+    socket.on('connect', function () {
+        sporeLoadStatsCache();
+        sporeRefreshAllDataDisplays();
+    });
+    socket.on('twitch-api-response', function (data) {
+        if (data && data.requestId) {
+            window.__sporeTwitchCache[data.requestId] = data; }
+        sporeRefreshAllDataDisplays();
+    });
+}
+(function () {
+    var __tn = "subcounter";
+    var __act = "counter_adjust";
+    var __base = {"target_counter_id": "counter1"};
+    if (typeof socket !== 'undefined' && socket && socket.on) {
+        socket.on("subcounter_counter_adjust", function (data) {
+            var __d = {};
+            for (var k in __base) { if (__base.hasOwnProperty(k)) __d[k] = __base[k]; }
+            if (data && typeof data === 'object') {
+                for (var k2 in data) { if (data.hasOwnProperty(k2)) __d[k2] = data[k2]; }
+            }
+            sporeDispatchControlAction(__act, __d, __tn);
+        });
+    }
+})();
+// SPORE_STUDIO:auto-end
+
+        (function () {
+            if (typeof socket !== 'undefined' && socket && socket.on) {
+                socket.on('streamdeck_template_action', function (data) {
+                    try {
+                        console.log('[subcounter] streamdeck_template_action (debug)', data);
+                    } catch (e) {}
+                });
+            }
+        })();
+
+        socket.on('connect', function () {
+            var __r = document.getElementById('sporeRoot');
+            var __t = __r && __r.getAttribute('data-mycelian-template');
+            console.log('[subcounter] socket connect (debug)', {
+                template: __t || 'subcounter',
+                sid: socket && socket.id
+            });
+        });
+
+        socket.on('instant_alert', function (data) {
+            try {
+                console.log('[subcounter] instant_alert (debug)', data);
+                sporeApplyBindings('instant_alert', data || {});
+            } catch (err) {
+                console.error('[subcounter] binding error', err);
+            }
+        });
+
+        // SPORE_STUDIO:user-begin
+// Place advanced custom JavaScript below. Anything between the
+        // user-begin and user-end markers is preserved across Spore Studio
+        // saves. Use sporeShow(id) / sporeHide(id) / sporeSetText(id,val)
+        // helpers, and listen for additional socket events here if needed.
+// SPORE_STUDIO:user-end
+    </script>
+</body>
+</html>

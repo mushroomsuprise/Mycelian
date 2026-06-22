@@ -49,7 +49,18 @@
             audio_fade_out_ms: 0
         },
         audio: { src: "", volume: 1, fade_in_ms: 0, fade_out_ms: 0 },
-        container: { background_color: "rgba(115,0,255,0.04)" }
+        container: { background_color: "rgba(115,0,255,0.04)" },
+        progress_bar: {
+            track_color: "#1e293b",
+            fill_color: "#a855f7",
+            border_radius: 8,
+            border_width: 0,
+            border_color: "#000000",
+            fill_animation_duration_ms: 500,
+            fill_animation_easing: "ease-out",
+            near_goal_threshold: 90,
+            near_goal_effect: "none"
+        }
     };
 
     var DEFAULT_SIZE = {
@@ -57,7 +68,8 @@
         image: { w: 200, h: 200 },
         video: { w: 320, h: 180 },
         audio: { w: 120, h: 32 },
-        container: { w: 240, h: 120 }
+        container: { w: 240, h: 120 },
+        progress_bar: { w: 400, h: 28 }
     };
 
     var ELEMENT_PROP_SCHEMA = {
@@ -109,6 +121,21 @@
             { key: "border_radius", label: "Border radius (px)", type: "number" },
             { key: "border_width", label: "Border width (px)", type: "number" },
             { key: "border_color", label: "Border color", type: "color" }
+        ],
+        progress_bar: [
+            { key: "track_color", label: "Track color", type: "color" },
+            { key: "fill_color", label: "Fill color", type: "color" },
+            { key: "border_radius", label: "Border radius (px)", type: "number" },
+            { key: "border_width", label: "Border width (px)", type: "number" },
+            { key: "border_color", label: "Border color", type: "color" },
+            { key: "fill_animation_duration_ms", label: "Fill animation (ms)", type: "number",
+              min: 0, max: 120000 },
+            { key: "fill_animation_easing", label: "Fill animation easing", type: "select",
+              options: ["ease", "ease-in", "ease-out", "ease-in-out", "linear"] },
+            { key: "near_goal_threshold", label: "Near-goal threshold (%)", type: "number",
+              min: 0, max: 100 },
+            { key: "near_goal_effect", label: "Near-goal effect", type: "select",
+              options: ["none", "pulse", "shimmer", "scroll"] }
         ]
     };
 
@@ -661,7 +688,59 @@
         if (elType === "video") {
             keys.push("audio_src");
         }
+        if (elType === "progress_bar") {
+            keys.push("max", "max_kind");
+        }
         return keys;
+    }
+
+    function ensureProgressBarDefaults(el) {
+        if (!el || el.type !== "progress_bar") { return; }
+        el.progress_source = el.progress_source || {};
+        var ps = el.progress_source;
+        if (!ps.counter_id) { ps.counter_id = ""; }
+        if (!ps.max_kind) { ps.max_kind = "fixed"; }
+        if (ps.max === undefined) { ps.max = 100; }
+        if (!ps.max_counter_id) { ps.max_counter_id = ""; }
+        el.props = el.props || {};
+        var defs = DEFAULT_PROPS.progress_bar;
+        if (defs) {
+            Object.keys(defs).forEach(function (k) {
+                if (el.props[k] === undefined) {
+                    el.props[k] = defs[k];
+                }
+            });
+        }
+        if (el.props.near_goal_pulse && !el.props.near_goal_effect) {
+            el.props.near_goal_effect = "pulse";
+        }
+        if (!el.props.near_goal_effect) {
+            el.props.near_goal_effect = "none";
+        }
+        var allowed = { none: true, pulse: true, shimmer: true, scroll: true };
+        if (!allowed[el.props.near_goal_effect]) {
+            el.props.near_goal_effect = "none";
+        }
+    }
+
+    function counterInitialValueById(counterId) {
+        if (!counterId || !state.model) { return 0; }
+        var found = (state.model.elements || []).find(function (e) {
+            return e.type === "text" && (e.text_mode || "static") === "counter" && e.counter &&
+                String(e.counter.counter_id || slugifyCounterId(e.id)) === String(counterId);
+        });
+        if (!found || !found.counter) { return 0; }
+        return found.counter.initial_value != null ? found.counter.initial_value : 0;
+    }
+
+    function progressMaxForPreview(el) {
+        ensureProgressBarDefaults(el);
+        var ps = el.progress_source;
+        if (ps.max_kind === "counter" && ps.max_counter_id) {
+            var mv = counterInitialValueById(ps.max_counter_id);
+            return mv > 0 ? mv : 100;
+        }
+        return ps.max != null ? ps.max : 100;
     }
 
     function dataSourcesForPicker(deltaOnly, displayOnly) {
@@ -672,6 +751,16 @@
             if (deltaOnly && s.display_only) { return false; }
             return true;
         });
+    }
+
+    function formatCounterPreview(counter, format) {
+        if (!counter) { return ""; }
+        var fmt = format || "{value}";
+        var val = counter.initial_value != null ? counter.initial_value : 0;
+        return fmt
+            .replace("{value}", String(val))
+            .replace("{min}", counter.min != null ? String(counter.min) : "")
+            .replace("{max}", counter.max != null ? String(counter.max) : "");
     }
 
     function ensureTextModeDefaults(el) {
@@ -1260,6 +1349,100 @@
         renderCounterImageTransitionSection(host, el);
     }
 
+    function renderProgressBarSection(host, el) {
+        if (el.type !== "progress_bar" || isLegacyModel()) { return; }
+        ensureProgressBarDefaults(el);
+        var ps = el.progress_source;
+        var sect = document.createElement("div");
+        sect.className = "ss-form-section";
+        var title = document.createElement("div");
+        title.className = "ss-form-section__title";
+        title.textContent = "Progress source";
+        sect.appendChild(title);
+
+        var counters = listCountersInModel();
+        var cidSel = document.createElement("select");
+        var blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = counters.length ? "(select counter)" : "(no counters in template)";
+        cidSel.appendChild(blank);
+        counters.forEach(function (c) {
+            var op = document.createElement("option");
+            op.value = c.id;
+            op.textContent = c.label;
+            if (String(ps.counter_id) === String(c.id)) { op.selected = true; }
+            cidSel.appendChild(op);
+        });
+        cidSel.addEventListener("change", function () {
+            ps.counter_id = cidSel.value;
+            pushHistoryDebounced();
+            renderStage();
+            modelTouch();
+        });
+        sect.appendChild(formRow("Value counter", cidSel));
+
+        var maxKindSel = document.createElement("select");
+        [
+            { v: "fixed", label: "Fixed max" },
+            { v: "counter", label: "Goal counter" }
+        ].forEach(function (m) {
+            var op = document.createElement("option");
+            op.value = m.v;
+            op.textContent = m.label;
+            if ((ps.max_kind || "fixed") === m.v) { op.selected = true; }
+            maxKindSel.appendChild(op);
+        });
+        maxKindSel.addEventListener("change", function () {
+            ps.max_kind = maxKindSel.value;
+            pushHistoryDebounced();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        sect.appendChild(
+            formRowPropWithExpose(el, "max_kind", "Max kind", maxKindSel)
+        );
+
+        if ((ps.max_kind || "fixed") === "fixed") {
+            sect.appendChild(formRowPropWithExpose(el, "max", "Max value", numberEl(
+                ps.max != null ? ps.max : 100, function (v) {
+                    ps.max = Math.max(0, parseInt(v, 10) || 0);
+                    pushHistoryDebounced();
+                    renderStage();
+                    modelTouch();
+                }
+            )));
+        } else {
+            var goalSel = document.createElement("select");
+            var gblank = document.createElement("option");
+            gblank.value = "";
+            gblank.textContent = counters.length ? "(select goal counter)" : "(no counters)";
+            goalSel.appendChild(gblank);
+            counters.forEach(function (c) {
+                var gop = document.createElement("option");
+                gop.value = c.id;
+                gop.textContent = c.label;
+                if (String(ps.max_counter_id) === String(c.id)) { gop.selected = true; }
+                goalSel.appendChild(gop);
+            });
+            goalSel.addEventListener("change", function () {
+                ps.max_counter_id = goalSel.value;
+                pushHistoryDebounced();
+                renderStage();
+                modelTouch();
+            });
+            sect.appendChild(formRow("Goal counter", goalSel));
+        }
+
+        var hint = document.createElement("p");
+        hint.style.cssText =
+            "color:var(--ss-text-muted);font-size:10px;margin:4px 0 0;line-height:1.4;";
+        hint.textContent =
+            "Set min and max on the value counter to use {min}/{max} in its format string.";
+        sect.appendChild(hint);
+        host.appendChild(sect);
+    }
+
     function renderValueAnimationSection(host, el) {
         if (el.type !== "text") { return; }
         var mode = el.text_mode || "static";
@@ -1377,6 +1560,31 @@
         return sel;
     }
 
+    function isSubDeltaSource(sourceId) {
+        return sourceId === "sub.new_sub" || sourceId === "sub.resub" ||
+            sourceId === "sub.gift_sub";
+    }
+
+    function buildTierFilterSelect(current, onChange) {
+        var sel = document.createElement("select");
+        [
+            { v: "any", label: "Any tier" },
+            { v: "1", label: "Tier 1" },
+            { v: "2", label: "Tier 2" },
+            { v: "3", label: "Tier 3" }
+        ].forEach(function (row) {
+            var op = document.createElement("option");
+            op.value = row.v;
+            op.textContent = row.label;
+            if (String(current || "any") === row.v) { op.selected = true; }
+            sel.appendChild(op);
+        });
+        sel.addEventListener("change", function () {
+            onChange(sel.value);
+        });
+        return sel;
+    }
+
     function buildDeltaEditor(delta, onChange) {
         var wrap = document.createElement("div");
         wrap.style.display = "flex";
@@ -1416,11 +1624,43 @@
             } else if (k === "data_source") {
                 fields.appendChild(formRow("Source", buildDataSourceSelect(delta.source, function (sid) {
                     delta.source = sid;
+                    if (isSubDeltaSource(sid)) {
+                        if (delta.tier_filter == null) { delta.tier_filter = "any"; }
+                        if (delta.fallback == null) { delta.fallback = 0; }
+                    }
                     onChange(delta);
+                    redraw();
                 }, { deltaOnly: false })));
-                fields.appendChild(formRow("Fallback", numberEl(delta.fallback != null ? delta.fallback : 1, function (v) {
-                    delta.fallback = Number(v); onChange(delta);
-                })));
+                if (isSubDeltaSource(delta.source)) {
+                    if (delta.tier_filter == null) { delta.tier_filter = "any"; }
+                    fields.appendChild(formRow(
+                        "Tier filter",
+                        buildTierFilterSelect(delta.tier_filter, function (v) {
+                            delta.tier_filter = v;
+                            onChange(delta);
+                        })
+                    ));
+                    var subHint = document.createElement("p");
+                    subHint.style.cssText =
+                        "color:var(--ss-text-muted);font-size:10px;margin:0;line-height:1.4;";
+                    if (delta.source === "sub.gift_sub") {
+                        subHint.textContent =
+                            "Adds the gifted quantity when a giftsub alert matches the tier. " +
+                            "Use fallback 0 so other alerts do not change the counter.";
+                    } else {
+                        subHint.textContent =
+                            "Adds 1 when the matching sub type and tier are received. " +
+                            "Use fallback 0 so other alerts do not change the counter.";
+                    }
+                    fields.appendChild(subHint);
+                }
+                fields.appendChild(formRow("Fallback", numberEl(
+                    delta.fallback != null ? delta.fallback :
+                        (isSubDeltaSource(delta.source) ? 0 : 1),
+                    function (v) {
+                        delta.fallback = Number(v); onChange(delta);
+                    }
+                )));
             }
             onChange(delta);
         }
@@ -1468,11 +1708,13 @@
             })));
             host.appendChild(formRow("Min", numberEl(c.min != null ? c.min : "", function (v) {
                 c.min = v === "" ? null : Number(v);
+                renderStage();
                 pushHistoryDebounced();
                 modelTouch();
             })));
             host.appendChild(formRow("Max", numberEl(c.max != null ? c.max : "", function (v) {
                 c.max = v === "" ? null : Number(v);
+                renderStage();
                 pushHistoryDebounced();
                 modelTouch();
             })));
@@ -1485,7 +1727,12 @@
                 modelTouch();
             });
             host.appendChild(
-                formRowPropWithExpose(el, "text", "Format (use {value})", formatInput)
+                formRowPropWithExpose(
+                    el,
+                    "text",
+                    "Format ({value}, {min}, {max})",
+                    formatInput
+                )
             );
             var persistCb = document.createElement("input");
             persistCb.type = "checkbox";
@@ -2097,9 +2344,7 @@
             if (el.type === "text") {
                 var tmode = el.text_mode || "static";
                 if (tmode === "counter" && el.counter) {
-                    var cfmt = el.counter.format || "{value}";
-                    var civ = el.counter.initial_value != null ? el.counter.initial_value : 0;
-                    node.textContent = cfmt.replace("{value}", String(civ));
+                    node.textContent = formatCounterPreview(el.counter, el.counter.format);
                 } else if (tmode === "data_display" && el.data_display) {
                     node.textContent = el.data_display.default_text != null
                         ? String(el.data_display.default_text) : "—";
@@ -2121,6 +2366,37 @@
                     "\u266B " + (el.props && el.props.src ? el.props.src : "(audio)");
             } else if (el.type === "container") {
                 node.textContent = "";
+            } else if (el.type === "progress_bar") {
+                ensureProgressBarDefaults(el);
+                node.textContent = "";
+                node.style.overflow = "hidden";
+                node.style.position = "relative";
+                node.style.padding = "0";
+                var pprops = el.props || {};
+                var track = document.createElement("div");
+                track.style.position = "relative";
+                track.style.width = "100%";
+                track.style.height = "100%";
+                track.style.background = pprops.track_color || "#1e293b";
+                track.style.borderRadius = (pprops.border_radius != null ? pprops.border_radius : 8) + "px";
+                track.style.overflow = "hidden";
+                if (pprops.border_width != null && pprops.border_color) {
+                    track.style.border = pprops.border_width + "px solid " + pprops.border_color;
+                }
+                var fill = document.createElement("div");
+                fill.style.position = "absolute";
+                fill.style.left = "0";
+                fill.style.top = "0";
+                fill.style.height = "100%";
+                fill.style.background = pprops.fill_color || "#a855f7";
+                fill.style.borderRadius = track.style.borderRadius;
+                var cur = el.progress_source && el.progress_source.counter_id;
+                var currentVal = cur ? counterInitialValueById(cur) : 0;
+                var maxVal = progressMaxForPreview(el);
+                var pct = maxVal > 0 ? Math.min(100, (currentVal / maxVal) * 100) : 0;
+                fill.style.width = pct + "%";
+                track.appendChild(fill);
+                node.appendChild(track);
             }
 
             var handle = document.createElement("div");
@@ -2174,6 +2450,11 @@
             node.style.border = props.border_width + "px solid " + props.border_color;
         }
         if (props.opacity != null) { node.style.opacity = String(props.opacity); }
+        if (el.type === "progress_bar") {
+            node.style.overflow = "hidden";
+            node.style.position = "relative";
+            node.style.padding = "0";
+        }
     }
 
     function pidNorm(pid) {
@@ -2960,6 +3241,10 @@
 
         if (el.type === "image" && !isLegacyModel()) {
             renderImageSrcModeSection(host, el);
+        }
+
+        if (el.type === "progress_bar" && !isLegacyModel()) {
+            renderProgressBarSection(host, el);
         }
 
         var schema = ELEMENT_PROP_SCHEMA[el.type] || [];
@@ -4252,6 +4537,7 @@
             ensureElementAnimations(el);
             if (type === "text") { ensureTextModeDefaults(el); }
             if (type === "image") { ensureImageSrcDefaults(el); }
+            if (type === "progress_bar") { ensureProgressBarDefaults(el); }
             if (pid) { ensurePlacementDefaults(el); }
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
@@ -4538,6 +4824,9 @@
                 }
                 if (el.type === "image") {
                     ensureImageSrcDefaults(el);
+                }
+                if (el.type === "progress_bar") {
+                    ensureProgressBarDefaults(el);
                 }
                 if (pidNorm(el.parent_id)) {
                     ensurePlacementDefaults(el);

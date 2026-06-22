@@ -1,0 +1,285 @@
+{
+  "advanced_js": "",
+  "alert_system": "instant",
+  "design": {
+    "height": 200,
+    "width": 850
+  },
+  "duration_seconds": 5.0,
+  "dynamic_controls": {
+    "elements": [
+      {
+        "action": "counter_adjust",
+        "id": "counter_inc",
+        "label": "Counter Options",
+        "step": 1,
+        "target_counter_id": "counter1",
+        "type": "counter_control"
+      }
+    ]
+  },
+  "elements": [
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Counter",
+      "counter": {
+        "counter_id": "counter1",
+        "database_key": "counter1",
+        "database_path": "subcounter/counters",
+        "format": "{value}/{max}",
+        "initial_value": 0,
+        "max": 75,
+        "min": 0,
+        "persist": false,
+        "rules": [
+          {
+            "delta": {
+              "fallback": 0,
+              "kind": "data_source",
+              "source": "sub.gift_sub",
+              "tier_filter": "any",
+              "value": 1
+            },
+            "event": "instant_alert",
+            "filter": {},
+            "operation": "increment",
+            "trigger": "event"
+          },
+          {
+            "delta": {
+              "fallback": 0,
+              "kind": "data_source",
+              "source": "sub.new_sub",
+              "tier_filter": "any",
+              "value": 1
+            },
+            "event": "instant_alert",
+            "filter": {},
+            "operation": "increment",
+            "trigger": "event"
+          },
+          {
+            "delta": {
+              "fallback": 0,
+              "kind": "data_source",
+              "source": "sub.resub",
+              "tier_filter": "any",
+              "value": 1
+            },
+            "event": "instant_alert",
+            "filter": {},
+            "operation": "increment",
+            "trigger": "event"
+          }
+        ]
+      },
+      "id": "counter1",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "props": {
+        "color": "#ffffff",
+        "font_family": "Roboto-Regular.ttf",
+        "font_size": 64,
+        "text": "{value}/{max}",
+        "vertical_align": "top"
+      },
+      "size": {
+        "h": 74,
+        "w": 142
+      },
+      "source_settings_expose": {
+        "background_color": true,
+        "color": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "text": true,
+        "text_align": true,
+        "vertical_align": true
+      },
+      "text_mode": "counter",
+      "type": "text",
+      "value_animation": {
+        "duration_ms": 500,
+        "easing": "ease-out",
+        "enabled": false,
+        "pulse": false,
+        "type": "fade-in"
+      }
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Progress Bar",
+      "id": "progress_bar3",
+      "position": {
+        "x": 8,
+        "y": 81
+      },
+      "progress_source": {
+        "counter_id": "counter1",
+        "max": 75,
+        "max_counter_id": "counter1",
+        "max_kind": "fixed"
+      },
+      "props": {
+        "border_color": "#000000",
+        "border_radius": 8,
+        "border_width": 0,
+        "fill_animation_duration_ms": 500,
+        "fill_animation_easing": "ease-out",
+        "fill_color": "#4f7a28",
+        "label_color": "#ffffff",
+        "label_font_size": 14,
+        "label_format": " ",
+        "near_goal_effect": "shimmer",
+        "near_goal_pulse": true,
+        "near_goal_threshold": 85,
+        "show_label": true,
+        "track_color": "#444444"
+      },
+      "size": {
+        "h": 12,
+        "w": 129
+      },
+      "source_settings_expose": {
+        "border_color": true,
+        "border_radius": true,
+        "border_width": true,
+        "fill_animation_duration_ms": true,
+        "fill_animation_easing": true,
+        "fill_color": true,
+        "label_color": true,
+        "label_font_size": true,
+        "label_format": true,
+        "max": true,
+        "max_kind": true,
+        "near_goal_effect": true,
+        "near_goal_pulse": true,
+        "near_goal_threshold": true,
+        "show_label": true,
+        "track_color": true
+      },
+      "type": "progress_bar"
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Extra Text",
+      "id": "text5",
+      "position": {
+        "x": 187,
+        "y": 24
+      },
+      "props": {
+        "color": "#ffffff",
+        "font_family": "Roboto-Regular.ttf",
+        "font_size": 48,
+        "text": "Subs = Gitaroo Man Plat Run",
+        "vertical_align": "top"
+      },
+      "size": {
+        "h": 54,
+        "w": 638
+      },
+      "source_settings_expose": {
+        "background_color": true,
+        "color": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "text": true,
+        "text_align": true,
+        "vertical_align": true
+      },
+      "text_mode": "static",
+      "type": "text"
+    }
+  ],
+  "preview_mocks": [
+    {
+      "event": "instant_alert",
+      "label": "Random instant alert"
+    },
+    {
+      "alert_type": "follow",
+      "event": "instant_alert",
+      "label": "Follow"
+    },
+    {
+      "alert_type": "sub",
+      "event": "instant_alert",
+      "label": "Sub"
+    },
+    {
+      "alert_type": "resub",
+      "event": "instant_alert",
+      "label": "Resub"
+    },
+    {
+      "alert_type": "giftsub",
+      "event": "instant_alert",
+      "label": "Gift sub"
+    },
+    {
+      "alert_type": "bit",
+      "event": "instant_alert",
+      "label": "Bits"
+    },
+    {
+      "alert_type": "raid",
+      "event": "instant_alert",
+      "label": "Raid"
+    },
+    {
+      "alert_type": "donation",
+      "event": "instant_alert",
+      "label": "Donation"
+    },
+    {
+      "alert_type": "point",
+      "event": "instant_alert",
+      "label": "Points"
+    },
+    {
+      "alert_type": "streak",
+      "event": "instant_alert",
+      "label": "Streak"
+    },
+    {
+      "alert_type": "hype_train",
+      "event": "instant_alert",
+      "label": "Hype train"
+    }
+  ],
+  "queued": false,
+  "streamdeck_options": {
+    "actions": {},
+    "description": ""
+  },
+  "template_name": "subcounter"
+}

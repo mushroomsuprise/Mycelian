@@ -31,13 +31,30 @@ logger = logging.getLogger(__name__)
 _CODEGEN_OWNED_CONFIG_VALUE_IDS = frozenset({"DesignWidth", "DesignHeight"})
 
 
+def _is_codegen_owned_config_value(el_id: str) -> bool:
+    """
+    Config field ids whose ``value`` must follow the Spore model on save.
+
+    Counter/data-display ``*_format`` fields are authored in Spore Studio;
+    preserving stale Source Settings values breaks runtime tokens like
+    ``{min}`` and ``{max}`` in OBS.
+    """
+    if el_id in _CODEGEN_OWNED_CONFIG_VALUE_IDS:
+        return True
+    return str(el_id).endswith("_format")
+
+
 # First-party overlays: excluded from Spore Studio's picker and non-deletable.
 SPORE_STUDIO_PROTECTED_TEMPLATES = frozenset({"activity_feed", "source_controls"})
 
 
 # Names that would conflict with built-in Flask routes or our own helpers.
 _RESERVED_TEMPLATE_NAMES = {
-    "static", "assets", "api", "debug", "_spore_studio_editor",
+    "static",
+    "assets",
+    "api",
+    "debug",
+    "_spore_studio_editor",
 }
 
 
@@ -83,7 +100,7 @@ def _merge_element_arrays(new_arr: list, old_arr: list) -> list:
                 if (
                     "value" in old_el
                     and "value" in merged
-                    and el_id not in _CODEGEN_OWNED_CONFIG_VALUE_IDS
+                    and not _is_codegen_owned_config_value(el_id)
                 ):
                     merged["value"] = _clone(old_el["value"])
                 if "elements" in merged and "elements" in old_el:
@@ -190,7 +207,9 @@ def compile_preview_draft(model: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         raise SporeStudioError("Live draft preview is only for Spore templates.")
     template_name = _validate_name(model.get("template_name") or "")
     existing = _load_existing_html(template_name)
-    html_text, json_config = template_codegen.compile_model(model, existing_html=existing)
+    html_text, json_config = template_codegen.compile_model(
+        model, existing_html=existing
+    )
     return html_text, json_config
 
 
@@ -329,29 +348,25 @@ def _resolved_legacy_binding_value(
     if model_path == "position.y" and anchor.get("y") == "bottom":
         height = _resolve_model_path(el, "size.h")
         try:
-            return int(round(
-                float(design.get("height") or 0)
-                - float(raw)
-                - float(height or 0)
-            ))
+            return int(
+                round(
+                    float(design.get("height") or 0) - float(raw) - float(height or 0)
+                )
+            )
         except (TypeError, ValueError):
             return raw
     if model_path == "position.x" and anchor.get("x") == "right":
         width = _resolve_model_path(el, "size.w")
         try:
-            return int(round(
-                float(design.get("width") or 0)
-                - float(raw)
-                - float(width or 0)
-            ))
+            return int(
+                round(float(design.get("width") or 0) - float(raw) - float(width or 0))
+            )
         except (TypeError, ValueError):
             return raw
     return raw
 
 
-def _save_legacy_template(
-    model: Dict[str, Any], template_name: str
-) -> Dict[str, Any]:
+def _save_legacy_template(model: Dict[str, Any], template_name: str) -> Dict[str, Any]:
     """
     Persist value edits for a legacy template without touching its HTML.
 
@@ -386,9 +401,7 @@ def _save_legacy_template(
         with open(json_path, "r", encoding="utf-8") as fh:
             config = json.load(fh)
     except (OSError, json.JSONDecodeError) as e:
-        raise SporeStudioError(
-            f"Could not read legacy config {json_path}: {e}"
-        ) from e
+        raise SporeStudioError(f"Could not read legacy config {json_path}: {e}") from e
 
     design = model.get("design") or {}
     edited_values: Dict[str, Any] = {}
@@ -405,9 +418,7 @@ def _save_legacy_template(
             for model_path, field_id in bindings.items():
                 if not field_id:
                     continue
-                value = _resolved_legacy_binding_value(
-                    el, model_path, design
-                )
+                value = _resolved_legacy_binding_value(el, model_path, design)
                 if value is None:
                     continue
                 edited_values[str(field_id)] = value
@@ -440,10 +451,9 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     For legacy templates (``model["legacy"]`` is truthy) only the public
     JSON config is updated — see :func:`_save_legacy_template`.
 
-    Re-saves are non-destructive for user-tuned ``value`` fields in the
-    public JSON config: we use :func:`merge_template_configs.merge_config`
-    so any property the user has tweaked through Source Settings or
-    Stream Deck stays intact when codegen rewrites the file.
+    The public JSON config is always regenerated from the editor model on
+    save. Prior Source Settings values are not merged back in, so OBS and
+    the in-app settings tab stay aligned with Spore Studio.
 
     Returns:
         The model as written (with name/alert_system normalized).
@@ -475,25 +485,10 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
 
     parser = TemplateConfigParser()
     json_path = parser.get_config_path(template_name)
-    if os.path.isfile(json_path):
-        try:
-            with open(json_path, "r", encoding="utf-8") as fh:
-                old_config = json.load(fh)
-            merged_config = _merge_config(json_config, old_config)
-        except (OSError, json.JSONDecodeError) as e:
-            logger.warning(
-                "Could not merge with existing config %s: %s", json_path, e
-            )
-            merged_config = json_config
-        except Exception as e:
-            logger.warning("merge_config failed for %s: %s", template_name, e)
-            merged_config = json_config
-    else:
-        merged_config = json_config
 
     html_path = get_template_path(f"{template_name}.html")
     _atomic_write(html_path, html_text)
-    _atomic_write_json(json_path, merged_config)
+    _atomic_write_json(json_path, json_config)
     template_parser_back.save_sidecar(template_name, model)
     ensure_template_assets_folder(template_name)
 

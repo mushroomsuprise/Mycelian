@@ -150,10 +150,26 @@ def _mimetype_for_asset_filename(filename: str) -> Optional[str]:
 # Mock data pools shared with :mod:`spore_studio.preview_mocks` for manual
 # preview toolbar emits (Custom Sources + Spore Studio).
 _DEMO_USERNAMES = (
-    "PixelPanda", "NeonNova", "TacoTuesday", "ShinyHaxor", "QwertyKnight",
-    "MidnightMango", "EmberFox", "GlitchWizard", "VelvetVortex", "OptimusByte",
-    "RetroRogue", "CelestialCat", "BlueberryBoss", "QuantumQuokka", "ZenithZen",
-    "FrostyFlame", "LunarLynx", "RubyRanger", "SableSpark", "TwilightTitan",
+    "PixelPanda",
+    "NeonNova",
+    "TacoTuesday",
+    "ShinyHaxor",
+    "QwertyKnight",
+    "MidnightMango",
+    "EmberFox",
+    "GlitchWizard",
+    "VelvetVortex",
+    "OptimusByte",
+    "RetroRogue",
+    "CelestialCat",
+    "BlueberryBoss",
+    "QuantumQuokka",
+    "ZenithZen",
+    "FrostyFlame",
+    "LunarLynx",
+    "RubyRanger",
+    "SableSpark",
+    "TwilightTitan",
 )
 _DEMO_CHAT_MESSAGES = (
     "GG!",
@@ -190,8 +206,16 @@ _DEMO_GAME_TITLES = (
     "Apex Legends",
 )
 _DEMO_CHAT_COLORS = (
-    "#FF4500", "#1E90FF", "#00CED1", "#FF69B4", "#9ACD32",
-    "#FFA500", "#9370DB", "#FFD700", "#20C997", "#FF6B6B",
+    "#FF4500",
+    "#1E90FF",
+    "#00CED1",
+    "#FF69B4",
+    "#9ACD32",
+    "#FFA500",
+    "#9370DB",
+    "#FFD700",
+    "#20C997",
+    "#FF6B6B",
 )
 # Alert presets used by manual preview mock emits. Each entry is the body
 # of an ``alerts_play_alert`` / ``next_alert``-style payload.
@@ -200,14 +224,25 @@ _DEMO_ALERT_PRESETS = (
     {"alert_type": "sub", "tier": "1000"},
     {"alert_type": "bit", "amt_cheered": 200, "message": "Awesome stream!"},
     {"alert_type": "raid", "raider_count": 25},
-    {"alert_type": "donation", "amount": 5.0, "currency": "USD",
-     "message": "Keep it up <3"},
+    {
+        "alert_type": "donation",
+        "amount": 5.0,
+        "currency": "USD",
+        "message": "Keep it up <3",
+    },
     {"alert_type": "follow"},
     {"alert_type": "giftsub", "gift_qty": 3, "tier": "1000"},
-    {"alert_type": "resub", "tier": "1000", "cumulative_months": 7,
-     "message": "7 months strong!"},
-    {"alert_type": "point", "alert_name": "Hydrate Reminder",
-     "message": "Time to drink water!"},
+    {
+        "alert_type": "resub",
+        "tier": "1000",
+        "cumulative_months": 7,
+        "message": "7 months strong!",
+    },
+    {
+        "alert_type": "point",
+        "alert_name": "Hydrate Reminder",
+        "message": "Time to drink water!",
+    },
 )
 
 # Snippet appended to a template's HTML response when served in preview mode
@@ -406,6 +441,7 @@ def assign_next_alert_queue_seq() -> int:
         EXPECTED_ALERT_COMPLETE_SEQ = _alert_queue_seq
         return _alert_queue_seq
 
+
 # Global flag to track Web Engine status
 web_engine_running = False
 
@@ -470,8 +506,7 @@ class WebEngine:
 
         # Template auto-reload: dev / unfrozen builds only (OBS sources stat every HTML file otherwise)
         _jinja_auto_reload = bool(
-            os.environ.get("MYCELIAN_DEV")
-            or not getattr(sys, "frozen", False)
+            os.environ.get("MYCELIAN_DEV") or not getattr(sys, "frozen", False)
         )
         self.app.config["TEMPLATES_AUTO_RELOAD"] = _jinja_auto_reload
         self.app.config["SEND_FILE_MAX_AGE_DEFAULT"] = (
@@ -499,9 +534,7 @@ class WebEngine:
         self._watchdog_thread: Optional[threading.Thread] = None
 
         # Short-TTL cache for GET /api/all-template-configs (OBS refresh storms)
-        self._all_template_configs_cache: Optional[
-            Tuple[str, float, bytes]
-        ] = None
+        self._all_template_configs_cache: Optional[Tuple[str, float, bytes]] = None
         self._all_template_configs_cache_lock = threading.Lock()
         self._all_template_configs_slow_log_at = 0.0
 
@@ -702,12 +735,13 @@ class WebEngine:
                     preview_tok
                 )
                 elapsed = time.time() - t0
-                if elapsed > 0.5 and time.time() >= self._all_template_configs_slow_log_at:
+                if (
+                    elapsed > 0.5
+                    and time.time() >= self._all_template_configs_slow_log_at
+                ):
                     self._all_template_configs_slow_log_at = time.time() + 30.0
                     try:
-                        template_count = len(
-                            json.loads(payload_bytes.decode("utf-8"))
-                        )
+                        template_count = len(json.loads(payload_bytes.decode("utf-8")))
                     except Exception:
                         template_count = -1
                     logger.warning(
@@ -783,9 +817,7 @@ class WebEngine:
                 if theme:
                     theme_css = generate_css_variables(theme)
                     theme_type = theme.theme_type or "dark"
-                    theme_block = (
-                        f'<style id="mycelian-theme-vars">{theme_css}</style>'
-                    )
+                    theme_block = f'<style id="mycelian-theme-vars">{theme_css}</style>'
                     if 'id="mycelian-theme-vars"' not in html:
                         if "</head>" in html:
                             html = html.replace(
@@ -812,9 +844,11 @@ class WebEngine:
             try:
                 from .spore_studio import event_registry as _ev
 
-                return _ev.get_event_registry(), 200, {
-                    "Content-Type": "application/json"
-                }
+                return (
+                    _ev.get_event_registry(),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
             except Exception as e:
                 logger.error("Spore Studio events endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
@@ -825,9 +859,11 @@ class WebEngine:
             try:
                 from .spore_studio import data_source_registry as _ds
 
-                return _ds.get_data_source_registry(), 200, {
-                    "Content-Type": "application/json"
-                }
+                return (
+                    _ds.get_data_source_registry(),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
             except Exception as e:
                 logger.error("Spore Studio data-sources endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
@@ -838,9 +874,11 @@ class WebEngine:
             try:
                 from .spore_studio import control_action_registry as _ca
 
-                return _ca.get_control_action_registry(), 200, {
-                    "Content-Type": "application/json"
-                }
+                return (
+                    _ca.get_control_action_registry(),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
             except Exception as e:
                 logger.error("Spore Studio control-actions endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
@@ -884,9 +922,11 @@ class WebEngine:
             try:
                 from .spore_studio import fonts_registry as _fr
 
-                return _fr.get_font_registry(), 200, {
-                    "Content-Type": "application/json"
-                }
+                return (
+                    _fr.get_font_registry(),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
             except Exception as e:
                 logger.error("Spore Studio fonts endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
@@ -938,9 +978,7 @@ class WebEngine:
                     {"Content-Type": "application/json"},
                 )
 
-        @self.app.route(
-            "/api/spore-studio/preview/register", methods=["POST"]
-        )
+        @self.app.route("/api/spore-studio/preview/register", methods=["POST"])
         def register_spore_studio_preview():
             """
             Register a preview session for the Spore Studio iframe.
@@ -973,7 +1011,8 @@ class WebEngine:
             except Exception as e:
                 logger.error(
                     "Spore Studio preview register error: %s",
-                    e, exc_info=True,
+                    e,
+                    exc_info=True,
                 )
                 return (
                     {"error": str(e)},
@@ -981,9 +1020,7 @@ class WebEngine:
                     {"Content-Type": "application/json"},
                 )
 
-        @self.app.route(
-            "/api/spore-studio/preview/draft", methods=["POST"]
-        )
+        @self.app.route("/api/spore-studio/preview/draft", methods=["POST"])
         def spore_studio_preview_draft():
             """Compile unsaved editor model into the preview session (HTML + JSON)."""
             try:
@@ -1009,7 +1046,10 @@ class WebEngine:
                 template_name = str(model.get("template_name") or "").strip()
                 with self._preview_sessions_lock:
                     sess = self._preview_sessions.get(str(token))
-                    if not isinstance(sess, dict) or sess.get("template") != template_name:
+                    if (
+                        not isinstance(sess, dict)
+                        or sess.get("template") != template_name
+                    ):
                         return (
                             {
                                 "error": (
@@ -1036,9 +1076,7 @@ class WebEngine:
                     {"Content-Type": "application/json"},
                 )
 
-        @self.app.route(
-            "/api/spore-studio/preview/release", methods=["POST"]
-        )
+        @self.app.route("/api/spore-studio/preview/release", methods=["POST"])
         def release_spore_studio_preview():
             """Drop the preview session created by ``/preview/register``."""
             try:
@@ -1061,7 +1099,8 @@ class WebEngine:
             except Exception as e:
                 logger.error(
                     "Spore Studio preview release error: %s",
-                    e, exc_info=True,
+                    e,
+                    exc_info=True,
                 )
                 return (
                     {"error": str(e)},
@@ -1102,7 +1141,8 @@ class WebEngine:
             except Exception as e:
                 logger.error(
                     "Spore Studio notify proxy error: %s",
-                    e, exc_info=True,
+                    e,
+                    exc_info=True,
                 )
                 return (
                     {"error": str(e)},
@@ -1152,7 +1192,9 @@ class WebEngine:
                 )
             except Exception as e:
                 logger.error(
-                    "Spore Studio preview emit error: %s", e, exc_info=True,
+                    "Spore Studio preview emit error: %s",
+                    e,
+                    exc_info=True,
                 )
                 return (
                     {"error": str(e)},
@@ -1182,7 +1224,9 @@ class WebEngine:
                 )
             except Exception as e:
                 logger.error(
-                    "Spore Studio preview mocks error: %s", e, exc_info=True,
+                    "Spore Studio preview mocks error: %s",
+                    e,
+                    exc_info=True,
                 )
                 return (
                     {"error": str(e)},
@@ -1509,10 +1553,10 @@ class WebEngine:
 
                                                 # Add type-specific data based on element configuration
                                                 if element_type == "counter_control":
-                                                    action_info[
-                                                        "default_data"
-                                                    ] = _dynamic_counter_control_default_data(
-                                                        element
+                                                    action_info["default_data"] = (
+                                                        _dynamic_counter_control_default_data(
+                                                            element
+                                                        )
                                                     )
                                                 elif element_type in [
                                                     "number_input",
@@ -1693,13 +1737,10 @@ class WebEngine:
                 action_name = data.get("actionName", "")
                 raw_event_name = data.get("eventName")
                 use_client_event = (
-                    raw_event_name is not None
-                    and str(raw_event_name).strip() != ""
+                    raw_event_name is not None and str(raw_event_name).strip() != ""
                 )
                 event_name = (
-                    str(raw_event_name).strip()
-                    if use_client_event
-                    else action_name
+                    str(raw_event_name).strip() if use_client_event else action_name
                 )
                 action_data = data.get("actionData", {})
 
@@ -1845,10 +1886,10 @@ class WebEngine:
 
                                         # Add type-specific data based on element configuration
                                         if element_type == "counter_control":
-                                            action_info[
-                                                "default_data"
-                                            ] = _dynamic_counter_control_default_data(
-                                                element
+                                            action_info["default_data"] = (
+                                                _dynamic_counter_control_default_data(
+                                                    element
+                                                )
                                             )
                                         elif element_type in [
                                             "number_input",
@@ -2136,14 +2177,10 @@ class WebEngine:
                 )
                 configs[config_name] = config
             except Exception as e:
-                logger.warning(
-                    "Error loading config for %s: %s", config_name, e
-                )
+                logger.warning("Error loading config for %s: %s", config_name, e)
         return configs
 
-    def _get_all_template_configs_cached(
-        self, preview_tok: str
-    ) -> Tuple[bytes, bool]:
+    def _get_all_template_configs_cached(self, preview_tok: str) -> Tuple[bytes, bool]:
         """Return UTF-8 JSON bytes and whether the response came from TTL cache."""
         cache_key = preview_tok or ""
         now = time.time()
@@ -2238,9 +2275,7 @@ class WebEngine:
                     # Fresh loop per job so aiohttp connector cleanup completes fully.
                     asyncio.run(coro)
                 except Exception as e:
-                    logger.error(
-                        "Twitch API worker job failed: %s", e, exc_info=True
-                    )
+                    logger.error("Twitch API worker job failed: %s", e, exc_info=True)
         finally:
             with self._twitch_api_worker_lock:
                 self._twitch_api_worker_started = False
@@ -2252,9 +2287,7 @@ class WebEngine:
 
     def _socket_client_disconnected(self) -> int:
         with self._socket_connected_lock:
-            self._socket_connected_count = max(
-                0, self._socket_connected_count - 1
-            )
+            self._socket_connected_count = max(0, self._socket_connected_count - 1)
             return self._socket_connected_count
 
     def _get_socket_connected_count(self) -> int:
@@ -2346,9 +2379,7 @@ class WebEngine:
         try:
             log_dir = Path(get_data_path("logs"))
             log_dir.mkdir(exist_ok=True)
-            dump_path = (
-                log_dir / f"freeze_dump_{datetime.now():%Y%m%d_%H%M%S}.txt"
-            )
+            dump_path = log_dir / f"freeze_dump_{datetime.now():%Y%m%d_%H%M%S}.txt"
             with open(dump_path, "w", encoding="utf-8") as fh:
                 fh.write(
                     f"Thread stack dump ({reason}) at "
@@ -2382,10 +2413,7 @@ class WebEngine:
         thread exiting, and the gevent hub freezing. Both trigger an automatic
         restart attempt.
         """
-        if (
-            self._supervisor_thread is not None
-            and self._supervisor_thread.is_alive()
-        ):
+        if self._supervisor_thread is not None and self._supervisor_thread.is_alive():
             return
         self._supervisor_thread = threading.Thread(
             target=self._supervisor_loop,
@@ -2405,8 +2433,7 @@ class WebEngine:
                 return
             try:
                 thread_alive = (
-                    self.server_thread is not None
-                    and self.server_thread.is_alive()
+                    self.server_thread is not None and self.server_thread.is_alive()
                 )
                 if not thread_alive and not self.is_running:
                     self.request_restart("WebEngine thread is no longer running")
@@ -2415,8 +2442,7 @@ class WebEngine:
                     if (
                         self.is_running
                         and last is not None
-                        and (time.time() - last)
-                        > self._FREEZE_RESTART_THRESHOLD_SEC
+                        and (time.time() - last) > self._FREEZE_RESTART_THRESHOLD_SEC
                     ):
                         self.request_restart(
                             "WebEngine gevent hub stopped responding "
@@ -2482,21 +2508,15 @@ class WebEngine:
 
         time.sleep(3.0)
         if self.is_alive():
-            logger.warning(
-                "WebEngine auto-restart succeeded (attempt %s)", attempt
-            )
+            logger.warning("WebEngine auto-restart succeeded (attempt %s)", attempt)
             with self._restart_lock:
                 self._restart_attempts = 0
                 self._restart_giveup_notified = False
             self._notify_restart_recovered()
         else:
-            logger.error(
-                "WebEngine auto-restart did not recover (attempt %s)", attempt
-            )
+            logger.error("WebEngine auto-restart did not recover (attempt %s)", attempt)
             with self._restart_lock:
-                give_up = (
-                    self._restart_attempts >= self._MAX_RESTART_ATTEMPTS
-                )
+                give_up = self._restart_attempts >= self._MAX_RESTART_ATTEMPTS
             if give_up and not self._restart_giveup_notified:
                 self._restart_giveup_notified = True
                 self._notify_restart_giveup()
@@ -2646,15 +2666,11 @@ class WebEngine:
                             template_config = copy.deepcopy(draft_config)
                         elif overrides or mycelian_preview_mode:
                             template_config = copy.deepcopy(
-                                engine_self.template_config_parser.load_config(
-                                    template
-                                )
+                                engine_self.template_config_parser.load_config(template)
                             )
                         else:
                             template_config = (
-                                engine_self.template_config_parser.load_config(
-                                    template
-                                )
+                                engine_self.template_config_parser.load_config(template)
                             )
 
                         engine_self._apply_preview_config_layers(
@@ -2732,7 +2748,8 @@ class WebEngine:
             logger.debug(
                 "Skipping explicit route for template %s (post-startup); "
                 "fallback route will serve it: %s",
-                template_name, e,
+                template_name,
+                e,
             )
         except Exception as e:
             logger.error(
@@ -2772,10 +2789,7 @@ class WebEngine:
                 if preview_token:
                     with engine_self._preview_sessions_lock:
                         sess = engine_self._preview_sessions.get(preview_token)
-                    if (
-                        isinstance(sess, dict)
-                        and sess.get("template") == template_name
-                    ):
+                    if isinstance(sess, dict) and sess.get("template") == template_name:
                         ov = sess.get("overrides")
                         if isinstance(ov, dict):
                             overrides = ov
@@ -2786,11 +2800,7 @@ class WebEngine:
                 if isinstance(sess, dict):
                     dh = sess.get("draft_html")
                     dc = sess.get("draft_config")
-                    if (
-                        isinstance(dh, str)
-                        and dh.strip()
-                        and isinstance(dc, dict)
-                    ):
+                    if isinstance(dh, str) and dh.strip() and isinstance(dc, dict):
                         draft_html = dh
                         draft_config = dc
 
@@ -2798,15 +2808,11 @@ class WebEngine:
                     template_config = copy.deepcopy(draft_config)
                 elif overrides or mycelian_preview_mode:
                     template_config = copy.deepcopy(
-                        engine_self.template_config_parser.load_config(
-                            template_name
-                        )
+                        engine_self.template_config_parser.load_config(template_name)
                     )
                 else:
-                    template_config = (
-                        engine_self.template_config_parser.load_config(
-                            template_name
-                        )
+                    template_config = engine_self.template_config_parser.load_config(
+                        template_name
                     )
 
                 engine_self._apply_preview_config_layers(
@@ -2853,7 +2859,9 @@ class WebEngine:
             except Exception as e:
                 logger.error(
                     "Template fallback render error for %s: %s",
-                    template_name, e, exc_info=True,
+                    template_name,
+                    e,
+                    exc_info=True,
                 )
                 return (f"Error loading template {template_name}: {e}", 500)
 
@@ -3032,11 +3040,7 @@ class WebEngine:
                 if prev.get("template") == str(template_name):
                     dh = prev.get("draft_html")
                     dc = prev.get("draft_config")
-                    if (
-                        isinstance(dh, str)
-                        and dh.strip()
-                        and isinstance(dc, dict)
-                    ):
+                    if isinstance(dh, str) and dh.strip() and isinstance(dc, dict):
                         draft_html = dh
                         draft_config = dc
             self._preview_sessions[str(token)] = {
@@ -3071,10 +3075,7 @@ class WebEngine:
                         if not isinstance(element, dict):
                             continue
                         eid = element.get("id")
-                        if (
-                            eid in mock_values
-                            and eid not in overrides
-                        ):
+                        if eid in mock_values and eid not in overrides:
                             element["value"] = mock_values[eid]
 
     @staticmethod
@@ -3117,11 +3118,7 @@ class WebEngine:
 
         out: Dict[str, Any] = {}
         for element in template_config.get("elements", []):
-            if (
-                isinstance(element, dict)
-                and "id" in element
-                and "value" in element
-            ):
+            if isinstance(element, dict) and "id" in element and "value" in element:
                 eid = str(element["id"])
                 val = element["value"]
                 if eid.endswith("_font_family") and val not in (None, ""):
@@ -3167,9 +3164,9 @@ class WebEngine:
         (``/api/spore-studio/preview/emit``).
         """
         try:
-            token = request.cookies.get(
-                "mycelian_preview_token"
-            ) or request.args.get("__preview_token")
+            token = request.cookies.get("mycelian_preview_token") or request.args.get(
+                "__preview_token"
+            )
             if not token:
                 return
             self._register_preview_iframe_sid(token, sid)
@@ -3526,9 +3523,7 @@ class WebEngine:
                 connected,
             )
             self._preview_demo_stop[request.sid] = True
-            stale_token = self._preview_iframe_tokens.pop(
-                request.sid, None
-            )
+            stale_token = self._preview_iframe_tokens.pop(request.sid, None)
             if stale_token is not None:
                 sids = self._preview_iframe_sids.get(stale_token)
                 if sids:
@@ -3564,9 +3559,7 @@ class WebEngine:
                 )
                 return
             if EXPECTED_ALERT_COMPLETE_SEQ is None:
-                logger.debug(
-                    "alert_complete ignored (no active expected queue_seq)"
-                )
+                logger.debug("alert_complete ignored (no active expected queue_seq)")
                 return
             if seq != EXPECTED_ALERT_COMPLETE_SEQ:
                 logger.debug(
@@ -3695,9 +3688,7 @@ class WebEngine:
                         self.socketio.emit("get_data", result, to=request.sid)
                         return result
                     except Exception as exc:
-                        logger.debug(
-                            "statistics/session snapshot failed: %s", exc
-                        )
+                        logger.debug("statistics/session snapshot failed: %s", exc)
 
                 result = database_manager.get_data(path, request_etag)
                 logger.debug(f"Successfully retrieved data from path: {path}")
@@ -3963,9 +3954,7 @@ class WebEngine:
                             if twitch_data.token_expiry:
                                 try:
                                     twitch.twitch_api.token_expiry = (
-                                        datetime.fromisoformat(
-                                            twitch_data.token_expiry
-                                        )
+                                        datetime.fromisoformat(twitch_data.token_expiry)
                                     )
                                 except ValueError:
                                     logger.warning(
@@ -3986,8 +3975,7 @@ class WebEngine:
 
                         if (
                             twitch.twitch_api.auth_token != original_auth_token
-                            or twitch.twitch_api.refresh_token
-                            != original_refresh_token
+                            or twitch.twitch_api.refresh_token != original_refresh_token
                         ):
                             logger.info(
                                 "Tokens were refreshed during API proxy call - syncing to state manager"
@@ -5119,10 +5107,8 @@ class WebEngine:
                         twitch.twitch_api.refresh_token = twitch_data.refresh_token
                         if twitch_data.token_expiry:
                             try:
-                                twitch.twitch_api.token_expiry = (
-                                    datetime.fromisoformat(
-                                        twitch_data.token_expiry
-                                    )
+                                twitch.twitch_api.token_expiry = datetime.fromisoformat(
+                                    twitch_data.token_expiry
                                 )
                             except ValueError:
                                 pass
@@ -5164,9 +5150,7 @@ class WebEngine:
                         self.socketio.emit(
                             "twitch-api-response", response_data, to=client_sid
                         )
-                        logger.debug(
-                            "Twitch API request successful for %s", endpoint
-                        )
+                        logger.debug("Twitch API request successful for %s", endpoint)
                     except Exception as e:
                         err = str(e)
                         if err.startswith("Authentication required"):
@@ -5497,7 +5481,9 @@ class WebEngine:
                     return
 
                 event_name_req = (
-                    data.get("eventName", action_name) if isinstance(data, dict) else action_name
+                    data.get("eventName", action_name)
+                    if isinstance(data, dict)
+                    else action_name
                 )
                 compat_action_key = action_name
                 final_broadcast_ad = coerced
@@ -5685,9 +5671,7 @@ class WebEngine:
         config_path = self.template_config_parser.get_config_path(template_name)
         try:
             mtime = (
-                os.path.getmtime(config_path)
-                if os.path.exists(config_path)
-                else 0.0
+                os.path.getmtime(config_path) if os.path.exists(config_path) else 0.0
             )
         except OSError:
             mtime = 0.0
@@ -5779,9 +5763,7 @@ class WebEngine:
         """Execute a Stream Deck specific action"""
         try:
             event_name = action_config.get("event", f"{template_name}_{action_name}")
-            event_data = _merged_streamdeck_options_payload(
-                action_config, action_data
-            )
+            event_data = _merged_streamdeck_options_payload(action_config, action_data)
 
             # Emit the event to all clients
             self.socketio.emit(event_name, event_data)
@@ -6255,9 +6237,7 @@ class WebEngine:
                 except Exception as exc:
                     if not self.is_running:
                         break
-                    logger.warning(
-                        "template control emit loop sleep failed: %s", exc
-                    )
+                    logger.warning("template control emit loop sleep failed: %s", exc)
                     try:
                         self.socketio.sleep(0.1)
                     except Exception:
@@ -6710,14 +6690,10 @@ class WebEngine:
         try:
             payload = {"service": service, "reason": reason}
             self.socketio.emit("overlay-recovery", payload)
-            logger.info(
-                "Broadcast overlay-recovery for %s (%s)", service, reason
-            )
+            logger.info("Broadcast overlay-recovery for %s (%s)", service, reason)
             return True
         except Exception as e:
-            logger.error(
-                "Error broadcasting overlay-recovery: %s", e, exc_info=True
-            )
+            logger.error("Error broadcasting overlay-recovery: %s", e, exc_info=True)
             return False
 
     def message_moderation(self, moderation_data):
@@ -7023,10 +6999,10 @@ class WebEngine:
 
                                         # Add type-specific data based on element configuration
                                         if element_type == "counter_control":
-                                            action_info[
-                                                "default_data"
-                                            ] = _dynamic_counter_control_default_data(
-                                                element
+                                            action_info["default_data"] = (
+                                                _dynamic_counter_control_default_data(
+                                                    element
+                                                )
                                             )
                                         elif element_type in [
                                             "number_input",
@@ -7238,9 +7214,7 @@ class WebEngine:
         global web_engine_running
         run_error: Optional[BaseException] = None
         try:
-            logger.info(
-                "Starting WebEngine server on %s:%s", self.host, self.port
-            )
+            logger.info("Starting WebEngine server on %s:%s", self.host, self.port)
             self.is_running = True
             web_engine_running = True
             # Enable debug mode for template reloading, but disable the reloader to avoid conflicts with our threading
@@ -7319,9 +7293,7 @@ class WebEngine:
                             # flask-socketio's stop() dereferences a None server
                             # ("'NoneType' object has no attribute 'close'"). Skip
                             # the call in that case to avoid the harmless error.
-                            wsgi_server = getattr(
-                                self.socketio, "wsgi_server", None
-                            )
+                            wsgi_server = getattr(self.socketio, "wsgi_server", None)
                             server_alive = (
                                 self.server_thread is not None
                                 and self.server_thread.is_alive()
@@ -7405,9 +7377,7 @@ class WebEngine:
             ]
             return len(control_elements)
         except Exception as e:
-            logger.debug(
-                "Could not get control count for %s: %s", template_name, e
-            )
+            logger.debug("Could not get control count for %s: %s", template_name, e)
             return 0
 
     def get_available_source_urls(self):

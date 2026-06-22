@@ -48,6 +48,8 @@ from .spore_data_codegen import (
     counter_image_range_max_id,
     counter_image_range_min_id,
     counter_image_range_src_id,
+    progress_bar_max_config_id,
+    progress_bar_max_kind_config_id,
     inject_data_runtime_block,
 )
 from .timing import effective_duration_seconds
@@ -101,6 +103,24 @@ def _slugify_id(value: str) -> str:
     return value.strip("_") or "el"
 
 
+def _apply_counter_format_tokens(
+    fmt: str,
+    value: Any,
+    min_bound: Any = None,
+    max_bound: Any = None,
+) -> str:
+    """Substitute ``{value}``, ``{min}``, and ``{max}`` for counter HTML preview."""
+    text = str(fmt or "{value}")
+    text = text.replace("{value}", str(value))
+    text = text.replace(
+        "{min}", "" if min_bound is None else str(min_bound)
+    )
+    text = text.replace(
+        "{max}", "" if max_bound is None else str(max_bound)
+    )
+    return text
+
+
 _NON_STYLE_PROP_KEYS = frozenset(
     {
         "text",
@@ -116,6 +136,13 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "audio_volume",
         "audio_fade_in_ms",
         "audio_fade_out_ms",
+        "track_color",
+        "fill_color",
+        "fill_animation_duration_ms",
+        "fill_animation_easing",
+        "near_goal_threshold",
+        "near_goal_effect",
+        "near_goal_pulse",
     }
 )
 
@@ -200,12 +227,24 @@ def _css_kv(
         return out
 
     pixel_keys = {
-        "font_size", "border_radius", "border_width", "padding", "margin",
-        "letter_spacing", "line_height_px",
+        "font_size",
+        "border_radius",
+        "border_width",
+        "padding",
+        "margin",
+        "letter_spacing",
+        "line_height_px",
     }
     raw_keys = {
-        "color", "background", "background_color", "border_color",
-        "font_family", "font_weight", "text_align", "opacity", "z_index",
+        "color",
+        "background",
+        "background_color",
+        "border_color",
+        "font_family",
+        "font_weight",
+        "text_align",
+        "opacity",
+        "z_index",
     }
 
     for key, value in props.items():
@@ -401,11 +440,21 @@ def _fmt_anim_data_attrs(element: Dict[str, Any]) -> str:
     anim_in = str(anims.get("anim_in") or "none").strip()
     anim_out = str(anims.get("anim_out") or "none").strip()
     if anim_in not in (
-        "none", "fade", "slideIn", "slideOut", "scaleIn", "scaleOut",
+        "none",
+        "fade",
+        "slideIn",
+        "slideOut",
+        "scaleIn",
+        "scaleOut",
     ):
         anim_in = "none"
     if anim_out not in (
-        "none", "fade", "slideIn", "slideOut", "scaleIn", "scaleOut",
+        "none",
+        "fade",
+        "slideIn",
+        "slideOut",
+        "scaleIn",
+        "scaleOut",
     ):
         anim_out = "none"
     try:
@@ -455,9 +504,7 @@ def _render_element(
     props = element.get("props") or {}
     style = _element_style(element, parent=parent, font_map=font_map)
     classes = "spore-element"
-    hidden_attr = (
-        ' data-spore-hidden="true"' if _element_start_hidden(element) else ""
-    )
+    hidden_attr = ' data-spore-hidden="true"' if _element_start_hidden(element) else ""
     anim_attrs = _fmt_anim_data_attrs(element)
     text_mode = str(element.get("text_mode") or "static").strip().lower()
     if text_mode not in ("static", "counter", "data_display"):
@@ -469,16 +516,26 @@ def _render_element(
         text_default = props.get("text", "")
         jinja_var = text_var
         if text_mode == "counter":
-            cfg = element.get("counter") if isinstance(element.get("counter"), dict) else {}
+            cfg = (
+                element.get("counter")
+                if isinstance(element.get("counter"), dict)
+                else {}
+            )
             fmt = str(cfg.get("format") or "{value}")
             try:
                 init = cfg.get("initial_value", 0)
             except (TypeError, ValueError):
                 init = 0
-            text_default = fmt.replace("{value}", str(init))
+            text_default = _apply_counter_format_tokens(
+                fmt, init, cfg.get("min"), cfg.get("max")
+            )
             jinja_var = counter_format_config_id(eid)
         elif text_mode == "data_display":
-            cfg = element.get("data_display") if isinstance(element.get("data_display"), dict) else {}
+            cfg = (
+                element.get("data_display")
+                if isinstance(element.get("data_display"), dict)
+                else {}
+            )
             text_default = str(
                 cfg.get("default_text") if cfg.get("default_text") is not None else "—"
             )
@@ -486,7 +543,7 @@ def _render_element(
         return (
             f'<div id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
-            f'{anim_attrs} '
+            f"{anim_attrs} "
             f'data-spore-type="text"{mode_attr}>'
             f"{{{{ {jinja_var}|default({json.dumps(text_default)})|safe }}}}"
             f"</div>"
@@ -515,7 +572,7 @@ def _render_element(
         return (
             f'<img id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
-            f'{anim_attrs} '
+            f"{anim_attrs} "
             f'data-spore-type="image"{counter_attrs} '
             f'src="{{{{ {jinja_src_var}|default({json.dumps(src_default)}) }}}}" '
             f'alt="" />'
@@ -561,7 +618,7 @@ def _render_element(
         return (
             f'<div id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
-            f'{anim_attrs} '
+            f"{anim_attrs} "
             f'data-spore-type="video" '
             f'data-spore-visual-kind="{html.escape(visual_kind, quote=True)}">'
             f"{inner}{nested_audio}"
@@ -578,16 +635,89 @@ def _render_element(
         )
         return (
             f'<audio id="{html.escape(eid)}" class="{classes}"{hidden_attr} '
-            f'{anim_attrs} '
+            f"{anim_attrs} "
             f'data-spore-type="audio" preload="auto" {audio_attrs}>'
             f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
             f"</audio>"
         )
 
+    if etype == "progress_bar":
+        ps = (
+            element.get("progress_source")
+            if isinstance(element.get("progress_source"), dict)
+            else {}
+        )
+        cid = _slugify_id(str(ps.get("counter_id") or ""))
+        max_kind = str(ps.get("max_kind") or "fixed").strip().lower()
+        if max_kind not in ("fixed", "counter"):
+            max_kind = "fixed"
+        max_counter_id = _slugify_id(str(ps.get("max_counter_id") or ""))
+        try:
+            br = int(float(props.get("border_radius", 8)))
+        except (TypeError, ValueError):
+            br = 8
+        try:
+            bw = int(float(props.get("border_width", 0)))
+        except (TypeError, ValueError):
+            bw = 0
+        try:
+            fad = int(float(props.get("fill_animation_duration_ms", 500)))
+        except (TypeError, ValueError):
+            fad = 500
+        fe_default = str(props.get("fill_animation_easing") or "ease-out")
+        track_default = str(props.get("track_color") or "#1e293b")
+        fill_default = str(props.get("fill_color") or "#a855f7")
+        bc_default = str(props.get("border_color") or "#000000")
+        max_counter_attr = ""
+        if max_kind == "counter" and max_counter_id:
+            max_counter_attr = f' data-spore-max-counter-id="{html.escape(max_counter_id, quote=True)}"'
+        track_border = (
+            "border:"
+            + str(bw)
+            + "px solid {{ "
+            + eid
+            + "_border_color|default("
+            + json.dumps(bc_default)
+            + ") }};"
+            if bw > 0
+            else ""
+        )
+        track_bg = (
+            "{{ " + eid + "_track_color|default(" + json.dumps(track_default) + ") }}"
+        )
+        fill_bg = (
+            "{{ " + eid + "_fill_color|default(" + json.dumps(fill_default) + ") }}"
+        )
+        fill_dur = (
+            "{{ " + eid + "_fill_animation_duration_ms|default(" + str(fad) + ") }}"
+        )
+        fill_ease = (
+            "{{ "
+            + eid
+            + "_fill_animation_easing|default("
+            + json.dumps(fe_default)
+            + ") }}"
+        )
+        return (
+            f'<div id="{html.escape(eid)}" class="{classes} spore-progress-bar" '
+            f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+            f"{anim_attrs} "
+            f'data-spore-type="progress_bar" '
+            f'data-spore-counter-id="{html.escape(cid, quote=True)}" '
+            f'data-spore-max-kind="{html.escape(max_kind, quote=True)}"'
+            f"{max_counter_attr}>"
+            f'<div class="spore-progress-track" style="background:{track_bg};'
+            f'border-radius:{br}px;overflow:hidden;{track_border}">'
+            f'<div class="spore-progress-fill" style="width:0%;background:{fill_bg};'
+            f'border-radius:{br}px;transition:width {fill_dur}ms {fill_ease};">'
+            f"</div></div>"
+            f"</div>"
+        )
+
     return (
         f'<div id="{html.escape(eid)}" class="{classes}" '
         f'style="{html.escape(style, quote=True)}"{hidden_attr} '
-        f'{anim_attrs} '
+        f"{anim_attrs} "
         f'data-spore-type="container">{children_inner_markup}</div>'
     )
 
@@ -695,9 +825,7 @@ def _render_dom_tree(
     if not dicts_only:
         return ""
     roots, cmap = _partition_elements_for_dom(dicts_only)
-    return "\n".join(
-        _emit_dom_recursive(r, cmap, "", font_map=font_map) for r in roots
-    )
+    return "\n".join(_emit_dom_recursive(r, cmap, "", font_map=font_map) for r in roots)
 
 
 def _boilerplate_path(alert_system: str) -> str:
@@ -921,7 +1049,7 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                             "value": str(cfg.get("format") or "{value}"),
                             "description": (
                                 f"Display format for counter '{element.get('id', eid)}'. "
-                                "Use {{value}} for the numeric counter."
+                                "Use {value}, {min}, and {max}."
                             ),
                         }
                     )
@@ -952,8 +1080,7 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                             "id": text_var,
                             "label": f"{element.get('id', eid)} text",
                             "value": str(props.get("text", "")),
-                            "description":
-                                f"Text shown by element '{element.get('id', eid)}'.",
+                            "description": f"Text shown by element '{element.get('id', eid)}'.",
                         }
                     )
             elif etype in ("image", "video", "audio"):
@@ -974,9 +1101,7 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                             "id": counter_image_default_src_id(eid),
                             "label": f"{element.get('id', eid)} default image",
                             "value": str(
-                                cs.get("default_src")
-                                or props.get("src")
-                                or ""
+                                cs.get("default_src") or props.get("src") or ""
                             ),
                             "description": (
                                 f"Image URL when no counter range matches "
@@ -1044,9 +1169,8 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                             "id": src_var,
                             "label": f"{element.get('id', eid)} source URL",
                             "value": str(props.get("src", "")),
-                            "description":
-                                f"Source URL or path for element "
-                                f"'{element.get('id', eid)}'.",
+                            "description": f"Source URL or path for element "
+                            f"'{element.get('id', eid)}'.",
                         }
                     )
 
@@ -1193,7 +1317,89 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                         }
                     )
 
-            for key in ("color", "background_color", "font_family"):
+            if etype == "progress_bar":
+                ps = (
+                    element.get("progress_source")
+                    if isinstance(element.get("progress_source"), dict)
+                    else {}
+                )
+                if _expose_field(element, "max"):
+                    try:
+                        max_val = int(float(ps.get("max", 100)))
+                    except (TypeError, ValueError):
+                        max_val = 100
+                    elements_out.append(
+                        {
+                            "type": "number",
+                            "id": progress_bar_max_config_id(eid),
+                            "label": f"{element.get('id', eid)} max",
+                            "value": max_val,
+                            "min": 0,
+                            "max": 9999999999,
+                            "description": (
+                                f"Goal value (100% fill) for progress bar "
+                                f"'{element.get('id', eid)}' when max kind is fixed."
+                            ),
+                        }
+                    )
+                if _expose_field(element, "max_kind"):
+                    mk = str(ps.get("max_kind") or "fixed").strip().lower()
+                    if mk not in ("fixed", "counter"):
+                        mk = "fixed"
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": progress_bar_max_kind_config_id(eid),
+                            "label": f"{element.get('id', eid)} max kind",
+                            "value": mk,
+                            "description": (
+                                f"Max kind for '{element.get('id', eid)}': "
+                                f"'fixed' or 'counter'."
+                            ),
+                        }
+                    )
+                if _expose_field(element, "fill_animation_easing"):
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": f"{eid}_fill_animation_easing",
+                            "label": f"{element.get('id', eid)} fill animation easing",
+                            "value": str(
+                                props.get("fill_animation_easing") or "ease-out"
+                            ),
+                            "description": (
+                                f"CSS easing for fill width transitions on "
+                                f"'{element.get('id', eid)}'."
+                            ),
+                        }
+                    )
+                if _expose_field(element, "near_goal_effect"):
+                    effect = str(props.get("near_goal_effect") or "none").strip().lower()
+                    if effect not in ("none", "pulse", "shimmer", "scroll"):
+                        if props.get("near_goal_pulse"):
+                            effect = "pulse"
+                        else:
+                            effect = "none"
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": f"{eid}_near_goal_effect",
+                            "label": f"{element.get('id', eid)} near-goal effect",
+                            "value": effect,
+                            "description": (
+                                f"Animation when near goal for '{element.get('id', eid)}': "
+                                "none, pulse, shimmer, or scroll."
+                            ),
+                        }
+                    )
+
+            for key in (
+                "color",
+                "background_color",
+                "font_family",
+                "track_color",
+                "fill_color",
+            ):
                 if props.get(key) in (None, ""):
                     continue
                 if not _expose_field(element, key):
@@ -1207,9 +1413,8 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                         "id": f"{eid}_{key}",
                         "label": f"{element.get('id', eid)} {key.replace('_', ' ')}",
                         "value": export_val,
-                        "description":
-                            f"{key.replace('_', ' ').title()} for "
-                            f"'{element.get('id', eid)}'.",
+                        "description": f"{key.replace('_', ' ').title()} for "
+                        f"'{element.get('id', eid)}'.",
                     }
                 )
 
@@ -1224,13 +1429,18 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                         "id": f"{eid}_{key}",
                         "label": f"{element.get('id', eid)} {key.replace('_', ' ')}",
                         "value": str(props[key]),
-                        "description":
-                            f"{key.replace('_', ' ').title()} for "
-                            f"'{element.get('id', eid)}'.",
+                        "description": f"{key.replace('_', ' ').title()} for "
+                        f"'{element.get('id', eid)}'.",
                     }
                 )
 
-            for key in ("font_size", "border_radius", "border_width"):
+            for key in (
+                "font_size",
+                "border_radius",
+                "border_width",
+                "fill_animation_duration_ms",
+                "near_goal_threshold",
+            ):
                 if props.get(key) in (None, ""):
                     continue
                 if not _expose_field(element, key):
@@ -1247,9 +1457,8 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                         "value": value,
                         "min": 0,
                         "max": 4096,
-                        "description":
-                            f"{key.replace('_', ' ').title()} for "
-                            f"'{element.get('id', eid)}' (pixels).",
+                        "description": f"{key.replace('_', ' ').title()} for "
+                        f"'{element.get('id', eid)}' (pixels).",
                     }
                 )
 
@@ -1400,9 +1609,7 @@ def compile_model(
         if existing_user and not advanced_js:
             advanced_js = existing_user
     if advanced_js:
-        out_html = _replace_block(
-            out_html, _USER_BEGIN, _USER_END, advanced_js
-        )
+        out_html = _replace_block(out_html, _USER_BEGIN, _USER_END, advanced_js)
 
     style_parts: List[str] = []
     if font_css.strip():

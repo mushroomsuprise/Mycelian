@@ -65,6 +65,46 @@ _DATA_SOURCES: List[Dict[str, Any]] = [
     _src("alert.alert_type", "Alert type", category="Alert payload", value_type="string"),
     _src("alert.currency", "Currency", category="Alert payload", value_type="string"),
     _src("alert.queue_seq", "Queue sequence", category="Alert payload"),
+    _src(
+        "alert.gift_qty",
+        "Gift sub quantity",
+        category="Alert payload",
+        description="Number of subs gifted (giftsub alerts).",
+    ),
+    # Subscriptions (counter deltas — tier filter configured in delta editor)
+    _src(
+        "sub.new_sub",
+        "New sub (+1)",
+        category="Subscriptions",
+        value_type="number",
+        delta_only=True,
+        description=(
+            "Returns 1 for a new subscription alert, else the fallback (usually 0). "
+            "Optionally restrict to a sub tier in the delta editor."
+        ),
+    ),
+    _src(
+        "sub.resub",
+        "Resub (+1)",
+        category="Subscriptions",
+        value_type="number",
+        delta_only=True,
+        description=(
+            "Returns 1 for a resubscription alert, else the fallback (usually 0). "
+            "Optionally restrict to a sub tier in the delta editor."
+        ),
+    ),
+    _src(
+        "sub.gift_sub",
+        "Gift sub (+quantity)",
+        category="Subscriptions",
+        value_type="number",
+        delta_only=True,
+        description=(
+            "Returns the gifted sub quantity for a giftsub alert, else the fallback "
+            "(usually 0). Optionally restrict to a sub tier in the delta editor."
+        ),
+    ),
     # Chat
     _src("chat.username", "Chat username", category="Chat", value_type="string"),
     _src("chat.message", "Chat message", category="Chat", value_type="string"),
@@ -134,6 +174,7 @@ ALERT_PAYLOAD_KEYS: Dict[str, str] = {
     "alert.alert_type": "alert_type",
     "alert.currency": "currency",
     "alert.queue_seq": "queue_seq",
+    "alert.gift_qty": "gift_qty",
 }
 
 CHAT_PAYLOAD_KEYS: Dict[str, str] = {

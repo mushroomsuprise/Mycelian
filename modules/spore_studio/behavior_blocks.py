@@ -195,6 +195,72 @@ COUNTER_IMAGE_TRANSITION_CSS = """
 }
 """.strip()
 
+PROGRESS_BAR_CSS = """
+.spore-progress-bar {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.spore-progress-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+.spore-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+@keyframes sporeProgressPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.25); }
+}
+.spore-progress-fill.spore-progress-near-pulse {
+  animation: sporeProgressPulse 1.5s ease-in-out infinite;
+}
+@keyframes sporeProgressShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.spore-progress-fill.spore-progress-near-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 100%
+  );
+  animation: sporeProgressShimmer 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes sporeProgressScroll {
+  from { background-position: 0 0; }
+  to { background-position: 16px 0; }
+}
+.spore-progress-fill.spore-progress-near-scroll::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 5px,
+    rgba(255, 255, 255, 0.22) 5px,
+    rgba(255, 255, 255, 0.22) 10px
+  );
+  background-size: 14px 14px;
+  animation: sporeProgressScroll 0.65s linear infinite;
+  pointer-events: none;
+}
+""".strip()
+
 
 _ANIM_CLASS = {
     "fade": ("spore-anim-fade-in", "spore-anim-fade-out"),
@@ -807,6 +873,16 @@ def _elements_need_value_change_css(elements: List[Dict[str, Any]]) -> bool:
     return False
 
 
+def _elements_need_progress_bar_css(elements: List[Dict[str, Any]]) -> bool:
+    """True when the template includes at least one progress bar element."""
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        if str(element.get("type") or "").lower() == "progress_bar":
+            return True
+    return False
+
+
 def _bindings_need_preset_css(elements: List[Dict[str, Any]]) -> bool:
     """Keyframe utility classes (.sporeShake, .sporePop) used by flash_class."""
     for element in elements or []:
@@ -994,5 +1070,7 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
         css_parts.append(VALUE_CHANGE_ANIMATION_CSS)
     if _elements_need_counter_image_transition_css(elements):
         css_parts.append(COUNTER_IMAGE_TRANSITION_CSS)
+    if _elements_need_progress_bar_css(elements):
+        css_parts.append(PROGRESS_BAR_CSS)
     css = "\n\n".join(css_parts)
     return {"js": js, "css": css}

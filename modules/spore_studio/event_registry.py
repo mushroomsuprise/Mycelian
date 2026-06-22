@@ -91,6 +91,7 @@ _EVENTS: List[Dict[str, Any]] = [
             {"key": "amount", "label": "Amount", "type": "number"},
             {"key": "tier", "label": "Sub tier", "type": "string"},
             {"key": "quantity", "label": "Quantity", "type": "number"},
+            {"key": "gift_qty", "label": "Gift sub quantity", "type": "number"},
         ],
     },
     {

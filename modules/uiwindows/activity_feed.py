@@ -895,6 +895,11 @@ def build_activity_feed_alert_payload(
                 f"Error retrieving stored alert data for {alert_id}: {str(e)}"
             )
 
+    if not alert_data.get("username"):
+        parsed = extract_username_from_message(message)
+        if parsed and parsed != "Unknown":
+            alert_data["username"] = parsed
+
     return alert_data
 
 
@@ -2297,7 +2302,12 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
         # Get username with fallback and debugging
         username = stored_alert_data.get("username", None)
         if username is None or username == "":
-            logger.warning(
+            log_fn = (
+                logger.debug
+                if str(original_type).startswith("hype_train")
+                else logger.warning
+            )
+            log_fn(
                 f"Alert {stored_alert_data.get('alert_id', 'unknown')} missing username. Available data: {stored_alert_data}"
             )
             username = "Unknown User"
@@ -2480,6 +2490,71 @@ def load_restored_alerts_for_time_window(cutoff_time: float):
             f"Error loading restored alerts for time window: {str(e)}", exc_info=True
         )
         return [], 0
+
+
+def _alert_timestamp_for_cutoff(alert_data: Dict[str, Any]) -> float:
+    for key in ("created_at", "timestamp"):
+        val = alert_data.get(key)
+        if val is not None:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                pass
+    return 0.0
+
+
+def _normalize_condensed_alert_username(alert_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a shallow copy with username resolved for condensed grouping."""
+    result = dict(alert_data)
+    if not result.get("username"):
+        username = extract_username_from_message(result.get("message", ""))
+        if username and username != "Unknown":
+            result["username"] = username
+    return result
+
+
+def collect_alerts_for_condensed_view(cutoff_time: float):
+    """Merge stored and live alerts for condensed view, deduped by alert_id."""
+    restored_alerts, historical_count = load_restored_alerts_for_time_window(
+        cutoff_time
+    )
+
+    by_id: Dict[str, Dict[str, Any]] = {}
+    no_id_alerts: List[Dict[str, Any]] = []
+
+    for alert in restored_alerts:
+        normalized = _normalize_condensed_alert_username(alert)
+        alert_id = normalized.get("alert_id")
+        if alert_id:
+            by_id[alert_id] = normalized
+        else:
+            no_id_alerts.append(normalized)
+
+    live_in_window = 0
+    for live_alert in activity_feed_state.live_alerts:
+        if _alert_timestamp_for_cutoff(live_alert) < cutoff_time:
+            continue
+        live_in_window += 1
+        normalized = _normalize_condensed_alert_username(live_alert)
+        alert_id = normalized.get("alert_id")
+        if alert_id:
+            by_id[alert_id] = normalized
+        else:
+            no_id_alerts.append(normalized)
+
+    alerts_to_process = list(by_id.values()) + no_id_alerts
+    alerts_to_process.sort(
+        key=_alert_timestamp_for_cutoff,
+        reverse=True,
+    )
+
+    logger.debug(
+        "Collected %d alerts for condensed view (stored=%d, live_in_window=%d)",
+        len(alerts_to_process),
+        historical_count,
+        live_in_window,
+    )
+    return alerts_to_process, historical_count, live_in_window
 
 
 def clear_restored_alerts():
@@ -2696,13 +2771,22 @@ def update_condensed_view():
             and activity_feed_state.condense_list
         ):
             logger.debug("Creating condensed view...")
-            create_condensed_view()
-            # Hide regular alerts
-            if activity_feed_state.current_alerts_container:
-                activity_feed_state.current_alerts_container.classes(add="hidden")
-            # Show condensed view
-            if activity_feed_state.condensed_container:
-                activity_feed_state.condensed_container.classes(remove="hidden")
+            built = create_condensed_view()
+            if built:
+                if activity_feed_state.current_alerts_container:
+                    activity_feed_state.current_alerts_container.classes(add="hidden")
+                if activity_feed_state.condensed_container:
+                    activity_feed_state.condensed_container.classes(remove="hidden")
+            else:
+                logger.warning(
+                    "Condensed view build failed; keeping regular alerts visible"
+                )
+                if activity_feed_state.condensed_container:
+                    activity_feed_state.condensed_container.classes(add="hidden")
+                if activity_feed_state.current_alerts_container:
+                    activity_feed_state.current_alerts_container.classes(
+                        remove="hidden"
+                    )
         else:
             logger.debug("Showing regular alerts view...")
             # Show regular alerts
@@ -2716,12 +2800,16 @@ def update_condensed_view():
         logger.error(f"Error updating condensed view: {str(e)}", exc_info=True)
 
 
-def create_condensed_view():
-    """Create the condensed view of alerts grouped by user (using historical data only)"""
+def create_condensed_view() -> bool:
+    """Create the condensed view of alerts grouped by user.
+
+    Returns:
+        True if the condensed container was rebuilt successfully, False otherwise.
+    """
     try:
         container = activity_feed_state.condensed_container
         if not _element_alive(container):
-            return
+            return False
 
         container.clear()
 
@@ -2761,15 +2849,12 @@ def create_condensed_view():
             logger.debug(f"Could not load template config for condensed view: {e}")
             pass
 
-        # Load ALL alerts within the time window using load_restored_alerts
-        alerts_to_process = []
-
-        # Load historical alerts for condensed view
         current_time = time.time()
         cutoff_time = current_time - (
             condense_historical_hours * 3600
         )  # Convert hours to seconds
         historical_count = 0
+        live_in_window = 0
 
         print(
             f"Loading alerts for condensed view from past {condense_historical_hours} hours..."
@@ -2779,21 +2864,25 @@ def create_condensed_view():
         )
 
         try:
-            alerts_to_process, historical_count = load_restored_alerts_for_time_window(
-                cutoff_time
-            )
+            (
+                alerts_to_process,
+                historical_count,
+                live_in_window,
+            ) = collect_alerts_for_condensed_view(cutoff_time)
 
             print(
-                f"Condensed view loaded {historical_count} alerts from storage (past {condense_historical_hours} hours)"
+                f"Condensed view loaded {historical_count} stored and {live_in_window} live alerts (past {condense_historical_hours} hours)"
             )
             logger.debug(
-                f"Condensed view loaded {historical_count} alerts from storage (past {condense_historical_hours} hours)"
+                f"Condensed view loaded {historical_count} stored and {live_in_window} live alerts (past {condense_historical_hours} hours)"
             )
 
         except Exception as e:
-            logger.error(f"Error loading historical alerts for condensed view: {e}")
-            print(f"Error loading historical alerts for condensed view: {e}")
+            logger.error(f"Error loading alerts for condensed view: {e}")
+            print(f"Error loading alerts for condensed view: {e}")
+            alerts_to_process = []
             historical_count = 0
+            live_in_window = 0
 
         logger.debug(
             f"Total alerts to process for condensed view: {len(alerts_to_process)}"
@@ -3004,13 +3093,13 @@ def create_condensed_view():
         # Create the condensed UI
         with activity_feed_state.condensed_container:
             if not user_alerts:
-                # If no alerts to condense, show nothing (just clear the container)
-                pass
+                ui.label(
+                    f"No alerts to condense in the last {condense_historical_hours} hours"
+                ).classes("text-sm muted-text italic")
             else:
-                # Add indicator showing historical alerts are being used
-                if historical_count > 0:
+                if historical_count > 0 or live_in_window > 0:
                     ui.label(
-                        f"Showing {historical_count} historical alerts from past {condense_historical_hours} hours"
+                        f"Showing {len(alerts_to_process)} alerts from past {condense_historical_hours} hours"
                     ).classes("text-xs muted-text mb-2 italic")
 
                 for username, alert_types in user_alerts.items():
@@ -3029,8 +3118,11 @@ def create_condensed_view():
                                             "secondary-text text-sm mb-1"
                                         )
 
+        return True
+
     except Exception as e:
         logger.error(f"Error creating condensed view: {str(e)}", exc_info=True)
+        return False
 
 
 def create_aggregated_alert_text(grouping_key, data):

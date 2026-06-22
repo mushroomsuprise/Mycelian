@@ -15,6 +15,7 @@ from modules.spore_studio import (
 )
 from modules.spore_studio.behavior_blocks import (
     COUNTER_IMAGE_TRANSITION_CSS,
+    PROGRESS_BAR_CSS,
     compile_bindings,
 )
 
@@ -24,7 +25,22 @@ class SporeStudioDataFeaturesTests(unittest.TestCase):
         reg = data_source_registry.get_data_source_registry()
         ids = {s["id"] for s in reg["sources"]}
         self.assertIn("alert.quantity", ids)
+        self.assertIn("alert.gift_qty", ids)
         self.assertIn("fixed", ids)
+
+    def test_data_source_registry_has_subscription_deltas(self):
+        reg = data_source_registry.get_data_source_registry()
+        ids = {s["id"] for s in reg["sources"]}
+        cats = set(reg.get("categories") or [])
+        self.assertIn("Subscriptions", cats)
+        self.assertIn("sub.new_sub", ids)
+        self.assertIn("sub.resub", ids)
+        self.assertIn("sub.gift_sub", ids)
+        sub_new = data_source_registry.get_data_source("sub.new_sub")
+        self.assertTrue(sub_new.get("delta_only"))
+        self.assertEqual(sub_new.get("category"), "Subscriptions")
+        keys = reg.get("alert_payload_keys") or {}
+        self.assertEqual(keys.get("alert.gift_qty"), "gift_qty")
 
     def test_control_action_registry_has_pause(self):
         reg = control_action_registry.get_control_action_registry()
@@ -295,6 +311,223 @@ class SporeStudioDataFeaturesTests(unittest.TestCase):
         self.assertIn("Renogare.ttf", html)
         self.assertIn("spore-el-n", html)
         self.assertIn("Renogare.ttf", html)
+
+    def test_progress_bar_fixed_max_compile(self):
+        model = {
+            "template_name": "prog_fixed",
+            "alert_system": "instant",
+            "design": {"width": 500, "height": 120},
+            "elements": [
+                {
+                    "id": "bits",
+                    "type": "text",
+                    "category": "Counters",
+                    "text_mode": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 200, "h": 40},
+                    "props": {"color": "#fff", "font_size": 24},
+                    "bindings": [],
+                    "counter": {
+                        "counter_id": "bit_count",
+                        "initial_value": 250,
+                        "format": "{value}",
+                        "rules": [],
+                    },
+                },
+                {
+                    "id": "cheer_bar",
+                    "type": "progress_bar",
+                    "category": "Progress",
+                    "position": {"x": 0, "y": 50},
+                    "size": {"w": 400, "h": 28},
+                    "props": {
+                        "track_color": "#1e293b",
+                        "fill_color": "#a855f7",
+                        "border_radius": 8,
+                        "near_goal_threshold": 90,
+                        "near_goal_effect": "pulse",
+                    },
+                    "progress_source": {
+                        "counter_id": "bit_count",
+                        "max_kind": "fixed",
+                        "max": 1000,
+                    },
+                    "bindings": [],
+                    "source_settings_expose": {
+                        "max": True,
+                        "fill_color": True,
+                    },
+                },
+            ],
+        }
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn("__sporeProgressBars", js)
+        self.assertIn('"counter_id": "bit_count"', js)
+        self.assertIn('"near_goal_threshold": 90', js)
+        self.assertIn('"near_goal_effect"', js)
+        self.assertIn("spore-progress-near-pulse", PROGRESS_BAR_CSS)
+        self.assertIn("spore-progress-near-shimmer", PROGRESS_BAR_CSS)
+        self.assertIn("spore-progress-near-scroll", PROGRESS_BAR_CSS)
+        self.assertIn("sporeUpdateAllProgressBars", js)
+
+        html, cfg = template_codegen.compile_model(model)
+        self.assertIn('data-spore-type="progress_bar"', html)
+        self.assertIn('data-spore-counter-id="bit_count"', html)
+        self.assertIn('class="spore-progress-fill"', html)
+        self.assertNotIn("spore-progress-label", html)
+        self.assertIn("sporeUpdateProgressBars", html)
+
+        bindings = compile_bindings(model["elements"])
+        self.assertIn("spore-progress-bar", PROGRESS_BAR_CSS)
+        self.assertIn("spore-progress-bar", bindings["css"])
+
+        cfg_ids = {
+            el["id"]
+            for el in cfg.get("elements", [])
+            if isinstance(el, dict) and "id" in el
+        }
+        self.assertIn("cheer_bar_max", cfg_ids)
+        self.assertIn("cheer_bar_fill_color", cfg_ids)
+        self.assertNotIn("cheer_bar_label_format", cfg_ids)
+
+    def test_counter_format_min_max_tokens(self):
+        model = {
+            "template_name": "fmt_tpl",
+            "alert_system": "instant",
+            "design": {"width": 200, "height": 60},
+            "elements": [
+                {
+                    "id": "cnt",
+                    "type": "text",
+                    "text_mode": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 120, "h": 30},
+                    "props": {},
+                    "counter": {
+                        "counter_id": "cnt",
+                        "initial_value": 5,
+                        "min": 0,
+                        "max": 100,
+                        "format": "{value}/{max}",
+                        "rules": [],
+                    },
+                }
+            ],
+        }
+        html, _cfg = template_codegen.compile_model(model)
+        self.assertIn("5/100", html)
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn("sporeFormatCounterDisplay", html)
+        self.assertIn('"min": 0', js)
+        self.assertIn('"max": 100', js)
+
+    def test_progress_bar_counter_goal_compile(self):
+        model = {
+            "template_name": "prog_goal",
+            "alert_system": "instant",
+            "design": {"width": 500, "height": 120},
+            "elements": [
+                {
+                    "id": "current",
+                    "type": "text",
+                    "category": "Counters",
+                    "text_mode": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 200, "h": 40},
+                    "props": {"color": "#fff"},
+                    "bindings": [],
+                    "counter": {
+                        "counter_id": "current_val",
+                        "initial_value": 40,
+                        "format": "{value}",
+                        "rules": [],
+                    },
+                },
+                {
+                    "id": "goal",
+                    "type": "text",
+                    "category": "Counters",
+                    "text_mode": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 200, "h": 40},
+                    "props": {"color": "#fff"},
+                    "bindings": [],
+                    "counter": {
+                        "counter_id": "goal_val",
+                        "initial_value": 100,
+                        "format": "{value}",
+                        "rules": [],
+                    },
+                },
+                {
+                    "id": "goal_bar",
+                    "type": "progress_bar",
+                    "category": "Progress",
+                    "position": {"x": 0, "y": 50},
+                    "size": {"w": 400, "h": 28},
+                    "props": {
+                        "track_color": "#222",
+                        "fill_color": "#0f0",
+                    },
+                    "progress_source": {
+                        "counter_id": "current_val",
+                        "max_kind": "counter",
+                        "max": 100,
+                        "max_counter_id": "goal_val",
+                    },
+                    "bindings": [],
+                },
+            ],
+        }
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn('"max_kind": "counter"', js)
+        self.assertIn('"max_counter_id": "goal_val"', js)
+
+        html, _cfg = template_codegen.compile_model(model)
+        self.assertIn('data-spore-max-counter-id="goal_val"', html)
+        self.assertIn('data-spore-max-kind="counter"', html)
+
+    def test_sub_delta_counter_rule_compile(self):
+        model = {
+            "template_name": "sub_delta_tpl",
+            "alert_system": "instant",
+            "design": {"width": 400, "height": 100},
+            "elements": [
+                {
+                    "id": "sub_counter",
+                    "type": "text",
+                    "category": "Counters",
+                    "text_mode": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 200, "h": 40},
+                    "props": {"color": "#fff"},
+                    "bindings": [],
+                    "counter": {
+                        "counter_id": "subs",
+                        "initial_value": 0,
+                        "format": "{value}",
+                        "rules": [
+                            {
+                                "trigger": "event",
+                                "event": "instant_alert",
+                                "filter": {},
+                                "operation": "increment",
+                                "delta": {
+                                    "kind": "data_source",
+                                    "source": "sub.gift_sub",
+                                    "tier_filter": "2",
+                                    "fallback": 0,
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn('"source": "sub.gift_sub"', js)
+        self.assertIn('"tier_filter": "2"', js)
+        self.assertIn("instant_alert", js)
 
 
 if __name__ == "__main__":

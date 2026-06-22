@@ -1,0 +1,284 @@
+{
+    "template_name": "subcounter",
+    "spore_studio": true,
+    "alert_system": "instant",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Canvas"
+        },
+        {
+            "type": "number",
+            "id": "DesignWidth",
+            "label": "Design Width",
+            "value": 850,
+            "min": 50,
+            "max": 7680,
+            "description": "Logical canvas width in pixels."
+        },
+        {
+            "type": "number",
+            "id": "DesignHeight",
+            "label": "Design Height",
+            "value": 200,
+            "min": 50,
+            "max": 4320,
+            "description": "Logical canvas height in pixels."
+        },
+        {
+            "type": "text",
+            "id": "TemplateTitle",
+            "label": "Title",
+            "value": "subcounter",
+            "description": "Browser title for this overlay."
+        },
+        {
+            "type": "number",
+            "id": "Duration",
+            "label": "Duration",
+            "value": 5.0,
+            "min": 0.1,
+            "max": 600,
+            "step": 0.1,
+            "description": "Display/hold duration in seconds for alert queue integration (point-reward templates matching this name)."
+        },
+        {
+            "type": "checkbox",
+            "id": "Queued",
+            "label": "Queued",
+            "value": false,
+            "description": "When enabled, point redemptions whose reward title matches this template name can hold the main alert queue."
+        },
+        {
+            "type": "separator",
+            "label": "Counter"
+        },
+        {
+            "type": "text",
+            "id": "counter1_format",
+            "label": "counter1 format",
+            "value": "{value}/{max}",
+            "description": "Display format for counter 'counter1'. Use {value}, {min}, and {max}."
+        },
+        {
+            "type": "color",
+            "id": "counter1_color",
+            "label": "counter1 color",
+            "value": "#ffffff",
+            "description": "Color for 'counter1'."
+        },
+        {
+            "type": "text",
+            "id": "counter1_font_family",
+            "label": "counter1 font family",
+            "value": "Roboto-Regular.ttf",
+            "description": "Font Family for 'counter1'."
+        },
+        {
+            "type": "number",
+            "id": "counter1_font_size",
+            "label": "counter1 font size",
+            "value": 64,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'counter1' (pixels)."
+        },
+        {
+            "type": "separator",
+            "label": "Progress Bar"
+        },
+        {
+            "type": "number",
+            "id": "progress_bar3_max",
+            "label": "progress_bar3 max",
+            "value": 75,
+            "min": 0,
+            "max": 9999999999,
+            "description": "Goal value (100% fill) for progress bar 'progress_bar3' when max kind is fixed."
+        },
+        {
+            "type": "text",
+            "id": "progress_bar3_max_kind",
+            "label": "progress_bar3 max kind",
+            "value": "fixed",
+            "description": "Max kind for 'progress_bar3': 'fixed' or 'counter'."
+        },
+        {
+            "type": "text",
+            "id": "progress_bar3_fill_animation_easing",
+            "label": "progress_bar3 fill animation easing",
+            "value": "ease-out",
+            "description": "CSS easing for fill width transitions on 'progress_bar3'."
+        },
+        {
+            "type": "text",
+            "id": "progress_bar3_near_goal_effect",
+            "label": "progress_bar3 near-goal effect",
+            "value": "shimmer",
+            "description": "Animation when near goal for 'progress_bar3': none, pulse, shimmer, or scroll."
+        },
+        {
+            "type": "color",
+            "id": "progress_bar3_track_color",
+            "label": "progress_bar3 track color",
+            "value": "#444444",
+            "description": "Track Color for 'progress_bar3'."
+        },
+        {
+            "type": "color",
+            "id": "progress_bar3_fill_color",
+            "label": "progress_bar3 fill color",
+            "value": "#4f7a28",
+            "description": "Fill Color for 'progress_bar3'."
+        },
+        {
+            "type": "number",
+            "id": "progress_bar3_border_radius",
+            "label": "progress_bar3 border radius",
+            "value": 8,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Radius for 'progress_bar3' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "progress_bar3_border_width",
+            "label": "progress_bar3 border width",
+            "value": 0,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Width for 'progress_bar3' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "progress_bar3_fill_animation_duration_ms",
+            "label": "progress_bar3 fill animation duration ms",
+            "value": 500,
+            "min": 0,
+            "max": 4096,
+            "description": "Fill Animation Duration Ms for 'progress_bar3' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "progress_bar3_near_goal_threshold",
+            "label": "progress_bar3 near goal threshold",
+            "value": 85,
+            "min": 0,
+            "max": 4096,
+            "description": "Near Goal Threshold for 'progress_bar3' (pixels)."
+        },
+        {
+            "type": "color",
+            "id": "progress_bar3_border_color",
+            "label": "progress_bar3 border color",
+            "value": "#000000",
+            "description": "Border color for 'progress_bar3'."
+        },
+        {
+            "type": "separator",
+            "label": "Extra Text"
+        },
+        {
+            "type": "text",
+            "id": "text5Text",
+            "label": "text5 text",
+            "value": "Subs = Gitaroo Man Plat Run",
+            "description": "Text shown by element 'text5'."
+        },
+        {
+            "type": "color",
+            "id": "text5_color",
+            "label": "text5 color",
+            "value": "#ffffff",
+            "description": "Color for 'text5'."
+        },
+        {
+            "type": "text",
+            "id": "text5_font_family",
+            "label": "text5 font family",
+            "value": "Roboto-Regular.ttf",
+            "description": "Font Family for 'text5'."
+        },
+        {
+            "type": "number",
+            "id": "text5_font_size",
+            "label": "text5 font size",
+            "value": 48,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'text5' (pixels)."
+        }
+    ],
+    "streamdeck_options": {
+        "description": "",
+        "actions": {}
+    },
+    "preview_mocks": [
+        {
+            "event": "instant_alert",
+            "label": "Random instant alert"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Follow",
+            "alert_type": "follow"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Sub",
+            "alert_type": "sub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Resub",
+            "alert_type": "resub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Gift sub",
+            "alert_type": "giftsub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Bits",
+            "alert_type": "bit"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Raid",
+            "alert_type": "raid"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Donation",
+            "alert_type": "donation"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Points",
+            "alert_type": "point"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Streak",
+            "alert_type": "streak"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Hype train",
+            "alert_type": "hype_train"
+        }
+    ],
+    "dynamic_controls": {
+        "elements": [
+            {
+                "action": "counter_adjust",
+                "id": "counter_inc",
+                "label": "Counter Options",
+                "step": 1,
+                "target_counter_id": "counter1",
+                "type": "counter_control"
+            }
+        ]
+    }
+}
