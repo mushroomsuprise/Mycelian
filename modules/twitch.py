@@ -216,6 +216,39 @@ async def _ephemeral_client_session():
 _CHEER_BITS_CACHE_TTL = 10.0
 _cheer_bits_cache: dict[str, dict[str, Any]] = {}
 
+_ALERT_USER_MESSAGE_CACHE_TTL = 30.0
+_alert_user_message_cache: dict[str, float] = {}
+
+
+def _alert_user_message_cache_key(user_id: str, message_text: str) -> str:
+    return f"{user_id}:{(message_text or '').strip()}"
+
+
+def _prune_alert_user_message_cache() -> None:
+    now = time.time()
+    expired = [k for k, v in _alert_user_message_cache.items() if v <= now]
+    for key in expired:
+        _alert_user_message_cache.pop(key, None)
+
+
+def register_alert_user_message(user_id: str, message_text: str) -> None:
+    """Mark a chat message body as originating from an alert user message."""
+    text = (message_text or "").strip()
+    if not user_id or not text:
+        return
+    _prune_alert_user_message_cache()
+    _alert_user_message_cache[
+        _alert_user_message_cache_key(user_id, text)
+    ] = time.time() + _ALERT_USER_MESSAGE_CACHE_TTL
+
+
+def is_alert_user_message(user_id: str, message_text: str) -> bool:
+    _prune_alert_user_message_cache()
+    expiry = _alert_user_message_cache.get(
+        _alert_user_message_cache_key(user_id, message_text)
+    )
+    return expiry is not None and expiry > time.time()
+
 
 def subscription_emotes_to_json(emotes) -> Optional[list]:
     """Convert EventSub subscription message.emotes to JSON-serializable list."""
@@ -317,6 +350,7 @@ def _store_cheer_bits_message(
         "emotes": emotes,
         "expires": time.time() + _CHEER_BITS_CACHE_TTL,
     }
+    register_alert_user_message(user_id, text)
 
 
 def _pop_cheer_bits_message(user_id: str, bits: int) -> Optional[dict]:
@@ -1091,6 +1125,9 @@ class Twitch_API:
                 "thread_message_id": reply.thread_message_id,
             }
 
+        if is_alert_user_message(user_id, message):
+            msg_dict["is_alert_user_message"] = True
+
         # Process greetings for new users
         try:
             chatbot_manager = get_chatbot_manager()
@@ -1627,6 +1664,9 @@ class Twitch_API:
             data.event.message if data.event.message else None
         )
 
+        if user_msg:
+            register_alert_user_message(str(data.event.user_id), user_msg)
+
         alert_processor.ALERT_QUEUE.append(alert)
         # Store completed alert using AlertStateManager
         alertutils.alert_state_manager.store_completed_alert(
@@ -1735,6 +1775,9 @@ class Twitch_API:
         alert.resub_month = cumulative_months
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
+
+        if user_msg:
+            register_alert_user_message(str(data.event.user_id), user_msg)
 
         alert_processor.ALERT_QUEUE.append(alert)
         # Store completed alert using AlertStateManager
@@ -2209,6 +2252,8 @@ class Twitch_API:
             alert.message = data.event.message or ""
             alert.fragments = None
             alert.emotes = None
+        if alert.message:
+            register_alert_user_message(cache_user_id, alert.message)
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
         alert_processor.ALERT_QUEUE.append(alert)

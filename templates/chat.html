@@ -105,7 +105,46 @@
             background-color: {{ EventBG }};
             color: {{ EventColor }};
             font-style: italic;
+            font-size: {{ EventFontSize }}px;
             border-left: {{ EventBorderWidth }}px solid {{ EventBorderColor }};
+        }
+
+        .chat-message.alert-event-message {
+            font-style: normal;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .alert-event-media {
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .alert-event-media img,
+        .alert-event-media video {
+            height: calc({{ EventFontSize }}px * {{ AlertMediaScale }});
+            width: auto;
+            object-fit: contain;
+            vertical-align: middle;
+            border-radius: 2px;
+        }
+
+        .alert-event-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .alert-event-text {
+            display: inline;
+        }
+
+        .alert-event-user-message {
+            display: block;
+            margin-top: 2px;
+            font-style: italic;
+            opacity: 0.9;
         }
 
         /* Activity feed event message styles */
@@ -287,12 +326,14 @@
 
         .message-reply {
             display: block;
-            font-size: {{ ReplyFontSize }}px;
+            font-size: calc({{ EventFontSize }}px * 0.85);
             color: {{ ReplyColor }};
             opacity: 0.85;
             margin-bottom: 4px;
             line-height: 1.3;
-            word-wrap: break-word;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .point-cost {
@@ -534,6 +575,11 @@
         var filterUnknownSlashCommands = {{ FilterUnknownSlashCommands | tojson }};
         var enableEmotes = {{ EnableEmotes | tojson }};
         var enableBadges = {{ EnableBadges | tojson }};
+        var alertShowActivitySummary = {{ AlertShowActivitySummary | tojson }};
+        var alertShowTwitchChat = {{ AlertShowTwitchChat | tojson }};
+        var alertShowMediaEvent = {{ AlertShowMediaEvent | tojson }};
+        var eventFontSize = {{ EventFontSize | tojson }};
+        var alertMediaScale = {{ AlertMediaScale | tojson }};
         var streamerID = null;
         var emoteFetchInProgress = false;
         var badgeFetchInProgress = false;
@@ -647,6 +693,7 @@
             }
             var parentUser = reply.parent_user_name || reply.parent_user_login || 'Unknown';
             var body = (reply.parent_message_body || '').trim();
+            body = body.split(/\r?\n/)[0].trim();
             var mentionPrefix = '@' + parentUser;
             if (body.toLowerCase().indexOf(mentionPrefix.toLowerCase()) === 0) {
                 body = body.substring(mentionPrefix.length).trim();
@@ -657,6 +704,31 @@
             var parentId = reply.parent_message_id || reply.thread_message_id || '';
             return '<div class="message-reply" data-reply-parent-id="' + escapeHtml(parentId) + '">' +
                 '\u21A9 Replying to @' + escapeHtml(parentUser) + ': ' + escapeHtml(body) + '</div>';
+        }
+
+        function stripReplyMentionFromMessage(text, reply) {
+            if (!reply || text == null) {
+                return text;
+            }
+            var trimmed = String(text).trim();
+            var candidates = [];
+            if (reply.parent_user_login) {
+                candidates.push(reply.parent_user_login);
+            }
+            if (reply.parent_user_name) {
+                candidates.push(reply.parent_user_name);
+            }
+            for (var i = 0; i < candidates.length; i++) {
+                var login = candidates[i];
+                if (!login) {
+                    continue;
+                }
+                var prefix = '@' + login;
+                if (trimmed.toLowerCase().indexOf(prefix.toLowerCase()) === 0) {
+                    return trimmed.substring(prefix.length).trim();
+                }
+            }
+            return trimmed;
         }
 
         function isPointsActivityAlert(alertData) {
@@ -879,7 +951,7 @@
 
         socket.on('activity_feed_alert', function (alertData) {
             chatLog('Received activity_feed_alert event:', alertData);
-            addActivityEventMessage(alertData);
+            handleActivityFeedAlert(alertData);
         });
 
         // Connector action event listeners
@@ -1115,16 +1187,17 @@
             return 0;
         }
 
-        // Add an activity feed event message to chat
-        function addActivityEventMessage(alertData) {
-            chatLog('Adding activity event message:', alertData);
-
+        function appendChatMessageElement(messageElement) {
             var chatContainer = document.getElementById('chat');
-            var messageElement = document.createElement('li');
-            messageElement.className = 'chat-message activity-event';
-            messageElement.id = 'activity-event-' + Date.now();
+            chatContainer.appendChild(messageElement);
+            scrollToBottom();
+            messageCount++;
+            if (messageCount > maxMessages) {
+                removeOldestMessage();
+            }
+        }
 
-            // Use the message directly from the activity feed data format
+        function resolveActivityEventText(alertData) {
             var eventText = '';
             var alertType = (alertData.type || alertData.alert_type || '').toLowerCase();
 
@@ -1139,10 +1212,8 @@
                     true
                 );
             } else if (alertData.message) {
-                // The activity feed already formats the message, so we can use it directly
                 eventText = alertData.message;
             } else {
-                // Fallback: Extract info and format manually if message is missing
                 alertType = alertData.type || 'Unknown';
                 var username = extractUsernameFromMessage(alertData) || 'Someone';
 
@@ -1180,16 +1251,99 @@
                 }
             }
 
-            messageElement.innerHTML = '<div class="message-content">' + escapeHtml(eventText) +
-                buildPointRedemptionSuffixHtml(alertData) + '</div>';
+            return eventText;
+        }
 
+        function formatRaidActivityMessage(username, raiderCount, gameName) {
+            var name = username || 'Someone';
+            var count = parseInt(raiderCount, 10);
+            if (isNaN(count)) {
+                count = 0;
+            }
+            var countStr = count.toLocaleString();
+            var base = name + ' raided with ' + countStr + ' viewers';
+            if (gameName) {
+                return base + ', they were last playing ' + gameName + '.';
+            }
+            return base + '!';
+        }
+
+        function resolveRaidRaiderCount(alertData) {
+            if (alertData.raider_count != null) {
+                return alertData.raider_count;
+            }
+            var stored = alertData.stored_alert_data || {};
+            if (stored.raider_count != null) {
+                return stored.raider_count;
+            }
+            var message = alertData.message || '';
+            var raidMatch = message.match(/(\d+)\s*viewers?/i);
+            return raidMatch ? parseInt(raidMatch[1], 10) : 0;
+        }
+
+        function resolveRaidGameName(alertData) {
+            if (alertData.game_name) {
+                return alertData.game_name;
+            }
+            var stored = alertData.stored_alert_data || {};
+            return stored.game_name || null;
+        }
+
+        function generateAlertMessage(alertData) {
+            var username = alertData.username || extractUsernameFromMessage(alertData.message || '');
+            var alertType = (alertData.alert_type || alertData.type || '').toLowerCase();
+
+            if (alertType === 'resub' || (alertType === 'sub' && (alertData.resub_month > 1 || alertData.months > 1))) {
+                var months = alertData.resub_month || alertData.months || alertData.total_months || 1;
+                return username + ' has resubscribed for ' + months + ' months!';
+            }
+
+            if (alertType === 'streak') {
+                return formatWatchStreakMessage(username, resolveWatchStreakCount(alertData), true);
+            }
+
+            if (alertType === 'raid') {
+                var raiderCount = resolveRaidRaiderCount(alertData);
+                var gameName = resolveRaidGameName(alertData);
+                if (raiderCount || gameName) {
+                    return formatRaidActivityMessage(username, raiderCount, gameName);
+                }
+            }
+
+            return alertData.message || resolveActivityEventText(alertData);
+        }
+
+        function resolveAlertMediaSource(alertData) {
+            var stored = alertData.stored_alert_data || {};
+            var gifDir = (stored.gif_dir != null ? String(stored.gif_dir) : (alertData.gif_dir != null ? String(alertData.gif_dir) : '')).trim();
+            var gifName = (stored.gif_name != null ? String(stored.gif_name) : (alertData.gif_name != null ? String(alertData.gif_name) : '')).trim();
+            if (!gifDir || !gifName) {
+                return null;
+            }
+            return gifDir + '/' + gifName;
+        }
+
+        function isAlertMediaVideo(url) {
+            return /\.(mp4|webm|mov)(\?|$)/i.test(url || '');
+        }
+
+        function buildAlertEventMediaHtml(mediaUrl) {
+            if (!mediaUrl) {
+                return '';
+            }
+            if (isAlertMediaVideo(mediaUrl)) {
+                return '<video class="alert-event-media-item" src="' + escapeHtml(mediaUrl) + '" muted autoplay loop playsinline></video>';
+            }
+            return '<img class="alert-event-media-item" src="' + escapeHtml(mediaUrl) + '" alt="">';
+        }
+
+        function maybeAttachPendingPointIcon(messageElement, alertData) {
             if (isPointsActivityAlert(alertData) && showPointIcon && channelPointsIconCache.url && !channelPointsIconCache.loaded) {
                 var pendingElement = messageElement;
-                var pendingAlert = alertData;
                 var pendingImg = new Image();
                 pendingImg.onload = function () {
                     channelPointsIconCache.loaded = true;
-                    var contentEl = pendingElement.querySelector('.message-content');
+                    var contentEl = pendingElement.querySelector('.message-content, .alert-event-text');
                     if (contentEl && !contentEl.querySelector('.point-icon') && showPointIcon && channelPointsIconCache.url) {
                         contentEl.insertAdjacentHTML(
                             'beforeend',
@@ -1199,16 +1353,72 @@
                 };
                 pendingImg.src = channelPointsIconCache.url;
             }
+        }
 
-            chatContainer.appendChild(messageElement);
+        // Add an activity feed event message to chat
+        function addActivityEventMessage(alertData) {
+            chatLog('Adding activity event message:', alertData);
 
-            // Scroll to bottom
-            scrollToBottom();
+            var messageElement = document.createElement('li');
+            messageElement.className = 'chat-message activity-event';
+            messageElement.id = 'activity-event-' + Date.now();
 
-            // Manage message count
-            messageCount++;
-            if (messageCount > maxMessages) {
-                removeOldestMessage();
+            var eventText = resolveActivityEventText(alertData);
+
+            messageElement.innerHTML = '<div class="message-content">' + escapeHtml(eventText) +
+                buildPointRedemptionSuffixHtml(alertData) + '</div>';
+
+            maybeAttachPendingPointIcon(messageElement, alertData);
+            appendChatMessageElement(messageElement);
+        }
+
+        function addAlertEventMessage(alertData) {
+            chatLog('Adding alert event message:', alertData);
+
+            var messageElement = document.createElement('li');
+            messageElement.className = 'chat-message event-message alert-event-message';
+            messageElement.id = 'alert-event-' + Date.now();
+
+            var eventText = generateAlertMessage(alertData);
+            var mediaUrl = resolveAlertMediaSource(alertData);
+            var mediaHtml = mediaUrl ? '<div class="alert-event-media">' + buildAlertEventMediaHtml(mediaUrl) + '</div>' : '';
+
+            var bodyHtml = '<div class="alert-event-body">';
+            bodyHtml += '<div class="alert-event-text">' + escapeHtml(eventText) + buildPointRedemptionSuffixHtml(alertData) + '</div>';
+
+            var userMessage = alertData.user_message;
+            if (userMessage) {
+                var userMessageHtml;
+                if (enableEmotes) {
+                    var stored = alertData.stored_alert_data || {};
+                    var emotes = stored.emotes || alertData.emotes;
+                    if (typeof emotes === 'string' && emotes !== 'null') {
+                        userMessageHtml = parseEmotes(String(userMessage), emotes);
+                    } else {
+                        userMessageHtml = escapeHtml(String(userMessage));
+                    }
+                } else {
+                    userMessageHtml = escapeHtml(String(userMessage));
+                }
+                bodyHtml += '<div class="alert-event-user-message">' + userMessageHtml + '</div>';
+            }
+            bodyHtml += '</div>';
+
+            messageElement.innerHTML = mediaHtml + bodyHtml;
+
+            maybeAttachPendingPointIcon(messageElement, alertData);
+            appendChatMessageElement(messageElement);
+        }
+
+        function handleActivityFeedAlert(alertData) {
+            if (!alertData) {
+                return;
+            }
+            if (alertShowActivitySummary) {
+                addActivityEventMessage(alertData);
+            }
+            if (alertShowMediaEvent) {
+                addAlertEventMessage(alertData);
             }
         }
 
@@ -1308,6 +1518,11 @@
         function addMessage(messageData) {
             chatLog('Adding message:', messageData);
 
+            if (!alertShowTwitchChat && messageData.is_alert_user_message) {
+                chatLog('Suppressing alert user message (AlertShowTwitchChat disabled):', messageData.message);
+                return;
+            }
+
             // Check if username filtering is enabled and if this username should be filtered
             if (enableUsernameFiltering && messageData.username) {
                 var lowerUsername = messageData.username.toLowerCase();
@@ -1350,6 +1565,10 @@
                 isActionMessage = true;
                 processedMessage = processedMessage.substring(4).trim();
                 chatLog('ACTION message detected (/me). Original:', messageData.message, 'Processed:', processedMessage);
+            }
+
+            if (messageData.reply) {
+                processedMessage = stripReplyMentionFromMessage(processedMessage, messageData.reply);
             }
 
             // Apply random font to message if enabled
@@ -2639,6 +2858,21 @@
             if (settings.showPointCost !== undefined) showPointCost = settings.showPointCost;
             if (settings.showPointIcon !== undefined) showPointIcon = settings.showPointIcon;
             if (settings.pointIconSize !== undefined) pointIconSize = settings.pointIconSize;
+            if (settings.alertShowActivitySummary !== undefined) {
+                alertShowActivitySummary = settings.alertShowActivitySummary;
+            }
+            if (settings.alertShowTwitchChat !== undefined) {
+                alertShowTwitchChat = settings.alertShowTwitchChat;
+            }
+            if (settings.alertShowMediaEvent !== undefined) {
+                alertShowMediaEvent = settings.alertShowMediaEvent;
+            }
+            if (settings.eventFontSize !== undefined) {
+                eventFontSize = Number(settings.eventFontSize);
+            }
+            if (settings.alertMediaScale !== undefined) {
+                alertMediaScale = Number(settings.alertMediaScale);
+            }
             if (settings.filterUnknownSlashCommands !== undefined) {
                 filterUnknownSlashCommands = settings.filterUnknownSlashCommands;
             }
@@ -2834,6 +3068,10 @@
             var eventColor = _chatCfg(config, 'EventColor', '#cccccc');
             var eventBorderWidth = _chatCfg(config, 'EventBorderWidth', 3);
             var eventBorderColor = _chatCfg(config, 'EventBorderColor', '#888888');
+            var eventFontSizeCfg = _chatCfg(config, 'EventFontSize', 18);
+            var alertMediaScaleCfg = _chatCfg(config, 'AlertMediaScale', 1.2);
+            eventFontSize = eventFontSizeCfg;
+            alertMediaScale = alertMediaScaleCfg;
             var badgeGap = _chatCfg(config, 'BadgeGap', 4);
             var badgeSize = _chatCfg(config, 'BadgeSize', 18);
             var badgeRadius = _chatCfg(config, 'BadgeRadius', 2);
@@ -2850,7 +3088,6 @@
             var timestampColor = _chatCfg(config, 'TimestampColor', '#888888');
             var timestampMargin = _chatCfg(config, 'TimestampMargin', 4);
             var timestampOpacity = _chatCfg(config, 'TimestampOpacity', 0.7);
-            var replyFontSize = _chatCfg(config, 'ReplyFontSize', 11);
             var replyColor = _chatCfg(config, 'ReplyColor', '#94a3b8');
             var pointIconSizeCfg = _chatCfg(config, 'PointIconSize', 14);
             pointIconSize = pointIconSizeCfg;
@@ -2868,7 +3105,9 @@
                 'border: ' + messageBorder + 'px solid ' + messageBorderColor + '; ' + animRule +
                 ' min-height: ' + minMessageHeight + 'px; line-height: ' + lineHeight + '; }' +
                 '.chat-message.event-message { font-family: event-font, chat-font, Arial, sans-serif; background-color: ' + eventBG + '; ' +
-                'color: ' + eventColor + '; border-left: ' + eventBorderWidth + 'px solid ' + eventBorderColor + '; }' +
+                'color: ' + eventColor + '; font-size: ' + eventFontSizeCfg + 'px; border-left: ' + eventBorderWidth + 'px solid ' + eventBorderColor + '; }' +
+                '.chat-message.alert-event-message { font-style: normal; display: flex; align-items: center; gap: 8px; }' +
+                '.alert-event-media img, .alert-event-media video { height: calc(' + eventFontSizeCfg + 'px * ' + alertMediaScaleCfg + '); width: auto; object-fit: contain; }' +
                 '.chat-message.activity-event { font-size: calc(' + fontSize + 'px * 0.85); margin: calc(' + messageMargin + 'px * 0.3) 0; ' +
                 'padding: calc(' + messagePadding + 'px * 0.4) calc(' + messagePadding + 'px * 0.6); }' +
                 '.message-badges { margin-right: ' + badgeGap + 'px; }' +
@@ -2887,7 +3126,7 @@
                 '.cheermote-container { margin: 0 ' + emoteMargin + 'px; }' +
                 '.cheermote-img { height: calc(28px * ' + emoteScale + '); }' +
                 '.timestamp { font-size: ' + timestampSize + 'px; color: ' + timestampColor + '; margin-right: ' + timestampMargin + 'px; opacity: ' + timestampOpacity + '; }' +
-                '.message-reply { font-size: ' + replyFontSize + 'px; color: ' + replyColor + '; }' +
+                '.message-reply { font-size: calc(' + eventFontSizeCfg + 'px * 0.85); color: ' + replyColor + '; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }' +
                 '.point-icon { width: ' + pointIconSizeCfg + 'px; height: ' + pointIconSizeCfg + 'px; }' +
                 '@media (max-width: 768px) { .chat-message { font-size: calc(' + fontSize + 'px * 0.9); padding: calc(' + messagePadding + 'px * 0.8); } ' +
                 '.chat-message.activity-event { font-size: calc(' + fontSize + 'px * 0.75); padding: calc(' + messagePadding + 'px * 0.3) calc(' + messagePadding + 'px * 0.5); ' +
@@ -2913,6 +3152,21 @@
             }
             if (config.EnableEmotes !== undefined) { enableEmotes = !!config.EnableEmotes; }
             if (config.EnableBadges !== undefined) { enableBadges = !!config.EnableBadges; }
+            if (config.AlertShowActivitySummary !== undefined) {
+                alertShowActivitySummary = !!config.AlertShowActivitySummary;
+            }
+            if (config.AlertShowTwitchChat !== undefined) {
+                alertShowTwitchChat = !!config.AlertShowTwitchChat;
+            }
+            if (config.AlertShowMediaEvent !== undefined) {
+                alertShowMediaEvent = !!config.AlertShowMediaEvent;
+            }
+            if (config.EventFontSize !== undefined) {
+                eventFontSize = Number(config.EventFontSize);
+            }
+            if (config.AlertMediaScale !== undefined) {
+                alertMediaScale = Number(config.AlertMediaScale);
+            }
             if (config.EnableMessageFontRandomization !== undefined) {
                 enableMessageFontRandomization = !!config.EnableMessageFontRandomization;
             }
@@ -2933,6 +3187,11 @@
                 showPointCost: showPointCost,
                 showPointIcon: showPointIcon,
                 pointIconSize: pointIconSize,
+                alertShowActivitySummary: alertShowActivitySummary,
+                alertShowTwitchChat: alertShowTwitchChat,
+                alertShowMediaEvent: alertShowMediaEvent,
+                eventFontSize: eventFontSize,
+                alertMediaScale: alertMediaScale,
                 filterUnknownSlashCommands: filterUnknownSlashCommands,
                 enableEmotes: enableEmotes,
                 enableBadges: enableBadges,

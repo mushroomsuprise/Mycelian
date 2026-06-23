@@ -600,6 +600,50 @@
             "description": "Left border width for event messages in pixels"
         },
         {
+            "type": "number",
+            "id": "EventFontSize",
+            "label": "Event Font Size",
+            "value": 18,
+            "min": 8,
+            "max": 100,
+            "description": "Font size for event and alert-event messages in pixels (also scales reply headers and alert media)"
+        },
+        {
+            "type": "number",
+            "id": "AlertMediaScale",
+            "label": "Alert Media Scale",
+            "value": 1.2,
+            "min": 0.5,
+            "max": 4.0,
+            "step": 0.1,
+            "description": "Alert image/video height multiplier relative to Event Font Size"
+        },
+        {
+            "type": "separator",
+            "label": "Alert Display Settings"
+        },
+        {
+            "type": "checkbox",
+            "id": "AlertShowActivitySummary",
+            "label": "Show Activity Summary",
+            "value": true,
+            "description": "Show the compact activity summary line for alerts (follows, subs, bits, etc.)"
+        },
+        {
+            "type": "checkbox",
+            "id": "AlertShowTwitchChat",
+            "label": "Show Twitch Chat Message",
+            "value": true,
+            "description": "Show the normal Twitch chat line for alert user messages (sub message, cheer text, etc.)"
+        },
+        {
+            "type": "checkbox",
+            "id": "AlertShowMediaEvent",
+            "label": "Show Alert Media Event",
+            "value": false,
+            "description": "Show a media-rich alert event block with alert image/video and message text"
+        },
+        {
             "type": "separator",
             "label": "Badge Settings"
         },
@@ -1073,11 +1117,11 @@
         {
             "type": "number",
             "id": "ReplyFontSize",
-            "label": "Reply Font Size",
+            "label": "Reply Font Size (deprecated)",
             "value": 11,
             "min": 8,
             "max": 16,
-            "description": "Font size for reply headers in pixels"
+            "description": "Deprecated: reply headers now use Event Font Size. Kept for backward compatibility."
         },
         {
             "type": "separator",

@@ -10,3 +10,9 @@ Spore Studio:
     [] - Make sections in the Properties tab collapsable (compressed by default)
     [] - Align checkboxes with their text, instead of being above or below it
     [] - Utilize more tooltips for options
+
+Chat template:
+    [x] - Add option to change the chat message for an alert (bits, subs, resubs, etc) from a regular chat message, to a special event type message that will display the alert image/video and the alert message. This should have the option to do either message type or both. Will need to scale the image to the font size, and the font size should be based on the event text font size
+    [x] - Fix reply message font size to be based on the event message font size
+    [x] - Fix reply messages so that the reply is only a single text line that gets truncated with 3 dots
+    [x] - Fix reply messages not stripping the leading username from the main message
