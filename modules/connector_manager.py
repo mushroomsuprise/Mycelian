@@ -46,13 +46,15 @@ class ConnectorManager:
 
     def __init__(self):
         self.connectors: Dict[str, Connector] = {}
-        self.event_queue = asyncio.Queue()
+        self.event_queue: Optional[asyncio.Queue] = None
         self.processing_task = None
         self.connector_thread = None
         self.connector_loop: Optional[asyncio.AbstractEventLoop] = None
         self.is_running = False
         self._lock = threading.RLock()
         self.hotkey_listener = get_listener()
+        self._loop_mismatch_errors = 0
+        self._loop_mismatch_rebuild_at = 0.0
 
         # Statistics
         self.stats = {
@@ -74,16 +76,18 @@ class ConnectorManager:
 
         # Load connectors from database
         self.load_connectors()
+        # Event processing runs only on the dedicated connector thread
+        # (see start_connector_thread); do not attach tasks to NiceGUI's loop.
+        self.processing_task = None
 
-        # Start event processing task only if we have a running event loop
-        try:
-            loop = asyncio.get_running_loop()
-            self.processing_task = asyncio.create_task(self._process_events())
-            logger.info("Started async event processing task")
-        except RuntimeError:
-            # No event loop running, defer task creation
-            logger.info("No event loop running, will start processing task later")
-            self.processing_task = None
+    def _reset_event_pipeline(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Bind a fresh queue + single processing task to the connector loop."""
+        old_task = self.processing_task
+        if old_task is not None and not old_task.done():
+            old_task.cancel()
+        self.event_queue = asyncio.Queue()
+        self.processing_task = loop.create_task(self._process_events())
+        self._loop_mismatch_errors = 0
 
     def start_connector_thread(self):
         """Start connector processing in a separate thread with its own event loop.
@@ -118,13 +122,16 @@ class ConnectorManager:
                     except Exception:
                         pass
 
-                    # Start the processing task and run the loop
-                    self.processing_task = loop.create_task(self._process_events())
+                    self._reset_event_pipeline(loop)
                     backoff = 1.0  # healthy start resets backoff
                     loop.run_forever()
                 except Exception as e:
                     logger.error(f"Error in connector thread: {e}", exc_info=True)
                 finally:
+                    if self.processing_task is not None and not self.processing_task.done():
+                        self.processing_task.cancel()
+                    self.processing_task = None
+                    self.event_queue = None
                     self.connector_loop = None
                     try:
                         from .obs_service import obs_service as _obs_svc
@@ -169,47 +176,50 @@ class ConnectorManager:
         logger.info("Started connector processing thread")
 
     def ensure_processing_task(self):
-        """Ensure the processing task is running if we have an event loop"""
-        if self.is_running and self.processing_task is None:
-            try:
-                loop = asyncio.get_running_loop()
-                self.processing_task = asyncio.create_task(self._process_events())
-                logger.info("Started deferred async event processing task")
-            except RuntimeError:
-                # Try to get or create an event loop
-                try:
-                    try:
-                        loop = asyncio.get_event_loop()
-                    except RuntimeError:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
+        """Ensure the processing task is running on the connector loop only."""
+        if not self.is_running:
+            return
+        loop = self.connector_loop
+        if loop is None or not loop.is_running():
+            return
+        if (
+            self.processing_task is not None
+            and not self.processing_task.done()
+            and self.event_queue is not None
+        ):
+            return
+        try:
+            self._reset_event_pipeline(loop)
+            logger.info("Started connector event processing task on connector loop")
+        except Exception:
+            logger.debug("ensure_processing_task failed", exc_info=True)
 
-                    self.processing_task = loop.create_task(self._process_events())
+    def _schedule_event_on_connector_loop(self, event_data: Dict[str, Any]) -> bool:
+        """Enqueue an event on the connector thread's loop (thread-safe)."""
+        loop = self.connector_loop
+        if loop is None or not loop.is_running() or self.event_queue is None:
+            return False
 
-                    # Try to run the event loop if it's not running
-                    if not loop.is_running():
-                        try:
-                            loop.run_until_complete(asyncio.sleep(0))
-                        except Exception:
-                            pass
+        def _put() -> None:
+            if self.event_queue is not None:
+                self.event_queue.put_nowait(event_data)
 
-                    logger.info(
-                        "Started deferred async event processing task (fallback)"
-                    )
-                except Exception:
-                    pass
+        loop.call_soon_threadsafe(_put)
+        return True
 
     async def process_event(self, event_data: Dict[str, Any]) -> bool:
         """Process an event through all enabled connectors"""
         if not self.is_running:
             return False
 
-        # Ensure processing task is running
-        self.ensure_processing_task()
-
-        # Add event to queue for processing
-        await self.event_queue.put(event_data)
-        return True
+        loop = self.connector_loop
+        if loop is not None and asyncio.get_running_loop() is loop:
+            self.ensure_processing_task()
+            if self.event_queue is None:
+                return False
+            await self.event_queue.put(event_data)
+            return True
+        return self._schedule_event_on_connector_loop(event_data)
 
     async def stop(self):
         """Stop the connector manager"""
@@ -225,6 +235,8 @@ class ConnectorManager:
                 await self.processing_task
             except asyncio.CancelledError:
                 pass
+        self.processing_task = None
+        self.event_queue = None
 
         # Cancel any active audio restoration tasks and clean up registry
         try:
@@ -241,16 +253,35 @@ class ConnectorManager:
             logger.warning("Connector manager not running, dropping event")
             return
 
-        self.ensure_processing_task()
-        await self.event_queue.put(event_data)
-        logger.debug(f"Added event to queue: {event_data.get('event_type', 'unknown')}")
+        loop = self.connector_loop
+        if loop is not None and asyncio.get_running_loop() is loop:
+            self.ensure_processing_task()
+            if self.event_queue is None:
+                return
+            await self.event_queue.put(event_data)
+            logger.debug(
+                f"Added event to queue: {event_data.get('event_type', 'unknown')}"
+            )
+            return
+        if self._schedule_event_on_connector_loop(event_data):
+            logger.debug(
+                f"Scheduled event on connector loop: {event_data.get('event_type', 'unknown')}"
+            )
+        else:
+            logger.warning(
+                "Connector loop not ready, dropping event: %s",
+                event_data.get("event_type", "unknown"),
+            )
 
     async def _process_events(self):
         """Process events from the queue"""
         logger.info("Event processing started")
+        loop = asyncio.get_running_loop()
 
         while self.is_running:
             try:
+                if self.event_queue is None:
+                    break
                 # Wait for an event with timeout
                 try:
                     event_data = await asyncio.wait_for(
@@ -262,9 +293,34 @@ class ConnectorManager:
                 # Process the event
                 await self._process_single_event(event_data)
                 self.stats["events_processed"] += 1
+                self._loop_mismatch_errors = 0
 
             except asyncio.CancelledError:
                 break
+            except RuntimeError as e:
+                if "bound to a different event loop" in str(e):
+                    self._loop_mismatch_errors += 1
+                    now = time.monotonic()
+                    if (
+                        self._loop_mismatch_errors == 1
+                        or now - self._loop_mismatch_rebuild_at > 30.0
+                    ):
+                        self._loop_mismatch_rebuild_at = now
+                        logger.error(
+                            "Connector event queue loop mismatch (%s); rebuilding pipeline",
+                            self._loop_mismatch_errors,
+                        )
+                        try:
+                            self._reset_event_pipeline(loop)
+                        except Exception:
+                            logger.error(
+                                "Connector pipeline rebuild failed", exc_info=True
+                            )
+                    if self._loop_mismatch_errors >= 50:
+                        await asyncio.sleep(1.0)
+                    continue
+                logger.error(f"Error processing event: {e}", exc_info=True)
+                self.stats["errors"] += 1
             except Exception as e:
                 logger.error(f"Error processing event: {e}", exc_info=True)
                 self.stats["errors"] += 1

@@ -288,17 +288,10 @@ def get_connection_status(key: str) -> str:
             base_status = "Disconnected"
 
     elif key == "webengine":
-        from . import web_engine
+        from .web_engine import get_webengine_health
 
-        if not getattr(web_engine, "web_engine_running", False):
-            base_status = "Stopped"
-        else:
-            inst = getattr(web_engine, "web_engine_instance", None)
-            last = getattr(inst, "_last_gevent_heartbeat", None) if inst else None
-            if last is not None and (time.time() - last) > _WEBENGINE_FREEZE_SEC:
-                base_status = "Frozen"
-            else:
-                base_status = "Connected"
+        health = get_webengine_health()
+        base_status = str(health.get("state") or "Unknown")
 
     else:
         base_status = "Unknown"

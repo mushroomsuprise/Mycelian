@@ -321,7 +321,7 @@ def cleanup():
 
         # Brief join; threads are daemon and exit once the queue/web server stop.
         if web_thread and web_thread.is_alive():
-            web_thread.join(timeout=2)
+            web_thread.join(timeout=15.0)
             logger.debug("Web thread joined")
 
         if alert_thread and alert_thread.is_alive():

@@ -33,6 +33,8 @@ import os
 import queue
 import random
 import re
+import socket
+import subprocess
 import sys
 import faulthandler
 import threading
@@ -40,8 +42,10 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from collections import deque
+from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 # Eventlet emits a deprecation warning on import. Flask-SocketIO still relies on
 # it here, so silence the noise (a migration off eventlet is tracked separately).
@@ -448,8 +452,55 @@ web_engine_running = False
 # Global instance for access by other modules
 web_engine_instance = None
 
+# Health state labels (worst-wins priority when computing get_health()["state"])
+WEBENGINE_STATE_CRASHED = "Crashed"
+WEBENGINE_STATE_STALLED = "Stalled"
+WEBENGINE_STATE_OVERLOADED = "Overloaded"
+WEBENGINE_STATE_RESTARTING = "Restarting"
+WEBENGINE_STATE_STARTING = "Starting"
+WEBENGINE_STATE_RUNNING = "Running"
+WEBENGINE_STATE_STOPPED = "Stopped"
+
+
+def get_webengine_health() -> Dict[str, Any]:
+    """Return overlay server health for footer / diagnostics."""
+    inst = web_engine_instance
+    if inst is None:
+        from .shutdown import is_shutdown_in_progress
+
+        state = (
+            WEBENGINE_STATE_STOPPED
+            if is_shutdown_in_progress()
+            else WEBENGINE_STATE_CRASHED
+        )
+        return {
+            "state": state,
+            "connected_clients": 0,
+            "is_running": False,
+            "thread_alive": False,
+            "last_error": None,
+            "restart_attempts": 0,
+            "overload": False,
+            "detail": "",
+        }
+    return inst.get_health()
+
 
 class WebEngine:
+    # --- Health / overload thresholds ----------------------------------------
+    _FREEZE_HEALTH_SEC = 60.0
+    _STARTING_GRACE_SEC = 15.0
+    _QUEUE_MAX_SIZE = 50
+    _OVERLOAD_QUEUE_THRESHOLD = 50
+    _OVERLOAD_CLIENT_THRESHOLD = 25
+    _OVERLOAD_SLOW_REQUEST_COUNT = 5
+    _OVERLOAD_SLOW_REQUEST_WINDOW_SEC = 60.0
+    _SLOW_REQUEST_SEC = 0.5
+    _ALL_TEMPLATE_CONFIGS_RATE_LIMIT = 4  # requests per IP per 3s window
+    _ALL_TEMPLATE_CONFIGS_RATE_WINDOW_SEC = 3.0
+    _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 3.0
+    _RESTART_THREAD_JOIN_SEC = 15.0 if sys.platform == "win32" else 10.0
+
     def __init__(self, template_dir="templates", host="127.0.0.1", port=5000):
         """
         Initialize the WebEngine server
@@ -517,7 +568,9 @@ class WebEngine:
         # Configure SocketIO with increased limits to prevent "Too many packets in payload" errors
         # This can happen during startup when there are rapid bursts of Socket.IO events
         # Cross-thread template control emits (NiceGUI -> Web Engine gevent loop)
-        self._template_control_queue: queue.Queue = queue.Queue()
+        self._template_control_queue: queue.Queue = queue.Queue(
+            maxsize=self._QUEUE_MAX_SIZE
+        )
         self._template_control_emit_worker_started = False
         self._template_control_emit_worker_lock = threading.Lock()
 
@@ -539,7 +592,7 @@ class WebEngine:
         self._all_template_configs_slow_log_at = 0.0
 
         # Bounded Twitch API worker (avoids per-request thread + event loop)
-        self._twitch_api_queue: queue.Queue = queue.Queue()
+        self._twitch_api_queue: queue.Queue = queue.Queue(maxsize=self._QUEUE_MAX_SIZE)
         self._twitch_api_worker_started = False
         self._twitch_api_worker_lock = threading.Lock()
 
@@ -725,9 +778,32 @@ class WebEngine:
                 )
 
         # Add route to serve ALL template configurations (raw JSON files)
+        @self.app.route("/api/health")
+        def web_engine_health():
+            """Lightweight liveness probe for restart / port-conflict detection."""
+            health = self.get_health()
+            code = 200 if health["state"] in (
+                WEBENGINE_STATE_RUNNING,
+                WEBENGINE_STATE_OVERLOADED,
+                WEBENGINE_STATE_STARTING,
+            ) else 503
+            return health, code, {"Content-Type": "application/json"}
+
         @self.app.route("/api/all-template-configs")
         def serve_all_template_configs():
             """Serve ALL template configurations as raw JSON"""
+            client_key = (request.remote_addr or "unknown").strip()
+            if self._all_template_configs_rate_limited(client_key):
+                return (
+                    {"error": "Rate limited; retry shortly"},
+                    429,
+                    {
+                        "Content-Type": "application/json",
+                        "Retry-After": str(
+                            int(self._ALL_TEMPLATE_CONFIGS_RATE_WINDOW_SEC)
+                        ),
+                    },
+                )
             t0 = time.time()
             try:
                 preview_tok = request.cookies.get("mycelian_preview_token") or ""
@@ -735,8 +811,10 @@ class WebEngine:
                     preview_tok
                 )
                 elapsed = time.time() - t0
+                if elapsed > self._SLOW_REQUEST_SEC:
+                    self._record_slow_request()
                 if (
-                    elapsed > 0.5
+                    elapsed > self._SLOW_REQUEST_SEC
                     and time.time() >= self._all_template_configs_slow_log_at
                 ):
                     self._all_template_configs_slow_log_at = time.time() + 30.0
@@ -2159,8 +2237,15 @@ class WebEngine:
         self._restart_attempts = 0
         self._supervisor_thread: Optional[threading.Thread] = None
         self._restart_giveup_notified = False
+        self._restart_in_progress = False
+        self._last_run_error: Optional[str] = None
+        self._server_started_at: Optional[float] = None
 
-    _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 3.0
+        # Overload / slow-request tracking
+        self._slow_request_times: Deque[float] = deque(maxlen=64)
+        self._overload_lock = threading.Lock()
+        self._all_template_configs_rate: Dict[str, Deque[float]] = {}
+        self._all_template_configs_rate_lock = threading.Lock()
 
     def _build_all_template_configs(self, preview_tok: Optional[str]) -> Dict[str, Any]:
         """Load every template JSON (used by cached all-template-configs route)."""
@@ -2263,7 +2348,13 @@ class WebEngine:
 
     def _submit_twitch_api_coro(self, coro) -> None:
         self.ensure_twitch_api_worker()
-        self._twitch_api_queue.put(coro)
+        try:
+            self._twitch_api_queue.put_nowait(coro)
+        except queue.Full:
+            logger.warning(
+                "Twitch API queue full (%s); dropping request",
+                self._twitch_api_queue.qsize(),
+            )
 
     def _twitch_api_worker_loop(self) -> None:
         try:
@@ -2293,6 +2384,176 @@ class WebEngine:
     def _get_socket_connected_count(self) -> int:
         with self._socket_connected_lock:
             return self._socket_connected_count
+
+    def _record_slow_request(self) -> None:
+        now = time.time()
+        with self._overload_lock:
+            self._slow_request_times.append(now)
+
+    def _slow_request_count_recent(self) -> int:
+        cutoff = time.time() - self._OVERLOAD_SLOW_REQUEST_WINDOW_SEC
+        with self._overload_lock:
+            while self._slow_request_times and self._slow_request_times[0] < cutoff:
+                self._slow_request_times.popleft()
+            return len(self._slow_request_times)
+
+    def _is_overloaded(self) -> bool:
+        clients = self._get_socket_connected_count()
+        if clients >= self._OVERLOAD_CLIENT_THRESHOLD:
+            return True
+        try:
+            tc_qsize = self._template_control_queue.qsize()
+        except Exception:
+            tc_qsize = 0
+        try:
+            tw_qsize = self._twitch_api_queue.qsize()
+        except Exception:
+            tw_qsize = 0
+        if (
+            tc_qsize >= self._OVERLOAD_QUEUE_THRESHOLD
+            or tw_qsize >= self._OVERLOAD_QUEUE_THRESHOLD
+        ):
+            return True
+        if self._slow_request_count_recent() >= self._OVERLOAD_SLOW_REQUEST_COUNT:
+            return True
+        return False
+
+    def _heartbeat_stale_seconds(self) -> Optional[float]:
+        last = self._last_gevent_heartbeat
+        if last is None:
+            return None
+        return time.time() - last
+
+    def _is_heartbeat_stale(self) -> bool:
+        stale = self._heartbeat_stale_seconds()
+        return stale is not None and stale > self._FREEZE_HEALTH_SEC
+
+    def _thread_alive(self) -> bool:
+        return self.server_thread is not None and self.server_thread.is_alive()
+
+    def _is_zombie_thread(self) -> bool:
+        return self._thread_alive() and not self.is_running
+
+    def get_health(self) -> Dict[str, Any]:
+        """Structured overlay-server health for footer and supervisor."""
+        from .shutdown import is_shutdown_in_progress
+
+        thread_alive = self._thread_alive()
+        clients = self._get_socket_connected_count()
+        overloaded = self._is_overloaded()
+        stale_sec = self._heartbeat_stale_seconds()
+        with self._restart_lock:
+            restart_attempts = self._restart_attempts
+            gave_up = (
+                self._restart_giveup_notified
+                or restart_attempts >= self._MAX_RESTART_ATTEMPTS
+            )
+
+        detail_parts: List[str] = []
+        if clients:
+            detail_parts.append(f"{clients} clients")
+        if self._last_run_error:
+            detail_parts.append(str(self._last_run_error)[:80])
+        if stale_sec is not None and stale_sec > self._FREEZE_HEALTH_SEC:
+            detail_parts.append(f"heartbeat {stale_sec:.0f}s stale")
+
+        state = WEBENGINE_STATE_RUNNING
+        if is_shutdown_in_progress() and not self.is_running and not thread_alive:
+            state = WEBENGINE_STATE_STOPPED
+        elif self._restart_in_progress:
+            state = WEBENGINE_STATE_RESTARTING
+        elif (
+            gave_up
+            or self._is_zombie_thread()
+            or (self._last_run_error and not self.is_running)
+            or (not thread_alive and not self.is_running)
+        ):
+            state = WEBENGINE_STATE_CRASHED
+        elif self.is_running and self._is_heartbeat_stale():
+            state = WEBENGINE_STATE_STALLED
+        elif self.is_running and overloaded:
+            state = WEBENGINE_STATE_OVERLOADED
+        elif self.is_running:
+            state = WEBENGINE_STATE_RUNNING
+        elif thread_alive and self._server_started_at is None:
+            state = WEBENGINE_STATE_STARTING
+        elif thread_alive and self._last_gevent_heartbeat is None:
+            started = self._server_started_at or 0.0
+            if time.time() - started < self._STARTING_GRACE_SEC:
+                state = WEBENGINE_STATE_STARTING
+            else:
+                state = WEBENGINE_STATE_CRASHED
+        else:
+            state = WEBENGINE_STATE_STOPPED
+
+        return {
+            "state": state,
+            "connected_clients": clients,
+            "is_running": self.is_running,
+            "thread_alive": thread_alive,
+            "last_error": self._last_run_error,
+            "restart_attempts": restart_attempts,
+            "overload": overloaded,
+            "heartbeat_stale_sec": stale_sec,
+            "detail": "; ".join(detail_parts),
+        }
+
+    def _all_template_configs_rate_limited(self, client_key: str) -> bool:
+        now = time.time()
+        window = self._ALL_TEMPLATE_CONFIGS_RATE_WINDOW_SEC
+        limit = self._ALL_TEMPLATE_CONFIGS_RATE_LIMIT
+        with self._all_template_configs_rate_lock:
+            hits = self._all_template_configs_rate.setdefault(
+                client_key, deque(maxlen=limit + 2)
+            )
+            while hits and now - hits[0] > window:
+                hits.popleft()
+            if len(hits) >= limit:
+                return True
+            hits.append(now)
+            return False
+
+    def _port_is_open(self) -> bool:
+        try:
+            with socket.create_connection((self.host, self.port), timeout=0.5):
+                return True
+        except OSError:
+            return False
+
+    def _probe_health_endpoint(self) -> bool:
+        try:
+            req = Request(
+                f"http://{self.host}:{self.port}/api/health",
+                headers={"User-Agent": "Mycelian-WebEngine-Probe"},
+            )
+            with urlopen(req, timeout=2.0) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    def _log_port_holder_hint(self) -> None:
+        if sys.platform != "win32":
+            return
+        try:
+            out = subprocess.run(
+                [
+                    "netstat",
+                    "-ano",
+                    "-p",
+                    "TCP",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+                check=False,
+            )
+            needle = f"{self.host}:{self.port}" if self.host != "0.0.0.0" else f":{self.port}"
+            for line in out.stdout.splitlines():
+                if needle in line and "LISTENING" in line.upper():
+                    logger.warning("Port %s may be held by: %s", self.port, line.strip())
+                    return
+        except Exception as e:
+            logger.debug("Could not log port holder hint: %s", e)
 
     def ensure_web_engine_heartbeat(self) -> None:
         """Log connected client count periodically and arm the freeze watchdog."""
@@ -2432,10 +2693,12 @@ class WebEngine:
             if is_shutdown_in_progress():
                 return
             try:
-                thread_alive = (
-                    self.server_thread is not None and self.server_thread.is_alive()
-                )
-                if not thread_alive and not self.is_running:
+                thread_alive = self._thread_alive()
+                if self._is_zombie_thread():
+                    self.request_restart(
+                        "WebEngine thread alive but server is not running (zombie)"
+                    )
+                elif not thread_alive and not self.is_running:
                     self.request_restart("WebEngine thread is no longer running")
                 else:
                     last = self._last_gevent_heartbeat
@@ -2451,6 +2714,120 @@ class WebEngine:
             except Exception as e:
                 logger.debug("WebEngine supervisor check failed: %s", e)
             time.sleep(self._SUPERVISOR_POLL_SEC)
+
+    def _aggressive_stop(self, join_timeout: Optional[float] = None) -> None:
+        """Best-effort stop when the gevent hub may be frozen or holding the port."""
+        join_timeout = (
+            self._RESTART_THREAD_JOIN_SEC if join_timeout is None else join_timeout
+        )
+        try:
+            self.stop()
+        except Exception as e:
+            logger.warning("WebEngine aggressive stop: stop() failed: %s", e)
+
+        def _close_listener() -> None:
+            try:
+                wsgi_server = getattr(self.socketio, "wsgi_server", None)
+                if wsgi_server is not None:
+                    listener = getattr(wsgi_server, "socket", None) or getattr(
+                        wsgi_server, "server", None
+                    )
+                    if listener is not None and hasattr(listener, "close"):
+                        listener.close()
+            except Exception as e:
+                logger.debug("WebEngine aggressive stop: listener close: %s", e)
+
+        _close_listener()
+        try:
+            self.socketio.stop()
+        except Exception as e:
+            logger.debug("WebEngine aggressive stop: socketio.stop: %s", e)
+
+        old_thread = self.server_thread
+        if old_thread is not None and old_thread.is_alive():
+            old_thread.join(timeout=join_timeout)
+            if old_thread.is_alive():
+                logger.warning(
+                    "WebEngine thread did not exit within %.0fs after aggressive stop",
+                    join_timeout,
+                )
+                self._log_port_holder_hint()
+
+    def _prepare_port_for_restart(self) -> None:
+        """Release or validate port 5000 before binding a new server thread."""
+        if not self._port_is_open():
+            return
+        if self._probe_health_endpoint():
+            logger.warning(
+                "Port %s still serves /api/health; attempting aggressive stop",
+                self.port,
+            )
+        else:
+            logger.warning(
+                "Port %s is open but health probe failed; attempting aggressive stop",
+                self.port,
+            )
+            self._log_port_holder_hint()
+        self._aggressive_stop()
+        # Brief wait for Windows TIME_WAIT / socket teardown
+        for delay in (0.5, 1.0, 2.0):
+            if not self._port_is_open():
+                return
+            time.sleep(delay)
+
+    def _do_restart(self, reason: str, attempt: int) -> None:
+        logger.error("WebEngine auto-restart (attempt %s): %s", attempt, reason)
+        self._restart_in_progress = True
+        try:
+            self._notify_restart_attempt()
+
+            self._aggressive_stop()
+
+            # Re-arm the lazily-started gevent workers so they restart when a
+            # client (e.g. an OBS browser source) reconnects.
+            with self._heartbeat_lock:
+                self._heartbeat_task_started = False
+            with self._template_control_emit_worker_lock:
+                self._template_control_emit_worker_started = False
+            self._last_gevent_heartbeat = None
+            self._server_started_at = None
+
+            self._prepare_port_for_restart()
+
+            bind_backoff = min(2.0 ** (attempt - 1), 8.0)
+            if self._port_is_open() and not self._probe_health_endpoint():
+                logger.warning(
+                    "WebEngine restart: port %s still in use; backing off %.1fs",
+                    self.port,
+                    bind_backoff,
+                )
+                time.sleep(bind_backoff)
+
+            try:
+                self._start_server_thread()
+            except Exception as e:
+                logger.error("WebEngine restart: failed to start new thread: %s", e)
+                self._last_run_error = str(e)
+
+            time.sleep(3.0)
+            if self.is_alive():
+                logger.warning("WebEngine auto-restart succeeded (attempt %s)", attempt)
+                with self._restart_lock:
+                    self._restart_attempts = 0
+                    self._restart_giveup_notified = False
+                self._last_run_error = None
+                self._notify_restart_recovered()
+            else:
+                logger.error(
+                    "WebEngine auto-restart did not recover (attempt %s)", attempt
+                )
+                with self._restart_lock:
+                    give_up = self._restart_attempts >= self._MAX_RESTART_ATTEMPTS
+                if give_up and not self._restart_giveup_notified:
+                    self._restart_giveup_notified = True
+                    self._notify_restart_giveup()
+        finally:
+            self._restart_in_progress = False
 
     def request_restart(self, reason: str) -> None:
         """Schedule a best-effort server restart (cooldown- and limit-gated)."""
@@ -2476,50 +2853,6 @@ class WebEngine:
             name="WebEngineRestart",
             daemon=True,
         ).start()
-
-    def _do_restart(self, reason: str, attempt: int) -> None:
-        logger.error("WebEngine auto-restart (attempt %s): %s", attempt, reason)
-        self._notify_restart_attempt()
-
-        # Best-effort stop of the existing (possibly frozen) server.
-        try:
-            self.stop()
-        except Exception as e:
-            logger.warning("WebEngine restart: stop() failed: %s", e)
-
-        old_thread = self.server_thread
-        if old_thread is not None and old_thread.is_alive():
-            old_thread.join(timeout=8.0)
-
-        # Re-arm the lazily-started gevent workers so they restart when a
-        # client (e.g. an OBS browser source) reconnects.
-        with self._heartbeat_lock:
-            self._heartbeat_task_started = False
-        with self._template_control_emit_worker_lock:
-            self._template_control_emit_worker_started = False
-        self._last_gevent_heartbeat = None
-
-        # Start a fresh server thread. This fails to bind if the old hub is
-        # frozen and still holding the port; that case is handled below.
-        try:
-            self._start_server_thread()
-        except Exception as e:
-            logger.error("WebEngine restart: failed to start new thread: %s", e)
-
-        time.sleep(3.0)
-        if self.is_alive():
-            logger.warning("WebEngine auto-restart succeeded (attempt %s)", attempt)
-            with self._restart_lock:
-                self._restart_attempts = 0
-                self._restart_giveup_notified = False
-            self._notify_restart_recovered()
-        else:
-            logger.error("WebEngine auto-restart did not recover (attempt %s)", attempt)
-            with self._restart_lock:
-                give_up = self._restart_attempts >= self._MAX_RESTART_ATTEMPTS
-            if give_up and not self._restart_giveup_notified:
-                self._restart_giveup_notified = True
-                self._notify_restart_giveup()
 
     def _start_server_thread(self) -> None:
         global web_engine_instance
@@ -6273,7 +6606,14 @@ class WebEngine:
             return
         event_name = f"{template_name}_{action}"
         event_data = data if isinstance(data, dict) else ({} if data is None else {})
-        self._template_control_queue.put((event_name, event_data))
+        try:
+            self._template_control_queue.put_nowait((event_name, event_data))
+        except queue.Full:
+            logger.warning(
+                "Template control queue full (%s); dropping %s",
+                self._template_control_queue.qsize(),
+                event_name,
+            )
 
     def persist_template_control_change(
         self, template_name: str, action: str, data: Optional[Dict[str, Any]]
@@ -7213,10 +7553,12 @@ class WebEngine:
         """Run the Flask server"""
         global web_engine_running
         run_error: Optional[BaseException] = None
+        self._server_started_at = time.time()
         try:
             logger.info("Starting WebEngine server on %s:%s", self.host, self.port)
             self.is_running = True
             web_engine_running = True
+            self._last_run_error = None
             # Enable debug mode for template reloading, but disable the reloader to avoid conflicts with our threading
             self.socketio.run(
                 self.app,
@@ -7227,15 +7569,18 @@ class WebEngine:
             )
         except Exception as e:
             run_error = e
+            self._last_run_error = str(e)
             logger.error(f"Error running WebEngine server: {str(e)}", exc_info=True)
             self.is_running = False
             web_engine_running = False
+            if "10048" in str(e) or "EADDRINUSE" in str(e).upper():
+                self._log_port_holder_hint()
         finally:
             self.is_running = False
             web_engine_running = False
-            thread_alive = (
-                self.server_thread is not None and self.server_thread.is_alive()
-            )
+            if run_error is not None and self._last_run_error is None:
+                self._last_run_error = str(run_error)
+            thread_alive = self._thread_alive()
             logger.warning(
                 "WebEngine server stopped (host=%s port=%s connected_clients=%s "
                 "thread_alive=%s error=%s)",
@@ -7289,21 +7634,23 @@ class WebEngine:
                         if in_request_context:
                             logger.debug("In request context, skipping socketio.stop()")
                         else:
-                            # If the underlying WSGI server never finished starting,
-                            # flask-socketio's stop() dereferences a None server
-                            # ("'NoneType' object has no attribute 'close'"). Skip
-                            # the call in that case to avoid the harmless error.
                             wsgi_server = getattr(self.socketio, "wsgi_server", None)
-                            server_alive = (
-                                self.server_thread is not None
-                                and self.server_thread.is_alive()
-                            )
+                            server_alive = self._thread_alive()
                             if wsgi_server is None and not server_alive:
                                 logger.debug(
                                     "socketio.stop() skipped: no running WSGI server"
                                 )
                             else:
                                 self.socketio.stop()
+                            if wsgi_server is not None:
+                                listener = getattr(wsgi_server, "socket", None) or getattr(
+                                    wsgi_server, "server", None
+                                )
+                                if listener is not None and hasattr(listener, "close"):
+                                    try:
+                                        listener.close()
+                                    except Exception:
+                                        pass
                     except AttributeError as e:
                         # Harmless shutdown race when the server was already torn down.
                         logger.debug("socketio.stop() no-op during shutdown: %s", e)
@@ -7315,7 +7662,7 @@ class WebEngine:
                 stop_thread.start()
 
                 # Wait for the stop thread to finish
-                stop_thread.join(timeout=2)
+                stop_thread.join(timeout=3.0)
 
                 self.is_running = False
                 web_engine_running = False

@@ -679,9 +679,14 @@ def _service_status_notify_type(service_key: str, status: str) -> str:
             return "positive"
         return "warning"
     if service_key == "webengine":
-        if s == "connected":
+        s_lower = s.lower()
+        if s_lower == "running":
             return "positive"
-        if "frozen" in s or "stopped" in s:
+        if s_lower in ("crashed", "stopped"):
+            return "negative"
+        if s_lower in ("stalled", "overloaded", "restarting", "starting"):
+            return "warning"
+        if "frozen" in s_lower:
             return "negative"
         return "warning"
     if service_key == "internet":
@@ -739,8 +744,20 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
     s = (status_raw or "").strip().lower()
     if not s:
         return "Unknown"
+    if service_key == "webengine":
+        webengine_labels = {
+            "running": "Running",
+            "stalled": "Stalled",
+            "overloaded": "Overloaded",
+            "crashed": "Crashed",
+            "restarting": "Restarting",
+            "starting": "Starting",
+            "stopped": "Stopped",
+        }
+        if s in webengine_labels:
+            return webengine_labels[s]
     if "frozen" in s:
-        return "Frozen"
+        return "Stalled"
     if "degraded" in s or "stale" in s or "no recent events" in s:
         return "Degraded"
     if s == "connected" or s.startswith("connected") or s.startswith("partial"):
@@ -794,11 +811,24 @@ def footer_status_tier(service_key: str, status_raw: str) -> str:
     display = footer_status_display(service_key, status_raw).lower()
     if display == "connected":
         return "success"
+    if display == "running":
+        return "success"
     if display in ("connecting", "disconnecting"):
         return "warning"
     if display in ("idle", "degraded"):
         return "warning"
-    if display in ("disconnected", "error", "frozen", "stopped", "no internet", "unreachable", "offline"):
+    if display in ("stalled", "overloaded", "restarting", "starting"):
+        return "warning"
+    if display in (
+        "disconnected",
+        "error",
+        "frozen",
+        "crashed",
+        "stopped",
+        "no internet",
+        "unreachable",
+        "offline",
+    ):
         return "error"
     return "info"
 
@@ -1014,6 +1044,14 @@ def refresh_service_status_footer() -> None:
             badge_wrap = refs.get("badge_wrap")
             if badge_wrap is not None:
                 badge_wrap.classes(replace=f"service-status-badge {tier}")
+            if key == "webengine":
+                try:
+                    from .web_engine import get_webengine_health
+
+                    tip = get_webengine_health().get("detail") or entry.status_raw
+                    container.tooltip(tip)
+                except Exception:
+                    pass
         except Exception:
             pass
 
