@@ -35,6 +35,7 @@ from typing import Any, Callable, Dict, List, Optional
 from nicegui import app, ui
 
 from ..notification_engine import notify
+from .. import alertutils
 from ..ui_timer import app_schedule
 
 logger = logging.getLogger(__name__)
@@ -852,8 +853,6 @@ def build_activity_feed_alert_payload(
 
     if alert_id:
         try:
-            from modules import alertutils
-
             alertutils.alert_state_manager.initialize()
             stored_alert_data = alertutils.alert_state_manager.get_stored_alert_by_id(
                 alert_id
@@ -900,7 +899,159 @@ def build_activity_feed_alert_payload(
         if parsed and parsed != "Unknown":
             alert_data["username"] = parsed
 
+    chat_media = alertutils.resolve_chat_alert_media(
+        alert_data, preview_placeholder=False
+    )
+    if chat_media:
+        alert_data["chat_media"] = chat_media
+
     return alert_data
+
+
+def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
+    """
+    Build a fixed ``activity_feed_alert`` preview payload for one alert type.
+
+    Media paths come from configured alerts via :func:`resolve_chat_alert_media`,
+    with default placeholder GIFs when previewing without a matching config.
+    """
+    import random
+
+    at = (alert_type or "follow").strip().lower()
+    ts = str(int(time.time()))
+    username = random.choice(
+        (
+            "PixelPanda",
+            "NeonNova",
+            "TacoTuesday",
+            "ShinyHaxor",
+            "5olid5nake",
+        )
+    )
+    stored_alert_data: Dict[str, Any] = {
+        "username": username,
+        "alert_type": at,
+    }
+
+    if at == "follow":
+        payload = build_activity_feed_alert_payload(
+            "Follow",
+            f"{username} just followed!",
+            "follow",
+            timestamp=ts,
+        )
+    elif at == "sub":
+        tier = random.choice((1, 2, 3))
+        stored_alert_data["tier"] = tier
+        payload = build_activity_feed_alert_payload(
+            "Sub",
+            f"{username} subscribed (Tier {tier})!",
+            "sub",
+            timestamp=ts,
+            tier=tier,
+            user_message="Thanks for an awesome stream!",
+        )
+    elif at == "resub":
+        tier = random.choice((1, 2, 3))
+        months = random.randint(2, 36)
+        stored_alert_data["tier"] = tier
+        stored_alert_data["resub_month"] = months
+        payload = build_activity_feed_alert_payload(
+            "Resub",
+            f"{username} resubscribed for {months} months (Tier {tier})!",
+            "resub",
+            timestamp=ts,
+            tier=tier,
+            user_message=f"{months} months strong!",
+        )
+    elif at in ("bit", "bits"):
+        amount = random.choice((100, 500, 1000, 5000))
+        stored_alert_data["amt_cheered"] = amount
+        payload = build_activity_feed_alert_payload(
+            "Bits",
+            f"{username} cheered {amount} bits!",
+            "bits",
+            timestamp=ts,
+            user_message="Loving the stream!",
+        )
+    elif at == "giftsub":
+        tier = random.choice((1, 2, 3))
+        qty = random.randint(1, 10)
+        stored_alert_data["tier"] = tier
+        stored_alert_data["gift_qty"] = qty
+        payload = build_activity_feed_alert_payload(
+            "Giftsub",
+            f"{username} gifted {qty} Tier {tier} subs!",
+            "giftsub",
+            timestamp=ts,
+            tier=tier,
+        )
+    elif at == "raid":
+        count = random.randint(25, 250)
+        game = random.choice(
+            ("Just Chatting", "Hades II", "Final Fantasy VII", "Hollow Knight")
+        )
+        stored_alert_data["raider_count"] = count
+        stored_alert_data["game_name"] = game
+        payload = build_activity_feed_alert_payload(
+            "Raid",
+            format_raid_activity_message(username, count, game),
+            "raid",
+            timestamp=ts,
+        )
+    elif at == "donation":
+        amount = round(random.uniform(5.0, 50.0), 2)
+        stored_alert_data["donation_amount"] = amount
+        payload = build_activity_feed_alert_payload(
+            "Donation",
+            f"{username} donated ${amount:.2f}!",
+            "donation",
+            timestamp=ts,
+            user_message="Keep up the great work!",
+        )
+    elif at in ("point", "points"):
+        reward = random.choice(
+            ("Hydrate Reminder", "Highlight My Message", "Pick the next song")
+        )
+        cost = random.choice((100, 500, 1100, 2500))
+        stored_alert_data["point_cost"] = cost
+        payload = build_activity_feed_alert_payload(
+            "Points",
+            f"{username} redeemed '{reward}'!",
+            "points",
+            timestamp=ts,
+            point_cost=cost,
+        )
+    elif at == "streak":
+        count = random.randint(2, 24)
+        stored_alert_data["streak_count"] = count
+        payload = build_activity_feed_alert_payload(
+            "Streak",
+            format_watch_streak_message(username, count),
+            "streak",
+            timestamp=ts,
+        )
+    else:
+        payload = build_activity_feed_alert_payload(
+            "Follow",
+            f"{username} just followed!",
+            "follow",
+            timestamp=ts,
+        )
+
+    payload["username"] = username
+    payload["stored_alert_data"] = stored_alert_data
+    payload.pop("chat_media", None)
+
+    chat_media = alertutils.resolve_chat_alert_media(
+        payload, preview_placeholder=True
+    )
+    if chat_media:
+        payload["chat_media"] = chat_media
+        stored_alert_data.update(chat_media)
+        payload["stored_alert_data"] = stored_alert_data
+
+    return payload
 
 
 def iter_activity_feed_preview_payloads():

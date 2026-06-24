@@ -2292,6 +2292,165 @@ def fetch_cheer_alert(quantity: int) -> AlertObj:
     return fetch_bits_alert(quantity)
 
 
+_CHAT_ACTIVITY_ONLY_ALERT_TYPES = frozenset(
+    {"point", "points", "streak", "hype_train", "hypetrain"}
+)
+_CHAT_MEDIA_RICH_ALERT_TYPES = frozenset(
+    {"follow", "sub", "resub", "giftsub", "bit", "bits", "donation", "raid"}
+)
+_CHAT_PREVIEW_PLACEHOLDER_DIR = "/assets/default_assets/images"
+_CHAT_PREVIEW_PLACEHOLDER_GIFS = (
+    "cheer100.gif",
+    "cheer1000.gif",
+    "cheer5000.gif",
+    "cheer10000.gif",
+    "cheer100000.gif",
+)
+
+
+def _normalize_chat_alert_type(alert_data: dict) -> str:
+    for key in ("badge_type", "alert_type", "type"):
+        raw = alert_data.get(key)
+        if raw is None or raw == "":
+            continue
+        return str(raw).strip().lower().replace(" ", "")
+    return ""
+
+
+def _chat_alert_lookup(alert_data: dict, *keys: str) -> Any:
+    stored = alert_data.get("stored_alert_data")
+    if not isinstance(stored, dict):
+        stored = {}
+    for key in keys:
+        if key in alert_data and alert_data[key] is not None:
+            return alert_data[key]
+        if key in stored and stored[key] is not None:
+            return stored[key]
+    return None
+
+
+def _alert_obj_media(alert: Optional[AlertObj]) -> Optional[Dict[str, str]]:
+    if alert is None:
+        return None
+    gif_dir = str(alert.gif_dir or "").strip()
+    gif_name = str(alert.gif_name or "").strip()
+    if gif_dir and gif_name:
+        return {"gif_dir": gif_dir, "gif_name": gif_name}
+    return None
+
+
+def _media_from_alert_data_fields(alert_data: dict) -> Optional[Dict[str, str]]:
+    chat_media = alert_data.get("chat_media")
+    if isinstance(chat_media, dict):
+        gif_dir = str(chat_media.get("gif_dir") or "").strip()
+        gif_name = str(chat_media.get("gif_name") or "").strip()
+        if gif_dir and gif_name:
+            return {"gif_dir": gif_dir, "gif_name": gif_name}
+
+    stored = alert_data.get("stored_alert_data")
+    if isinstance(stored, dict):
+        gif_dir = str(stored.get("gif_dir") or "").strip()
+        gif_name = str(stored.get("gif_name") or "").strip()
+        if gif_dir and gif_name:
+            return {"gif_dir": gif_dir, "gif_name": gif_name}
+
+    gif_dir = str(alert_data.get("gif_dir") or "").strip()
+    gif_name = str(alert_data.get("gif_name") or "").strip()
+    if gif_dir and gif_name:
+        return {"gif_dir": gif_dir, "gif_name": gif_name}
+    return None
+
+
+def _preview_placeholder_media() -> Dict[str, str]:
+    import random
+
+    return {
+        "gif_dir": _CHAT_PREVIEW_PLACEHOLDER_DIR,
+        "gif_name": random.choice(_CHAT_PREVIEW_PLACEHOLDER_GIFS),
+    }
+
+
+def _fetch_chat_alert_for_media(alert_type: str, alert_data: dict) -> Optional[AlertObj]:
+    at = alert_type
+    if at == "follow":
+        return fetch_follow_alert()
+    if at == "sub":
+        return fetch_sub_alert(1)
+    if at == "resub":
+        months = _chat_alert_lookup(
+            alert_data, "resub_month", "months", "total_months", "cumulative_months"
+        )
+        try:
+            months_int = int(months) if months is not None else 2
+        except (TypeError, ValueError):
+            months_int = 2
+        if months_int < 2:
+            months_int = 2
+        return fetch_resub_alert(months_int)
+    if at == "giftsub":
+        qty = _chat_alert_lookup(alert_data, "gift_qty", "quantity")
+        try:
+            qty_int = int(qty) if qty is not None else 1
+        except (TypeError, ValueError):
+            qty_int = 1
+        return fetch_giftsub_alert(max(qty_int, 1))
+    if at in ("bit", "bits"):
+        amt = _chat_alert_lookup(alert_data, "amt_cheered", "bits", "amount")
+        try:
+            amt_int = int(amt) if amt is not None else 100
+        except (TypeError, ValueError):
+            amt_int = 100
+        return fetch_bits_alert(max(amt_int, 1))
+    if at == "donation":
+        amount = _chat_alert_lookup(alert_data, "donation_amount", "amount")
+        try:
+            amount_val = float(amount) if amount is not None else 5.0
+        except (TypeError, ValueError):
+            amount_val = 5.0
+        return fetch_donation_alert(amount_val)
+    if at == "raid":
+        count = _chat_alert_lookup(alert_data, "raider_count", "viewers")
+        try:
+            count_int = int(count) if count is not None else 25
+        except (TypeError, ValueError):
+            count_int = 25
+        return fetch_raid_alert(max(count_int, 1))
+    return None
+
+
+def resolve_chat_alert_media(
+    alert_data: dict, *, preview_placeholder: bool = False
+) -> Optional[Dict[str, str]]:
+    """
+    Resolve GIF/video paths for the chat template media-rich alert block.
+
+    Uses existing media on the payload when present, otherwise looks up the
+    configured alert via the same fetch_* helpers used at alert fire time.
+    """
+    if not isinstance(alert_data, dict):
+        return None
+
+    alert_type = _normalize_chat_alert_type(alert_data)
+    if not alert_type or alert_type in _CHAT_ACTIVITY_ONLY_ALERT_TYPES:
+        return None
+
+    existing = _media_from_alert_data_fields(alert_data)
+    if existing:
+        return existing
+
+    if alert_type not in _CHAT_MEDIA_RICH_ALERT_TYPES:
+        return None
+
+    alert_obj = _fetch_chat_alert_for_media(alert_type, alert_data)
+    resolved = _alert_obj_media(alert_obj)
+    if resolved:
+        return resolved
+
+    if preview_placeholder:
+        return _preview_placeholder_media()
+    return None
+
+
 # Initialize the alert state manager when this module is imported
 def initialize_alert_state():
     """Initialize the global alert state manager"""

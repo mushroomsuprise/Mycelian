@@ -42,6 +42,7 @@ _PREVIEW_ALERT_TYPES: Tuple[Tuple[str, str], ...] = (
 )
 
 _ALERT_SOCKET_EVENTS = frozenset({"next_alert", "instant_alert"})
+_ACTIVITY_FEED_SOCKET_EVENTS = frozenset({"activity_feed_alert"})
 
 
 _FALLBACK_POOLS: Dict[str, Any] = {
@@ -117,6 +118,35 @@ def _chat_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
             "thread_message_id": f"mock-thread-{int(time.time())}",
         }
     return payload
+
+
+def _chat_reply_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
+    """Twitch-style reply: parent context in header, @mention stripped from body."""
+    uname = random.choice(pools["usernames"])
+    parent_login = "utbsb"
+    parent_display = "utbsb"
+    msg_id = f"mock-{int(time.time() * 1000)}"
+    return {
+        "username": uname,
+        "message": f"@{parent_login} oh yeah",
+        "color": random.choice(pools["colors"]),
+        "badges": None,
+        "emotes": "",
+        "fragments": None,
+        "message_type": "text",
+        "userid": str(random.randint(10_000_000, 99_999_999)),
+        "type": "chat",
+        "id": msg_id,
+        "twmsgid": msg_id,
+        "timestamp": time.time(),
+        "reply": {
+            "parent_message_id": f"mock-parent-{int(time.time())}",
+            "parent_message_body": "ready for hades II solid?",
+            "parent_user_name": parent_display,
+            "parent_user_login": parent_login,
+            "thread_message_id": f"mock-thread-{int(time.time())}",
+        },
+    }
 
 
 def _connector_chat_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
@@ -459,6 +489,31 @@ def build_mock_payload(
     """
     pools = _demo_pools()
     ev = str(event_name or "").strip()
+    if alert_type and ev in _ACTIVITY_FEED_SOCKET_EVENTS:
+        try:
+            from ..uiwindows.activity_feed import (
+                build_typed_activity_feed_preview_payload,
+            )
+
+            body = build_typed_activity_feed_preview_payload(alert_type)
+            return ev, body
+        except Exception as e:  # pragma: no cover
+            logger.warning(
+                "Typed activity feed mock for %s/%s raised %s: %s",
+                ev,
+                alert_type,
+                type(e).__name__,
+                e,
+            )
+            return None
+    if alert_type == "reply" and ev == "new-message":
+        try:
+            return ev, _chat_reply_payload(pools)
+        except Exception as e:  # pragma: no cover
+            logger.warning(
+                "Reply chat mock raised %s: %s", type(e).__name__, e
+            )
+            return None
     if alert_type and ev in _ALERT_SOCKET_EVENTS:
         try:
             system = "queue" if ev == "next_alert" else "instant"

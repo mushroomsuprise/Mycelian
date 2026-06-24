@@ -27,8 +27,11 @@ _MOCKS: Dict[str, List[Dict[str, Any]]] = {
     ],
     "chat": [
         {"event": "new-message", "label": "Chat (Twitch)"},
-        {"event": "chat_add_message", "label": "Chat (connector)"},
+        {"event": "new-message", "label": "Chat reply", "alert_type": "reply"},
         {"event": "message_moderation", "label": "Moderation"},
+        {"event": "activity_feed_alert", "label": "Alert (random)"},
+        {"event": "activity_feed_alert", "label": "Alert: Sub", "alert_type": "sub"},
+        {"event": "activity_feed_alert", "label": "Alert: Bits", "alert_type": "bit"},
     ],
     "activity_feed": [
         {"event": "activity_feed_alert", "label": "Sample feed item"},

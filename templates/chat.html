@@ -19,6 +19,11 @@
             src: url("/assets/default_assets/fonts/{{EventFontName}}");
         }
 
+        @font-face {
+            font-family: alert-event-font;
+            src: url("/assets/default_assets/fonts/{{AlertEventFontName}}");
+        }
+
         /* Dynamic font classes for randomization */
         .random-message-font {
             /* Font will be set dynamically via JavaScript */
@@ -110,11 +115,63 @@
         }
 
         .chat-message.alert-event-message {
-            font-style: normal;
+            font-family: alert-event-font, event-font, chat-font, Arial, sans-serif;
+            font-size: {{ AlertEventFontSize }}px;
+            color: {{ AlertEventColor }};
+            font-weight: {{ AlertEventFontWeight }};
+            font-style: {{ AlertEventFontStyle }};
+            line-height: {{ AlertEventLineHeight }};
             display: flex;
             align-items: center;
             gap: 8px;
+            position: relative;
+            overflow: hidden;
+            border: {{ AlertEventBorderWidth }}px solid {{ AlertEventBorderColor }};
+            border-radius: {{ AlertEventBorderRadius }}px;
+            padding: {{ AlertEventPadding }}px;
+            {% if AlertEventEnterAnimation == "none" %}
+            animation: none;
+            {% else %}
+            animation: {{ AlertEventEnterAnimation }} {{ AlertEventEnterDuration }}s {{ AlertEventEnterEasing }};
+            {% endif %}
+            {% if AlertEventBG and AlertEventBG != 'transparent' %}
+            background-color: {{ AlertEventBG }};
+            {% endif %}
+            {% if AlertEventBGImage %}
+            background-image: url('{{ AlertEventBGImage }}');
+            background-size: {{ AlertEventBGSize }};
+            background-position: {{ AlertEventBGPosition }};
+            background-repeat: {{ AlertEventBGRepeat }};
+            {% endif %}
         }
+
+        .chat-message.alert-event-message .alert-event-media,
+        .chat-message.alert-event-message .alert-event-body {
+            position: relative;
+            z-index: 2;
+        }
+
+        {% if AlertEventShimmer %}
+        .chat-message.alert-event-message::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 45%;
+            height: 100%;
+            background: linear-gradient(
+                100deg,
+                transparent 15%,
+                {{ AlertEventShimmerColor }} 50%,
+                transparent 85%
+            );
+            opacity: {{ AlertEventShimmerOpacity }};
+            transform: translateX(-150%);
+            animation: alertEventShimmer {{ AlertEventShimmerDuration }}s ease-in-out {{ AlertEventShimmerRepeat }};
+            pointer-events: none;
+            z-index: 1;
+        }
+        {% endif %}
 
         .alert-event-media {
             flex-shrink: 0;
@@ -124,7 +181,7 @@
 
         .alert-event-media img,
         .alert-event-media video {
-            height: calc({{ EventFontSize }}px * {{ AlertMediaScale }});
+            height: calc({{ AlertEventFontSize }}px * {{ AlertMediaScale }});
             width: auto;
             object-fit: contain;
             vertical-align: middle;
@@ -143,8 +200,12 @@
         .alert-event-user-message {
             display: block;
             margin-top: 2px;
-            font-style: italic;
-            opacity: 0.9;
+            font-size: calc({{ AlertEventFontSize }}px * {{ AlertEventUserMessageScale }});
+            font-style: {{ AlertEventUserMessageStyle }};
+            {% if AlertEventUserMessageColor and AlertEventUserMessageColor != 'inherit' %}
+            color: {{ AlertEventUserMessageColor }};
+            {% endif %}
+            opacity: {{ AlertEventUserMessageOpacity }};
         }
 
         /* Activity feed event message styles */
@@ -481,6 +542,16 @@
             100% {
                 transform: scale(1);
                 opacity: 1;
+            }
+        }
+
+        @keyframes alertEventShimmer {
+            0% {
+                transform: translateX(-150%);
+            }
+
+            100% {
+                transform: translateX(350%);
             }
         }
 
@@ -1313,14 +1384,44 @@
             return alertData.message || resolveActivityEventText(alertData);
         }
 
-        function resolveAlertMediaSource(alertData) {
-            var stored = alertData.stored_alert_data || {};
-            var gifDir = (stored.gif_dir != null ? String(stored.gif_dir) : (alertData.gif_dir != null ? String(alertData.gif_dir) : '')).trim();
-            var gifName = (stored.gif_name != null ? String(stored.gif_name) : (alertData.gif_name != null ? String(alertData.gif_name) : '')).trim();
-            if (!gifDir || !gifName) {
-                return null;
+        function normalizeChatAlertType(alertData) {
+            var raw = alertData.badge_type || alertData.alert_type || alertData.type || '';
+            return String(raw).trim().toLowerCase().replace(/\s+/g, '');
+        }
+
+        function isChatActivityOnlyAlertType(alertData) {
+            var t = normalizeChatAlertType(alertData);
+            return t === 'point' || t === 'points' || t === 'streak' ||
+                t === 'hypetrain' || t === 'hype_train';
+        }
+
+        function isChatMediaRichAlertType(alertData) {
+            if (isChatActivityOnlyAlertType(alertData)) {
+                return false;
             }
-            return gifDir + '/' + gifName;
+            var t = normalizeChatAlertType(alertData);
+            return t === 'follow' || t === 'sub' || t === 'resub' || t === 'giftsub' ||
+                t === 'bit' || t === 'bits' || t === 'donation' || t === 'raid';
+        }
+
+        function resolveAlertMediaSource(alertData) {
+            var sources = [
+                alertData.chat_media,
+                alertData.stored_alert_data || {},
+                alertData
+            ];
+            for (var i = 0; i < sources.length; i++) {
+                var src = sources[i];
+                if (!src || typeof src !== 'object') {
+                    continue;
+                }
+                var gifDir = (src.gif_dir != null ? String(src.gif_dir) : '').trim();
+                var gifName = (src.gif_name != null ? String(src.gif_name) : '').trim();
+                if (gifDir && gifName) {
+                    return gifDir + '/' + gifName;
+                }
+            }
+            return null;
         }
 
         function isAlertMediaVideo(url) {
@@ -1414,10 +1515,24 @@
             if (!alertData) {
                 return;
             }
-            if (alertShowActivitySummary) {
+
+            if (isChatActivityOnlyAlertType(alertData)) {
+                if (alertShowActivitySummary) {
+                    addActivityEventMessage(alertData);
+                }
+                return;
+            }
+
+            var mediaEligible = isChatMediaRichAlertType(alertData);
+            var hasMedia = mediaEligible && !!resolveAlertMediaSource(alertData);
+
+            if (alertShowMediaEvent && mediaEligible && !hasMedia) {
+                addActivityEventMessage(alertData);
+            } else if (alertShowActivitySummary) {
                 addActivityEventMessage(alertData);
             }
-            if (alertShowMediaEvent) {
+
+            if (alertShowMediaEvent && hasMedia) {
                 addAlertEventMessage(alertData);
             }
         }
@@ -3070,8 +3185,48 @@
             var eventBorderColor = _chatCfg(config, 'EventBorderColor', '#888888');
             var eventFontSizeCfg = _chatCfg(config, 'EventFontSize', 18);
             var alertMediaScaleCfg = _chatCfg(config, 'AlertMediaScale', 1.2);
+            var alertEventBorderWidth = _chatCfg(config, 'AlertEventBorderWidth', 2);
+            var alertEventBorderColor = _chatCfg(config, 'AlertEventBorderColor', '#888888');
+            var alertEventBorderRadius = _chatCfg(config, 'AlertEventBorderRadius', 6);
+            var alertEventPadding = _chatCfg(config, 'AlertEventPadding', 8);
+            var alertEventBG = _chatCfg(config, 'AlertEventBG', 'transparent');
+            var alertEventBGImage = String(_chatCfg(config, 'AlertEventBGImage', '') || '').trim();
+            var alertEventBGSize = _chatCfg(config, 'AlertEventBGSize', 'cover');
+            var alertEventBGPosition = _chatCfg(config, 'AlertEventBGPosition', 'center');
+            var alertEventBGRepeat = _chatCfg(config, 'AlertEventBGRepeat', 'no-repeat');
+            var alertEventFontName = _chatCfg(config, 'AlertEventFontName', 'Roboto-Regular.ttf');
+            var alertEventFontSizeCfg = _chatCfg(config, 'AlertEventFontSize', 18);
+            var alertEventColor = _chatCfg(config, 'AlertEventColor', '#ffffff');
+            var alertEventFontWeight = _chatCfg(config, 'AlertEventFontWeight', 'normal');
+            var alertEventFontStyle = _chatCfg(config, 'AlertEventFontStyle', 'normal');
+            var alertEventLineHeight = _chatCfg(config, 'AlertEventLineHeight', 1.3);
+            var alertEventUserMessageScale = _chatCfg(config, 'AlertEventUserMessageScale', 0.9);
+            var alertEventUserMessageStyle = _chatCfg(config, 'AlertEventUserMessageStyle', 'italic');
+            var alertEventUserMessageColor = String(_chatCfg(config, 'AlertEventUserMessageColor', '') || '').trim();
+            var alertEventUserMessageOpacity = _chatCfg(config, 'AlertEventUserMessageOpacity', 0.9);
+            var alertEventEnterAnimation = _chatCfg(config, 'AlertEventEnterAnimation', 'fadeIn');
+            var alertEventEnterDuration = _chatCfg(config, 'AlertEventEnterDuration', 0.5);
+            var alertEventEnterEasing = _chatCfg(config, 'AlertEventEnterEasing', 'ease-out');
+            var alertEventShimmer = !!config.AlertEventShimmer;
+            var alertEventShimmerColor = _chatCfg(config, 'AlertEventShimmerColor', '#ffffff');
+            var alertEventShimmerOpacity = _chatCfg(config, 'AlertEventShimmerOpacity', 0.45);
+            var alertEventShimmerDuration = _chatCfg(config, 'AlertEventShimmerDuration', 2);
+            var alertEventShimmerRepeat = _chatCfg(config, 'AlertEventShimmerRepeat', 'infinite');
             eventFontSize = eventFontSizeCfg;
             alertMediaScale = alertMediaScaleCfg;
+            var alertEnterAnimRule = (alertEventEnterAnimation === 'none')
+                ? 'animation: none;'
+                : ('animation: ' + alertEventEnterAnimation + ' ' + alertEventEnterDuration + 's ' + alertEventEnterEasing + ';');
+            var alertEventShimmerCss = '';
+            if (alertEventShimmer) {
+                alertEventShimmerCss =
+                    '@keyframes alertEventShimmer { 0% { transform: translateX(-150%); } 100% { transform: translateX(350%); } }' +
+                    '.chat-message.alert-event-message::after { content: ""; position: absolute; top: 0; left: 0; width: 45%; height: 100%; ' +
+                    'background: linear-gradient(100deg, transparent 15%, ' + alertEventShimmerColor + ' 50%, transparent 85%); ' +
+                    'opacity: ' + alertEventShimmerOpacity + '; transform: translateX(-150%); ' +
+                    'animation: alertEventShimmer ' + alertEventShimmerDuration + 's ease-in-out ' + alertEventShimmerRepeat + '; ' +
+                    'pointer-events: none; z-index: 1; }';
+            }
             var badgeGap = _chatCfg(config, 'BadgeGap', 4);
             var badgeSize = _chatCfg(config, 'BadgeSize', 18);
             var badgeRadius = _chatCfg(config, 'BadgeRadius', 2);
@@ -3098,6 +3253,7 @@
             return (
                 '@font-face { font-family: chat-font; src: url("/assets/default_assets/fonts/' + fontName + '"); }' +
                 '@font-face { font-family: event-font; src: url("/assets/default_assets/fonts/' + eventFontName + '"); }' +
+                '@font-face { font-family: alert-event-font; src: url("/assets/default_assets/fonts/' + alertEventFontName + '"); }' +
                 'html, body { font-family: chat-font, Arial, sans-serif; }' +
                 '#chat { background-color: ' + bgColor + '; padding: ' + chatPadding + 'px; }' +
                 '.chat-message { background-color: ' + messageBG + '; padding: ' + messagePadding + 'px; margin: ' + messageMargin + 'px 0; ' +
@@ -3106,8 +3262,27 @@
                 ' min-height: ' + minMessageHeight + 'px; line-height: ' + lineHeight + '; }' +
                 '.chat-message.event-message { font-family: event-font, chat-font, Arial, sans-serif; background-color: ' + eventBG + '; ' +
                 'color: ' + eventColor + '; font-size: ' + eventFontSizeCfg + 'px; border-left: ' + eventBorderWidth + 'px solid ' + eventBorderColor + '; }' +
-                '.chat-message.alert-event-message { font-style: normal; display: flex; align-items: center; gap: 8px; }' +
-                '.alert-event-media img, .alert-event-media video { height: calc(' + eventFontSizeCfg + 'px * ' + alertMediaScaleCfg + '); width: auto; object-fit: contain; }' +
+                '.chat-message.alert-event-message { font-family: alert-event-font, event-font, chat-font, Arial, sans-serif; ' +
+                'font-size: ' + alertEventFontSizeCfg + 'px; color: ' + alertEventColor + '; font-weight: ' + alertEventFontWeight + '; ' +
+                'font-style: ' + alertEventFontStyle + '; line-height: ' + alertEventLineHeight + '; display: flex; align-items: center; gap: 8px; ' +
+                'position: relative; overflow: hidden; ' + alertEnterAnimRule + ' ' +
+                'border: ' + alertEventBorderWidth + 'px solid ' + alertEventBorderColor + '; ' +
+                'border-radius: ' + alertEventBorderRadius + 'px; padding: ' + alertEventPadding + 'px; ' +
+                (alertEventBG && alertEventBG !== 'transparent' ? ('background-color: ' + alertEventBG + '; ') : '') +
+                (alertEventBGImage ? (
+                    'background-image: url("' + alertEventBGImage.replace(/"/g, '\\"') + '"); ' +
+                    'background-size: ' + alertEventBGSize + '; ' +
+                    'background-position: ' + alertEventBGPosition + '; ' +
+                    'background-repeat: ' + alertEventBGRepeat + '; '
+                ) : '') +
+                '}' +
+                '.chat-message.alert-event-message .alert-event-media, .chat-message.alert-event-message .alert-event-body { position: relative; z-index: 2; }' +
+                alertEventShimmerCss +
+                '.alert-event-user-message { font-size: calc(' + alertEventFontSizeCfg + 'px * ' + alertEventUserMessageScale + '); ' +
+                'font-style: ' + alertEventUserMessageStyle + '; opacity: ' + alertEventUserMessageOpacity + '; ' +
+                (alertEventUserMessageColor ? ('color: ' + alertEventUserMessageColor + '; ') : '') +
+                '}' +
+                '.alert-event-media img, .alert-event-media video { height: calc(' + alertEventFontSizeCfg + 'px * ' + alertMediaScaleCfg + '); width: auto; object-fit: contain; }' +
                 '.chat-message.activity-event { font-size: calc(' + fontSize + 'px * 0.85); margin: calc(' + messageMargin + 'px * 0.3) 0; ' +
                 'padding: calc(' + messagePadding + 'px * 0.4) calc(' + messagePadding + 'px * 0.6); }' +
                 '.message-badges { margin-right: ' + badgeGap + 'px; }' +
