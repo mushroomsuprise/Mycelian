@@ -28,6 +28,7 @@ class TwitchTab:
     def __init__(self) -> None:
         self.dirty: bool = False
         self.buffer: Optional[dataobjects.TwitchData] = None
+        self._app_settings_buffer: Optional[dataobjects.AppSettings] = None
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
         self._status_timer: Optional[Any] = None
@@ -300,6 +301,42 @@ class TwitchTab:
                     client_secret_placeholder="Chatbot Twitch API Client Secret",
                 )
 
+            with settings_inner_panel():
+                ui.label("Options").classes("text-base font-semibold")
+                with ui.row().classes("items-center gap-6 flex-wrap"):
+                    with ui.row().classes("items-center gap-2"):
+                        self.ui_elements["auto_raid_helix_shoutout"] = (
+                            ui.switch(
+                                value=bool(
+                                    self._app_settings_buffer.auto_raid_helix_shoutout
+                                )
+                            )
+                            .classes("q-switch")
+                            .on_value_change(
+                                lambda e: self._set_app_setting(
+                                    "auto_raid_helix_shoutout",
+                                    bool(e.value),
+                                )
+                            )
+                        )
+                        ui.label("Send native Twitch Shoutout").classes("text-sm")
+                    with ui.row().classes("items-center gap-2"):
+                        self.ui_elements["auto_raid_chat_shoutout"] = (
+                            ui.switch(
+                                value=bool(
+                                    self._app_settings_buffer.auto_raid_chat_shoutout
+                                )
+                            )
+                            .classes("q-switch")
+                            .on_value_change(
+                                lambda e: self._set_app_setting(
+                                    "auto_raid_chat_shoutout",
+                                    bool(e.value),
+                                )
+                            )
+                        )
+                        ui.label("Send chat raid shoutout").classes("text-sm")
+
             settings_footer(self.discard, self.save)
             self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
             self._token_timer = layout_schedule(
@@ -324,6 +361,14 @@ class TwitchTab:
             }
         )
 
+        app_settings = state_manager.get_app_settings()
+        self._app_settings_buffer = dataobjects.AppSettings(
+            **{
+                k: getattr(app_settings, k)
+                for k in app_settings.__dataclass_fields__.keys()
+            }
+        )
+
         self.dirty = False
 
     def _set(self, field: str, value) -> None:
@@ -334,6 +379,13 @@ class TwitchTab:
     def _set_cred(self, field: str, value: str) -> None:
         if self._creds.get(field) != value:
             self._creds[field] = value
+            self.dirty = True
+
+    def _set_app_setting(self, field: str, value) -> None:
+        if not self._app_settings_buffer:
+            return
+        if getattr(self._app_settings_buffer, field) != value:
+            setattr(self._app_settings_buffer, field, value)
             self.dirty = True
 
     # ----- actions -----
@@ -356,6 +408,12 @@ class TwitchTab:
             client_secret=self._creds.get("chatbot_client_secret", ""),
         )
 
+        if self._app_settings_buffer:
+            for field in ("auto_raid_helix_shoutout", "auto_raid_chat_shoutout"):
+                state_manager.update_app_setting(
+                    field, getattr(self._app_settings_buffer, field)
+                )
+
         if state_manager.save_changes():
             notify("Twitch saved", type="positive")
             self.dirty = False
@@ -373,6 +431,12 @@ class TwitchTab:
                 "chatbot_client_secret",
             ) and hasattr(element, "value"):
                 element.value = self._creds.get(key, "")
+            elif (
+                self._app_settings_buffer
+                and hasattr(self._app_settings_buffer, key)
+                and hasattr(element, "value")
+            ):
+                element.value = getattr(self._app_settings_buffer, key)
             elif hasattr(self.buffer, key) and hasattr(element, "value"):
                 element.value = getattr(self.buffer, key)
         self.dirty = False

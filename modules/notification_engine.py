@@ -726,6 +726,31 @@ _service_last: Dict[str, str] = {}
 # Same status repeated within this window does not re-notify (flicker).
 _SERVICE_STATUS_DEDUPE_COOLDOWN_SEC = 45.0
 
+# OBS reconnect cycles through these phases between stable Connected/Disconnected.
+_OBS_TRANSIENT_STATUSES = frozenset({"connecting", "disconnecting"})
+
+
+def _is_obs_transient_status(status: str) -> bool:
+    return (status or "").strip().lower() in _OBS_TRANSIENT_STATUSES
+
+
+def _should_notify_obs_status_change(prev: str, status: str) -> bool:
+    """Toast only on stable Connected or after losing an active OBS session."""
+    p = (prev or "").strip().lower()
+    s = (status or "").strip().lower()
+    if s in _OBS_TRANSIENT_STATUSES:
+        return False
+    if s == "connected":
+        return p != "connected"
+    if s == "disconnected":
+        return p == "connected"
+    return False
+
+
+def _should_skip_psn_status_notify(status: str) -> bool:
+    """NPSSO expiry already has a dedicated toast from psn_service."""
+    return (status or "").strip().lower() == "token expired"
+
 
 def _status_footer_enabled() -> bool:
     try:
@@ -776,6 +801,10 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
         return "Online"
     if s == "offline":
         return "Offline"
+    if "token expired" in s:
+        return "Expired"
+    if "authentication failed" in s:
+        return "Auth Failed"
     if any(
         x in s
         for x in (
@@ -794,7 +823,6 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
             "authorization",
             "awaiting",
             "opening browser",
-            "offline",
             "token refresh",
         )
     ):
@@ -815,19 +843,20 @@ def footer_status_tier(service_key: str, status_raw: str) -> str:
         return "success"
     if display in ("connecting", "disconnecting"):
         return "warning"
-    if display in ("idle", "degraded"):
+    if display in ("idle", "degraded", "offline"):
         return "warning"
     if display in ("stalled", "overloaded", "restarting", "starting"):
         return "warning"
     if display in (
         "disconnected",
         "error",
+        "expired",
+        "auth failed",
         "frozen",
         "crashed",
         "stopped",
         "no internet",
         "unreachable",
-        "offline",
     ):
         return "error"
     return "info"
@@ -1083,9 +1112,22 @@ def poll_service_status_changes() -> None:
 
             prev = _service_last.get(key)
             if prev is None:
+                if key == "obs" and _is_obs_transient_status(status):
+                    continue
                 _service_last[key] = status
                 continue
             if prev == status:
+                continue
+
+            if key == "obs":
+                if _is_obs_transient_status(status):
+                    continue
+                if not _should_notify_obs_status_change(prev, status):
+                    _service_last[key] = status
+                    continue
+
+            if key == "psn" and _should_skip_psn_status_notify(status):
+                _service_last[key] = status
                 continue
 
             _service_last[key] = status

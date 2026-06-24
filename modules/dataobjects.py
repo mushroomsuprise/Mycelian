@@ -217,6 +217,7 @@ class PSNData:
     online_id: str = ""
     account_id: str = ""
     is_online: bool = False
+    connection_status: str = "Disconnected"
     presence: dict = field(default_factory=dict)
 
 

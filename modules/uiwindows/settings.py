@@ -34,6 +34,7 @@ from typing import Dict, List, Optional
 import aiohttp
 from nicegui import ui
 from ..notification_engine import notify
+from ..ui_buttons import outline_button
 from ..ui_timer import layout_schedule
 
 from .. import dataobjects, psn_service, twitch
@@ -1531,9 +1532,11 @@ class SettingsUI:
                                     on_click=self.check_for_updates_manual,
                                 ).props("icon=system_update color=primary")
 
-                                ui.button(
-                                    "View Changelog", on_click=self.show_changelog_modal
-                                ).props("icon=history color=secondary")
+                                outline_button(
+                                    "View Changelog",
+                                    self.show_changelog_modal,
+                                    icon="history",
+                                )
 
                         # Available Source URLs section
                         with ui.card().classes("content-section w-full mt-4"):
@@ -2411,34 +2414,9 @@ class SettingsUI:
             # Initialize PSN service only when needed
             self._ensure_psn_initialized()
 
-            # Get live PSN data from state manager
-            live_psn_data = state_manager.get_live_psn_data()
-            # Get PSN settings to see target username
-            psn_settings = state_manager.get_psn_settings_data()
-            target_username = psn_settings.psn_username if psn_settings else None
+            from .. import psn_service
 
-            if live_psn_data and live_psn_data.npsso_code:
-                if live_psn_data.is_online:
-                    if target_username:
-                        status_text = f"Connected - Tracking {target_username}"
-                        user_text = f"{target_username} (target)"
-                    else:
-                        status_text = f"Connected as {live_psn_data.online_id}"
-                        user_text = f"{live_psn_data.online_id} (own account)"
-                else:
-                    if target_username:
-                        status_text = f"Configured - Tracking {target_username}"
-                        user_text = f"{target_username} (target)"
-                    else:
-                        status_text = "Configured but Offline"
-                        user_text = (
-                            f"{live_psn_data.online_id} (own account)"
-                            if live_psn_data.online_id
-                            else "Unknown"
-                        )
-            else:
-                status_text = "Not Connected"
-                user_text = "N/A"
+            status_text, user_text, _status_color = psn_service.get_psn_status_display()
 
             # Update UI elements if they exist
             if "psn_status_label" in self.ui_elements:
@@ -5243,16 +5221,20 @@ class SettingsUI:
                     "Check for Updates",
                     on_click=self.check_for_updates_manual,
                 ).props("icon=system_update color=primary dense")
-                ui.button(
+                outline_button(
                     "View on GitHub",
-                    on_click=lambda: webbrowser.open(
+                    lambda: webbrowser.open(
                         "https://github.com/mushroomsuprise/mycelian"
                     ),
-                ).props("icon=code color=secondary dense")
-                ui.button(
+                    icon="code",
+                    extra_classes="dense",
+                )
+                outline_button(
                     "View Changelog",
-                    on_click=self.show_changelog_modal,
-                ).props("icon=history color=secondary dense")
+                    self.show_changelog_modal,
+                    icon="history",
+                    extra_classes="dense",
+                )
             with ui.row().classes("gap-4 flex-wrap"):
                 ui.label(f"Version {self.app_settings.version}").classes(
                     "secondary-text text-sm"

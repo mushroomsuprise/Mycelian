@@ -145,6 +145,21 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "near_goal_pulse",
         "text_underline",
         "text_strikethrough",
+        "shape_kind",
+        "gradient_kind",
+        "color_stops",
+        "angle",
+        "orientation",
+        "thickness",
+        "speed",
+        "direction",
+        "gap",
+        "format",
+        "timezone",
+        "timezone_offset_minutes",
+        "mode",
+        "duration_seconds",
+        "auto_start",
     }
 )
 
@@ -495,6 +510,75 @@ def _fmt_anim_data_attrs(element: Dict[str, Any]) -> str:
     )
 
 
+_TEXT_LIKE_TYPES = frozenset({"text", "marquee"})
+
+
+def _gradient_css(props: Dict[str, Any]) -> str:
+    stops_raw = props.get("color_stops")
+    stops: List[Dict[str, Any]] = (
+        [s for s in stops_raw if isinstance(s, dict)]
+        if isinstance(stops_raw, list)
+        else []
+    )
+    if not stops:
+        stops = [{"color": "#a855f7", "stop": 0}, {"color": "#1e293b", "stop": 100}]
+    parts: List[str] = []
+    for stop in stops:
+        color = str(stop.get("color") or "#000000")
+        try:
+            pct = int(float(stop.get("stop", 0)))
+        except (TypeError, ValueError):
+            pct = 0
+        parts.append(f"{color} {pct}%")
+    joined = ", ".join(parts)
+    kind = str(props.get("gradient_kind") or "linear").strip().lower()
+    if kind == "radial":
+        return f"radial-gradient(circle, {joined})"
+    try:
+        angle = int(float(props.get("angle", 90)))
+    except (TypeError, ValueError):
+        angle = 90
+    return f"linear-gradient({angle}deg, {joined})"
+
+
+def _text_element_display(
+    element: Dict[str, Any],
+    eid: str,
+    text_mode: str,
+    props: Dict[str, Any],
+) -> Tuple[str, str]:
+    """Resolve Jinja variable and default inner text for text-like elements."""
+    text_var = element.get("text_var") or eid + "Text"
+    text_default = str(props.get("text", ""))
+    jinja_var = text_var
+    if text_mode == "counter":
+        cfg = (
+            element.get("counter")
+            if isinstance(element.get("counter"), dict)
+            else {}
+        )
+        fmt = str(cfg.get("format") or "{value}")
+        try:
+            init = cfg.get("initial_value", 0)
+        except (TypeError, ValueError):
+            init = 0
+        text_default = _apply_counter_format_tokens(
+            fmt, init, cfg.get("min"), cfg.get("max")
+        )
+        jinja_var = counter_format_config_id(eid)
+    elif text_mode == "data_display":
+        cfg = (
+            element.get("data_display")
+            if isinstance(element.get("data_display"), dict)
+            else {}
+        )
+        text_default = str(
+            cfg.get("default_text") if cfg.get("default_text") is not None else "—"
+        )
+        jinja_var = counter_format_config_id(eid)
+    return jinja_var, text_default
+
+
 def _render_element(
     element: Dict[str, Any],
     *,
@@ -727,6 +811,142 @@ def _render_element(
             f'border-radius:{br}px;transition:width {fill_dur}ms {fill_ease};">'
             f"</div></div>"
             f"</div>"
+        )
+
+    if etype == "shape":
+        shape_kind = str(props.get("shape_kind") or "rectangle").strip().lower()
+        if shape_kind not in ("rectangle", "ellipse"):
+            shape_kind = "rectangle"
+        shape_extra = ""
+        if shape_kind == "ellipse":
+            shape_extra = "border-radius:50%;"
+        elif props.get("border_radius") not in (None, ""):
+            try:
+                br_s = int(float(props.get("border_radius")))
+                shape_extra = f"border-radius:{br_s}px;"
+            except (TypeError, ValueError):
+                pass
+        style_shape = style + (";" + shape_extra if shape_extra else "")
+        return (
+            f'<div id="{html.escape(eid)}" class="{classes} spore-shape" '
+            f'style="{html.escape(style_shape, quote=True)}"{hidden_attr} '
+            f"{anim_attrs} "
+            f'data-spore-type="shape" '
+            f'data-spore-shape-kind="{html.escape(shape_kind, quote=True)}"></div>'
+        )
+
+    if etype == "divider":
+        orient = str(props.get("orientation") or "horizontal").strip().lower()
+        if orient not in ("horizontal", "vertical"):
+            orient = "horizontal"
+        try:
+            thick = max(1, int(float(props.get("thickness", 2))))
+        except (TypeError, ValueError):
+            thick = 2
+        col = str(props.get("color") or "#64748b")
+        line_style = (
+            f"background:{col};"
+            + (
+                f"height:{thick}px;width:100%;"
+                if orient == "horizontal"
+                else f"width:{thick}px;height:100%;"
+            )
+        )
+        return (
+            f'<div id="{html.escape(eid)}" class="{classes} spore-divider" '
+            f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+            f"{anim_attrs} "
+            f'data-spore-type="divider" '
+            f'data-spore-orientation="{html.escape(orient, quote=True)}">'
+            f'<div class="spore-divider-line" style="{html.escape(line_style, quote=True)}"></div>'
+            f"</div>"
+        )
+
+    if etype == "gradient":
+        grad = _gradient_css(props)
+        grad_extra = f"background:{grad};"
+        style_grad = style + ";" + grad_extra
+        return (
+            f'<div id="{html.escape(eid)}" class="{classes} spore-gradient" '
+            f'style="{html.escape(style_grad, quote=True)}"{hidden_attr} '
+            f"{anim_attrs} "
+            f'data-spore-type="gradient"></div>'
+        )
+
+    if etype == "marquee":
+        jinja_var, text_default = _text_element_display(
+            element, eid, text_mode, props
+        )
+        try:
+            spd = max(1, int(float(props.get("speed", 8))))
+        except (TypeError, ValueError):
+            spd = 8
+        direction = str(props.get("direction") or "left").strip().lower()
+        if direction not in ("left", "right"):
+            direction = "left"
+        try:
+            gap = max(0, int(float(props.get("gap", 48))))
+        except (TypeError, ValueError):
+            gap = 48
+        inner = (
+            f'<div class="spore-marquee-inner" style="--spore-marquee-gap:{gap}px;">'
+            f'<span class="spore-marquee-text">{{{{ {jinja_var}|default({json.dumps(text_default)})|safe }}}}</span>'
+            f'<span class="spore-marquee-text">{{{{ {jinja_var}|default({json.dumps(text_default)})|safe }}}}</span>'
+            f"</div>"
+        )
+        return (
+            f'<div id="{html.escape(eid)}" class="{classes} spore-marquee" '
+            f'style="{html.escape(style + ";--spore-marquee-duration:" + str(spd) + "s", quote=True)}"{hidden_attr} '
+            f"{anim_attrs} "
+            f'data-spore-type="marquee"{mode_attr} '
+            f'data-spore-marquee-speed="{spd}" '
+            f'data-spore-marquee-direction="{html.escape(direction, quote=True)}" '
+            f'data-spore-marquee-gap="{gap}">'
+            f"{inner}</div>"
+        )
+
+    if etype == "clock":
+        fmt_default = str(props.get("format") or "HH:mm:ss")
+        tz = str(props.get("timezone") or "local").strip().lower()
+        if tz not in ("local", "utc", "offset"):
+            tz = "local"
+        try:
+            off = int(float(props.get("timezone_offset_minutes", 0)))
+        except (TypeError, ValueError):
+            off = 0
+        fmt_var = counter_format_config_id(eid)
+        return (
+            f'<div id="{html.escape(eid)}" class="{classes} spore-clock" '
+            f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+            f"{anim_attrs} "
+            f'data-spore-type="clock" '
+            f'data-spore-clock-format="{{{{ {fmt_var}|default({json.dumps(fmt_default)}) }}}}" '
+            f'data-spore-clock-tz="{html.escape(tz, quote=True)}" '
+            f'data-spore-clock-offset="{off}">'
+            f"00:00:00</div>"
+        )
+
+    if etype == "timer":
+        mode = str(props.get("mode") or "count_down").strip().lower()
+        if mode not in ("count_up", "count_down"):
+            mode = "count_down"
+        try:
+            dur = max(0, int(float(props.get("duration_seconds", 300))))
+        except (TypeError, ValueError):
+            dur = 300
+        auto = "true" if props.get("auto_start", True) else "false"
+        fmt_default = str(props.get("format") or "{mm}:{ss}")
+        fmt_var = counter_format_config_id(eid)
+        return (
+            f'<div id="{html.escape(eid)}" class="{classes} spore-timer" '
+            f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+            f"{anim_attrs} "
+            f'data-spore-type="timer" '
+            f'data-spore-timer-mode="{html.escape(mode, quote=True)}" '
+            f'data-spore-timer-duration="{dur}" '
+            f'data-spore-timer-autostart="{auto}" '
+            f'data-spore-timer-format="{{{{ {fmt_var}|default({json.dumps(fmt_default)}) }}}}">'
+            f"00:00</div>"
         )
 
     return (

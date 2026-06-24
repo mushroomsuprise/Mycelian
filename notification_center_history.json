@@ -1,1 +1,110 @@
-[]
+[
+  {
+    "id": "24fcef0d-ff68-4f9f-a8e2-894dbed4afc3",
+    "ts": 1782330685.990581,
+    "message": "Loading bitcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "a9d0b06e-6cba-45cc-a3db-006e2c2f94b4",
+    "ts": 1782330724.667925,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "4582b37c-e8e3-4901-8938-fe8a4bb8615c",
+    "ts": 1782330789.176335,
+    "message": "Loading bitcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "cd24aeb0-bf31-479a-900a-d8d4b0b9783f",
+    "ts": 1782331363.530493,
+    "message": "PSN NPSSO token expired \u2014 open Settings \u2192 PSN and click Connect to update.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "5bb09139-c208-4adc-83cd-eca769a53da5",
+    "ts": 1782331367.8387158,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "69ee9fea-d477-4f5d-81c2-6e4d5e7ae3bd",
+    "ts": 1782332135.423266,
+    "message": "PSN NPSSO token expired \u2014 open Settings \u2192 PSN and click Connect to update.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "02757b00-a975-4184-93ec-57f36f84f526",
+    "ts": 1782332138.4203808,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "96adf2ad-c2e9-44b8-aad7-dfb1f31c2270",
+    "ts": 1782332143.478011,
+    "message": "Loading bitcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "2c3bf845-9cf7-415f-b870-25cd87980860",
+    "ts": 1782332158.8427289,
+    "message": "Loading raids\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "e7bd0e01-9e74-4e6d-bcc5-3b859aa7dec5",
+    "ts": 1782332158.8873951,
+    "message": "Legacy template (advanced mode)",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "8d3c391d-7041-454f-b3d2-867304c00d97",
+    "ts": 1782332160.808178,
+    "message": "Legacy templates can't accept new blocks \u2014 create a new template via '+ New' to edit visually.",
+    "type": "negative",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "5689b4a5-73b6-4bf8-84f2-8bc5c3f7b201",
+    "ts": 1782332166.002557,
+    "message": "Loading subcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  }
+]

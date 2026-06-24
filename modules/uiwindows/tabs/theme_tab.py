@@ -1079,11 +1079,12 @@ class ThemeTab:
                             "Apply", on_click=self.save, icon="check"
                         ).props("color=primary dense").classes("px-3")
 
-                        ui.button(
+                        outline_button(
                             "Save as",
-                            on_click=self._open_save_as_dialog,
+                            self._open_save_as_dialog,
                             icon="drive_file_rename_outline",
-                        ).props("color=secondary dense").classes("px-3")
+                            extra_classes="px-3 dense",
+                        )
 
                         delete_btn = ui.button(
                             "Delete",

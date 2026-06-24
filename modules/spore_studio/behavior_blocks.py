@@ -262,6 +262,34 @@ PROGRESS_BAR_CSS = """
 """.strip()
 
 
+MARQUEE_CSS = """
+.spore-marquee {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.spore-marquee .spore-marquee-inner {
+  display: inline-flex;
+  gap: var(--spore-marquee-gap, 48px);
+  animation: sporeMarqueeScroll var(--spore-marquee-duration, 8s) linear infinite;
+}
+.spore-marquee[data-spore-marquee-direction="right"] .spore-marquee-inner {
+  animation-direction: reverse;
+}
+@keyframes sporeMarqueeScroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.spore-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.spore-divider-line {
+  display: block;
+}
+""".strip()
+
+
 _ANIM_CLASS = {
     "fade": ("spore-anim-fade-in", "spore-anim-fade-out"),
     "slideIn": ("spore-anim-slidein", "spore-anim-slideout"),
@@ -483,6 +511,21 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
                 f"sporeSetText({eid}, payload && payload[{_js_string(from_payload)}]);"
             ]
         return [f"sporeSetText({eid}, {_js_string(literal)});"]
+
+    if action == "timer_start":
+        return [
+            f"if (typeof sporeTimerStart === 'function') {{ sporeTimerStart({eid}); }}"
+        ]
+
+    if action == "timer_pause":
+        return [
+            f"if (typeof sporeTimerPause === 'function') {{ sporeTimerPause({eid}); }}"
+        ]
+
+    if action == "timer_reset":
+        return [
+            f"if (typeof sporeTimerReset === 'function') {{ sporeTimerReset({eid}); }}"
+        ]
 
     if action == "set_image":
         from_payload = args.get("from_payload") or ""
@@ -858,11 +901,11 @@ def _elements_need_counter_image_transition_css(elements: List[Dict[str, Any]]) 
 
 
 def _elements_need_value_change_css(elements: List[Dict[str, Any]]) -> bool:
-    """True when any text element enables counter/data value-change animations."""
+    """True when any text-like element enables counter/data value-change animations."""
     for element in elements or []:
         if not isinstance(element, dict):
             continue
-        if str(element.get("type") or "").lower() != "text":
+        if str(element.get("type") or "").lower() not in ("text", "marquee"):
             continue
         mode = str(element.get("text_mode") or "static").strip().lower()
         if mode not in ("counter", "data_display"):
@@ -879,6 +922,16 @@ def _elements_need_progress_bar_css(elements: List[Dict[str, Any]]) -> bool:
         if not isinstance(element, dict):
             continue
         if str(element.get("type") or "").lower() == "progress_bar":
+            return True
+    return False
+
+
+def _elements_need_marquee_css(elements: List[Dict[str, Any]]) -> bool:
+    """True when the template includes at least one marquee element."""
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        if str(element.get("type") or "").lower() == "marquee":
             return True
     return False
 
@@ -1072,5 +1125,7 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
         css_parts.append(COUNTER_IMAGE_TRANSITION_CSS)
     if _elements_need_progress_bar_css(elements):
         css_parts.append(PROGRESS_BAR_CSS)
+    if _elements_need_marquee_css(elements):
+        css_parts.append(MARQUEE_CSS)
     css = "\n\n".join(css_parts)
     return {"js": js, "css": css}

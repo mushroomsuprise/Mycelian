@@ -94,10 +94,13 @@ def _jinja_tojson_default(var_name: str, default: Any) -> str:
     return f"{{{{ {var_name}|default({json.dumps(default)})|tojson }}}}"
 
 
+_COUNTER_ELEMENT_TYPES = frozenset({"text", "marquee"})
+
+
 def _collect_counters(elements: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
     out: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
     for el in elements or []:
-        if not isinstance(el, dict) or (el.get("type") or "").lower() != "text":
+        if not isinstance(el, dict) or (el.get("type") or "").lower() not in _COUNTER_ELEMENT_TYPES:
             continue
         if (el.get("text_mode") or "static") != "counter":
             continue
@@ -138,10 +141,28 @@ def _collect_progress_bars(
     return out
 
 
+def _collect_clocks(elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for el in elements or []:
+        if not isinstance(el, dict) or (el.get("type") or "").lower() != "clock":
+            continue
+        out.append(el)
+    return out
+
+
+def _collect_timers(elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for el in elements or []:
+        if not isinstance(el, dict) or (el.get("type") or "").lower() != "timer":
+            continue
+        out.append(el)
+    return out
+
+
 def _collect_displays(elements: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
     out: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
     for el in elements or []:
-        if not isinstance(el, dict) or (el.get("type") or "").lower() != "text":
+        if not isinstance(el, dict) or (el.get("type") or "").lower() not in _COUNTER_ELEMENT_TYPES:
             continue
         if (el.get("text_mode") or "static") != "data_display":
             continue
@@ -514,6 +535,65 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
                 f"    }}\n"
                 f"}})();"
             )
+
+    clocks = _collect_clocks(elements)
+    if clocks:
+        lines.append("window.__sporeClocks = window.__sporeClocks || [];")
+        for el in clocks:
+            eid_slug = _slugify_id(str(el.get("id") or ""))
+            eid = str(el.get("id") or "")
+            props = el.get("props") if isinstance(el.get("props"), dict) else {}
+            fmt_default = str(props.get("format") or "HH:mm:ss")
+            fmt_var = counter_format_config_id(eid_slug)
+            tz = str(props.get("timezone") or "local").strip().lower()
+            if tz not in ("local", "utc", "offset"):
+                tz = "local"
+            try:
+                off = int(float(props.get("timezone_offset_minutes", 0)))
+            except (TypeError, ValueError):
+                off = 0
+            lines.append(
+                "window.__sporeClocks.push({"
+                f'"elementId": {_js_string(eid)}, '
+                f'"format": {_jinja_tojson_default(fmt_var, fmt_default)}, '
+                f'"timezone": {_js_string(tz)}, '
+                f'"timezone_offset_minutes": {off}'
+                "});"
+            )
+
+    timers = _collect_timers(elements)
+    if timers:
+        lines.append("window.__sporeTimers = window.__sporeTimers || {};")
+        for el in timers:
+            eid_slug = _slugify_id(str(el.get("id") or ""))
+            eid = str(el.get("id") or "")
+            props = el.get("props") if isinstance(el.get("props"), dict) else {}
+            mode = str(props.get("mode") or "count_down").strip().lower()
+            if mode not in ("count_up", "count_down"):
+                mode = "count_down"
+            try:
+                dur = max(0, int(float(props.get("duration_seconds", 300))))
+            except (TypeError, ValueError):
+                dur = 300
+            fmt_default = str(props.get("format") or "{mm}:{ss}")
+            fmt_var = counter_format_config_id(eid_slug)
+            lines.append(
+                f"window.__sporeTimers[{_js_string(eid)}] = {{"
+                f'"elementId": {_js_string(eid)}, '
+                f'"mode": {_js_string(mode)}, '
+                f'"duration_seconds": {dur}, '
+                f'"auto_start": {json.dumps(bool(props.get("auto_start", True)))}, '
+                f'"format": {_jinja_tojson_default(fmt_var, fmt_default)}, '
+                f'"running": false, "elapsed": 0, "started_at": null'
+                "};"
+            )
+
+    if clocks:
+        lines.append("if (typeof sporeInitClocks === 'function') { sporeInitClocks(); }")
+    if timers:
+        lines.append("if (typeof sporeInitTimers === 'function') { sporeInitTimers(); }")
+
+    lines.append("if (typeof sporePatchSetText === 'function') { sporePatchSetText(); }")
 
     return "\n".join(lines)
 

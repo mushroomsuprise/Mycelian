@@ -253,6 +253,7 @@ class PSNData:
     online_id: str | None = None
     account_id: str | None = None
     is_online: bool = False
+    connection_status: str = "Disconnected"
     presence: dict = field(default_factory=dict)
     current_game_mismatch: PSNGameMismatch | None = None  # Active mismatch state
 
@@ -279,6 +280,9 @@ class PSNClient:
         self.psn_data.npsso_code = npsso_code
         self.api = None
         self.authenticated = False
+        self.psn_data.connection_status = (
+            "Not Connected" if not (npsso_code or "").strip() else "Disconnected"
+        )
         logger.info("NPSSO code updated. Re-authentication will be attempted.")
 
     def update_psn_username(self, psn_username: str):
@@ -293,6 +297,9 @@ class PSNClient:
         self.psn_data.npsso_code = npsso_code
         self.api = None
         self.authenticated = False
+        self.psn_data.connection_status = (
+            "Not Connected" if not (npsso_code or "").strip() else "Disconnected"
+        )
         logger.info(
             f"Credentials updated. NPSSO code and PSN username ({psn_username}) set. Re-authentication will be attempted."
         )
@@ -437,6 +444,7 @@ class PSNClient:
         if not self.npsso_code:
             logger.error("NPSSO code is not set. Cannot connect to PSN.")
             self.authenticated = False
+            self.psn_data.connection_status = "Not Connected"
             return False
 
         if self.authenticated and self.api:
@@ -468,6 +476,7 @@ class PSNClient:
             self.psn_data.account_id = self.account_id
 
             self.authenticated = True
+            self.psn_data.connection_status = "Connected"
             logger.info(
                 f"Successfully connected to PSN as user: {self.user_online_id} (Account ID: {self.account_id})"
             )
@@ -479,19 +488,23 @@ class PSNClient:
                 f"PSN API Forbidden: Check permissions or IP restrictions. Details: {e}"
             )
             self.authenticated = False
+            self.psn_data.connection_status = "Authentication Failed"
         except PSNAWPNotFoundError as e:
             logger.error(
                 f"PSN API Not Found: Endpoint or resource not found. Details: {e}"
             )
             self.authenticated = False
+            self.psn_data.connection_status = "Authentication Failed"
         except PSNAWPBadRequestError as e:
             logger.error(
                 f"PSN API Bad Request: The request was malformed. Details: {e}"
             )
             self.authenticated = False
+            self.psn_data.connection_status = "Authentication Failed"
         except Exception as e:
             logger.exception(f"An unexpected error occurred during PSN connection: {e}")
             self.authenticated = False
+            self.psn_data.connection_status = "Authentication Failed"
 
         return False
 
@@ -499,9 +512,18 @@ class PSNClient:
         """Checks if the client is authenticated."""
         return self.authenticated
 
+    def _sync_presence_connection_status(self) -> None:
+        """Reflect authenticated API session vs PlayStation presence in connection_status."""
+        if not self.authenticated:
+            return
+        self.psn_data.connection_status = (
+            "Connected" if self.psn_data.is_online else "Offline"
+        )
+
     def _on_psn_auth_expired(self, context: str, exc: BaseException) -> None:
         self.authenticated = False
         self.api = None
+        self.psn_data.connection_status = "Token Expired"
         logger.warning("%s: NPSSO token expired or invalid: %s", context, exc)
         try:
             from .psn_service import notify_psn_npsso_expired
@@ -628,6 +650,7 @@ class PSNClient:
                 )
 
             logger.debug(f"Successfully fetched presence for {target_online_id}")
+            self._sync_presence_connection_status()
             return presence_info
         except (PSNAWPForbiddenError, PSNAWPNotFoundError, PSNAWPBadRequestError) as e:
             logger.error(

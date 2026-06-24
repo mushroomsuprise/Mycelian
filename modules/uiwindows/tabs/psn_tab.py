@@ -540,63 +540,9 @@ class PSNTab:
     def _refresh_status(self) -> None:
         """Update PSN status labels in the UI."""
         try:
-            from ...connection_status_tracker import get_connectivity_overlay
+            from ... import psn_service
 
-            overlay = get_connectivity_overlay("psn")
-            if overlay:
-                status_text = overlay
-                user_text = "N/A"
-                status_color = "text-theme-error"
-                if "status_label" in self.ui_elements:
-                    self.ui_elements["status_label"].set_text(status_text)
-                    self.ui_elements["status_label"].classes(
-                        replace=f"font-semibold {status_color}"
-                    )
-                if "user_label" in self.ui_elements:
-                    self.ui_elements["user_label"].set_text(user_text)
-                return
-
-            from ...dataobjects import state_manager
-
-            live_psn_data = state_manager.get_live_psn_data()
-            psn_settings = state_manager.get_psn_settings_data()
-            target_username = psn_settings.psn_username if psn_settings else None
-            # Live PSN data can lack npsso_code briefly before the service updates it,
-            # and must not be the only source: trust saved settings too.
-            token_in_settings = (
-                (psn_settings.npsso_code or "").strip() if psn_settings else ""
-            )
-            token_in_live = ""
-            if live_psn_data and getattr(live_psn_data, "npsso_code", None):
-                token_in_live = str(live_psn_data.npsso_code or "").strip()
-            has_credentials = bool(token_in_settings or token_in_live)
-
-            # status_color tracks the connection state: error (no creds),
-            # success (live online), or warning (configured but not online).
-            if not has_credentials:
-                status_text = "Not Connected"
-                user_text = "N/A"
-                status_color = "text-theme-error"
-            elif live_psn_data and live_psn_data.is_online:
-                if target_username:
-                    status_text = f"Connected - Tracking {target_username}"
-                    user_text = f"{target_username} (target)"
-                else:
-                    status_text = f"Connected as {live_psn_data.online_id}"
-                    user_text = f"{live_psn_data.online_id} (own account)"
-                status_color = "text-theme-success"
-            else:
-                if target_username:
-                    status_text = f"Configured - Tracking {target_username}"
-                    user_text = f"{target_username} (target)"
-                else:
-                    status_text = "Configured but Offline"
-                    user_text = (
-                        f"{live_psn_data.online_id} (own account)"
-                        if live_psn_data and live_psn_data.online_id
-                        else "Unknown"
-                    )
-                status_color = "text-theme-warning"
+            status_text, user_text, status_color = psn_service.get_psn_status_display()
 
             # Update UI elements if they exist
             if "status_label" in self.ui_elements:

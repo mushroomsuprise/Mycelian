@@ -257,22 +257,9 @@ def get_connection_status(key: str) -> str:
                 base_status = (getattr(y, "connection_status", "") or "Unknown").strip()
 
     elif key == "psn":
-        from .dataobjects import state_manager
+        from . import psn_service
 
-        live = state_manager.get_live_psn_data()
-        settings = state_manager.get_psn_settings_data()
-        token_in_settings = (
-            (settings.npsso_code or "").strip() if settings else ""
-        )
-        token_in_live = ""
-        if live and getattr(live, "npsso_code", None):
-            token_in_live = str(live.npsso_code or "").strip()
-        if not (token_in_settings or token_in_live):
-            base_status = "Not Connected"
-        elif live and getattr(live, "is_online", False):
-            base_status = "Connected"
-        else:
-            base_status = "Configured but Offline"
+        base_status = psn_service.get_psn_status_label()
 
     elif key == "obs":
         from .obs_service import obs_service

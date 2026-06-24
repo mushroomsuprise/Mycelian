@@ -87,41 +87,7 @@ def create_spore_studio_tab() -> None:
     ) as container:
         state["container"] = container
 
-        with ui.row().classes(
-            "w-full items-center justify-between px-3 py-1 border-b "
-            "border-[var(--color-border-default)]"
-        ):
-            with ui.column().classes("gap-0"):
-                ui.label("Spore Studio").classes("text-lg font-medium")
-                ui.label(
-                    "Visual editor for Mycelian HTML templates and their "
-                    "JSON configurations."
-                ).classes("text-xs opacity-70")
-
-            with ui.row().classes("items-center gap-2"):
-                refresh_btn = (
-                    ui.button(
-                        icon="refresh",
-                        text="Reload editor",
-                        on_click=lambda: _refresh_iframe(state),
-                    )
-                    .props("dense flat")
-                    .classes("text-xs")
-                )
-                refresh_btn.tooltip("Reload the editor inside the iframe")
-
-                open_external_btn = (
-                    ui.button(
-                        icon="open_in_new",
-                        text="Open externally",
-                        on_click=lambda: _open_externally(),
-                    )
-                    .props("dense flat")
-                    .classes("text-xs")
-                )
-                open_external_btn.tooltip("Open the editor in your default browser")
-
-        body = ui.element("div").classes("w-full grow relative min-h-0 pb-3")
+        body = ui.element("div").classes("w-full grow relative min-h-0")
         state["body"] = body
 
         with body:

@@ -168,7 +168,9 @@ def _initialize_psn_module_impl() -> None:
                 logger.info(
                     "No NPSSO code found in settings. PSNClient not started by PSN Service."
                 )
-                state_manager.set_live_psn_data(PSNData())
+                empty_psn_data = PSNData()
+                empty_psn_data.connection_status = "Not Connected"
+                state_manager.set_live_psn_data(empty_psn_data)
                 logger.info("=== PSN SERVICE INITIALIZATION COMPLETE ===")
                 return
 
@@ -886,6 +888,93 @@ def handle_psn_settings_change():
         logger.exception(f"Exception while handling PSN settings change: {e}")
 
     logger.info("=== PSN SETTINGS CHANGE HANDLING COMPLETE ===")
+
+
+def get_psn_client() -> Optional[PSNClient]:
+    """Return the global PSN client instance, if initialized."""
+    return psn_client_instance
+
+
+def get_psn_status_label() -> str:
+    """Return the canonical PSN connection status label for footer and settings."""
+    from .connection_status_tracker import psn_configured
+
+    if not psn_configured():
+        return "Not Connected"
+
+    if psn_client_instance and (psn_client_instance.psn_data.npsso_code or "").strip():
+        status = (
+            getattr(psn_client_instance.psn_data, "connection_status", "") or ""
+        ).strip()
+        if status and status != "Disconnected":
+            return status
+
+    live = state_manager.get_live_psn_data()
+    if live:
+        status = (getattr(live, "connection_status", "") or "").strip()
+        if status and status != "Disconnected":
+            return status
+        if getattr(live, "is_online", False):
+            return "Connected"
+
+    if psn_client_instance and not psn_client_instance.is_connected():
+        return "Token Expired"
+
+    return "Offline"
+
+
+def get_psn_status_display() -> tuple[str, str, str]:
+    """Return (status_text, user_text, theme_color_class) for PSN settings UI."""
+    from .connection_status_tracker import get_connectivity_overlay
+
+    overlay = get_connectivity_overlay("psn")
+    if overlay:
+        return overlay, "N/A", "text-theme-error"
+
+    psn_settings = state_manager.get_psn_settings_data()
+    target_username = psn_settings.psn_username if psn_settings else None
+    live_psn_data = state_manager.get_live_psn_data()
+    status = get_psn_status_label()
+
+    if status == "Not Connected":
+        return "Not Connected", "N/A", "text-theme-error"
+
+    if status in ("Token Expired", "Authentication Failed"):
+        return status, "N/A", "text-theme-error"
+
+    online_id = ""
+    if live_psn_data and live_psn_data.online_id:
+        online_id = str(live_psn_data.online_id)
+    elif psn_client_instance and psn_client_instance.psn_data.online_id:
+        online_id = str(psn_client_instance.psn_data.online_id)
+
+    if status == "Connected":
+        if target_username:
+            return (
+                f"Connected - Tracking {target_username}",
+                f"{target_username} (target)",
+                "text-theme-success",
+            )
+        return (
+            f"Connected as {online_id}" if online_id else "Connected",
+            f"{online_id} (own account)" if online_id else "Unknown",
+            "text-theme-success",
+        )
+
+    if status == "Offline":
+        if target_username:
+            return (
+                f"Offline - Tracking {target_username}",
+                f"{target_username} (target)",
+                "text-theme-warning",
+            )
+        return (
+            "Offline",
+            f"{online_id} (own account)" if online_id else "Unknown",
+            "text-theme-warning",
+        )
+
+    return status, "N/A", "text-theme-warning"
 
 
 def psn_configured_for_monitor() -> bool:

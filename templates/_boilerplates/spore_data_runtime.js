@@ -889,4 +889,176 @@
     window.sporeRefreshAllDataDisplays = sporeRefreshAllDataDisplays;
     window.sporeLoadStatsCache = sporeLoadStatsCache;
     window.sporeDispatchControlAction = sporeDispatchControlAction;
+
+    window.__sporeClocks = window.__sporeClocks || [];
+    window.__sporeTimers = window.__sporeTimers || {};
+    window.__sporeClockIntervals = window.__sporeClockIntervals || [];
+    window.__sporeTimerIntervals = window.__sporeTimerIntervals || {};
+
+    function sporePad2(n) {
+        n = Math.floor(n);
+        return (n < 10 ? '0' : '') + n;
+    }
+
+    function sporeSetTextContent(el, value) {
+        if (!el) { return; }
+        var t = (value == null ? '' : String(value));
+        if (el.classList && el.classList.contains('spore-marquee')) {
+            var nodes = el.querySelectorAll('.spore-marquee-text');
+            for (var i = 0; i < nodes.length; i++) {
+                nodes[i].textContent = t;
+            }
+            return;
+        }
+        el.textContent = t;
+    }
+
+    function sporePatchSetText() {
+        window.sporeSetText = function (id, value) {
+            var el = document.getElementById(id);
+            sporeSetTextContent(el, value);
+        };
+    }
+
+    function sporeClockDate(spec) {
+        var now = new Date();
+        if (!spec) { return now; }
+        var tz = spec.timezone || 'local';
+        if (tz === 'utc') {
+            return new Date(now.getTime() + now.getTimezoneOffset() * 60000);
+        }
+        if (tz === 'offset') {
+            var off = parseInt(spec.timezone_offset_minutes, 10) || 0;
+            return new Date(now.getTime() + now.getTimezoneOffset() * 60000 + off * 60000);
+        }
+        return now;
+    }
+
+    function sporeFormatClockDate(date, format) {
+        var fmt = format || 'HH:mm:ss';
+        var hh = sporePad2(date.getHours());
+        var mm = sporePad2(date.getMinutes());
+        var ss = sporePad2(date.getSeconds());
+        return fmt.split('HH').join(hh).split('mm').join(mm).split('ss').join(ss);
+    }
+
+    function sporeInitClocks() {
+        if (window.__sporeClockIntervals && window.__sporeClockIntervals.length) {
+            for (var ci = 0; ci < window.__sporeClockIntervals.length; ci++) {
+                clearInterval(window.__sporeClockIntervals[ci]);
+            }
+        }
+        window.__sporeClockIntervals = [];
+        var list = window.__sporeClocks || [];
+        for (var i = 0; i < list.length; i++) {
+            (function (spec) {
+                var tick = function () {
+                    var el = document.getElementById(spec.elementId);
+                    if (!el) { return; }
+                    sporeSetTextContent(el, sporeFormatClockDate(sporeClockDate(spec), spec.format));
+                };
+                tick();
+                window.__sporeClockIntervals.push(setInterval(tick, 1000));
+            })(list[i]);
+        }
+    }
+
+    function sporeFormatTimerElapsed(spec, elapsed) {
+        var fmt = (spec && spec.format) || '{mm}:{ss}';
+        var mode = (spec && spec.mode) || 'count_down';
+        var dur = sporeCoerceNumber(spec && spec.duration_seconds, 0);
+        var total = Math.max(0, Math.floor(elapsed));
+        var remain = mode === 'count_down' ? Math.max(0, dur - total) : total;
+        var hh = Math.floor(remain / 3600);
+        var mm = Math.floor((remain % 3600) / 60);
+        var ss = remain % 60;
+        return fmt
+            .split('{time}').join(sporePad2(hh) + ':' + sporePad2(mm) + ':' + sporePad2(ss))
+            .split('{hh}').join(sporePad2(hh))
+            .split('{mm}').join(sporePad2(mm))
+            .split('{ss}').join(sporePad2(ss));
+    }
+
+    function sporeTimerRender(id) {
+        var spec = window.__sporeTimers[id];
+        if (!spec) { return; }
+        var el = document.getElementById(spec.elementId || id);
+        if (!el) { return; }
+        var elapsed = spec.elapsed || 0;
+        sporeSetTextContent(el, sporeFormatTimerElapsed(spec, elapsed));
+    }
+
+    function sporeTimerTick(id) {
+        var spec = window.__sporeTimers[id];
+        if (!spec || !spec.running) { return; }
+        var base = spec.started_at != null ? spec.started_at : Date.now();
+        if (spec.started_at == null) { spec.started_at = base; }
+        var elapsed = (Date.now() - base) / 1000 + (spec.elapsed_base || 0);
+        spec.elapsed = elapsed;
+        if (spec.mode === 'count_down') {
+            var dur = sporeCoerceNumber(spec.duration_seconds, 0);
+            if (elapsed >= dur) {
+                spec.elapsed = dur;
+                spec.running = false;
+                sporeTimerRender(id);
+                return;
+            }
+        }
+        sporeTimerRender(id);
+    }
+
+    function sporeTimerStart(id) {
+        var spec = window.__sporeTimers[id];
+        if (!spec) { return; }
+        if (!spec.running) {
+            spec.running = true;
+            spec.started_at = Date.now();
+            spec.elapsed_base = spec.elapsed || 0;
+        }
+        if (!window.__sporeTimerIntervals[id]) {
+            window.__sporeTimerIntervals[id] = setInterval(function () {
+                sporeTimerTick(id);
+            }, 250);
+        }
+        sporeTimerTick(id);
+    }
+
+    function sporeTimerPause(id) {
+        var spec = window.__sporeTimers[id];
+        if (!spec) { return; }
+        if (spec.running && spec.started_at != null) {
+            spec.elapsed = (Date.now() - spec.started_at) / 1000 + (spec.elapsed_base || 0);
+            spec.elapsed_base = spec.elapsed;
+        }
+        spec.running = false;
+        spec.started_at = null;
+    }
+
+    function sporeTimerReset(id) {
+        var spec = window.__sporeTimers[id];
+        if (!spec) { return; }
+        spec.elapsed = 0;
+        spec.elapsed_base = 0;
+        spec.started_at = null;
+        spec.running = !!spec.auto_start;
+        sporeTimerRender(id);
+        if (spec.running) { sporeTimerStart(id); }
+    }
+
+    function sporeInitTimers() {
+        var ids = Object.keys(window.__sporeTimers || {});
+        for (var i = 0; i < ids.length; i++) {
+            var id = ids[i];
+            var spec = window.__sporeTimers[id];
+            sporeTimerRender(id);
+            if (spec && spec.auto_start) { sporeTimerStart(id); }
+        }
+    }
+
+    window.sporePatchSetText = sporePatchSetText;
+    window.sporeInitClocks = sporeInitClocks;
+    window.sporeInitTimers = sporeInitTimers;
+    window.sporeTimerStart = sporeTimerStart;
+    window.sporeTimerPause = sporeTimerPause;
+    window.sporeTimerReset = sporeTimerReset;
 })();

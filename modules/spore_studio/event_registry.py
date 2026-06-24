@@ -376,6 +376,24 @@ _ACTIONS: List[Dict[str, Any]] = [
             {"key": "delta_max", "label": "Random max", "type": "number", "default": 5},
         ],
     },
+    {
+        "action": "timer_start",
+        "label": "Start timer",
+        "description": "Start or resume a timer element's count up/down.",
+        "args": [],
+    },
+    {
+        "action": "timer_pause",
+        "label": "Pause timer",
+        "description": "Pause a timer element.",
+        "args": [],
+    },
+    {
+        "action": "timer_reset",
+        "label": "Reset timer",
+        "description": "Reset a timer element to zero and apply auto-start setting.",
+        "args": [],
+    },
 ]
 def get_event_registry() -> Dict[str, Any]:
     """

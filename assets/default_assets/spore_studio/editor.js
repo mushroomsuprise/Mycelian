@@ -60,6 +60,63 @@
             fill_animation_easing: "ease-out",
             near_goal_threshold: 90,
             near_goal_effect: "none"
+        },
+        shape: {
+            shape_kind: "rectangle",
+            background_color: "#a855f7",
+            border_width: 0,
+            border_color: "#000000",
+            border_radius: 8,
+            opacity: 1
+        },
+        divider: {
+            orientation: "horizontal",
+            color: "#64748b",
+            thickness: 2,
+            opacity: 1
+        },
+        gradient: {
+            gradient_kind: "linear",
+            angle: 90,
+            color_stops: [
+                { color: "#a855f7", stop: 0 },
+                { color: "#1e293b", stop: 100 }
+            ],
+            border_radius: 0,
+            border_width: 0,
+            border_color: "#000000",
+            opacity: 1
+        },
+        marquee: {
+            text: "Scrolling text",
+            font_size: 24,
+            color: "#ffffff",
+            font_family: "Arial",
+            speed: 8,
+            direction: "left",
+            gap: 48,
+            vertical_align: "center"
+        },
+        clock: {
+            format: "HH:mm:ss",
+            timezone: "local",
+            timezone_offset_minutes: 0,
+            font_size: 32,
+            color: "#ffffff",
+            font_family: "Arial",
+            text_align: "center",
+            vertical_align: "center"
+        },
+        timer: {
+            mode: "count_down",
+            duration_seconds: 300,
+            auto_start: true,
+            format: "{mm}:{ss}",
+            font_size: 32,
+            color: "#ffffff",
+            font_family: "Arial",
+            text_align: "center",
+            vertical_align: "center"
         }
     };
 
@@ -69,40 +126,49 @@
         video: { w: 320, h: 180 },
         audio: { w: 120, h: 32 },
         container: { w: 240, h: 120 },
-        progress_bar: { w: 400, h: 28 }
+        progress_bar: { w: 400, h: 28 },
+        shape: { w: 120, h: 120 },
+        divider: { w: 200, h: 4 },
+        gradient: { w: 240, h: 120 },
+        marquee: { w: 400, h: 40 },
+        clock: { w: 200, h: 48 },
+        timer: { w: 160, h: 48 }
     };
+
+    var TEXT_STYLE_SCHEMA = [
+        { key: "font_size", label: "Size", type: "number",
+          tooltip: "Font size in pixels" },
+        { key: "color", label: "Color", type: "color",
+          tooltip: "Text color" },
+        { key: "font_family", label: "Font", type: "font",
+          tooltip: "Font family file or name" },
+        { key: "font_weight", label: "Bold", type: "bold",
+          tooltip: "Bold text" },
+        { key: "font_style", label: "Italic", type: "italic",
+          tooltip: "Italic text" },
+        { key: "text_underline", label: "Underline", type: "checkbox",
+          tooltip: "Underline text" },
+        { key: "text_strikethrough", label: "Strikethrough", type: "checkbox",
+          tooltip: "Strikethrough text" },
+        { key: "letter_spacing", label: "Kerning", type: "number",
+          tooltip: "Letter spacing in pixels" },
+        { key: "line_height_px", label: "Leading", type: "number",
+          tooltip: "Line height in pixels" },
+        { key: "text_align", label: "Align", type: "select",
+          tooltip: "Horizontal text alignment",
+          options: ["left", "center", "right"] },
+        { key: "vertical_align", label: "V-align", type: "select",
+          tooltip: "Vertical alignment inside the element box",
+          options: ["top", "center", "bottom"] },
+        { key: "background_color", label: "Background", type: "color",
+          tooltip: "Background fill behind text" }
+    ];
 
     var ELEMENT_PROP_SCHEMA = {
         text: [
             { key: "text", label: "Text", type: "textarea",
-              tooltip: "Static text content (static mode only)" },
-            { key: "font_size", label: "Size", type: "number",
-              tooltip: "Font size in pixels" },
-            { key: "color", label: "Color", type: "color",
-              tooltip: "Text color" },
-            { key: "font_family", label: "Font", type: "font",
-              tooltip: "Font family file or name" },
-            { key: "font_weight", label: "Bold", type: "bold",
-              tooltip: "Bold text" },
-            { key: "font_style", label: "Italic", type: "italic",
-              tooltip: "Italic text" },
-            { key: "text_underline", label: "Underline", type: "checkbox",
-              tooltip: "Underline text" },
-            { key: "text_strikethrough", label: "Strikethrough", type: "checkbox",
-              tooltip: "Strikethrough text" },
-            { key: "letter_spacing", label: "Kerning", type: "number",
-              tooltip: "Letter spacing in pixels" },
-            { key: "line_height_px", label: "Leading", type: "number",
-              tooltip: "Line height in pixels" },
-            { key: "text_align", label: "Align", type: "select",
-              tooltip: "Horizontal text alignment",
-              options: ["left", "center", "right"] },
-            { key: "vertical_align", label: "V-align", type: "select",
-              tooltip: "Vertical alignment inside the element box",
-              options: ["top", "center", "bottom"] },
-            { key: "background_color", label: "Background", type: "color",
-              tooltip: "Background fill behind text" }
-        ],
+              tooltip: "Static text content (static mode only)" }
+        ].concat(TEXT_STYLE_SCHEMA),
         image: [
             { key: "src", label: "Source URL", type: "text" },
             { key: "border_radius", label: "Border radius (px)", type: "number" },
@@ -153,8 +219,86 @@
               min: 0, max: 100 },
             { key: "near_goal_effect", label: "Near-goal effect", type: "select",
               options: ["none", "pulse", "shimmer", "scroll"] }
-        ]
+        ],
+        shape: [
+            { key: "shape_kind", label: "Shape", type: "select",
+              options: ["rectangle", "ellipse"] },
+            { key: "background_color", label: "Fill", type: "color" },
+            { key: "border_width", label: "Border width (px)", type: "number" },
+            { key: "border_color", label: "Border color", type: "color" },
+            { key: "border_radius", label: "Corner radius (px)", type: "number" },
+            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1 }
+        ],
+        divider: [
+            { key: "orientation", label: "Orientation", type: "select",
+              options: ["horizontal", "vertical"] },
+            { key: "color", label: "Color", type: "color" },
+            { key: "thickness", label: "Thickness (px)", type: "number", min: 1, max: 64 },
+            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1 }
+        ],
+        gradient: [
+            { key: "gradient_kind", label: "Kind", type: "select",
+              options: ["linear", "radial"] },
+            { key: "angle", label: "Angle (deg)", type: "number", min: 0, max: 360 },
+            { key: "border_radius", label: "Corner radius (px)", type: "number" },
+            { key: "border_width", label: "Border width (px)", type: "number" },
+            { key: "border_color", label: "Border color", type: "color" },
+            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1 }
+        ],
+        marquee: [
+            { key: "text", label: "Text", type: "textarea",
+              tooltip: "Static text (static mode only)" },
+            { key: "speed", label: "Speed (s)", type: "number", min: 1, max: 120,
+              tooltip: "Seconds for one full scroll cycle" },
+            { key: "direction", label: "Direction", type: "select",
+              options: ["left", "right"] },
+            { key: "gap", label: "Gap (px)", type: "number", min: 0, max: 500 }
+        ].concat(TEXT_STYLE_SCHEMA),
+        clock: [
+            { key: "format", label: "Format", type: "text",
+              tooltip: "HH, mm, ss tokens (e.g. HH:mm:ss)" },
+            { key: "timezone", label: "Timezone", type: "select",
+              options: ["local", "utc", "offset"] },
+            { key: "timezone_offset_minutes", label: "Offset (min)", type: "number",
+              tooltip: "Minutes from UTC when timezone is offset" }
+        ].concat(TEXT_STYLE_SCHEMA.filter(function (e) {
+            return e.key !== "background_color";
+        })),
+        timer: [
+            { key: "mode", label: "Mode", type: "select",
+              options: ["count_up", "count_down"] },
+            { key: "duration_seconds", label: "Duration (s)", type: "number", min: 0 },
+            { key: "auto_start", label: "Auto start", type: "checkbox" },
+            { key: "format", label: "Format", type: "text",
+              tooltip: "{time}, {mm}, {ss}, {hh}" }
+        ].concat(TEXT_STYLE_SCHEMA.filter(function (e) {
+            return e.key !== "background_color";
+        }))
     };
+
+    var TEXT_LIKE_TYPES = { text: true, marquee: true };
+    var BLOCK_LABELS = {
+        audio: "Audio",
+        clock: "Clock",
+        container: "Container",
+        divider: "Divider",
+        gradient: "Gradient",
+        image: "Image",
+        marquee: "Marquee",
+        progress_bar: "Progress bar",
+        shape: "Shape",
+        text: "Text",
+        timer: "Timer",
+        video: "Video"
+    };
+    var BLOCK_PALETTE = [
+        { group: "Data", types: ["clock", "marquee", "timer"] },
+        { group: "Layout", types: ["container", "divider", "gradient", "shape"] },
+        { group: "Media", types: ["audio", "image", "video"] },
+        { group: "Text", types: ["text"] },
+        { group: "Widgets", types: ["progress_bar"] }
+    ];
+    var stagePreviewIntervals = [];
 
     var DEFAULT_ANIMATIONS = {
         anim_in: "none",
@@ -399,9 +543,7 @@
             : null;
         if (snapshot === top) {
             // Multiple debounced calls landed on the same state — keep
-            // the stack lean and don't break the "every entry is a real
-            // checkpoint" property used by undo().
-            state.future = [];
+            // the stack lean without clearing redo (no model change).
             return;
         }
         state.history.push(snapshot);
@@ -409,8 +551,15 @@
         state.future = [];
     }
 
+    var historyTimer = null;
+    function clearHistoryDebounce() {
+        clearTimeout(historyTimer);
+        historyTimer = null;
+    }
+
     function undo() {
         if (!state.model) { return; }
+        clearHistoryDebounce();
         if (state.history.length <= 1) { return; }
         var current = JSON.stringify(state.model);
         var top = state.history[state.history.length - 1];
@@ -427,6 +576,7 @@
 
     function redo() {
         if (!state.model) { return; }
+        clearHistoryDebounce();
         if (state.future.length === 0) { return; }
         var snapshot = state.future.pop();
         state.history.push(snapshot);
@@ -847,7 +997,8 @@
     function counterInitialValueById(counterId) {
         if (!counterId || !state.model) { return 0; }
         var found = (state.model.elements || []).find(function (e) {
-            return e.type === "text" && (e.text_mode || "static") === "counter" && e.counter &&
+            return TEXT_LIKE_TYPES[e.type] &&
+                (e.text_mode || "static") === "counter" && e.counter &&
                 String(e.counter.counter_id || slugifyCounterId(e.id)) === String(counterId);
         });
         if (!found || !found.counter) { return 0; }
@@ -885,7 +1036,7 @@
     }
 
     function ensureTextModeDefaults(el) {
-        if (!el || el.type !== "text") { return; }
+        if (!el || !TEXT_LIKE_TYPES[el.type]) { return; }
         if (!el.text_mode) { el.text_mode = "static"; }
         if (el.text_mode === "counter") {
             el.counter = el.counter || {};
@@ -935,7 +1086,7 @@
     };
 
     function ensureValueAnimationDefaults(el) {
-        if (!el || el.type !== "text") { return; }
+        if (!el || !TEXT_LIKE_TYPES[el.type]) { return; }
         if (!el.value_animation || typeof el.value_animation !== "object") {
             el.value_animation = Object.assign({}, DEFAULT_VALUE_ANIMATION);
         } else {
@@ -949,10 +1100,367 @@
 
     function listCountersInModel() {
         return (state.model.elements || []).filter(function (e) {
-            return e.type === "text" && (e.text_mode || "static") === "counter" && e.counter;
+            return TEXT_LIKE_TYPES[e.type] &&
+                (e.text_mode || "static") === "counter" && e.counter;
         }).map(function (e) {
             var cid = e.counter.counter_id || slugifyCounterId(e.id);
             return { id: cid, label: e.id + " (" + cid + ")" };
+        });
+    }
+
+    function ensureTimerDefaults(el) {
+        if (!el || el.type !== "timer") { return; }
+        el.props = el.props || {};
+        var p = el.props;
+        if (!p.mode) { p.mode = "count_down"; }
+        if (p.duration_seconds == null) { p.duration_seconds = 300; }
+        if (p.auto_start === undefined) { p.auto_start = true; }
+        if (!p.format) { p.format = "{mm}:{ss}"; }
+        if (!el.timer || typeof el.timer !== "object") {
+            el.timer = { running: !!p.auto_start, elapsed: 0 };
+        }
+    }
+
+    function ensureClockDefaults(el) {
+        if (!el || el.type !== "clock") { return; }
+        el.props = el.props || {};
+        if (!el.props.format) { el.props.format = "HH:mm:ss"; }
+        if (!el.props.timezone) { el.props.timezone = "local"; }
+        if (el.props.timezone_offset_minutes == null) {
+            el.props.timezone_offset_minutes = 0;
+        }
+    }
+
+    function ensureGradientDefaults(el) {
+        if (!el || el.type !== "gradient") { return; }
+        el.props = el.props || {};
+        if (!Array.isArray(el.props.color_stops) || !el.props.color_stops.length) {
+            el.props.color_stops = [
+                { color: "#a855f7", stop: 0 },
+                { color: "#1e293b", stop: 100 }
+            ];
+        }
+    }
+
+    function ensureShapeDefaults(el) {
+        if (!el || el.type !== "shape") { return; }
+        el.props = el.props || {};
+        if (!el.props.shape_kind) { el.props.shape_kind = "rectangle"; }
+    }
+
+    function ensureDividerDefaults(el) {
+        if (!el || el.type !== "divider") { return; }
+        el.props = el.props || {};
+        if (!el.props.orientation) { el.props.orientation = "horizontal"; }
+        if (el.props.thickness == null) { el.props.thickness = 2; }
+    }
+
+    function ensureMarqueeDefaults(el) {
+        if (!el || el.type !== "marquee") { return; }
+        ensureTextModeDefaults(el);
+    }
+
+    function buildGradientCss(props) {
+        props = props || {};
+        var stops = Array.isArray(props.color_stops) ? props.color_stops : [];
+        if (!stops.length) {
+            stops = [{ color: "#a855f7", stop: 0 }, { color: "#1e293b", stop: 100 }];
+        }
+        var parts = stops.map(function (s) {
+            return (s.color || "#000") + " " + (s.stop != null ? s.stop : 0) + "%";
+        }).join(", ");
+        if ((props.gradient_kind || "linear") === "radial") {
+            return "radial-gradient(circle, " + parts + ")";
+        }
+        var angle = props.angle != null ? props.angle : 90;
+        return "linear-gradient(" + angle + "deg, " + parts + ")";
+    }
+
+    function applyShapeDividerGradientStyles(node, el) {
+        var props = el.props || {};
+        if (el.type === "shape") {
+            node.style.background = props.background_color || "#a855f7";
+            if (props.shape_kind === "ellipse") {
+                node.style.borderRadius = "50%";
+            } else if (props.border_radius != null) {
+                node.style.borderRadius = props.border_radius + "px";
+            }
+            if (props.border_width != null && props.border_color) {
+                node.style.border = props.border_width + "px solid " + props.border_color;
+            }
+            if (props.opacity != null) { node.style.opacity = String(props.opacity); }
+        } else if (el.type === "divider") {
+            node.style.background = "transparent";
+            node.style.padding = "0";
+            var line = node.querySelector(".ss-divider-line");
+            if (!line) {
+                line = document.createElement("div");
+                line.className = "ss-divider-line";
+                node.appendChild(line);
+            }
+            var thick = props.thickness != null ? props.thickness : 2;
+            var col = props.color || "#64748b";
+            if ((props.orientation || "horizontal") === "vertical") {
+                line.style.width = thick + "px";
+                line.style.height = "100%";
+            } else {
+                line.style.height = thick + "px";
+                line.style.width = "100%";
+            }
+            line.style.background = col;
+            if (props.opacity != null) { line.style.opacity = String(props.opacity); }
+        } else if (el.type === "gradient") {
+            node.style.background = buildGradientCss(props);
+            if (props.border_radius != null) {
+                node.style.borderRadius = props.border_radius + "px";
+            }
+            if (props.border_width != null && props.border_color) {
+                node.style.border = props.border_width + "px solid " + props.border_color;
+            }
+            if (props.opacity != null) { node.style.opacity = String(props.opacity); }
+        }
+    }
+
+    function pad2(n) {
+        return (n < 10 ? "0" : "") + n;
+    }
+
+    function formatClockTime(date, format, tz, offsetMin) {
+        var d = date;
+        if (tz === "utc") {
+            d = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+        } else if (tz === "offset") {
+            var off = parseInt(offsetMin, 10) || 0;
+            d = new Date(date.getTime() + date.getTimezoneOffset() * 60000 + off * 60000);
+        }
+        var fmt = format || "HH:mm:ss";
+        var hh = pad2(d.getHours());
+        var mm = pad2(d.getMinutes());
+        var ss = pad2(d.getSeconds());
+        return fmt.split("HH").join(hh).split("mm").join(mm).split("ss").join(ss);
+    }
+
+    function formatTimerDisplay(el, elapsedSec) {
+        ensureTimerDefaults(el);
+        var p = el.props || {};
+        var fmt = p.format || "{mm}:{ss}";
+        var total = Math.max(0, Math.floor(elapsedSec));
+        var mode = p.mode || "count_down";
+        var dur = Math.max(0, parseInt(p.duration_seconds, 10) || 0);
+        var remain = mode === "count_down" ? Math.max(0, dur - total) : total;
+        var hh = Math.floor(remain / 3600);
+        var mm = Math.floor((remain % 3600) / 60);
+        var ss = remain % 60;
+        return fmt
+            .split("{time}").join(pad2(hh) + ":" + pad2(mm) + ":" + pad2(ss))
+            .split("{hh}").join(pad2(hh))
+            .split("{mm}").join(pad2(mm))
+            .split("{ss}").join(pad2(ss));
+    }
+
+    function clearStagePreviewIntervals() {
+        stagePreviewIntervals.forEach(function (id) { clearInterval(id); });
+        stagePreviewIntervals = [];
+    }
+
+    function startStagePreviewIntervals() {
+        if (!state.model) { return; }
+        (state.model.elements || []).forEach(function (el) {
+            if (el.type === "clock") {
+                ensureClockDefaults(el);
+                var node = document.querySelector(
+                    ".ss-element[data-spore-id=\"" + cssEscapeSs(el.id) + "\"]"
+                );
+                if (!node) { return; }
+                var tick = function () {
+                    var p = el.props || {};
+                    node.textContent = formatClockTime(
+                        new Date(),
+                        p.format,
+                        p.timezone,
+                        p.timezone_offset_minutes
+                    );
+                };
+                tick();
+                stagePreviewIntervals.push(setInterval(tick, 1000));
+            } else if (el.type === "timer") {
+                ensureTimerDefaults(el);
+                var tnode = document.querySelector(
+                    ".ss-element[data-spore-id=\"" + cssEscapeSs(el.id) + "\"]"
+                );
+                if (!tnode) { return; }
+                if (!el.timer.running && !el.props.auto_start) {
+                    tnode.textContent = formatTimerDisplay(el, 0);
+                    return;
+                }
+                if (!el.timer.running) { el.timer.running = true; }
+                var t0 = Date.now() - (el.timer.elapsed || 0) * 1000;
+                var ttick = function () {
+                    var elapsed = (Date.now() - t0) / 1000;
+                    el.timer.elapsed = elapsed;
+                    var mode = (el.props && el.props.mode) || "count_down";
+                    var dur = parseInt((el.props && el.props.duration_seconds) || 0, 10) || 0;
+                    if (mode === "count_down" && elapsed >= dur) {
+                        tnode.textContent = formatTimerDisplay(el, dur);
+                        return;
+                    }
+                    tnode.textContent = formatTimerDisplay(el, elapsed);
+                };
+                ttick();
+                stagePreviewIntervals.push(setInterval(ttick, 250));
+            }
+        });
+    }
+
+    function renderGradientStopsSection(host, el) {
+        if (el.type !== "gradient") { return; }
+        ensureGradientDefaults(el);
+        var sect = document.createElement("div");
+        sect.className = "ss-form-section";
+        var title = document.createElement("div");
+        title.className = "ss-form-section__title";
+        title.textContent = "Color stops";
+        sect.appendChild(title);
+        var list = document.createElement("div");
+        list.className = "ss-gradient-stops";
+        function redraw() {
+            list.innerHTML = "";
+            (el.props.color_stops || []).forEach(function (stop, idx) {
+                var row = document.createElement("div");
+                row.className = "ss-gradient-stop-row";
+                var colorIn = document.createElement("input");
+                colorIn.type = "color";
+                colorIn.value = stop.color || "#000000";
+                colorIn.addEventListener("change", function () {
+                    stop.color = colorIn.value;
+                    pushHistoryDebounced();
+                    renderStage();
+                    modelTouch();
+                });
+                var stopIn = numberEl(stop.stop != null ? stop.stop : 0, function (v) {
+                    stop.stop = Math.max(0, Math.min(100, parseInt(v, 10) || 0));
+                    pushHistoryDebounced();
+                    renderStage();
+                    modelTouch();
+                });
+                stopIn.min = 0;
+                stopIn.max = 100;
+                var del = document.createElement("button");
+                del.className = "ss-btn ss-btn--ghost";
+                del.textContent = "×";
+                del.addEventListener("click", function () {
+                    el.props.color_stops.splice(idx, 1);
+                    pushHistory();
+                    redraw();
+                    renderStage();
+                    modelTouch();
+                });
+                row.appendChild(colorIn);
+                row.appendChild(stopIn);
+                row.appendChild(del);
+                list.appendChild(row);
+            });
+        }
+        redraw();
+        sect.appendChild(list);
+        var addBtn = document.createElement("button");
+        addBtn.className = "ss-btn";
+        addBtn.textContent = "+ Add stop";
+        addBtn.addEventListener("click", function () {
+            el.props.color_stops.push({ color: "#ffffff", stop: 50 });
+            pushHistory();
+            redraw();
+            renderStage();
+            modelTouch();
+        });
+        sect.appendChild(addBtn);
+        host.appendChild(sect);
+    }
+
+    function renderTimerControlSection(host, el) {
+        if (el.type !== "timer") { return; }
+        ensureTimerDefaults(el);
+        var sect = document.createElement("div");
+        sect.className = "ss-form-section";
+        var title = document.createElement("div");
+        title.className = "ss-form-section__title";
+        title.textContent = "Timer controls";
+        sect.appendChild(title);
+        var row = document.createElement("div");
+        row.className = "ss-btn-row";
+        ["Start", "Pause", "Reset"].forEach(function (label) {
+            var btn = document.createElement("button");
+            btn.className = "ss-btn";
+            btn.textContent = label;
+            btn.addEventListener("click", function () {
+                if (label === "Start") { el.timer.running = true; }
+                else if (label === "Pause") { el.timer.running = false; }
+                else {
+                    el.timer.running = !!(el.props && el.props.auto_start);
+                    el.timer.elapsed = 0;
+                }
+                renderStage();
+                modelTouch();
+            });
+            row.appendChild(btn);
+        });
+        sect.appendChild(row);
+        host.appendChild(sect);
+    }
+
+    function blockPaletteIconHtml(type) {
+        if (type === "progress_bar") {
+            return '<svg class="ss-block__icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+                '<rect x="1" y="6" width="16" height="6" rx="3" stroke="currentColor" stroke-width="1.5"/>' +
+                '<rect x="1" y="6" width="10" height="6" rx="3" fill="currentColor"/></svg>';
+        }
+        var icons = {
+            text: "T",
+            image: "\uD83D\uDCF7",
+            video: "\uD83C\uDFAC",
+            audio: "\uD83D\uDD0A",
+            container: "\u25A1",
+            shape: "\u25AD",
+            divider: "\u2014",
+            gradient: "\u25D0",
+            marquee: "\u21C4",
+            clock: "\u23F0",
+            timer: "\u23F1"
+        };
+        return '<span class="ss-block__icon">' + (icons[type] || "?") + "</span>";
+    }
+
+    function renderBlockPalette() {
+        var host = $("#ss-blocks-list");
+        if (!host) { return; }
+        host.innerHTML = "";
+        var groups = BLOCK_PALETTE.slice().sort(function (a, b) {
+            return a.group.localeCompare(b.group);
+        });
+        groups.forEach(function (grp) {
+            var types = grp.types.slice().sort(function (a, b) {
+                return (BLOCK_LABELS[a] || a).localeCompare(BLOCK_LABELS[b] || b);
+            });
+            var gEl = document.createElement("div");
+            gEl.className = "ss-block-group";
+            var gTitle = document.createElement("div");
+            gTitle.className = "ss-block-group__title";
+            gTitle.textContent = grp.group;
+            gEl.appendChild(gTitle);
+            types.forEach(function (type) {
+                if (!ELEMENT_PROP_SCHEMA[type]) { return; }
+                var block = document.createElement("div");
+                block.className = "ss-block";
+                block.draggable = true;
+                block.dataset.blockType = type;
+                block.innerHTML =
+                    blockPaletteIconHtml(type) +
+                    '<span class="ss-block__label">' +
+                    (BLOCK_LABELS[type] || type) +
+                    "</span>";
+                gEl.appendChild(block);
+            });
+            host.appendChild(gEl);
         });
     }
 
@@ -1553,7 +2061,7 @@
     }
 
     function renderValueAnimationSection(host, el) {
-        if (el.type !== "text") { return; }
+        if (!TEXT_LIKE_TYPES[el.type]) { return; }
         var mode = el.text_mode || "static";
         if (mode !== "counter" && mode !== "data_display") { return; }
         ensureValueAnimationDefaults(el);
@@ -1762,7 +2270,7 @@
     }
 
     function renderTextModeSection(host, el) {
-        if (el.type !== "text" || isLegacyModel()) { return; }
+        if (!TEXT_LIKE_TYPES[el.type] || isLegacyModel()) { return; }
         ensureTextModeDefaults(el);
         var modeSel = document.createElement("select");
         ["static", "counter", "data_display"].forEach(function (m) {
@@ -2375,6 +2883,7 @@
     }
 
     function renderStage() {
+        clearStagePreviewIntervals();
         var stage = $("#ss-stage");
         stage.innerHTML = "";
         if (!state.model) { return; }
@@ -2430,16 +2939,48 @@
                 node.classList.add("ss-element--animated");
             }
 
-            if (el.type === "text") {
+            if (el.type === "text" || el.type === "marquee") {
                 var tmode = el.text_mode || "static";
+                var displayText = "";
                 if (tmode === "counter" && el.counter) {
-                    node.textContent = formatCounterPreview(el.counter, el.counter.format);
+                    displayText = formatCounterPreview(el.counter, el.counter.format);
                 } else if (tmode === "data_display" && el.data_display) {
-                    node.textContent = el.data_display.default_text != null
+                    displayText = el.data_display.default_text != null
                         ? String(el.data_display.default_text) : "—";
                 } else {
-                    node.textContent = (el.props && el.props.text) || "";
+                    displayText = (el.props && el.props.text) || "";
                 }
+                if (el.type === "marquee") {
+                    node.textContent = "";
+                    node.classList.add("ss-marquee-preview", "spore-marquee");
+                    var mInner = document.createElement("div");
+                    mInner.className = "spore-marquee-inner";
+                    var mSpan = document.createElement("span");
+                    mSpan.className = "spore-marquee-text";
+                    mSpan.textContent = displayText || "Scrolling text";
+                    mInner.appendChild(mSpan);
+                    mInner.appendChild(mSpan.cloneNode(true));
+                    node.appendChild(mInner);
+                    var spd = (el.props && el.props.speed) != null ? el.props.speed : 8;
+                    node.style.setProperty("--ss-marquee-duration", spd + "s");
+                    node.dataset.marqueeDir = (el.props && el.props.direction) || "left";
+                } else {
+                    node.textContent = displayText;
+                }
+            } else if (el.type === "clock") {
+                ensureClockDefaults(el);
+                node.textContent = formatClockTime(
+                    new Date(),
+                    el.props.format,
+                    el.props.timezone,
+                    el.props.timezone_offset_minutes
+                );
+            } else if (el.type === "timer") {
+                ensureTimerDefaults(el);
+                node.textContent = formatTimerDisplay(el, el.timer.elapsed || 0);
+            } else if (el.type === "shape" || el.type === "divider" || el.type === "gradient") {
+                node.textContent = "";
+                applyShapeDividerGradientStyles(node, el);
             } else if (el.type === "image") {
                 node.textContent = (el.props && el.props.src) ? "img: " + el.props.src : "(image)";
             } else if (el.type === "video") {
@@ -2510,6 +3051,7 @@
                 paintElementBranch(el, stage);
             }
         });
+        startStagePreviewIntervals();
     }
 
     function applyPropsToNode(node, el) {
@@ -2535,7 +3077,7 @@
         }
         var textDeco = composeTextDecoration(props);
         node.style.textDecoration = textDeco || "";
-        if (el.type === "text") {
+        if (el.type === "text" || el.type === "marquee" || el.type === "clock" || el.type === "timer") {
             var va = props.vertical_align || "top";
             if (va === "center" || va === "bottom") {
                 node.style.display = "flex";
@@ -2546,6 +3088,9 @@
                 node.style.flexDirection = "";
                 node.style.justifyContent = "";
             }
+        }
+        if (el.type === "shape" || el.type === "divider" || el.type === "gradient") {
+            applyShapeDividerGradientStyles(node, el);
         }
         if (props.border_radius != null) { node.style.borderRadius = props.border_radius + "px"; }
         if (props.border_width != null && props.border_color) {
@@ -2797,7 +3342,9 @@
                     syncPlacementFromPosition(modelEl, parDrag);
                 }
             }
-            pushHistoryDebounced();
+            if (dd.didMove) {
+                pushHistoryDebounced();
+            }
             modelTouch();
             dragData = null;
         });
@@ -2826,6 +3373,9 @@
         });
         document.addEventListener("mouseup", function () {
             if (resizeData) {
+                var sz = modelEl.size || {};
+                var sizeChanged =
+                    sz.w !== resizeData.origW || sz.h !== resizeData.origH;
                 if (pidNorm(modelEl.parent_id)) {
                     var parRs = elementByIdFromModel(modelEl.parent_id);
                     if (parRs) {
@@ -2835,14 +3385,15 @@
                 }
                 renderStage();
                 renderInspector();
-                pushHistoryDebounced();
+                if (sizeChanged) {
+                    pushHistoryDebounced();
+                }
                 modelTouch();
             }
             resizeData = null;
         });
     }
 
-    var historyTimer = null;
     function pushHistoryDebounced() {
         clearTimeout(historyTimer);
         historyTimer = setTimeout(pushHistory, 250);
@@ -3183,7 +3734,11 @@
     }
 
     function appendSchemaProperty(host, el, entry, textMode, imageSrcMode) {
-        if (el.type === "text" && textMode !== "static" && entry.key === "text") {
+        if (TEXT_LIKE_TYPES[el.type] && textMode !== "static" && entry.key === "text") {
+            return;
+        }
+        if (el.type === "clock" && entry.key === "timezone_offset_minutes" &&
+                (el.props && el.props.timezone) !== "offset") {
             return;
         }
         if (el.type === "image" && imageSrcMode === "from_counter" && entry.key === "src") {
@@ -3455,6 +4010,22 @@
             host.appendChild(buildCollapsibleSection("Text mode", "Static, counter, or data display", function (body) {
                 renderTextModeSection(body, el);
             }));
+        }
+
+        if (el.type === "marquee" && !isLegacyModel()) {
+            host.appendChild(buildCollapsibleSection("Marquee mode", "Static, counter, or data display", function (body) {
+                renderTextModeSection(body, el);
+            }));
+        }
+
+        if (el.type === "timer" && !isLegacyModel()) {
+            host.appendChild(buildCollapsibleSection("Timer", "Playback controls for editor preview", function (body) {
+                renderTimerControlSection(body, el);
+            }));
+        }
+
+        if (el.type === "gradient" && !isLegacyModel()) {
+            renderGradientStopsSection(host, el);
         }
 
         if (el.type === "image" && !isLegacyModel()) {
@@ -4667,9 +5238,15 @@
             }
             ensureElementExposeDefaults(el);
             ensureElementAnimations(el);
-            if (type === "text") { ensureTextModeDefaults(el); }
+            if (type === "text" || type === "marquee") { ensureTextModeDefaults(el); }
             if (type === "image") { ensureImageSrcDefaults(el); }
             if (type === "progress_bar") { ensureProgressBarDefaults(el); }
+            if (type === "shape") { ensureShapeDefaults(el); }
+            if (type === "divider") { ensureDividerDefaults(el); }
+            if (type === "gradient") { ensureGradientDefaults(el); }
+            if (type === "marquee") { ensureMarqueeDefaults(el); }
+            if (type === "clock") { ensureClockDefaults(el); }
+            if (type === "timer") { ensureTimerDefaults(el); }
             if (pid) { ensurePlacementDefaults(el); }
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
@@ -4951,7 +5528,7 @@
             if (!model.legacy) {
                 ensureElementExposeDefaults(el);
                 ensureElementAnimations(el);
-                if (el.type === "text") {
+                if (el.type === "text" || el.type === "marquee") {
                     ensureTextModeDefaults(el);
                     normalizeElementFontFamily(el);
                 }
@@ -4960,6 +5537,17 @@
                 }
                 if (el.type === "progress_bar") {
                     ensureProgressBarDefaults(el);
+                }
+                if (el.type === "shape") { ensureShapeDefaults(el); }
+                if (el.type === "divider") { ensureDividerDefaults(el); }
+                if (el.type === "gradient") { ensureGradientDefaults(el); }
+                if (el.type === "clock") {
+                    ensureClockDefaults(el);
+                    normalizeElementFontFamily(el);
+                }
+                if (el.type === "timer") {
+                    ensureTimerDefaults(el);
+                    normalizeElementFontFamily(el);
                 }
                 if (pidNorm(el.parent_id)) {
                     ensurePlacementDefaults(el);
@@ -5862,6 +6450,12 @@
         $("#ss-btn-redo").addEventListener("click", redo);
         $("#ss-btn-save").addEventListener("click", saveCurrent);
         $("#ss-btn-preview").addEventListener("click", togglePreviewDialog);
+        $("#ss-btn-reload").addEventListener("click", function () {
+            window.location.href = window.location.pathname + "?_cb=" + Date.now();
+        });
+        $("#ss-btn-open-external").addEventListener("click", function () {
+            window.open(window.location.pathname, "_blank");
+        });
         $("#ss-stage").addEventListener("mousedown", function () {
             state.selectedId = null;
             $$(".ss-element").forEach(function (n) { n.classList.remove("selected"); });
@@ -5875,6 +6469,7 @@
         setupToolbar();
         setupInspectorResize();
         setupCanvasPanel();
+        renderBlockPalette();
         setupBlockPaletteDnD();
         setupPreviewDialog();
         setupKeyboard();

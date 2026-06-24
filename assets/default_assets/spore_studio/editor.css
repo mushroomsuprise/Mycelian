@@ -276,6 +276,43 @@ html, body {
 }
 .ss-block__label { font-size: 12px; }
 
+.ss-block-group { margin-bottom: 8px; }
+.ss-block-group__title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ss-text-muted);
+    margin: 6px 0 4px;
+}
+
+.ss-gradient-stop-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.ss-gradient-stop-row input[type="number"] { width: 56px; }
+.ss-btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
+.ss-marquee-preview {
+    overflow: hidden;
+    white-space: nowrap;
+}
+.ss-marquee-preview .spore-marquee-inner {
+    display: inline-flex;
+    gap: var(--spore-marquee-gap, 48px);
+    animation: ssMarqueeScroll var(--ss-marquee-duration, 8s) linear infinite;
+}
+.ss-marquee-preview[data-marquee-dir="right"] .spore-marquee-inner {
+    animation-direction: reverse;
+}
+@keyframes ssMarqueeScroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+}
+.ss-divider-line { display: block; margin: auto; }
+
 .ss-form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .ss-form-row--inline {
     flex-direction: row;

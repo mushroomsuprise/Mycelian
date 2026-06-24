@@ -1458,9 +1458,6 @@
                 };
 
                 broadcastSocket.emit('source_controls_relay', relayData);
-                if (!silent) {
-                    showNotification(`Relayed ${action} to ${templateName}`, 'success');
-                }
             } catch (error) {
                 console.error(`Error sending relay event ${action} for ${templateName}:`, error);
                 if (!silent) {
