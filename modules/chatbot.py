@@ -36,12 +36,25 @@ from typing import Any, Dict, Optional
 import aiohttp
 from twitchAPI.helper import first
 from twitchAPI.oauth import UserAuthenticator
-from twitchAPI.twitch import Twitch
-from twitchAPI.type import AuthScope
+from twitchAPI.type import AuthScope, InvalidRefreshTokenException
 
 from . import dataobjects
 from .api_credentials_manager import get_chatbot_credentials
 from .twitch_oauth import run_user_authentication, stop_active_oauth
+from .twitch_token_auth import (
+    apply_user_authentication,
+    attach_refresh_callback,
+    compute_token_expiry,
+    create_twitch_client,
+    is_access_token_expired,
+    is_credential_config_error,
+    is_definitive_refresh_failure,
+    is_token_currently_valid,
+    legacy_expiry_needs_migration,
+    refresh_user_token,
+    twitch_has_user_auth,
+    validate_access_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +132,51 @@ class Chatbot_API:
         # Token refresh synchronization
         self._refresh_lock = threading.Lock()
         self._last_refresh_attempt = None
+
+    def _sync_client_credentials(self) -> None:
+        """Reload chatbot client id/secret from the credential store."""
+        creds = get_chatbot_credentials()
+        if creds.get("client_id"):
+            self.client_id = creds["client_id"]
+        if creds.get("client_secret"):
+            self.client_secret = creds["client_secret"]
+
+    def _wire_twitch_refresh_callback(self) -> None:
+        if self.twitch is None:
+            return
+        attach_refresh_callback(self.twitch, self._on_library_tokens_refreshed)
+
+    async def _on_library_tokens_refreshed(
+        self, auth_token: str, refresh_token: str
+    ) -> None:
+        self.auth_token = auth_token
+        self.refresh_token = refresh_token
+        self.token_expiry = await compute_token_expiry(auth_token)
+        self.save_auth_data()
+        logger.info("Persisted chatbot tokens from library auto-refresh")
+
+    async def _migrate_legacy_token_expiry_if_needed(self) -> None:
+        if not self.auth_token:
+            return
+        if not legacy_expiry_needs_migration(self.token_expiry):
+            return
+        self.token_expiry = await compute_token_expiry(self.auth_token)
+        self.save_auth_data()
+        logger.debug("Migrated legacy chatbot token expiry to %s", self.token_expiry)
+
+    def _clear_tokens_after_refresh_failure(self) -> None:
+        self.auth_token = ""
+        self.refresh_token = ""
+        self.token_expiry = None
+        try:
+            self.save_auth_data()
+            logger.warning(
+                "Cleared invalid chatbot tokens after refresh failure - OAuth re-authentication required"
+            )
+        except Exception as save_error:
+            logger.error(
+                "Failed to save cleared chatbot token state: %s", save_error
+            )
 
     def load_auth_data(self):
         """Load chatbot-specific authentication data from the state manager"""
@@ -265,34 +323,41 @@ class Chatbot_API:
             return False
 
     def is_token_expired(self):
-        """Check if the current auth token is expired"""
-        if not self.auth_token:
-            return True
-        if not self.token_expiry:
-            # Unknown expiry — use token until Helix returns 401
+        """Check if the current auth token is expired."""
+        return is_access_token_expired(self.auth_token, self.token_expiry)
+
+    async def _apply_refresh_result(self, result) -> bool:
+        if not result.success:
             return False
-        # Consider token expired if less than 5 minutes remaining
-        return datetime.now() + timedelta(minutes=5) >= self.token_expiry
+        self.auth_token = result.auth_token
+        self.refresh_token = result.refresh_token
+        self.token_expiry = result.token_expiry or await compute_token_expiry(
+            self.auth_token
+        )
+        save_success = self.save_auth_data()
+        if not save_success:
+            logger.warning("Failed to save refreshed chatbot tokens")
+        return True
 
     async def refresh_auth_token(self):
         """Refresh the authentication token using the refresh token"""
 
-        # Check if another refresh is already in progress
         if not self._refresh_lock.acquire(blocking=False):
             logger.info("Chatbot token refresh already in progress, waiting...")
-            # Wait for the other refresh to complete
             with self._refresh_lock:
                 logger.info(
                     "Other chatbot token refresh completed, checking if we still need to refresh"
                 )
-                if not self.is_token_expired():
+                if await is_token_currently_valid(
+                    self.auth_token, self.client_id or None
+                ):
                     logger.info(
                         "Chatbot token was already refreshed by another process"
                     )
                     return True
+            return False
 
         try:
-            # Check if we recently attempted a refresh (within last 30 seconds)
             now = datetime.now()
             if (
                 self._last_refresh_attempt
@@ -301,164 +366,115 @@ class Chatbot_API:
                 logger.info(
                     "Chatbot token refresh attempted recently, skipping duplicate refresh"
                 )
-                return not self.is_token_expired()
+                return await is_token_currently_valid(
+                    self.auth_token, self.client_id or None
+                )
 
             self._last_refresh_attempt = now
-
             logger.info("Refreshing chatbot authentication token")
 
-            # Check if we have a refresh token
+            self._sync_client_credentials()
+            if not self.client_id or not self.client_secret:
+                logger.warning(
+                    "Cannot refresh chatbot token: client id/secret not configured"
+                )
+                return False
+
             if not self.refresh_token:
                 logger.error("No refresh token available for chatbot token refresh")
                 return False
 
-            # Use existing Twitch instance if available, otherwise create one
             if not self.twitch:
-                self.twitch = Twitch(self.client_id, self.client_secret)
+                self.twitch = await create_twitch_client(
+                    self.client_id, self.client_secret
+                )
+                self._wire_twitch_refresh_callback()
 
-            # Set user authentication with current tokens
-            await self.twitch.set_user_authentication(
-                self.auth_token, self.authscope, self.refresh_token
+            result = await refresh_user_token(
+                self.twitch,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                auth_token=self.auth_token,
+                refresh_token=self.refresh_token,
+                scopes=self.authscope,
             )
 
-            # Store current tokens before refresh to compare later
-            old_twitch_auth_token = getattr(self.twitch, "_user_auth_token", None)
-            old_twitch_refresh_token = getattr(
-                self.twitch, "_user_auth_refresh_token", None
+            if result.success:
+                await self._apply_refresh_result(result)
+                logger.info(
+                    "Successfully refreshed chatbot authentication token (outcome=%s)",
+                    result.outcome,
+                )
+                return True
+
+            logger.warning(
+                "Chatbot token refresh failed (outcome=%s)", result.outcome
             )
+            if result.outcome in ("invalid_refresh_token", "client_id_mismatch"):
+                self._clear_tokens_after_refresh_failure()
+            return False
 
-            # Refresh the token
-            await self.twitch.refresh_used_token()
-
-            # Get the refreshed tokens from the Twitch instance
-            new_auth_token = getattr(self.twitch, "_user_auth_token", None)
-            new_refresh_token = getattr(self.twitch, "_user_auth_refresh_token", None)
-
-            # Check if refresh was successful by comparing tokens and ensuring they're valid
-            if (
-                not new_auth_token
-                or not new_refresh_token
-                or (
-                    new_auth_token == old_twitch_auth_token
-                    and new_refresh_token == old_twitch_refresh_token
-                )
-            ):
-                logger.error(
-                    "Chatbot token refresh failed - tokens are empty or unchanged"
-                )
-
-                # Clear invalid tokens
-                self.auth_token = ""
-                self.refresh_token = ""
-                self.token_expiry = None
-
-                # Save the cleared state
-                self.save_auth_data()
-
+        except InvalidRefreshTokenException as e:
+            if is_credential_config_error(e):
                 logger.warning(
-                    "Cleared invalid chatbot tokens - OAuth re-authentication required"
+                    "Cannot refresh chatbot token (check client id/secret in Settings): %s",
+                    e,
                 )
                 return False
-
-            # Update tokens
-            old_auth_token = self.auth_token
-            self.auth_token = new_auth_token
-            self.refresh_token = new_refresh_token
-
-            # Set token expiry (Twitch tokens typically expire in 60 days)
-            self.token_expiry = datetime.now() + timedelta(days=60)
-
-            # Save new tokens to database
-            save_success = self.save_auth_data()
-            if not save_success:
-                logger.warning("Failed to save refreshed chatbot tokens")
-
-            # Create token previews for logging
-            if isinstance(old_auth_token, str) and old_auth_token:
-                old_preview = (
-                    old_auth_token[:10] + "..."
-                    if len(old_auth_token) > 10
-                    else old_auth_token
-                )
-            else:
-                old_preview = "None"
-
-            if isinstance(new_auth_token, str) and new_auth_token:
-                new_preview = (
-                    new_auth_token[:10] + "..."
-                    if len(new_auth_token) > 10
-                    else new_auth_token
-                )
-            else:
-                new_preview = "None"
-            logger.info(
-                f"Successfully refreshed chatbot authentication token (old: {old_preview}, new: {new_preview})"
-            )
-            return True
+            logger.warning("Chatbot refresh token invalid: %s", e)
+            self._clear_tokens_after_refresh_failure()
+            return False
         except Exception as e:
+            if is_credential_config_error(e):
+                logger.warning(
+                    "Cannot refresh chatbot token (check client secret in Settings): %s",
+                    e,
+                )
+                return False
+            if is_definitive_refresh_failure(e):
+                logger.warning("Chatbot refresh token invalid: %s", e)
+                self._clear_tokens_after_refresh_failure()
+                return False
             logger.error(
-                f"Failed to refresh chatbot authentication token: {str(e)}",
+                "Failed to refresh chatbot authentication token (transient): %s",
+                e,
                 exc_info=True,
             )
-
-            # If refresh completely failed, clear tokens to force re-authentication
-            self.auth_token = ""
-            self.refresh_token = ""
-            self.token_expiry = None
-
-            try:
-                self.save_auth_data()
-                logger.warning(
-                    "Cleared invalid chatbot tokens after refresh failure - OAuth re-authentication required"
-                )
-            except Exception as save_error:
-                logger.error(
-                    f"Failed to save cleared chatbot token state: {str(save_error)}"
-                )
-
             return False
         finally:
-            # Always release the lock
             try:
                 self._refresh_lock.release()
             except Exception:
-                pass  # Lock might already be released
+                pass
 
     async def authenticate_with_oauth(self):
         """Handle the OAuth flow to get new authentication tokens"""
         try:
             logger.debug("Starting chatbot OAuth authentication flow")
 
-            # Create Twitch instance
-            self.twitch = Twitch(self.client_id, self.client_secret)
+            self.twitch = await create_twitch_client(self.client_id, self.client_secret)
+            self._wire_twitch_refresh_callback()
 
-            # Create authenticator
             self.authenticator = UserAuthenticator(
                 self.twitch, self.authscope, force_verify=False
             )
 
-            # Get tokens through OAuth (serialized app-wide on port 17563)
             (
                 self.auth_token,
                 self.refresh_token,
             ) = await run_user_authentication(self.authenticator)
 
-            # Set user authentication with the tokens we just received
-            await self.twitch.set_user_authentication(
-                self.auth_token, self.authscope, self.refresh_token
+            await apply_user_authentication(
+                self.twitch, self.auth_token, self.refresh_token, self.authscope
             )
 
-            # Now get user info
             self.user = await first(self.twitch.get_users())
             self.user_id = self.user.id
 
-            # Set token expiry (Twitch tokens typically expire in 60 days)
-            self.token_expiry = datetime.now() + timedelta(days=60)
+            self.token_expiry = await compute_token_expiry(self.auth_token)
 
-            # Save new tokens
             self.save_auth_data()
 
-            # Explicitly set connection status after OAuth authentication
             global chatbot_connected
             self.is_connected = True
             chatbot_connected = True
@@ -473,6 +489,71 @@ class Chatbot_API:
             )
             return False
 
+    async def _ensure_user_authenticated(self, *, allow_oauth: bool = False) -> bool:
+        """Verify the chatbot Twitch client has working user authentication."""
+        self._sync_client_credentials()
+        if not self.client_id or not self.client_secret:
+            return False
+
+        if not self.auth_token or not self.refresh_token:
+            if allow_oauth:
+                return await self.authenticate_with_oauth()
+            return False
+
+        token_check = await validate_access_token(self.auth_token, self.client_id)
+        if token_check.outcome == "client_id_mismatch":
+            logger.warning("Chatbot auth blocked: %s", token_check.message)
+            if allow_oauth:
+                return await self.authenticate_with_oauth()
+            return False
+
+        if self.twitch is None:
+            self.twitch = await create_twitch_client(self.client_id, self.client_secret)
+            self._wire_twitch_refresh_callback()
+
+        if twitch_has_user_auth(self.twitch) and token_check.ok:
+            return True
+
+        if self.is_token_expired() or not token_check.ok:
+            if await self.refresh_auth_token():
+                token_check = await validate_access_token(
+                    self.auth_token, self.client_id
+                )
+                if token_check.ok and twitch_has_user_auth(self.twitch):
+                    return True
+
+        try:
+            await apply_user_authentication(
+                self.twitch, self.auth_token, self.refresh_token, self.authscope
+            )
+            self.user = await first(self.twitch.get_users())
+            self.user_id = self.user.id
+            self.token_expiry = await compute_token_expiry(self.auth_token)
+            self.save_auth_data()
+            return True
+        except Exception as e:
+            logger.warning("Chatbot user auth verification failed: %s", e)
+            if await self.refresh_auth_token():
+                try:
+                    await apply_user_authentication(
+                        self.twitch,
+                        self.auth_token,
+                        self.refresh_token,
+                        self.authscope,
+                    )
+                    self.user = await first(self.twitch.get_users())
+                    self.user_id = self.user.id
+                    self.token_expiry = await compute_token_expiry(self.auth_token)
+                    self.save_auth_data()
+                    return True
+                except Exception as retry_err:
+                    logger.warning(
+                        "Chatbot auth still invalid after refresh: %s", retry_err
+                    )
+            if allow_oauth:
+                return await self.authenticate_with_oauth()
+            return False
+
     async def stage_chatbot_api(self):
         """Stage the Chatbot API for use"""
         try:
@@ -480,6 +561,7 @@ class Chatbot_API:
 
             # Try to load existing auth data from database
             auth_data_loaded = self.load_auth_data()
+            await self._migrate_legacy_token_expiry_if_needed()
 
             # Check if we have dedicated chatbot credentials
             if not self.client_id or not self.client_secret:
@@ -521,54 +603,85 @@ class Chatbot_API:
                     logger.error("Failed to authenticate chatbot with OAuth")
                     return False  # Return False instead of raising exception
             else:
-                # Use existing tokens
-                self.twitch = Twitch(self.client_id, self.client_secret)
-
-                # Set user authentication with existing tokens
-                await self.twitch.set_user_authentication(
-                    self.auth_token, self.authscope, self.refresh_token
+                token_check = await validate_access_token(
+                    self.auth_token, self.client_id
                 )
+                if token_check.outcome == "client_id_mismatch":
+                    logger.warning("Chatbot auth: %s", token_check.message)
+                    oauth_success = await self.authenticate_with_oauth()
+                    if not oauth_success:
+                        logger.error(
+                            "Failed to authenticate chatbot with OAuth after client id mismatch"
+                        )
+                        return False
+                else:
+                    self.twitch = await create_twitch_client(
+                        self.client_id, self.client_secret
+                    )
+                    self._wire_twitch_refresh_callback()
 
-                # Verify the tokens still work
-                try:
-                    self.user = await first(self.twitch.get_users())
-                    self.user_id = self.user.id
-                    logger.debug(
-                        f"Successfully authenticated chatbot with existing tokens as user: {self.user.display_name}"
+                    await apply_user_authentication(
+                        self.twitch,
+                        self.auth_token,
+                        self.refresh_token,
+                        self.authscope,
                     )
 
-                    # Save the verified auth data
-                    self.save_auth_data()
+                    try:
+                        self.user = await first(self.twitch.get_users())
+                        self.user_id = self.user.id
+                        logger.debug(
+                            "Successfully authenticated chatbot with existing tokens as user: %s",
+                            self.user.display_name,
+                        )
 
-                except Exception as e:
-                    logger.warning(
-                        f"Existing chatbot tokens failed validation: {str(e)}"
-                    )
-                    logger.info(
-                        "Attempting chatbot token refresh before OAuth after validation failure"
-                    )
-                    refresh_success = await self.refresh_auth_token()
-                    if refresh_success:
-                        try:
-                            self.user = await first(self.twitch.get_users())
-                            self.user_id = self.user.id
-                            self.save_auth_data()
-                            logger.info(
-                                "Recovered chatbot session after token refresh"
-                            )
-                        except Exception as retry_err:
-                            logger.warning(
-                                "Chatbot tokens still invalid after refresh: %s",
-                                retry_err,
-                            )
-                            refresh_success = False
-                    if not refresh_success:
-                        oauth_success = await self.authenticate_with_oauth()
-                        if not oauth_success:
-                            logger.error(
-                                "Failed to authenticate chatbot with OAuth after token validation failure"
-                            )
-                            return False
+                        self.token_expiry = await compute_token_expiry(self.auth_token)
+                        self.save_auth_data()
+
+                    except Exception as e:
+                        logger.warning(
+                            "Existing chatbot tokens failed validation: %s", e
+                        )
+                        logger.info(
+                            "Attempting chatbot token refresh before OAuth after validation failure"
+                        )
+                        refresh_success = await self.refresh_auth_token()
+                        if refresh_success:
+                            try:
+                                await apply_user_authentication(
+                                    self.twitch,
+                                    self.auth_token,
+                                    self.refresh_token,
+                                    self.authscope,
+                                )
+                                self.user = await first(self.twitch.get_users())
+                                self.user_id = self.user.id
+                                self.token_expiry = await compute_token_expiry(
+                                    self.auth_token
+                                )
+                                self.save_auth_data()
+                                logger.info(
+                                    "Recovered chatbot session after token refresh"
+                                )
+                            except Exception as retry_err:
+                                logger.warning(
+                                    "Chatbot tokens still invalid after refresh: %s",
+                                    retry_err,
+                                )
+                                refresh_success = False
+                        if not refresh_success:
+                            oauth_success = await self.authenticate_with_oauth()
+                            if not oauth_success:
+                                logger.error(
+                                    "Failed to authenticate chatbot with OAuth after token validation failure"
+                                )
+                                return False
+
+            if not await self._ensure_user_authenticated():
+                logger.error(
+                    "Chatbot staging finished without verified user authentication"
+                )
+                return False
 
             # Explicitly set connection status and start health check after successful staging
             global chatbot_connected
@@ -738,15 +851,19 @@ class Chatbot_API:
                 )
 
             # Use dedicated chatbot instance
-            if not self.is_connected or not self.twitch or not self.user_id:
-                logger.error(f"Chatbot not connected - cannot send message. is_connected: {self.is_connected}, twitch: {self.twitch is not None}, user_id: {self.user_id}")
+            if not await self._ensure_user_authenticated():
+                logger.error(
+                    "Chatbot not authenticated - cannot send message. "
+                    "is_connected=%s twitch=%s user_id=%s",
+                    self.is_connected,
+                    self.twitch is not None,
+                    self.user_id,
+                )
                 return False
 
-            # Check if token is expired and refresh if needed
             if self.is_token_expired():
                 logger.info("Token expired before sending message, attempting refresh")
-                refresh_success = await self.refresh_auth_token()
-                if not refresh_success:
+                if not await self.refresh_auth_token():
                     logger.error("Failed to refresh token before sending message")
                     return False
 

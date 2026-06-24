@@ -54,10 +54,9 @@ from twitchAPI.object.eventsub import (
     HypeTrainEndEvent,
     HypeTrainEvent,
 )
-from twitchAPI.twitch import Twitch
-from urllib.parse import parse_qs, urlparse
-
+from twitchAPI.oauth import UserAuthenticator
 from twitchAPI.type import AuthScope, InvalidRefreshTokenException
+from urllib.parse import parse_qs, urlparse
 
 from .twitch_chat_commands import is_allowed_slash_message
 
@@ -75,6 +74,21 @@ from .template_config_parser import match_point_reward_dedicated_template
 from .text_safe import safe_console_str
 from .twitch_eventsub_patch import ensure_channel_chat_notification_watch_streak_patch
 from .twitch_oauth import run_user_authentication, stop_active_oauth
+from .twitch_token_auth import (
+    TOKEN_PROACTIVE_REFRESH_BUFFER,
+    apply_user_authentication,
+    attach_refresh_callback,
+    compute_token_expiry,
+    create_twitch_client,
+    is_access_token_expired,
+    is_credential_config_error,
+    is_definitive_refresh_failure,
+    is_token_currently_valid,
+    legacy_expiry_needs_migration,
+    refresh_user_token,
+    twitch_has_user_auth,
+    validate_access_token,
+)
 from .uiwindows.activity_feed import (
     add_alert_to_feed,
     format_raid_activity_message,
@@ -84,14 +98,6 @@ from .uiwindows.activity_feed import (
 ensure_channel_chat_notification_watch_streak_patch()
 
 logger = logging.getLogger(__name__)
-
-# Twitch user access tokens live ~4 hours (not 60 days). Used as a conservative
-# fallback when the OAuth validate endpoint can't be reached, so the proactive
-# refresh in ``_health_check_loop`` still runs before the token actually dies.
-ACCESS_TOKEN_FALLBACK_LIFETIME = timedelta(hours=3, minutes=30)
-# Proactive refresh in ``is_token_expired`` / ``_health_check_loop`` fires this
-# many minutes before the access token actually expires.
-TOKEN_PROACTIVE_REFRESH_BUFFER = timedelta(minutes=5)
 
 _ANONYMOUS_USER_SENTINELS = frozenset({"anonymous", "anonymous gifter"})
 
@@ -470,12 +476,12 @@ class Twitch_API:
                 "Could not load Twitch credentials from credential store: %s", e
             )
 
-    def sync_helix_credentials_from_state(self) -> None:
-        """Merge tokens and client credentials from state/credential store into this instance.
+    def sync_client_credentials(self) -> None:
+        """Load Twitch client id/secret from the credential store only."""
+        self._apply_api_credentials_from_store()
 
-        EventSub init populates twitch_api in its init thread; Helix proxy callers
-        (e.g. overlay web_engine) must refresh from state_manager before API calls.
-        """
+    def sync_tokens_from_state(self) -> None:
+        """Reload stored tokens from state manager (startup/reconnect — not mid-refresh)."""
         try:
             if (
                 hasattr(dataobjects.state_manager, "_initialized")
@@ -501,9 +507,29 @@ class Twitch_API:
                         except ValueError:
                             pass
         except Exception as e:
-            logger.debug("Helix credential sync from state manager: %s", e)
+            logger.debug("Token sync from state manager: %s", e)
 
         self._apply_api_credentials_from_store()
+
+    def sync_helix_credentials_from_state(self) -> None:
+        """Full credential reload — use at startup/reconnect, not during refresh."""
+        self.sync_tokens_from_state()
+
+    def _wire_twitch_refresh_callback(self) -> None:
+        """Persist tokens when twitchAPI auto-refreshes on Helix 401."""
+        if self.twitch is None:
+            return
+        attach_refresh_callback(self.twitch, self._on_library_tokens_refreshed)
+
+    async def _on_library_tokens_refreshed(
+        self, auth_token: str, refresh_token: str
+    ) -> None:
+        self.auth_token = auth_token
+        self.refresh_token = refresh_token
+        self.token_expiry = await compute_token_expiry(auth_token)
+        self.save_auth_data()
+        self._sync_tokens_to_state_manager()
+        logger.info("Persisted Twitch tokens from library auto-refresh")
 
     def load_auth_data(self):
         """Load authentication data from the state manager"""
@@ -632,62 +658,58 @@ class Twitch_API:
             return False
 
     async def _compute_token_expiry(self, token: str) -> datetime:
-        """Resolve the real expiry for a Twitch user access token.
+        """Resolve the real expiry for a Twitch user access token."""
+        return await compute_token_expiry(token)
 
-        Queries the OAuth validate endpoint for the exact ``expires_in`` (Twitch
-        user tokens last ~4h, not 60 days). Falls back to a conservative ~3.5h if
-        validation is unavailable, so ``is_token_expired()`` becomes True in time
-        for the health-check loop to refresh proactively.
-        """
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    "https://id.twitch.tv/oauth2/validate",
-                    headers={"Authorization": f"OAuth {token}"},
-                    timeout=aiohttp.ClientTimeout(total=10),
-                ) as resp:
-                    if resp.status == 200:
-                        payload = await resp.json()
-                        expires_in = int(payload.get("expires_in", 0) or 0)
-                        if expires_in > 0:
-                            return datetime.now() + timedelta(seconds=expires_in)
-                        # expires_in == 0 means a non-expiring token; keep using it.
-                        return datetime.now() + timedelta(days=60)
-                    logger.warning(
-                        "Twitch token validate returned %s; using fallback expiry",
-                        resp.status,
-                    )
-        except Exception as e:
-            logger.warning("Could not validate Twitch token expiry: %s", e)
-        return datetime.now() + ACCESS_TOKEN_FALLBACK_LIFETIME
+    async def _migrate_legacy_token_expiry_if_needed(self) -> None:
+        """Recompute expiry when stored value is the old 60-day placeholder."""
+        if not self.auth_token:
+            return
+        if not legacy_expiry_needs_migration(self.token_expiry):
+            return
+        self.token_expiry = await compute_token_expiry(self.auth_token)
+        self.save_auth_data()
+        logger.debug("Migrated legacy Twitch token expiry to %s", self.token_expiry)
 
     def is_token_expired(self):
-        """Check if the current auth token is expired"""
-        if not self.auth_token:
-            return True
-        if not self.token_expiry:
-            # Unknown expiry — use token until Helix returns 401
+        """Check if the current auth token is expired."""
+        return is_access_token_expired(self.auth_token, self.token_expiry)
+
+    async def _apply_refresh_result(self, result) -> bool:
+        """Apply a successful RefreshResult to instance state."""
+        if not result.success:
             return False
-        # Consider token expired if less than 5 minutes remaining
-        return datetime.now() + timedelta(minutes=5) >= self.token_expiry
+        self.auth_token = result.auth_token
+        self.refresh_token = result.refresh_token
+        self.token_expiry = result.token_expiry or await compute_token_expiry(
+            self.auth_token
+        )
+        save_success = self.save_auth_data()
+        if not save_success:
+            logger.warning(
+                "Failed to save refreshed tokens to database, but continuing with new tokens"
+            )
+        self._sync_tokens_to_state_manager()
+        return True
 
     async def refresh_auth_token(self):
-        """Refresh the authentication token using the refresh token"""
+        """Refresh the authentication token using the refresh token."""
 
         # Check if another refresh is already in progress
         if not self._refresh_lock.acquire(blocking=False):
             logger.info("Token refresh already in progress, waiting...")
-            # Wait for the other refresh to complete
             with self._refresh_lock:
                 logger.info(
                     "Other token refresh completed, checking if we still need to refresh"
                 )
-                if not self.is_token_expired():
+                if await is_token_currently_valid(
+                    self.auth_token, self.client_id or None
+                ):
                     logger.info("Token was already refreshed by another process")
                     return True
+            return False
 
         try:
-            # Check if we recently attempted a refresh (within last 30 seconds)
             now = datetime.now()
             if (
                 self._last_refresh_attempt
@@ -696,96 +718,57 @@ class Twitch_API:
                 logger.info(
                     "Token refresh attempted recently, skipping duplicate refresh"
                 )
-                return not self.is_token_expired()
+                return await is_token_currently_valid(
+                    self.auth_token, self.client_id or None
+                )
 
             self._last_refresh_attempt = now
-
             logger.info("Refreshing authentication token")
 
-            self.sync_helix_credentials_from_state()
+            # Only sync client credentials — never overwrite in-memory tokens from state.
+            self.sync_client_credentials()
             if not self.client_id or not self.client_secret:
                 logger.warning(
                     "Cannot refresh Twitch token: client id/secret not configured"
                 )
                 return False
 
-            # Check if we have a refresh token
             if not self.refresh_token:
                 logger.error("No refresh token available for token refresh")
                 return False
 
-            # Use existing Twitch instance if available, otherwise create one
             if not self.twitch:
-                self.twitch = Twitch(self.client_id, self.client_secret)
+                self.twitch = await create_twitch_client(
+                    self.client_id, self.client_secret
+                )
+                self._wire_twitch_refresh_callback()
 
-            # Set user authentication with current tokens
-            await self.twitch.set_user_authentication(
-                self.auth_token, self.authscope, self.refresh_token
+            result = await refresh_user_token(
+                self.twitch,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                auth_token=self.auth_token,
+                refresh_token=self.refresh_token,
+                scopes=self.authscope,
             )
 
-            # Store current tokens before refresh to compare later
-            old_twitch_auth_token = getattr(self.twitch, "_user_auth_token", None)
-            old_twitch_refresh_token = getattr(
-                self.twitch, "_user_auth_refresh_token", None
+            if result.success:
+                await self._apply_refresh_result(result)
+                logger.info(
+                    "Successfully refreshed authentication token (outcome=%s)",
+                    result.outcome,
+                )
+                return True
+
+            logger.warning(
+                "Twitch token refresh failed (outcome=%s)", result.outcome
             )
+            if result.outcome in ("invalid_refresh_token", "client_id_mismatch"):
+                self._clear_tokens_after_refresh_failure()
+            return False
 
-            # Refresh the token
-            await self.twitch.refresh_used_token()
-
-            # Get the refreshed tokens from the Twitch instance
-            # The refresh_used_token method updates tokens internally but doesn't return them
-            new_auth_token = getattr(self.twitch, "_user_auth_token", None)
-            new_refresh_token = getattr(self.twitch, "_user_auth_refresh_token", None)
-
-            # Check if refresh was successful by comparing tokens and ensuring they're valid
-            if (
-                not new_auth_token
-                or not new_refresh_token
-                or (
-                    new_auth_token == old_twitch_auth_token
-                    and new_refresh_token == old_twitch_refresh_token
-                )
-            ):
-                logger.error("Token refresh failed - tokens are empty or unchanged")
-
-                # Clear invalid tokens
-                self.auth_token = ""
-                self.refresh_token = ""
-                self.token_expiry = None
-
-                # Save the cleared state
-                self.save_auth_data()
-
-                logger.warning(
-                    "Cleared invalid tokens - OAuth re-authentication required"
-                )
-                return False
-
-            # Update tokens
-            old_auth_token = self.auth_token
-            self.auth_token = new_auth_token
-            self.refresh_token = new_refresh_token
-
-            # Resolve the real (~4h) expiry so proactive refresh fires in time.
-            self.token_expiry = await self._compute_token_expiry(self.auth_token)
-
-            # Save new tokens to database
-            save_success = self.save_auth_data()
-            if not save_success:
-                logger.warning(
-                    "Failed to save refreshed tokens to database, but continuing with new tokens"
-                )
-
-            # IMPORTANT: Also sync to state manager to ensure all parts of the app get updated tokens
-            self._sync_tokens_to_state_manager()
-
-            logger.info(
-                f"Successfully refreshed authentication token (old: {old_auth_token[:10]}..., new: {new_auth_token[:10]}...)"
-            )
-            return True
         except InvalidRefreshTokenException as e:
-            err = str(e).lower()
-            if "client secret" in err or "client_id" in err:
+            if is_credential_config_error(e):
                 logger.warning(
                     "Cannot refresh Twitch token (check client id/secret in Settings): %s",
                     e,
@@ -795,22 +778,27 @@ class Twitch_API:
             self._clear_tokens_after_refresh_failure()
             return False
         except Exception as e:
-            err = str(e).lower()
-            if "client secret" in err:
+            if is_credential_config_error(e):
                 logger.warning(
                     "Cannot refresh Twitch token (check client secret in Settings): %s",
                     e,
                 )
                 return False
-            logger.error("Failed to refresh authentication token: %s", e, exc_info=True)
-            self._clear_tokens_after_refresh_failure()
+            if is_definitive_refresh_failure(e):
+                logger.warning("Twitch refresh token invalid: %s", e)
+                self._clear_tokens_after_refresh_failure()
+                return False
+            logger.error(
+                "Failed to refresh authentication token (transient): %s",
+                e,
+                exc_info=True,
+            )
             return False
         finally:
-            # Always release the lock
             try:
                 self._refresh_lock.release()
-            except:
-                pass  # Lock might already be released
+            except Exception:
+                pass
 
     def _clear_tokens_after_refresh_failure(self) -> None:
         """Clear stored tokens after a failed refresh (invalid/revoked token)."""
@@ -831,8 +819,8 @@ class Twitch_API:
         try:
             logger.debug("Starting OAuth authentication flow")
 
-            # Create Twitch instance
-            self.twitch = Twitch(self.client_id, self.client_secret)
+            self.twitch = await create_twitch_client(self.client_id, self.client_secret)
+            self._wire_twitch_refresh_callback()
 
             # Create authenticator
             self.authenticator = UserAuthenticator(
@@ -846,16 +834,15 @@ class Twitch_API:
             ) = await run_user_authentication(self.authenticator)
 
             # Set user authentication with the tokens we just received
-            await self.twitch.set_user_authentication(
-                self.auth_token, self.authscope, self.refresh_token
+            await apply_user_authentication(
+                self.twitch, self.auth_token, self.refresh_token, self.authscope
             )
 
             # Now get user info
             self.user = await first(self.twitch.get_users())
             self.user_id = self.user.id
 
-            # Resolve the real (~4h) expiry so proactive refresh fires in time.
-            self.token_expiry = await self._compute_token_expiry(self.auth_token)
+            self.token_expiry = await compute_token_expiry(self.auth_token)
 
             # Save new tokens to Firebase
             self.save_auth_data()
@@ -868,6 +855,74 @@ class Twitch_API:
             logger.error(f"Failed to authenticate with OAuth: {str(e)}", exc_info=True)
             return False
 
+    async def _ensure_user_authenticated(self, *, allow_oauth: bool = False) -> bool:
+        """Verify the live Twitch client has working user authentication."""
+        self.sync_client_credentials()
+        if not self.client_id or not self.client_secret:
+            logger.warning("Cannot ensure Twitch auth: client credentials missing")
+            return False
+
+        if not self.auth_token or not self.refresh_token:
+            if allow_oauth:
+                return await self.authenticate_with_oauth()
+            return False
+
+        token_check = await validate_access_token(self.auth_token, self.client_id)
+        if token_check.outcome == "client_id_mismatch":
+            logger.warning("Twitch auth blocked: %s", token_check.message)
+            if allow_oauth:
+                notify_twitch_connect_failed()
+                return await self.authenticate_with_oauth()
+            return False
+
+        if self.twitch is None:
+            self.twitch = await create_twitch_client(self.client_id, self.client_secret)
+            self._wire_twitch_refresh_callback()
+
+        if twitch_has_user_auth(self.twitch) and token_check.ok:
+            return True
+
+        if self.is_token_expired() or not token_check.ok:
+            if await self.refresh_auth_token():
+                token_check = await validate_access_token(
+                    self.auth_token, self.client_id
+                )
+                if token_check.ok and twitch_has_user_auth(self.twitch):
+                    return True
+
+        try:
+            await apply_user_authentication(
+                self.twitch, self.auth_token, self.refresh_token, self.authscope
+            )
+            self.user = await first(self.twitch.get_users())
+            self.user_id = self.user.id
+            self.token_expiry = await compute_token_expiry(self.auth_token)
+            self.save_auth_data()
+            return True
+        except Exception as e:
+            logger.warning("Twitch user auth verification failed: %s", e)
+            if await self.refresh_auth_token():
+                try:
+                    await apply_user_authentication(
+                        self.twitch,
+                        self.auth_token,
+                        self.refresh_token,
+                        self.authscope,
+                    )
+                    self.user = await first(self.twitch.get_users())
+                    self.user_id = self.user.id
+                    self.token_expiry = await compute_token_expiry(self.auth_token)
+                    self.save_auth_data()
+                    return True
+                except Exception as retry_err:
+                    logger.warning(
+                        "Twitch auth still invalid after refresh: %s", retry_err
+                    )
+            if allow_oauth:
+                notify_twitch_connect_failed()
+                return await self.authenticate_with_oauth()
+            return False
+
     async def stage_twitch_api(self):
         """Stage the Twitch API for use"""
         try:
@@ -875,7 +930,8 @@ class Twitch_API:
 
             # Load tokens from state + client id/secret from api_credentials.json
             auth_data_loaded = self.load_auth_data()
-            self.sync_helix_credentials_from_state()
+            self.sync_tokens_from_state()
+            await self._migrate_legacy_token_expiry_if_needed()
 
             # Check if we have client credentials at minimum
             if not self.client_id or not self.client_secret:
@@ -910,62 +966,88 @@ class Twitch_API:
                     logger.error("Failed to authenticate with OAuth")
                     return False  # Return False instead of raising exception
             else:
-                # Use existing tokens
-                self.twitch = Twitch(self.client_id, self.client_secret)
-
-                # Set user authentication with existing tokens
-                await self.twitch.set_user_authentication(
-                    self.auth_token, self.authscope, self.refresh_token
+                token_check = await validate_access_token(
+                    self.auth_token, self.client_id
                 )
+                if token_check.outcome == "client_id_mismatch":
+                    logger.warning("Twitch auth: %s", token_check.message)
+                    notify_twitch_connect_failed()
+                    oauth_success = await self.authenticate_with_oauth()
+                    if not oauth_success:
+                        logger.error(
+                            "Failed to authenticate with OAuth after client id mismatch"
+                        )
+                        return False
+                else:
+                    self.twitch = await create_twitch_client(
+                        self.client_id, self.client_secret
+                    )
+                    self._wire_twitch_refresh_callback()
 
-                # Verify the tokens still work
-                try:
-                    self.user = await first(self.twitch.get_users())
-                    self.user_id = self.user.id
-                    logger.debug(
-                        f"Successfully authenticated with existing tokens as user: {self.user.display_name}"
+                    await apply_user_authentication(
+                        self.twitch,
+                        self.auth_token,
+                        self.refresh_token,
+                        self.authscope,
                     )
 
-                    # Refresh the stored expiry from Twitch so the proactive
-                    # health-check refresh fires in time (older sessions saved a
-                    # bogus 60-day expiry that disabled proactive refresh).
-                    self.token_expiry = await self._compute_token_expiry(
-                        self.auth_token
-                    )
+                    # Verify the tokens still work
+                    try:
+                        self.user = await first(self.twitch.get_users())
+                        self.user_id = self.user.id
+                        logger.debug(
+                            "Successfully authenticated with existing tokens as user: %s",
+                            self.user.display_name,
+                        )
 
-                    # Save the verified auth data to ensure it's persisted
-                    self.save_auth_data()
+                        self.token_expiry = await compute_token_expiry(self.auth_token)
+                        self.save_auth_data()
 
-                except Exception as e:
-                    logger.warning(f"Existing tokens failed validation: {str(e)}")
-                    logger.info(
-                        "Attempting token refresh before OAuth after validation failure"
-                    )
-                    refresh_success = await self.refresh_auth_token()
-                    if refresh_success:
-                        try:
-                            self.user = await first(self.twitch.get_users())
-                            self.user_id = self.user.id
-                            self.token_expiry = await self._compute_token_expiry(
-                                self.auth_token
-                            )
-                            self.save_auth_data()
-                            logger.info(
-                                "Recovered Twitch session after token refresh"
-                            )
-                        except Exception as retry_err:
-                            logger.warning(
-                                "Tokens still invalid after refresh: %s", retry_err
-                            )
-                            refresh_success = False
-                    if not refresh_success:
-                        notify_twitch_connect_failed()
-                        oauth_success = await self.authenticate_with_oauth()
-                        if not oauth_success:
-                            logger.error(
-                                "Failed to authenticate with OAuth after token validation failure"
-                            )
-                            return False
+                    except Exception as e:
+                        logger.warning(
+                            "Existing tokens failed validation: %s", e
+                        )
+                        logger.info(
+                            "Attempting token refresh before OAuth after validation failure"
+                        )
+                        refresh_success = await self.refresh_auth_token()
+                        if refresh_success:
+                            try:
+                                await apply_user_authentication(
+                                    self.twitch,
+                                    self.auth_token,
+                                    self.refresh_token,
+                                    self.authscope,
+                                )
+                                self.user = await first(self.twitch.get_users())
+                                self.user_id = self.user.id
+                                self.token_expiry = await compute_token_expiry(
+                                    self.auth_token
+                                )
+                                self.save_auth_data()
+                                logger.info(
+                                    "Recovered Twitch session after token refresh"
+                                )
+                            except Exception as retry_err:
+                                logger.warning(
+                                    "Tokens still invalid after refresh: %s",
+                                    retry_err,
+                                )
+                                refresh_success = False
+                        if not refresh_success:
+                            notify_twitch_connect_failed()
+                            oauth_success = await self.authenticate_with_oauth()
+                            if not oauth_success:
+                                logger.error(
+                                    "Failed to authenticate with OAuth after token validation failure"
+                                )
+                                return False
+
+            if not await self._ensure_user_authenticated():
+                logger.error(
+                    "Twitch staging finished without verified user authentication"
+                )
+                return False
 
             return True  # Successfully staged
 
@@ -3232,6 +3314,15 @@ class Twitch_API:
             if is_shutdown_in_progress() or self._connection_epoch != epoch:
                 return False
 
+            if not await self._ensure_user_authenticated():
+                logger.error(
+                    "EventSub start blocked: Twitch user authentication not verified"
+                )
+                self.is_connected = False
+                twitch_connected = False
+                notify_twitch_connect_failed()
+                return False
+
             # Initialize the EventSub websocket with a revocation handler so a
             # token-expiry revocation triggers a refresh + re-subscribe instead
             # of silently leaving an open-but-empty session.
@@ -3455,8 +3546,8 @@ class Twitch_API:
                 "User lookup skipped (anonymous or invalid login)"
             )
 
-        # Helix proxy may run on another thread before this instance was updated
-        self.sync_helix_credentials_from_state()
+        # Helix proxy may run on another thread — sync client creds only; keep in-memory tokens.
+        self.sync_client_credentials()
 
         if not self.auth_token or not self.client_id:
             logger.debug("Missing auth tokens, attempting to load from database")
@@ -3549,10 +3640,11 @@ class Twitch_API:
                                 # Update the existing Twitch instance with new authentication
                                 if self.twitch:
                                     try:
-                                        await self.twitch.set_user_authentication(
+                                        await apply_user_authentication(
+                                            self.twitch,
                                             self.auth_token,
-                                            self.authscope,
                                             self.refresh_token,
+                                            self.authscope,
                                         )
                                         logger.debug(
                                             "Updated existing Twitch instance with refreshed tokens"
@@ -4330,7 +4422,7 @@ def can_proxy_helix_api_requests() -> bool:
     if api is None:
         return False
     try:
-        api.sync_helix_credentials_from_state()
+        api.sync_client_credentials()
         if not (api.auth_token and api.client_id):
             api.load_auth_data()
         return bool(api.auth_token and api.client_id)
