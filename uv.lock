@@ -1809,7 +1809,7 @@ wheels = [
 
 [[package]]
 name = "mycelian"
-version = "1.11.5"
+version = "1.11.6"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

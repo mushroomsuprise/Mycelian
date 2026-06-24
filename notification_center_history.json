@@ -106,5 +106,71 @@
     "type": "info",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "8637eae2-58ce-4ac1-94e4-42be3378a1a9",
+    "ts": 1782335793.3722277,
+    "message": "PSN NPSSO token expired \u2014 open Settings \u2192 PSN and click Connect to update.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "5e8f8ca9-c755-4d44-b24d-d380552513c5",
+    "ts": 1782335799.9823744,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "fb6f9dee-4256-43d4-84e5-176b3182cb97",
+    "ts": 1782335800.3818207,
+    "message": "Loading bitcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "e52dc978-3ea9-4ad4-bedd-03bc0e46cbe7",
+    "ts": 1782335806.3872526,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "22a3ea29-2c9e-4170-bc65-7339bebd07b1",
+    "ts": 1782335897.9178612,
+    "message": "PSN NPSSO token expired \u2014 open Settings \u2192 PSN and click Connect to update.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "d59fd8ae-c94a-4f2a-8626-b9db68dd91cd",
+    "ts": 1782335899.8648942,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
   }
 ]
