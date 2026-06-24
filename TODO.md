@@ -12,10 +12,10 @@ Spore Studio:
     [x] - Remove the bottom black bar, remove the "Loaded" text and move "Unsaved Changes" text to be to the left of the Preview button. See first image for how it currently looks.
     [x] - Update the Progress Bar element's icon. it currently appears as a small square
     [x] - Remove the extra "?" button to open the help next to the reload editor button. there is a global button in the top right of the app that handles this already
-    [] - Add some new "blocks" for users, include all adjustment options, features, ways to display live data, etc etc. The end users will likely be creating elaborate displays of wildly varying content to display in OBS, so we should ensure we expose as many options as possible. Right now we have basic items such as text, videos, images, and progress bars. We should add in more options to help end users achieve unique displays.
-    [] - Reorganize block list into groups, then have the groups listed in alphabetical order, and the items inside each group in alphabetical order.
-    [] - Inspect the undo/redo logic. ive ran into several situations where the redo will not work
-    [] - Remove the very top "Spore Studio", and the description text underneath. Move the Reload Editor and Open Externally buttons to be to the left of the "Preview" button instead.
+    [x] - Add some new "blocks" for users, include all adjustment options, features, ways to display live data, etc etc. The end users will likely be creating elaborate displays of wildly varying content to display in OBS, so we should ensure we expose as many options as possible. Right now we have basic items such as text, videos, images, and progress bars. We should add in more options to help end users achieve unique displays.
+    [x] - Reorganize block list into groups, then have the groups listed in alphabetical order, and the items inside each group in alphabetical order.
+    [x] - Inspect the undo/redo logic. ive ran into several situations where the redo will not work
+    [x] - Remove the very top "Spore Studio", and the description text underneath. Move the Reload Editor and Open Externally buttons to be to the left of the "Preview" button instead.
 
 
 Chat template:
