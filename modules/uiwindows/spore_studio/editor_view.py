@@ -23,7 +23,6 @@ from typing import Any, Dict
 
 from nicegui import ui
 
-from ...help_system.contextual_help import spore_studio_help_button
 from ...ui_timer import layout_schedule
 from .. import customsources as _customsources_module  # noqa: F401  (style consistency)
 from ... import web_engine as web_engine_module
@@ -100,8 +99,6 @@ def create_spore_studio_tab() -> None:
                 ).classes("text-xs opacity-70")
 
             with ui.row().classes("items-center gap-2"):
-                spore_studio_help_button(size="sm")
-
                 refresh_btn = (
                     ui.button(
                         icon="refresh",

@@ -30,6 +30,7 @@
                 </svg>
             </button>
             <span class="ss-spacer"></span>
+            <span id="ss-dirty-indicator" class="ss-dirty-indicator"></span>
             <button class="ss-btn" id="ss-btn-preview"
                     title="Open live preview window">Preview</button>
             <button class="ss-btn ss-btn--primary" id="ss-btn-save">Save</button>
@@ -60,7 +61,10 @@
                         <span class="ss-block__label">Container</span>
                     </div>
                     <div class="ss-block" draggable="true" data-block-type="progress_bar">
-                        <span class="ss-block__icon">&#9642;</span>
+                        <svg class="ss-block__icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <rect x="1" y="6" width="16" height="6" rx="3" stroke="currentColor" stroke-width="1.5"/>
+                            <rect x="1" y="6" width="10" height="6" rx="3" fill="currentColor"/>
+                        </svg>
                         <span class="ss-block__label">Progress bar</span>
                     </div>
                 </div>
@@ -82,13 +86,33 @@
         </div>
 
         <div class="ss-panel-inspector">
-            <div class="ss-tabs">
-                <div class="ss-tab active" data-tab="properties">Properties</div>
-                <div class="ss-tab" data-tab="bindings">Bindings</div>
-                <div class="ss-tab" data-tab="streamdeck">Stream Deck</div>
-                <div class="ss-tab" data-tab="sourcecontrols">Source Controls</div>
-                <div class="ss-tab" data-tab="advanced">Advanced JS</div>
-                <div class="ss-tab" data-tab="canvas">Canvas</div>
+            <div id="ss-inspector-resize" class="ss-inspector-resize"
+                 title="Drag to resize the inspector panel"></div>
+            <div class="ss-tabs-wrap">
+                <button type="button" class="ss-tabs-scroll ss-tabs-scroll--left"
+                        id="ss-tabs-scroll-left" aria-label="Scroll tabs left"
+                        title="Scroll tabs left" hidden>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="m15 6-6 6 6 6" stroke="currentColor" stroke-width="2"
+                              stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <div class="ss-tabs" id="ss-tabs-scroll">
+                    <div class="ss-tab active" data-tab="properties" title="Element properties">Properties</div>
+                    <div class="ss-tab" data-tab="bindings" title="Event bindings">Bindings</div>
+                    <div class="ss-tab" data-tab="streamdeck" title="Stream Deck actions">Stream Deck</div>
+                    <div class="ss-tab" data-tab="sourcecontrols" title="Dynamic Source Controls">Source Controls</div>
+                    <div class="ss-tab" data-tab="advanced" title="Custom JavaScript">Advanced JS</div>
+                    <div class="ss-tab" data-tab="canvas" title="Canvas and template settings">Canvas</div>
+                </div>
+                <button type="button" class="ss-tabs-scroll ss-tabs-scroll--right"
+                        id="ss-tabs-scroll-right" aria-label="Scroll tabs right"
+                        title="Scroll tabs right" hidden>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2"
+                              stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
             <div class="ss-tab-pane active" id="ss-pane-properties">
                 <div class="ss-section" id="ss-properties-host">
@@ -163,19 +187,15 @@
                             id="ss-duration-reset" title="Set duration to the computed minimum">
                         Reset to minimum
                     </button>
-                    <div class="ss-form-row">
-                        <label>Queued</label>
-                        <input type="checkbox" id="ss-queued"
-                               title="Hold the main alert queue when a point reward title matches this template name">
+                    <div class="ss-form-row ss-form-row--inline">
+                        <label class="ss-toggle" title="Hold the main alert queue when a point reward title matches this template name">
+                            <input type="checkbox" class="ss-toggle__input" id="ss-queued">
+                            <span class="ss-toggle__track" aria-hidden="true"></span>
+                        </label>
+                        <label for="ss-queued">Queued</label>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <div class="ss-status">
-            <span id="ss-status-text">Ready</span>
-            <span class="ss-spacer" style="flex:1"></span>
-            <span id="ss-dirty-indicator"></span>
         </div>
     </div>
 

@@ -74,17 +74,34 @@
 
     var ELEMENT_PROP_SCHEMA = {
         text: [
-            { key: "text", label: "Text", type: "textarea" },
-            { key: "font_size", label: "Font size (px)", type: "number" },
-            { key: "color", label: "Color", type: "color" },
-            { key: "font_family", label: "Font", type: "font" },
-            { key: "font_weight", label: "Font weight", type: "select",
-              options: ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"] },
-            { key: "text_align", label: "Text align", type: "select",
+            { key: "text", label: "Text", type: "textarea",
+              tooltip: "Static text content (static mode only)" },
+            { key: "font_size", label: "Size", type: "number",
+              tooltip: "Font size in pixels" },
+            { key: "color", label: "Color", type: "color",
+              tooltip: "Text color" },
+            { key: "font_family", label: "Font", type: "font",
+              tooltip: "Font family file or name" },
+            { key: "font_weight", label: "Bold", type: "bold",
+              tooltip: "Bold text" },
+            { key: "font_style", label: "Italic", type: "italic",
+              tooltip: "Italic text" },
+            { key: "text_underline", label: "Underline", type: "checkbox",
+              tooltip: "Underline text" },
+            { key: "text_strikethrough", label: "Strikethrough", type: "checkbox",
+              tooltip: "Strikethrough text" },
+            { key: "letter_spacing", label: "Kerning", type: "number",
+              tooltip: "Letter spacing in pixels" },
+            { key: "line_height_px", label: "Leading", type: "number",
+              tooltip: "Line height in pixels" },
+            { key: "text_align", label: "Align", type: "select",
+              tooltip: "Horizontal text alignment",
               options: ["left", "center", "right"] },
-            { key: "vertical_align", label: "Vertical align", type: "select",
+            { key: "vertical_align", label: "V-align", type: "select",
+              tooltip: "Vertical alignment inside the element box",
               options: ["top", "center", "bottom"] },
-            { key: "background_color", label: "Background", type: "color" }
+            { key: "background_color", label: "Background", type: "color",
+              tooltip: "Background fill behind text" }
         ],
         image: [
             { key: "src", label: "Source URL", type: "text" },
@@ -239,10 +256,114 @@
         }
     }
 
-    function setStatus(text) { $("#ss-status-text").textContent = text || ""; }
+    function setStatus(text) {
+        if (!text) { return; }
+        toast(text, "info");
+    }
     function setDirty(isDirty) {
         state.dirty = !!isDirty;
-        $("#ss-dirty-indicator").textContent = isDirty ? "Unsaved changes" : "";
+        var el = $("#ss-dirty-indicator");
+        if (el) {
+            el.textContent = isDirty ? "Unsaved changes" : "";
+        }
+    }
+
+    function composeTextDecoration(props) {
+        if (!props) { return ""; }
+        var parts = [];
+        if (props.text_underline) { parts.push("underline"); }
+        if (props.text_strikethrough) { parts.push("line-through"); }
+        return parts.join(" ");
+    }
+
+    function isFontWeightBold(weight) {
+        if (weight == null || weight === "") { return false; }
+        var w = String(weight).toLowerCase();
+        if (w === "bold" || w === "bolder") { return true; }
+        var n = parseInt(w, 10);
+        return !isNaN(n) && n >= 600;
+    }
+
+    var INSPECTOR_WIDTH_KEY = "spore-studio-inspector-width";
+    var INSPECTOR_WIDTH_MIN = 240;
+    var INSPECTOR_WIDTH_MAX = 560;
+
+    function applyInspectorWidth(px) {
+        var w = Math.max(INSPECTOR_WIDTH_MIN, Math.min(INSPECTOR_WIDTH_MAX, px));
+        document.documentElement.style.setProperty("--ss-inspector-width", w + "px");
+        try { localStorage.setItem(INSPECTOR_WIDTH_KEY, String(w)); } catch (e) { /* ignore */ }
+        updateTabsScrollArrows();
+        return w;
+    }
+
+    function restoreInspectorWidth() {
+        var stored = null;
+        try { stored = localStorage.getItem(INSPECTOR_WIDTH_KEY); } catch (e) { /* ignore */ }
+        if (stored) {
+            var n = parseInt(stored, 10);
+            if (!isNaN(n)) { applyInspectorWidth(n); }
+        }
+    }
+
+    function buildCollapsibleSection(title, tooltip, buildContent) {
+        var details = document.createElement("details");
+        details.className = "ss-collapse";
+        var summary = document.createElement("summary");
+        summary.className = "ss-collapse__summary";
+        summary.textContent = title;
+        if (tooltip) { summary.title = tooltip; }
+        details.appendChild(summary);
+        var body = document.createElement("div");
+        body.className = "ss-collapse__body";
+        buildContent(body);
+        details.appendChild(body);
+        return details;
+    }
+
+    function formRow(label, controlNode, tooltip) {
+        var row = document.createElement("div");
+        row.className = "ss-form-row";
+        var lbl = document.createElement("label");
+        lbl.textContent = label;
+        if (tooltip) { lbl.title = tooltip; }
+        row.appendChild(lbl);
+        if (controlNode) { row.appendChild(controlNode); }
+        return row;
+    }
+
+    function formRowInline(label, controlNode, tooltip) {
+        var row = document.createElement("div");
+        row.className = "ss-form-row ss-form-row--inline";
+        if (controlNode) { row.appendChild(controlNode); }
+        var lbl = document.createElement("label");
+        lbl.textContent = label;
+        if (tooltip) { lbl.title = tooltip; }
+        row.appendChild(lbl);
+        return row;
+    }
+
+    function buildToggle(checked, onChange) {
+        var wrap = document.createElement("label");
+        wrap.className = "ss-toggle";
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "ss-toggle__input";
+        cb.checked = !!checked;
+        if (onChange) {
+            cb.addEventListener("change", function () { onChange(cb.checked); });
+        }
+        var track = document.createElement("span");
+        track.className = "ss-toggle__track";
+        track.setAttribute("aria-hidden", "true");
+        wrap.appendChild(cb);
+        wrap.appendChild(track);
+        return { wrap: wrap, input: cb };
+    }
+
+    function formRowCheckbox(label, checked, onChange, tooltip) {
+        var toggle = buildToggle(checked, onChange);
+        if (tooltip) { toggle.wrap.title = tooltip; }
+        return formRowInline(label, toggle.wrap, tooltip);
     }
 
     /*
@@ -1171,12 +1292,6 @@
         if (el.type !== "image" || (el.src_mode || "static") !== "from_counter") { return; }
         var ranges = (el.counter_src && el.counter_src.ranges) || [];
         if (ranges.length < 2) {
-            var hint = document.createElement("p");
-            hint.style.cssText =
-                "color:var(--ss-text-muted);font-size:10px;margin:8px 0;line-height:1.4;";
-            hint.textContent =
-                "Add at least two counter ranges to enable transition animations when the image changes.";
-            host.appendChild(hint);
             return;
         }
         ensureCounterImageTransitionDefaults(el);
@@ -1187,15 +1302,11 @@
         title.className = "ss-form-section__title";
         title.textContent = "Range change transition";
         sect.appendChild(title);
-        var enCb = document.createElement("input");
-        enCb.type = "checkbox";
-        enCb.checked = !!tr.enabled;
-        enCb.addEventListener("change", function () {
-            tr.enabled = enCb.checked;
+        sect.appendChild(formRowCheckbox("Animate when image changes", !!tr.enabled, function (checked) {
+            tr.enabled = checked;
             pushHistoryDebounced();
             modelTouch();
-        });
-        sect.appendChild(formRow("Animate when image changes", enCb));
+        }, "Fade/slide between images when the counter range changes (requires 2+ ranges)"));
         var typeSel = document.createElement("select");
         [
             { v: "fade", label: "Fade out, then fade in" },
@@ -1379,7 +1490,11 @@
             renderStage();
             modelTouch();
         });
-        sect.appendChild(formRow("Value counter", cidSel));
+        sect.appendChild(formRow(
+            "Value counter",
+            cidSel,
+            "Set min and max on the value counter to use {min}/{max} in its format string"
+        ));
 
         var maxKindSel = document.createElement("select");
         [
@@ -1434,12 +1549,6 @@
             sect.appendChild(formRow("Goal counter", goalSel));
         }
 
-        var hint = document.createElement("p");
-        hint.style.cssText =
-            "color:var(--ss-text-muted);font-size:10px;margin:4px 0 0;line-height:1.4;";
-        hint.textContent =
-            "Set min and max on the value counter to use {min}/{max} in its format string.";
-        sect.appendChild(hint);
         host.appendChild(sect);
     }
 
@@ -1454,16 +1563,14 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Value change animation";
+        title.title =
+            "Tick up animates from the previous value. Other types play a visual effect on the text.";
         sect.appendChild(title);
-        var enCb = document.createElement("input");
-        enCb.type = "checkbox";
-        enCb.checked = !!va.enabled;
-        enCb.addEventListener("change", function () {
-            va.enabled = enCb.checked;
+        sect.appendChild(formRowCheckbox("Enable on value update", !!va.enabled, function (checked) {
+            va.enabled = checked;
             pushHistoryDebounced();
             modelTouch();
-        });
-        sect.appendChild(formRow("Enable on value update", enCb));
+        }, "Run an animation when the displayed value changes"));
         var typeSel = document.createElement("select");
         ["tick_up", "fade-in", "slide-in", "bounce"].forEach(function (t) {
             var labels = {
@@ -1483,14 +1590,7 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        sect.appendChild(formRow("Animation type", typeSel));
-        var tickHint = document.createElement("p");
-        tickHint.style.cssText =
-            "color:var(--ss-text-muted);font-size:10px;margin:4px 0 0;line-height:1.4;";
-        tickHint.textContent =
-            "Tick up animates the number from the previous value (like memecalc). " +
-            "Other types play a visual effect on the text.";
-        sect.appendChild(tickHint);
+        sect.appendChild(formRow("Animation type", typeSel, "Tick up counts from the previous value; others are visual effects"));
         sect.appendChild(formRow("Duration (ms)", numberEl(
             va.duration_ms != null ? va.duration_ms : 500, function (v) {
                 va.duration_ms = Math.max(0, parseInt(v, 10) || 0);
@@ -1512,15 +1612,11 @@
             modelTouch();
         });
         sect.appendChild(formRow("Easing", easeSel));
-        var pulseCb = document.createElement("input");
-        pulseCb.type = "checkbox";
-        pulseCb.checked = !!va.pulse;
-        pulseCb.addEventListener("change", function () {
-            va.pulse = pulseCb.checked;
+        sect.appendChild(formRowCheckbox("Continuous pulse", !!va.pulse, function (checked) {
+            va.pulse = checked;
             pushHistoryDebounced();
             modelTouch();
-        });
-        sect.appendChild(formRow("Continuous pulse", pulseCb));
+        }, "Keep pulsing while the value is displayed"));
         host.appendChild(sect);
     }
 
@@ -1633,33 +1729,27 @@
                 }, { deltaOnly: false })));
                 if (isSubDeltaSource(delta.source)) {
                     if (delta.tier_filter == null) { delta.tier_filter = "any"; }
+                    var subSourceTip = delta.source === "sub.gift_sub"
+                        ? "Adds the gifted quantity when a giftsub alert matches the tier. Use fallback 0 so other alerts do not change the counter."
+                        : "Adds 1 when the matching sub type and tier are received. Use fallback 0 so other alerts do not change the counter.";
                     fields.appendChild(formRow(
                         "Tier filter",
                         buildTierFilterSelect(delta.tier_filter, function (v) {
                             delta.tier_filter = v;
                             onChange(delta);
-                        })
+                        }),
+                        subSourceTip
                     ));
-                    var subHint = document.createElement("p");
-                    subHint.style.cssText =
-                        "color:var(--ss-text-muted);font-size:10px;margin:0;line-height:1.4;";
-                    if (delta.source === "sub.gift_sub") {
-                        subHint.textContent =
-                            "Adds the gifted quantity when a giftsub alert matches the tier. " +
-                            "Use fallback 0 so other alerts do not change the counter.";
-                    } else {
-                        subHint.textContent =
-                            "Adds 1 when the matching sub type and tier are received. " +
-                            "Use fallback 0 so other alerts do not change the counter.";
-                    }
-                    fields.appendChild(subHint);
                 }
                 fields.appendChild(formRow("Fallback", numberEl(
                     delta.fallback != null ? delta.fallback :
                         (isSubDeltaSource(delta.source) ? 0 : 1),
                     function (v) {
                         delta.fallback = Number(v); onChange(delta);
-                    }
+                    },
+                    isSubDeltaSource(delta.source)
+                        ? "Value used when no matching alert is received (0 avoids changing the counter on unrelated alerts)"
+                        : "Value used when the data source has no value"
                 )));
             }
             onChange(delta);
@@ -1734,15 +1824,12 @@
                     formatInput
                 )
             );
-            var persistCb = document.createElement("input");
-            persistCb.type = "checkbox";
-            persistCb.checked = !!c.persist;
-            persistCb.addEventListener("change", function () {
-                c.persist = persistCb.checked;
+            host.appendChild(formRowCheckbox("Persist (database)", !!c.persist, function (checked) {
+                c.persist = checked;
                 pushHistoryDebounced();
                 modelTouch();
-            });
-            host.appendChild(formRow("Persist (database)", persistCb));
+                renderProperties();
+            }, "Store counter value in the Mycelian database"));
             if (c.persist) {
                 host.appendChild(formRow("DB path", inputEl("text", c.database_path || "", function (v) {
                     c.database_path = v.trim();
@@ -1883,13 +1970,10 @@
             refreshWrap.style.flexDirection = "column";
             refreshWrap.style.gap = "4px";
             (state.registry.events || []).forEach(function (ev) {
-                var cb = document.createElement("input");
-                cb.type = "checkbox";
                 var en = ev.event;
-                cb.checked = (d.refresh_on || []).indexOf(en) !== -1;
-                cb.addEventListener("change", function () {
+                var toggle = buildToggle((d.refresh_on || []).indexOf(en) !== -1, function (checked) {
                     d.refresh_on = d.refresh_on || [];
-                    if (cb.checked) {
+                    if (checked) {
                         if (d.refresh_on.indexOf(en) === -1) { d.refresh_on.push(en); }
                     } else {
                         d.refresh_on = d.refresh_on.filter(function (x) { return x !== en; });
@@ -1897,11 +1981,13 @@
                     pushHistoryDebounced();
                     modelTouch();
                 });
+                var row = document.createElement("div");
+                row.className = "ss-form-row ss-form-row--inline";
+                row.appendChild(toggle.wrap);
                 var lbl = document.createElement("label");
-                lbl.style.fontSize = "11px";
-                lbl.appendChild(cb);
-                lbl.appendChild(document.createTextNode(" " + (ev.label || en)));
-                refreshWrap.appendChild(lbl);
+                lbl.textContent = ev.label || en;
+                row.appendChild(lbl);
+                refreshWrap.appendChild(row);
             });
             host.appendChild(formRow("Refresh on events", refreshWrap));
         }
@@ -1930,13 +2016,10 @@
         }
         ensureDynamicControls(state.model);
         var dc = state.model.dynamic_controls;
-        var hint = document.createElement("p");
-        hint.style.cssText = "color:var(--ss-text-muted);font-size:11px;margin:0 0 10px;";
-        hint.textContent = "Controls appear in the Source Controls overlay and emit template socket events.";
-        host.appendChild(hint);
         var addBtn = document.createElement("button");
         addBtn.className = "ss-btn ss-btn--primary";
         addBtn.textContent = "+ Add control";
+        addBtn.title = "Controls appear in the Source Controls overlay and emit template socket events.";
         addBtn.addEventListener("click", function () {
             dc.elements.push({
                 type: "button",
@@ -2238,40 +2321,46 @@
         });
     }
 
-    function formRowPropWithExpose(el, exportKey, labelText, controlNode) {
+    function formRowPropWithExpose(el, exportKey, labelText, controlNode, tooltip) {
         ensureElementExposeDefaults(el);
+        if (!el.source_settings_expose) {
+            el.source_settings_expose = {};
+        }
         if (el.source_settings_expose[exportKey] === undefined) {
             el.source_settings_expose[exportKey] = true;
         }
 
         var wrap = document.createElement("div");
         wrap.className = "ss-form-prop";
-        var head = document.createElement("div");
-        head.className = "ss-form-prop__head";
-        var lbl = document.createElement("div");
-        lbl.className = "ss-form-prop__label";
-        lbl.textContent = labelText;
+        if (controlNode && controlNode.classList &&
+                controlNode.classList.contains("ss-toggle")) {
+            wrap.classList.add("ss-form-prop--inline-control");
+        }
 
         var exLbl = document.createElement("label");
         exLbl.className = "ss-form-prop__expose";
+        exLbl.title =
+            "Expose in Source Settings (JSON). When off, value is inlined in HTML only.";
+        exLbl.setAttribute("aria-label", "Expose in Source Settings (JSON)");
         var cb = document.createElement("input");
         cb.type = "checkbox";
         cb.checked = !!el.source_settings_expose[exportKey];
-        cb.title = "When off, value is inlined in HTML only (omitted from template JSON).";
         cb.addEventListener("change", function () {
             el.source_settings_expose[exportKey] = cb.checked;
             pushHistoryDebounced();
             modelTouch();
         });
-        var exText = document.createElement("span");
-        exText.className = "ss-form-prop__expose-text";
-        exText.textContent = "Expose in Source Settings (JSON)";
         exLbl.appendChild(cb);
-        exLbl.appendChild(exText);
 
-        head.appendChild(lbl);
-        head.appendChild(exLbl);
-        wrap.appendChild(head);
+        var labelRow = document.createElement("div");
+        labelRow.className = "ss-form-prop__label-row";
+        var lbl = document.createElement("div");
+        lbl.className = "ss-form-prop__label";
+        lbl.textContent = labelText;
+        if (tooltip) { lbl.title = tooltip; }
+        labelRow.appendChild(exLbl);
+        labelRow.appendChild(lbl);
+        wrap.appendChild(labelRow);
         wrap.appendChild(controlNode);
         return wrap;
     }
@@ -2433,6 +2522,19 @@
         }
         if (props.font_weight) { node.style.fontWeight = props.font_weight; }
         if (props.text_align) { node.style.textAlign = props.text_align; }
+        if (props.letter_spacing != null && props.letter_spacing !== "") {
+            node.style.letterSpacing = props.letter_spacing + "px";
+        }
+        if (props.line_height_px != null && props.line_height_px !== "") {
+            node.style.lineHeight = props.line_height_px + "px";
+        }
+        if (props.font_style === "italic") {
+            node.style.fontStyle = "italic";
+        } else {
+            node.style.fontStyle = "";
+        }
+        var textDeco = composeTextDecoration(props);
+        node.style.textDecoration = textDeco || "";
         if (el.type === "text") {
             var va = props.vertical_align || "top";
             if (va === "center" || va === "bottom") {
@@ -2728,10 +2830,11 @@
                     var parRs = elementByIdFromModel(modelEl.parent_id);
                     if (parRs) {
                         ensurePlacementDefaults(modelEl);
-                        applyPlacementToPosition(modelEl, parRs);
-                        renderStage();
+                        syncPlacementFromPosition(modelEl, parRs);
                     }
                 }
+                renderStage();
+                renderInspector();
                 pushHistoryDebounced();
                 modelTouch();
             }
@@ -2782,9 +2885,27 @@
         var ctrl;
         if (fieldType === "checkbox" || fieldType === "switch" ||
             fieldType === "toggle") {
-            ctrl = document.createElement("input");
-            ctrl.type = "checkbox";
-            ctrl.checked = !!el.props.value;
+            var legacyToggle = buildToggle(!!el.props.value, function (checked) {
+                el.props.value = checked;
+                pushHistoryDebounced();
+                modelTouch();
+            });
+            host.appendChild(formRow("Value", legacyToggle.wrap));
+            if (field.description) {
+                var desc = document.createElement("p");
+                desc.textContent = String(field.description);
+                desc.style.cssText =
+                    "color:var(--ss-text-muted);font-size:11px;margin:4px 0 0;";
+                host.appendChild(desc);
+            }
+            var note = document.createElement("p");
+            note.textContent =
+                "Read-only legacy template. Edits to this value persist to " +
+                "the JSON config; HTML is not regenerated.";
+            note.style.cssText =
+                "color:var(--ss-warn);font-size:11px;margin-top:10px;";
+            host.appendChild(note);
+            return;
         } else if (fieldType === "select" && Array.isArray(field.options)) {
             ctrl = document.createElement("select");
             field.options.forEach(function (opt) {
@@ -2863,14 +2984,10 @@
             return span;
         })()));
 
-        function bindingHint(modelPath) {
+        function bindingTooltip(modelPath) {
             var fieldId = bindings[modelPath];
-            if (!fieldId) { return null; }
-            var hint = document.createElement("div");
-            hint.style.cssText =
-                "color:var(--ss-text-muted);font-size:10px;margin-top:-2px;";
-            hint.textContent = "→ JSON config: " + fieldId;
-            return hint;
+            if (!fieldId) { return ""; }
+            return "→ JSON config: " + fieldId;
         }
 
         var posRow = document.createElement("div");
@@ -2885,10 +3002,9 @@
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })
+            }),
+            bindingTooltip("position.x")
         ));
-        var xHint = bindingHint("position.x");
-        if (xHint) { xCol.appendChild(xHint); }
         var yCol = document.createElement("div");
         yCol.style.flex = "1";
         yCol.appendChild(formRow(
@@ -2899,10 +3015,9 @@
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })
+            }),
+            bindingTooltip("position.y")
         ));
-        var yHint = bindingHint("position.y");
-        if (yHint) { yCol.appendChild(yHint); }
         posRow.appendChild(xCol);
         posRow.appendChild(yCol);
         host.appendChild(posRow);
@@ -2919,9 +3034,7 @@
                 pushHistoryDebounced();
                 modelTouch();
             }
-        )));
-        var wHint = bindingHint("size.w");
-        if (wHint) { wCol.appendChild(wHint); }
+        ), bindingTooltip("size.w")));
         var hCol = document.createElement("div");
         hCol.style.flex = "1";
         hCol.appendChild(formRow("H", numberEl(
@@ -2932,9 +3045,7 @@
                 pushHistoryDebounced();
                 modelTouch();
             }
-        )));
-        var hHint = bindingHint("size.h");
-        if (hHint) { hCol.appendChild(hHint); }
+        ), bindingTooltip("size.h")));
         sizeRow.appendChild(wCol);
         sizeRow.appendChild(hCol);
         host.appendChild(sizeRow);
@@ -2978,9 +3089,7 @@
                 pushHistoryDebounced();
                 modelTouch();
             });
-            host.appendChild(formRow(field.label, ctrl));
-            var hint = bindingHint(field.path);
-            if (hint) { host.appendChild(hint); }
+            host.appendChild(formRow(field.label, ctrl, bindingTooltip(field.path)));
         });
 
         var note = document.createElement("p");
@@ -3005,6 +3114,8 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Placement in container";
+        title.title =
+            "Presets anchor inside the parent; offsets fine-tune. Dragging updates offset while keeping the anchor.";
         sect.appendChild(title);
 
         var grid = document.createElement("div");
@@ -3068,14 +3179,128 @@
             }
         )));
         sect.appendChild(offRow);
-
-        var hint = document.createElement("p");
-        hint.style.cssText =
-            "color:var(--ss-text-muted);font-size:10px;margin:4px 0 0;line-height:1.4;";
-        hint.textContent =
-            "Presets anchor inside the parent; offsets fine-tune. Dragging updates offset while keeping the anchor.";
-        sect.appendChild(hint);
         host.appendChild(sect);
+    }
+
+    function appendSchemaProperty(host, el, entry, textMode, imageSrcMode) {
+        if (el.type === "text" && textMode !== "static" && entry.key === "text") {
+            return;
+        }
+        if (el.type === "image" && imageSrcMode === "from_counter" && entry.key === "src") {
+            return;
+        }
+        var current = el.props && el.props[entry.key];
+        var tip = entry.tooltip || "";
+
+        function propChange(fn) {
+            fn();
+            renderStage();
+            pushHistoryDebounced();
+            modelTouch();
+        }
+
+        if (el.type === "image" && entry.key === "src") {
+            var srcPicker = buildImageSrcPicker(current || "", function (v) {
+                el.props = el.props || {};
+                el.props.src = v;
+                propChange(function () {});
+            });
+            host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, srcPicker, tip));
+            return;
+        }
+
+        if (entry.type === "color") {
+            var colorCtrl = buildColorPicker(current, function (v) {
+                el.props = el.props || {};
+                el.props[entry.key] = v;
+                propChange(function () {});
+            });
+            host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, colorCtrl, tip));
+            return;
+        }
+
+        if (entry.type === "font") {
+            var fontCtrl = buildFontFamilySelect(current || "", function (v) {
+                el.props = el.props || {};
+                el.props[entry.key] = v;
+                normalizeElementFontFamily(el);
+                propChange(function () {});
+            });
+            host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, fontCtrl, tip));
+            return;
+        }
+
+        var ctrl;
+        if (entry.type === "textarea") {
+            ctrl = document.createElement("textarea");
+            ctrl.rows = 3;
+            ctrl.value = current == null ? "" : String(current);
+        } else if (entry.type === "bold") {
+            var boldToggle = buildToggle(isFontWeightBold(current), function (checked) {
+                el.props = el.props || {};
+                el.props.font_weight = checked ? "bold" : "normal";
+                propChange(function () {});
+            });
+            host.appendChild(formRowPropWithExpose(
+                el, entry.key, entry.label, boldToggle.wrap, tip
+            ));
+            return;
+        } else if (entry.type === "italic") {
+            var italicToggle = buildToggle(current === "italic", function (checked) {
+                el.props = el.props || {};
+                el.props.font_style = checked ? "italic" : "normal";
+                propChange(function () {});
+            });
+            host.appendChild(formRowPropWithExpose(
+                el, entry.key, entry.label, italicToggle.wrap, tip
+            ));
+            return;
+        } else if (entry.type === "checkbox") {
+            var propToggle = buildToggle(!!current, function (checked) {
+                el.props = el.props || {};
+                el.props[entry.key] = checked;
+                propChange(function () {});
+            });
+            host.appendChild(formRowPropWithExpose(
+                el, entry.key, entry.label, propToggle.wrap, tip
+            ));
+            if (entry.key === "fade_in_ms" || entry.key === "fade_out_ms"
+                    || entry.key === "audio_fade_in_ms" || entry.key === "audio_fade_out_ms") {
+                propToggle.input.addEventListener("change", onLayoutTimingChanged);
+            }
+            return;
+        } else if (entry.type === "select") {
+            ctrl = document.createElement("select");
+            (entry.options || []).forEach(function (opt) {
+                var op = document.createElement("option");
+                op.value = opt;
+                op.textContent = opt;
+                if (String(opt) === String(current)) { op.selected = true; }
+                ctrl.appendChild(op);
+            });
+        } else {
+            ctrl = document.createElement("input");
+            ctrl.type = entry.type === "number" ? "number" : "text";
+            if (entry.step != null) { ctrl.step = entry.step; }
+            if (entry.min != null) { ctrl.min = entry.min; }
+            if (entry.max != null) { ctrl.max = entry.max; }
+            ctrl.value = current == null ? "" : String(current);
+        }
+
+        ctrl.addEventListener("change", function () {
+            el.props = el.props || {};
+            if (entry.type === "number") {
+                el.props[entry.key] = ctrl.value === "" ? null : Number(ctrl.value);
+            } else {
+                el.props[entry.key] = ctrl.value;
+            }
+            propChange(function () {});
+        });
+        host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl, tip));
+        if (entry.key === "fade_in_ms" || entry.key === "fade_out_ms"
+                || entry.key === "audio_fade_in_ms" || entry.key === "audio_fade_out_ms") {
+            ctrl.addEventListener("change", onLayoutTimingChanged);
+        }
     }
 
     function renderProperties() {
@@ -3116,264 +3341,181 @@
             pushHistory();
             renderAll();
             modelTouch();
-        }));
-        host.appendChild(idRow);
+        }), "Unique element identifier used in HTML and bindings");
 
-        var catRow = formRow("Category", inputEl("text", el.category || "", function (v) {
-            el.category = v.trim();
-            pushHistoryDebounced();
-            modelTouch();
-        }));
-        host.appendChild(catRow);
+        host.appendChild(buildCollapsibleSection(
+            "Element",
+            "ID, category, type, and nesting. Drag onto highlighted containers to nest; Alt while dropping forces canvas-level placement.",
+            function (body) {
+            body.appendChild(idRow);
+            body.appendChild(formRow("Category", inputEl("text", el.category || "", function (v) {
+                el.category = v.trim();
+                pushHistoryDebounced();
+                modelTouch();
+            }), "Groups elements in the saved JSON config"));
+            body.appendChild(formRow("Type", document.createTextNode(el.type)));
 
-        var typeRow = formRow("Type", document.createTextNode(el.type));
-        host.appendChild(typeRow);
-
-        if (!isLegacyModel()) {
-            var pnorm = pidNorm(el.parent_id);
-            host.appendChild(formRow(
-                "Parent",
-                document.createTextNode(pnorm || "(canvas root)")
-            ));
-            var nestHint = document.createElement("p");
-            nestHint.style.cssText =
-                "color:var(--ss-text-muted);font-size:10px;margin:6px 0 0;" +
-                "line-height:1.45;";
-            nestHint.textContent =
-                "Toward a container: borders highlight while you drag blocks or " +
-                "elements onto them. Drag past the bounds of your current container " +
-                "to nest on the canvas, or onto a highlighted container to re-nest. " +
-                "Alt while dropping forces canvas-level placement. \"Move to canvas\" below also unnests.";
-            host.appendChild(nestHint);
-            if (pnorm) {
-                var detachBtn = document.createElement("button");
-                detachBtn.type = "button";
-                detachBtn.className = "ss-btn";
-                detachBtn.textContent = "Move to canvas";
-                detachBtn.addEventListener("click", function () {
-                    var st = $("#ss-stage");
-                    var domEl = domNodeForCanvasElement(st, el.id);
-                    if (!domEl || !state.model) { return; }
-                    repositionModelElementForDropTarget(el, domEl, null);
-                    normalizeParentLinksAndReorderLive();
-                    pushHistory();
-                    renderAll();
-                    modelTouch();
-                });
-                host.appendChild(detachBtn);
+            if (!isLegacyModel()) {
+                var pnorm = pidNorm(el.parent_id);
+                body.appendChild(formRow(
+                    "Parent",
+                    document.createTextNode(pnorm || "(canvas root)"),
+                    "Container this element is nested inside"
+                ));
+                if (pnorm) {
+                    var detachBtn = document.createElement("button");
+                    detachBtn.type = "button";
+                    detachBtn.className = "ss-btn";
+                    detachBtn.textContent = "Move to canvas";
+                    detachBtn.addEventListener("click", function () {
+                        var st = $("#ss-stage");
+                        var domEl = domNodeForCanvasElement(st, el.id);
+                        if (!domEl || !state.model) { return; }
+                        repositionModelElementForDropTarget(el, domEl, null);
+                        normalizeParentLinksAndReorderLive();
+                        pushHistory();
+                        renderAll();
+                        modelTouch();
+                    });
+                    body.appendChild(detachBtn);
+                }
             }
-            if (pnorm) {
-                renderPlacementInContainerSection(host, el);
-            }
-        }
+        }));
 
-        var posRow = document.createElement("div");
-        posRow.className = "ss-row";
         var parForPos = pidNorm(el.parent_id)
             ? elementByIdFromModel(el.parent_id) : null;
-        posRow.appendChild(formRow("X", numberEl(el.position && el.position.x || 0, function (v) {
-            el.position = el.position || { x: 0, y: 0 };
-            el.position.x = Math.max(0, parseInt(v, 10) || 0);
-            if (parForPos) {
-                ensurePlacementDefaults(el);
-                syncPlacementFromPosition(el, parForPos);
-            }
-            renderStage();
-            pushHistoryDebounced();
-            modelTouch();
-        })));
-        posRow.appendChild(formRow("Y", numberEl(el.position && el.position.y || 0, function (v) {
-            el.position = el.position || { x: 0, y: 0 };
-            el.position.y = Math.max(0, parseInt(v, 10) || 0);
-            if (parForPos) {
-                ensurePlacementDefaults(el);
-                syncPlacementFromPosition(el, parForPos);
-            }
-            renderStage();
-            pushHistoryDebounced();
-            modelTouch();
-        })));
-        host.appendChild(posRow);
+        host.appendChild(buildCollapsibleSection("Layout", "Position and size on the canvas", function (body) {
+            var posRow = document.createElement("div");
+            posRow.className = "ss-row";
+            posRow.appendChild(formRow("X", numberEl(el.position && el.position.x || 0, function (v) {
+                el.position = el.position || { x: 0, y: 0 };
+                el.position.x = Math.max(0, parseInt(v, 10) || 0);
+                if (parForPos) {
+                    ensurePlacementDefaults(el);
+                    syncPlacementFromPosition(el, parForPos);
+                }
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }), "Horizontal position in pixels"));
+            posRow.appendChild(formRow("Y", numberEl(el.position && el.position.y || 0, function (v) {
+                el.position = el.position || { x: 0, y: 0 };
+                el.position.y = Math.max(0, parseInt(v, 10) || 0);
+                if (parForPos) {
+                    ensurePlacementDefaults(el);
+                    syncPlacementFromPosition(el, parForPos);
+                }
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }), "Vertical position in pixels"));
+            body.appendChild(posRow);
 
-        var sizeRow = document.createElement("div");
-        sizeRow.className = "ss-row";
-        sizeRow.appendChild(formRow("W", numberEl(el.size && el.size.w || 100, function (v) {
-            el.size = el.size || { w: 100, h: 30 };
-            el.size.w = Math.max(10, parseInt(v, 10) || 10);
-            renderStage();
-            pushHistoryDebounced();
-            modelTouch();
-        })));
-        sizeRow.appendChild(formRow("H", numberEl(el.size && el.size.h || 30, function (v) {
-            el.size = el.size || { w: 100, h: 30 };
-            el.size.h = Math.max(10, parseInt(v, 10) || 10);
-            renderStage();
-            pushHistoryDebounced();
-            modelTouch();
-        })));
-        host.appendChild(sizeRow);
+            var sizeRow = document.createElement("div");
+            sizeRow.className = "ss-row";
+            sizeRow.appendChild(formRow("W", numberEl(el.size && el.size.w || 100, function (v) {
+                el.size = el.size || { w: 100, h: 30 };
+                el.size.w = Math.max(10, parseInt(v, 10) || 10);
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }), "Width in pixels"));
+            sizeRow.appendChild(formRow("H", numberEl(el.size && el.size.h || 30, function (v) {
+                el.size = el.size || { w: 100, h: 30 };
+                el.size.h = Math.max(10, parseInt(v, 10) || 10);
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }), "Height in pixels"));
+            body.appendChild(sizeRow);
 
-        var shWrap = document.createElement("div");
-        shWrap.style.display = "flex";
-        shWrap.style.flexDirection = "column";
-        shWrap.style.gap = "4px";
-        var shCb = document.createElement("input");
-        shCb.type = "checkbox";
-        shCb.checked = resolvedStartHidden(el);
-        shCb.addEventListener("change", function () {
-            el.start_hidden = shCb.checked;
-            pushHistoryDebounced();
-            modelTouch();
-        });
-        var shHint = document.createElement("span");
-        shHint.style.cssText = "color:var(--ss-text-muted);font-size:10px;line-height:1.35;";
-        shHint.textContent = elementHasShowBinding(el) &&
-            (el.start_hidden === undefined || el.start_hidden === null)
-            ? "Auto: on while a Show or Show for N seconds binding exists. Uncheck to keep the element visible on load."
-            : "When checked, the overlay starts hidden (data-spore-hidden) until a Show binding runs.";
-        shWrap.appendChild(shCb);
-        shWrap.appendChild(shHint);
-        host.appendChild(formRow("Start hidden until shown", shWrap));
+            if (!isLegacyModel() && pidNorm(el.parent_id)) {
+                renderPlacementInContainerSection(body, el);
+            }
+        }));
+
+        host.appendChild(buildCollapsibleSection("Visibility", "Initial visibility on overlay load", function (body) {
+            var hiddenTip = elementHasShowBinding(el) &&
+                (el.start_hidden === undefined || el.start_hidden === null)
+                ? "Auto: hidden while a Show binding exists. Uncheck to stay visible on load."
+                : "When checked, hidden until a Show binding runs.";
+            body.appendChild(formRowCheckbox(
+                "Start hidden until shown",
+                resolvedStartHidden(el),
+                function (checked) {
+                    el.start_hidden = checked;
+                    pushHistoryDebounced();
+                    modelTouch();
+                },
+                hiddenTip
+            ));
+        }));
 
         if (el.type === "text" && !isLegacyModel()) {
-            renderTextModeSection(host, el);
+            host.appendChild(buildCollapsibleSection("Text mode", "Static, counter, or data display", function (body) {
+                renderTextModeSection(body, el);
+            }));
         }
 
         if (el.type === "image" && !isLegacyModel()) {
-            renderImageSrcModeSection(host, el);
+            host.appendChild(buildCollapsibleSection("Image source", "Static URL or counter-driven ranges", function (body) {
+                renderImageSrcModeSection(body, el);
+            }));
         }
 
         if (el.type === "progress_bar" && !isLegacyModel()) {
-            renderProgressBarSection(host, el);
+            host.appendChild(buildCollapsibleSection("Progress bar", "Counter binding and goal effects", function (body) {
+                renderProgressBarSection(body, el);
+            }));
         }
 
         var schema = ELEMENT_PROP_SCHEMA[el.type] || [];
         var textMode = el.text_mode || "static";
         var imageSrcMode = el.src_mode || "static";
-        schema.forEach(function (entry) {
-            if (el.type === "text" && textMode !== "static" && entry.key === "text") {
-                return;
-            }
-            if (el.type === "image" && imageSrcMode === "from_counter" && entry.key === "src") {
-                return;
-            }
-            var current = el.props && el.props[entry.key];
-            if (el.type === "image" && entry.key === "src") {
-                var srcPicker = buildImageSrcPicker(current || "", function (v) {
-                    el.props = el.props || {};
-                    el.props.src = v;
-                    renderStage();
-                    pushHistoryDebounced();
-                    modelTouch();
+        if (schema.length > 0) {
+            host.appendChild(buildCollapsibleSection("Appearance", "Visual style properties", function (body) {
+                schema.forEach(function (entry) {
+                    appendSchemaProperty(body, el, entry, textMode, imageSrcMode);
                 });
-                host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, srcPicker));
-                return;
-            }
-            var ctrl;
-            if (entry.type === "textarea") {
-                ctrl = document.createElement("textarea");
-                ctrl.rows = 3;
-                ctrl.value = current == null ? "" : String(current);
-            } else if (entry.type === "checkbox") {
-                ctrl = document.createElement("input");
-                ctrl.type = "checkbox";
-                ctrl.checked = !!current;
-            } else if (entry.type === "select") {
-                ctrl = document.createElement("select");
-                (entry.options || []).forEach(function (opt) {
-                    var op = document.createElement("option");
-                    op.value = opt;
-                    op.textContent = opt;
-                    if (String(opt) === String(current)) { op.selected = true; }
-                    ctrl.appendChild(op);
-                });
-            } else if (entry.type === "color") {
-                ctrl = buildColorPicker(current, function (v) {
-                    el.props = el.props || {};
-                    el.props[entry.key] = v;
-                    renderStage();
-                    pushHistoryDebounced();
-                    modelTouch();
-                });
-                host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl));
-                return;
-            } else if (entry.type === "font") {
-                ctrl = buildFontFamilySelect(current || "", function (v) {
-                    el.props = el.props || {};
-                    el.props[entry.key] = v;
-                    normalizeElementFontFamily(el);
-                    renderStage();
-                    pushHistoryDebounced();
-                    modelTouch();
-                });
-                host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl));
-                return;
-            } else {
-                ctrl = document.createElement("input");
-                ctrl.type = entry.type === "number" ? "number" : "text";
-                if (entry.step != null) { ctrl.step = entry.step; }
-                if (entry.min != null) { ctrl.min = entry.min; }
-                if (entry.max != null) { ctrl.max = entry.max; }
-                ctrl.value = current == null ? "" : String(current);
-            }
-            ctrl.addEventListener("change", function () {
-                el.props = el.props || {};
-                if (entry.type === "checkbox") { el.props[entry.key] = ctrl.checked; }
-                else if (entry.type === "number") {
-                    el.props[entry.key] = ctrl.value === "" ? null : Number(ctrl.value);
-                } else {
-                    el.props[entry.key] = ctrl.value;
-                }
-                renderStage();
-                pushHistory();
-                modelTouch();
-            });
-            host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl));
-            if (entry.key === "fade_in_ms" || entry.key === "fade_out_ms"
-                || entry.key === "audio_fade_in_ms" || entry.key === "audio_fade_out_ms") {
-                ctrl.addEventListener("change", onLayoutTimingChanged);
-            }
-        });
+            }));
+        }
 
-        var animHead = document.createElement("h4");
-        animHead.className = "ss-section-sub";
-        animHead.textContent = "Animations";
-        animHead.style.marginTop = "12px";
-        host.appendChild(animHead);
-        ensureElementAnimations(el);
-        ANIMATION_SCHEMA.forEach(function (entry) {
-            var current = el.animations && el.animations[entry.key];
-            var ctrl;
-            if (entry.type === "select") {
-                ctrl = document.createElement("select");
-                (entry.options || []).forEach(function (opt) {
-                    var op = document.createElement("option");
-                    op.value = opt;
-                    op.textContent = opt;
-                    if (String(opt) === String(current)) { op.selected = true; }
-                    ctrl.appendChild(op);
-                });
-            } else {
-                ctrl = document.createElement("input");
-                ctrl.type = "number";
-                if (entry.min != null) { ctrl.min = entry.min; }
-                if (entry.max != null) { ctrl.max = entry.max; }
-                ctrl.value = current == null ? "" : String(current);
-            }
-            ctrl.addEventListener("change", function () {
-                el.animations = el.animations || {};
-                if (entry.type === "number") {
-                    el.animations[entry.key] = ctrl.value === "" ? 0 : Number(ctrl.value);
+        host.appendChild(buildCollapsibleSection("Animations", "Entrance and exit animations", function (body) {
+            ensureElementAnimations(el);
+            ANIMATION_SCHEMA.forEach(function (entry) {
+                var current = el.animations && el.animations[entry.key];
+                var ctrl;
+                if (entry.type === "select") {
+                    ctrl = document.createElement("select");
+                    (entry.options || []).forEach(function (opt) {
+                        var op = document.createElement("option");
+                        op.value = opt;
+                        op.textContent = opt;
+                        if (String(opt) === String(current)) { op.selected = true; }
+                        ctrl.appendChild(op);
+                    });
                 } else {
-                    el.animations[entry.key] = ctrl.value;
+                    ctrl = document.createElement("input");
+                    ctrl.type = "number";
+                    if (entry.min != null) { ctrl.min = entry.min; }
+                    if (entry.max != null) { ctrl.max = entry.max; }
+                    ctrl.value = current == null ? "" : String(current);
                 }
-                onLayoutTimingChanged();
-                renderStage();
-                pushHistory();
-                modelTouch();
+                ctrl.addEventListener("change", function () {
+                    el.animations = el.animations || {};
+                    if (entry.type === "number") {
+                        el.animations[entry.key] = ctrl.value === "" ? 0 : Number(ctrl.value);
+                    } else {
+                        el.animations[entry.key] = ctrl.value;
+                    }
+                    onLayoutTimingChanged();
+                    renderStage();
+                    pushHistory();
+                    modelTouch();
+                });
+                body.appendChild(formRow(entry.label, ctrl));
             });
-            host.appendChild(formRow(entry.label, ctrl));
-        });
+        }));
 
         var deleteBtn = document.createElement("button");
         deleteBtn.className = "ss-btn";
@@ -3389,16 +3531,6 @@
             modelTouch();
         });
         host.appendChild(deleteBtn);
-    }
-
-    function formRow(label, controlNode) {
-        var row = document.createElement("div");
-        row.className = "ss-form-row";
-        var lbl = document.createElement("label");
-        lbl.textContent = label;
-        row.appendChild(lbl);
-        if (controlNode) { row.appendChild(controlNode); }
-        return row;
     }
 
     function inputEl(type, value, onChange) {
@@ -4771,12 +4903,13 @@
                 refreshAssetsForCurrent();
                 refreshPreview();
                 setDirty(false);
-                setStatus(model.legacy ? "Legacy template (advanced mode)" : "Loaded");
+                if (model.legacy) {
+                    toast("Legacy template (advanced mode)", "info");
+                }
             })
             .catch(function (err) {
                 console.error("Load failed", err);
                 toast("Failed to load template", "error");
-                setStatus("Load failed");
             });
     }
 
@@ -4866,12 +4999,10 @@
     function saveCurrent() {
         if (!state.model) { return; }
         flushStreamdeckPanelInputs();
-        setStatus("Saving…");
-        var payload = { model: state.model };
         fetch("/api/spore-studio/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ model: state.model })
         })
             .then(function (r) {
                 return r.json().then(function (data) { return { ok: r.ok, data: data }; });
@@ -4881,14 +5012,12 @@
                     throw new Error((res.data && res.data.error) || "Save failed");
                 }
                 setDirty(false);
-                setStatus("Saved");
                 toast("Saved " + state.model.template_name, "success");
                 refreshPreview(true);
             })
             .catch(function (err) {
                 console.error("Save failed", err);
                 toast("Save failed: " + err.message, "error");
-                setStatus("Save failed");
             });
     }
 
@@ -5522,7 +5651,49 @@
         $("#ss-advanced-js").addEventListener("blur", function () { pushHistory(); });
     }
 
+    function updateTabsScrollArrows() {
+        var strip = $("#ss-tabs-scroll");
+        var leftBtn = $("#ss-tabs-scroll-left");
+        var rightBtn = $("#ss-tabs-scroll-right");
+        if (!strip || !leftBtn || !rightBtn) { return; }
+
+        var overflow = strip.scrollWidth > strip.clientWidth + 1;
+        leftBtn.hidden = !overflow;
+        rightBtn.hidden = !overflow;
+        if (!overflow) { return; }
+
+        var atStart = strip.scrollLeft <= 1;
+        var atEnd = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
+        leftBtn.disabled = atStart;
+        rightBtn.disabled = atEnd;
+    }
+
+    function scrollTabsBy(delta) {
+        var strip = $("#ss-tabs-scroll");
+        if (!strip) { return; }
+        strip.scrollBy({ left: delta, behavior: "smooth" });
+    }
+
     function setupTabs() {
+        var strip = $("#ss-tabs-scroll");
+        var leftBtn = $("#ss-tabs-scroll-left");
+        var rightBtn = $("#ss-tabs-scroll-right");
+
+        if (leftBtn) {
+            leftBtn.addEventListener("click", function () {
+                scrollTabsBy(-(strip ? strip.clientWidth * 0.65 : 120));
+            });
+        }
+        if (rightBtn) {
+            rightBtn.addEventListener("click", function () {
+                scrollTabsBy(strip ? strip.clientWidth * 0.65 : 120);
+            });
+        }
+        if (strip) {
+            strip.addEventListener("scroll", updateTabsScrollArrows);
+            window.addEventListener("resize", updateTabsScrollArrows);
+        }
+
         $$(".ss-tab").forEach(function (tab) {
             tab.addEventListener("click", function () {
                 var name = tab.dataset.tab;
@@ -5530,7 +5701,39 @@
                 $$(".ss-tab-pane").forEach(function (p) {
                     p.classList.toggle("active", p.id === "ss-pane-" + name);
                 });
+                tab.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+                setTimeout(updateTabsScrollArrows, 200);
             });
+        });
+
+        updateTabsScrollArrows();
+    }
+
+    function setupInspectorResize() {
+        var handle = $("#ss-inspector-resize");
+        if (!handle) { return; }
+        var resizeData = null;
+
+        handle.addEventListener("mousedown", function (ev) {
+            ev.preventDefault();
+            resizeData = { startX: ev.clientX, startW: 0 };
+            var cur = getComputedStyle(document.documentElement)
+                .getPropertyValue("--ss-inspector-width").trim();
+            resizeData.startW = parseInt(cur, 10) || 320;
+            handle.classList.add("ss-inspector-resize--active");
+        });
+
+        document.addEventListener("mousemove", function (ev) {
+            if (!resizeData) { return; }
+            var dx = resizeData.startX - ev.clientX;
+            applyInspectorWidth(resizeData.startW + dx);
+        });
+
+        document.addEventListener("mouseup", function () {
+            if (resizeData) {
+                handle.classList.remove("ss-inspector-resize--active");
+            }
+            resizeData = null;
         });
     }
 
@@ -5613,7 +5816,7 @@
                 if (!sel.options.length) {
                     loadTemplate("");
                     updateDeleteTemplateButton();
-                    setStatus("No templates — click '+ New'.");
+                    toast("No templates — click '+ New'.", "info");
                     return;
                 }
                 sel.value = sel.options[0].value;
@@ -5667,8 +5870,10 @@
     }
 
     function init() {
+        restoreInspectorWidth();
         setupTabs();
         setupToolbar();
+        setupInspectorResize();
         setupCanvasPanel();
         setupBlockPaletteDnD();
         setupPreviewDialog();
@@ -5697,12 +5902,12 @@
                     sel.value = sel.options[0].value;
                     loadTemplate(sel.value);
                 } else {
-                    setStatus("No templates yet — click '+ New' to create one.");
+                    toast("No templates yet — click '+ New' to create one.", "info");
                 }
             })
             .catch(function (err) {
                 console.error("Init failed", err);
-                setStatus("Editor failed to initialize");
+                toast("Editor failed to initialize", "error");
             });
     }
 

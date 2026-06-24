@@ -143,6 +143,8 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "near_goal_threshold",
         "near_goal_effect",
         "near_goal_pulse",
+        "text_underline",
+        "text_strikethrough",
     }
 )
 
@@ -242,10 +244,20 @@ def _css_kv(
         "border_color",
         "font_family",
         "font_weight",
+        "font_style",
         "text_align",
+        "text_decoration",
         "opacity",
         "z_index",
     }
+
+    deco_parts: List[str] = []
+    if props.get("text_underline"):
+        deco_parts.append("underline")
+    if props.get("text_strikethrough"):
+        deco_parts.append("line-through")
+    if deco_parts:
+        out.append(("text-decoration", " ".join(deco_parts)))
 
     for key, value in props.items():
         if key in _NON_STYLE_PROP_KEYS:
@@ -259,6 +271,9 @@ def _css_kv(
                 out.append(("flex-direction", "column"))
                 jc = "center" if va == "center" else "flex-end"
                 out.append(("justify-content", jc))
+            continue
+        if key == "line_height_px":
+            out.append(("line-height", f"{value}px"))
             continue
         css_key = key.replace("_", "-")
         if key in pixel_keys:
@@ -1418,7 +1433,7 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 )
 
-            for key in ("font_weight", "text_align"):
+            for key in ("font_weight", "text_align", "font_style", "text_decoration"):
                 if props.get(key) in (None, ""):
                     continue
                 if not _expose_field(element, key):
@@ -1436,6 +1451,8 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
 
             for key in (
                 "font_size",
+                "letter_spacing",
+                "line_height_px",
                 "border_radius",
                 "border_width",
                 "fill_animation_duration_ms",

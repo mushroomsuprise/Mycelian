@@ -2,14 +2,17 @@ Legacy Templates:
     [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
 Spore Studio:
-    [] - Investigate issues with the templates suddenly not updating until the app is closed. Maybe a web_engine failure?
-    [] - Check hot reload maybe causing issues with packaged Windows version?
-    [] - Port conflict for web_engine, may be due to reload feature? End user had to reboot to get it working again.
     [] - Add in additional text options: text leading, kerning, bold, italic, underlined, strikethrough, etc etc
     [] - Dragging text element box did not update the size, could also effect other elements
     [] - Make sections in the Properties tab collapsable (compressed by default)
-    [] - Align checkboxes with their text, instead of being above or below it
-    [] - Utilize more tooltips for options
+    [] - Align checkboxes with their text in the Properties tab, instead of being above or below it
+    [] - Utilize more tooltips for options so title text can be simpler
+    [] - Make right panel resizable
+    [] - Make it easier to see what tab youre in for the right panel. Add better separation between the tabs. Make the tabs a "carousel" if they overflow the panel width
+    [] - Remove the bottom black bar, remove the "Loaded" text and move "Unsaved Changes" text to be to the left of the Preview button. See first image for how it currently looks.
+    [] - Update the Progress Bar element's icon. it currently appears as a small square
+    [] - Remove the extra "?" button to open the help next to the reload editor button. there is a global button in the top right of the app that handles this already
+
 
 Chat template:
     [x] - Add option to change the chat message for an alert (bits, subs, resubs, etc) from a regular chat message, to a special event type message that will display the alert image/video and the alert message. This should have the option to do either message type or both. Will need to scale the image to the font size, and the font size should be based on the event text font size
