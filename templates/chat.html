@@ -123,7 +123,7 @@
             line-height: {{ AlertEventLineHeight }};
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: {{ AlertEventMediaGap }}px;
             position: relative;
             overflow: hidden;
             border: {{ AlertEventBorderWidth }}px solid {{ AlertEventBorderColor }};
@@ -177,6 +177,7 @@
             flex-shrink: 0;
             display: inline-flex;
             align-items: center;
+            padding: {{ AlertEventMediaPadding }}px;
         }
 
         .alert-event-media img,
@@ -191,6 +192,7 @@
         .alert-event-body {
             flex: 1;
             min-width: 0;
+            padding: {{ AlertEventTextPadding }}px;
         }
 
         .alert-event-text {
@@ -387,7 +389,7 @@
 
         .message-reply {
             display: block;
-            font-size: calc({{ EventFontSize }}px * 0.85);
+            font-size: calc({{ FontSize }}px * {{ ReplyFontScale }});
             color: {{ ReplyColor }};
             opacity: 0.85;
             margin-bottom: 4px;
@@ -3203,6 +3205,9 @@
             var alertEventBorderColor = _chatCfg(config, 'AlertEventBorderColor', '#888888');
             var alertEventBorderRadius = _chatCfg(config, 'AlertEventBorderRadius', 6);
             var alertEventPadding = _chatCfg(config, 'AlertEventPadding', 8);
+            var alertEventMediaPadding = _chatCfg(config, 'AlertEventMediaPadding', 0);
+            var alertEventTextPadding = _chatCfg(config, 'AlertEventTextPadding', 0);
+            var alertEventMediaGap = _chatCfg(config, 'AlertEventMediaGap', 8);
             var alertEventBG = _chatCfg(config, 'AlertEventBG', 'transparent');
             var alertEventBGImage = String(_chatCfg(config, 'AlertEventBGImage', '') || '').trim();
             var alertEventBGSize = _chatCfg(config, 'AlertEventBGSize', 'cover');
@@ -3258,6 +3263,7 @@
             var timestampMargin = _chatCfg(config, 'TimestampMargin', 4);
             var timestampOpacity = _chatCfg(config, 'TimestampOpacity', 0.7);
             var replyColor = _chatCfg(config, 'ReplyColor', '#94a3b8');
+            var replyFontScale = _chatCfg(config, 'ReplyFontScale', 0.75);
             var pointIconSizeCfg = _chatCfg(config, 'PointIconSize', 14);
             pointIconSize = pointIconSizeCfg;
             var animRule = (messageAnimation === 'none')
@@ -3278,7 +3284,7 @@
                 'color: ' + eventColor + '; font-size: ' + eventFontSizeCfg + 'px; border-left: ' + eventBorderWidth + 'px solid ' + eventBorderColor + '; }' +
                 '.chat-message.alert-event-message { font-family: alert-event-font, event-font, chat-font, Arial, sans-serif; ' +
                 'font-size: ' + alertEventFontSizeCfg + 'px; color: ' + alertEventColor + '; font-weight: ' + alertEventFontWeight + '; ' +
-                'font-style: ' + alertEventFontStyle + '; line-height: ' + alertEventLineHeight + '; display: flex; align-items: center; gap: 8px; ' +
+                'font-style: ' + alertEventFontStyle + '; line-height: ' + alertEventLineHeight + '; display: flex; align-items: center; gap: ' + alertEventMediaGap + 'px; ' +
                 'position: relative; overflow: hidden; ' + alertEnterAnimRule + ' ' +
                 'border: ' + alertEventBorderWidth + 'px solid ' + alertEventBorderColor + '; ' +
                 'border-radius: ' + alertEventBorderRadius + 'px; padding: ' + alertEventPadding + 'px; ' +
@@ -3291,6 +3297,8 @@
                 ) : '') +
                 '}' +
                 '.chat-message.alert-event-message .alert-event-media, .chat-message.alert-event-message .alert-event-body { position: relative; z-index: 2; }' +
+                '.alert-event-media { padding: ' + alertEventMediaPadding + 'px; }' +
+                '.alert-event-body { padding: ' + alertEventTextPadding + 'px; }' +
                 alertEventShimmerCss +
                 '.alert-event-user-message { font-size: calc(' + alertEventFontSizeCfg + 'px * ' + alertEventUserMessageScale + '); ' +
                 'font-style: ' + alertEventUserMessageStyle + '; opacity: ' + alertEventUserMessageOpacity + '; ' +
@@ -3315,7 +3323,7 @@
                 '.cheermote-container { margin: 0 ' + emoteMargin + 'px; }' +
                 '.cheermote-img { height: calc(28px * ' + emoteScale + '); }' +
                 '.timestamp { font-size: ' + timestampSize + 'px; color: ' + timestampColor + '; margin-right: ' + timestampMargin + 'px; opacity: ' + timestampOpacity + '; }' +
-                '.message-reply { font-size: calc(' + eventFontSizeCfg + 'px * 0.85); color: ' + replyColor + '; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }' +
+                '.message-reply { font-size: calc(' + fontSize + 'px * ' + replyFontScale + '); color: ' + replyColor + '; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }' +
                 '.point-icon { width: ' + pointIconSizeCfg + 'px; height: ' + pointIconSizeCfg + 'px; }' +
                 '@media (max-width: 768px) { .chat-message { font-size: calc(' + fontSize + 'px * 0.9); padding: calc(' + messagePadding + 'px * 0.8); } ' +
                 '.chat-message.activity-event { font-size: calc(' + fontSize + 'px * 0.75); padding: calc(' + messagePadding + 'px * 0.3) calc(' + messagePadding + 'px * 0.5); ' +

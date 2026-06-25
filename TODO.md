@@ -23,8 +23,8 @@ Chat template:
     [x] - Fix reply message font size to be based on the event message font size
     [x] - Fix reply messages so that the reply is only a single text line that gets truncated with 3 dots
     [x] - Fix reply messages not stripping the leading username from the main message
-    [] - Add padding options to the alert event display for the images and fonts
-    [] - Update reply font size to be driven off the chat message. It should use a user definable scaler value to make it smaller (default 0.75x).
+    [x] - Add padding options to the alert event display for the images and fonts
+    [x] - Update reply font size to be driven off the chat message. It should use a user definable scaler value to make it smaller (default 0.75x).
 
 UI Improvements:
     [x] - Move the two Twitch toggles from App Settings to the Twitch tab. Put inside an "Options" card that will be below the connection cards

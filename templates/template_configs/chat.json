@@ -606,7 +606,7 @@
             "value": 18,
             "min": 8,
             "max": 100,
-            "description": "Font size for event messages in pixels (also scales reply headers)"
+            "description": "Font size for event messages in pixels"
         },
         {
             "type": "separator",
@@ -709,6 +709,33 @@
             "min": 0,
             "max": 40,
             "description": "Inner padding for the media-rich alert container in pixels"
+        },
+        {
+            "type": "number",
+            "id": "AlertEventMediaPadding",
+            "label": "Alert Event Media Padding",
+            "value": 0,
+            "min": 0,
+            "max": 20,
+            "description": "Padding around the alert image/video in pixels"
+        },
+        {
+            "type": "number",
+            "id": "AlertEventTextPadding",
+            "label": "Alert Event Text Padding",
+            "value": 0,
+            "min": 0,
+            "max": 20,
+            "description": "Padding around the alert event text in pixels"
+        },
+        {
+            "type": "number",
+            "id": "AlertEventMediaGap",
+            "label": "Alert Event Media Gap",
+            "value": 8,
+            "min": 0,
+            "max": 40,
+            "description": "Gap between alert media and text in pixels"
         },
         {
             "type": "color",
@@ -1550,6 +1577,16 @@
                 "transparent"
             ],
             "transparent": false
+        },
+        {
+            "type": "number",
+            "id": "ReplyFontScale",
+            "label": "Reply Font Scale",
+            "value": 0.75,
+            "min": 0.3,
+            "max": 1.5,
+            "step": 0.05,
+            "description": "Reply header text size relative to Font Size (main chat message font)"
         },
         {
             "type": "number",
