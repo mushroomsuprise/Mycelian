@@ -194,7 +194,7 @@ CUSTOM_CSS = """
     min-height: 220px;
     position: relative;
     overflow: hidden;
-    background: rgba(0, 0, 0, 0.08);
+    background: var(--color-bg-elevated);
 }
 .mycelian-cs-popout-dialog__preview-outer {
     position: absolute;
@@ -222,6 +222,18 @@ CUSTOM_CSS = """
         var(--color-border-default) 50%
     );
     z-index: 2;
+}
+
+[data-mycelian-cs-preview-outer],
+[data-mycelian-cs-preview-outer] > div,
+[data-mycelian-cs-popout-preview],
+[data-mycelian-cs-popout-preview] > div {
+    background: var(--color-bg-elevated);
+}
+[data-mycelian-cs-preview-outer] iframe,
+[data-mycelian-cs-popout-preview] iframe {
+    background: transparent;
+    border: 0;
 }
 
 """
@@ -254,6 +266,7 @@ def _assign_preview_iframe_src(
     if scale_outer_id:
         onload_scale = (
             "iframe.onload=function(){"
+            "if(window.mycelianCsPreviewPostChrome){window.mycelianCsPreviewPostChrome(iframe);}"
             "if(window.mycelianCsPreviewScale){"
             f"window.mycelianCsPreviewScale({json.dumps(scale_outer_id)},"
             f"{json.dumps(inner_id)},{int(design_w)},{int(design_h)},"
@@ -266,11 +279,16 @@ def _assign_preview_iframe_src(
         "if(!inner){return;}"
         "var iframe=inner.querySelector('iframe');"
         "if(!iframe){return;}"
-        f"iframe.src={json.dumps(src)};"
+        f"var __rawSrc={json.dumps(src)};"
+        "var __src=(window.mycelianCsPreviewSrcWithChrome"
+        "?window.mycelianCsPreviewSrcWithChrome(__rawSrc):__rawSrc);"
+        "iframe.src=__src;"
         f"iframe.width={int(design_w)};"
         f"iframe.height={int(design_h)};"
         f"iframe.style.width='{int(design_w)}px';"
         f"iframe.style.height='{int(design_h)}px';"
+        "iframe.style.background='transparent';"
+        "inner.style.background='transparent';"
         f"{onload_scale}"
         "})();"
     )
@@ -343,6 +361,30 @@ def _estimate_design_size(form_data: Dict[str, Any]) -> Tuple[int, int]:
 _PREVIEW_SCALE_IIFE = r"""
 (function () {
   if (window.mycelianCsPreviewScale) { return; }
+  window.mycelianCsPreviewChromeBg = function () {
+    var root = document.documentElement;
+    var bg = getComputedStyle(root).getPropertyValue("--color-bg-elevated").trim();
+    if (!bg) {
+      bg = getComputedStyle(root).getPropertyValue("--color-bg-base").trim();
+    }
+    if (!bg) { bg = "#1a1d24"; }
+    return bg;
+  };
+  window.mycelianCsPreviewSrcWithChrome = function (src) {
+    var url = String(src || "");
+    if (url.indexOf("__preview_chrome_bg=") >= 0) { return url; }
+    var bg = window.mycelianCsPreviewChromeBg();
+    return url + (url.indexOf("?") >= 0 ? "&" : "?") + "__preview_chrome_bg=" + encodeURIComponent(bg);
+  };
+  window.mycelianCsPreviewPostChrome = function (iframe) {
+    if (!iframe || !iframe.contentWindow) { return; }
+    try {
+      iframe.contentWindow.postMessage(
+        { type: "mycelian_preview_chrome", bg: window.mycelianCsPreviewChromeBg() },
+        "*"
+      );
+    } catch (e) {}
+  };
   function getState(outer) {
     if (!outer._mycelianCs) {
       outer._mycelianCs = {
@@ -395,6 +437,7 @@ _PREVIEW_SCALE_IIFE = r"""
     inner.style.width = state.designW + "px";
     inner.style.height = state.designH + "px";
     inner.style.transform = "translate(" + pos.fx + "px," + pos.fy + "px) scale(" + eff + ")";
+    inner.style.background = "transparent";
     var iframe = inner.querySelector("iframe");
     if (iframe) {
       iframe.setAttribute("width", String(state.designW));
@@ -402,6 +445,7 @@ _PREVIEW_SCALE_IIFE = r"""
       iframe.style.width = state.designW + "px";
       iframe.style.height = state.designH + "px";
       iframe.style.pointerEvents = "none";
+      iframe.style.background = "transparent";
     }
   }
   function ensureOverlay(outer) {
@@ -648,10 +692,12 @@ _POPOUT_DIALOG_IIFE = r"""
     inner.style.height = sh + "px";
     inner.style.overflow = "hidden";
     inner.style.transform = "none";
+    inner.style.background = "transparent";
     iframe.style.display = "block";
     iframe.style.border = "none";
     iframe.style.width = designW + "px";
     iframe.style.height = designH + "px";
+    iframe.style.background = "transparent";
     iframe.style.transform = "scale(" + eff + ")";
     iframe.style.transformOrigin = "top left";
     var panOverlay = outer.querySelector(".mycelian-cs-pan-overlay");
@@ -696,8 +742,15 @@ _POPOUT_DIALOG_IIFE = r"""
         setTimeout(applySrc, 40);
         return;
       }
-      iframe.onload = fit;
-      iframe.src = src;
+      iframe.onload = function () {
+        if (window.mycelianCsPreviewPostChrome) {
+          window.mycelianCsPreviewPostChrome(iframe);
+        }
+        fit();
+      };
+      iframe.src = window.mycelianCsPreviewSrcWithChrome
+        ? window.mycelianCsPreviewSrcWithChrome(src)
+        : src;
       iframe.setAttribute("width", String(designW));
       iframe.setAttribute("height", String(designH));
       requestAnimationFrame(function () { requestAnimationFrame(fit); });
@@ -1485,7 +1538,7 @@ def create_custom_sources_tab():
                         f"id={preview_outer_id} data-mycelian-cs-preview-outer=true"
                     )
                     .classes(
-                        "relative w-full flex-1 min-h-[200px] overflow-hidden rounded bg-black/10"
+                        "relative w-full flex-1 min-h-[200px] overflow-hidden rounded"
                     )
                 )
                 with preview_outer:

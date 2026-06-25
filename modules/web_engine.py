@@ -262,12 +262,40 @@ _DEMO_ALERT_PRESETS = (
 # cookie, no injection).
 MYCELIAN_PREVIEW_HELPER_HTML = """
 <style id="__mycelian_preview_helper_css">
-/* reserved for future preview-only CSS overrides */
+/* Custom Sources preview: cross-origin iframes cannot composite parent
+   backgrounds through transparent template regions (browser paints white).
+   Match the host app chrome instead of leaving html canvas white. */
+html {
+  background-color: var(--mycelian-preview-chrome-bg, #1a1d24) !important;
+}
+body {
+  background: transparent !important;
+}
 </style>
 <script id="__mycelian_preview_helper_js">
 (function () {
   if (window.__mycelianPreviewHelperReady) { return; }
   window.__mycelianPreviewHelperReady = true;
+  (function applyPreviewChrome() {
+    function setChromeBg(bg) {
+      if (!bg || typeof bg !== "string") { return; }
+      var t = bg.trim();
+      if (!t) { return; }
+      document.documentElement.style.setProperty("--mycelian-preview-chrome-bg", t);
+      document.documentElement.style.backgroundColor = t;
+    }
+    var qs = window.location.search || "";
+    var m = /(?:\\?|&)__preview_chrome_bg=([^&]+)/.exec(qs);
+    if (m) {
+      try { setChromeBg(decodeURIComponent(m[1].replace(/\\+/g, " "))); } catch (e) {}
+    }
+    window.addEventListener("message", function (ev) {
+      var d = ev && ev.data;
+      if (d && d.type === "mycelian_preview_chrome" && d.bg) {
+        setChromeBg(d.bg);
+      }
+    });
+  })();
   window.__mycelianPreviewSettings = window.__mycelianPreviewSettings || {
     enable_preview_sounds: true,
     show_mock_toolbar: true
