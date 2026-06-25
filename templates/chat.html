@@ -779,7 +779,7 @@
 
         function stripReplyMentionFromMessage(text, reply) {
             if (!reply || text == null) {
-                return text;
+                return { text: text, removedChars: 0 };
             }
             var trimmed = String(text).trim();
             var candidates = [];
@@ -794,12 +794,15 @@
                 if (!login) {
                     continue;
                 }
-                var prefix = '@' + login;
-                if (trimmed.toLowerCase().indexOf(prefix.toLowerCase()) === 0) {
-                    return trimmed.substring(prefix.length).trim();
+                var escapedLogin = login.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                var prefixRe = new RegExp('^@' + escapedLogin + '\\s*', 'i');
+                var match = trimmed.match(prefixRe);
+                if (match) {
+                    var removedChars = match[0].length;
+                    return { text: trimmed.substring(removedChars).trimStart(), removedChars: removedChars };
                 }
             }
-            return trimmed;
+            return { text: trimmed, removedChars: 0 };
         }
 
         function isPointsActivityAlert(alertData) {
@@ -1682,8 +1685,11 @@
                 chatLog('ACTION message detected (/me). Original:', messageData.message, 'Processed:', processedMessage);
             }
 
+            var replyStripOffset = 0;
             if (messageData.reply) {
-                processedMessage = stripReplyMentionFromMessage(processedMessage, messageData.reply);
+                var stripResult = stripReplyMentionFromMessage(processedMessage, messageData.reply);
+                processedMessage = stripResult.text;
+                replyStripOffset = stripResult.removedChars;
             }
 
             // Apply random font to message if enabled
@@ -1739,7 +1745,7 @@
             if (isActionMessage) {
                 // For ACTION messages, process emotes/mentions but apply username color to the entire message
                 if (enableEmotes) {
-                    messageContent = parseEmotesForAction(processedMessage, messageData.emotes, usernameColor);
+                    messageContent = parseEmotesForAction(processedMessage, messageData.emotes, usernameColor, replyStripOffset);
                 } else {
                     // When emotes are disabled, still process @mentions but apply username color
                     messageContent = processTextForEmotesAction(processedMessage, usernameColor);
@@ -1747,7 +1753,7 @@
             } else {
                 // Regular message processing
                 if (enableEmotes) {
-                    messageContent = parseEmotes(processedMessage, messageData.emotes);
+                    messageContent = parseEmotes(processedMessage, messageData.emotes, replyStripOffset);
                 } else {
                     // When emotes are disabled, still process @mentions
                     messageContent = processTextForEmotes(processedMessage);
@@ -1942,13 +1948,14 @@
 
 
         // Parse emotes in message
-        function parseEmotes(message, twitchEmotes) {
+        function parseEmotes(message, twitchEmotes, positionOffset) {
+            positionOffset = positionOffset || 0;
             // First, handle Twitch native emotes on the original message
             var twitchProcessedMessage = message;
             var usedTwitchEmotePositions = [];
 
             if (twitchEmotes && twitchEmotes !== 'null') {
-                var result = parseTwitchEmotesInOriginalMessage(message, twitchEmotes);
+                var result = parseTwitchEmotesInOriginalMessage(message, twitchEmotes, positionOffset);
                 twitchProcessedMessage = result.message;
                 usedTwitchEmotePositions = result.usedPositions;
             }
@@ -1986,13 +1993,14 @@
         }
 
         // Parse emotes in ACTION message with username color
-        function parseEmotesForAction(message, twitchEmotes, usernameColor) {
+        function parseEmotesForAction(message, twitchEmotes, usernameColor, positionOffset) {
+            positionOffset = positionOffset || 0;
             // First, handle Twitch native emotes on the original message
             var twitchProcessedMessage = message;
             var usedTwitchEmotePositions = [];
 
             if (twitchEmotes && twitchEmotes !== 'null') {
-                var result = parseTwitchEmotesInOriginalMessage(message, twitchEmotes);
+                var result = parseTwitchEmotesInOriginalMessage(message, twitchEmotes, positionOffset);
                 twitchProcessedMessage = result.message;
                 usedTwitchEmotePositions = result.usedPositions;
             }
@@ -2636,8 +2644,9 @@
         }
 
         // Parse Twitch emotes on the original message before processing other emotes
-        function parseTwitchEmotesInOriginalMessage(message, emotesString) {
-            chatLog('Parsing Twitch emotes. Message:', message, 'Emotes:', emotesString);
+        function parseTwitchEmotesInOriginalMessage(message, emotesString, positionOffset) {
+            positionOffset = positionOffset || 0;
+            chatLog('Parsing Twitch emotes. Message:', message, 'Emotes:', emotesString, 'Offset:', positionOffset);
 
             if (!emotesString || emotesString === 'null') {
                 return { message: message, usedPositions: [] };
@@ -2660,8 +2669,13 @@
                     var range = position.split('-');
                     if (range.length !== 2) return;
 
-                    var start = parseInt(range[0]);
-                    var end = parseInt(range[1]);
+                    var start = parseInt(range[0], 10) - positionOffset;
+                    var end = parseInt(range[1], 10) - positionOffset;
+
+                    if (start < 0 || end < 0) {
+                        chatLog('Skipping Twitch emote position outside stripped message:', start, '-', end);
+                        return;
+                    }
 
                     chatLog('Twitch emote position:', start, '-', end, 'Text:', message.substring(start, end + 1));
 
