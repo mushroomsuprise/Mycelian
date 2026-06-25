@@ -1,6 +1,6 @@
 [project]
 name = "mycelian"
-version = "1.11.6"
+version = "1.11.7"
 description = "Mycelian is a custom alert and browser source tool for Twitch streamers."
 readme = "README.md"
 license = { text = "MIT" }
