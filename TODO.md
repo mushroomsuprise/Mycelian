@@ -25,6 +25,9 @@ Chat template:
     [x] - Fix reply messages not stripping the leading username from the main message
     [x] - Add padding options to the alert event display for the images and fonts
     [x] - Update reply font size to be driven off the chat message. It should use a user definable scaler value to make it smaller (default 0.75x).
+    [] - Fix missing "simple" event messages for non media rich events. it should always default back to the simple message if the media alert errors. this should happen even if the toggle is disabled for simple event messages.
+    [] - Fix media-rich alert always saying people resibscribed for 1 month. it should display the total number of months they have been subscribed for
+    [] - Fix message formatting so it says "gifted a tier X sub!" when only a single gifted sub is sent.
 
 UI Improvements:
     [x] - Move the two Twitch toggles from App Settings to the Twitch tab. Put inside an "Options" card that will be below the connection cards
