@@ -29,6 +29,7 @@ Chat template:
     [] - Fix media-rich alert always saying people resibscribed for 1 month. it should display the total number of months they have been subscribed for
     [] - Fix message formatting so it says "gifted a tier X sub!" when only a single gifted sub is sent.
     [] - Fix media-rich events displaying alerts that arent configured (follow alert for sure)
+    [] - Fix username color matching to check as case insensitive
 
 UI Improvements:
     [x] - Move the two Twitch toggles from App Settings to the Twitch tab. Put inside an "Options" card that will be below the connection cards
