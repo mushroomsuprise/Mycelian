@@ -890,6 +890,10 @@ def build_activity_feed_alert_payload(
                         value = stored_alert_data.get(field)
                         if value is not None and field not in alert_data:
                             alert_data[field] = value
+                    for field in ("emotes", "fragments"):
+                        value = stored_alert_data.get(field)
+                        if value is not None and field not in alert_data:
+                            alert_data[field] = value
             else:
                 logger.debug(f"No stored alert data found for alert_id {alert_id}")
 

@@ -210,6 +210,20 @@
             opacity: {{ AlertEventUserMessageOpacity }};
         }
 
+        .alert-event-user-message .emote-img,
+        .alert-event-user-message .emote-base,
+        .alert-event-user-message .emote-zw,
+        .alert-event-user-message .cheermote-img {
+            height: calc(28px * {{ AlertEventUserMessageEmoteScale }});
+        }
+
+        .alert-event-user-message .emote-img,
+        .alert-event-user-message .emote-container,
+        .alert-event-user-message .emote-zw,
+        .alert-event-user-message .cheermote-container {
+            margin: 0 {{ AlertEventUserMessageEmoteMargin }}px;
+        }
+
         /* Activity feed event message styles */
         .chat-message.activity-event {
             font-style: italic;
@@ -1588,18 +1602,7 @@
 
             var userMessage = alertData.user_message;
             if (userMessage) {
-                var userMessageHtml;
-                if (enableEmotes) {
-                    var stored = alertData.stored_alert_data || {};
-                    var emotes = stored.emotes || alertData.emotes;
-                    if (typeof emotes === 'string' && emotes !== 'null') {
-                        userMessageHtml = parseEmotes(String(userMessage), emotes);
-                    } else {
-                        userMessageHtml = escapeHtml(String(userMessage));
-                    }
-                } else {
-                    userMessageHtml = escapeHtml(String(userMessage));
-                }
+                var userMessageHtml = parseAlertUserMessageHtml(alertData, userMessage);
                 bodyHtml += '<div class="alert-event-user-message">' + userMessageHtml + '</div>';
             }
             bodyHtml += '</div>';
@@ -1843,22 +1846,14 @@
 
             // Add message content with emote parsing and special ACTION handling
             var messageContent;
-            if (isActionMessage) {
-                // For ACTION messages, process emotes/mentions but apply username color to the entire message
-                if (enableEmotes) {
-                    messageContent = parseEmotesForAction(processedMessage, messageData.emotes, usernameColor, replyStripOffset);
-                } else {
-                    // When emotes are disabled, still process @mentions but apply username color
-                    messageContent = processTextForEmotesAction(processedMessage, usernameColor);
-                }
+            if (!enableEmotes) {
+                messageContent = isActionMessage
+                    ? '<span style="color: ' + usernameColor + '">' + escapeHtml(processedMessage) + '</span>'
+                    : escapeHtml(processedMessage);
+            } else if (isActionMessage) {
+                messageContent = parseEmotesForAction(processedMessage, messageData.emotes, usernameColor, replyStripOffset);
             } else {
-                // Regular message processing
-                if (enableEmotes) {
-                    messageContent = parseEmotes(processedMessage, messageData.emotes, replyStripOffset);
-                } else {
-                    // When emotes are disabled, still process @mentions
-                    messageContent = processTextForEmotes(processedMessage);
-                }
+                messageContent = parseEmotes(processedMessage, messageData.emotes, replyStripOffset);
             }
 
             if (messageData.message_type === 'power_ups_gigantified_emote') {
@@ -2048,6 +2043,179 @@
 
 
 
+        function handleEmoteImageError(imgEl) {
+            if (!imgEl || imgEl.getAttribute('data-emote-fallback-applied') === '1') {
+                return;
+            }
+            imgEl.setAttribute('data-emote-fallback-applied', '1');
+
+            var fallback = imgEl.getAttribute('data-emote-fallback') || '';
+            var replacement = document.createTextNode(fallback);
+            var container = imgEl.closest('.cheermote-container, .emote-container');
+            var target = container || imgEl;
+
+            if (target.parentNode) {
+                target.parentNode.replaceChild(replacement, target);
+            }
+        }
+
+        function buildEmoteImgHtml(url, fallbackText, extraClass, extraAttrs) {
+            extraClass = extraClass || '';
+            extraAttrs = extraAttrs || '';
+            var cls = 'emote-img' + (extraClass ? ' ' + extraClass : '');
+            var fallback = escapeHtml(fallbackText || '');
+            return '<img src="' + escapeHtml(url) + '" class="' + cls + '" ' +
+                'data-emote-fallback="' + fallback + '" alt="" ' +
+                'onerror="handleEmoteImageError(this)"' + extraAttrs + '>';
+        }
+
+        function buildCheermoteHtml(word, emoteUrl, amount, color) {
+            return '<span class="cheermote-container">' +
+                buildEmoteImgHtml(emoteUrl, word, 'cheermote-img') +
+                '<span class="cheermote-amount" style="color: ' + color + '">' + amount + '</span>' +
+                '</span>';
+        }
+
+        function renderTwitchEmoteImg(emoteId, fallbackText) {
+            var url = 'https://static-cdn.jtvnw.net/emoticons/v2/' + emoteId + '/default/light/1.0';
+            return buildEmoteImgHtml(url, fallbackText || '');
+        }
+
+        function normalizeEmotesList(emotes) {
+            if (!emotes) {
+                return null;
+            }
+            if (typeof emotes === 'string') {
+                if (emotes.indexOf(':') !== -1 && emotes.indexOf('/') !== -1) {
+                    return null;
+                }
+                try {
+                    emotes = JSON.parse(emotes);
+                } catch (e) {
+                    return null;
+                }
+            }
+            return Array.isArray(emotes) && emotes.length ? emotes : null;
+        }
+
+        function normalizeFragmentsList(fragments) {
+            if (!fragments) {
+                return null;
+            }
+            if (typeof fragments === 'string') {
+                try {
+                    fragments = JSON.parse(fragments);
+                } catch (e) {
+                    return null;
+                }
+            }
+            return Array.isArray(fragments) && fragments.length ? fragments : null;
+        }
+
+        function parseSubscriptionEmotesMessage(text, emotesList) {
+            var list = normalizeEmotesList(emotesList);
+            if (!list) {
+                return processTextForEmotes(text);
+            }
+            var replacements = [];
+            list.forEach(function (emote) {
+                replacements.push({
+                    start: parseInt(emote.begin, 10),
+                    end: parseInt(emote.end, 10),
+                    emoteId: String(emote.id)
+                });
+            });
+            replacements.sort(function (a, b) { return b.start - a.start; });
+            var processed = text;
+            replacements.forEach(function (replacement) {
+                var fallbackText = text.substring(replacement.start, replacement.end + 1);
+                var before = processed.substring(0, replacement.start);
+                var after = processed.substring(replacement.end + 1);
+                processed = before + renderTwitchEmoteImg(replacement.emoteId, fallbackText) + after;
+            });
+            if (processed.indexOf('<img') !== -1 && processed.indexOf('emote-img') !== -1) {
+                var parts = processed.split(/(<img[^>]*>)/);
+                return parts.map(function (part) {
+                    if (part.startsWith('<img') && part.indexOf('emote-img') !== -1) {
+                        return part;
+                    }
+                    return part ? processTextForEmotesWithContext(part, []) : part;
+                }).join('');
+            }
+            return processTextForEmotes(processed);
+        }
+
+        function renderCheermoteFragment(frag) {
+            var prefix = String(frag.prefix || '').toLowerCase();
+            var amount = parseInt(frag.bits, 10) || 0;
+            var fallbackText = frag.text || (prefix && amount ? prefix + amount : '');
+            if (!prefix || !emoteCache.cheermotes[prefix]) {
+                return escapeHtml(fallbackText);
+            }
+            var tiers = Object.keys(emoteCache.cheermotes[prefix]).map(Number).sort(function (a, b) { return b - a; });
+            var tier = null;
+            for (var i = 0; i < tiers.length; i++) {
+                if (amount >= tiers[i]) {
+                    tier = tiers[i];
+                    break;
+                }
+            }
+            if (tier === null) {
+                return escapeHtml(fallbackText);
+            }
+            var cheermoteData = emoteCache.cheermotes[prefix][tier];
+            var emoteUrl = Object.keys(cheermoteData)[0];
+            var color = cheermoteData[emoteUrl];
+            return buildCheermoteHtml(fallbackText, emoteUrl, amount, color);
+        }
+
+        function parseBitsFragmentsMessage(text, fragments) {
+            var frags = normalizeFragmentsList(fragments);
+            if (!frags) {
+                return processTextForEmotes(text);
+            }
+            var html = '';
+            frags.forEach(function (frag) {
+                var type = frag.type || 'text';
+                if (type === 'cheermote') {
+                    html += renderCheermoteFragment(frag);
+                } else if (type === 'emote' && frag.emote_id) {
+                    html += renderTwitchEmoteImg(frag.emote_id, frag.text || '');
+                } else {
+                    html += processTextForEmotes(frag.text || '');
+                }
+            });
+            return html;
+        }
+
+        function parseAlertUserMessageHtml(alertData, userMessageText) {
+            var text = String(userMessageText || '').trim();
+            if (!text) {
+                return '';
+            }
+
+            if (!enableEmotes) {
+                return escapeHtml(text);
+            }
+
+            var fragments = normalizeFragmentsList(lookupChatAlertField(alertData, 'fragments'));
+            if (fragments) {
+                return parseBitsFragmentsMessage(text, fragments);
+            }
+
+            var emotesList = normalizeEmotesList(lookupChatAlertField(alertData, 'emotes'));
+            if (emotesList) {
+                return parseSubscriptionEmotesMessage(text, emotesList);
+            }
+
+            var emotesRaw = lookupChatAlertField(alertData, 'emotes');
+            if (typeof emotesRaw === 'string' && emotesRaw !== 'null' && emotesRaw.indexOf(':') !== -1) {
+                return parseEmotes(text, emotesRaw);
+            }
+
+            return processTextForEmotes(text);
+        }
+
         // Parse emotes in message
         function parseEmotes(message, twitchEmotes, positionOffset) {
             positionOffset = positionOffset || 0;
@@ -2216,7 +2384,7 @@
                                 // Convert text emote to HTML
                                 var prevEmoteResult = findEmoteWithMetadata(previousWord);
                                 if (prevEmoteResult) {
-                                    baseEmoteHtml = '<img src="' + prevEmoteResult.url + '" class="emote-img" alt="' + escapeHtml(prevEmoteResult.name) + '">';
+                                    baseEmoteHtml = buildEmoteImgHtml(prevEmoteResult.url, prevEmoteResult.name);
                                 }
                             }
 
@@ -2236,9 +2404,9 @@
                         if (emoteResult.isZeroWidth) {
                             // Zero-width emote without base, render as regular emote with special class
                             chatLog('Rendering zero-width emote as standalone:', word);
-                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                            emoteImg = buildEmoteImgHtml(emoteResult.url, word, 'emote-zw', ' title="Zero-width: ' + escapeHtml(emoteResult.name) + '"');
                         } else {
-                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                            emoteImg = buildEmoteImgHtml(emoteResult.url, word);
                         }
                         chatLog('Generated emote HTML:', emoteImg);
                         parsedWords.push(emoteImg);
@@ -2335,7 +2503,7 @@
                                 // Convert text emote to HTML
                                 var prevEmoteResult = findEmoteWithMetadata(previousWord);
                                 if (prevEmoteResult) {
-                                    baseEmoteHtml = '<img src="' + prevEmoteResult.url + '" class="emote-img" alt="' + escapeHtml(prevEmoteResult.name) + '">';
+                                    baseEmoteHtml = buildEmoteImgHtml(prevEmoteResult.url, prevEmoteResult.name);
                                 }
                             }
 
@@ -2355,9 +2523,9 @@
                         if (emoteResult.isZeroWidth) {
                             // Zero-width emote without base, render as regular emote with special class
                             chatLog('Rendering zero-width emote as standalone in ACTION:', word);
-                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                            emoteImg = buildEmoteImgHtml(emoteResult.url, word, 'emote-zw', ' title="Zero-width: ' + escapeHtml(emoteResult.name) + '"');
                         } else {
-                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                            emoteImg = buildEmoteImgHtml(emoteResult.url, word);
                         }
                         chatLog('Generated emote HTML in ACTION:', emoteImg);
                         parsedWords.push(emoteImg);
@@ -2452,7 +2620,7 @@
                                 isPreviousWordEmote = previousEmoteResult !== null;
 
                                 if (isPreviousWordEmote && !isPreviousWordCheermote) {
-                                    baseEmoteHtml = '<img src="' + previousEmoteResult.url + '" class="emote-img" alt="' + escapeHtml(previousEmoteResult.name) + '">';
+                                    baseEmoteHtml = buildEmoteImgHtml(previousEmoteResult.url, previousEmoteResult.name);
                                 }
                             }
 
@@ -2535,9 +2703,9 @@
                         if (emoteResult.isZeroWidth) {
                             // Zero-width emote without base, render as regular emote with special class
                             chatLog('Rendering zero-width emote as standalone:', word);
-                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                            emoteImg = buildEmoteImgHtml(emoteResult.url, word, 'emote-zw', ' title="Zero-width: ' + escapeHtml(emoteResult.name) + '"');
                         } else {
-                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                            emoteImg = buildEmoteImgHtml(emoteResult.url, word);
                         }
                         chatLog('Generated emote HTML with context:', emoteImg);
                         parsedWords.push(emoteImg);
@@ -2632,7 +2800,7 @@
                                 isPreviousWordEmote = previousEmoteResult !== null;
 
                                 if (isPreviousWordEmote && !isPreviousWordCheermote) {
-                                    baseEmoteHtml = '<img src="' + previousEmoteResult.url + '" class="emote-img" alt="' + escapeHtml(previousEmoteResult.name) + '">';
+                                    baseEmoteHtml = buildEmoteImgHtml(previousEmoteResult.url, previousEmoteResult.name);
                                 }
                             }
 
@@ -2715,9 +2883,9 @@
                         if (emoteResult.isZeroWidth) {
                             // Zero-width emote without base, render as regular emote with special class
                             chatLog('Rendering zero-width emote as standalone in ACTION:', word);
-                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img emote-zw" alt="' + escapeHtml(emoteResult.name) + '" title="Zero-width: ' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                            emoteImg = buildEmoteImgHtml(emoteResult.url, word, 'emote-zw', ' title="Zero-width: ' + escapeHtml(emoteResult.name) + '"');
                         } else {
-                            emoteImg = '<img src="' + emoteResult.url + '" class="emote-img" alt="' + escapeHtml(emoteResult.name) + '" onerror="console.error(\'Failed to load emote:\', this.src); this.style.display=\'none\';">';
+                            emoteImg = buildEmoteImgHtml(emoteResult.url, word);
                         }
                         chatLog('Generated emote HTML with context in ACTION:', emoteImg);
                         parsedWords.push(emoteImg);
@@ -2791,7 +2959,8 @@
             var processedMessage = message;
             replacements.forEach(function (replacement) {
                 var emoteUrl = 'https://static-cdn.jtvnw.net/emoticons/v2/' + replacement.emoteId + '/default/light/1.0';
-                var emoteImg = '<img src="' + emoteUrl + '" class="emote-img" alt="emote" onerror="console.error(\'Failed to load Twitch emote:\', this.src); this.style.display=\'none\';">';
+                var fallbackText = message.substring(replacement.start, replacement.end + 1);
+                var emoteImg = buildEmoteImgHtml(emoteUrl, fallbackText);
 
                 chatLog('Replacing Twitch emote at position', replacement.start, '-', replacement.end, 'with URL:', emoteUrl);
 
@@ -2821,7 +2990,7 @@
 
             // Extract the src from the base emote
             var srcMatch = baseEmoteHtml.match(/src="([^"]*)"/);
-            var altMatch = baseEmoteHtml.match(/alt="([^"]*)"/);
+            var fallbackMatch = baseEmoteHtml.match(/data-emote-fallback="([^"]*)"/);
             var classMatch = baseEmoteHtml.match(/class="([^"]*)"/);
 
             if (!srcMatch) {
@@ -2830,15 +2999,20 @@
             }
 
             var baseSrc = srcMatch[1];
-            var baseAlt = altMatch ? altMatch[1] : 'emote';
+            var baseFallback = 'emote';
+            if (fallbackMatch) {
+                var decodeDiv = document.createElement('div');
+                decodeDiv.innerHTML = fallbackMatch[1];
+                baseFallback = decodeDiv.textContent || 'emote';
+            }
             var baseClasses = classMatch ? classMatch[1] : 'emote-img';
 
-            chatLog('Extracted base emote - src:', baseSrc, 'alt:', baseAlt, 'classes:', baseClasses);
+            chatLog('Extracted base emote - src:', baseSrc, 'fallback:', baseFallback, 'classes:', baseClasses);
 
             // Create the overlay container with the base emote and overlay
             var result = '<span class="emote-container">' +
-                '<img src="' + baseSrc + '" class="emote-base" alt="' + escapeHtml(baseAlt) + '">' +
-                '<img src="' + overlayUrl + '" class="emote-overlay" alt="' + escapeHtml(overlayName) + '" title="Zero-width overlay: ' + escapeHtml(overlayName) + '">' +
+                buildEmoteImgHtml(baseSrc, baseFallback, 'emote-base') +
+                buildEmoteImgHtml(overlayUrl, overlayName, 'emote-overlay', ' title="Zero-width overlay: ' + escapeHtml(overlayName) + '"') +
                 '</span>';
 
             chatLog('Created overlay container:', result);
@@ -3011,10 +3185,7 @@
             var emoteUrl = Object.keys(cheermoteData)[0]; // Get the first (and likely only) URL
             var color = cheermoteData[emoteUrl];
 
-            return '<span class="cheermote-container">' +
-                '<img src="' + emoteUrl + '" class="cheermote-img" alt="' + prefix + '">' +
-                '<span class="cheermote-amount" style="color: ' + color + '">' + amount + '</span>' +
-                '</span>';
+            return buildCheermoteHtml(word, emoteUrl, amount, color);
         }
 
         // Format timestamp
@@ -3348,6 +3519,8 @@
             var emoteScale = _chatCfg(config, 'EmoteScale', 1);
             var emoteRadius = _chatCfg(config, 'EmoteRadius', 0);
             var emoteMargin = _chatCfg(config, 'EmoteMargin', 2);
+            var alertUserEmoteScale = _chatCfg(config, 'AlertEventUserMessageEmoteScale', 1.4);
+            var alertUserEmoteMargin = _chatCfg(config, 'AlertEventUserMessageEmoteMargin', 2);
             var gigScale = _chatCfg(config, 'GigantifiedTwitchDisplayScale', 2);
             var timestampSize = _chatCfg(config, 'TimestampSize', 11);
             var timestampColor = _chatCfg(config, 'TimestampColor', '#888888');
@@ -3395,6 +3568,10 @@
                 'font-style: ' + alertEventUserMessageStyle + '; opacity: ' + alertEventUserMessageOpacity + '; ' +
                 (alertEventUserMessageColor ? ('color: ' + alertEventUserMessageColor + '; ') : '') +
                 '}' +
+                '.alert-event-user-message .emote-img, .alert-event-user-message .emote-base, .alert-event-user-message .emote-zw, ' +
+                '.alert-event-user-message .cheermote-img { height: calc(28px * ' + alertUserEmoteScale + '); }' +
+                '.alert-event-user-message .emote-img, .alert-event-user-message .emote-container, .alert-event-user-message .emote-zw, ' +
+                '.alert-event-user-message .cheermote-container { margin: 0 ' + alertUserEmoteMargin + 'px; }' +
                 '.alert-event-media img, .alert-event-media video { height: calc(' + alertEventFontSizeCfg + 'px * ' + alertMediaScaleCfg + '); width: auto; object-fit: contain; }' +
                 '.chat-message.activity-event { font-size: calc(' + fontSize + 'px * 0.85); margin: calc(' + messageMargin + 'px * 0.3) 0; ' +
                 'padding: calc(' + messagePadding + 'px * 0.4) calc(' + messagePadding + 'px * 0.6); }' +

@@ -1000,6 +1000,25 @@
             "description": "Opacity for the optional user message line inside alert events"
         },
         {
+            "type": "number",
+            "id": "AlertEventUserMessageEmoteScale",
+            "label": "Alert User Message Emote Scale",
+            "value": 1.4,
+            "min": 0.3,
+            "max": 3.0,
+            "step": 0.1,
+            "description": "Uniform scale for emotes inside alert user messages"
+        },
+        {
+            "type": "number",
+            "id": "AlertEventUserMessageEmoteMargin",
+            "label": "Alert User Message Emote Margin",
+            "value": 2,
+            "min": 0,
+            "max": 8,
+            "description": "Horizontal margin around emotes in alert user messages"
+        },
+        {
             "type": "separator",
             "label": "Alert Event Animation"
         },
@@ -1394,7 +1413,7 @@
             "id": "EnableEmotes",
             "label": "Enable Emotes",
             "value": true,
-            "description": "Whether to parse and display emotes (BTTV, FFZ, 7TV, Twitch)"
+            "description": "When off, no emotes render in chat or alert user messages (Twitch, third-party, or cheermotes)"
         },
         {
             "type": "number",
