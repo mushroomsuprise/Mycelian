@@ -616,21 +616,21 @@
             "type": "checkbox",
             "id": "AlertShowActivitySummary",
             "label": "Show Activity Summary",
-            "value": true,
+            "value": false,
             "description": "Show the compact activity summary line for alerts (follows, subs, bits, etc.)"
         },
         {
             "type": "checkbox",
             "id": "AlertShowTwitchChat",
             "label": "Show Twitch Chat Message",
-            "value": true,
+            "value": false,
             "description": "Show the normal Twitch chat line for alert user messages (sub message, cheer text, etc.)"
         },
         {
             "type": "checkbox",
             "id": "AlertShowMediaEvent",
             "label": "Show Alert Media Event",
-            "value": false,
+            "value": true,
             "description": "Show a media-rich alert event block with alert image/video and message text"
         },
         {
@@ -1721,43 +1721,43 @@
             "event": "activity_feed_alert",
             "label": "Alert: Follow",
             "alert_type": "follow",
-            "tooltip": "Uses configured alert media, or a default placeholder GIF in preview"
+            "tooltip": "Uses configured follow alert media; falls back to simple text if none is configured"
         },
         {
             "event": "activity_feed_alert",
             "label": "Alert: Sub",
             "alert_type": "sub",
-            "tooltip": "Uses configured sub alert media, or a default placeholder GIF in preview"
+            "tooltip": "Uses configured sub alert media; falls back to simple text if none is configured"
         },
         {
             "event": "activity_feed_alert",
             "label": "Alert: Resub",
             "alert_type": "resub",
-            "tooltip": "Uses configured resub alert media, or a default placeholder GIF in preview"
+            "tooltip": "Uses configured resub alert media; falls back to simple text if none is configured"
         },
         {
             "event": "activity_feed_alert",
             "label": "Alert: Bits",
             "alert_type": "bit",
-            "tooltip": "Uses configured bits alert media (exact or range), or a default placeholder GIF in preview"
+            "tooltip": "Uses configured bits alert media (exact or range); falls back to simple text if none is configured"
         },
         {
             "event": "activity_feed_alert",
             "label": "Alert: Gift sub",
             "alert_type": "giftsub",
-            "tooltip": "Uses configured gift sub alert media (exact or range), or a default placeholder GIF in preview"
+            "tooltip": "Uses configured gift sub alert media (exact or range); falls back to simple text if none is configured"
         },
         {
             "event": "activity_feed_alert",
             "label": "Alert: Raid",
             "alert_type": "raid",
-            "tooltip": "Uses configured raid alert media, or a default placeholder GIF in preview"
+            "tooltip": "Uses configured raid alert media; falls back to simple text if none is configured"
         },
         {
             "event": "activity_feed_alert",
             "label": "Alert: Donation",
             "alert_type": "donation",
-            "tooltip": "Uses configured donation alert media, or a default placeholder GIF in preview"
+            "tooltip": "Uses configured donation alert media; falls back to simple text if none is configured"
         },
         {
             "event": "activity_feed_alert",

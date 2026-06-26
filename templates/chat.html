@@ -896,10 +896,20 @@
         }
 
         // Username color functions
+        function normalizeUsernameKey(username) {
+            return (username || '').toLowerCase();
+        }
+
+        function getCachedUsernameColor(username) {
+            return usernameColorCache[normalizeUsernameKey(username)] || null;
+        }
+
         function getUsernameColor(username, twitchColor) {
+            var cacheKey = normalizeUsernameKey(username);
+
             // Check if we've already assigned a color for this user
-            if (usernameColorCache[username]) {
-                return usernameColorCache[username];
+            if (usernameColorCache[cacheKey]) {
+                return usernameColorCache[cacheKey];
             }
 
             var finalColor;
@@ -916,7 +926,7 @@
             }
 
             // Store the color assignment for consistency (both Twitch and random colors)
-            usernameColorCache[username] = finalColor;
+            usernameColorCache[cacheKey] = finalColor;
 
             return finalColor;
         }
@@ -1273,6 +1283,51 @@
             }
         }
 
+        function lookupChatAlertField(alertData, key1, key2, key3, key4) {
+            var keys = Array.prototype.slice.call(arguments, 1);
+            var stored = alertData.stored_alert_data;
+            if (!stored || typeof stored !== 'object') {
+                stored = {};
+            }
+            for (var i = 0; i < keys.length; i++) {
+                var key = keys[i];
+                if (key in alertData && alertData[key] != null) {
+                    return alertData[key];
+                }
+                if (key in stored && stored[key] != null) {
+                    return stored[key];
+                }
+            }
+            return null;
+        }
+
+        function formatGiftSubMessage(alertData) {
+            var username = lookupChatAlertField(alertData, 'username') || extractUsernameFromMessage(alertData) || 'Someone';
+            var qty = parseInt(lookupChatAlertField(alertData, 'gift_qty', 'quantity'), 10) || 1;
+            var tier = lookupChatAlertField(alertData, 'tier') || 1;
+            if (qty === 1) {
+                return username + ' gifted a tier ' + tier + ' sub!';
+            }
+            return username + ' gifted ' + qty + ' tier ' + tier + ' subs!';
+        }
+
+        function formatBitsMessage(alertData) {
+            var username = lookupChatAlertField(alertData, 'username') || extractUsernameFromMessage(alertData) || 'Someone';
+            var amount = parseInt(lookupChatAlertField(alertData, 'amt_cheered', 'bits', 'amount'), 10) || 1;
+            var label = amount === 1 ? 'bit' : 'bits';
+            return username + ' cheered ' + amount + ' ' + label + '!';
+        }
+
+        function formatResubMessage(alertData) {
+            var username = lookupChatAlertField(alertData, 'username') || extractUsernameFromMessage(alertData) || 'Someone';
+            var months = parseInt(
+                lookupChatAlertField(alertData, 'resub_month', 'months', 'total_months', 'cumulative_months'),
+                10
+            ) || 1;
+            var monthLabel = months === 1 ? 'month' : 'months';
+            return username + ' has resubscribed for ' + months + ' ' + monthLabel + '!';
+        }
+
         function resolveActivityEventText(alertData) {
             var eventText = '';
             var alertType = (alertData.type || alertData.alert_type || '').toLowerCase();
@@ -1287,6 +1342,12 @@
                     resolveWatchStreakCount(alertData),
                     true
                 );
+            } else if (alertType === 'giftsub') {
+                eventText = formatGiftSubMessage(alertData);
+            } else if (alertType === 'bits' || alertType === 'bit') {
+                eventText = formatBitsMessage(alertData);
+            } else if (alertType === 'resub') {
+                eventText = formatResubMessage(alertData);
             } else if (alertData.message) {
                 eventText = alertData.message;
             } else {
@@ -1369,9 +1430,21 @@
             var username = alertData.username || extractUsernameFromMessage(alertData.message || '');
             var alertType = (alertData.alert_type || alertData.type || '').toLowerCase();
 
-            if (alertType === 'resub' || (alertType === 'sub' && (alertData.resub_month > 1 || alertData.months > 1))) {
-                var months = alertData.resub_month || alertData.months || alertData.total_months || 1;
-                return username + ' has resubscribed for ' + months + ' months!';
+            var resubMonths = parseInt(
+                lookupChatAlertField(alertData, 'resub_month', 'months', 'total_months', 'cumulative_months'),
+                10
+            ) || 1;
+
+            if (alertType === 'resub' || (alertType === 'sub' && resubMonths > 1)) {
+                return formatResubMessage(alertData);
+            }
+
+            if (alertType === 'giftsub') {
+                return formatGiftSubMessage(alertData);
+            }
+
+            if (alertType === 'bit' || alertType === 'bits') {
+                return formatBitsMessage(alertData);
             }
 
             if (alertType === 'streak') {
@@ -1410,21 +1483,14 @@
         }
 
         function resolveAlertMediaSource(alertData) {
-            var sources = [
-                alertData.chat_media,
-                alertData.stored_alert_data || {},
-                alertData
-            ];
-            for (var i = 0; i < sources.length; i++) {
-                var src = sources[i];
-                if (!src || typeof src !== 'object') {
-                    continue;
-                }
-                var gifDir = (src.gif_dir != null ? String(src.gif_dir) : '').trim();
-                var gifName = (src.gif_name != null ? String(src.gif_name) : '').trim();
-                if (gifDir && gifName) {
-                    return gifDir + '/' + gifName;
-                }
+            var chatMedia = alertData.chat_media;
+            if (!chatMedia || typeof chatMedia !== 'object') {
+                return null;
+            }
+            var gifDir = String(chatMedia.gif_dir || '').trim();
+            var gifName = String(chatMedia.gif_name || '').trim();
+            if (gifDir && gifName) {
+                return gifDir + '/' + gifName;
             }
             return null;
         }
@@ -1441,6 +1507,31 @@
                 return '<video class="alert-event-media-item" src="' + escapeHtml(mediaUrl) + '" muted autoplay loop playsinline></video>';
             }
             return '<img class="alert-event-media-item" src="' + escapeHtml(mediaUrl) + '" alt="">';
+        }
+
+        function handleAlertMediaLoadFailure(messageElement, alertData, simpleAlreadyShown) {
+            if (messageElement.getAttribute('data-media-fallback-handled') === '1') {
+                return;
+            }
+            messageElement.setAttribute('data-media-fallback-handled', '1');
+
+            var mediaContainer = messageElement.querySelector('.alert-event-media');
+            if (mediaContainer) {
+                mediaContainer.remove();
+            }
+
+            if (!simpleAlreadyShown) {
+                addActivityEventMessage(alertData);
+            }
+        }
+
+        function attachAlertMediaErrorHandlers(messageElement, alertData, simpleAlreadyShown) {
+            var mediaItems = messageElement.querySelectorAll('.alert-event-media-item');
+            for (var i = 0; i < mediaItems.length; i++) {
+                mediaItems[i].addEventListener('error', function () {
+                    handleAlertMediaLoadFailure(messageElement, alertData, simpleAlreadyShown);
+                });
+            }
         }
 
         function maybeAttachPendingPointIcon(messageElement, alertData) {
@@ -1478,7 +1569,10 @@
             appendChatMessageElement(messageElement);
         }
 
-        function addAlertEventMessage(alertData) {
+        function addAlertEventMessage(alertData, options) {
+            options = options || {};
+            var simpleAlreadyShown = !!options.simpleAlreadyShown;
+
             chatLog('Adding alert event message:', alertData);
 
             var messageElement = document.createElement('li');
@@ -1512,6 +1606,10 @@
 
             messageElement.innerHTML = mediaHtml + bodyHtml;
 
+            if (mediaUrl) {
+                attachAlertMediaErrorHandlers(messageElement, alertData, simpleAlreadyShown);
+            }
+
             maybeAttachPendingPointIcon(messageElement, alertData);
             appendChatMessageElement(messageElement);
         }
@@ -1522,7 +1620,7 @@
             }
 
             if (isChatActivityOnlyAlertType(alertData)) {
-                if (alertShowActivitySummary) {
+                if (alertShowActivitySummary || alertShowMediaEvent) {
                     addActivityEventMessage(alertData);
                 }
                 return;
@@ -1530,15 +1628,16 @@
 
             var mediaEligible = isChatMediaRichAlertType(alertData);
             var hasMedia = mediaEligible && !!resolveAlertMediaSource(alertData);
+            var wantsMedia = alertShowMediaEvent && mediaEligible;
+            var needsMandatoryFallback = wantsMedia && !hasMedia;
+            var simpleAlreadyShown = alertShowActivitySummary || needsMandatoryFallback;
 
-            if (alertShowMediaEvent && mediaEligible && !hasMedia) {
-                addActivityEventMessage(alertData);
-            } else if (alertShowActivitySummary) {
+            if (simpleAlreadyShown) {
                 addActivityEventMessage(alertData);
             }
 
-            if (alertShowMediaEvent && hasMedia) {
-                addAlertEventMessage(alertData);
+            if (wantsMedia && hasMedia) {
+                addAlertEventMessage(alertData, { simpleAlreadyShown: simpleAlreadyShown });
             }
         }
 
@@ -2061,10 +2160,8 @@
                     var remainder = mentionMatch[2]; // Any punctuation or text after the username
 
                     // Get the color for this username from the cache
-                    var usernameColor = null;
-                    if (usernameColorCache[username]) {
-                        usernameColor = usernameColorCache[username];
-                    } else {
+                    var usernameColor = getCachedUsernameColor(username);
+                    if (!usernameColor) {
                         // If not in cache, use the default font color
                         usernameColor = '{{FontColor}}';
                     }
@@ -2181,10 +2278,8 @@
                     var remainder = mentionMatch[2]; // Any punctuation or text after the username
 
                     // Get the color for this username from the cache
-                    var mentionColor = null;
-                    if (usernameColorCache[username]) {
-                        mentionColor = usernameColorCache[username];
-                    } else {
+                    var mentionColor = getCachedUsernameColor(username);
+                    if (!mentionColor) {
                         // If not in cache, use the default font color
                         mentionColor = '{{FontColor}}';
                     }
@@ -2303,10 +2398,8 @@
                     var remainder = mentionMatch[2]; // Any punctuation or text after the username
 
                     // Get the color for this username from the cache
-                    var usernameColor = null;
-                    if (usernameColorCache[username]) {
-                        usernameColor = usernameColorCache[username];
-                    } else {
+                    var usernameColor = getCachedUsernameColor(username);
+                    if (!usernameColor) {
                         // If not in cache, use the default font color
                         usernameColor = '{{FontColor}}';
                     }
@@ -2484,10 +2577,8 @@
                     var remainder = mentionMatch[2]; // Any punctuation or text after the username
 
                     // Get the color for this username from the cache
-                    var mentionColor = null;
-                    if (usernameColorCache[username]) {
-                        mentionColor = usernameColorCache[username];
-                    } else {
+                    var mentionColor = getCachedUsernameColor(username);
+                    if (!mentionColor) {
                         // If not in cache, use the default font color
                         mentionColor = '{{FontColor}}';
                     }

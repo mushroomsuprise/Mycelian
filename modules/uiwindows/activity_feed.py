@@ -886,6 +886,10 @@ def build_activity_feed_alert_payload(
                             alert_data["point_cost"] = int(point_cost)
                         except (TypeError, ValueError):
                             pass
+                    for field in ("resub_month", "gift_qty", "amt_cheered", "tier"):
+                        value = stored_alert_data.get(field)
+                        if value is not None and field not in alert_data:
+                            alert_data[field] = value
             else:
                 logger.debug(f"No stored alert data found for alert_id {alert_id}")
 
@@ -912,8 +916,8 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
     """
     Build a fixed ``activity_feed_alert`` preview payload for one alert type.
 
-    Media paths come from configured alerts via :func:`resolve_chat_alert_media`,
-    with default placeholder GIFs when previewing without a matching config.
+    Media paths come from configured alerts via :func:`resolve_chat_alert_media`.
+    Unconfigured alerts omit ``chat_media`` so the chat template falls back to simple text.
     """
     import random
 
@@ -1044,7 +1048,7 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
     payload.pop("chat_media", None)
 
     chat_media = alertutils.resolve_chat_alert_media(
-        payload, preview_placeholder=True
+        payload, preview_placeholder=False
     )
     if chat_media:
         payload["chat_media"] = chat_media
