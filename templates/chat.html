@@ -1529,13 +1529,14 @@
             }
             messageElement.setAttribute('data-media-fallback-handled', '1');
 
-            var mediaContainer = messageElement.querySelector('.alert-event-media');
-            if (mediaContainer) {
-                mediaContainer.remove();
-            }
-
             if (!simpleAlreadyShown) {
+                messageElement.remove();
                 addActivityEventMessage(alertData);
+            } else {
+                var mediaContainer = messageElement.querySelector('.alert-event-media');
+                if (mediaContainer) {
+                    mediaContainer.remove();
+                }
             }
         }
 

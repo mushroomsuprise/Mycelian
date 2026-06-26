@@ -2370,12 +2370,106 @@ def _preview_placeholder_media() -> Dict[str, str]:
     }
 
 
+def _find_range_amount_alert(
+    alerts: dict,
+    amount: float,
+    *,
+    prefix: str,
+    prefix_strip_len: int,
+) -> Optional[AlertObj]:
+    """Return the alert whose ID range contains ``amount``, if any."""
+    for alert_id, alert_data in alerts.items():
+        if "-" not in alert_id:
+            continue
+        try:
+            range_part = (
+                alert_id[prefix_strip_len:]
+                if alert_id.startswith(prefix)
+                else alert_id
+            )
+            min_val, max_val = map(int, range_part.split("-"))
+            if min_val <= amount <= max_val:
+                return AlertObj(**alert_data)
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def _fetch_sub_alert_exact(months: int) -> Optional[AlertObj]:
+    """Exact subs{N} match only — no default/fallback alerts."""
+    alert_state_manager.initialize()
+    alerts = alert_state_manager.get_alerts_by_type("subs", include_ranges=False)
+    exact_key = "subs" + str(months)
+    if exact_key in alerts:
+        return AlertObj(**alerts[exact_key])
+    return None
+
+
+def _fetch_bits_alert_exact(quantity: int) -> Optional[AlertObj]:
+    """Exact bits{N} or range match only — no default/fallback alerts."""
+    alert_state_manager.initialize()
+    alerts = alert_state_manager.get_alerts_by_type("bits", include_ranges=True)
+    exact_key = "bits" + str(quantity)
+    if exact_key in alerts:
+        return AlertObj(**alerts[exact_key])
+    return _find_range_amount_alert(
+        alerts, quantity, prefix="bits", prefix_strip_len=4
+    )
+
+
+def _fetch_giftsub_alert_exact(quantity: int) -> Optional[AlertObj]:
+    """Exact giftsubs{N} or range match only — no default/fallback alerts."""
+    alert_state_manager.initialize()
+    alerts = alert_state_manager.get_alerts_by_type("giftsubs", include_ranges=True)
+    if not alerts:
+        alert_state_manager.ensure_alert_paths_loaded(
+            ["giftsubs", "giftsub_ranges"]
+        )
+        alerts = alert_state_manager.get_alerts_by_type("giftsubs", include_ranges=True)
+    exact_key = "giftsubs" + str(quantity)
+    if exact_key in alerts:
+        return AlertObj(**alerts[exact_key])
+    return _find_range_amount_alert(
+        alerts, quantity, prefix="giftsubs", prefix_strip_len=8
+    )
+
+
+def _fetch_donation_alert_exact(amount: float) -> Optional[AlertObj]:
+    """Exact donations amount or range match only — no default/fallback alerts."""
+    alert_state_manager.initialize()
+    alerts = alert_state_manager.get_alerts_by_type("donations", include_ranges=True)
+    exact_key = "donations" + str(int(amount) if amount == int(amount) else amount)
+    if exact_key in alerts:
+        return AlertObj(**alerts[exact_key])
+    return _find_range_amount_alert(
+        alerts, amount, prefix="donations", prefix_strip_len=9
+    )
+
+
+def _fetch_raid_alert_exact(raider_count: int) -> Optional[AlertObj]:
+    """Exact raids{N} or range match only — no default/fallback alerts."""
+    alert_state_manager.initialize()
+    alerts = alert_state_manager.get_alerts_by_type("raids", include_ranges=True)
+    exact_key = "raids" + str(raider_count)
+    if exact_key in alerts:
+        return AlertObj(**alerts[exact_key])
+    return _find_range_amount_alert(
+        alerts, raider_count, prefix="raids", prefix_strip_len=5
+    )
+
+
 def _fetch_chat_alert_for_media(alert_type: str, alert_data: dict) -> Optional[AlertObj]:
+    """
+    Resolve alert config for chat media-rich blocks.
+
+    Uses exact/range matches only for amount-based types so a configured
+    ``bits1`` alert is not reused for unrelated bit amounts (e.g. 500 bits).
+    """
     at = alert_type
     if at == "follow":
         return fetch_follow_alert()
     if at == "sub":
-        return fetch_sub_alert(1)
+        return _fetch_sub_alert_exact(1)
     if at == "resub":
         months = _chat_alert_lookup(
             alert_data, "resub_month", "months", "total_months", "cumulative_months"
@@ -2386,35 +2480,41 @@ def _fetch_chat_alert_for_media(alert_type: str, alert_data: dict) -> Optional[A
             months_int = 2
         if months_int < 2:
             months_int = 2
-        return fetch_resub_alert(months_int)
+        return _fetch_sub_alert_exact(months_int)
     if at == "giftsub":
         qty = _chat_alert_lookup(alert_data, "gift_qty", "quantity")
         try:
             qty_int = int(qty) if qty is not None else 1
         except (TypeError, ValueError):
             qty_int = 1
-        return fetch_giftsub_alert(max(qty_int, 1))
+        return _fetch_giftsub_alert_exact(max(qty_int, 1))
     if at in ("bit", "bits"):
         amt = _chat_alert_lookup(alert_data, "amt_cheered", "bits", "amount")
         try:
-            amt_int = int(amt) if amt is not None else 100
+            amt_int = int(amt) if amt is not None else 0
         except (TypeError, ValueError):
-            amt_int = 100
-        return fetch_bits_alert(max(amt_int, 1))
+            amt_int = 0
+        if amt_int < 1:
+            return None
+        return _fetch_bits_alert_exact(amt_int)
     if at == "donation":
         amount = _chat_alert_lookup(alert_data, "donation_amount", "amount")
         try:
-            amount_val = float(amount) if amount is not None else 5.0
+            amount_val = float(amount) if amount is not None else 0.0
         except (TypeError, ValueError):
-            amount_val = 5.0
-        return fetch_donation_alert(amount_val)
+            amount_val = 0.0
+        if amount_val <= 0:
+            return None
+        return _fetch_donation_alert_exact(amount_val)
     if at == "raid":
         count = _chat_alert_lookup(alert_data, "raider_count", "viewers")
         try:
-            count_int = int(count) if count is not None else 25
+            count_int = int(count) if count is not None else 0
         except (TypeError, ValueError):
-            count_int = 25
-        return fetch_raid_alert(max(count_int, 1))
+            count_int = 0
+        if count_int < 1:
+            return None
+        return _fetch_raid_alert_exact(count_int)
     return None
 
 
@@ -2424,8 +2524,9 @@ def resolve_chat_alert_media(
     """
     Resolve GIF/video paths for the chat template media-rich alert block.
 
-    Uses existing media on the payload when present, otherwise looks up the
-    configured alert via the same fetch_* helpers used at alert fire time.
+    Only attaches media when an alert is explicitly configured for the event
+    (exact or range match). Does not reuse fallback/default alerts or GIF paths
+    stored on unrelated alert snapshots.
     """
     if not isinstance(alert_data, dict):
         return None
@@ -2433,10 +2534,6 @@ def resolve_chat_alert_media(
     alert_type = _normalize_chat_alert_type(alert_data)
     if not alert_type or alert_type in _CHAT_ACTIVITY_ONLY_ALERT_TYPES:
         return None
-
-    existing = _media_from_alert_data_fields(alert_data)
-    if existing:
-        return existing
 
     if alert_type not in _CHAT_MEDIA_RICH_ALERT_TYPES:
         return None
