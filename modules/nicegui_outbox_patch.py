@@ -13,8 +13,8 @@ mid-iteration, raising ``RuntimeError: dictionary changed size during iteration`
 In the pinned version the loop already catches the exception, so it is not fatal,
 but it drops that batch of UI updates and spams the log. This patch reimplements
 ``Outbox.loop`` to iterate a snapshot taken with the garbage collector briefly
-disabled, eliminating the race. It is gated to the exact pinned NiceGUI version
-and is fully best-effort: any problem applying it leaves NiceGUI untouched.
+disabled, eliminating the race. It is gated to tested NiceGUI versions and is fully
+best-effort: any problem applying it leaves NiceGUI untouched.
 """
 
 import asyncio
@@ -24,7 +24,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 _PATCH_ATTR = "__mycelian_outbox_snapshot_patched__"
-_SUPPORTED_VERSION = "3.12.1"
+_SUPPORTED_VERSIONS = frozenset({"3.12.1", "3.13.0"})
 
 
 def ensure_outbox_snapshot_patch() -> None:
@@ -33,11 +33,11 @@ def ensure_outbox_snapshot_patch() -> None:
         import nicegui
 
         version = getattr(nicegui, "__version__", None)
-        if version != _SUPPORTED_VERSION:
-            logger.debug(
-                "Skipping NiceGUI outbox patch: version %s != %s",
+        if version not in _SUPPORTED_VERSIONS:
+            logger.info(
+                "Skipping NiceGUI outbox patch: version %s not in tested set %s",
                 version,
-                _SUPPORTED_VERSION,
+                sorted(_SUPPORTED_VERSIONS),
             )
             return
 
@@ -141,8 +141,9 @@ def ensure_outbox_snapshot_patch() -> None:
 
         outbox_cls.loop = loop
         setattr(outbox_cls, _PATCH_ATTR, True)
-        logger.debug(
-            "Patched NiceGUI Outbox.loop with snapshot-safe update iteration"
+        logger.info(
+            "Patched NiceGUI %s Outbox.loop with snapshot-safe update iteration",
+            version,
         )
     except Exception as e:
-        logger.debug("Could not apply NiceGUI outbox snapshot patch: %s", e)
+        logger.info("Could not apply NiceGUI outbox snapshot patch: %s", e)

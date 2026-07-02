@@ -74,9 +74,57 @@
             return { host: parts[0], port: 5000 };
         }
 
+        function mycelianServerBase(serverUrl) {
+            const { host, port } = parseServerUrl(serverUrl || '127.0.0.1:5000');
+            return `http://${host}:${port}`;
+        }
+
+        function ensureMycelianLogger(serverUrl) {
+            const base = mycelianServerBase(serverUrl);
+            if (window.MycelianLog) {
+                MycelianLog.setHttpBaseUrl(base);
+                MycelianLog.init({
+                    templateName: 'streamdeck_toggle_alerts',
+                    httpBaseUrl: base
+                });
+                return;
+            }
+            if (document.getElementById('mycelian-template-logger')) {
+                return;
+            }
+            const script = document.createElement('script');
+            script.id = 'mycelian-template-logger';
+            script.src = base + '/assets/default_assets/template_logger.js';
+            script.onload = function () {
+                MycelianLog.setHttpBaseUrl(base);
+                MycelianLog.init({
+                    templateName: 'streamdeck_toggle_alerts',
+                    httpBaseUrl: base
+                });
+            };
+            document.head.appendChild(script);
+        }
+
+        function logStreamDeckMessage(level, message, serverUrl) {
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            const resolvedUrl = serverUrl || (serverUrlField && serverUrlField.value) || '127.0.0.1:5000';
+            ensureMycelianLogger(resolvedUrl);
+            if (!window.MycelianLog) {
+                return;
+            }
+            if (level === 'error') {
+                MycelianLog.error(message, { source: 'streamdeck_ui' });
+            } else {
+                MycelianLog.warn(message, { source: 'streamdeck_ui' });
+            }
+        }
+
         function showConnectionStatus(message, type) {
             connectionStatus.textContent = message;
             connectionStatus.className = 'status-message ' + type;
+            if (type === 'error') {
+                logStreamDeckMessage('error', message);
+            }
         }
 
         testConnectionBtn.addEventListener('click', async function () {

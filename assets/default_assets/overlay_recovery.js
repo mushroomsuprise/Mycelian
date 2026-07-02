@@ -101,7 +101,11 @@
             throw new Error('Socket.IO client (io) is not loaded');
         }
         var socket = global.io(url, mergeSocketOptions(options));
-        return installHandlers(socket, options);
+        socket = installHandlers(socket, options);
+        if (global.MycelianLog && typeof global.MycelianLog.attachSocket === 'function') {
+            global.MycelianLog.attachSocket(socket);
+        }
+        return socket;
     }
 
     global.MycelianOverlay = {

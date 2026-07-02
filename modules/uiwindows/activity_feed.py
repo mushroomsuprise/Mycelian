@@ -42,6 +42,8 @@ logger = logging.getLogger(__name__)
 
 _pause_breath_timer_started = False
 _recovery_scheduled = False
+_integrity_check_reason: Optional[str] = None
+_integrity_check_scheduled = False
 
 
 def _is_stale_client_error(exc: BaseException) -> bool:
@@ -68,6 +70,54 @@ def _element_alive(el: Any) -> bool:
 
 def _containers_alive() -> bool:
     return _element_alive(activity_feed_state.current_alerts_container)
+
+
+def _count_rendered_live_alerts() -> int:
+    """Return how many live alerts still have a bound, alive UI element."""
+    count = 0
+    for alert_data in activity_feed_state.live_alerts:
+        element = alert_data.get("element")
+        if element is not None and _element_alive(element):
+            count += 1
+    return count
+
+
+def _ensure_feed_integrity(reason: str) -> None:
+    """Rebuild the feed when state has alerts but nothing is rendered."""
+    if activity_feed_state.current_tab != "current":
+        return
+    if activity_feed_state.condense_list:
+        return
+    if not _containers_alive():
+        return
+    if not activity_feed_state.live_alerts:
+        return
+    if _count_rendered_live_alerts() > 0:
+        return
+
+    logger.warning(
+        "activity_feed: integrity mismatch (%s) — %d live alerts, 0 rendered",
+        reason,
+        len(activity_feed_state.live_alerts),
+    )
+    recover_activity_feed_panel()
+
+
+def schedule_feed_integrity_check(reason: str) -> None:
+    """Debounced integrity check after destructive UI operations."""
+    global _integrity_check_reason, _integrity_check_scheduled
+
+    _integrity_check_reason = reason
+    if _integrity_check_scheduled:
+        return
+    _integrity_check_scheduled = True
+
+    def _deferred() -> None:
+        global _integrity_check_scheduled
+        _integrity_check_scheduled = False
+        _ensure_feed_integrity(_integrity_check_reason or "unspecified")
+
+    app_schedule(0.2, _deferred, once=True)
 
 
 def _run_on_ui_loop(fn: Callable[[], Any]) -> None:
@@ -311,6 +361,8 @@ class AlertEventHandler:
                 and activity_feed_state.current_tab == "current"
             ):
                 update_condensed_view()
+            elif should_display_new_alert:
+                schedule_feed_integrity_check("apply_alert_on_ui")
 
     def _apply_filter_visibility(
         self, new_alert_data: Dict[str, Any], alert_type: str
@@ -1312,6 +1364,7 @@ def rebuild_current_alerts_feed():
         logger.debug(
             f"Rebuilt current alerts feed with {len(activity_feed_state.live_alerts)} live alerts"
         )
+        schedule_feed_integrity_check("rebuild_current_alerts_feed")
 
     except Exception as e:
         if _is_stale_client_error(e):
@@ -2955,6 +3008,8 @@ def update_condensed_view():
             if activity_feed_state.condensed_container:
                 activity_feed_state.condensed_container.classes(add="hidden")
 
+            schedule_feed_integrity_check("update_condensed_view_regular")
+
     except Exception as e:
         logger.error(f"Error updating condensed view: {str(e)}", exc_info=True)
 
@@ -3528,6 +3583,8 @@ def switch_to_tab(tab_name):
 
             # Update condensed view visibility
             update_condensed_view()
+
+            schedule_feed_integrity_check("switch_to_tab_current")
 
             logger.debug("Successfully switched to current alerts tab")
 

@@ -327,6 +327,8 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="/assets/default_assets/overlay_recovery.js"></script>
+    <script src="/assets/default_assets/template_logger.js"></script>
+    <script>MycelianLog.init({ templateName: 'spotify' });</script>
     <script>
         const socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port);
         

@@ -647,6 +647,50 @@
             }
         }
 
+        function mycelianServerBase(serverUrl) {
+            const { host, port } = parseServerUrl(serverUrl || '127.0.0.1:5000');
+            return `http://${host}:${port}`;
+        }
+
+        function ensureMycelianLogger(serverUrl) {
+            const base = mycelianServerBase(serverUrl);
+            if (window.MycelianLog) {
+                MycelianLog.setHttpBaseUrl(base);
+                MycelianLog.init({
+                    templateName: 'streamdeck_template_action',
+                    httpBaseUrl: base
+                });
+                return;
+            }
+            if (document.getElementById('mycelian-template-logger')) {
+                return;
+            }
+            const script = document.createElement('script');
+            script.id = 'mycelian-template-logger';
+            script.src = base + '/assets/default_assets/template_logger.js';
+            script.onload = function () {
+                MycelianLog.setHttpBaseUrl(base);
+                MycelianLog.init({
+                    templateName: 'streamdeck_template_action',
+                    httpBaseUrl: base
+                });
+            };
+            document.head.appendChild(script);
+        }
+
+        function logStreamDeckMessage(level, message, serverUrl) {
+            const resolvedUrl = serverUrl || currentSettings.serverUrl || '127.0.0.1:5000';
+            ensureMycelianLogger(resolvedUrl);
+            if (!window.MycelianLog) {
+                return;
+            }
+            if (level === 'error') {
+                MycelianLog.error(message, { source: 'streamdeck_ui' });
+            } else {
+                MycelianLog.warn(message, { source: 'streamdeck_ui' });
+            }
+        }
+
         function saveSettings() {
             const selectedTemplateSetting = document.getElementById('selectedTemplateSetting');
             const selectedActionSetting = document.getElementById('selectedActionSetting');
@@ -672,11 +716,15 @@
         function showConnectionStatus(message, type) {
             connectionStatus.textContent = message;
             connectionStatus.className = type;
+            if (type === 'error') {
+                logStreamDeckMessage('error', message);
+            }
         }
 
         function showTemplateError(message) {
             templateError.textContent = message;
             templateError.style.display = 'block';
+            logStreamDeckMessage('error', message);
         }
 
         function hideTemplateError() {
@@ -686,6 +734,7 @@
         function showActionError(message) {
             actionError.textContent = message;
             actionError.style.display = 'block';
+            logStreamDeckMessage('error', message);
         }
 
         function hideActionError() {

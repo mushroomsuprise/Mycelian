@@ -182,6 +182,7 @@ def setup_logging():
     logging.getLogger("engineio.server").setLevel(logging.WARNING)
     logging.getLogger("socketio.server").setLevel(logging.WARNING)
     logging.getLogger("pyrate_limiter").setLevel(logging.CRITICAL)
+    logging.getLogger("modules.template_log").setLevel(logging.INFO)
 
 
 # Set up logging first (timed for startup diagnosis)

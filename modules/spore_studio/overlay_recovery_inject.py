@@ -10,6 +10,9 @@ import re
 _OVERLAY_RECOVERY_SCRIPT = (
     '<script src="/assets/default_assets/overlay_recovery.js"></script>'
 )
+_TEMPLATE_LOGGER_SCRIPT = (
+    '<script src="/assets/default_assets/template_logger.js"></script>'
+)
 
 _SOCKET_IO_TAG = re.compile(
     r'<script\s+src="https://cdnjs\.cloudflare\.com/ajax/libs/socket\.io/[^"]+/socket\.io\.js"[^>]*>\s*</script>',
@@ -47,6 +50,18 @@ def inject_overlay_recovery(html: str) -> str:
         html, count = _SOCKET_IO_TAG.subn(_add_script, html, count=1)
         if count == 0 and "</head>" in html:
             html = html.replace("</head>", f"    {_OVERLAY_RECOVERY_SCRIPT}\n</head>", 1)
+
+    if "template_logger.js" not in html:
+        if _OVERLAY_RECOVERY_SCRIPT in html:
+            html = html.replace(
+                _OVERLAY_RECOVERY_SCRIPT,
+                _OVERLAY_RECOVERY_SCRIPT + "\n    " + _TEMPLATE_LOGGER_SCRIPT,
+                1,
+            )
+        elif "</head>" in html:
+            html = html.replace(
+                "</head>", f"    {_TEMPLATE_LOGGER_SCRIPT}\n</head>", 1
+            )
 
     for pattern, replacement in _IO_CONNECT_PATTERNS:
         html = pattern.sub(replacement, html)

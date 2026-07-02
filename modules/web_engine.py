@@ -100,6 +100,7 @@ from .template_config_parser import (
     TemplateConfigParser,
     resolve_dynamic_control_values_from_elements,
 )
+from .template_log import TemplateLogRateLimiter, inject_template_logger, process_template_log
 from .theme_manager import generate_css_variables, get_theme_manager
 
 logger = logging.getLogger(__name__)
@@ -569,6 +570,7 @@ class WebEngine:
         self._preview_iframe_tokens: Dict[str, str] = {}
         # template_name -> {mtime, cfg} for Stream Deck hot-path config resolution
         self._streamdeck_config_cache: Dict[str, Dict[str, Any]] = {}
+        self._template_log_rate_limiter = TemplateLogRateLimiter()
 
         # Log template directory info
         logger.debug(f"Template directory: {template_dir}")
@@ -1255,6 +1257,26 @@ class WebEngine:
                     500,
                     {"Content-Type": "application/json"},
                 )
+
+        @self.app.route("/api/template-log", methods=["POST"])
+        def receive_template_log():
+            """Accept client-side template log events over HTTP."""
+            client_key = (request.remote_addr or "unknown").strip()
+            payload = request.get_json(silent=True)
+            ok, err = process_template_log(
+                payload,
+                client_key,
+                self._template_log_rate_limiter,
+            )
+            if err == "rate_limited":
+                return ("", 429)
+            if not ok:
+                return (
+                    {"error": err or "invalid payload"},
+                    400,
+                    {"Content-Type": "application/json"},
+                )
+            return ("", 204)
 
         @self.app.route("/api/spore-studio/preview/emit", methods=["POST"])
         def emit_spore_studio_preview_mock():
@@ -3061,6 +3083,7 @@ class WebEngine:
                                 mycelian_html_stem=str(template),
                                 mycelian_preview_mode=mycelian_preview_mode,
                             )
+                        html = inject_template_logger(html)
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
                             # MutationObserver). Try </body> first, then
@@ -3083,7 +3106,7 @@ class WebEngine:
                                 httponly=False,
                             )
                             return resp
-                        return html
+                        return inject_template_logger(html)
                     except Exception as e:
                         logger.error(
                             f"Error rendering template {template}: {str(e)}",
@@ -3198,6 +3221,7 @@ class WebEngine:
                         mycelian_html_stem=str(template_name),
                         mycelian_preview_mode=mycelian_preview_mode,
                     )
+                html = inject_template_logger(html)
                 if mycelian_preview_mode and preview_token:
                     if "</body>" in html:
                         html = html.replace(
@@ -3216,7 +3240,7 @@ class WebEngine:
                         httponly=False,
                     )
                     return resp
-                return html
+                return inject_template_logger(html)
             except Exception as e:
                 logger.error(
                     "Template fallback render error for %s: %s",
@@ -4045,7 +4069,7 @@ class WebEngine:
                             "raids": int(alerts.raids or 0),
                             "cheers": int(alerts.bit_alerts_played or 0),
                         }
-                        result = {"data": session_doc}
+                        result = {"data": session_doc, "path": path}
                         self.socketio.emit("get_data", result, to=request.sid)
                         return result
                     except Exception as exc:
@@ -4053,6 +4077,15 @@ class WebEngine:
 
                 result = database_manager.get_data(path, request_etag)
                 logger.debug(f"Successfully retrieved data from path: {path}")
+
+                if isinstance(result, dict):
+                    if request_etag and "data" in result:
+                        result["path"] = path
+                    else:
+                        result = dict(result)
+                        result["path"] = path
+                else:
+                    result = {"path": path, "data": result}
 
                 # Emit the result back to the client
                 self.socketio.emit("get_data", result, to=request.sid)
@@ -5718,6 +5751,25 @@ class WebEngine:
                 }
                 self.socketio.emit(
                     "template_stat_response", error_response, to=client_sid
+                )
+
+        @self.socketio.on("template_log")
+        def handle_template_log(data):
+            """Forward client-side template log events to mycelian.log."""
+            client_sid = request.sid
+            client_key = f"sid:{client_sid}"
+            try:
+                process_template_log(
+                    data,
+                    client_key,
+                    self._template_log_rate_limiter,
+                )
+            except Exception as e:
+                logger.error(
+                    "Error handling template_log from %s: %s",
+                    client_sid,
+                    e,
+                    exc_info=True,
                 )
 
         @self.socketio.on("get_template_configs_for_streamdeck")

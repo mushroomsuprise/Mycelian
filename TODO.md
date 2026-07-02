@@ -25,14 +25,17 @@ Chat template:
     [x] - Fix reply messages not stripping the leading username from the main message
     [x] - Add padding options to the alert event display for the images and fonts
     [x] - Update reply font size to be driven off the chat message. It should use a user definable scaler value to make it smaller (default 0.75x).
-    [] - Fix missing "simple" event messages for non media rich events. it should always default back to the simple message if the media alert errors, or if an alert is not configured. this should happen even if the toggle is disabled for simple event messages.
-    [] - Fix media-rich alert always saying people resubscribed for 1 month. it should display the total number of months they have been subscribed for. IE: "TestUser has resubscribed for 51 months!"
-    [] - Fix message formatting so it automatically pluralizes the gift sub and bit donation messages. Example: it current says something like "TestUser gifted 1 tier 1 subs!" when only a single gifted sub is sent, instead it should be something like "TestUser gift a tier 1 sub!". The bit messages should be similar.
-    [] - Fix media-rich events displaying alerts that arent configured (follow alert for sure)
-    [] - Fix username color matching to check as case insensitive
+    [x] - Fix missing "simple" event messages for non media rich events. it should always default back to the simple message if the media alert errors, or if an alert is not configured. this should happen even if the toggle is disabled for simple event messages.
+    [x] - Fix media-rich alert always saying people resubscribed for 1 month. it should display the total number of months they have been subscribed for. IE: "TestUser has resubscribed for 51 months!"
+    [x] - Fix message formatting so it automatically pluralizes the gift sub and bit donation messages. Example: it current says something like "TestUser gifted 1 tier 1 subs!" when only a single gifted sub is sent, instead it should be something like "TestUser gift a tier 1 sub!". The bit messages should be similar.
+    [x] - Fix media-rich events displaying alerts that arent configured (follow alert for sure)
+    [x] - Fix username color matching to check as case insensitive
 
 UI Improvements:
     [x] - Move the two Twitch toggles from App Settings to the Twitch tab. Put inside an "Options" card that will be below the connection cards
     [x] - Change the "Save As" button on the Theme tab, the "View on GitHub", and the "View Changelog" buttons to match the theme, instead of being the teal color.
     [x] - On the OBS Source Controls dock, toast notifications are fired every time something is clicked. This results in excessive notifications. We should only send notifications upon failures.
-    [] - Remove the background from the preview area so it does not display as white
+    [x] - Remove the background from the preview area so it does not display as white
+
+General:
+    [x] - Implement a callback logger system so template errors reach the mycelian.log file

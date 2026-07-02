@@ -5,7 +5,9 @@
     <title>Mycelian Paused Alerts</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js" integrity="sha512-YeeA/Qxn5hYdkukScTCNNOhTrv1C2RubAGButJ1rmgQwZf/HdRaCGl+JAVkqsqaNRaYNHdheiuKKuPf9mDcqKg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="/assets/default_assets/overlay_recovery.js"></script>
-    <style>
+    <script src="/assets/default_assets/template_logger.js"></script>
+    <script>MycelianLog.init({ templateName: 'pausedalerts' });</script>
+        <style>
         body {
             margin: 0;
             padding: 0;
@@ -123,7 +125,7 @@
             }
         }
     </style>
-    <script src="/assets/default_assets/overlay_recovery.js"></script>
+    
 </head>
 <body>
     <div class="relative">
