@@ -33,6 +33,13 @@ import threading
 import time
 from pathlib import Path
 
+_NPSSO_HELPER_FLAG = "--mycelian-npsso-capture"
+
+if __name__ == "__main__" and _NPSSO_HELPER_FLAG in sys.argv:
+    from modules.npsso_webview_capture import main as _npsso_capture_main
+
+    raise SystemExit(_npsso_capture_main())
+
 from modules.log_trim import trim_log_file as _trim_log_file
 
 # Set True to print [startup] timing lines and summaries to the console.

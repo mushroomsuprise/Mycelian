@@ -34,18 +34,51 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 _SUBPROCESS_TIMEOUT_SEC = 600
+NPSSO_HELPER_FLAG = "--mycelian-npsso-capture"
 
 # NPSSO is ~64 chars, alphanumeric / base64url-style (not hex-only).
 _NPSSO_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{64}$")
 
+_PYINSTALLER_BOOTSTRAP_VARS = (
+    "_MEIPASS2",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "_PYI_BOOTSTRAP",
+)
+
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent
+
+
+def _is_frozen() -> bool:
+    return getattr(sys, "frozen", False)
+
+
+def _npsso_capture_command_and_env() -> tuple[list[str], dict[str, str], Path]:
+    """Build subprocess argv and env for the isolated NPSSO webview helper."""
+    root = _project_root()
+    env = os.environ.copy()
+
+    if _is_frozen():
+        cmd = [sys.executable, NPSSO_HELPER_FLAG]
+        for var_name in _PYINSTALLER_BOOTSTRAP_VARS:
+            env.pop(var_name, None)
+    else:
+        cmd = [sys.executable, "-m", "modules.npsso_webview_capture"]
+        extra = str(root)
+        sep = os.pathsep
+        if env.get("PYTHONPATH"):
+            env["PYTHONPATH"] = f"{extra}{sep}{env['PYTHONPATH']}"
+        else:
+            env["PYTHONPATH"] = extra
+
+    return cmd, env, root
 
 
 def _run_npsso_capture_subprocess() -> tuple[bool, str, str]:
@@ -58,15 +91,7 @@ def _run_npsso_capture_subprocess() -> tuple[bool, str, str]:
         "npsso_authenticator: subprocess.run starting webview module",
         flush=True,
     )
-    root = _project_root()
-    cmd = [sys.executable, "-m", "modules.npsso_webview_capture"]
-    env = os.environ.copy()
-    extra = str(root)
-    sep = os.pathsep
-    if env.get("PYTHONPATH"):
-        env["PYTHONPATH"] = f"{extra}{sep}{env['PYTHONPATH']}"
-    else:
-        env["PYTHONPATH"] = extra
+    cmd, env, root = _npsso_capture_command_and_env()
 
     try:
         proc = subprocess.run(
@@ -130,7 +155,10 @@ class NpssoResult:
     error_message: str = ""
 
 
-def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None:
+def show_npsso_instruction_dialog(
+    on_after_continue: Callable[[], None],
+    on_cancel: Optional[Callable[[], None]] = None,
+) -> None:
     """
     Show the countdown + instructions dialog. When the user clicks Continue,
     the dialog closes and ``on_after_continue`` runs.
@@ -142,6 +170,11 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
     from nicegui import ui
 
     from .ui_timer import layout_schedule
+
+    def on_cancel_click() -> None:
+        dialog.close()
+        if on_cancel is not None:
+            on_cancel()
 
     def on_continue() -> None:
         print(
@@ -176,21 +209,21 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
                     ui.badge("1", color="primary").classes("rounded-full mt-1")
                     with ui.column().classes("gap-1 grow"):
                         ui.label(
-                            "Click Continue to open a dedicated sign-in window"
+                            "Click Continue to open the dedicated PlayStation sign-in window"
                         ).classes("font-medium")
                         ui.label(
-                            "Sign in to your PlayStation Network account in that window."
+                            "A separate window will open for PlayStation Network sign-in."
                         ).classes("text-sm secondary-text")
 
                 with ui.row().classes("gap-3 items-start"):
                     ui.badge("2", color="primary").classes("rounded-full mt-1")
                     with ui.column().classes("gap-1 grow"):
                         ui.label(
-                            "Wait until you are fully signed in on PlayStation.com"
+                            "Sign in to PlayStation Network in that window"
                         ).classes("font-medium")
-                        ui.label("Keep the sign-in window open.").classes(
-                            "text-sm secondary-text"
-                        )
+                        ui.label(
+                            "Wait until you are fully signed in, then keep the window open."
+                        ).classes("text-sm secondary-text")
 
                 with ui.row().classes("gap-3 items-start"):
                     ui.badge("3", color="primary").classes("rounded-full mt-1")
@@ -199,18 +232,18 @@ def show_npsso_instruction_dialog(on_after_continue: Callable[[], None]) -> None
                             "Use the menu: NPSSO → I am signed in — retrieve NPSSO token"
                         ).classes("font-medium")
                         ui.label(
-                            "The window will close and Mycelian will save your token."
+                            "The window closes and Mycelian saves your token and reconnects PSN."
                         ).classes("text-sm secondary-text")
 
                 ui.separator().classes("my-4")
 
                 ui.label(
-                    "The sign-in window shares cookies with the token step, "
-                    "so your token is retrieved automatically after the menu action."
+                    "Sign-in and token retrieval happen in the same window, "
+                    "so your NPSSO token is captured automatically after the menu action."
                 ).classes("text-sm text-orange-600 font-medium")
 
                 with ui.row().classes("justify-end gap-2 mt-4"):
-                    ui.button("Cancel", on_click=dialog.close).props("flat")
+                    ui.button("Cancel", on_click=on_cancel_click).props("flat")
 
                     continue_btn = ui.button(
                         "Continue (10)",

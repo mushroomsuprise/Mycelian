@@ -395,7 +395,10 @@ class PSNTab:
             _npsso_trace("begin_capture_after_instructions: poll timer started")
 
         try:
-            show_npsso_instruction_dialog(begin_capture_after_instructions)
+            show_npsso_instruction_dialog(
+                begin_capture_after_instructions,
+                on_cancel=reset_connect_ui,
+            )
         except Exception as e:
             logger.error(f"Error starting NPSSO auth: {e}")
             self._auth_in_progress = False
