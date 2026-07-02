@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -179,4 +180,21 @@ def get_working_directory():
     if is_frozen():
         return get_executable_dir()
     else:
-        return os.getcwd() 
+        return os.getcwd()
+
+
+def reveal_in_file_manager(path: Path) -> None:
+    """Open a file or folder in the native OS file manager."""
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        raise FileNotFoundError(f"Path does not exist: {target}")
+
+    open_path = str(target)
+    if sys.platform == "darwin":
+        subprocess.run(["open", open_path], check=True)
+    elif sys.platform == "win32":
+        subprocess.run(["explorer", open_path], check=True)
+    elif sys.platform.startswith("linux"):
+        subprocess.run(["xdg-open", open_path], check=True)
+    else:
+        raise OSError(f"Unsupported platform: {sys.platform}")

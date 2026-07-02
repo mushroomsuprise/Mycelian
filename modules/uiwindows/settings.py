@@ -47,7 +47,8 @@ from ..database_manager import (
 )
 from ..dataobjects import YouTubeData, state_manager
 from ..build_info import resolve_build_number
-from ..path_utils import get_working_directory
+from ..log_parser import get_actionable_errors, get_log_dir
+from ..path_utils import get_working_directory, reveal_in_file_manager
 from ..startup_profiler import StartupTimer, log_startup_summary
 from ..ui_settings_layout import settings_header, settings_section, settings_surface
 from .service_brand_icons import service_tab_icon
@@ -3502,6 +3503,57 @@ class SettingsUI:
                         "text-red-400 text-center p-4"
                     )
 
+    @staticmethod
+    def _truncate_log_error_message(message: str, max_len: int = 120) -> str:
+        text = " ".join(message.split())
+        if len(text) <= max_len:
+            return text
+        return text[: max_len - 1] + "…"
+
+    def refresh_log_errors(self) -> None:
+        """Refresh actionable error summary from mycelian.log."""
+        count_label = self.ui_elements.get("log_error_count_label")
+        list_container = self.ui_elements.get("log_errors_list_container")
+        if not count_label or not list_container:
+            return
+
+        try:
+            summary = get_actionable_errors()
+            list_container.clear()
+
+            if summary.total_count == 0:
+                count_label.set_text("No actionable errors")
+                count_label.classes(remove="text-amber-400 text-red-400")
+                count_label.classes(add="secondary-text")
+                return
+
+            noun = "error" if summary.total_count == 1 else "errors"
+            count_label.set_text(f"{summary.total_count} actionable {noun}")
+            count_label.classes(remove="secondary-text")
+            count_label.classes(add="text-amber-400")
+
+            with list_container:
+                for item in summary.unique_errors:
+                    display = self._truncate_log_error_message(item.message)
+                    if item.count > 1:
+                        display = f"{display} (×{item.count})"
+                    ui.label(display).classes("secondary-text text-sm break-words")
+
+        except Exception as e:
+            logger.error(f"Error refreshing log errors: {e}", exc_info=True)
+            count_label.set_text("Unable to read log file")
+            count_label.classes(remove="secondary-text text-amber-400")
+            count_label.classes(add="text-red-400")
+            list_container.clear()
+
+    def open_logs_folder(self) -> None:
+        """Open the folder containing mycelian.log in the native file manager."""
+        try:
+            reveal_in_file_manager(get_log_dir())
+        except Exception as e:
+            logger.error(f"Error opening logs folder: {e}", exc_info=True)
+            notify("Failed to open logs folder.", type="negative")
+
     def _copy_url_to_clipboard(self, url: str):
         """Copy URL to clipboard and show notification"""
         try:
@@ -5245,6 +5297,32 @@ class SettingsUI:
                 ui.label(f"Built on {self.app_settings.build_date}").classes(
                     "secondary-text text-sm"
                 )
+
+        with settings_surface(container):
+            with ui.row().classes("w-full items-start justify-between gap-3"):
+                with ui.column().classes("gap-1 min-w-0"):
+                    ui.label("Application Logs").classes("text-base font-semibold")
+                    ui.label(
+                        "Actionable errors from the application log file, "
+                        "excluding known noise such as expired tokens."
+                    ).classes("secondary-text text-sm")
+                with ui.row().classes("items-center gap-2 shrink-0"):
+                    outline_button(
+                        "Open Logs Folder",
+                        self.open_logs_folder,
+                        icon="folder_open",
+                        extra_classes="dense",
+                    )
+                    ui.button("Refresh", on_click=self.refresh_log_errors).props(
+                        "icon=refresh outline dense"
+                    )
+            self.ui_elements["log_error_count_label"] = ui.label(
+                "No actionable errors"
+            ).classes("secondary-text text-sm")
+            self.ui_elements["log_errors_list_container"] = ui.column().classes(
+                "w-full gap-1 mt-1"
+            )
+            layout_schedule(0.1, lambda: self.refresh_log_errors(), once=True)
 
         with settings_surface(container):
             with ui.row().classes("w-full items-start justify-between gap-3"):
