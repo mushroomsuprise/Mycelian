@@ -384,6 +384,17 @@ def _apply_bits_message_to_alert(alert, message_obj) -> None:
         alert.emotes = None
 
 
+def _hype_train_type_from_event(event) -> Optional[str]:
+    """Read Hype Train variant (regular, treasure, golden_kappa) from EventSub payload."""
+    train_type = getattr(event, "type", None) or getattr(event, "type_", None)
+    if train_type is None:
+        return None
+    if hasattr(train_type, "value"):
+        train_type = train_type.value
+    normalized = str(train_type).strip().lower()
+    return normalized or None
+
+
 class Twitch_API:
     def __init__(self):
         logger.debug("Initializing Twitch API class")
@@ -2746,6 +2757,8 @@ class Twitch_API:
             message=f"Hype Train started by {conductor_name}! Level {level}.",
             badge_type="hype_train",
             timestamp=str(int(current_ts)),
+            level=level,
+            hype_train_type=_hype_train_type_from_event(data.event),
         )
 
         # Emit hype train active websocket event
@@ -2871,6 +2884,8 @@ class Twitch_API:
             timestamp=str(int(current_ts)),
             user_message=user_msg_details,
             alert_id=alert.alert_id,
+            level=level,
+            hype_train_type=_hype_train_type_from_event(event_data),
         )
 
         # Track hype train completion statistics immediately when event occurs

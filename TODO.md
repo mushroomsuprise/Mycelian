@@ -30,6 +30,10 @@ Chat template:
     [x] - Fix message formatting so it automatically pluralizes the gift sub and bit donation messages. Example: it current says something like "TestUser gifted 1 tier 1 subs!" when only a single gifted sub is sent, instead it should be something like "TestUser gift a tier 1 sub!". The bit messages should be similar.
     [x] - Fix media-rich events displaying alerts that arent configured (follow alert for sure)
     [x] - Fix username color matching to check as case insensitive
+    [x] - Fix event message only saying "Hype train started by A viewer! Level X". It reads sort of weird, and the starting users name is never filled it. It should read something more like "Level {lvl} started by {user}!" and fallback to "Level {lvl} started!" if the username is unresolvable.
+
+FF7 Template:
+    [x] - Add row display to the Party segment. Put in the same row as the character name and justified to the right so it sits above the MP number. Font size should match the username size. We should just show a label "FR" for front row and "BR" for back row.
 
 UI Improvements:
     [x] - Move the two Twitch toggles from App Settings to the Twitch tab. Put inside an "Options" card that will be below the connection cards

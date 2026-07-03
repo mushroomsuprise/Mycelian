@@ -881,6 +881,8 @@ def build_activity_feed_alert_payload(
     user_message=None,
     alert_id=None,
     point_cost=None,
+    level=None,
+    hype_train_type=None,
 ):
     """
     Build the same dict that is sent over ``activity_feed_alert`` WebSocket events.
@@ -902,6 +904,15 @@ def build_activity_feed_alert_payload(
             alert_data["point_cost"] = int(point_cost)
         except (TypeError, ValueError):
             pass
+
+    if level is not None:
+        try:
+            alert_data["level"] = int(level)
+        except (TypeError, ValueError):
+            pass
+
+    if hype_train_type:
+        alert_data["hype_train_type"] = str(hype_train_type).strip().lower()
 
     if alert_id:
         try:
@@ -1091,6 +1102,19 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
             "streak",
             timestamp=ts,
         )
+    elif at in ("hype_train", "hypetrain"):
+        hype_level = random.randint(1, 5)
+        train_type = random.choice(("regular", "treasure", "golden_kappa"))
+        stored_alert_data["hype_train_type"] = train_type
+        stored_alert_data["level"] = hype_level
+        payload = build_activity_feed_alert_payload(
+            "Hype Train",
+            f"Hype Train started by {username}! Level {hype_level}.",
+            "hype_train",
+            timestamp=ts,
+            level=hype_level,
+            hype_train_type=train_type,
+        )
     else:
         payload = build_activity_feed_alert_payload(
             "Follow",
@@ -1233,11 +1257,25 @@ def iter_activity_feed_preview_payloads():
 
     hype_user = pick()
     hype_level = random.randint(1, 5)
+    hype_train_type = random.choice(("regular", "treasure", "golden_kappa"))
     yield build_activity_feed_alert_payload(
         "Hype Train",
         f"Hype Train started by {hype_user}! Level {hype_level}.",
         "hype_train",
         timestamp=ts,
+        level=hype_level,
+        hype_train_type=hype_train_type,
+    )
+
+    hype_end_level = random.randint(1, 5)
+    hype_end_type = random.choice(("regular", "treasure", "golden_kappa"))
+    yield build_activity_feed_alert_payload(
+        "Hype Train",
+        f"Hype Train ended at Level {hype_end_level}!",
+        "hype_train",
+        timestamp=ts,
+        level=hype_end_level,
+        hype_train_type=hype_end_type,
     )
 
 
@@ -1250,6 +1288,8 @@ def add_alert_to_feed(
     user_message=None,
     alert_id=None,
     point_cost=None,
+    level=None,
+    hype_train_type=None,
 ):
     """Add a new alert card to the activity feed container.
 
@@ -1271,6 +1311,8 @@ def add_alert_to_feed(
         user_message=user_message,
         alert_id=alert_id,
         point_cost=point_cost,
+        level=level,
+        hype_train_type=hype_train_type,
     )
 
     # Process the alert immediately using the event-based system

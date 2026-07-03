@@ -1344,6 +1344,48 @@
             return username + ' has resubscribed for ' + months + ' ' + monthLabel + '!';
         }
 
+        function isHypeTrainAlertType(alertData) {
+            var t = normalizeChatAlertType(alertData);
+            return t === 'hypetrain' || t === 'hype_train';
+        }
+
+        function resolveHypeTrainLevel(alertData) {
+            var level = lookupChatAlertField(alertData, 'level', 'hype_train_level');
+            if (level != null) {
+                var parsed = parseInt(level, 10);
+                if (!isNaN(parsed)) {
+                    return parsed;
+                }
+            }
+            var message = alertData.message || '';
+            var levelMatch = message.match(/Level\s+(\d+)/i);
+            return levelMatch ? parseInt(levelMatch[1], 10) : null;
+        }
+
+        function resolveHypeTrainTypePhrase(alertData) {
+            var raw = lookupChatAlertField(alertData, 'hype_train_type');
+            var trainType = raw != null ? String(raw).trim().toLowerCase() : 'regular';
+            if (trainType === 'treasure') {
+                return 'Treasure Train';
+            }
+            if (trainType === 'golden_kappa') {
+                return 'Golden Kappa train';
+            }
+            return 'hype train';
+        }
+
+        function isHypeTrainEndMessage(alertData) {
+            return /ended at level/i.test(alertData.message || '');
+        }
+
+        function formatHypeTrainMessage(alertData) {
+            var level = resolveHypeTrainLevel(alertData);
+            var levelStr = level != null ? String(level) : '?';
+            var typePhrase = resolveHypeTrainTypePhrase(alertData);
+            var verb = isHypeTrainEndMessage(alertData) ? 'ended' : 'started';
+            return 'Level ' + levelStr + ' ' + typePhrase + ' ' + verb + '!';
+        }
+
         function resolveActivityEventText(alertData) {
             var eventText = '';
             var alertType = (alertData.type || alertData.alert_type || '').toLowerCase();
@@ -1364,6 +1406,8 @@
                 eventText = formatBitsMessage(alertData);
             } else if (alertType === 'resub') {
                 eventText = formatResubMessage(alertData);
+            } else if (isHypeTrainAlertType(alertData)) {
+                eventText = formatHypeTrainMessage(alertData);
             } else if (alertData.message) {
                 eventText = alertData.message;
             } else {

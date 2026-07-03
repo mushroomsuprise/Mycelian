@@ -241,6 +241,31 @@
             margin-top: -3px;
             line-height: 1.15;
         }
+        #panelParty .char-party-name-row {
+            display: flex;
+            flex-direction: row;
+            align-items: baseline;
+            gap: 6px;
+            width: 100%;
+            min-width: 0;
+            margin-top: -3px;
+        }
+        #panelParty .char-party-name-row .char-name {
+            flex: 2.06;
+            min-width: 0;
+            width: auto;
+            margin-top: 0;
+            line-height: 1.15;
+        }
+        #panelParty .char-party-row {
+            flex: 0.71;
+            min-width: 0;
+            text-align: right;
+            font-size: var(--name-font, 15px);
+            line-height: 1.15;
+            white-space: nowrap;
+            color: var(--ff7-text);
+        }
         #panelParty .char-hpmp-row {
             display: flex;
             flex-direction: row;
@@ -1707,6 +1732,12 @@
             return parts.join('|');
         }
 
+        function ff7PartyRowLabel(actor) {
+            var r = actor && actor.row;
+            if (r === 'BR' || r === 'br') return 'BR';
+            return 'FR';
+        }
+
         function patchPartyRowStats(container, party) {
             var members = [];
             for (var i = 0; i < party.length; i++) {
@@ -1728,13 +1759,16 @@
                 var lowMp = !dead && maxMp > 0 && (mp / maxMp) < 0.25;
                 var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
 
-                var nameEl = row.querySelector('.char-party-main > .char-name');
+                var nameEl = row.querySelector('.char-party-name-row .char-name');
                 if (nameEl) {
                     var lv = (actor.level !== undefined && actor.level !== null) ? Number(actor.level) : 0;
                     var nm = actor.name || '?';
                     nameEl.textContent = lv > 0 ? ('Lv ' + lv + ' ' + nm) : nm;
                     nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
                 }
+
+                var rowEl = row.querySelector('.char-party-row');
+                if (rowEl) rowEl.textContent = ff7PartyRowLabel(actor);
 
                 var hpCell = row.querySelector('.hp-block .stat-cell.hp-cell');
                 if (hpCell) {
@@ -1927,12 +1961,22 @@
             var partyMain = document.createElement('div');
             partyMain.className = 'char-party-main';
 
+            var nameRow = document.createElement('div');
+            nameRow.className = 'char-party-name-row';
+
             var nameEl = document.createElement('div');
             nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
             var lv = (actor.level !== undefined && actor.level !== null) ? Number(actor.level) : 0;
             var nm = actor.name || '?';
             nameEl.textContent = lv > 0 ? ('Lv ' + lv + ' ' + nm) : nm;
-            partyMain.appendChild(nameEl);
+            nameRow.appendChild(nameEl);
+
+            var rowLbl = document.createElement('span');
+            rowLbl.className = 'char-party-row';
+            rowLbl.textContent = ff7PartyRowLabel(actor);
+            nameRow.appendChild(rowLbl);
+
+            partyMain.appendChild(nameRow);
 
             var hpMpRow = document.createElement('div');
             hpMpRow.className = 'char-hpmp-row';

@@ -151,6 +151,8 @@ ENEMY_OFF_MDEF = 0x27
 
 # Battle-actor ally-only fields
 BATTLE_OFF_LEVEL = 0x24
+# Battle script 0x4026 (back row) → physical +0x0A in 104-byte actor block
+BATTLE_OFF_BACK_ROW = 0x0A
 
 FF7_MENU_NAMES: List[str] = [
     "Item",
@@ -217,6 +219,10 @@ REC_OFF_WEAPON_MATERIA = 0x40
 REC_OFF_ARMOR_MATERIA = 0x60
 REC_OFF_MATERIA_WEAPON = 0x40
 REC_OFF_MATERIA_ARMOR = 0x60
+# Data Crystal char record: 0xFF front row, 0xFE back row
+REC_OFF_ROW = 0x20
+ROW_ORDER_FRONT = 0xFF
+ROW_ORDER_BACK = 0xFE
 
 # Built-in gear slot layouts (KERNEL-style slot-type bytes; see ff7-flat-wiki Weapon_data / Armor_data).
 
@@ -478,6 +484,25 @@ def _ailments_from_status(status: int) -> List[str]:
         if st & mask:
             out.append(label)
     return out
+
+
+def _row_label_from_savemap_order(order: int) -> str:
+    return "BR" if (int(order) & 0xFF) == ROW_ORDER_BACK else "FR"
+
+
+def _row_label_from_battle_raw(raw: bytes) -> str:
+    if len(raw) > BATTLE_OFF_BACK_ROW and raw[BATTLE_OFF_BACK_ROW]:
+        return "BR"
+    return "FR"
+
+
+def _row_for_char_id(savemap: bytes, char_id: int) -> str:
+    if char_id < 0 or char_id >= len(_CHAR_BLOCK):
+        return "FR"
+    off = _CHAR_BLOCK[char_id]
+    if off + REC_OFF_ROW >= len(savemap):
+        return "FR"
+    return _row_label_from_savemap_order(savemap[off + REC_OFF_ROW])
 
 
 def _materia_orb_stem(materia_id: int) -> str:
@@ -2337,6 +2362,7 @@ class FF7Hook:
                 "limit": int(limit_bar),
                 "atb": 0.0,
                 "slot_empty": False,
+                "row": _row_for_char_id(savemap, cid),
             }
             row.update(_char_gear_materia(rec))
             members.append(row)
@@ -2434,6 +2460,7 @@ class FF7Hook:
             "scene_id": 0,
             "level": int(level),
             "slot_empty": False,
+            "row": _row_label_from_battle_raw(raw),
         }
 
     def _read_battle_enemy(self, slot: int) -> Optional[Dict[str, Any]]:
