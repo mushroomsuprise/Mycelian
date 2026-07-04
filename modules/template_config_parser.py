@@ -557,6 +557,16 @@ def find_template_config_for_reward_title(
     return None
 
 
+def point_alert_silent_no_media_enabled() -> bool:
+    """Whether alerts config enables silent empty point redemptions."""
+    try:
+        cfg = TemplateConfigParser().load_config("alerts", include_dynamic_controls=False)
+        return bool(_config_element_value(cfg, "PointAlertSilentNoMedia"))
+    except Exception as e:
+        logger.debug("Could not read PointAlertSilentNoMedia: %s", e)
+        return False
+
+
 def point_reward_template_duration_seconds(config: Dict[str, Any]) -> float:
     """Duration field: values >100 treated as milliseconds (boo-style); else seconds."""
     raw = _config_element_value(config, "Duration")
@@ -569,6 +579,26 @@ def point_reward_template_duration_seconds(config: Dict[str, Any]) -> float:
     if dur_num > 100:
         return dur_num / 1000.0
     return dur_num
+
+
+def build_template_queue_metadata() -> Dict[str, Any]:
+    """Slim per-template queue fields for alerts overlay (not full config trees)."""
+    parser = TemplateConfigParser()
+    metadata: Dict[str, Any] = {}
+    for stem in parser.get_config_files():
+        try:
+            cfg = parser.load_config(stem, include_dynamic_controls=False)
+        except Exception as e:
+            logger.debug("Skipping template %s for queue metadata: %s", stem, e)
+            continue
+        if not isinstance(cfg, dict):
+            continue
+        metadata[stem] = {
+            "Duration": _config_element_value(cfg, "Duration"),
+            "Queued": bool(_config_element_value(cfg, "Queued")),
+            "template_name": cfg.get("template_name") or stem,
+        }
+    return metadata
 
 
 def match_point_reward_dedicated_template(

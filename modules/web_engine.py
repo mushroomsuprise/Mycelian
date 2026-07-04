@@ -26,6 +26,7 @@ SOFTWARE.
 import asyncio
 import copy
 import dataclasses  # Added for converting PSNData to dict
+import faulthandler
 import glob
 import json
 import logging
@@ -36,13 +37,12 @@ import re
 import socket
 import subprocess
 import sys
-import faulthandler
 import threading
 import time
 import warnings
+from collections import deque
 from datetime import datetime
 from pathlib import Path
-from collections import deque
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -66,6 +66,7 @@ Payload.max_decode_packets = 128
 
 from flask import (
     Flask,
+    g,
     make_response,
     render_template,
     render_template_string,
@@ -100,7 +101,11 @@ from .template_config_parser import (
     TemplateConfigParser,
     resolve_dynamic_control_values_from_elements,
 )
-from .template_log import TemplateLogRateLimiter, inject_template_logger, process_template_log
+from .template_log import (
+    TemplateLogRateLimiter,
+    inject_template_logger,
+    process_template_log,
+)
 from .theme_manager import generate_css_variables, get_theme_manager
 
 logger = logging.getLogger(__name__)
@@ -490,6 +495,35 @@ WEBENGINE_STATE_STARTING = "Starting"
 WEBENGINE_STATE_RUNNING = "Running"
 WEBENGINE_STATE_STOPPED = "Stopped"
 
+# Temporary terminal debug during bottleneck calibration (MYCELIAN_BOTTLENECK_DEBUG=1).
+_BOTTLENECK_DEBUG_PRINT = True
+
+
+def _bottleneck_debug_enabled() -> bool:
+    if os.environ.get("MYCELIAN_BOTTLENECK_DEBUG", "").lower() in ("1", "true", "yes"):
+        return True
+    return _BOTTLENECK_DEBUG_PRINT
+
+
+def _bottleneck_print(msg: str) -> None:
+    if _bottleneck_debug_enabled():
+        print(f"[BOTTLENECK] {msg}", flush=True)
+
+
+def _percentile_value(samples: List[float], pct: float) -> float:
+    if not samples:
+        return 0.0
+    ordered = sorted(samples)
+    idx = min(len(ordered) - 1, max(0, int((len(ordered) - 1) * pct)))
+    return float(ordered[idx])
+
+
+def _count_recent_timestamps(bucket: Deque[float], window_sec: float) -> int:
+    cutoff = time.time() - window_sec
+    while bucket and bucket[0] < cutoff:
+        bucket.popleft()
+    return len(bucket)
+
 
 def get_webengine_health() -> Dict[str, Any]:
     """Return overlay server health for footer / diagnostics."""
@@ -510,25 +544,46 @@ def get_webengine_health() -> Dict[str, Any]:
             "last_error": None,
             "restart_attempts": 0,
             "overload": False,
+            "overload_reasons": [],
+            "overload_metrics": {},
+            "bottlenecked": False,
+            "bottleneck_reasons": [],
+            "bottleneck_metrics": {},
             "detail": "",
         }
     return inst.get_health()
 
 
 class WebEngine:
-    # --- Health / overload thresholds ----------------------------------------
+    # --- Health / bottleneck thresholds --------------------------------------
     _FREEZE_HEALTH_SEC = 60.0
     _STARTING_GRACE_SEC = 15.0
     _QUEUE_MAX_SIZE = 50
-    _OVERLOAD_QUEUE_THRESHOLD = 50
-    _OVERLOAD_CLIENT_THRESHOLD = 25
     _OVERLOAD_SLOW_REQUEST_COUNT = 5
     _OVERLOAD_SLOW_REQUEST_WINDOW_SEC = 60.0
+    _HEALTH_OVERLOAD_LOG_COOLDOWN_SEC = 30.0
+    _ALL_TEMPLATE_CONFIGS_RATE_LOG_COOLDOWN_SEC = 10.0
     _SLOW_REQUEST_SEC = 0.5
     _ALL_TEMPLATE_CONFIGS_RATE_LIMIT = 4  # requests per IP per 3s window
     _ALL_TEMPLATE_CONFIGS_RATE_WINDOW_SEC = 3.0
     _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 3.0
+    _TEMPLATE_QUEUE_METADATA_CACHE_TTL = 30.0
     _RESTART_THREAD_JOIN_SEC = 15.0 if sys.platform == "win32" else 10.0
+    _HTTP_LATENCY_WINDOW_SEC = 60.0
+    _HTTP_LATENCY_MAX_SAMPLES = 128
+    _HTTP_SLOW_ROUTE_PRINT_MS = 200.0
+    # Hard bottleneck trips (any one -> Overloaded)
+    _BN_HUB_TICK_DRIFT_MS = 3000.0
+    _BN_HTTP_P95_MS = 750.0
+    _BN_TC_OLDEST_AGE_MS = 500.0
+    _BN_TC_QUEUE_DEPTH_HARD = 40
+    _BN_TW_OLDEST_AGE_MS = 2000.0
+    # Soft bottleneck trips (two at once -> Overloaded)
+    _BN_HTTP_P95_SOFT_MS = 400.0
+    _BN_TC_QUEUE_DEPTH_SOFT = 15
+    _BN_NET_CONNECTS_30S = 10
+    _BN_COUNTER_WINDOW_SEC = 60.0
+    _HEARTBEAT_EXPECTED_INTERVAL_SEC = 10.0
 
     def __init__(self, template_dir="templates", host="127.0.0.1", port=5000):
         """
@@ -645,8 +700,30 @@ class WebEngine:
         )
 
         # Add CORS headers to all responses for Stream Deck plugin compatibility
+        @self.app.before_request
+        def _bottleneck_request_start():
+            if request.method == "OPTIONS":
+                return None
+            try:
+                self.ensure_web_engine_heartbeat()
+                self.ensure_template_control_emit_worker()
+            except Exception as exc:
+                logger.debug("WebEngine background workers hook failed: %s", exc)
+            path = request.path or ""
+            if path.startswith("/assets/"):
+                return None
+            g._bottleneck_req_start = time.perf_counter()
+
         @self.app.after_request
         def add_cors_headers(response):
+            start = getattr(g, "_bottleneck_req_start", None)
+            if start is not None:
+                elapsed_ms = (time.perf_counter() - start) * 1000.0
+                self._record_http_latency(elapsed_ms, request.path or "")
+                if elapsed_ms >= self._HTTP_SLOW_ROUTE_PRINT_MS:
+                    _bottleneck_print(
+                        f"slow_route path={request.path} elapsed={elapsed_ms:.0f}ms"
+                    )
             response.headers["Access-Control-Allow-Origin"] = "*"
             response.headers["Access-Control-Allow-Methods"] = (
                 "GET, POST, PUT, DELETE, OPTIONS"
@@ -824,6 +901,16 @@ class WebEngine:
             """Serve ALL template configurations as raw JSON"""
             client_key = (request.remote_addr or "unknown").strip()
             if self._all_template_configs_rate_limited(client_key):
+                now = time.time()
+                if now >= self._all_template_configs_rate_log_at:
+                    self._all_template_configs_rate_log_at = (
+                        now + self._ALL_TEMPLATE_CONFIGS_RATE_LOG_COOLDOWN_SEC
+                    )
+                    logger.warning(
+                        "serve_all_template_configs rate_limited client=%s "
+                        "(OBS refresh storm)",
+                        client_key,
+                    )
                 return (
                     {"error": "Rate limited; retry shortly"},
                     429,
@@ -842,7 +929,7 @@ class WebEngine:
                 )
                 elapsed = time.time() - t0
                 if elapsed > self._SLOW_REQUEST_SEC:
-                    self._record_slow_request()
+                    self._record_slow_request("all-template-configs", elapsed)
                 if (
                     elapsed > self._SLOW_REQUEST_SEC
                     and time.time() >= self._all_template_configs_slow_log_at
@@ -898,6 +985,26 @@ class WebEngine:
                 )
                 return (
                     {"error": "Failed to load template configuration"},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route("/api/template-queue-metadata")
+        def serve_template_queue_metadata():
+            """Slim per-template Duration/Queued fields for alerts queue timing."""
+            try:
+                payload_bytes, cache_hit = self._get_template_queue_metadata_cached()
+                return (
+                    payload_bytes,
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    "Error serving template queue metadata: %s", e, exc_info=True
+                )
+                return (
+                    {"error": "Failed to load template queue metadata"},
                     500,
                     {"Content-Type": "application/json"},
                 )
@@ -2291,11 +2398,41 @@ class WebEngine:
         self._last_run_error: Optional[str] = None
         self._server_started_at: Optional[float] = None
 
-        # Overload / slow-request tracking
+        # Overload / bottleneck tracking
         self._slow_request_times: Deque[float] = deque(maxlen=64)
         self._overload_lock = threading.Lock()
         self._all_template_configs_rate: Dict[str, Deque[float]] = {}
         self._all_template_configs_rate_lock = threading.Lock()
+        self._all_template_configs_rate_log_at = 0.0
+        self._last_reported_health_state: Optional[str] = None
+        self._last_overload_health_log_at = 0.0
+        self._http_latency_samples: Deque[Tuple[float, float]] = deque(
+            maxlen=self._HTTP_LATENCY_MAX_SAMPLES
+        )
+        self._http_latency_lock = threading.Lock()
+        self._tc_enqueue_times: Deque[float] = deque(maxlen=self._QUEUE_MAX_SIZE)
+        self._tw_enqueue_times: Deque[float] = deque(maxlen=self._QUEUE_MAX_SIZE)
+        self._queue_metrics_lock = threading.Lock()
+        self._emit_delivery_lags_ms: Deque[float] = deque(maxlen=64)
+        self._tc_drop_times: Deque[float] = deque(maxlen=64)
+        self._tw_drop_times: Deque[float] = deque(maxlen=64)
+        self._socket_emit_error_times: Deque[float] = deque(maxlen=64)
+        self._socket_connect_times: Deque[float] = deque(maxlen=256)
+        self._socket_disconnect_times: Deque[float] = deque(maxlen=256)
+        self._last_heartbeat_mono: Optional[float] = None
+        self._template_control_worker_alive = False
+        self._all_template_configs_singleflight_lock = threading.Lock()
+        self._all_template_configs_singleflight_cond = threading.Condition(
+            self._all_template_configs_singleflight_lock
+        )
+        self._all_template_configs_building = False
+        self._template_queue_metadata_cache: Optional[Tuple[float, bytes]] = None
+        self._template_queue_metadata_cache_lock = threading.Lock()
+        self._template_queue_metadata_singleflight_lock = threading.Lock()
+        self._template_queue_metadata_singleflight_cond = threading.Condition(
+            self._template_queue_metadata_singleflight_lock
+        )
+        self._template_queue_metadata_building = False
 
     def _build_all_template_configs(self, preview_tok: Optional[str]) -> Dict[str, Any]:
         """Load every template JSON (used by cached all-template-configs route)."""
@@ -2325,19 +2462,78 @@ class WebEngine:
                 key, expires_at, payload_bytes = cached
                 if key == cache_key and now < expires_at:
                     return payload_bytes, True
-        configs = self._build_all_template_configs(preview_tok or None)
-        payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
-        with self._all_template_configs_cache_lock:
-            self._all_template_configs_cache = (
-                cache_key,
-                now + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
-                payload_bytes,
-            )
-        return payload_bytes, False
+
+        with self._all_template_configs_singleflight_cond:
+            while self._all_template_configs_building:
+                self._all_template_configs_singleflight_cond.wait(timeout=5.0)
+            with self._all_template_configs_cache_lock:
+                cached = self._all_template_configs_cache
+                if cached is not None:
+                    key, expires_at, payload_bytes = cached
+                    if key == cache_key and now < expires_at:
+                        return payload_bytes, True
+            self._all_template_configs_building = True
+
+        try:
+            configs = self._build_all_template_configs(preview_tok or None)
+            payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
+            with self._all_template_configs_cache_lock:
+                self._all_template_configs_cache = (
+                    cache_key,
+                    time.time() + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
+                    payload_bytes,
+                )
+            return payload_bytes, False
+        finally:
+            with self._all_template_configs_singleflight_cond:
+                self._all_template_configs_building = False
+                self._all_template_configs_singleflight_cond.notify_all()
+
+    def _get_template_queue_metadata_cached(self) -> Tuple[bytes, bool]:
+        """Slim queue-timing metadata for alerts overlay."""
+        from .template_config_parser import build_template_queue_metadata
+
+        now = time.time()
+        with self._template_queue_metadata_cache_lock:
+            cached = self._template_queue_metadata_cache
+            if cached is not None:
+                expires_at, payload_bytes = cached
+                if now < expires_at:
+                    return payload_bytes, True
+
+        with self._template_queue_metadata_singleflight_cond:
+            while self._template_queue_metadata_building:
+                self._template_queue_metadata_singleflight_cond.wait(timeout=5.0)
+            with self._template_queue_metadata_cache_lock:
+                cached = self._template_queue_metadata_cache
+                if cached is not None:
+                    expires_at, payload_bytes = cached
+                    if now < expires_at:
+                        return payload_bytes, True
+            self._template_queue_metadata_building = True
+
+        try:
+            metadata = build_template_queue_metadata()
+            payload_bytes = json.dumps(metadata, separators=(",", ":")).encode("utf-8")
+            with self._template_queue_metadata_cache_lock:
+                self._template_queue_metadata_cache = (
+                    time.time() + self._TEMPLATE_QUEUE_METADATA_CACHE_TTL,
+                    payload_bytes,
+                )
+            return payload_bytes, False
+        finally:
+            with self._template_queue_metadata_singleflight_cond:
+                self._template_queue_metadata_building = False
+                self._template_queue_metadata_singleflight_cond.notify_all()
+
+    def invalidate_template_queue_metadata_cache(self) -> None:
+        with self._template_queue_metadata_cache_lock:
+            self._template_queue_metadata_cache = None
 
     def invalidate_all_template_configs_cache(self) -> None:
         with self._all_template_configs_cache_lock:
             self._all_template_configs_cache = None
+        self.invalidate_template_queue_metadata_cache()
 
     def broadcast_template_config_updated(self, template_name: str) -> None:
         """Notify overlays that a template JSON was saved (reload via single-config API)."""
@@ -2399,17 +2595,26 @@ class WebEngine:
     def _submit_twitch_api_coro(self, coro) -> None:
         self.ensure_twitch_api_worker()
         try:
+            with self._queue_metrics_lock:
+                self._tw_enqueue_times.append(time.monotonic())
             self._twitch_api_queue.put_nowait(coro)
         except queue.Full:
+            self._record_event_timestamp(self._tw_drop_times)
             logger.warning(
                 "Twitch API queue full (%s); dropping request",
                 self._twitch_api_queue.qsize(),
+            )
+            _bottleneck_print(
+                f"tw_drop depth={self._twitch_api_queue.qsize()}"
             )
 
     def _twitch_api_worker_loop(self) -> None:
         try:
             while True:
                 coro = self._twitch_api_queue.get()
+                with self._queue_metrics_lock:
+                    if self._tw_enqueue_times:
+                        self._tw_enqueue_times.popleft()
                 if coro is None:
                     break
                 try:
@@ -2424,21 +2629,104 @@ class WebEngine:
     def _socket_client_connected(self) -> int:
         with self._socket_connected_lock:
             self._socket_connected_count += 1
-            return self._socket_connected_count
+            self._record_event_timestamp(self._socket_connect_times)
+            count = self._socket_connected_count
+        _bottleneck_print(
+            f"connect connected={count} net_30s={self._net_connects_30s()}"
+        )
+        return count
 
     def _socket_client_disconnected(self) -> int:
         with self._socket_connected_lock:
             self._socket_connected_count = max(0, self._socket_connected_count - 1)
-            return self._socket_connected_count
+            self._record_event_timestamp(self._socket_disconnect_times)
+            count = self._socket_connected_count
+        _bottleneck_print(
+            f"disconnect connected={count} net_30s={self._net_connects_30s()}"
+        )
+        return count
 
     def _get_socket_connected_count(self) -> int:
         with self._socket_connected_lock:
             return self._socket_connected_count
 
-    def _record_slow_request(self) -> None:
+    def _record_http_latency(self, elapsed_ms: float, path: str) -> None:
+        now = time.time()
+        with self._http_latency_lock:
+            self._http_latency_samples.append((now, elapsed_ms))
+            cutoff = now - self._HTTP_LATENCY_WINDOW_SEC
+            while self._http_latency_samples and self._http_latency_samples[0][0] < cutoff:
+                self._http_latency_samples.popleft()
+
+    def _http_latency_stats(self) -> Dict[str, float]:
+        now = time.time()
+        with self._http_latency_lock:
+            cutoff = now - self._HTTP_LATENCY_WINDOW_SEC
+            values = [
+                ms
+                for ts, ms in self._http_latency_samples
+                if ts >= cutoff
+            ]
+        if not values:
+            return {"http_p50_ms": 0.0, "http_p95_ms": 0.0, "http_max_ms": 0.0}
+        return {
+            "http_p50_ms": _percentile_value(values, 0.50),
+            "http_p95_ms": _percentile_value(values, 0.95),
+            "http_max_ms": float(max(values)),
+        }
+
+    def _queue_oldest_age_ms(self, enqueue_times: Deque[float]) -> float:
+        with self._queue_metrics_lock:
+            if not enqueue_times:
+                return 0.0
+            return max(0.0, (time.monotonic() - enqueue_times[0]) * 1000.0)
+
+    def _emit_delivery_p95_ms(self) -> float:
+        with self._overload_lock:
+            if not self._emit_delivery_lags_ms:
+                return 0.0
+            return _percentile_value(list(self._emit_delivery_lags_ms), 0.95)
+
+    def _net_connects_30s(self) -> int:
+        cutoff = time.time() - 30.0
+        with self._overload_lock:
+            while self._socket_connect_times and self._socket_connect_times[0] < cutoff:
+                self._socket_connect_times.popleft()
+            while (
+                self._socket_disconnect_times
+                and self._socket_disconnect_times[0] < cutoff
+            ):
+                self._socket_disconnect_times.popleft()
+            connects = sum(1 for t in self._socket_connect_times if t >= cutoff)
+            disconnects = sum(1 for t in self._socket_disconnect_times if t >= cutoff)
+        return connects - disconnects
+
+    def _record_event_timestamp(self, bucket: Deque[float]) -> None:
+        with self._overload_lock:
+            bucket.append(time.time())
+
+    def _record_slow_request(
+        self, source: str = "unknown", elapsed_sec: Optional[float] = None
+    ) -> None:
         now = time.time()
         with self._overload_lock:
             self._slow_request_times.append(now)
+        recent = self._slow_request_count_recent()
+        if elapsed_sec is not None:
+            _bottleneck_print(
+                f"slow_request source={source} elapsed={elapsed_sec:.3f}s recent={recent}"
+            )
+            logger.debug(
+                "slow_request recorded source=%s elapsed=%.3fs recent=%s",
+                source,
+                elapsed_sec,
+                recent,
+            )
+        else:
+            _bottleneck_print(f"slow_request source={source} recent={recent}")
+            logger.debug(
+                "slow_request recorded source=%s recent=%s", source, recent
+            )
 
     def _slow_request_count_recent(self) -> int:
         cutoff = time.time() - self._OVERLOAD_SLOW_REQUEST_WINDOW_SEC
@@ -2447,26 +2735,212 @@ class WebEngine:
                 self._slow_request_times.popleft()
             return len(self._slow_request_times)
 
-    def _is_overloaded(self) -> bool:
+    def _collect_bottleneck_metrics(self) -> Dict[str, Any]:
         clients = self._get_socket_connected_count()
-        if clients >= self._OVERLOAD_CLIENT_THRESHOLD:
-            return True
         try:
-            tc_qsize = self._template_control_queue.qsize()
+            tc_depth = self._template_control_queue.qsize()
         except Exception:
-            tc_qsize = 0
+            tc_depth = 0
         try:
-            tw_qsize = self._twitch_api_queue.qsize()
+            tw_depth = self._twitch_api_queue.qsize()
         except Exception:
-            tw_qsize = 0
-        if (
-            tc_qsize >= self._OVERLOAD_QUEUE_THRESHOLD
-            or tw_qsize >= self._OVERLOAD_QUEUE_THRESHOLD
-        ):
-            return True
-        if self._slow_request_count_recent() >= self._OVERLOAD_SLOW_REQUEST_COUNT:
-            return True
-        return False
+            tw_depth = 0
+        slow_recent = self._slow_request_count_recent()
+        stale_sec = self._heartbeat_stale_seconds()
+        http_stats = self._http_latency_stats()
+        hub_drift = 0.0
+        if self._last_heartbeat_mono is not None:
+            hub_drift = max(
+                0.0,
+                (time.monotonic() - self._last_heartbeat_mono - self._HEARTBEAT_EXPECTED_INTERVAL_SEC)
+                * 1000.0,
+            )
+        with self._overload_lock:
+            tc_drops = _count_recent_timestamps(
+                self._tc_drop_times, self._BN_COUNTER_WINDOW_SEC
+            )
+            tw_drops = _count_recent_timestamps(
+                self._tw_drop_times, self._BN_COUNTER_WINDOW_SEC
+            )
+            emit_errors = _count_recent_timestamps(
+                self._socket_emit_error_times, self._BN_COUNTER_WINDOW_SEC
+            )
+        return {
+            "hub_tick_drift_ms": hub_drift,
+            "heartbeat_stale_sec": stale_sec if stale_sec is not None else 0.0,
+            "http_p50_ms": http_stats["http_p50_ms"],
+            "http_p95_ms": http_stats["http_p95_ms"],
+            "http_max_ms": http_stats["http_max_ms"],
+            "slow_requests_recent": slow_recent,
+            "template_control_queue_depth": tc_depth,
+            "template_control_oldest_age_ms": self._queue_oldest_age_ms(
+                self._tc_enqueue_times
+            ),
+            "template_control_drops_60s": tc_drops,
+            "emit_delivery_p95_ms": self._emit_delivery_p95_ms(),
+            "twitch_api_queue_depth": tw_depth,
+            "twitch_api_oldest_age_ms": self._queue_oldest_age_ms(
+                self._tw_enqueue_times
+            ),
+            "twitch_api_drops_60s": tw_drops,
+            "socket_emit_errors_60s": emit_errors,
+            "net_connects_30s": self._net_connects_30s(),
+            "connected_clients": clients,
+            "template_control_worker_alive": self._template_control_worker_alive,
+        }
+
+    def _maybe_log_bottleneck_calibration_watch(self, m: Dict[str, Any]) -> None:
+        """Log metrics approaching hard thresholds (calibration aid)."""
+        watches = [
+            ("hub_tick_drift_ms", m.get("hub_tick_drift_ms", 0), self._BN_HUB_TICK_DRIFT_MS),
+            ("http_p95_ms", m.get("http_p95_ms", 0), self._BN_HTTP_P95_MS),
+            (
+                "template_control_oldest_age_ms",
+                m.get("template_control_oldest_age_ms", 0),
+                self._BN_TC_OLDEST_AGE_MS,
+            ),
+            (
+                "template_control_queue_depth",
+                m.get("template_control_queue_depth", 0),
+                float(self._BN_TC_QUEUE_DEPTH_HARD),
+            ),
+            (
+                "twitch_api_oldest_age_ms",
+                m.get("twitch_api_oldest_age_ms", 0),
+                self._BN_TW_OLDEST_AGE_MS,
+            ),
+        ]
+        for name, value, threshold in watches:
+            if threshold > 0 and value >= threshold * 0.5:
+                logger.info(
+                    "WebEngine bottleneck watch: %s=%.0f (thresh %.0f)",
+                    name,
+                    value,
+                    threshold,
+                )
+
+    def _get_bottleneck_diagnostics(self) -> Dict[str, Any]:
+        """Real-time gevent-thread bottleneck evaluation."""
+        m = self._collect_bottleneck_metrics()
+        hard_reasons: List[str] = []
+        soft_hits: List[str] = []
+
+        if m["heartbeat_stale_sec"] > 45.0:
+            hard_reasons.append(
+                f"heartbeat_stale_sec={m['heartbeat_stale_sec']:.0f}"
+            )
+        if m["hub_tick_drift_ms"] > self._BN_HUB_TICK_DRIFT_MS:
+            hard_reasons.append(
+                f"hub_tick_drift_ms={m['hub_tick_drift_ms']:.0f}"
+            )
+        if m["http_p95_ms"] > self._BN_HTTP_P95_MS:
+            hard_reasons.append(f"http_p95_ms={m['http_p95_ms']:.0f}")
+        if m["slow_requests_recent"] >= self._OVERLOAD_SLOW_REQUEST_COUNT:
+            hard_reasons.append(
+                f"slow_requests={m['slow_requests_recent']}/"
+                f"{self._OVERLOAD_SLOW_REQUEST_COUNT}"
+            )
+        if m["template_control_oldest_age_ms"] > self._BN_TC_OLDEST_AGE_MS:
+            hard_reasons.append(
+                f"template_control_oldest_age_ms="
+                f"{m['template_control_oldest_age_ms']:.0f}"
+            )
+        if m["template_control_queue_depth"] >= self._BN_TC_QUEUE_DEPTH_HARD:
+            hard_reasons.append(
+                f"template_control_queue_depth={m['template_control_queue_depth']}/"
+                f"{self._BN_TC_QUEUE_DEPTH_HARD}"
+            )
+        if m["twitch_api_oldest_age_ms"] > self._BN_TW_OLDEST_AGE_MS:
+            hard_reasons.append(
+                f"twitch_api_oldest_age_ms={m['twitch_api_oldest_age_ms']:.0f}"
+            )
+        if m["template_control_drops_60s"] > 0:
+            hard_reasons.append(
+                f"template_control_drops_60s={m['template_control_drops_60s']}"
+            )
+        if m["twitch_api_drops_60s"] > 0:
+            hard_reasons.append(
+                f"twitch_api_drops_60s={m['twitch_api_drops_60s']}"
+            )
+        if self.is_running and not m["template_control_worker_alive"]:
+            if self._template_control_emit_worker_started:
+                hard_reasons.append("template_control_worker_alive=false")
+
+        if m["http_p95_ms"] > self._BN_HTTP_P95_SOFT_MS:
+            soft_hits.append(f"http_p95_ms={m['http_p95_ms']:.0f}")
+        if m["template_control_queue_depth"] >= self._BN_TC_QUEUE_DEPTH_SOFT:
+            soft_hits.append(
+                f"template_control_queue_depth={m['template_control_queue_depth']}"
+            )
+        if m["net_connects_30s"] > self._BN_NET_CONNECTS_30S:
+            soft_hits.append(f"net_connects_30s={m['net_connects_30s']}")
+        if m["socket_emit_errors_60s"] > 0:
+            soft_hits.append(
+                f"socket_emit_errors_60s={m['socket_emit_errors_60s']}"
+            )
+
+        reasons = list(hard_reasons)
+        if len(soft_hits) >= 2:
+            reasons.extend(soft_hits)
+
+        bottlenecked = bool(hard_reasons) or len(soft_hits) >= 2
+        _bottleneck_print(
+            f"eval bottlenecked={bottlenecked} hard={hard_reasons} soft={soft_hits}"
+        )
+        return {
+            "bottlenecked": bottlenecked,
+            "reasons": reasons,
+            "metrics": m,
+            "hard_reasons": hard_reasons,
+            "soft_hits": soft_hits,
+        }
+
+    def _get_overload_diagnostics(self) -> Dict[str, Any]:
+        """Backward-compatible wrapper around bottleneck diagnostics."""
+        diag = self._get_bottleneck_diagnostics()
+        return {
+            "overloaded": diag["bottlenecked"],
+            "reasons": diag["reasons"],
+            "metrics": diag["metrics"],
+        }
+
+    def _is_overloaded(self) -> bool:
+        return self._get_bottleneck_diagnostics()["bottlenecked"]
+
+    def _maybe_log_health_state_transition(
+        self, state: str, bottleneck_diag: Dict[str, Any]
+    ) -> None:
+        """Log when health enters or leaves Overloaded (cooldown while overloaded)."""
+        prev = self._last_reported_health_state
+        now = time.time()
+
+        if state == WEBENGINE_STATE_OVERLOADED:
+            if (
+                prev != WEBENGINE_STATE_OVERLOADED
+                or now >= self._last_overload_health_log_at
+            ):
+                reasons = bottleneck_diag.get("reasons") or []
+                metrics = bottleneck_diag.get("metrics") or {}
+                reason_str = "; ".join(reasons) if reasons else "unknown"
+                logger.warning(
+                    "WebEngine health: Overloaded — %s; clients: %s; "
+                    "template_control_queue: %s; twitch_api_queue: %s",
+                    reason_str,
+                    metrics.get("connected_clients", "?"),
+                    metrics.get("template_control_queue_depth", "?"),
+                    metrics.get("twitch_api_queue_depth", "?"),
+                )
+                _bottleneck_print(f"state OVERLOADED reasons={reason_str}")
+                self._last_overload_health_log_at = (
+                    now + self._HEALTH_OVERLOAD_LOG_COOLDOWN_SEC
+                )
+        elif prev == WEBENGINE_STATE_OVERLOADED:
+            logger.warning(
+                "WebEngine health: recovered from Overloaded (now %s)", state
+            )
+            _bottleneck_print(f"state recovered from OVERLOADED now={state}")
+
+        self._last_reported_health_state = state
 
     def _heartbeat_stale_seconds(self) -> Optional[float]:
         last = self._last_gevent_heartbeat
@@ -2489,8 +2963,9 @@ class WebEngine:
         from .shutdown import is_shutdown_in_progress
 
         thread_alive = self._thread_alive()
-        clients = self._get_socket_connected_count()
-        overloaded = self._is_overloaded()
+        bottleneck_diag = self._get_bottleneck_diagnostics()
+        overloaded = bottleneck_diag["bottlenecked"]
+        clients = bottleneck_diag["metrics"]["connected_clients"]
         stale_sec = self._heartbeat_stale_seconds()
         with self._restart_lock:
             restart_attempts = self._restart_attempts
@@ -2506,6 +2981,8 @@ class WebEngine:
             detail_parts.append(str(self._last_run_error)[:80])
         if stale_sec is not None and stale_sec > self._FREEZE_HEALTH_SEC:
             detail_parts.append(f"heartbeat {stale_sec:.0f}s stale")
+        if overloaded:
+            detail_parts.extend(bottleneck_diag["reasons"])
 
         state = WEBENGINE_STATE_RUNNING
         if is_shutdown_in_progress() and not self.is_running and not thread_alive:
@@ -2536,6 +3013,8 @@ class WebEngine:
         else:
             state = WEBENGINE_STATE_STOPPED
 
+        self._maybe_log_health_state_transition(state, bottleneck_diag)
+
         return {
             "state": state,
             "connected_clients": clients,
@@ -2544,6 +3023,11 @@ class WebEngine:
             "last_error": self._last_run_error,
             "restart_attempts": restart_attempts,
             "overload": overloaded,
+            "overload_reasons": bottleneck_diag["reasons"],
+            "overload_metrics": bottleneck_diag["metrics"],
+            "bottlenecked": overloaded,
+            "bottleneck_reasons": bottleneck_diag["reasons"],
+            "bottleneck_metrics": bottleneck_diag["metrics"],
             "heartbeat_stale_sec": stale_sec,
             "detail": "; ".join(detail_parts),
         }
@@ -2636,18 +3120,52 @@ class WebEngine:
     def _web_engine_heartbeat_loop(self) -> None:
         while self.is_running:
             try:
-                self.socketio.sleep(10.0)
+                self.socketio.sleep(self._HEARTBEAT_EXPECTED_INTERVAL_SEC)
             except Exception:
                 break
             if not self.is_running:
                 break
+            now_mono = time.monotonic()
+            if self._last_heartbeat_mono is not None:
+                drift_ms = max(
+                    0.0,
+                    (now_mono - self._last_heartbeat_mono - self._HEARTBEAT_EXPECTED_INTERVAL_SEC)
+                    * 1000.0,
+                )
+            else:
+                drift_ms = 0.0
+            self._last_heartbeat_mono = now_mono
             # Mark the gevent hub as alive for the watchdog.
             self._last_gevent_heartbeat = time.time()
-            logger.info(
-                "WebEngine heartbeat: connected_clients=%s is_running=%s",
-                self._get_socket_connected_count(),
-                self.is_running,
+            bottleneck_diag = self._get_bottleneck_diagnostics()
+            m = bottleneck_diag.get("metrics") or {}
+            status = "overloaded" if bottleneck_diag.get("bottlenecked") else "running"
+            _bottleneck_print(
+                f"heartbeat drift={drift_ms:.0f}ms p95={m.get('http_p95_ms', 0):.0f}ms "
+                f"tc_q={m.get('template_control_queue_depth', 0)} "
+                f"tc_age={m.get('template_control_oldest_age_ms', 0):.0f}ms "
+                f"drops={m.get('template_control_drops_60s', 0)} "
+                f"clients={m.get('connected_clients', 0)} -> {status}"
             )
+            if bottleneck_diag.get("bottlenecked"):
+                reasons = bottleneck_diag.get("reasons") or []
+                logger.warning(
+                    "WebEngine heartbeat: overloaded — %s; clients=%s "
+                    "template_control_queue=%s template_control_oldest_age_ms=%s "
+                    "http_p95_ms=%s",
+                    "; ".join(reasons),
+                    m.get("connected_clients"),
+                    m.get("template_control_queue_depth"),
+                    m.get("template_control_oldest_age_ms"),
+                    m.get("http_p95_ms"),
+                )
+            else:
+                self._maybe_log_bottleneck_calibration_watch(m)
+                logger.info(
+                    "WebEngine heartbeat: connected_clients=%s is_running=%s",
+                    self._get_socket_connected_count(),
+                    self.is_running,
+                )
 
     def _watchdog_loop(self) -> None:
         """Detect a frozen gevent hub and dump thread stacks for diagnosis.
@@ -6590,11 +7108,19 @@ class WebEngine:
             self.socketio.emit(f"{template_name}_{action}", data or {})
 
     def _broadcast_template_control_event(
-        self, event_name: str, event_data: Dict[str, Any]
+        self, event_name: str, event_data: Dict[str, Any], enqueued_at: float = 0.0
     ) -> None:
         """Emit on the Web Engine Socket.IO stack (same path as source_controls_relay)."""
-        with self.app.app_context():
-            self.socketio.emit(event_name, event_data)
+        try:
+            with self.app.app_context():
+                self.socketio.emit(event_name, event_data)
+            if enqueued_at > 0:
+                lag_ms = (time.monotonic() - enqueued_at) * 1000.0
+                with self._overload_lock:
+                    self._emit_delivery_lags_ms.append(lag_ms)
+        except Exception as e:
+            self._record_event_timestamp(self._socket_emit_error_times)
+            raise
 
     def ensure_template_control_emit_worker(self) -> None:
         """Start the gevent worker that drains cross-thread template control emits."""
@@ -6613,10 +7139,11 @@ class WebEngine:
 
     def _template_control_emit_loop(self) -> None:
         """Drain NiceGUI-thread enqueues and broadcast on the Socket.IO/gevent stack."""
+        self._template_control_worker_alive = True
         q = self._template_control_queue
         try:
             while self.is_running:
-                batch: List[Tuple[str, Dict[str, Any]]] = []
+                batch: List[Tuple[float, str, Dict[str, Any]]] = []
                 try:
                     while True:
                         batch.append(q.get_nowait())
@@ -6624,18 +7151,27 @@ class WebEngine:
                     pass
 
                 if batch:
+                    with self._queue_metrics_lock:
+                        for _ in batch:
+                            if self._tc_enqueue_times:
+                                self._tc_enqueue_times.popleft()
                     # Preserve order across event names; coalesce rapid duplicates (typing).
                     order: List[str] = []
-                    latest: Dict[str, Dict[str, Any]] = {}
-                    for event_name, event_data in batch:
+                    latest: Dict[str, Tuple[float, str, Dict[str, Any]]] = {}
+                    for enqueued_at, event_name, event_data in batch:
                         if event_name not in latest:
                             order.append(event_name)
-                        latest[event_name] = event_data
+                        latest[event_name] = (enqueued_at, event_name, event_data)
+                    max_lag_ms = 0.0
                     for event_name in order:
-                        event_data = latest[event_name]
+                        enqueued_at, _, event_data = latest[event_name]
+                        if enqueued_at > 0:
+                            max_lag_ms = max(
+                                max_lag_ms, (time.monotonic() - enqueued_at) * 1000.0
+                            )
                         try:
                             self._broadcast_template_control_event(
-                                event_name, event_data
+                                event_name, event_data, enqueued_at
                             )
                         except Exception as e:
                             logger.error(
@@ -6644,6 +7180,10 @@ class WebEngine:
                                 e,
                                 exc_info=True,
                             )
+                    _bottleneck_print(
+                        f"tc_drain batch={len(batch)} coalesced={len(order)} "
+                        f"max_lag={max_lag_ms:.0f}ms"
+                    )
 
                 try:
                     self.socketio.sleep(0.05 if not batch else 0.016)
@@ -6656,6 +7196,7 @@ class WebEngine:
                     except Exception:
                         break
         finally:
+            self._template_control_worker_alive = False
             with self._template_control_emit_worker_lock:
                 self._template_control_emit_worker_started = False
             if self.is_running:
@@ -6686,13 +7227,30 @@ class WebEngine:
             return
         event_name = f"{template_name}_{action}"
         event_data = data if isinstance(data, dict) else ({} if data is None else {})
+        enqueued_at = time.monotonic()
         try:
-            self._template_control_queue.put_nowait((event_name, event_data))
+            with self._queue_metrics_lock:
+                self._tc_enqueue_times.append(enqueued_at)
+            self._template_control_queue.put_nowait(
+                (enqueued_at, event_name, event_data)
+            )
+            oldest_ms = self._queue_oldest_age_ms(self._tc_enqueue_times)
+            _bottleneck_print(
+                f"tc_enqueue event={event_name} depth={self._template_control_queue.qsize()} "
+                f"oldest_age={oldest_ms:.0f}ms"
+            )
         except queue.Full:
+            with self._queue_metrics_lock:
+                if self._tc_enqueue_times:
+                    self._tc_enqueue_times.pop()
+            self._record_event_timestamp(self._tc_drop_times)
             logger.warning(
                 "Template control queue full (%s); dropping %s",
                 self._template_control_queue.qsize(),
                 event_name,
+            )
+            _bottleneck_print(
+                f"tc_drop event={event_name} depth={self._template_control_queue.qsize()}"
             )
 
     def persist_template_control_change(
@@ -7055,6 +7613,7 @@ class WebEngine:
             logger.debug(f"Sent next_alert: {alert_data}")
             return True
         except Exception as e:
+            self._record_event_timestamp(self._socket_emit_error_times)
             logger.error(f"Error sending next_alert: {str(e)}", exc_info=True)
             return False
 

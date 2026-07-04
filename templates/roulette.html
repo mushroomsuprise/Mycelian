@@ -907,19 +907,22 @@
 
         // Initialize audio
         function initializeAudio() {
-            if (settings.enableSound) {
-                try {
-                    if ({{ ClickSoundFile | tojson }} !== '') {
-                    clickAudio = new Audio('/assets/roulette/' + {{ ClickSoundFile| tojson }});
-            clickAudio.volume = settings.clickSoundVolume;
-        }
-        if ({{ ResultSoundFile | tojson }} !== '') {
-            resultAudio = new Audio('/assets/roulette/' + {{ ResultSoundFile| tojson }});
-        resultAudio.volume = settings.resultSoundVolume;
-                    }
-                } catch (e) {
-            console.log('Error initializing audio:', e);
-        }
+            if (!settings.enableSound) {
+                return;
+            }
+            try {
+                var clickFile = {{ ClickSoundFile | tojson }};
+                if (clickFile) {
+                    clickAudio = new Audio('/assets/roulette/' + clickFile);
+                    clickAudio.volume = settings.clickSoundVolume;
+                }
+                var resultFile = {{ ResultSoundFile | tojson }};
+                if (resultFile) {
+                    resultAudio = new Audio('/assets/roulette/' + resultFile);
+                    resultAudio.volume = settings.resultSoundVolume;
+                }
+            } catch (e) {
+                console.log('Error initializing audio:', e);
             }
         }
 
@@ -1192,6 +1195,7 @@
             ctx.strokeStyle = rouletteDrawParams.arrowBorderColor;
         ctx.lineWidth = rouletteDrawParams.arrowBorderWidth;
         ctx.stroke();
+        }
         ctx.restore();
         }
 
@@ -1246,19 +1250,18 @@
             spinTime = 0;
 
             // Use custom spin duration if provided
-            var minSpinTime = customData && customData.minDuration ? customData.minDuration : {{ MinSpinDuration| tojson
-        }};
-        var maxSpinTime = customData && customData.maxDuration ? customData.maxDuration : {{ MaxSpinDuration| tojson}};
-        spinTimeTotal = (Math.floor(Math.random() * (maxSpinTime - minSpinTime)) + minSpinTime) * 1000;
+            var minSpinTime = customData && customData.minDuration ? customData.minDuration : {{ MinSpinDuration | tojson }};
+            var maxSpinTime = customData && customData.maxDuration ? customData.maxDuration : {{ MaxSpinDuration | tojson }};
+            spinTimeTotal = (Math.floor(Math.random() * (maxSpinTime - minSpinTime)) + minSpinTime) * 1000;
 
-        clickValues = [];
+            clickValues = [];
 
-        // Calculate click positions for sound
-        for (var i = 0; i < 12000 / (360 / rouletteData.options.length); i++) {
-            clickValues.push(((360 / rouletteData.options.length) * i) - 90);
-        }
+            // Calculate click positions for sound
+            for (var i = 0; i < 12000 / (360 / rouletteData.options.length); i++) {
+                clickValues.push(((360 / rouletteData.options.length) * i) - 90);
+            }
 
-        rotateWheel();
+            rotateWheel();
         }
 
         // Rotate wheel animation

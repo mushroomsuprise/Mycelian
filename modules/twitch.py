@@ -3953,6 +3953,8 @@ class Twitch_API:
 # Point reward API functions
 _CHANNEL_POINTS_ICON_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
 _CHANNEL_POINTS_ICON_CACHE_TTL = 3600.0
+_channel_points_unlocked: bool | None = None
+_channel_points_fetch_lock = threading.Lock()
 
 _CHANNEL_POINTS_ICON_GQL = """
 query ChannelPointsChannelSettings($channelID: ID!) {
@@ -4009,6 +4011,9 @@ async def fetch_channel_points_currency_icon_async(
 ) -> Optional[dict[str, str]]:
     """Fetch per-channel community points currency icon URLs (GQL with Helix fallback)."""
     if not broadcaster_id:
+        return None
+
+    if _channel_points_unlocked is False:
         return None
 
     cache_key = str(broadcaster_id)
@@ -4127,27 +4132,37 @@ async def _fetch_channel_point_rewards_async():
     status is one of: ok, not_connected, not_unlocked, error.
     On ok, rewards is a list (possibly empty).
     """
+    global _channel_points_unlocked
+    if _channel_points_unlocked is False:
+        return (None, "not_unlocked")
+
     if not twitch_api or not twitch_api.is_connected:
         logger.error("Twitch API not connected")
         return (None, "not_connected")
 
-    url = f"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={twitch_api.user_id}"
-
-    try:
-        response = await twitch_api.generic_api_call(url, "GET")
-        if response and "data" in response:
-            return (response["data"], "ok")
-        logger.error("Invalid response format from Twitch API")
-        return (None, "error")
-    except Exception as e:
-        if _is_channel_points_forbidden(e):
-            logger.warning(
-                "Channel point rewards unavailable: the channel must have "
-                "Affiliate or Partner status."
-            )
+    with _channel_points_fetch_lock:
+        if _channel_points_unlocked is False:
             return (None, "not_unlocked")
-        logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
-        return (None, "error")
+
+        url = f"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={twitch_api.user_id}"
+
+        try:
+            response = await twitch_api.generic_api_call(url, "GET")
+            if response and "data" in response:
+                _channel_points_unlocked = True
+                return (response["data"], "ok")
+            logger.error("Invalid response format from Twitch API")
+            return (None, "error")
+        except Exception as e:
+            if _is_channel_points_forbidden(e):
+                _channel_points_unlocked = False
+                logger.warning(
+                    "Channel point rewards unavailable: the channel must have "
+                    "Affiliate or Partner status."
+                )
+                return (None, "not_unlocked")
+            logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
+            return (None, "error")
 
 
 async def get_point_rewards_async():
@@ -4160,14 +4175,23 @@ async def get_point_rewards_async():
 
 def fetch_channel_point_rewards():
     """Sync: structured result for UI (rewards list only when status is ok)."""
+    global _channel_points_unlocked
     if not twitch_api or not twitch_api.is_connected:
         return {"rewards": None, "status": "not_connected"}
+
+    if _channel_points_unlocked is False:
+        return {"rewards": None, "status": "not_unlocked"}
 
     try:
         rewards, status = _run_twitch_coro_sync(_fetch_channel_point_rewards_async())
     except Exception as e:
         logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
         return {"rewards": None, "status": "error"}
+
+    if status == "not_unlocked":
+        _channel_points_unlocked = False
+    elif status == "ok":
+        _channel_points_unlocked = True
 
     if status == "ok":
         return {"rewards": rewards if rewards is not None else [], "status": "ok"}

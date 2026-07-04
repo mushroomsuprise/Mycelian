@@ -54,6 +54,36 @@ def process_alert(alert: AlertObj):
         alert (AlertObj): The alert object to process
     """
     try:
+        if getattr(alert, "alert_type", "") == "point" and not alert.hold_queue_only:
+            gif_ok = (
+                alert.gif_dir
+                and str(alert.gif_dir).strip()
+                and alert.gif_name
+                and str(alert.gif_name).strip()
+            )
+            audio_ok = alert.single_audio_dir and alert.single_audio_name
+            if not gif_ok and not audio_ok and not alert.randomized:
+                try:
+                    from .template_config_parser import (
+                        find_template_config_for_reward_title,
+                        point_alert_silent_no_media_enabled,
+                        point_reward_template_duration_seconds,
+                    )
+
+                    if point_alert_silent_no_media_enabled():
+                        cfg = find_template_config_for_reward_title(
+                            alert.alert_name or ""
+                        )
+                        if cfg:
+                            alert.duration = point_reward_template_duration_seconds(
+                                cfg
+                            )
+                except Exception as dur_exc:
+                    logger.debug(
+                        "Could not resolve point alert duration from template: %s",
+                        dur_exc,
+                    )
+
         # Convert AlertObj to dictionary for JSON serialization
         alert_data = vars(alert)
         queue_seq = web_engine.assign_next_alert_queue_seq()

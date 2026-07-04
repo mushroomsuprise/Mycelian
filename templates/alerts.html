@@ -770,9 +770,9 @@
         socket.on('template_config_updated', function (data) {
             if (!data || !data.template || data.template === 'alerts') {
                 loadTemplateConfig();
-            }
-            if (window.allTemplateConfigs !== undefined) {
-                window.allTemplateConfigs = undefined;
+            } else if (window.templateQueueMetadata !== undefined) {
+                window.templateQueueMetadata = undefined;
+                loadQueueMetadata();
             }
         });
 
@@ -908,7 +908,13 @@
         }
 
         function getConfigElementValue(config, id) {
-            if (!config || !config.elements) {
+            if (!config) {
+                return undefined;
+            }
+            if (config[id] !== undefined) {
+                return config[id];
+            }
+            if (!config.elements) {
                 return undefined;
             }
             const el = config.elements.find(function (e) { return e && e.id === id; });
@@ -923,18 +929,24 @@
         }
 
         function findTemplateConfigForAlertName(alertData) {
-            if (!window.allTemplateConfigs) {
+            var metaSource = window.templateQueueMetadata || window.allTemplateConfigs;
+            if (!metaSource) {
                 return null;
             }
             const want = normalizeTemplateMatchKey(alertData.alert_name);
             if (!want) {
                 return null;
             }
-            const keys = Object.keys(window.allTemplateConfigs);
+            const keys = Object.keys(metaSource);
             for (let i = 0; i < keys.length; i++) {
                 const k = keys[i];
                 if (normalizeTemplateMatchKey(k) === want) {
-                    return window.allTemplateConfigs[k];
+                    return metaSource[k];
+                }
+                const entry = metaSource[k];
+                if (entry && entry.template_name &&
+                    normalizeTemplateMatchKey(entry.template_name) === want) {
+                    return entry;
                 }
             }
             return null;
@@ -942,18 +954,34 @@
 
         var _templateConfigsLoadPromise = null;
         function ensureAllTemplateConfigs() {
-            if (window.allTemplateConfigs !== undefined) {
+            if (window.templateQueueMetadata !== undefined) {
                 return Promise.resolve();
             }
             if (_templateConfigsLoadPromise) {
                 return _templateConfigsLoadPromise;
             }
-            _templateConfigsLoadPromise = loadTemplateConfig().then(function () {
+            _templateConfigsLoadPromise = loadQueueMetadata().then(function () {
                 _templateConfigsLoadPromise = null;
             }).catch(function (e) {
                 _templateConfigsLoadPromise = null;
             });
             return _templateConfigsLoadPromise;
+        }
+
+        async function loadQueueMetadata() {
+            try {
+                const response = await fetch('/api/template-queue-metadata', { credentials: 'same-origin' });
+                if (response.ok) {
+                    window.templateQueueMetadata = await response.json();
+                } else if (window.templateQueueMetadata === undefined) {
+                    window.templateQueueMetadata = {};
+                }
+            } catch (error) {
+                console.error('Error loading template queue metadata:', error);
+                if (window.templateQueueMetadata === undefined) {
+                    window.templateQueueMetadata = {};
+                }
+            }
         }
 
         function pointHasGif(alertData) {
@@ -963,6 +991,10 @@
         }
 
         function getSilentPointDurationMs(alertData) {
+            const d = Number(alertData.duration);
+            if (d > 0) {
+                return d * 1000;
+            }
             const matched = findTemplateConfigForAlertName(alertData);
             if (matched) {
                 const raw = getConfigElementValue(matched, 'Duration');
@@ -970,7 +1002,6 @@
                     return Math.max(0, Number(raw));
                 }
             }
-            const d = Number(alertData.duration);
             return (d > 0 ? d : 5) * 1000;
         }
 
@@ -2461,36 +2492,35 @@
         // Load template config directly from API
         async function loadTemplateConfig() {
             try {
-                const response = await fetch('/api/all-template-configs');
-                if (response.ok) {
-                    const allConfigs = await response.json();
-                    window.allTemplateConfigs = allConfigs;
-                    console.log('Loaded all template configs:', Object.keys(allConfigs));
-
-                    const alertsConfigData = allConfigs.alerts;
+                const [alertsResponse, metaResponse] = await Promise.all([
+                    fetch('/api/template-config/alerts', { credentials: 'same-origin' }),
+                    fetch('/api/template-queue-metadata', { credentials: 'same-origin' }),
+                ]);
+                if (metaResponse.ok) {
+                    window.templateQueueMetadata = await metaResponse.json();
+                } else if (window.templateQueueMetadata === undefined) {
+                    window.templateQueueMetadata = {};
+                }
+                if (alertsResponse.ok) {
+                    const alertsConfigData = await alertsResponse.json();
                     if (alertsConfigData && alertsConfigData.elements) {
-                        console.log('Found alerts template config:', alertsConfigData);
                         const config = {};
                         alertsConfigData.elements.forEach(element => {
                             if (element.type !== 'section') {
                                 config[element.id] = element.value;
                             }
                         });
-                        console.log('Parsed config values:', config);
                         applyTemplateConfig(config);
                     } else {
                         console.warn('No alerts config found in response');
                     }
                 } else {
-                    console.error('Failed to load template configs:', response.status);
-                    if (window.allTemplateConfigs === undefined) {
-                        window.allTemplateConfigs = {};
-                    }
+                    console.error('Failed to load alerts template config:', alertsResponse.status);
                 }
             } catch (error) {
                 console.error('Error loading template config:', error);
-                if (window.allTemplateConfigs === undefined) {
-                    window.allTemplateConfigs = {};
+                if (window.templateQueueMetadata === undefined) {
+                    window.templateQueueMetadata = {};
                 }
             }
         }
