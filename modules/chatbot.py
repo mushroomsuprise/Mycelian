@@ -63,6 +63,7 @@ _initialized = False
 _init_lock = threading.Lock()
 _chatbot_reconnect_lock = threading.Lock()
 _chatbot_reconnect_in_progress = False
+_chatbot_token_validation_warned = False
 
 # Global flag to track Chatbot connection status
 chatbot_connected = False
@@ -639,9 +640,16 @@ class Chatbot_API:
                         self.save_auth_data()
 
                     except Exception as e:
-                        logger.warning(
-                            "Existing chatbot tokens failed validation: %s", e
-                        )
+                        global _chatbot_token_validation_warned
+                        if not _chatbot_token_validation_warned:
+                            _chatbot_token_validation_warned = True
+                            logger.warning(
+                                "Existing chatbot tokens failed validation: %s", e
+                            )
+                        else:
+                            logger.debug(
+                                "Existing chatbot tokens still invalid: %s", e
+                            )
                         logger.info(
                             "Attempting chatbot token refresh before OAuth after validation failure"
                         )

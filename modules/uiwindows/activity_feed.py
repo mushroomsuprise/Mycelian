@@ -158,6 +158,17 @@ def _handle_stale_client(reason: str) -> None:
 
 
 def _escalate_page_reload(reason: str) -> None:
+    try:
+        from modules.shutdown import is_shutdown_in_progress
+
+        if is_shutdown_in_progress():
+            logger.debug(
+                "activity_feed: reload_escalation skipped during shutdown (%s)", reason
+            )
+            return
+    except Exception:
+        pass
+
     logger.warning("activity_feed: reload_escalation (%s)", reason)
     try:
         from nicegui import Client, background_tasks

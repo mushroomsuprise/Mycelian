@@ -270,6 +270,8 @@ class PSNClient:
         self.user_online_id: str | None = None
         self.account_id: str | None = None
         self.authenticated: bool = False
+        self._auth_expired: bool = False
+        self._auth_expired_warned: bool = False
         self.psn_data: PSNData = PSNData()
         if npsso_code:
             self.psn_data.npsso_code = npsso_code
@@ -280,6 +282,8 @@ class PSNClient:
         self.psn_data.npsso_code = npsso_code
         self.api = None
         self.authenticated = False
+        self._auth_expired = False
+        self._auth_expired_warned = False
         self.psn_data.connection_status = (
             "Not Connected" if not (npsso_code or "").strip() else "Disconnected"
         )
@@ -297,6 +301,8 @@ class PSNClient:
         self.psn_data.npsso_code = npsso_code
         self.api = None
         self.authenticated = False
+        self._auth_expired = False
+        self._auth_expired_warned = False
         self.psn_data.connection_status = (
             "Not Connected" if not (npsso_code or "").strip() else "Disconnected"
         )
@@ -447,6 +453,12 @@ class PSNClient:
             self.psn_data.connection_status = "Not Connected"
             return False
 
+        if self._auth_expired:
+            logger.debug(
+                "Skipping PSN connect — NPSSO token expired; update credentials to retry"
+            )
+            return False
+
         if self.authenticated and self.api:
             logger.info("Already authenticated with PSN.")
             return True
@@ -524,13 +536,22 @@ class PSNClient:
         self.authenticated = False
         self.api = None
         self.psn_data.connection_status = "Token Expired"
-        logger.warning("%s: NPSSO token expired or invalid: %s", context, exc)
+        self._auth_expired = True
+        if not self._auth_expired_warned:
+            self._auth_expired_warned = True
+            logger.warning("%s: NPSSO token expired or invalid: %s", context, exc)
+        else:
+            logger.debug("%s: NPSSO token still expired or invalid: %s", context, exc)
         try:
             from .psn_service import notify_psn_npsso_expired
 
             notify_psn_npsso_expired()
         except Exception as notify_err:
             logger.debug("PSN NPSSO expiry notification failed: %s", notify_err)
+
+    def is_auth_expired(self) -> bool:
+        """True when the stored NPSSO token is known expired until user updates it."""
+        return self._auth_expired
 
     def get_presence(self, _allow_retry: bool = True) -> dict | None:
         """Fetches the current presence status of the user or specified PSN username."""

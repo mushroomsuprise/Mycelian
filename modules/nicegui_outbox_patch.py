@@ -20,11 +20,35 @@ best-effort: any problem applying it leaves NiceGUI untouched.
 import asyncio
 import gc
 import logging
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 _PATCH_ATTR = "__mycelian_outbox_snapshot_patched__"
-_SUPPORTED_VERSIONS = frozenset({"3.12.1", "3.13.0"})
+_MIN_NICEGUI_VERSION = (3, 12, 1)
+
+
+def _parse_nicegui_version(version: Optional[str]) -> Optional[Tuple[int, int, int]]:
+    if not version:
+        return None
+    parts = version.split(".")
+    try:
+        nums = tuple(int(p) for p in parts[:3])
+        while len(nums) < 3:
+            nums = (*nums, 0)
+        return nums  # type: ignore[return-value]
+    except ValueError:
+        return None
+
+
+def _nicegui_version_supported(version: Optional[str]) -> bool:
+    parsed = _parse_nicegui_version(version)
+    if parsed is None:
+        return False
+    major, minor, patch = parsed
+    if major != 3:
+        return False
+    return (minor, patch) >= (_MIN_NICEGUI_VERSION[1], _MIN_NICEGUI_VERSION[2])
 
 
 def ensure_outbox_snapshot_patch() -> None:
@@ -33,11 +57,12 @@ def ensure_outbox_snapshot_patch() -> None:
         import nicegui
 
         version = getattr(nicegui, "__version__", None)
-        if version not in _SUPPORTED_VERSIONS:
-            logger.info(
-                "Skipping NiceGUI outbox patch: version %s not in tested set %s",
+        if not _nicegui_version_supported(version):
+            logger.warning(
+                "Skipping NiceGUI outbox patch: version %s is outside supported "
+                "range (>= %s)",
                 version,
-                sorted(_SUPPORTED_VERSIONS),
+                ".".join(str(p) for p in _MIN_NICEGUI_VERSION),
             )
             return
 
@@ -141,9 +166,9 @@ def ensure_outbox_snapshot_patch() -> None:
 
         outbox_cls.loop = loop
         setattr(outbox_cls, _PATCH_ATTR, True)
-        logger.info(
+        logger.warning(
             "Patched NiceGUI %s Outbox.loop with snapshot-safe update iteration",
             version,
         )
     except Exception as e:
-        logger.info("Could not apply NiceGUI outbox snapshot patch: %s", e)
+        logger.warning("Could not apply NiceGUI outbox snapshot patch: %s", e)

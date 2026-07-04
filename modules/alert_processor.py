@@ -268,6 +268,11 @@ def initialize():
     # Set the global instance in the web_engine module
     web_engine.web_engine_instance = web_engine_instance
 
+    try:
+        web_engine_instance.prepare_port_for_startup()
+    except Exception as e:
+        logger.warning("WebEngine startup port preparation failed: %s", e)
+
     # Start web engine in a separate thread
     web_thread = threading.Thread(
         target=web_engine_instance.run, daemon=True, name="WebEngine"

@@ -43,3 +43,4 @@ UI Improvements:
 
 General:
     [x] - Implement a callback logger system so template errors reach the mycelian.log file
+    [] - Condensed view in integrated activity feed causes the activity feed tab to be blank

@@ -16,8 +16,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from modules.nicegui_outbox_patch import (  # noqa: E402
+    _MIN_NICEGUI_VERSION,
     _PATCH_ATTR,
-    _SUPPORTED_VERSIONS,
+    _nicegui_version_supported,
 )
 
 
@@ -81,8 +82,16 @@ class NiceguiOutboxPatchTests(unittest.TestCase):
 
         self.assertTrue(getattr(self.outbox_cls, _PATCH_ATTR, False))
 
-    def test_skips_untested_version(self) -> None:
+    def test_applies_for_newer_minor_version(self) -> None:
         self.fake_nicegui.__version__ = "3.14.0"
+        from modules.nicegui_outbox_patch import ensure_outbox_snapshot_patch
+
+        ensure_outbox_snapshot_patch()
+
+        self.assertTrue(getattr(self.outbox_cls, _PATCH_ATTR, False))
+
+    def test_skips_version_below_minimum(self) -> None:
+        self.fake_nicegui.__version__ = "3.11.0"
         from modules.nicegui_outbox_patch import ensure_outbox_snapshot_patch
 
         ensure_outbox_snapshot_patch()
@@ -90,8 +99,9 @@ class NiceguiOutboxPatchTests(unittest.TestCase):
         self.assertFalse(getattr(self.outbox_cls, _PATCH_ATTR, False))
         self.assertIsNone(self.outbox_cls.loop)
 
-    def test_supported_versions_include_current_lockfile(self) -> None:
-        self.assertIn("3.13.0", _SUPPORTED_VERSIONS)
+    def test_version_gate_matches_lockfile_minimum(self) -> None:
+        self.assertTrue(_nicegui_version_supported("3.13.0"))
+        self.assertEqual(_MIN_NICEGUI_VERSION, (3, 12, 1))
 
 
 if __name__ == "__main__":

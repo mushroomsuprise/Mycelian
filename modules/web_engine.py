@@ -3321,6 +3321,105 @@ class WebEngine:
                 )
                 self._log_port_holder_hint()
 
+    def _extract_listening_pid(self) -> Optional[int]:
+        """Best-effort PID listening on our overlay port (Windows netstat)."""
+        if sys.platform != "win32":
+            return None
+        try:
+            out = subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+                check=False,
+            )
+            needle = (
+                f"{self.host}:{self.port}"
+                if self.host not in ("0.0.0.0", "")
+                else f":{self.port}"
+            )
+            for line in out.stdout.splitlines():
+                if needle in line and "LISTENING" in line.upper():
+                    parts = line.split()
+                    if parts:
+                        return int(parts[-1])
+        except Exception as e:
+            logger.debug("Could not extract port holder PID: %s", e)
+        return None
+
+    def _try_terminate_stale_port_holder(self) -> bool:
+        """Terminate a foreign process still holding our port after stop."""
+        pid = self._extract_listening_pid()
+        if pid is None:
+            return False
+        if pid == os.getpid():
+            return False
+        logger.warning(
+            "Attempting to terminate stale process %s holding port %s",
+            pid,
+            self.port,
+        )
+        try:
+            if sys.platform == "win32":
+                result = subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/F"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5.0,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    logger.warning(
+                        "Terminated stale process %s holding port %s", pid, self.port
+                    )
+                    return True
+                logger.warning(
+                    "taskkill failed for PID %s (rc=%s): %s",
+                    pid,
+                    result.returncode,
+                    (result.stderr or result.stdout or "").strip(),
+                )
+        except Exception as e:
+            logger.warning("Could not terminate stale port holder PID %s: %s", pid, e)
+        return False
+
+    def _notify_port_conflict(self, context: str) -> None:
+        try:
+            from .notification_engine import notify_critical
+
+            notify_critical(
+                f"The overlay server could not bind to port {self.port} ({context}). "
+                "OBS browser sources and alerts may not work until you restart Mycelian "
+                "or close the other application using that port.",
+                dedupe_key=f"web_engine:port_conflict:{context}",
+                dedupe_cooldown_sec=120.0,
+            )
+        except Exception as e:
+            logger.debug("WebEngine port conflict notification failed: %s", e)
+
+    def prepare_port_for_startup(self) -> None:
+        """Release a stale listener before the first WebEngine bind."""
+        if not self._port_is_open():
+            return
+        logger.warning(
+            "Port %s is already in use before WebEngine startup; attempting release",
+            self.port,
+        )
+        self._prepare_port_for_restart()
+        if self._port_is_open():
+            self._try_terminate_stale_port_holder()
+            for delay in (0.5, 1.0, 2.0):
+                if not self._port_is_open():
+                    return
+                time.sleep(delay)
+        if self._port_is_open():
+            self._log_port_holder_hint()
+            logger.error(
+                "Port %s still in use after startup release attempts",
+                self.port,
+            )
+            self._notify_port_conflict("startup")
+
     def _prepare_port_for_restart(self) -> None:
         """Release or validate port 5000 before binding a new server thread."""
         if not self._port_is_open():
@@ -3337,6 +3436,8 @@ class WebEngine:
             )
             self._log_port_holder_hint()
         self._aggressive_stop()
+        if self._port_is_open():
+            self._try_terminate_stale_port_holder()
         # Brief wait for Windows TIME_WAIT / socket teardown
         for delay in (0.5, 1.0, 2.0):
             if not self._port_is_open():
@@ -3389,6 +3490,9 @@ class WebEngine:
                 logger.error(
                     "WebEngine auto-restart did not recover (attempt %s)", attempt
                 )
+                if self._port_is_open():
+                    self._log_port_holder_hint()
+                    self._notify_port_conflict("auto-restart")
                 with self._restart_lock:
                     give_up = self._restart_attempts >= self._MAX_RESTART_ATTEMPTS
                 if give_up and not self._restart_giveup_notified:

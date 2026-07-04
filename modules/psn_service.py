@@ -241,6 +241,13 @@ def psn_data_update_loop():
 
             # Ensure we're connected
             if not psn_client_instance.is_connected():
+                if getattr(psn_client_instance, "is_auth_expired", lambda: False)():
+                    logger.debug(
+                        "Skipping PSN reconnect in update loop — NPSSO token expired"
+                    )
+                    state_manager.set_live_psn_data(psn_client_instance.psn_data)
+                    stop_psn_thread_event.wait(SLEEP_NO_GAME)
+                    continue
                 logger.info(
                     "PSNClient not connected. Attempting to connect in update loop..."
                 )
