@@ -258,171 +258,184 @@ if __name__ == "__main__":
     # Enable multiprocessing support for frozen executables
     multiprocessing.freeze_support()
 
-    startup_start = time.perf_counter()
+    from modules.app_startup import critical_startup_done, mark_critical_startup_done
 
-    # Set working directory for exe files - important for resource access
-    if getattr(sys, "frozen", False):
-        # Running as exe - change to the directory containing the executable
-        exe_dir = os.path.dirname(sys.executable)
-        os.chdir(exe_dir)
-        logger.info(f"Running as executable, set working directory to: {exe_dir}")
+    # NiceGUI native mode re-executes this script on some HTTP 404 paths while its
+    # asyncio loop is already running. Skip the blocking startup phases on re-entry.
+    if critical_startup_done():
+        logger.debug(
+            "Skipping critical startup phases (already completed in this process)"
+        )
+    else:
+        startup_start = time.perf_counter()
 
-    # =========================================
-    # Phase 1: Critical Path (Blocking)
-    # =========================================
+        # Set working directory for exe files - important for resource access
+        if getattr(sys, "frozen", False):
+            # Running as exe - change to the directory containing the executable
+            exe_dir = os.path.dirname(sys.executable)
+            os.chdir(exe_dir)
+            logger.info(f"Running as executable, set working directory to: {exe_dir}")
 
-    # Database must be ready first
-    logger.info("Phase 1: Initializing critical components...")
-    try:
-        from modules.database_init import ensure_database_initialized
+        # =========================================
+        # Phase 1: Critical Path (Blocking)
+        # =========================================
 
-        with StartupTimer("ensure_database_initialized"):
-            if not ensure_database_initialized():
-                logger.error("Failed to initialize database system")
-                sys.exit(1)
-        logger.info("Database system initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing database system: {str(e)}", exc_info=True)
-        sys.exit(1)
+        # Database must be ready first
+        logger.info("Phase 1: Initializing critical components...")
+        try:
+            from modules.database_init import ensure_database_initialized
 
-    # Load all data in parallel (instead of sequential database calls)
-    logger.info("Loading all startup data in parallel...")
-    try:
-        import asyncio
-        from modules import database_manager
+            with StartupTimer("ensure_database_initialized"):
+                if not ensure_database_initialized():
+                    logger.error("Failed to initialize database system")
+                    sys.exit(1)
+            logger.info("Database system initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing database system: {str(e)}", exc_info=True)
+            sys.exit(1)
 
-        with StartupTimer("load_all_initial_data"):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            all_data = loop.run_until_complete(database_manager.load_all_initial_data())
-            loop.close()
-        logger.info(f"Loaded data for {len(all_data)} paths")
-    except Exception as e:
-        logger.error(f"Error loading startup data: {str(e)}", exc_info=True)
-        sys.exit(1)
+        # Load all data in parallel (instead of sequential database calls)
+        logger.info("Loading all startup data in parallel...")
+        try:
+            import asyncio
+            from modules import database_manager
 
-    # Initialize core modules with pre-loaded data
-    try:
-        from modules import dataobjects, alertutils, statistics_manager, alert_processor
+            with StartupTimer("load_all_initial_data"):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                all_data = loop.run_until_complete(
+                    database_manager.load_all_initial_data()
+                )
+                loop.close()
+            logger.info(f"Loaded data for {len(all_data)} paths")
+        except Exception as e:
+            logger.error(f"Error loading startup data: {str(e)}", exc_info=True)
+            sys.exit(1)
 
-        with StartupTimer("dataobjects.initialize_with_data"):
-            dataobjects.initialize_with_data(all_data)
+        # Initialize core modules with pre-loaded data
+        try:
+            from modules import dataobjects, alertutils, statistics_manager, alert_processor
 
-        with StartupTimer("alertutils.initialize_alert_state_with_data"):
-            alertutils.initialize_alert_state_with_data(all_data)
+            with StartupTimer("dataobjects.initialize_with_data"):
+                dataobjects.initialize_with_data(all_data)
 
-        with StartupTimer("statistics_manager.initialize_statistics_with_data"):
-            statistics_manager.initialize_statistics_with_data(all_data)
+            with StartupTimer("alertutils.initialize_alert_state_with_data"):
+                alertutils.initialize_alert_state_with_data(all_data)
 
-        # Alert processor needs to be ready
-        with StartupTimer("alert_processor.initialize"):
-            alert_processor.initialize()
+            with StartupTimer("statistics_manager.initialize_statistics_with_data"):
+                statistics_manager.initialize_statistics_with_data(all_data)
 
-        logger.info("Core modules initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing core modules: {str(e)}", exc_info=True)
-        sys.exit(1)
+            # Alert processor needs to be ready
+            with StartupTimer("alert_processor.initialize"):
+                alert_processor.initialize()
 
-    # =========================================
-    # Phase 2: UI Initialization
-    # =========================================
+            logger.info("Core modules initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing core modules: {str(e)}", exc_info=True)
+            sys.exit(1)
 
-    logger.info("Phase 2: Initializing UI shell...")
-    try:
-        with StartupTimer("mainuiwindow.initialize_ui_shell"):
-            mainuiwindow.initialize_ui_shell()
+        # =========================================
+        # Phase 2: UI Initialization
+        # =========================================
 
-        from modules.theme_manager import get_theme_manager
+        logger.info("Phase 2: Initializing UI shell...")
+        try:
+            with StartupTimer("mainuiwindow.initialize_ui_shell"):
+                mainuiwindow.initialize_ui_shell()
 
-        with StartupTimer("theme_manager.load_themes_from_directory"):
-            theme_manager = get_theme_manager()
-            theme_manager.load_themes_from_directory()
-            logger.info(
-                f"Theme manager initialized with {len(theme_manager._loaded_themes)} theme(s)"
+            from modules.theme_manager import get_theme_manager
+
+            with StartupTimer("theme_manager.load_themes_from_directory"):
+                theme_manager = get_theme_manager()
+                theme_manager.load_themes_from_directory()
+                logger.info(
+                    f"Theme manager initialized with {len(theme_manager._loaded_themes)} theme(s)"
+                )
+
+            logger.info("UI shell ready")
+        except Exception as e:
+            logger.error(f"Error initializing UI shell: {str(e)}", exc_info=True)
+            sys.exit(1)
+
+        # =========================================
+        # Phase 3: Deferred Initialization (Background)
+        # =========================================
+
+        logger.info("Phase 3: Setting up deferred services...")
+        try:
+            from modules.service_manager import DeferredServiceManager
+            from modules.mainuiwindow import update_splash_progress, close_splash_screen
+            from modules import connector_integration, connector_manager
+
+            # Create service manager with progress callback
+            def progress_callback(progress, message):
+                update_splash_progress(progress, message)
+
+            service_manager = DeferredServiceManager(progress_callback=progress_callback)
+
+            # Register services by priority (lower = higher priority)
+            service_manager.register(
+                "statistics_saving", statistics_manager.start_statistics_saving, priority=1
+            )
+            service_manager.register("twitch", twitch.initialize, priority=2)
+            service_manager.register("chatbot", chatbot.initialize, priority=3)
+            service_manager.register(
+                "connectors",
+                lambda: (
+                    connector_manager.initialize(),
+                    connector_integration.initialize_integration(),
+                ),
+                priority=4,
             )
 
-        logger.info("UI shell ready")
-    except Exception as e:
-        logger.error(f"Error initializing UI shell: {str(e)}", exc_info=True)
-        sys.exit(1)
+            # 3rd party services
+            from modules import spotify, psn_service, youtube
 
-    # =========================================
-    # Phase 3: Deferred Initialization (Background)
-    # =========================================
+            service_manager.register("spotify", spotify.start_spotify_service, priority=5)
+            service_manager.register("psn", psn_service.initialize_psn_module, priority=6)
+            service_manager.register("youtube", youtube.start_youtube_service, priority=7)
 
-    logger.info("Phase 3: Setting up deferred services...")
-    try:
-        from modules.service_manager import DeferredServiceManager
-        from modules.mainuiwindow import update_splash_progress, close_splash_screen
-        from modules import connector_integration, connector_manager
+            from modules.obs_service import start_obs_service as _start_obs_ws
 
-        # Create service manager with progress callback
-        def progress_callback(progress, message):
-            update_splash_progress(progress, message)
+            service_manager.register("obs", _start_obs_ws, priority=5)
 
-        service_manager = DeferredServiceManager(progress_callback=progress_callback)
+            from modules.connection_monitor import start as start_connection_monitor
 
-        # Register services by priority (lower = higher priority)
-        service_manager.register(
-            "statistics_saving", statistics_manager.start_statistics_saving, priority=1
+            service_manager.register(
+                "connection_monitor", start_connection_monitor, priority=8
+            )
+
+            # Start deferred init after UI is responsive
+            service_manager.start_deferred_init(delay_seconds=1.0)
+
+            # Close splash screen after a short delay to show "Ready!" message
+            def close_splash():
+                time.sleep(2.0)  # Show "Ready!" for 2 seconds
+                close_splash_screen()
+
+            import threading
+
+            splash_thread = threading.Thread(target=close_splash, daemon=True)
+            splash_thread.start()
+
+            logger.info("Deferred services registered and started")
+        except Exception as e:
+            logger.error(f"Error setting up deferred services: {str(e)}", exc_info=True)
+            # Continue anyway - deferred services are not critical
+
+        total_startup_time = time.perf_counter() - startup_start
+        set_total_startup_time(total_startup_time)
+        print_startup_message(
+            f"critical path (__main__ only) ready in {total_startup_time:.3f}s "
+            "(UI server not started yet)"
         )
-        service_manager.register("twitch", twitch.initialize, priority=2)
-        service_manager.register("chatbot", chatbot.initialize, priority=3)
-        service_manager.register(
-            "connectors",
-            lambda: (
-                connector_manager.initialize(),
-                connector_integration.initialize_integration(),
-            ),
-            priority=4,
+        print_startup_message(
+            f"total since import baseline: {get_elapsed_since_baseline():.3f}s "
+            "(includes module imports above)"
         )
+        log_startup_summary()
 
-        # 3rd party services
-        from modules import spotify, psn_service, youtube
-
-        service_manager.register("spotify", spotify.start_spotify_service, priority=5)
-        service_manager.register("psn", psn_service.initialize_psn_module, priority=6)
-        service_manager.register("youtube", youtube.start_youtube_service, priority=7)
-
-        from modules.obs_service import start_obs_service as _start_obs_ws
-
-        service_manager.register("obs", _start_obs_ws, priority=5)
-
-        from modules.connection_monitor import start as start_connection_monitor
-
-        service_manager.register(
-            "connection_monitor", start_connection_monitor, priority=8
-        )
-
-        # Start deferred init after UI is responsive
-        service_manager.start_deferred_init(delay_seconds=1.0)
-
-        # Close splash screen after a short delay to show "Ready!" message
-        def close_splash():
-            time.sleep(2.0)  # Show "Ready!" for 2 seconds
-            close_splash_screen()
-
-        import threading
-
-        splash_thread = threading.Thread(target=close_splash, daemon=True)
-        splash_thread.start()
-
-        logger.info("Deferred services registered and started")
-    except Exception as e:
-        logger.error(f"Error setting up deferred services: {str(e)}", exc_info=True)
-        # Continue anyway - deferred services are not critical
-
-    total_startup_time = time.perf_counter() - startup_start
-    set_total_startup_time(total_startup_time)
-    print_startup_message(
-        f"critical path (__main__ only) ready in {total_startup_time:.3f}s "
-        "(UI server not started yet)"
-    )
-    print_startup_message(
-        f"total since import baseline: {get_elapsed_since_baseline():.3f}s "
-        "(includes module imports above)"
-    )
-    log_startup_summary()
+        mark_critical_startup_done()
 
     # =========================================
     # Phase 4: Start UI Server (Blocking)

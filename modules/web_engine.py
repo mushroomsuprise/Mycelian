@@ -496,7 +496,7 @@ WEBENGINE_STATE_RUNNING = "Running"
 WEBENGINE_STATE_STOPPED = "Stopped"
 
 # Temporary terminal debug during bottleneck calibration (MYCELIAN_BOTTLENECK_DEBUG=1).
-_BOTTLENECK_DEBUG_PRINT = True
+_BOTTLENECK_DEBUG_PRINT = False
 
 
 def _bottleneck_debug_enabled() -> bool:
@@ -889,11 +889,16 @@ class WebEngine:
         def web_engine_health():
             """Lightweight liveness probe for restart / port-conflict detection."""
             health = self.get_health()
-            code = 200 if health["state"] in (
-                WEBENGINE_STATE_RUNNING,
-                WEBENGINE_STATE_OVERLOADED,
-                WEBENGINE_STATE_STARTING,
-            ) else 503
+            code = (
+                200
+                if health["state"]
+                in (
+                    WEBENGINE_STATE_RUNNING,
+                    WEBENGINE_STATE_OVERLOADED,
+                    WEBENGINE_STATE_STARTING,
+                )
+                else 503
+            )
             return health, code, {"Content-Type": "application/json"}
 
         @self.app.route("/api/all-template-configs")
@@ -2604,9 +2609,7 @@ class WebEngine:
                 "Twitch API queue full (%s); dropping request",
                 self._twitch_api_queue.qsize(),
             )
-            _bottleneck_print(
-                f"tw_drop depth={self._twitch_api_queue.qsize()}"
-            )
+            _bottleneck_print(f"tw_drop depth={self._twitch_api_queue.qsize()}")
 
     def _twitch_api_worker_loop(self) -> None:
         try:
@@ -2655,18 +2658,16 @@ class WebEngine:
         with self._http_latency_lock:
             self._http_latency_samples.append((now, elapsed_ms))
             cutoff = now - self._HTTP_LATENCY_WINDOW_SEC
-            while self._http_latency_samples and self._http_latency_samples[0][0] < cutoff:
+            while (
+                self._http_latency_samples and self._http_latency_samples[0][0] < cutoff
+            ):
                 self._http_latency_samples.popleft()
 
     def _http_latency_stats(self) -> Dict[str, float]:
         now = time.time()
         with self._http_latency_lock:
             cutoff = now - self._HTTP_LATENCY_WINDOW_SEC
-            values = [
-                ms
-                for ts, ms in self._http_latency_samples
-                if ts >= cutoff
-            ]
+            values = [ms for ts, ms in self._http_latency_samples if ts >= cutoff]
         if not values:
             return {"http_p50_ms": 0.0, "http_p95_ms": 0.0, "http_max_ms": 0.0}
         return {
@@ -2724,9 +2725,7 @@ class WebEngine:
             )
         else:
             _bottleneck_print(f"slow_request source={source} recent={recent}")
-            logger.debug(
-                "slow_request recorded source=%s recent=%s", source, recent
-            )
+            logger.debug("slow_request recorded source=%s recent=%s", source, recent)
 
     def _slow_request_count_recent(self) -> int:
         cutoff = time.time() - self._OVERLOAD_SLOW_REQUEST_WINDOW_SEC
@@ -2752,7 +2751,11 @@ class WebEngine:
         if self._last_heartbeat_mono is not None:
             hub_drift = max(
                 0.0,
-                (time.monotonic() - self._last_heartbeat_mono - self._HEARTBEAT_EXPECTED_INTERVAL_SEC)
+                (
+                    time.monotonic()
+                    - self._last_heartbeat_mono
+                    - self._HEARTBEAT_EXPECTED_INTERVAL_SEC
+                )
                 * 1000.0,
             )
         with self._overload_lock:
@@ -2792,7 +2795,11 @@ class WebEngine:
     def _maybe_log_bottleneck_calibration_watch(self, m: Dict[str, Any]) -> None:
         """Log metrics approaching hard thresholds (calibration aid)."""
         watches = [
-            ("hub_tick_drift_ms", m.get("hub_tick_drift_ms", 0), self._BN_HUB_TICK_DRIFT_MS),
+            (
+                "hub_tick_drift_ms",
+                m.get("hub_tick_drift_ms", 0),
+                self._BN_HUB_TICK_DRIFT_MS,
+            ),
             ("http_p95_ms", m.get("http_p95_ms", 0), self._BN_HTTP_P95_MS),
             (
                 "template_control_oldest_age_ms",
@@ -2826,13 +2833,9 @@ class WebEngine:
         soft_hits: List[str] = []
 
         if m["heartbeat_stale_sec"] > 45.0:
-            hard_reasons.append(
-                f"heartbeat_stale_sec={m['heartbeat_stale_sec']:.0f}"
-            )
+            hard_reasons.append(f"heartbeat_stale_sec={m['heartbeat_stale_sec']:.0f}")
         if m["hub_tick_drift_ms"] > self._BN_HUB_TICK_DRIFT_MS:
-            hard_reasons.append(
-                f"hub_tick_drift_ms={m['hub_tick_drift_ms']:.0f}"
-            )
+            hard_reasons.append(f"hub_tick_drift_ms={m['hub_tick_drift_ms']:.0f}")
         if m["http_p95_ms"] > self._BN_HTTP_P95_MS:
             hard_reasons.append(f"http_p95_ms={m['http_p95_ms']:.0f}")
         if m["slow_requests_recent"] >= self._OVERLOAD_SLOW_REQUEST_COUNT:
@@ -2859,9 +2862,7 @@ class WebEngine:
                 f"template_control_drops_60s={m['template_control_drops_60s']}"
             )
         if m["twitch_api_drops_60s"] > 0:
-            hard_reasons.append(
-                f"twitch_api_drops_60s={m['twitch_api_drops_60s']}"
-            )
+            hard_reasons.append(f"twitch_api_drops_60s={m['twitch_api_drops_60s']}")
         if self.is_running and not m["template_control_worker_alive"]:
             if self._template_control_emit_worker_started:
                 hard_reasons.append("template_control_worker_alive=false")
@@ -2875,9 +2876,7 @@ class WebEngine:
         if m["net_connects_30s"] > self._BN_NET_CONNECTS_30S:
             soft_hits.append(f"net_connects_30s={m['net_connects_30s']}")
         if m["socket_emit_errors_60s"] > 0:
-            soft_hits.append(
-                f"socket_emit_errors_60s={m['socket_emit_errors_60s']}"
-            )
+            soft_hits.append(f"socket_emit_errors_60s={m['socket_emit_errors_60s']}")
 
         reasons = list(hard_reasons)
         if len(soft_hits) >= 2:
@@ -3066,28 +3065,52 @@ class WebEngine:
             return False
 
     def _log_port_holder_hint(self) -> None:
-        if sys.platform != "win32":
+        if sys.platform == "win32":
+            try:
+                out = subprocess.run(
+                    [
+                        "netstat",
+                        "-ano",
+                        "-p",
+                        "TCP",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False,
+                )
+                needle = (
+                    f"{self.host}:{self.port}"
+                    if self.host != "0.0.0.0"
+                    else f":{self.port}"
+                )
+                for line in out.stdout.splitlines():
+                    if needle in line and "LISTENING" in line.upper():
+                        logger.warning(
+                            "Port %s may be held by: %s", self.port, line.strip()
+                        )
+                        return
+            except Exception as e:
+                logger.debug("Could not log port holder hint: %s", e)
             return
-        try:
-            out = subprocess.run(
-                [
-                    "netstat",
-                    "-ano",
-                    "-p",
-                    "TCP",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=3.0,
-                check=False,
-            )
-            needle = f"{self.host}:{self.port}" if self.host != "0.0.0.0" else f":{self.port}"
-            for line in out.stdout.splitlines():
-                if needle in line and "LISTENING" in line.upper():
-                    logger.warning("Port %s may be held by: %s", self.port, line.strip())
-                    return
-        except Exception as e:
-            logger.debug("Could not log port holder hint: %s", e)
+
+        if sys.platform == "darwin":
+            try:
+                out = subprocess.run(
+                    ["lsof", "-nP", f"-iTCP:{self.port}", "-sTCP:LISTEN"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False,
+                )
+                for line in out.stdout.splitlines():
+                    if line.strip() and not line.startswith("COMMAND"):
+                        logger.warning(
+                            "Port %s may be held by: %s", self.port, line.strip()
+                        )
+                        return
+            except Exception as e:
+                logger.debug("Could not log port holder hint: %s", e)
 
     def ensure_web_engine_heartbeat(self) -> None:
         """Log connected client count periodically and arm the freeze watchdog."""
@@ -3129,7 +3152,11 @@ class WebEngine:
             if self._last_heartbeat_mono is not None:
                 drift_ms = max(
                     0.0,
-                    (now_mono - self._last_heartbeat_mono - self._HEARTBEAT_EXPECTED_INTERVAL_SEC)
+                    (
+                        now_mono
+                        - self._last_heartbeat_mono
+                        - self._HEARTBEAT_EXPECTED_INTERVAL_SEC
+                    )
                     * 1000.0,
                 )
             else:
@@ -3401,24 +3428,36 @@ class WebEngine:
         """Release a stale listener before the first WebEngine bind."""
         if not self._port_is_open():
             return
-        logger.warning(
-            "Port %s is already in use before WebEngine startup; attempting release",
-            self.port,
-        )
-        self._prepare_port_for_restart()
-        if self._port_is_open():
-            self._try_terminate_stale_port_holder()
-            for delay in (0.5, 1.0, 2.0):
-                if not self._port_is_open():
-                    return
-                time.sleep(delay)
+
+        if self._probe_health_endpoint():
+            logger.warning(
+                "Port %s still serves Mycelian /api/health before startup; "
+                "attempting release",
+                self.port,
+            )
+            self._prepare_port_for_restart()
+            if self._port_is_open():
+                self._try_terminate_stale_port_holder()
+                for delay in (0.5, 1.0):
+                    if not self._port_is_open():
+                        return
+                    time.sleep(delay)
+        else:
+            self._log_port_holder_hint()
+            logger.warning(
+                "Port %s is in use by another application (not Mycelian). "
+                "The overlay server may fail to bind. On macOS, disable AirPlay "
+                "Receiver in System Settings or change the WebEngine port.",
+                self.port,
+            )
+            return
+
         if self._port_is_open():
             self._log_port_holder_hint()
             logger.error(
                 "Port %s still in use after startup release attempts",
                 self.port,
             )
-            self._notify_port_conflict("startup")
 
     def _prepare_port_for_restart(self) -> None:
         """Release or validate port 5000 before binding a new server thread."""
@@ -3429,13 +3468,14 @@ class WebEngine:
                 "Port %s still serves /api/health; attempting aggressive stop",
                 self.port,
             )
+            self._aggressive_stop()
         else:
             logger.warning(
                 "Port %s is open but health probe failed; attempting aggressive stop",
                 self.port,
             )
             self._log_port_holder_hint()
-        self._aggressive_stop()
+            self._aggressive_stop()
         if self._port_is_open():
             self._try_terminate_stale_port_holder()
         # Brief wait for Windows TIME_WAIT / socket teardown
@@ -8386,9 +8426,9 @@ class WebEngine:
                             else:
                                 self.socketio.stop()
                             if wsgi_server is not None:
-                                listener = getattr(wsgi_server, "socket", None) or getattr(
-                                    wsgi_server, "server", None
-                                )
+                                listener = getattr(
+                                    wsgi_server, "socket", None
+                                ) or getattr(wsgi_server, "server", None)
                                 if listener is not None and hasattr(listener, "close"):
                                     try:
                                         listener.close()
