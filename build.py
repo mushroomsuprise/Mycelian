@@ -97,7 +97,7 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.11.1o"
+VERSION = "1.11.10"
 BUILD_DATE = "July 3rd 2026"
 BUILD_NUMBER = "dev"
 
