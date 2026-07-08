@@ -101,9 +101,9 @@ class AppSettings:
 
     streamer_name: str = "mycelian"
     streamer_id: str = ""
-    version: str = "1.11.10"
-    build_number: str = "cf21763b9aa64b105d6dbf4eb4d6e01d02170fda"
-    build_date: str = "July 3rd 2026"
+    version: str = "1.11.11"
+    build_number: str = "46dbe287f9b772b388d0d2a9ceaa3296b25549d0"
+    build_date: str = "July 7th 2026"
     alert_volume: float = 0.5
     auto_reconnect: bool = True
     auto_raid_helix_shoutout: bool = True
