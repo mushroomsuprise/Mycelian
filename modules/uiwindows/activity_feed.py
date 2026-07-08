@@ -32,7 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import current_process
 from typing import Any, Callable, Dict, List, Optional
 
-from nicegui import app, ui
+from nicegui import app, background_tasks, run, ui
 
 from ..notification_engine import notify
 from .. import alertutils
@@ -45,6 +45,8 @@ _recovery_scheduled = False
 _integrity_check_reason: Optional[str] = None
 _integrity_check_scheduled = False
 _condensed_update_scheduled = False
+_condensed_rebuild_running = False
+_condensed_rebuild_rerun = False
 
 
 def _is_stale_client_error(exc: BaseException) -> bool:
@@ -83,7 +85,9 @@ def _condensed_view_has_content() -> bool:
     if not _element_alive(container):
         return False
     try:
-        return len(getattr(container, "default_slot", None) or []) > 0
+        # NiceGUI 3.x Slot has no __len__; inspect its children list directly.
+        slot = getattr(container, "default_slot", None)
+        return bool(slot is not None and len(slot.children) > 0)
     except Exception:
         return False
 
@@ -1746,6 +1750,10 @@ def create_activity_feed_tab():
     """Create the activity feed tab UI"""
     logger.debug("Creating activity feed tab...")
 
+    # Sync tab UI state with the module singleton (survives client reloads).
+    activity_feed_state.current_tab = "current"
+    activity_feed_state.dropdown_visible = False
+
     # Add the hover CSS once at the top level
     ui.add_head_html(
         """
@@ -2242,7 +2250,9 @@ def create_activity_feed_tab():
                 update_condensed_view()
 
             activity_feed_state.condense_toggle = ui.switch(
-                text="Condense List", value=False, on_change=toggle_condense_list
+                text="Condense List",
+                value=activity_feed_state.condense_list,
+                on_change=toggle_condense_list,
             ).classes("condense-toggle shrink-0")
             logger.debug(
                 "Condense List toggle created (id=%s)",
@@ -2453,8 +2463,8 @@ def create_activity_feed_tab():
             # Hide pagination initially (only show for previous alerts tab)
             activity_feed_state.pagination_container.classes(add="hidden")
 
-            # Ensure condense toggle visibility matches initial tab (Current Alerts)
-            update_condensed_view()
+            # Defer condensed-view setup so first paint is never blocked by storage I/O.
+            app_schedule(0, update_condensed_view, once=True)
 
             # Start on current alerts tab - no need to load restored alerts initially
 
@@ -3071,6 +3081,385 @@ def go_to_page(page):
         logger.error(f"Error navigating to page {page}: {str(e)}", exc_info=True)
 
 
+def _load_condensed_historical_hours() -> int:
+    """Load condense_historical_hours from template config (may perform I/O)."""
+    condense_historical_hours = 12
+    try:
+        from modules.template_config_parser import TemplateConfigParser
+
+        config_parser = TemplateConfigParser()
+        config_data = config_parser.load_config("activity_feed")
+
+        if config_data and "elements" in config_data:
+            for element in config_data["elements"]:
+                if element.get("type") == "section":
+                    continue
+                if element.get("id") == "condense_historical_hours":
+                    element_value = element.get("value")
+                    condense_historical_hours = (
+                        int(element_value) if element_value is not None else 12
+                    )
+                    break
+            logger.debug(
+                "Loaded condensed view config: hours=%s", condense_historical_hours
+            )
+        else:
+            logger.debug("No activity_feed config elements found, using defaults")
+    except Exception as exc:
+        logger.debug("Could not load template config for condensed view: %s", exc)
+    return condense_historical_hours
+
+
+def _group_alerts_for_condensed(alerts_to_process: List[Dict[str, Any]]):
+    """Group alerts by user and type for the condensed view (CPU-only)."""
+    import re
+
+    user_alerts: Dict[str, Dict[str, Any]] = {}
+    excluded_count = 0
+    unknown_username_count = 0
+
+    for alert_data in alerts_to_process:
+        alert_type = alert_data.get("type", "").lower()
+        badge_type = alert_data.get("badge_type", "").lower()
+
+        if alert_type in ["hype train", "point"] or badge_type in [
+            "hype_train",
+            "point",
+        ]:
+            excluded_count += 1
+            continue
+
+        username = alert_data.get("username")
+        if not username:
+            username = extract_username_from_message(alert_data.get("message", ""))
+
+        if not username or username == "Unknown":
+            unknown_username_count += 1
+            continue
+
+        if username not in user_alerts:
+            user_alerts[username] = {}
+
+        grouping_key = alert_type
+
+        if alert_type in ["sub", "resub", "giftsub"]:
+            tier = alert_data.get("tier", 1)
+            grouping_key = f"{alert_type}_tier{tier}"
+
+            if alert_type in ["resub", "giftsub"]:
+                duration_months = 1
+                stored_data = alert_data.get("stored_alert_data", {})
+
+                if stored_data:
+                    duration_months = (
+                        stored_data.get("resub_month", 0)
+                        or stored_data.get("months", 0)
+                        or stored_data.get("total_months", 0)
+                        or 1
+                    )
+                else:
+                    message = alert_data.get("message", "")
+                    month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
+                    if month_match:
+                        duration_months = int(month_match.group(1))
+
+                if duration_months > 1:
+                    grouping_key = f"{alert_type}_tier{tier}_multi_month"
+                else:
+                    grouping_key = f"{alert_type}_tier{tier}_1month"
+
+        if grouping_key not in user_alerts[username]:
+            user_alerts[username][grouping_key] = {
+                "count": 0,
+                "total_amount": 0,
+                "tier": alert_data.get("tier", 1),
+                "months": 0,
+                "original_type": alert_type,
+            }
+
+        user_alerts[username][grouping_key]["count"] += 1
+
+        message = alert_data.get("message", "")
+        stored_data = alert_data.get("stored_alert_data", {})
+
+        if alert_type in ("bit", "bits"):
+            amt_cheered = stored_data.get("amt_cheered") if stored_data else None
+            if amt_cheered:
+                user_alerts[username][grouping_key]["total_amount"] += int(amt_cheered)
+            else:
+                bit_match = re.search(r"(\d+)\s*bits?", message, re.IGNORECASE)
+                if bit_match:
+                    user_alerts[username][grouping_key]["total_amount"] += int(
+                        bit_match.group(1)
+                    )
+        elif alert_type == "donation":
+            donation_amount = (
+                stored_data.get("donation_amount") if stored_data else None
+            )
+            if donation_amount:
+                user_alerts[username][grouping_key]["total_amount"] += float(
+                    donation_amount
+                )
+            else:
+                donation_match = re.search(
+                    r"donated\s+\$?(\d+(?:\.\d{2})?)", message, re.IGNORECASE
+                )
+                if donation_match:
+                    user_alerts[username][grouping_key]["total_amount"] += float(
+                        donation_match.group(1)
+                    )
+        elif alert_type == "giftsub":
+            gift_qty = stored_data.get("gift_qty") if stored_data else None
+            if gift_qty:
+                user_alerts[username][grouping_key]["total_amount"] += int(gift_qty)
+            else:
+                gift_match = re.search(r"gifted\s+(\d+)", message, re.IGNORECASE)
+                if gift_match:
+                    user_alerts[username][grouping_key]["total_amount"] += int(
+                        gift_match.group(1)
+                    )
+        elif alert_type == "resub":
+            resub_month = None
+            if stored_data:
+                resub_month = (
+                    stored_data.get("resub_month")
+                    or stored_data.get("months")
+                    or stored_data.get("total_months")
+                )
+            if resub_month:
+                months = int(resub_month)
+            else:
+                month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
+                months = int(month_match.group(1)) if month_match else 1
+            if months > user_alerts[username][grouping_key]["months"]:
+                user_alerts[username][grouping_key]["months"] = months
+        elif alert_type == "raid":
+            raider_count = stored_data.get("raider_count") if stored_data else None
+            if raider_count:
+                viewers = int(raider_count)
+            else:
+                raid_match = re.search(r"(\d+)\s*viewers?", message, re.IGNORECASE)
+                viewers = int(raid_match.group(1)) if raid_match else 0
+            raid_game = alert_data.get("game_name")
+            if not raid_game and stored_data:
+                raid_game = stored_data.get("game_name")
+            if viewers > user_alerts[username][grouping_key]["total_amount"]:
+                user_alerts[username][grouping_key]["total_amount"] = viewers
+                if raid_game:
+                    user_alerts[username][grouping_key]["game_name"] = raid_game
+        elif alert_type == "streak":
+            streak_count_val = alert_data.get("streak_count")
+            if streak_count_val is None and stored_data:
+                streak_count_val = stored_data.get("streak_count")
+            if streak_count_val is not None:
+                sc = int(streak_count_val)
+            else:
+                streak_match = re.search(
+                    r"(\d+)\s*consecutive streams", message, re.IGNORECASE
+                )
+                sc = int(streak_match.group(1)) if streak_match else 0
+            if sc > user_alerts[username][grouping_key]["total_amount"]:
+                user_alerts[username][grouping_key]["total_amount"] = sc
+
+    logger.debug(
+        "Condensed grouping: processed=%d excluded=%d unknown_user=%d users=%d",
+        len(alerts_to_process),
+        excluded_count,
+        unknown_username_count,
+        len(user_alerts),
+    )
+    return user_alerts, excluded_count, unknown_username_count
+
+
+def _collect_condensed_build_data() -> Dict[str, Any]:
+    """Collect all data needed to render the condensed view (blocking I/O)."""
+    started = time.monotonic()
+    condense_historical_hours = _load_condensed_historical_hours()
+    cutoff_time = time.time() - (condense_historical_hours * 3600)
+    historical_count = 0
+    live_in_window = 0
+    alerts_to_process: List[Dict[str, Any]] = []
+
+    logger.debug(
+        "Loading alerts for condensed view from past %s hours...",
+        condense_historical_hours,
+    )
+
+    try:
+        (
+            alerts_to_process,
+            historical_count,
+            live_in_window,
+        ) = collect_alerts_for_condensed_view(cutoff_time)
+        logger.debug(
+            "Condensed view loaded %d stored and %d live alerts (past %d hours)",
+            historical_count,
+            live_in_window,
+            condense_historical_hours,
+        )
+    except Exception as exc:
+        logger.error("Error loading alerts for condensed view: %s", exc, exc_info=True)
+
+    elapsed = time.monotonic() - started
+    if elapsed > 1.0:
+        logger.warning(
+            "activity_feed: condensed alert collection took %.2fs (stored=%d live=%d)",
+            elapsed,
+            historical_count,
+            live_in_window,
+        )
+
+    user_alerts, excluded_count, unknown_username_count = _group_alerts_for_condensed(
+        alerts_to_process
+    )
+
+    return {
+        "condense_historical_hours": condense_historical_hours,
+        "alerts_to_process": alerts_to_process,
+        "historical_count": historical_count,
+        "live_in_window": live_in_window,
+        "user_alerts": user_alerts,
+        "excluded_count": excluded_count,
+        "unknown_username_count": unknown_username_count,
+    }
+
+
+def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
+    """Render the condensed view from pre-fetched data (UI loop only)."""
+    container = activity_feed_state.condensed_container
+    if not _element_alive(container):
+        return False
+
+    user_alerts = build_data["user_alerts"]
+    condense_historical_hours = build_data["condense_historical_hours"]
+    alerts_to_process = build_data["alerts_to_process"]
+    historical_count = build_data["historical_count"]
+    live_in_window = build_data["live_in_window"]
+
+    if not _element_alive(container):
+        return False
+
+    container.clear()
+
+    with container:
+        if not user_alerts:
+            ui.label(
+                f"No alerts to condense in the last {condense_historical_hours} hours"
+            ).classes("text-sm muted-text italic")
+        else:
+            if historical_count > 0 or live_in_window > 0:
+                ui.label(
+                    f"Showing {len(alerts_to_process)} alerts from past {condense_historical_hours} hours"
+                ).classes("text-xs muted-text mb-2 italic")
+
+            for username, alert_types in user_alerts.items():
+                if not alert_types:
+                    continue
+                with ui.element("div").classes("mb-4"):
+                    ui.label(f"{username}:").classes("font-semibold mb-1")
+                    with ui.element("div").classes("ml-4"):
+                        for grouping_key, data in alert_types.items():
+                            condensed_text = create_aggregated_alert_text(
+                                grouping_key, data
+                            )
+                            if condensed_text:
+                                ui.label(f"• {condensed_text}").classes(
+                                    "secondary-text text-sm mb-1"
+                                )
+
+    return True
+
+
+def _apply_condensed_visibility(show_condensed: bool) -> None:
+    """Show condensed view and hide regular feed, or the reverse."""
+    if show_condensed:
+        if activity_feed_state.current_alerts_container:
+            activity_feed_state.current_alerts_container.classes(add="hidden")
+        if activity_feed_state.condensed_container:
+            activity_feed_state.condensed_container.classes(remove="hidden")
+    else:
+        if activity_feed_state.condensed_container:
+            activity_feed_state.condensed_container.classes(add="hidden")
+        if activity_feed_state.current_alerts_container:
+            activity_feed_state.current_alerts_container.classes(remove="hidden")
+
+
+def _schedule_condensed_rebuild(reason: str) -> None:
+    """Start (or coalesce) an async condensed-view rebuild."""
+    global _condensed_rebuild_running, _condensed_rebuild_rerun
+
+    if _condensed_rebuild_running:
+        _condensed_rebuild_rerun = True
+        logger.debug(
+            "activity_feed: condensed rebuild coalesced (%s)", reason
+        )
+        return
+
+    background_tasks.create(
+        _update_condensed_view_async(reason),
+        name="activity_feed_condensed_rebuild",
+    )
+
+
+async def _update_condensed_view_async(reason: str) -> None:
+    """Fetch condensed data off the UI loop, then render on the loop."""
+    global _condensed_rebuild_running, _condensed_rebuild_rerun
+
+    _condensed_rebuild_running = True
+    try:
+        while True:
+            _condensed_rebuild_rerun = False
+
+            if not (
+                activity_feed_state.current_tab == "current"
+                and activity_feed_state.condense_list
+            ):
+                return
+
+            build_data = await run.io_bound(_collect_condensed_build_data)
+
+            if not (
+                activity_feed_state.current_tab == "current"
+                and activity_feed_state.condense_list
+            ):
+                return
+
+            try:
+                built = _render_condensed_view_ui(build_data)
+            except Exception as exc:
+                logger.error(
+                    "activity_feed: condensed UI render failed (%s): %s",
+                    reason,
+                    exc,
+                    exc_info=True,
+                )
+                built = False
+
+            if built:
+                _apply_condensed_visibility(True)
+            else:
+                logger.warning(
+                    "activity_feed: condensed build failed (%s); showing regular feed",
+                    reason,
+                )
+                _apply_condensed_visibility(False)
+
+            if not _condensed_rebuild_rerun:
+                break
+    except Exception as exc:
+        logger.error(
+            "activity_feed: async condensed rebuild failed (%s): %s",
+            reason,
+            exc,
+            exc_info=True,
+        )
+        _apply_condensed_visibility(False)
+    finally:
+        _condensed_rebuild_running = False
+        if _condensed_rebuild_rerun:
+            _schedule_condensed_rebuild("coalesced_rerun")
+
+
 def update_condensed_view() -> bool:
     """Update the condensed view based on the toggle state.
 
@@ -3102,22 +3491,13 @@ def update_condensed_view() -> bool:
             activity_feed_state.current_tab == "current"
             and activity_feed_state.condense_list
         ):
-            logger.debug("Creating condensed view...")
-            built = create_condensed_view()
-            if built:
-                if activity_feed_state.current_alerts_container:
-                    activity_feed_state.current_alerts_container.classes(add="hidden")
-                if activity_feed_state.condensed_container:
-                    activity_feed_state.condensed_container.classes(remove="hidden")
-                return True
-            logger.warning(
-                "Condensed view build failed; keeping regular alerts visible"
-            )
-            if activity_feed_state.condensed_container:
-                activity_feed_state.condensed_container.classes(add="hidden")
-            if activity_feed_state.current_alerts_container:
-                activity_feed_state.current_alerts_container.classes(remove="hidden")
-            return False
+            # Data collection can hit the database/network, so it must not run on
+            # the UI event loop (a long fetch stalls the websocket and the client
+            # eventually gets deleted). Schedule an async rebuild instead; the
+            # regular feed stays visible until the condensed view is ready.
+            logger.debug("Scheduling condensed view rebuild...")
+            _schedule_condensed_rebuild("update_condensed_view")
+            return True
 
         logger.debug("Showing regular alerts view...")
         if activity_feed_state.current_alerts_container:
@@ -3144,328 +3524,17 @@ def update_condensed_view() -> bool:
 
 
 def create_condensed_view() -> bool:
-    """Create the condensed view of alerts grouped by user.
+    """Create the condensed view of alerts grouped by user (sync fallback).
 
     Returns:
         True if the condensed container was rebuilt successfully, False otherwise.
     """
     try:
-        container = activity_feed_state.condensed_container
-        if not _element_alive(container):
+        build_data = _collect_condensed_build_data()
+        if not _render_condensed_view_ui(build_data):
             return False
-
-        # Get template configuration for condensed view settings
-        condense_historical_hours = 12
-
-        try:
-            # Load template configuration using the existing parser
-            from modules.template_config_parser import TemplateConfigParser
-
-            config_parser = TemplateConfigParser()
-            config_data = config_parser.load_config("activity_feed")
-
-            if config_data and "elements" in config_data:
-                # Parse configuration from elements array (same as HTML templates do)
-                for element in config_data["elements"]:
-                    if element.get("type") != "section":  # Skip section headers
-                        element_id = element.get("id")
-                        element_value = element.get("value")
-
-                        if element_id == "condense_historical_hours":
-                            condense_historical_hours = (
-                                int(element_value) if element_value is not None else 12
-                            )
-                print(
-                    f"Loaded condensed view config: hours={condense_historical_hours}"
-                )
-                logger.debug(
-                    f"Loaded condensed view config: hours={condense_historical_hours}"
-                )
-            else:
-                print("No activity_feed config elements found, using defaults")
-                logger.debug("No activity_feed config elements found, using defaults")
-
-        except Exception as e:
-            # Use default values if configuration is not available
-            logger.debug(f"Could not load template config for condensed view: {e}")
-            pass
-
-        current_time = time.time()
-        cutoff_time = current_time - (
-            condense_historical_hours * 3600
-        )  # Convert hours to seconds
-        historical_count = 0
-        live_in_window = 0
-
-        print(
-            f"Loading alerts for condensed view from past {condense_historical_hours} hours..."
-        )
-        logger.debug(
-            f"Loading alerts for condensed view from past {condense_historical_hours} hours..."
-        )
-
-        try:
-            (
-                alerts_to_process,
-                historical_count,
-                live_in_window,
-            ) = collect_alerts_for_condensed_view(cutoff_time)
-
-            print(
-                f"Condensed view loaded {historical_count} stored and {live_in_window} live alerts (past {condense_historical_hours} hours)"
-            )
-            logger.debug(
-                f"Condensed view loaded {historical_count} stored and {live_in_window} live alerts (past {condense_historical_hours} hours)"
-            )
-
-        except Exception as e:
-            logger.error(f"Error loading alerts for condensed view: {e}")
-            print(f"Error loading alerts for condensed view: {e}")
-            alerts_to_process = []
-            historical_count = 0
-            live_in_window = 0
-
-        logger.debug(
-            f"Total alerts to process for condensed view: {len(alerts_to_process)}"
-        )
-        print(f"Total alerts to process for condensed view: {len(alerts_to_process)}")
-
-        # Group alerts by user and type, excluding hype train and point alerts
-        user_alerts = {}
-        excluded_count = 0
-        unknown_username_count = 0
-
-        for alert_data in alerts_to_process:
-            alert_type = alert_data.get("type", "").lower()
-            badge_type = alert_data.get("badge_type", "").lower()
-
-            # Exclude hype train and point alerts (channel point redemptions)
-            if alert_type in ["hype train", "point"] or badge_type in [
-                "hype_train",
-                "point",
-            ]:
-                excluded_count += 1
-                logger.debug(
-                    f"Excluding {alert_type}/{badge_type} alert from condensed view"
-                )
-                continue
-
-            # Get username from alert data, with fallback to message extraction
-            username = alert_data.get("username")
-            if not username:
-                username = extract_username_from_message(alert_data.get("message", ""))
-
-            if not username or username == "Unknown":
-                unknown_username_count += 1
-                logger.debug(
-                    f"Skipping alert with unknown username: {alert_data.get('message', '')} (alert_id: {alert_data.get('alert_id', 'N/A')})"
-                )
-                continue
-
-            if username not in user_alerts:
-                user_alerts[username] = {}
-                logger.debug(f"Added new user to condensed view: {username}")
-
-            # Create specific grouping key based on alert type, tier, and duration
-            grouping_key = alert_type
-
-            # For subs, resubs, and gift subs, include tier and duration information
-            if alert_type in ["sub", "resub", "giftsub"]:
-                tier = alert_data.get("tier", 1)
-                grouping_key = f"{alert_type}_tier{tier}"
-
-                # For resubs and gift subs, also separate by duration
-                if alert_type in ["resub", "giftsub"]:
-                    # Get duration information
-                    duration_months = 1
-                    stored_data = alert_data.get("stored_alert_data", {})
-
-                    if stored_data:
-                        # Try stored data first
-                        duration_months = (
-                            stored_data.get("resub_month", 0)
-                            or stored_data.get("months", 0)
-                            or stored_data.get("total_months", 0)
-                            or 1
-                        )
-                    else:
-                        # Fall back to message parsing
-                        message = alert_data.get("message", "")
-                        import re
-
-                        month_match = re.search(
-                            r"(\d+)\s*months?", message, re.IGNORECASE
-                        )
-                        if month_match:
-                            duration_months = int(month_match.group(1))
-
-                    # Create duration-specific key
-                    if duration_months > 1:
-                        grouping_key = f"{alert_type}_tier{tier}_multi_month"
-                    else:
-                        grouping_key = f"{alert_type}_tier{tier}_1month"
-
-            # Group by the specific key and accumulate data
-            if grouping_key not in user_alerts[username]:
-                user_alerts[username][grouping_key] = {
-                    "count": 0,
-                    "total_amount": 0,
-                    "tier": alert_data.get("tier", 1),
-                    "months": 0,  # For resubs, track months
-                    "original_type": alert_type,  # Keep track of original alert type
-                }
-
-            user_alerts[username][grouping_key]["count"] += 1
-
-            # Extract amounts based on alert type - prioritize stored_alert_data values over message parsing
-            message = alert_data.get("message", "")
-            stored_data = alert_data.get("stored_alert_data", {})
-
-            import re
-
-            if alert_type == "bit" or alert_type == "bits":
-                # Try to get amount from stored data first
-                amt_cheered = stored_data.get("amt_cheered") if stored_data else None
-                if amt_cheered:
-                    user_alerts[username][grouping_key]["total_amount"] += int(
-                        amt_cheered
-                    )
-                else:
-                    # Fall back to message parsing
-                    bit_match = re.search(r"(\d+)\s*bits?", message, re.IGNORECASE)
-                    if bit_match:
-                        user_alerts[username][grouping_key]["total_amount"] += int(
-                            bit_match.group(1)
-                        )
-            elif alert_type == "donation":
-                # Try to get amount from stored data first
-                donation_amount = (
-                    stored_data.get("donation_amount") if stored_data else None
-                )
-                if donation_amount:
-                    user_alerts[username][grouping_key]["total_amount"] += float(
-                        donation_amount
-                    )
-                else:
-                    # Fall back to message parsing
-                    donation_match = re.search(
-                        r"donated\s+\$?(\d+(?:\.\d{2})?)", message, re.IGNORECASE
-                    )
-                    if donation_match:
-                        user_alerts[username][grouping_key]["total_amount"] += float(
-                            donation_match.group(1)
-                        )
-            elif alert_type == "giftsub":
-                # Try to get amount from stored data first
-                gift_qty = stored_data.get("gift_qty") if stored_data else None
-                if gift_qty:
-                    user_alerts[username][grouping_key]["total_amount"] += int(gift_qty)
-                else:
-                    # Fall back to message parsing
-                    gift_match = re.search(r"gifted\s+(\d+)", message, re.IGNORECASE)
-                    if gift_match:
-                        user_alerts[username][grouping_key]["total_amount"] += int(
-                            gift_match.group(1)
-                        )
-            elif alert_type == "resub":
-                # For resubs, get the month count
-                resub_month = None
-                if stored_data:
-                    resub_month = (
-                        stored_data.get("resub_month")
-                        or stored_data.get("months")
-                        or stored_data.get("total_months")
-                    )
-                if resub_month:
-                    months = int(resub_month)
-                else:
-                    # Fall back to message parsing
-                    month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
-                    if month_match:
-                        months = int(month_match.group(1))
-                    else:
-                        months = 1
-                # Keep the highest month count for this user
-                if months > user_alerts[username][grouping_key]["months"]:
-                    user_alerts[username][grouping_key]["months"] = months
-            elif alert_type == "raid":
-                # Try to get viewers from stored data first
-                raider_count = stored_data.get("raider_count") if stored_data else None
-                if raider_count:
-                    viewers = int(raider_count)
-                else:
-                    # Fall back to message parsing
-                    raid_match = re.search(r"(\d+)\s*viewers?", message, re.IGNORECASE)
-                    if raid_match:
-                        viewers = int(raid_match.group(1))
-                    else:
-                        viewers = 0
-                # Keep the largest raid for this user
-                raid_game = alert_data.get("game_name")
-                if not raid_game and stored_data:
-                    raid_game = stored_data.get("game_name")
-                if viewers > user_alerts[username][grouping_key]["total_amount"]:
-                    user_alerts[username][grouping_key]["total_amount"] = viewers
-                    if raid_game:
-                        user_alerts[username][grouping_key]["game_name"] = raid_game
-            elif alert_type == "streak":
-                streak_count_val = alert_data.get("streak_count")
-                if streak_count_val is None and stored_data:
-                    streak_count_val = stored_data.get("streak_count")
-                if streak_count_val is not None:
-                    sc = int(streak_count_val)
-                else:
-                    streak_match = re.search(
-                        r"(\d+)\s*consecutive streams", message, re.IGNORECASE
-                    )
-                    sc = int(streak_match.group(1)) if streak_match else 0
-                if sc > user_alerts[username][grouping_key]["total_amount"]:
-                    user_alerts[username][grouping_key]["total_amount"] = sc
-
-        # Debug summary
-        logger.debug(f"Condensed view processing complete:")
-        logger.debug(f"  - Processed {len(alerts_to_process)} total alerts")
-        logger.debug(f"  - Excluded {excluded_count} hype train/points alerts")
-        logger.debug(
-            f"  - Skipped {unknown_username_count} alerts with unknown usernames"
-        )
-        logger.debug(f"  - Final result: {len(user_alerts)} users with alerts")
-
-        if not _element_alive(container):
-            return False
-
-        container.clear()
-
-        # Create the condensed UI
-        with container:
-            if not user_alerts:
-                ui.label(
-                    f"No alerts to condense in the last {condense_historical_hours} hours"
-                ).classes("text-sm muted-text italic")
-            else:
-                if historical_count > 0 or live_in_window > 0:
-                    ui.label(
-                        f"Showing {len(alerts_to_process)} alerts from past {condense_historical_hours} hours"
-                    ).classes("text-xs muted-text mb-2 italic")
-
-                for username, alert_types in user_alerts.items():
-                    if alert_types:  # Only show users with alerts
-                        with ui.element("div").classes("mb-4"):
-                            ui.label(f"{username}:").classes(
-                                "font-semibold mb-1"
-                            )
-                            with ui.element("div").classes("ml-4"):
-                                for grouping_key, data in alert_types.items():
-                                    condensed_text = create_aggregated_alert_text(
-                                        grouping_key, data
-                                    )
-                                    if condensed_text:
-                                        ui.label(f"• {condensed_text}").classes(
-                                            "secondary-text text-sm mb-1"
-                                        )
-
+        _apply_condensed_visibility(True)
         return True
-
     except Exception as e:
         logger.error(f"Error creating condensed view: {str(e)}", exc_info=True)
         return False

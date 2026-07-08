@@ -1091,37 +1091,38 @@ class AlertStateManager:
                 self.initialize()
 
             try:
-                # Ensure we have a complete copy with all AlertObj fields
                 complete_alert_data = self._normalize_alert_data_for_storage(alert_data)
-
-                # Store in memory
                 self._alert_storage[alert_id] = copy.deepcopy(complete_alert_data)
-
-                # Store in database
-                database_manager.set_data(
-                    f"Alerts/AlertStorage/{alert_id}", complete_alert_data
-                )
-
-                # Debug logging to verify what's being stored
-                logger.debug(
-                    f"Stored completed alert {alert_id} with data keys: {list(complete_alert_data.keys())}"
-                )
-                if "username" in complete_alert_data:
-                    logger.debug(
-                        f"Stored alert {alert_id} - username: '{complete_alert_data['username']}'"
-                    )
-                else:
-                    logger.warning(
-                        f"Stored alert {alert_id} is missing username field!"
-                    )
-
-                return True
-
             except Exception as e:
                 logger.error(
                     f"Error storing completed alert {alert_id}: {str(e)}", exc_info=True
                 )
                 return False
+
+        try:
+            database_manager.set_data(
+                f"Alerts/AlertStorage/{alert_id}", complete_alert_data
+            )
+
+            logger.debug(
+                f"Stored completed alert {alert_id} with data keys: {list(complete_alert_data.keys())}"
+            )
+            if "username" in complete_alert_data:
+                logger.debug(
+                    f"Stored alert {alert_id} - username: '{complete_alert_data['username']}'"
+                )
+            else:
+                logger.warning(
+                    f"Stored alert {alert_id} is missing username field!"
+                )
+
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Error storing completed alert {alert_id}: {str(e)}", exc_info=True
+            )
+            return False
 
     def _normalize_alert_data_for_storage(self, alert_data: dict) -> dict:
         """Normalize alert data to ensure all AlertObj fields are present and properly formatted
@@ -1366,6 +1367,21 @@ class AlertStateManager:
                 )
                 return None
 
+    def _limit_stored_alerts_dict(self, all_stored_alerts: dict, max_alerts: int) -> dict:
+        """Return the newest max_alerts entries from a stored-alerts dict."""
+        if not all_stored_alerts:
+            return {}
+
+        alerts_list = []
+        for alert_id, alert_data in all_stored_alerts.items():
+            timestamp = alert_data.get("timestamp", 0)
+            alerts_list.append((alert_id, alert_data, timestamp))
+
+        alerts_list.sort(key=lambda x: x[2], reverse=True)
+        limited_alerts = alerts_list[:max_alerts]
+
+        return {alert_id: alert_data for alert_id, alert_data, _ in limited_alerts}
+
     def get_limited_stored_alerts_from_firebase(self, max_alerts: int) -> dict:
         """Get only the most recent X alerts directly from Firebase to reduce bandwidth
 
@@ -1375,43 +1391,44 @@ class AlertStateManager:
         Returns:
             dict: Dictionary of the most recent stored alerts (limited to max_alerts)
         """
+        if not self._initialized:
+            self.initialize()
+
+        need_fetch = False
         with self._lock:
-            try:
-                self._ensure_alert_storage_loaded(max_alerts=max_alerts)
+            need_fetch = not self._alert_storage_loaded
+
+        if need_fetch:
+            fetched = self._fetch_alert_storage_from_database(max_alerts=max_alerts)
+            with self._lock:
+                if not self._alert_storage_loaded:
+                    self._alert_storage = fetched
+                    self._alert_storage_loaded = True
+
+        try:
+            with self._lock:
                 all_stored_alerts = dict(self._alert_storage)
 
-                if not all_stored_alerts:
-                    logger.debug("No stored alerts found")
-                    return {}
-
-                # Convert to list of tuples (alert_id, alert_data) and sort by timestamp
-                alerts_list = []
-                for alert_id, alert_data in all_stored_alerts.items():
-                    timestamp = alert_data.get("timestamp", 0)
-                    alerts_list.append((alert_id, alert_data, timestamp))
-
-                # Sort by timestamp (newest first)
-                alerts_list.sort(key=lambda x: x[2], reverse=True)
-
-                # Limit to max_alerts
-                limited_alerts = alerts_list[:max_alerts]
-
-                # Convert back to dictionary format
-                result = {}
-                for alert_id, alert_data, _ in limited_alerts:
-                    result[alert_id] = alert_data
-
-                logger.debug(
-                    f"Retrieved {len(result)} out of {len(all_stored_alerts)} stored alerts from Firebase (limited to {max_alerts})"
-                )
-                return result
-
-            except Exception as e:
-                logger.error(
-                    f"Error getting limited stored alerts from Firebase: {str(e)}",
-                    exc_info=True,
-                )
+            if not all_stored_alerts:
+                logger.debug("No stored alerts found")
                 return {}
+
+            result = self._limit_stored_alerts_dict(all_stored_alerts, max_alerts)
+
+            logger.debug(
+                "Retrieved %d out of %d stored alerts from Firebase (limited to %d)",
+                len(result),
+                len(all_stored_alerts),
+                max_alerts,
+            )
+            return result
+
+        except Exception as e:
+            logger.error(
+                f"Error getting limited stored alerts from Firebase: {str(e)}",
+                exc_info=True,
+            )
+            return {}
 
     def get_limited_stored_alerts_paginated(
         self, page: int = 1, limit: int = 25, max_total_alerts: int = 250
@@ -1433,58 +1450,52 @@ class AlertStateManager:
                 - has_next: Whether there's a next page
                 - has_prev: Whether there's a previous page
         """
-        with self._lock:
-            try:
-                limited_stored_alerts = self.get_limited_stored_alerts_from_firebase(
-                    max_total_alerts
-                )
+        try:
+            limited_stored_alerts = self.get_limited_stored_alerts_from_firebase(
+                max_total_alerts
+            )
 
-                # Convert to list and sort by timestamp (newest first)
-                alerts_list = []
-                for alert_id, alert_data in limited_stored_alerts.items():
-                    alert_copy = copy.deepcopy(alert_data)
-                    alert_copy["alert_id"] = alert_id  # Ensure alert_id is included
-                    alerts_list.append(alert_copy)
+            alerts_list = []
+            for alert_id, alert_data in limited_stored_alerts.items():
+                alert_copy = copy.deepcopy(alert_data)
+                alert_copy["alert_id"] = alert_id
+                alerts_list.append(alert_copy)
 
-                # Sort by timestamp (newest first)
-                alerts_list.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+            alerts_list.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
 
-                total_count = len(alerts_list)
-                total_pages = (
-                    (total_count + limit - 1) // limit if total_count > 0 else 1
-                )
+            total_count = len(alerts_list)
+            total_pages = (
+                (total_count + limit - 1) // limit if total_count > 0 else 1
+            )
 
-                # Calculate pagination boundaries
-                start_index = (page - 1) * limit
-                end_index = start_index + limit
+            start_index = (page - 1) * limit
+            end_index = start_index + limit
+            page_alerts = alerts_list[start_index:end_index]
 
-                # Get the page slice
-                page_alerts = alerts_list[start_index:end_index]
+            return {
+                "alerts": page_alerts,
+                "total_count": total_count,
+                "page": page,
+                "limit": limit,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            }
 
-                return {
-                    "alerts": page_alerts,
-                    "total_count": total_count,
-                    "page": page,
-                    "limit": limit,
-                    "total_pages": total_pages,
-                    "has_next": page < total_pages,
-                    "has_prev": page > 1,
-                }
-
-            except Exception as e:
-                logger.error(
-                    f"Error getting limited paginated stored alerts: {str(e)}",
-                    exc_info=True,
-                )
-                return {
-                    "alerts": [],
-                    "total_count": 0,
-                    "page": page,
-                    "limit": limit,
-                    "total_pages": 1,
-                    "has_next": False,
-                    "has_prev": False,
-                }
+        except Exception as e:
+            logger.error(
+                f"Error getting limited paginated stored alerts: {str(e)}",
+                exc_info=True,
+            )
+            return {
+                "alerts": [],
+                "total_count": 0,
+                "page": page,
+                "limit": limit,
+                "total_pages": 1,
+                "has_next": False,
+                "has_prev": False,
+            }
 
     def get_display_name(
         self, alert_type: str, alert_id: str, alert_data: dict = None
