@@ -44,6 +44,7 @@ _pause_breath_timer_started = False
 _recovery_scheduled = False
 _integrity_check_reason: Optional[str] = None
 _integrity_check_scheduled = False
+_condensed_update_scheduled = False
 
 
 def _is_stale_client_error(exc: BaseException) -> bool:
@@ -69,7 +70,22 @@ def _element_alive(el: Any) -> bool:
 
 
 def _containers_alive() -> bool:
+    if (
+        activity_feed_state.condense_list
+        and activity_feed_state.current_tab == "current"
+    ):
+        return _element_alive(activity_feed_state.condensed_container)
     return _element_alive(activity_feed_state.current_alerts_container)
+
+
+def _condensed_view_has_content() -> bool:
+    container = activity_feed_state.condensed_container
+    if not _element_alive(container):
+        return False
+    try:
+        return len(getattr(container, "default_slot", None) or []) > 0
+    except Exception:
+        return False
 
 
 def _count_rendered_live_alerts() -> int:
@@ -86,10 +102,20 @@ def _ensure_feed_integrity(reason: str) -> None:
     """Rebuild the feed when state has alerts but nothing is rendered."""
     if activity_feed_state.current_tab != "current":
         return
-    if activity_feed_state.condense_list:
-        return
     if not _containers_alive():
         return
+
+    if activity_feed_state.condense_list:
+        if _condensed_view_has_content():
+            return
+        logger.warning(
+            "activity_feed: condensed integrity mismatch (%s) — rebuilding",
+            reason,
+        )
+        if not update_condensed_view():
+            recover_activity_feed_panel()
+        return
+
     if not activity_feed_state.live_alerts:
         return
     if _count_rendered_live_alerts() > 0:
@@ -101,6 +127,34 @@ def _ensure_feed_integrity(reason: str) -> None:
         len(activity_feed_state.live_alerts),
     )
     recover_activity_feed_panel()
+
+
+def schedule_condensed_view_update(reason: str) -> None:
+    """Debounced condensed view refresh (avoids clear/rebuild storms)."""
+    global _condensed_update_scheduled
+
+    if not activity_feed_state.condense_list:
+        return
+    if activity_feed_state.current_tab != "current":
+        return
+    if _condensed_update_scheduled:
+        return
+    _condensed_update_scheduled = True
+
+    def _deferred() -> None:
+        global _condensed_update_scheduled
+        _condensed_update_scheduled = False
+        try:
+            update_condensed_view()
+        except Exception as exc:
+            logger.error(
+                "activity_feed: debounced condensed update failed (%s): %s",
+                reason,
+                exc,
+                exc_info=True,
+            )
+
+    app_schedule(0.3, _deferred, once=True)
 
 
 def schedule_feed_integrity_check(reason: str) -> None:
@@ -208,7 +262,16 @@ def recover_activity_feed_panel() -> bool:
 
         rebuild_current_alerts_feed()
         if activity_feed_state.condense_list and activity_feed_state.current_tab == "current":
-            update_condensed_view()
+            if not update_condensed_view():
+                logger.warning(
+                    "activity_feed: condensed recovery failed; showing regular feed"
+                )
+                if activity_feed_state.condensed_container:
+                    activity_feed_state.condensed_container.classes(add="hidden")
+                if activity_feed_state.current_alerts_container:
+                    activity_feed_state.current_alerts_container.classes(
+                        remove="hidden"
+                    )
         update_alert_visibility()
         activity_feed_state.is_initialized = True
         logger.info("activity_feed: recovered (%d live alerts)", len(activity_feed_state.live_alerts))
@@ -371,7 +434,7 @@ class AlertEventHandler:
                 activity_feed_state.condense_list
                 and activity_feed_state.current_tab == "current"
             ):
-                update_condensed_view()
+                schedule_condensed_view_update("apply_alert_on_ui")
             elif should_display_new_alert:
                 schedule_feed_integrity_check("apply_alert_on_ui")
 
@@ -824,8 +887,8 @@ def skip_alert(alert_data):
                 and not hasattr(value, "_classes")
             }
 
-            # Skip the current alert by setting a flag or emitting a skip event
-            web_engine.web_engine_instance.socketio.emit("skip_alert", clean_alert_data)
+            # Skip the current alert (safe_emit: NiceGUI thread, not the gevent hub)
+            web_engine.web_engine_instance.safe_emit("skip_alert", clean_alert_data)
             logger.debug(
                 f"Sent skip request via websocket for alert: {clean_alert_data.get('type', 'Unknown')}"
             )
@@ -3008,8 +3071,12 @@ def go_to_page(page):
         logger.error(f"Error navigating to page {page}: {str(e)}", exc_info=True)
 
 
-def update_condensed_view():
-    """Update the condensed view based on the toggle state"""
+def update_condensed_view() -> bool:
+    """Update the condensed view based on the toggle state.
+
+    Returns:
+        True if the visible feed surface is in a good state, False on build failure.
+    """
     try:
         logger.debug(
             f"update_condensed_view called - current tab: {activity_feed_state.current_tab}, condense_list: {activity_feed_state.condense_list}"
@@ -3017,7 +3084,7 @@ def update_condensed_view():
 
         if not activity_feed_state.condense_toggle:
             logger.debug("No condense toggle found, returning early")
-            return
+            return True
 
         # Show/hide condense toggle based on current tab
         if activity_feed_state.current_tab == "current":
@@ -3042,29 +3109,38 @@ def update_condensed_view():
                     activity_feed_state.current_alerts_container.classes(add="hidden")
                 if activity_feed_state.condensed_container:
                     activity_feed_state.condensed_container.classes(remove="hidden")
-            else:
-                logger.warning(
-                    "Condensed view build failed; keeping regular alerts visible"
-                )
-                if activity_feed_state.condensed_container:
-                    activity_feed_state.condensed_container.classes(add="hidden")
-                if activity_feed_state.current_alerts_container:
-                    activity_feed_state.current_alerts_container.classes(
-                        remove="hidden"
-                    )
-        else:
-            logger.debug("Showing regular alerts view...")
-            # Show regular alerts
-            if activity_feed_state.current_alerts_container:
-                activity_feed_state.current_alerts_container.classes(remove="hidden")
-            # Hide condensed view
+                return True
+            logger.warning(
+                "Condensed view build failed; keeping regular alerts visible"
+            )
             if activity_feed_state.condensed_container:
                 activity_feed_state.condensed_container.classes(add="hidden")
+            if activity_feed_state.current_alerts_container:
+                activity_feed_state.current_alerts_container.classes(remove="hidden")
+            return False
 
-            schedule_feed_integrity_check("update_condensed_view_regular")
+        logger.debug("Showing regular alerts view...")
+        if activity_feed_state.current_alerts_container:
+            activity_feed_state.current_alerts_container.classes(remove="hidden")
+        if activity_feed_state.condensed_container:
+            activity_feed_state.condensed_container.classes(add="hidden")
+
+        schedule_feed_integrity_check("update_condensed_view_regular")
+        return True
 
     except Exception as e:
         logger.error(f"Error updating condensed view: {str(e)}", exc_info=True)
+        if activity_feed_state.condensed_container:
+            try:
+                activity_feed_state.condensed_container.classes(add="hidden")
+            except Exception:
+                pass
+        if activity_feed_state.current_alerts_container:
+            try:
+                activity_feed_state.current_alerts_container.classes(remove="hidden")
+            except Exception:
+                pass
+        return False
 
 
 def create_condensed_view() -> bool:
@@ -3077,8 +3153,6 @@ def create_condensed_view() -> bool:
         container = activity_feed_state.condensed_container
         if not _element_alive(container):
             return False
-
-        container.clear()
 
         # Get template configuration for condensed view settings
         condense_historical_hours = 12
@@ -3357,8 +3431,13 @@ def create_condensed_view() -> bool:
         )
         logger.debug(f"  - Final result: {len(user_alerts)} users with alerts")
 
+        if not _element_alive(container):
+            return False
+
+        container.clear()
+
         # Create the condensed UI
-        with activity_feed_state.condensed_container:
+        with container:
             if not user_alerts:
                 ui.label(
                     f"No alerts to condense in the last {condense_historical_hours} hours"

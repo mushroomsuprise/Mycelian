@@ -203,17 +203,9 @@ class GameHooksServiceImpl:
             from . import web_engine
 
             inst = getattr(web_engine, "web_engine_instance", None)
-            if inst and getattr(inst, "socketio", None):
-                app = getattr(inst, "app", None)
-                if app is not None:
-                    with app.app_context():
-                        inst.socketio.emit(
-                            "game_hook_payload", payload, namespace="/"
-                        )
-                else:
-                    inst.socketio.emit(
-                        "game_hook_payload", payload, namespace="/"
-                    )
+            if inst is not None:
+                # safe_emit: coordinator thread, not the gevent hub thread.
+                inst.safe_emit("game_hook_payload", payload)
         except Exception as e:
             logger.warning("game_hook_payload emit failed: %s", e, exc_info=True)
 

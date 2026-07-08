@@ -39,7 +39,6 @@ import subprocess
 import sys
 import threading
 import time
-import warnings
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -47,18 +46,9 @@ from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-# Eventlet emits a deprecation warning on import. Flask-SocketIO still relies on
-# it here, so silence the noise (a migration off eventlet is tracked separately).
-warnings.filterwarnings("ignore", message=r"\s*Eventlet is deprecated")
-
-import eventlet
-import eventlet.green.select
-import eventlet.green.socket
-import eventlet.green.subprocess
-import eventlet.green.threading
-import eventlet.green.time
-import eventlet.wsgi
-from engineio.async_drivers import gevent
+# Async mode is gevent (see SocketIO(..., async_mode="gevent") below). The
+# explicit driver import keeps PyInstaller bundling the gevent async driver.
+from engineio.async_drivers import gevent  # noqa: F401
 from engineio.payload import Payload
 
 # Default is 16; OBS browser-source reconnect bursts can exceed that in one polling POST.
@@ -659,6 +649,17 @@ class WebEngine:
         self._template_control_emit_worker_started = False
         self._template_control_emit_worker_lock = threading.Lock()
 
+        # Generic outbound emit queue for cross-thread Socket.IO emits (alerts,
+        # PSN/YouTube updates, theme broadcasts, ...). Emitting on the gevent
+        # stack from a foreign OS thread is not thread-safe (gevent queue puts
+        # go through hub.loop.run_callback, which may lose wakeups or corrupt
+        # the hub), so foreign threads enqueue here and the gevent drain worker
+        # performs the actual emit. Ordered, never coalesced (alerts must not
+        # be dropped/merged).
+        self._safe_emit_queue: queue.Queue = queue.Queue(maxsize=256)
+        # OS thread id of the thread running socketio.run (the gevent hub).
+        self._server_thread_ident: Optional[int] = None
+
         # Socket.IO client tracking (observability / heartbeat)
         self._socket_connected_count = 0
         self._socket_connected_lock = threading.Lock()
@@ -699,16 +700,25 @@ class WebEngine:
             engineio_logger=False,
         )
 
+        # Throttle for the per-request maintenance hooks below (safety net for
+        # the workers armed at startup in run()); only touched on the server
+        # thread, so no lock is needed.
+        self._maintenance_hooks_last_run = 0.0
+
         # Add CORS headers to all responses for Stream Deck plugin compatibility
         @self.app.before_request
         def _bottleneck_request_start():
             if request.method == "OPTIONS":
                 return None
-            try:
-                self.ensure_web_engine_heartbeat()
-                self.ensure_template_control_emit_worker()
-            except Exception as exc:
-                logger.debug("WebEngine background workers hook failed: %s", exc)
+            now = time.monotonic()
+            if now - self._maintenance_hooks_last_run >= 5.0:
+                self._maintenance_hooks_last_run = now
+                try:
+                    self._refresh_cached_listener()
+                    self.ensure_web_engine_heartbeat()
+                    self.ensure_template_control_emit_worker()
+                except Exception as exc:
+                    logger.debug("WebEngine background workers hook failed: %s", exc)
             path = request.path or ""
             if path.startswith("/assets/"):
                 return None
@@ -832,49 +842,11 @@ class WebEngine:
         def serve_template_configs():
             """Serve template configurations with dynamic controls as JSON"""
             try:
-                configs = {}
-                config_parser = self.template_config_parser
-                preview_tok = request.cookies.get("mycelian_preview_token")
-
-                # Get all config files
-                config_files = config_parser.get_config_files()
-
-                for config_name in config_files:
-                    try:
-                        # Load config with dynamic controls
-                        config = config_parser.load_config(
-                            config_name, include_dynamic_controls=True
-                        )
-
-                        # Only include configs that have dynamic_controls
-                        if isinstance(config, dict) and "dynamic_controls" in config:
-                            dynamic_controls = (
-                                resolve_dynamic_control_values_from_elements(config)
-                            )
-                            if (
-                                isinstance(dynamic_controls, dict)
-                                and "elements" in dynamic_controls
-                            ):
-                                if dynamic_controls[
-                                    "elements"
-                                ]:  # Only include if there are elements
-                                    self._merge_preview_session_into_config(
-                                        preview_tok, config_name, dynamic_controls
-                                    )
-                                    configs[config_name] = dynamic_controls
-                                    logger.debug(
-                                        f"Added dynamic controls for {config_name}: {len(dynamic_controls['elements'])} elements"
-                                    )
-                    except Exception as e:
-                        logger.warning(
-                            f"Error loading dynamic controls for {config_name}: {str(e)}"
-                        )
-                        continue
-
-                logger.debug(
-                    f"Serving template configs for {len(configs)} templates with dynamic controls"
+                preview_tok = request.cookies.get("mycelian_preview_token") or ""
+                payload_bytes, _cache_hit = self._get_dynamic_controls_configs_cached(
+                    preview_tok
                 )
-                return configs, 200, {"Content-Type": "application/json"}
+                return payload_bytes, 200, {"Content-Type": "application/json"}
 
             except Exception as e:
                 logger.error(f"Error serving template configs: {str(e)}", exc_info=True)
@@ -889,6 +861,10 @@ class WebEngine:
         def web_engine_health():
             """Lightweight liveness probe for restart / port-conflict detection."""
             health = self.get_health()
+            # RESTARTING counts as alive: if this handler is answering, the new
+            # listener is up; returning 503 here made _do_restart's recovery
+            # poll fail forever (restart_in_progress is still set while it
+            # polls) and produced false "could not restart" notifications.
             code = (
                 200
                 if health["state"]
@@ -896,6 +872,7 @@ class WebEngine:
                     WEBENGINE_STATE_RUNNING,
                     WEBENGINE_STATE_OVERLOADED,
                     WEBENGINE_STATE_STARTING,
+                    WEBENGINE_STATE_RESTARTING,
                 )
                 else 503
             )
@@ -904,6 +881,17 @@ class WebEngine:
         @self.app.route("/api/all-template-configs")
         def serve_all_template_configs():
             """Serve ALL template configurations as raw JSON"""
+            preview_tok = request.cookies.get("mycelian_preview_token") or ""
+            # Cache hits are nearly free -- serve them before rate limiting so
+            # OBS refresh storms (many sources, all 127.0.0.1) don't 429 each
+            # other. Only requests that would trigger a rebuild are limited.
+            cached_payload = self._peek_all_template_configs_cache(preview_tok)
+            if cached_payload is not None:
+                return (
+                    cached_payload,
+                    200,
+                    {"Content-Type": "application/json"},
+                )
             client_key = (request.remote_addr or "unknown").strip()
             if self._all_template_configs_rate_limited(client_key):
                 now = time.time()
@@ -928,7 +916,6 @@ class WebEngine:
                 )
             t0 = time.time()
             try:
-                preview_tok = request.cookies.get("mycelian_preview_token") or ""
                 payload_bytes, cache_hit = self._get_all_template_configs_cached(
                     preview_tok
                 )
@@ -2388,6 +2375,9 @@ class WebEngine:
 
         # Thread for running the server
         self.server_thread = None
+        self._known_server_threads: List[threading.Thread] = []
+        self._cached_listener: Any = None
+        self._listener_cache_lock = threading.Lock()
         self.is_running = False
 
         # Auto-recovery: a native supervisor thread (started by alert_processor)
@@ -2426,18 +2416,17 @@ class WebEngine:
         self._socket_disconnect_times: Deque[float] = deque(maxlen=256)
         self._last_heartbeat_mono: Optional[float] = None
         self._template_control_worker_alive = False
-        self._all_template_configs_singleflight_lock = threading.Lock()
-        self._all_template_configs_singleflight_cond = threading.Condition(
-            self._all_template_configs_singleflight_lock
-        )
+        # Singleflight build flags, guarded by the matching cache locks.
+        # Never wait on these with a native Condition -- see the note above
+        # _get_all_template_configs_cached.
         self._all_template_configs_building = False
         self._template_queue_metadata_cache: Optional[Tuple[float, bytes]] = None
         self._template_queue_metadata_cache_lock = threading.Lock()
-        self._template_queue_metadata_singleflight_lock = threading.Lock()
-        self._template_queue_metadata_singleflight_cond = threading.Condition(
-            self._template_queue_metadata_singleflight_lock
-        )
         self._template_queue_metadata_building = False
+        # Short-TTL cache for GET /api/template-configs (dynamic controls)
+        self._dynamic_controls_cache: Optional[Tuple[str, float, bytes]] = None
+        self._dynamic_controls_cache_lock = threading.Lock()
+        self._dynamic_controls_building = False
 
     def _build_all_template_configs(self, preview_tok: Optional[str]) -> Dict[str, Any]:
         """Load every template JSON (used by cached all-template-configs route)."""
@@ -2457,27 +2446,53 @@ class WebEngine:
                 logger.warning("Error loading config for %s: %s", config_name, e)
         return configs
 
+    def _yield_sleep(self, seconds: float) -> None:
+        """Sleep without blocking the gevent hub when called from a greenlet."""
+        try:
+            self.socketio.sleep(seconds)
+        except Exception:
+            time.sleep(seconds)
+
+    # NOTE: singleflight here must never use threading.Condition.wait() or a
+    # blocking Lock.acquire(). All request handlers are greenlets sharing one
+    # OS thread; a native wait blocks the whole gevent hub, and the builder
+    # greenlet can never be rescheduled to finish -- a permanent freeze of the
+    # overlay server. Poll with a hub-yielding sleep instead, and fall through
+    # to a duplicate build after the deadline (duplicate work beats a stall).
+    _SINGLEFLIGHT_WAIT_SEC = 5.0
+    _SINGLEFLIGHT_POLL_SEC = 0.05
+
+    def _peek_all_template_configs_cache(self, preview_tok: str) -> Optional[bytes]:
+        """Return the cached all-template-configs payload if fresh, else None."""
+        cache_key = preview_tok or ""
+        with self._all_template_configs_cache_lock:
+            cached = self._all_template_configs_cache
+        if cached is not None:
+            key, expires_at, payload_bytes = cached
+            if key == cache_key and time.time() < expires_at:
+                return payload_bytes
+        return None
+
     def _get_all_template_configs_cached(self, preview_tok: str) -> Tuple[bytes, bool]:
         """Return UTF-8 JSON bytes and whether the response came from TTL cache."""
         cache_key = preview_tok or ""
-        now = time.time()
-        with self._all_template_configs_cache_lock:
-            cached = self._all_template_configs_cache
-            if cached is not None:
-                key, expires_at, payload_bytes = cached
-                if key == cache_key and now < expires_at:
-                    return payload_bytes, True
 
-        with self._all_template_configs_singleflight_cond:
-            while self._all_template_configs_building:
-                self._all_template_configs_singleflight_cond.wait(timeout=5.0)
+        payload = self._peek_all_template_configs_cache(preview_tok)
+        if payload is not None:
+            return payload, True
+
+        deadline = time.monotonic() + self._SINGLEFLIGHT_WAIT_SEC
+        while True:
             with self._all_template_configs_cache_lock:
-                cached = self._all_template_configs_cache
-                if cached is not None:
-                    key, expires_at, payload_bytes = cached
-                    if key == cache_key and now < expires_at:
-                        return payload_bytes, True
-            self._all_template_configs_building = True
+                if not self._all_template_configs_building:
+                    self._all_template_configs_building = True
+                    break
+            if time.monotonic() >= deadline:
+                break
+            self._yield_sleep(self._SINGLEFLIGHT_POLL_SEC)
+            payload = self._peek_all_template_configs_cache(preview_tok)
+            if payload is not None:
+                return payload, True
 
         try:
             configs = self._build_all_template_configs(preview_tok or None)
@@ -2490,32 +2505,38 @@ class WebEngine:
                 )
             return payload_bytes, False
         finally:
-            with self._all_template_configs_singleflight_cond:
+            with self._all_template_configs_cache_lock:
                 self._all_template_configs_building = False
-                self._all_template_configs_singleflight_cond.notify_all()
 
     def _get_template_queue_metadata_cached(self) -> Tuple[bytes, bool]:
         """Slim queue-timing metadata for alerts overlay."""
         from .template_config_parser import build_template_queue_metadata
 
-        now = time.time()
-        with self._template_queue_metadata_cache_lock:
-            cached = self._template_queue_metadata_cache
-            if cached is not None:
-                expires_at, payload_bytes = cached
-                if now < expires_at:
-                    return payload_bytes, True
-
-        with self._template_queue_metadata_singleflight_cond:
-            while self._template_queue_metadata_building:
-                self._template_queue_metadata_singleflight_cond.wait(timeout=5.0)
+        def _cached_payload() -> Optional[bytes]:
             with self._template_queue_metadata_cache_lock:
                 cached = self._template_queue_metadata_cache
-                if cached is not None:
-                    expires_at, payload_bytes = cached
-                    if now < expires_at:
-                        return payload_bytes, True
-            self._template_queue_metadata_building = True
+            if cached is not None:
+                expires_at, payload_bytes = cached
+                if time.time() < expires_at:
+                    return payload_bytes
+            return None
+
+        payload = _cached_payload()
+        if payload is not None:
+            return payload, True
+
+        deadline = time.monotonic() + self._SINGLEFLIGHT_WAIT_SEC
+        while True:
+            with self._template_queue_metadata_cache_lock:
+                if not self._template_queue_metadata_building:
+                    self._template_queue_metadata_building = True
+                    break
+            if time.monotonic() >= deadline:
+                break
+            self._yield_sleep(self._SINGLEFLIGHT_POLL_SEC)
+            payload = _cached_payload()
+            if payload is not None:
+                return payload, True
 
         try:
             metadata = build_template_queue_metadata()
@@ -2527,9 +2548,83 @@ class WebEngine:
                 )
             return payload_bytes, False
         finally:
-            with self._template_queue_metadata_singleflight_cond:
+            with self._template_queue_metadata_cache_lock:
                 self._template_queue_metadata_building = False
-                self._template_queue_metadata_singleflight_cond.notify_all()
+
+    def _build_dynamic_controls_configs(
+        self, preview_tok: Optional[str]
+    ) -> Dict[str, Any]:
+        """Load dynamic-controls configs for every template (cached route body)."""
+        configs: Dict[str, Any] = {}
+        config_parser = self.template_config_parser
+        for config_name in config_parser.get_config_files():
+            try:
+                config = config_parser.load_config(
+                    config_name, include_dynamic_controls=True
+                )
+                if isinstance(config, dict) and "dynamic_controls" in config:
+                    dynamic_controls = resolve_dynamic_control_values_from_elements(
+                        config
+                    )
+                    if isinstance(dynamic_controls, dict) and dynamic_controls.get(
+                        "elements"
+                    ):
+                        self._merge_preview_session_into_config(
+                            preview_tok, config_name, dynamic_controls
+                        )
+                        configs[config_name] = dynamic_controls
+            except Exception as e:
+                logger.warning(
+                    "Error loading dynamic controls for %s: %s", config_name, e
+                )
+        return configs
+
+    def _peek_dynamic_controls_cache(self, preview_tok: str) -> Optional[bytes]:
+        cache_key = preview_tok or ""
+        with self._dynamic_controls_cache_lock:
+            cached = self._dynamic_controls_cache
+        if cached is not None:
+            key, expires_at, payload_bytes = cached
+            if key == cache_key and time.time() < expires_at:
+                return payload_bytes
+        return None
+
+    def _get_dynamic_controls_configs_cached(
+        self, preview_tok: str
+    ) -> Tuple[bytes, bool]:
+        """TTL-cached /api/template-configs payload (same singleflight pattern)."""
+        cache_key = preview_tok or ""
+
+        payload = self._peek_dynamic_controls_cache(preview_tok)
+        if payload is not None:
+            return payload, True
+
+        deadline = time.monotonic() + self._SINGLEFLIGHT_WAIT_SEC
+        while True:
+            with self._dynamic_controls_cache_lock:
+                if not self._dynamic_controls_building:
+                    self._dynamic_controls_building = True
+                    break
+            if time.monotonic() >= deadline:
+                break
+            self._yield_sleep(self._SINGLEFLIGHT_POLL_SEC)
+            payload = self._peek_dynamic_controls_cache(preview_tok)
+            if payload is not None:
+                return payload, True
+
+        try:
+            configs = self._build_dynamic_controls_configs(preview_tok or None)
+            payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
+            with self._dynamic_controls_cache_lock:
+                self._dynamic_controls_cache = (
+                    cache_key,
+                    time.time() + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
+                    payload_bytes,
+                )
+            return payload_bytes, False
+        finally:
+            with self._dynamic_controls_cache_lock:
+                self._dynamic_controls_building = False
 
     def invalidate_template_queue_metadata_cache(self) -> None:
         with self._template_queue_metadata_cache_lock:
@@ -2538,24 +2633,16 @@ class WebEngine:
     def invalidate_all_template_configs_cache(self) -> None:
         with self._all_template_configs_cache_lock:
             self._all_template_configs_cache = None
+        with self._dynamic_controls_cache_lock:
+            self._dynamic_controls_cache = None
         self.invalidate_template_queue_metadata_cache()
 
     def broadcast_template_config_updated(self, template_name: str) -> None:
         """Notify overlays that a template JSON was saved (reload via single-config API)."""
         if not template_name:
             return
-        try:
-            with self.app.app_context():
-                self.socketio.emit(
-                    "template_config_updated",
-                    {"template": str(template_name)},
-                )
-        except Exception as e:
-            logger.debug(
-                "broadcast_template_config_updated failed for %s: %s",
-                template_name,
-                e,
-            )
+        # Called from NiceGUI / save paths (foreign threads): must be safe_emit.
+        self.safe_emit("template_config_updated", {"template": str(template_name)})
 
     def register_assets_watch_template(self, template_name: str) -> None:
         """Limit Spore assets mtime polling to active preview/editor templates."""
@@ -3284,6 +3371,7 @@ class WebEngine:
 
         # Give the server a moment to bind before judging its health.
         time.sleep(self._SUPERVISOR_POLL_SEC)
+        consecutive_probe_failures = 0
         while True:
             if is_shutdown_in_progress():
                 return
@@ -3306,9 +3394,117 @@ class WebEngine:
                             "WebEngine gevent hub stopped responding "
                             f"({time.time() - last:.0f}s without heartbeat)"
                         )
+
+                # Liveness probe over real HTTP: catches freezes the heartbeat
+                # misses (e.g. accept loop wedged while background greenlets
+                # still tick). Skipped during restarts and the startup grace.
+                if (
+                    self.is_running
+                    and thread_alive
+                    and not self._restart_in_progress
+                ):
+                    started_at = self._server_started_at
+                    in_grace = (
+                        started_at is not None
+                        and (time.time() - started_at) < self._STARTING_GRACE_SEC
+                    )
+                    if not in_grace:
+                        if self._probe_health_endpoint():
+                            consecutive_probe_failures = 0
+                        else:
+                            consecutive_probe_failures += 1
+                            if consecutive_probe_failures >= 2:
+                                consecutive_probe_failures = 0
+                                self.request_restart(
+                                    "WebEngine /api/health unresponsive "
+                                    "(2 consecutive probe failures)"
+                                )
+                else:
+                    consecutive_probe_failures = 0
             except Exception as e:
                 logger.debug("WebEngine supervisor check failed: %s", e)
             time.sleep(self._SUPERVISOR_POLL_SEC)
+
+    def _extract_listener_from_wsgi(self, wsgi_server: Any) -> Any:
+        if wsgi_server is None:
+            return None
+        return getattr(wsgi_server, "socket", None) or getattr(
+            wsgi_server, "server", None
+        )
+
+    def _refresh_cached_listener(self) -> None:
+        """Remember the bound listener so we can close it after thread death."""
+        try:
+            wsgi_server = getattr(self.socketio, "wsgi_server", None)
+            listener = self._extract_listener_from_wsgi(wsgi_server)
+            if listener is not None:
+                with self._listener_cache_lock:
+                    self._cached_listener = listener
+        except Exception as e:
+            logger.debug("WebEngine listener cache refresh failed: %s", e)
+
+    def _close_listener(self) -> None:
+        """Close cached and live listeners (safe when is_running is False)."""
+        listeners: List[Any] = []
+        with self._listener_cache_lock:
+            if self._cached_listener is not None:
+                listeners.append(self._cached_listener)
+        try:
+            wsgi_server = getattr(self.socketio, "wsgi_server", None)
+            live_listener = self._extract_listener_from_wsgi(wsgi_server)
+            if live_listener is not None and live_listener not in listeners:
+                listeners.append(live_listener)
+        except Exception as e:
+            logger.debug("WebEngine listener lookup failed: %s", e)
+
+        closed_any = False
+        for listener in listeners:
+            if listener is None or not hasattr(listener, "close"):
+                continue
+            try:
+                listener.close()
+                closed_any = True
+            except Exception as e:
+                logger.debug("WebEngine listener close: %s", e)
+
+        if closed_any:
+            with self._listener_cache_lock:
+                self._cached_listener = None
+
+    def _join_known_server_threads(self, join_timeout: float) -> None:
+        """Join every WebEngine thread this instance has started."""
+        threads = list(self._known_server_threads)
+        if self.server_thread is not None and self.server_thread not in threads:
+            threads.append(self.server_thread)
+        for thread in threads:
+            if thread is None or not thread.is_alive():
+                continue
+            thread.join(timeout=join_timeout)
+            if thread.is_alive():
+                logger.warning(
+                    "WebEngine thread %s did not exit within %.0fs",
+                    thread.name,
+                    join_timeout,
+                )
+
+    def _wait_for_port_free(self, timeout: float = 20.0) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if not self._port_is_open():
+                return True
+            time.sleep(0.25)
+        return not self._port_is_open()
+
+    def _is_healthy(self) -> bool:
+        return (
+            self.is_running
+            and self._thread_alive()
+            and self._probe_health_endpoint()
+        )
+
+    def force_stop(self, join_timeout: Optional[float] = None) -> None:
+        """Public entry for shutdown and zombie recovery."""
+        self._aggressive_stop(join_timeout=join_timeout)
 
     def _aggressive_stop(self, join_timeout: Optional[float] = None) -> None:
         """Best-effort stop when the gevent hub may be frozen or holding the port."""
@@ -3320,67 +3516,73 @@ class WebEngine:
         except Exception as e:
             logger.warning("WebEngine aggressive stop: stop() failed: %s", e)
 
-        def _close_listener() -> None:
-            try:
-                wsgi_server = getattr(self.socketio, "wsgi_server", None)
-                if wsgi_server is not None:
-                    listener = getattr(wsgi_server, "socket", None) or getattr(
-                        wsgi_server, "server", None
-                    )
-                    if listener is not None and hasattr(listener, "close"):
-                        listener.close()
-            except Exception as e:
-                logger.debug("WebEngine aggressive stop: listener close: %s", e)
-
-        _close_listener()
+        self._close_listener()
         try:
             self.socketio.stop()
         except Exception as e:
             logger.debug("WebEngine aggressive stop: socketio.stop: %s", e)
 
-        old_thread = self.server_thread
-        if old_thread is not None and old_thread.is_alive():
-            old_thread.join(timeout=join_timeout)
-            if old_thread.is_alive():
-                logger.warning(
-                    "WebEngine thread did not exit within %.0fs after aggressive stop",
-                    join_timeout,
-                )
-                self._log_port_holder_hint()
+        self._join_known_server_threads(join_timeout)
+        if self._port_is_open():
+            self._log_port_holder_hint()
 
     def _extract_listening_pid(self) -> Optional[int]:
-        """Best-effort PID listening on our overlay port (Windows netstat)."""
-        if sys.platform != "win32":
-            return None
+        """Best-effort PID listening on our overlay port (netstat / lsof)."""
         try:
-            out = subprocess.run(
-                ["netstat", "-ano", "-p", "TCP"],
-                capture_output=True,
-                text=True,
-                timeout=3.0,
-                check=False,
-            )
-            needle = (
-                f"{self.host}:{self.port}"
-                if self.host not in ("0.0.0.0", "")
-                else f":{self.port}"
-            )
-            for line in out.stdout.splitlines():
-                if needle in line and "LISTENING" in line.upper():
-                    parts = line.split()
-                    if parts:
-                        return int(parts[-1])
+            if sys.platform == "win32":
+                out = subprocess.run(
+                    ["netstat", "-ano", "-p", "TCP"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False,
+                )
+                needle = (
+                    f"{self.host}:{self.port}"
+                    if self.host not in ("0.0.0.0", "")
+                    else f":{self.port}"
+                )
+                for line in out.stdout.splitlines():
+                    if needle in line and "LISTENING" in line.upper():
+                        parts = line.split()
+                        if parts:
+                            return int(parts[-1])
+            elif sys.platform == "darwin":
+                out = subprocess.run(
+                    ["lsof", "-nP", "-t", f"-iTCP:{self.port}", "-sTCP:LISTEN"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False,
+                )
+                for line in out.stdout.splitlines():
+                    if line.strip():
+                        return int(line.strip())
         except Exception as e:
-            logger.debug("Could not extract port holder PID: %s", e)
+            # Warning (not debug): a silent None here previously hid why the
+            # stale-port terminate step was skipped during failed restarts.
+            logger.warning("Could not extract port %s holder PID: %s", self.port, e)
         return None
 
     def _try_terminate_stale_port_holder(self) -> bool:
         """Terminate a foreign process still holding our port after stop."""
         pid = self._extract_listening_pid()
         if pid is None:
+            logger.warning(
+                "Port %s is in use but the holding PID could not be identified; "
+                "skipping stale-holder termination",
+                self.port,
+            )
             return False
         if pid == os.getpid():
-            return False
+            logger.warning(
+                "Port %s held by current process (zombie_in_process); "
+                "attempting in-process listener release",
+                self.port,
+            )
+            self._close_listener()
+            self._join_known_server_threads(join_timeout=5.0)
+            return not self._port_is_open()
         logger.warning(
             "Attempting to terminate stale process %s holding port %s",
             pid,
@@ -3406,6 +3608,14 @@ class WebEngine:
                     result.returncode,
                     (result.stderr or result.stdout or "").strip(),
                 )
+            else:
+                import signal as _signal
+
+                os.kill(pid, _signal.SIGTERM)
+                logger.warning(
+                    "Sent SIGTERM to stale process %s holding port %s", pid, self.port
+                )
+                return True
         except Exception as e:
             logger.warning("Could not terminate stale port holder PID %s: %s", pid, e)
         return False
@@ -3478,11 +3688,7 @@ class WebEngine:
             self._aggressive_stop()
         if self._port_is_open():
             self._try_terminate_stale_port_holder()
-        # Brief wait for Windows TIME_WAIT / socket teardown
-        for delay in (0.5, 1.0, 2.0):
-            if not self._port_is_open():
-                return
-            time.sleep(delay)
+        self._wait_for_port_free(timeout=8.0)
 
     def _do_restart(self, reason: str, attempt: int) -> None:
         logger.error("WebEngine auto-restart (attempt %s): %s", attempt, reason)
@@ -3504,22 +3710,41 @@ class WebEngine:
             self._prepare_port_for_restart()
 
             bind_backoff = min(2.0 ** (attempt - 1), 8.0)
-            if self._port_is_open() and not self._probe_health_endpoint():
+            if self._port_is_open():
                 logger.warning(
                     "WebEngine restart: port %s still in use; backing off %.1fs",
                     self.port,
                     bind_backoff,
                 )
                 time.sleep(bind_backoff)
+                self._prepare_port_for_restart()
 
-            try:
-                self._start_server_thread()
-            except Exception as e:
-                logger.error("WebEngine restart: failed to start new thread: %s", e)
-                self._last_run_error = str(e)
+            if self._port_is_open():
+                logger.error(
+                    "WebEngine restart: port %s still in use after cleanup; "
+                    "skipping bind",
+                    self.port,
+                )
+                self._last_run_error = f"port {self.port} still in use"
+            else:
+                try:
+                    self._start_server_thread()
+                except Exception as e:
+                    logger.error("WebEngine restart: failed to start new thread: %s", e)
+                    self._last_run_error = str(e)
 
-            time.sleep(3.0)
-            if self.is_alive():
+            # Poll for recovery instead of a single fixed-delay probe: on slow
+            # machines the server can need >3s to serve /api/health, and a
+            # false "did not recover" both notifies the user needlessly and
+            # misreads our own new listener as a port conflict.
+            recovered = False
+            recovery_deadline = time.time() + 15.0
+            while time.time() < recovery_deadline:
+                time.sleep(1.0)
+                if self._is_healthy():
+                    recovered = True
+                    break
+            if recovered:
                 logger.warning("WebEngine auto-restart succeeded (attempt %s)", attempt)
                 with self._restart_lock:
                     self._restart_attempts = 0
@@ -3548,6 +3773,8 @@ class WebEngine:
         if is_shutdown_in_progress():
             return
         with self._restart_lock:
+            if self._restart_in_progress:
+                return
             now = time.time()
             if now - self._last_restart_ts < self._RESTART_COOLDOWN_SEC:
                 return
@@ -3568,10 +3795,14 @@ class WebEngine:
 
     def _start_server_thread(self) -> None:
         global web_engine_instance
-        self.server_thread = threading.Thread(
-            target=self.run, name="WebEngine", daemon=True
-        )
-        self.server_thread.start()
+        if self._port_is_open():
+            raise OSError(
+                f"Refusing to start WebEngine: port {self.host}:{self.port} is in use"
+            )
+        thread = threading.Thread(target=self.run, name="WebEngine", daemon=True)
+        self.server_thread = thread
+        self._known_server_threads.append(thread)
+        thread.start()
         web_engine_instance = self
 
     def _notify_restart_attempt(self) -> None:
@@ -4017,7 +4248,7 @@ class WebEngine:
         try:
             if custom is not None:
                 for sid in sid_list:
-                    self.socketio.emit(str(event_name), custom, to=sid)
+                    self.safe_emit(str(event_name), custom, to=sid)
                 return True, None, str(event_name)
             from .spore_studio import preview_mocks as _pm
 
@@ -4029,7 +4260,7 @@ class WebEngine:
                 return False, f"No mock payload defined for '{event_name}'.", None
             socket_event, body = spec
             for sid in sid_list:
-                self.socketio.emit(socket_event, body, to=sid)
+                self.safe_emit(socket_event, body, to=sid)
             return True, None, str(socket_event)
         except Exception as e:
             logger.error("emit_preview_mock failed: %s", e, exc_info=True)
@@ -4045,7 +4276,7 @@ class WebEngine:
 
             payload = load_template_preview_settings()
             for sid in sid_list:
-                self.socketio.emit(
+                self.safe_emit(
                     "mycelian_preview_settings",
                     payload,
                     to=sid,
@@ -4060,7 +4291,7 @@ class WebEngine:
             return
         try:
             for sid in sid_list:
-                self.socketio.emit("mycelian_preview_config_refresh", {}, to=sid)
+                self.safe_emit("mycelian_preview_config_refresh", {}, to=sid)
         except Exception as e:
             logger.debug("emit_preview_config_refresh skipped: %s", e)
 
@@ -6773,8 +7004,8 @@ class WebEngine:
         merged_ad: Any,
     ) -> None:
         """Emit primary socket event plus legacy streamdeck_template_action."""
-        self.socketio.emit(resolved_event, merged_ad)
-        self.socketio.emit(
+        self.safe_emit(resolved_event, merged_ad)
+        self.safe_emit(
             "streamdeck_template_action",
             {
                 "templateName": template_name,
@@ -6785,7 +7016,7 @@ class WebEngine:
         )
         compat_emit = f"{template_name}_{compat_key}"
         if compat_emit != resolved_event:
-            self.socketio.emit(compat_emit, merged_ad)
+            self.safe_emit(compat_emit, merged_ad)
 
     def _streamdeck_http_dispatch_emits(
         self,
@@ -6841,7 +7072,7 @@ class WebEngine:
             event_data = _merged_streamdeck_options_payload(action_config, action_data)
 
             # Emit the event to all clients
-            self.socketio.emit(event_name, event_data)
+            self.safe_emit(event_name, event_data)
             logger.debug(
                 f"Emitted Stream Deck event: {event_name} with data: {event_data}"
             )
@@ -6862,15 +7093,15 @@ class WebEngine:
             # For counter controls, handle specific actions
             if element_config.get("type") == "counter_control":
                 if action.endswith("_increment") or action == "increment":
-                    self.socketio.emit("counter_update", {"action": "increment"})
+                    self.safe_emit("counter_update", {"action": "increment"})
                 elif action.endswith("_decrement") or action == "decrement":
-                    self.socketio.emit("counter_update", {"action": "decrement"})
+                    self.safe_emit("counter_update", {"action": "decrement"})
                 elif action.endswith("_reset") or action == "reset":
-                    self.socketio.emit("counter_update", {"action": "reset"})
+                    self.safe_emit("counter_update", {"action": "reset"})
             else:
                 # Generic action emission
                 event_name = f"{template_name}_{action}"
-                self.socketio.emit(event_name, action_data or {})
+                self.safe_emit(event_name, action_data or {})
                 logger.debug(f"Emitted dynamic control event: {event_name}")
 
         except Exception as e:
@@ -6898,7 +7129,7 @@ class WebEngine:
             }
 
             # Emit the connector event
-            self.socketio.emit(f"connector_{trigger}", event_data)
+            self.safe_emit(f"connector_{trigger}", event_data)
             logger.debug(f"Emitted connector event: connector_{trigger}")
 
         except Exception as e:
@@ -7266,6 +7497,69 @@ class WebEngine:
             self._record_event_timestamp(self._socket_emit_error_times)
             raise
 
+    def safe_emit(self, event: str, data: Any = None, to: Optional[str] = None) -> bool:
+        """Broadcast a Socket.IO event safely from any thread.
+
+        On the server (gevent hub) thread this emits directly. From any other
+        OS thread the event is enqueued and delivered by the gevent drain
+        worker, because touching gevent primitives from a foreign thread is
+        not thread-safe (lost wakeups, hub corruption -> frozen overlays).
+
+        Returns True if the event was emitted or enqueued.
+        """
+        if not event:
+            return False
+        ident = self._server_thread_ident
+        if ident is not None and threading.get_ident() == ident:
+            try:
+                if data is None:
+                    self.socketio.emit(event, to=to)
+                else:
+                    self.socketio.emit(event, data, to=to)
+                return True
+            except Exception as e:
+                self._record_event_timestamp(self._socket_emit_error_times)
+                logger.error("safe_emit failed for %s: %s", event, e, exc_info=True)
+                return False
+        try:
+            self._safe_emit_queue.put_nowait((time.monotonic(), event, data, to))
+            return True
+        except queue.Full:
+            self._record_event_timestamp(self._socket_emit_error_times)
+            logger.warning(
+                "safe_emit queue full (%s); dropping %s",
+                self._safe_emit_queue.qsize(),
+                event,
+            )
+            return False
+
+    def _drain_safe_emit_queue(self) -> int:
+        """Emit everything foreign threads queued via safe_emit (gevent worker)."""
+        emitted = 0
+        while True:
+            try:
+                enqueued_at, event_name, event_data, to = (
+                    self._safe_emit_queue.get_nowait()
+                )
+            except queue.Empty:
+                return emitted
+            try:
+                with self.app.app_context():
+                    if event_data is None:
+                        self.socketio.emit(event_name, to=to)
+                    else:
+                        self.socketio.emit(event_name, event_data, to=to)
+                if enqueued_at > 0:
+                    lag_ms = (time.monotonic() - enqueued_at) * 1000.0
+                    with self._overload_lock:
+                        self._emit_delivery_lags_ms.append(lag_ms)
+                emitted += 1
+            except Exception as e:
+                self._record_event_timestamp(self._socket_emit_error_times)
+                logger.error(
+                    "safe_emit drain failed for %s: %s", event_name, e, exc_info=True
+                )
+
     def ensure_template_control_emit_worker(self) -> None:
         """Start the gevent worker that drains cross-thread template control emits."""
         with self._template_control_emit_worker_lock:
@@ -7287,6 +7581,8 @@ class WebEngine:
         q = self._template_control_queue
         try:
             while self.is_running:
+                safe_emitted = self._drain_safe_emit_queue()
+
                 batch: List[Tuple[float, str, Dict[str, Any]]] = []
                 try:
                     while True:
@@ -7330,7 +7626,8 @@ class WebEngine:
                     )
 
                 try:
-                    self.socketio.sleep(0.05 if not batch else 0.016)
+                    busy = bool(batch) or safe_emitted > 0
+                    self.socketio.sleep(0.016 if busy else 0.05)
                 except Exception as exc:
                     if not self.is_running:
                         break
@@ -7529,7 +7826,9 @@ class WebEngine:
             "data": data or {},
             "timestamp": int(time.time() * 1000),
         }
-        self.socketio.emit("source_controls_state_update", payload)
+        # Called from both the gevent hub (socket handlers) and foreign threads
+        # (NiceGUI persist path), so use the thread-safe emit.
+        self.safe_emit("source_controls_state_update", payload)
         try:
             from .uiwindows import sourcecontrols
 
@@ -7745,6 +8044,10 @@ class WebEngine:
             )
             return False
 
+    # The broadcast helpers below are called from native threads (alert
+    # processor, Twitch EventSub, chatbot, PSN, NiceGUI), so they must go
+    # through safe_emit -- never self.socketio.emit directly.
+
     def next_alert(self, alert_data):
         """
         Trigger a 'next_alert' websocket event
@@ -7752,14 +8055,10 @@ class WebEngine:
         Args:
             alert_data (dict): Alert data to send as JSON
         """
-        try:
-            self.socketio.emit("next_alert", alert_data)
+        ok = self.safe_emit("next_alert", alert_data)
+        if ok:
             logger.debug(f"Sent next_alert: {alert_data}")
-            return True
-        except Exception as e:
-            self._record_event_timestamp(self._socket_emit_error_times)
-            logger.error(f"Error sending next_alert: {str(e)}", exc_info=True)
-            return False
+        return ok
 
     def activity_feed_alert(self, alert_data):
         """
@@ -7768,13 +8067,10 @@ class WebEngine:
         Args:
             alert_data (dict): Alert data to send as JSON to activity feed
         """
-        try:
-            self.socketio.emit("activity_feed_alert", alert_data)
+        ok = self.safe_emit("activity_feed_alert", alert_data)
+        if ok:
             logger.debug(f"Sent activity_feed_alert: {alert_data}")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending activity_feed_alert: {str(e)}", exc_info=True)
-            return False
+        return ok
 
     def instant_alert(self, alert_data):
         """
@@ -7783,13 +8079,10 @@ class WebEngine:
         Args:
             alert_data (dict): Alert data to send as JSON for instant alerts
         """
-        try:
-            self.socketio.emit("instant_alert", alert_data)
+        ok = self.safe_emit("instant_alert", alert_data)
+        if ok:
             logger.debug(f"Sent instant_alert: {alert_data}")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending instant_alert: {str(e)}", exc_info=True)
-            return False
+        return ok
 
     def new_message(self, message_data):
         """
@@ -7798,26 +8091,20 @@ class WebEngine:
         Args:
             message_data (dict): Message data to send as JSON
         """
-        try:
-            self.socketio.emit("new-message", message_data)
+        ok = self.safe_emit("new-message", message_data)
+        if ok:
             logger.debug(f"Sent new-message: {message_data}")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending new-message: {str(e)}", exc_info=True)
-            return False
+        return ok
 
     def broadcast_overlay_recovery(
         self, service: str = "twitch", reason: str = "reconnected"
     ) -> bool:
         """Tell overlay browser sources to re-sync after a service reconnects."""
-        try:
-            payload = {"service": service, "reason": reason}
-            self.socketio.emit("overlay-recovery", payload)
+        payload = {"service": service, "reason": reason}
+        ok = self.safe_emit("overlay-recovery", payload)
+        if ok:
             logger.info("Broadcast overlay-recovery for %s (%s)", service, reason)
-            return True
-        except Exception as e:
-            logger.error("Error broadcasting overlay-recovery: %s", e, exc_info=True)
-            return False
+        return ok
 
     def message_moderation(self, moderation_data):
         """
@@ -7826,13 +8113,10 @@ class WebEngine:
         Args:
             moderation_data (dict): Moderation data to send as JSON
         """
-        try:
-            self.socketio.emit("message_moderation", moderation_data)
+        ok = self.safe_emit("message_moderation", moderation_data)
+        if ok:
             logger.debug(f"Sent message_moderation: {moderation_data}")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending message_moderation: {str(e)}", exc_info=True)
-            return False
+        return ok
 
     def state(self, state_data):
         """
@@ -7841,13 +8125,10 @@ class WebEngine:
         Args:
             state_data (dict): State data to send as JSON
         """
-        try:
-            self.socketio.emit("state", state_data)
+        ok = self.safe_emit("state", state_data)
+        if ok:
             logger.debug(f"Sent state update: {state_data}")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending state update: {str(e)}", exc_info=True)
-            return False
+        return ok
 
     def pause_status_update(self):
         """
@@ -7860,19 +8141,15 @@ class WebEngine:
 
             # Send specific pause/resume events (for backward compatibility)
             if ALERTS_PAUSED:
-                self.socketio.emit("alerts_paused", {"paused": True})
-                logger.debug("Emitted 'alerts_paused' event")
+                self.safe_emit("alerts_paused", {"paused": True})
             else:
-                self.socketio.emit("alerts_resumed", {"paused": False})
-                logger.debug("Emitted 'alerts_resumed' event")
+                self.safe_emit("alerts_resumed", {"paused": False})
 
             # Send general status update (primary event)
-            self.socketio.emit("pause_status_update", {"paused": ALERTS_PAUSED})
-            logger.debug("Emitted 'pause_status_update' event")
+            self.safe_emit("pause_status_update", {"paused": ALERTS_PAUSED})
 
             # Also emit legacy pause_alerts event for any templates that only listen for this
-            self.socketio.emit("pause_alerts", {"paused": ALERTS_PAUSED})
-            logger.debug("Emitted legacy 'pause_alerts' event")
+            self.safe_emit("pause_alerts", {"paused": ALERTS_PAUSED})
 
             logger.info(
                 f"Successfully broadcasted pause status update: paused={ALERTS_PAUSED}"
@@ -7890,7 +8167,7 @@ class WebEngine:
             global ALERTS_MUTED
 
             logger.info(f"Broadcasting mute status update: muted={ALERTS_MUTED}")
-            self.socketio.emit("mute_status_update", {"muted": ALERTS_MUTED})
+            self.safe_emit("mute_status_update", {"muted": ALERTS_MUTED})
             _sync_mute_button_state()
             logger.info(
                 f"Successfully broadcasted mute status update: muted={ALERTS_MUTED}"
@@ -7917,7 +8194,7 @@ class WebEngine:
             if hype_train_data:
                 status_data.update(hype_train_data)
 
-            self.socketio.emit("hype_train_active", status_data)
+            self.safe_emit("hype_train_active", status_data)
             logger.debug(f"Emitted hype_train_active event: active={is_active}")
 
             return True
@@ -8342,6 +8619,17 @@ class WebEngine:
             self.is_running = True
             web_engine_running = True
             self._last_run_error = None
+            self._server_thread_ident = threading.get_ident()
+            # Arm the heartbeat/watchdog and emit drain worker now instead of on
+            # the first request, so a freeze (or queued cross-thread emits)
+            # before any client connects is still detected/serviced. The
+            # greenlets are spawned on this thread's gevent hub and start
+            # running as soon as socketio.run enters the event loop.
+            try:
+                self.ensure_web_engine_heartbeat()
+                self.ensure_template_control_emit_worker()
+            except Exception as exc:
+                logger.debug("WebEngine startup worker arm failed: %s", exc)
             # Enable debug mode for template reloading, but disable the reloader to avoid conflicts with our threading
             self.socketio.run(
                 self.app,
@@ -8358,9 +8646,18 @@ class WebEngine:
             web_engine_running = False
             if "10048" in str(e) or "EADDRINUSE" in str(e).upper():
                 self._log_port_holder_hint()
+            # Schedule recovery immediately instead of waiting for the next
+            # supervisor poll (cooldown/attempt-gated inside request_restart).
+            try:
+                self.request_restart(f"server exited with error: {e}")
+            except Exception as restart_exc:
+                logger.debug(
+                    "WebEngine post-crash restart scheduling failed: %s", restart_exc
+                )
         finally:
             self.is_running = False
             web_engine_running = False
+            self._server_thread_ident = None
             if run_error is not None and self._last_run_error is None:
                 self._last_run_error = str(run_error)
             thread_alive = self._thread_alive()
@@ -8396,66 +8693,55 @@ class WebEngine:
         """Stop the WebEngine server"""
         global web_engine_running
         self._stop_twitch_api_worker()
+        port_open = self._port_is_open()
+        if not self.is_running and not self._thread_alive() and not port_open:
+            logger.debug("WebEngine stop: already stopped")
+            return
+
         if self.is_running:
             logger.debug("Stopping WebEngine server")
-            try:
-                # Use a separate thread to stop the server to avoid blocking
-                def stop_server():
+        elif port_open or self._thread_alive():
+            logger.debug(
+                "Stopping WebEngine server (zombie: is_running=%s thread_alive=%s "
+                "port_open=%s)",
+                self.is_running,
+                self._thread_alive(),
+                port_open,
+            )
+
+        try:
+            def stop_server():
+                try:
+                    in_request_context = False
                     try:
-                        # Try to check if we're in a request context before stopping
-                        # Since we're in a separate thread, this should generally be False
+                        from flask import has_request_context
+
+                        in_request_context = has_request_context()
+                    except Exception:
                         in_request_context = False
-                        try:
-                            from flask import has_request_context
 
-                            in_request_context = has_request_context()
-                        except Exception:
-                            # If we can't check the context (e.g., working outside Flask context),
-                            # assume we're not in a request context and proceed with stopping
-                            in_request_context = False
+                    if not in_request_context:
+                        wsgi_server = getattr(self.socketio, "wsgi_server", None)
+                        server_alive = self._thread_alive()
+                        if wsgi_server is not None or server_alive:
+                            self.socketio.stop()
+                    self._close_listener()
+                except AttributeError as e:
+                    logger.debug("socketio.stop() no-op during shutdown: %s", e)
+                except Exception as e:
+                    logger.error("Error stopping socketio: %s", e)
 
-                        if in_request_context:
-                            logger.debug("In request context, skipping socketio.stop()")
-                        else:
-                            wsgi_server = getattr(self.socketio, "wsgi_server", None)
-                            server_alive = self._thread_alive()
-                            if wsgi_server is None and not server_alive:
-                                logger.debug(
-                                    "socketio.stop() skipped: no running WSGI server"
-                                )
-                            else:
-                                self.socketio.stop()
-                            if wsgi_server is not None:
-                                listener = getattr(
-                                    wsgi_server, "socket", None
-                                ) or getattr(wsgi_server, "server", None)
-                                if listener is not None and hasattr(listener, "close"):
-                                    try:
-                                        listener.close()
-                                    except Exception:
-                                        pass
-                    except AttributeError as e:
-                        # Harmless shutdown race when the server was already torn down.
-                        logger.debug("socketio.stop() no-op during shutdown: %s", e)
-                    except Exception as e:
-                        logger.error(f"Error stopping socketio: {str(e)}")
-
-                stop_thread = threading.Thread(target=stop_server)
-                stop_thread.daemon = True
-                stop_thread.start()
-
-                # Wait for the stop thread to finish
-                stop_thread.join(timeout=3.0)
-
-                self.is_running = False
-                web_engine_running = False
-                logger.debug("WebEngine server stopped")
-            except Exception as e:
-                logger.error(
-                    f"Error stopping WebEngine server: {str(e)}", exc_info=True
-                )
-        else:
-            logger.warning("WebEngine server not running")
+            stop_thread = threading.Thread(target=stop_server, name="WebEngineStop")
+            stop_thread.daemon = True
+            stop_thread.start()
+            stop_thread.join(timeout=3.0)
+        except Exception as e:
+            logger.error("Error stopping WebEngine server: %s", e, exc_info=True)
+        finally:
+            self.is_running = False
+            web_engine_running = False
+            self._close_listener()
+            logger.debug("WebEngine server stopped")
 
     def is_alive(self):
         """Check if the web server is running"""
@@ -8604,32 +8890,26 @@ class WebEngine:
         Returns:
             True if broadcast was successful, False otherwise
         """
-        try:
-            self.socketio.emit(
-                "theme_update",
-                {
-                    "css": theme_css,
-                    "theme_name": theme_name,
-                    "theme_type": theme_type,
-                },
-            )
+        ok = self.safe_emit(
+            "theme_update",
+            {
+                "css": theme_css,
+                "theme_name": theme_name,
+                "theme_type": theme_type,
+            },
+        )
+        if ok:
             logger.info(f"Broadcast theme update: {theme_name} ({theme_type})")
-            return True
-        except Exception as e:
-            logger.error(f"Error broadcasting theme update: {str(e)}", exc_info=True)
-            return False
+        return ok
 
     def clear_chat(self):
         """
         Trigger a 'clear-chat' websocket event to clear all chat messages
         """
-        try:
-            self.socketio.emit("clear-chat")
+        ok = self.safe_emit("clear-chat")
+        if ok:
             logger.debug("Sent clear-chat event")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending clear-chat: {str(e)}", exc_info=True)
-            return False
+        return ok
 
     def remove_messages(self, message_ids):
         """
@@ -8638,13 +8918,10 @@ class WebEngine:
         Args:
             message_ids (list): List of message IDs to remove
         """
-        try:
-            self.socketio.emit("remove-messages", message_ids)
+        ok = self.safe_emit("remove-messages", message_ids)
+        if ok:
             logger.debug(f"Sent remove-messages: {message_ids}")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending remove-messages: {str(e)}", exc_info=True)
-            return False
+        return ok
 
 
 def broadcast_overlay_recovery(

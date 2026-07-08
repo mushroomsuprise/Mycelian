@@ -597,7 +597,7 @@ def _update_and_broadcast():
             psn_data_dict = dataclasses.asdict(psn_client_instance.psn_data)
 
             # Emit the updated data to all connected clients
-            web_engine.web_engine_instance.socketio.emit(
+            web_engine.web_engine_instance.safe_emit(
                 "psn_data_update", psn_data_dict
             )
             logger.debug(
@@ -615,7 +615,7 @@ def _update_and_broadcast():
                 if current_time - last_notified >= MISMATCH_NOTIFICATION_COOLDOWN:
                     # Emit mismatch notification event
                     mismatch_data = dataclasses.asdict(mismatch)
-                    web_engine.web_engine_instance.socketio.emit(
+                    web_engine.web_engine_instance.safe_emit(
                         "psn_game_mismatch", mismatch_data
                     )
                     logger.info(
@@ -804,7 +804,7 @@ def handle_psn_settings_change():
                     psn_data_dict = dataclasses.asdict(psn_client_instance.psn_data)
 
                     # Emit the updated data to all connected clients
-                    web_engine.web_engine_instance.socketio.emit(
+                    web_engine.web_engine_instance.safe_emit(
                         "psn_data_update", psn_data_dict
                     )
                     logger.debug(
@@ -845,7 +845,7 @@ def handle_psn_settings_change():
                         psn_data_dict = dataclasses.asdict(psn_client_instance.psn_data)
 
                         # Emit the empty data to all connected clients
-                        web_engine.web_engine_instance.socketio.emit(
+                        web_engine.web_engine_instance.safe_emit(
                             "psn_data_update", psn_data_dict
                         )
                         logger.debug(
@@ -878,7 +878,7 @@ def handle_psn_settings_change():
                         psn_data_dict = dataclasses.asdict(empty_psn_data)
 
                         # Emit the empty data to all connected clients
-                        web_engine.web_engine_instance.socketio.emit(
+                        web_engine.web_engine_instance.safe_emit(
                             "psn_data_update", psn_data_dict
                         )
                         logger.debug("Broadcasted empty PSN data to WebSocket clients")

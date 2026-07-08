@@ -156,8 +156,8 @@ class GiveawayManager:
         try:
             from . import web_engine
 
-            if web_engine.web_engine_instance and web_engine.web_engine_instance.socketio:
-                web_engine.web_engine_instance.socketio.emit(event, data)
+            if web_engine.web_engine_instance:
+                web_engine.web_engine_instance.safe_emit(event, data)
         except Exception as e:
             logger.debug("giveaway emit %s: %s", event, e)
 

@@ -349,15 +349,21 @@ def cleanup():
         except Exception as e:
             logger.debug("Game hooks service stop: %s", e)
 
-        # Stop web engine if it's running
+        # Stop web engine (aggressive teardown so port 5000 is released on exit)
         if web_engine_instance:
-            web_engine_instance.stop()
-            logger.debug("Web engine stopped")
+            web_engine_instance.force_stop()
+            logger.debug("Web engine force-stopped")
 
         # Brief join; threads are daemon and exit once the queue/web server stop.
         if web_thread and web_thread.is_alive():
             web_thread.join(timeout=15.0)
             logger.debug("Web thread joined")
+
+        if web_engine_instance and web_engine_instance._port_is_open():
+            logger.error(
+                "WebEngine port %s still open after shutdown cleanup",
+                web_engine_instance.port,
+            )
 
         if alert_thread and alert_thread.is_alive():
             alert_thread.join(timeout=1)

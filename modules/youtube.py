@@ -990,7 +990,7 @@ class YouTubeClient:
                     for field in YouTubeData.__dataclass_fields__.values()
                     if not field.name.startswith("_")
                 }
-                web_engine.web_engine_instance.socketio.emit(
+                web_engine.web_engine_instance.safe_emit(
                     "youtube_data_update", youtube_dict
                 )
         except Exception as e:

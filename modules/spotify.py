@@ -858,7 +858,7 @@ class SpotifyClient:
                 and web_engine.web_engine_instance
             ):
                 spotify_dict = asdict(self.spotify_data)
-                web_engine.web_engine_instance.socketio.emit(
+                web_engine.web_engine_instance.safe_emit(
                     "spotify_data_update", spotify_dict
                 )
         except Exception as e:

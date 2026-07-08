@@ -91,9 +91,9 @@ class TemplateControlAction(BaseAction):
                 control_data, event_data
             )
 
-            # Emit WebSocket event
+            # Emit WebSocket event (thread-safe: connectors run off the gevent hub)
             event_name = f"{self.template_name}_{self.control_action}"
-            web_engine.web_engine_instance.socketio.emit(event_name, control_data)
+            web_engine.web_engine_instance.safe_emit(event_name, control_data)
 
             logger.info(
                 f"Template control action executed: {event_name} with data: {control_data}"
@@ -155,10 +155,8 @@ class WebSocketEmitAction(BaseAction):
                 websocket_data, event_data
             )
 
-            # Emit event
-            web_engine.web_engine_instance.socketio.emit(
-                self.event_name, websocket_data
-            )
+            # Emit event (thread-safe: connectors run off the gevent hub)
+            web_engine.web_engine_instance.safe_emit(self.event_name, websocket_data)
 
             logger.info(
                 f"WebSocket event emitted: {self.event_name} with data: {websocket_data}"

@@ -1621,7 +1621,8 @@ class Twitch_API:
                             twitch_data_dict[field] = ""
 
                     # Emit the updated data to all connected clients
-                    web_engine.web_engine_instance.socketio.emit(
+                    # (safe_emit: EventSub callback thread, not the gevent hub)
+                    web_engine.web_engine_instance.safe_emit(
                         "twitch_data_update", twitch_data_dict
                     )
                     logger.debug(
