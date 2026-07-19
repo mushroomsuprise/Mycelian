@@ -207,19 +207,11 @@ class AppSettingsTab:
                                     max=120,
                                     step=5,
                                     classes="w-24",
-                                )
-                            )
-                            self.ui_elements["update_check_interval_minutes"].on(
-                                "change",
-                                lambda e: self._set(
-                                    "update_check_interval_minutes",
-                                    int(
-                                        getattr(
-                                            e, "args", [getattr(e, "value", 30)]
-                                        )[0]
-                                        or 30
+                                    on_change=lambda e: self._set(
+                                        "update_check_interval_minutes",
+                                        int(e.value or 30),
                                     ),
-                                ),
+                                )
                             )
                             ui.label("minutes (5–120)").classes(
                                 "secondary-text text-sm"
@@ -237,17 +229,9 @@ class AppSettingsTab:
                                 max=100,
                                 step=5,
                                 classes="w-24",
-                            )
-                            self.ui_elements["activity_feed_limit"].on(
-                                "change",
-                                lambda e: self._set(
+                                on_change=lambda e: self._set(
                                     "activity_feed_limit",
-                                    int(
-                                        getattr(
-                                            e, "args", [getattr(e, "value", 5)]
-                                        )[0]
-                                        or 5
-                                    ),
+                                    int(e.value or 5),
                                 ),
                             )
                             ui.label("per page").classes("secondary-text text-sm")
@@ -260,17 +244,9 @@ class AppSettingsTab:
                                 max=50,
                                 step=1,
                                 classes="w-24",
-                            )
-                            self.ui_elements["activity_feed_max_pages"].on(
-                                "change",
-                                lambda e: self._set(
+                                on_change=lambda e: self._set(
                                     "activity_feed_max_pages",
-                                    int(
-                                        getattr(
-                                            e, "args", [getattr(e, "value", 1)]
-                                        )[0]
-                                        or 1
-                                    ),
+                                    int(e.value or 1),
                                 ),
                             )
                             ui.label("to load").classes("secondary-text text-sm")

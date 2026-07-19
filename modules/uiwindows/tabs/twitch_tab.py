@@ -259,20 +259,18 @@ class TwitchTab:
                     label="Client ID",
                     value=self._creds.get(client_id_key, ""),
                     placeholder=client_id_placeholder,
-                )
-                self.ui_elements[client_id_key].on(
-                    "change",
-                    lambda e, k=client_id_key: self._set_cred(k, e.args or ""),
+                    on_change=lambda e, k=client_id_key: self._set_cred(
+                        k, "" if e.value is None else str(e.value)
+                    ),
                 )
                 self.ui_elements[client_secret_key] = form_sensitive_input(
                     tooltip="Twitch application Client Secret (keep private)",
                     label="Client Secret",
                     value=self._creds.get(client_secret_key, ""),
                     placeholder=client_secret_placeholder,
-                )
-                self.ui_elements[client_secret_key].on(
-                    "change",
-                    lambda e, k=client_secret_key: self._set_cred(k, e.args or ""),
+                    on_change=lambda e, k=client_secret_key: self._set_cred(
+                        k, "" if e.value is None else str(e.value)
+                    ),
                 )
 
     def build(self, parent_container) -> None:

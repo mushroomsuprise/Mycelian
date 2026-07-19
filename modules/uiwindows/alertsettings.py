@@ -2074,13 +2074,12 @@ def update_file_listing(dialog_state):
                     "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
                 ):
                     ui.icon("arrow_upward").classes("text-blue-400")
-                    parent_label = ui.label(".. (Parent Directory)").classes(
-                        "text-blue-400"
-                    )
-                    parent_label.on(
+                    # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
+                    parent_label = ui.label(".. (Parent Directory)").on(
                         "click",
                         lambda: navigate_to_path(dialog_state, current_path.parent),
                     )
+                    parent_label.classes("text-blue-400")
 
         # List directories and files
         try:
@@ -2093,32 +2092,41 @@ def update_file_listing(dialog_state):
                     continue  # Skip hidden files
 
                 with dialog_state["file_list"]:
-                    with ui.row().classes(
-                        "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
-                    ) as row:
-                        if item.is_dir():
-                            ui.icon("folder").classes("text-yellow-400")
-                            dir_label = ui.label(item.name).classes("")
-                            # Directories are always clickable for navigation
+                    # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
+                    row = ui.row()
+                    file_extension = item.suffix.lower() if item.is_file() else ""
+                    if item.is_dir():
+                        row.on(
+                            "click",
+                            lambda path=item: navigate_to_path(dialog_state, path),
+                        )
+                        if browse_mode == "directory":
                             row.on(
                                 "click",
-                                lambda path=item: navigate_to_path(dialog_state, path),
+                                lambda path=item: select_directory_in_dialog(
+                                    dialog_state, path
+                                ),
                             )
-
-                            # In directory mode, also allow selecting directories
+                    elif browse_mode == "file" and file_extension in extensions:
+                        row.on(
+                            "click",
+                            lambda path=item: select_file_in_dialog(
+                                dialog_state, path
+                            ),
+                        )
+                    row.classes(
+                        "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
+                    )
+                    with row:
+                        if item.is_dir():
+                            ui.icon("folder").classes("text-yellow-400")
+                            dir_label = ui.label(item.name)
                             if browse_mode == "directory":
-                                row.on(
-                                    "click",
-                                    lambda path=item: select_directory_in_dialog(
-                                        dialog_state, path
-                                    ),
-                                )
                                 dir_label.classes(
                                     "text-green-400"
                                 )  # Highlight selectable directories
                         else:
                             # Show different icons for different file types
-                            file_extension = item.suffix.lower()
                             if file_extension in extensions:
                                 # Determine icon based on file type
                                 if file_extension in [
@@ -2139,23 +2147,10 @@ def update_file_listing(dialog_state):
                                     ui.icon("image").classes("text-theme-primary")
                                 else:
                                     ui.icon("description").classes("text-green-400")
-                                file_label = ui.label(item.name).classes(
-                                    "text-green-400"
-                                )
+                                ui.label(item.name).classes("text-green-400")
                             else:
                                 ui.icon("description").classes("secondary-text")
-                                file_label = ui.label(item.name).classes(
-                                    "secondary-text"
-                                )
-
-                            # Make files selectable only in file mode and if they match our extensions
-                            if browse_mode == "file" and file_extension in extensions:
-                                row.on(
-                                    "click",
-                                    lambda path=item: select_file_in_dialog(
-                                        dialog_state, path
-                                    ),
-                                )
+                                ui.label(item.name).classes("secondary-text")
 
         except PermissionError:
             with dialog_state["file_list"]:

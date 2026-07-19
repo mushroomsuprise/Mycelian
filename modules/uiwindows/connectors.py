@@ -23,14 +23,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import asyncio
 import json
 import logging
 import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from nicegui import context, run, ui
+from nicegui import background_tasks, context, run, ui
 from ..notification_engine import notify
 from ..ui_buttons import outline_button, primary_button
 from ..ui_timer import layout_schedule
@@ -5483,7 +5482,7 @@ def test_connector(connector_id: str):
                     type="negative",
                 )
 
-        asyncio.create_task(run_test())
+        background_tasks.create(run_test(), name="connector_test")
 
     except Exception as e:
         logger.error(f"Error testing connector: {e}", exc_info=True)

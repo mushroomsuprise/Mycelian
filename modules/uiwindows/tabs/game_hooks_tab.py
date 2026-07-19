@@ -85,7 +85,7 @@ class GameHooksTab:
                     else "inline-flex items-center leading-none opacity-55"
                 )
                 with ui.element("div").classes(cls).tooltip(tip):
-                    ui.html(svg, tag="span")
+                    ui.html(svg, tag="span", sanitize=False)
 
     @staticmethod
     def _truncate(msg: str, max_len: int = 120) -> str:

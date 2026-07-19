@@ -326,12 +326,8 @@ class YouTubeTab:
                     label="API key",
                     value=getattr(self.buffer, "api_key", ""),
                     placeholder="YouTube Data API v3 Key",
-                )
-                self.ui_elements["api_key"].on(
-                    "change",
-                    lambda e: self._set(
-                        "api_key",
-                        getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                    on_change=lambda e: self._set(
+                        "api_key", "" if e.value is None else str(e.value)
                     ),
                 )
             self.ui_elements["channel_urls"] = form_sensitive_input(
@@ -339,12 +335,8 @@ class YouTubeTab:
                 label="Channel URLs",
                 value=getattr(self.buffer, "channel_urls", ""),
                 placeholder="https://youtube.com/@Channel|https://...",
-            )
-            self.ui_elements["channel_urls"].on(
-                "change",
-                lambda e: self._set(
-                    "channel_urls",
-                    getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                on_change=lambda e: self._set(
+                    "channel_urls", "" if e.value is None else str(e.value)
                 ),
             )
 

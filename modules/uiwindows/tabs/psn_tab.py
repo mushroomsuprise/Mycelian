@@ -644,17 +644,13 @@ class PSNTab:
                         tooltip="Display name shown for this game in presence/social APIs",
                         label="Presence name",
                         placeholder="Name from presence/social API",
-                    )
-                    self.ui_elements["cache_presence_name"].on(
-                        "change", lambda e: self._on_cache_field_changed()
+                        on_change=lambda e: self._on_cache_field_changed(),
                     )
                     self.ui_elements["cache_np_title_id"] = form_input(
                         tooltip="PlayStation NP Title ID for this cached game",
                         label="NP Title ID",
                         placeholder="e.g. PPSA01234_00",
-                    )
-                    self.ui_elements["cache_np_title_id"].on(
-                        "change", lambda e: self._on_cache_field_changed()
+                        on_change=lambda e: self._on_cache_field_changed(),
                     )
 
                 with ui.row().classes("justify-end gap-2 mt-1"):

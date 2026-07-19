@@ -2276,7 +2276,7 @@ def create_command_card(command_id: str, command: ChatCommand):
                 truncated_html = resolved_text[:200] + "..."
             else:
                 truncated_html = resolved_text
-            ui.html(truncated_html).classes("text-xs secondary-text")
+            ui.html(truncated_html, sanitize=False).classes("text-xs secondary-text")
 
         # Statistics
         with ui.row().classes(
@@ -2383,7 +2383,7 @@ def create_event_card(event_id: str, event: ChatEvent):
                 truncated_html = resolved_text[:200] + "..."
             else:
                 truncated_html = resolved_text
-            ui.html(truncated_html).classes("text-xs secondary-text")
+            ui.html(truncated_html, sanitize=False).classes("text-xs secondary-text")
 
         # Statistics
         with ui.row().classes(
@@ -2524,7 +2524,7 @@ def create_greeting_card(greeting_id: str, greeting):
                 truncated_html = resolved_text[:200] + "..."
             else:
                 truncated_html = resolved_text
-            ui.html(truncated_html).classes(
+            ui.html(truncated_html, sanitize=False).classes(
                 "text-sm secondary-text p-3 bg-theme-surface rounded border-l-4 border-cyan-500"
             )
 
@@ -3881,9 +3881,10 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                             # Clear and rebuild the HTML element
                             response_preview_container.clear()
                             with response_preview_container:
-                                ui.html(resolved_text if resolved_text else "").classes(
-                                    "response-preview"
-                                )
+                                ui.html(
+                                    resolved_text if resolved_text else "",
+                                    sanitize=False,
+                                ).classes("response-preview")
                         except Exception as e:
                             logger.error(f"Error updating preview: {e}", exc_info=True)
 

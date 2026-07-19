@@ -3882,9 +3882,9 @@ class SettingsUI:
                                                 formatted_notes = (
                                                     self._format_release_notes(notes)
                                                 )
-                                                ui.html(formatted_notes).classes(
-                                                    "text-sm"
-                                                )
+                                                ui.html(
+                                                    formatted_notes, sanitize=False
+                                                ).classes("text-sm")
                                             else:
                                                 ui.label(
                                                     "No release notes available."
@@ -4154,15 +4154,14 @@ class SettingsUI:
                         "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
                     ):
                         ui.icon("arrow_upward").classes("text-blue-400")
-                        parent_label = ui.label(".. (Parent Directory)").classes(
-                            "text-blue-400"
-                        )
-                        parent_label.on(
+                        # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
+                        parent_label = ui.label(".. (Parent Directory)").on(
                             "click",
                             lambda: self._navigate_to_database_path(
                                 dialog_state, current_path.parent
                             ),
                         )
+                        parent_label.classes("text-blue-400")
 
             # List directories and files
             try:
@@ -4175,18 +4174,29 @@ class SettingsUI:
                         continue  # Skip hidden files
 
                     with dialog_state["file_list"]:
-                        with ui.row().classes(
+                        # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
+                        row = ui.row()
+                        if item.is_dir():
+                            row.on(
+                                "click",
+                                lambda path=item: self._navigate_to_database_path(
+                                    dialog_state, path
+                                ),
+                            )
+                        elif item.suffix.lower() == extension_filter:
+                            row.on(
+                                "click",
+                                lambda path=item: self._select_database_file_in_dialog(
+                                    dialog_state, path
+                                ),
+                            )
+                        row.classes(
                             "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
-                        ) as row:
+                        )
+                        with row:
                             if item.is_dir():
                                 ui.icon("folder").classes("text-yellow-400")
-                                dir_label = ui.label(item.name).classes("")
-                                row.on(
-                                    "click",
-                                    lambda path=item: self._navigate_to_database_path(
-                                        dialog_state, path
-                                    ),
-                                )
+                                ui.label(item.name)
                             else:
                                 # Show different icons for different file types
                                 if item.suffix.lower() == extension_filter:
@@ -4194,23 +4204,10 @@ class SettingsUI:
                                         ui.icon("storage").classes("text-green-400")
                                     else:  # .json
                                         ui.icon("code").classes("text-green-400")
-                                    file_label = ui.label(item.name).classes(
-                                        "text-green-400"
-                                    )
+                                    ui.label(item.name).classes("text-green-400")
                                 else:
                                     ui.icon("description").classes("secondary-text")
-                                    file_label = ui.label(item.name).classes(
-                                        "secondary-text"
-                                    )
-
-                                # Make files selectable if they match our filter
-                                if item.suffix.lower() == extension_filter:
-                                    row.on(
-                                        "click",
-                                        lambda path=item: self._select_database_file_in_dialog(
-                                            dialog_state, path
-                                        ),
-                                    )
+                                    ui.label(item.name).classes("secondary-text")
 
             except PermissionError:
                 with dialog_state["file_list"]:

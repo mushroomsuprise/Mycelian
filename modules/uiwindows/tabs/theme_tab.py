@@ -1170,7 +1170,9 @@ class ThemeTab:
                     with ui.element("div").classes(f"mock-tab {active}"):
                         ui.html(tab_name)
             with ui.element("div").classes("mock-notification-btn"):
-                ui.html('<span class="icon">notifications</span>')
+                ui.html(
+                    '<span class="icon">notifications</span>', sanitize=False
+                )
 
     def _build_mock_sub_tabs(self):
         """Build mock settings sub-tab bar matching build_ui_v2 order and icons."""
@@ -1194,11 +1196,13 @@ class ThemeTab:
                     if icon_kind == "brand":
                         svg = SERVICE_BRAND_SVG[icon_key]
                         ui.html(
-                            f'<span class="brand-icon">{svg}</span>{tab_label}'
+                            f'<span class="brand-icon">{svg}</span>{tab_label}',
+                            sanitize=False,
                         )
                     else:
                         ui.html(
-                            f'<span class="icon">{icon_key}</span>{tab_label}'
+                            f'<span class="icon">{icon_key}</span>{tab_label}',
+                            sanitize=False,
                         )
 
     def _build_mock_settings_card(self):
@@ -1316,16 +1320,16 @@ class ThemeTab:
                 hex_color = self._convert_to_hex(raw_color)
                 border = self._get_contrast_border_color(hex_color)
                 with ui.column().classes("items-center gap-0"):
-                    swatch = ui.element("div").classes(
-                        f"preview-swatch {swatch_class}"
-                    ).style(
+                    # Register click before style so NiceGUI 3.x does not treat it as a late listener.
+                    swatch = ui.element("div").on(
+                        "click",
+                        lambda _, fn=field_name: self._open_palette_color_picker(fn),
+                    )
+                    swatch.classes(f"preview-swatch {swatch_class}")
+                    swatch.style(
                         f"width: 100%; height: 24px; border-radius: 3px;"
                         f"background: {raw_color or hex_color};"
                         f"border: 1px solid {border};"
-                    )
-                    swatch.on(
-                        "click",
-                        lambda _, fn=field_name: self._open_palette_color_picker(fn),
                     )
                     ui.label(label).classes("typography-muted").style(
                         "font-size: 9px; margin-top: 2px;"
