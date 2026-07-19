@@ -151,8 +151,8 @@ ENEMY_OFF_MDEF = 0x27
 
 # Battle-actor ally-only fields
 BATTLE_OFF_LEVEL = 0x24
-# Battle script 0x4026 (back row) → physical +0x0A in 104-byte actor block
-BATTLE_OFF_BACK_ROW = 0x0A
+# Battle AI address 0x4026 (back row) → byte offset 0x26 in 104-byte battle_char_base actor block
+BATTLE_OFF_BACK_ROW = 0x26
 
 FF7_MENU_NAMES: List[str] = [
     "Item",
@@ -2443,6 +2443,16 @@ class FF7Hook:
                 off = _CHAR_BLOCK[cid]
                 level = int(sm[off + REC_OFF_LEVEL])
         ailments = _ailments_from_status(status)
+        row = _row_label_from_battle_raw(raw)
+        if party_id is not None and party_id < len(_CHAR_BLOCK):
+            sm = savemap
+            if sm is None:
+                sm, _ = self._read_savemap()
+            if sm:
+                savemap_row = _row_for_char_id(sm, party_id)
+                # Fallback when battle byte reads as front row but savemap says back row
+                if row == "FR" and savemap_row == "BR":
+                    row = savemap_row
         return {
             "party_slot": slot,
             "slot": slot,
@@ -2460,7 +2470,7 @@ class FF7Hook:
             "scene_id": 0,
             "level": int(level),
             "slot_empty": False,
-            "row": _row_label_from_battle_raw(raw),
+            "row": row,
         }
 
     def _read_battle_enemy(self, slot: int) -> Optional[Dict[str, Any]]:
