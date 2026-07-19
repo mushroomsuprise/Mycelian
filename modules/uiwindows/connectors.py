@@ -1889,7 +1889,8 @@ _CONDITION_OPERATOR_META: Dict[str, tuple] = {
     "greater_than": (">", "Greater than"),
     "less_than": ("<", "Less than"),
     "contains": ("∋", "Contains"),
-    "starts_with": ("^", "Starts with"),
+    "starts_with": ("^", "First word"),
+    "begins_with": ("^…", "Begins with"),
     "ends_with": ("$", "Ends with"),
 }
 _BOOL_CONDITION_OPERATOR_KEYS = ("equal", "not_equal")

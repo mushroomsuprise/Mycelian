@@ -47,6 +47,8 @@ _integrity_check_scheduled = False
 _condensed_update_scheduled = False
 _condensed_rebuild_running = False
 _condensed_rebuild_rerun = False
+_condensed_integrity_failures = 0
+_ignore_condense_toggle_event = False
 
 
 def _is_stale_client_error(exc: BaseException) -> bool:
@@ -71,6 +73,27 @@ def _element_alive(el: Any) -> bool:
         return False
 
 
+def _slot_child_count(el: Any) -> int:
+    """Return child count for a NiceGUI element's default slot (3.x safe)."""
+    if not _element_alive(el):
+        return 0
+    try:
+        slot = getattr(el, "default_slot", None)
+        if slot is None:
+            return 0
+        return len(slot.children)
+    except Exception:
+        return 0
+
+
+def _null_live_alert_element_refs() -> None:
+    """Drop stale UI refs before a clear()/rebuild so callers never touch deleted elements."""
+    for alert_data in activity_feed_state.live_alerts:
+        alert_data["element"] = None
+        alert_data["new_badge"] = None
+        alert_data["timestamp_label"] = None
+
+
 def _containers_alive() -> bool:
     if (
         activity_feed_state.condense_list
@@ -84,12 +107,7 @@ def _condensed_view_has_content() -> bool:
     container = activity_feed_state.condensed_container
     if not _element_alive(container):
         return False
-    try:
-        # NiceGUI 3.x Slot has no __len__; inspect its children list directly.
-        slot = getattr(container, "default_slot", None)
-        return bool(slot is not None and len(slot.children) > 0)
-    except Exception:
-        return False
+    return _slot_child_count(container) > 0
 
 
 def _count_rendered_live_alerts() -> int:
@@ -102,8 +120,57 @@ def _count_rendered_live_alerts() -> int:
     return count
 
 
+def _ensure_regular_feed_populated(reason: str) -> None:
+    """Rebuild the regular feed when rendered cards are missing or out of date.
+
+    While condensed mode is on, new alerts are state-only (no cards). Toggle-off
+    and fallback paths must rebuild whenever rendered count lags live state.
+    """
+    if not activity_feed_state.live_alerts:
+        return
+    if not _element_alive(activity_feed_state.current_alerts_container):
+        return
+    rendered = _count_rendered_live_alerts()
+    live_count = len(activity_feed_state.live_alerts)
+    if rendered >= live_count:
+        return
+    logger.warning(
+        "activity_feed: regular feed stale (%s) — rebuilding "
+        "(rendered=%d live=%d)",
+        reason,
+        rendered,
+        live_count,
+    )
+    rebuild_current_alerts_feed()
+
+
+def _fallback_to_regular_feed(reason: str, *, disable_condense: bool = False) -> None:
+    """Show the regular feed and rebuild it if the surface is empty."""
+    global _condensed_integrity_failures, _ignore_condense_toggle_event
+
+    logger.warning("activity_feed: falling back to regular feed (%s)", reason)
+    _condensed_integrity_failures = 0
+
+    if disable_condense and activity_feed_state.condense_list:
+        activity_feed_state.condense_list = False
+        toggle = activity_feed_state.condense_toggle
+        if _element_alive(toggle) and getattr(toggle, "value", False):
+            _ignore_condense_toggle_event = True
+            try:
+                toggle.value = False
+            except Exception:
+                pass
+            finally:
+                _ignore_condense_toggle_event = False
+
+    _apply_condensed_visibility(False)
+    _ensure_regular_feed_populated(f"fallback:{reason}")
+
+
 def _ensure_feed_integrity(reason: str) -> None:
     """Rebuild the feed when state has alerts but nothing is rendered."""
+    global _condensed_integrity_failures
+
     if activity_feed_state.current_tab != "current":
         return
     if not _containers_alive():
@@ -111,13 +178,36 @@ def _ensure_feed_integrity(reason: str) -> None:
 
     if activity_feed_state.condense_list:
         if _condensed_view_has_content():
+            _condensed_integrity_failures = 0
             return
+        # A rebuild in flight is expected to leave the surface empty briefly;
+        # re-check after it finishes instead of counting a failure.
+        if _condensed_rebuild_running or _condensed_update_scheduled:
+            app_schedule(
+                0.5,
+                lambda: _ensure_feed_integrity(f"{reason}_await_rebuild"),
+                once=True,
+            )
+            return
+        _condensed_integrity_failures += 1
         logger.warning(
-            "activity_feed: condensed integrity mismatch (%s) — rebuilding",
+            "activity_feed: condensed integrity mismatch (%s) — "
+            "empty condensed surface (failure %d)",
             reason,
+            _condensed_integrity_failures,
         )
-        if not update_condensed_view():
-            recover_activity_feed_panel()
+        if _condensed_integrity_failures >= 2:
+            _fallback_to_regular_feed(
+                f"integrity_exhausted:{reason}", disable_condense=True
+            )
+            return
+        # Schedule a rebuild; do not treat "scheduled" as a healthy surface.
+        _schedule_condensed_rebuild(f"integrity:{reason}")
+        app_schedule(
+            0.5,
+            lambda: _ensure_feed_integrity(f"{reason}_recheck"),
+            once=True,
+        )
         return
 
     if not activity_feed_state.live_alerts:
@@ -259,23 +349,12 @@ def recover_activity_feed_panel() -> bool:
         return False
 
     try:
-        for alert_data in activity_feed_state.live_alerts:
-            alert_data["element"] = None
-            alert_data["new_badge"] = None
-            alert_data["timestamp_label"] = None
-
+        _null_live_alert_element_refs()
         rebuild_current_alerts_feed()
         if activity_feed_state.condense_list and activity_feed_state.current_tab == "current":
-            if not update_condensed_view():
-                logger.warning(
-                    "activity_feed: condensed recovery failed; showing regular feed"
-                )
-                if activity_feed_state.condensed_container:
-                    activity_feed_state.condensed_container.classes(add="hidden")
-                if activity_feed_state.current_alerts_container:
-                    activity_feed_state.current_alerts_container.classes(
-                        remove="hidden"
-                    )
+            # Schedule async condensed rebuild; regular feed stays populated as fallback.
+            _schedule_condensed_rebuild("recover_activity_feed_panel")
+            schedule_feed_integrity_check("recover_activity_feed_panel")
         update_alert_visibility()
         activity_feed_state.is_initialized = True
         logger.info("activity_feed: recovered (%d live alerts)", len(activity_feed_state.live_alerts))
@@ -420,27 +499,33 @@ class AlertEventHandler:
             activity_feed_state.live_alerts.insert(0, new_alert_data)
 
             should_display_new_alert = activity_feed_state.current_tab == "current"
+            condensed_active = (
+                activity_feed_state.condense_list
+                and activity_feed_state.current_tab == "current"
+            )
 
-            if should_display_new_alert:
+            if condensed_active:
+                # Avoid dual-feed churn: keep state only; condensed rebuild owns the surface.
+                schedule_condensed_view_update("apply_alert_on_ui")
+                logger.debug(
+                    "Queued condensed update for new alert: %s (skipped regular card)",
+                    alert_type,
+                )
+            elif should_display_new_alert:
                 if not create_alert_element(new_alert_data):
                     return
                 self._apply_filter_visibility(new_alert_data, alert_type)
-                ui.update()
+                element = new_alert_data.get("element")
+                if _element_alive(element):
+                    element.update()
                 logger.debug(
                     f"Displayed new alert: {alert_type} (current tab: {activity_feed_state.current_tab})"
                 )
+                schedule_feed_integrity_check("apply_alert_on_ui")
             else:
                 logger.debug(
                     f"New alert {alert_type} added to state but not displayed - on {activity_feed_state.current_tab} tab"
                 )
-
-            if (
-                activity_feed_state.condense_list
-                and activity_feed_state.current_tab == "current"
-            ):
-                schedule_condensed_view_update("apply_alert_on_ui")
-            elif should_display_new_alert:
-                schedule_feed_integrity_check("apply_alert_on_ui")
 
     def _apply_filter_visibility(
         self, new_alert_data: Dict[str, Any], alert_type: str
@@ -476,8 +561,9 @@ class AlertEventHandler:
             activity_feed_state.filter_state.get("all", True)
             or activity_feed_state.filter_state.get(filter_key, True)
         ):
-            if new_alert_data.get("element"):
-                new_alert_data["element"].classes(add="hidden")
+            element = new_alert_data.get("element")
+            if _element_alive(element):
+                element.classes(add="hidden")
 
     def _trigger_timestamp_update(self) -> None:
         """Trigger a timestamp update cycle instead of continuous polling"""
@@ -526,7 +612,9 @@ class AlertEventHandler:
             if alert_data.get("is_restored", False):
                 continue
 
-            if not alert_data.get("element") or not alert_data.get("new_badge"):
+            element = alert_data.get("element")
+            new_badge = alert_data.get("new_badge")
+            if not _element_alive(element) or not _element_alive(new_badge):
                 continue
 
             try:
@@ -535,22 +623,23 @@ class AlertEventHandler:
                 is_recent = time_diff < 300  # 5 minutes
 
                 # Check if badge visibility needs to change
-                badge_hidden = "hidden" in alert_data["new_badge"]._classes
+                badge_hidden = "hidden" in getattr(new_badge, "_classes", [])
                 should_hide = not is_recent
 
                 if badge_hidden != should_hide:
                     if should_hide:
-                        alert_data["new_badge"].classes(add="hidden")
+                        new_badge.classes(add="hidden")
                     else:
-                        alert_data["new_badge"].classes(remove="hidden")
+                        new_badge.classes(remove="hidden")
                     updates_made = True
 
                 # Update timestamp if it exists
-                if alert_data.get("timestamp_label"):
-                    old_timestamp = alert_data["timestamp_label"].text
+                timestamp_label = alert_data.get("timestamp_label")
+                if _element_alive(timestamp_label):
+                    old_timestamp = timestamp_label.text
                     new_timestamp = format_timestamp(alert_data.get("timestamp", ""))
                     if old_timestamp != new_timestamp:
-                        alert_data["timestamp_label"].set_text(new_timestamp)
+                        timestamp_label.set_text(new_timestamp)
                         updates_made = True
 
             except Exception as e:
@@ -558,7 +647,9 @@ class AlertEventHandler:
 
         # Only force UI update if changes were made
         if updates_made:
-            ui.update()
+            container = activity_feed_state.current_alerts_container
+            if _element_alive(container):
+                container.update()
             logger.debug("Completed timestamp/recent status update cycle with changes")
 
     def force_timestamp_update(self) -> None:
@@ -1450,13 +1541,19 @@ def rebuild_alert_feed():
             _handle_stale_client("rebuild_alert_feed: container dead")
             return
 
+        for alert_data in activity_feed_state.alert_elements:
+            alert_data["element"] = None
+            alert_data["new_badge"] = None
+            alert_data["timestamp_label"] = None
+
         container.clear()
 
         for alert_data in activity_feed_state.alert_elements:
             if not create_alert_element(alert_data):
                 return
 
-        ui.update()
+        if _element_alive(container):
+            container.update()
 
     except Exception as e:
         if _is_stale_client_error(e):
@@ -1473,13 +1570,15 @@ def rebuild_current_alerts_feed():
             _handle_stale_client("rebuild_current_alerts_feed: container dead")
             return
 
+        _null_live_alert_element_refs()
         container.clear()
 
         for alert_data in activity_feed_state.live_alerts:
             if not create_alert_element(alert_data):
                 return
 
-        ui.update()
+        if _element_alive(container):
+            container.update()
 
         logger.debug(
             f"Rebuilt current alerts feed with {len(activity_feed_state.live_alerts)} live alerts"
@@ -1624,7 +1723,8 @@ def update_alert_visibility():
     updates_needed = 0
 
     for alert_data in alerts_to_process:
-        if not alert_data.get("element"):
+        element = alert_data.get("element")
+        if not _element_alive(element):
             continue
 
         alert_type = alert_data.get("type")
@@ -1652,44 +1752,35 @@ def update_alert_visibility():
         )
 
         # Only update elements that need to change (performance optimization)
-        current_hidden = "hidden" in alert_data["element"]._classes
+        current_hidden = "hidden" in getattr(element, "_classes", [])
         needs_update = (should_show and current_hidden) or (
             not should_show and not current_hidden
         )
 
         if needs_update:
             # Remove classes one at a time
-            alert_data["element"].classes(remove="hidden")
-            alert_data["element"].classes(remove="visible")
+            element.classes(remove="hidden")
+            element.classes(remove="visible")
 
             # Then add the appropriate class and style
             if should_show:
-                alert_data["element"].classes(add="visible")
-                alert_data["element"].style("display: block")
+                element.classes(add="visible")
+                element.style("display: block")
             else:
-                alert_data["element"].classes(add="hidden")
-                alert_data["element"].style("display: none")
+                element.classes(add="hidden")
+                element.style("display: none")
 
             updates_needed += 1
 
-    # Add CSS for visibility classes if not already added
-    ui.add_head_html(
-        """
-        <style>
-        .hidden {
-            display: none !important;
-        }
-        .visible {
-            display: block !important;
-        }
-        </style>
-    """,
-        shared=True,
-    )
-
     # Only update UI if we actually made changes
     if updates_needed > 0:
-        ui.update()
+        container = (
+            activity_feed_state.current_alerts_container
+            if activity_feed_state.current_tab == "current"
+            else activity_feed_state.previous_alerts_container
+        )
+        if _element_alive(container):
+            container.update()
         logger.debug(
             f"Updated visibility for {updates_needed} alerts on {activity_feed_state.current_tab} tab"
         )
@@ -2110,6 +2201,12 @@ def create_activity_feed_tab():
             font-size: 0.875rem;
             color: rgba(255, 255, 255, 0.6);
         }
+        .hidden {
+            display: none !important;
+        }
+        .visible {
+            display: block !important;
+        }
         </style>
     """,
         shared=True,
@@ -2193,11 +2290,6 @@ def create_activity_feed_tab():
                     f"Error initializing pause button state: {str(e)}", exc_info=True
                 )
 
-            mute_btn = ui.button(icon="notifications_off", text="MUTE ALERTS").classes(
-                "control-button mute-alerts-btn"
-            ).props(f"{_DOCK_BTN_PROPS} id=mute-alerts-btn")
-            activity_feed_state.mute_btn = mute_btn
-
             def update_mute_button_state():
                 """Update mute button based on current ALERTS_MUTED status."""
                 try:
@@ -2210,10 +2302,13 @@ def create_activity_feed_tab():
                             f"Error getting mute state: {state_err}, defaulting to False"
                         )
                     activity_feed_state.alerts_muted = muted
+                    btn = activity_feed_state.mute_btn
+                    if not _element_alive(btn):
+                        return
                     if muted:
-                        mute_btn.classes(add="muted")
+                        btn.classes(add="muted")
                     else:
-                        mute_btn.classes(remove="muted")
+                        btn.classes(remove="muted")
                 except Exception as e:
                     logger.error(
                         f"Error updating mute button state: {str(e)}", exc_info=True
@@ -2225,7 +2320,14 @@ def create_activity_feed_tab():
                 toggle_mute()
                 update_mute_button_state()
 
-            mute_btn.on_click(on_mute_button_click)
+            mute_btn = ui.button(
+                icon="notifications_off",
+                text="MUTE ALERTS",
+                on_click=on_mute_button_click,
+            ).classes("control-button mute-alerts-btn").props(
+                f"{_DOCK_BTN_PROPS} id=mute-alerts-btn"
+            )
+            activity_feed_state.mute_btn = mute_btn
 
             try:
                 update_mute_button_state()
@@ -2242,6 +2344,9 @@ def create_activity_feed_tab():
 
             # Condense List toggle (only visible on Current Alerts tab)
             def toggle_condense_list(e):
+                global _ignore_condense_toggle_event
+                if _ignore_condense_toggle_event:
+                    return
                 logger.debug(f"Condense list toggle changed: {e.value}")
                 activity_feed_state.condense_list = e.value
                 logger.debug(
@@ -2261,16 +2366,41 @@ def create_activity_feed_tab():
 
             # Create a container for the filter dropdown
             with ui.element("div").classes("relative shrink-0"):
-                # Create a button for filters
-                filter_button = ui.button(icon="filter_list", text="FILTERS").classes(
-                    "control-button"
-                )
+                def toggle_filter_dropdown(e):
+                    logger.debug(
+                        f"Filter button clicked. Current state: {activity_feed_state.dropdown_visible}"
+                    )
+
+                    # Toggle the dropdown visibility using the activity_feed_state
+                    activity_feed_state.dropdown_visible = (
+                        not activity_feed_state.dropdown_visible
+                    )
+
+                    # Use the stored reference for reliable access
+                    if activity_feed_state.dropdown_visible:
+                        # Show the dropdown and backdrop
+                        activity_feed_state.filter_dropdown.visible = True
+                        activity_feed_state.backdrop.style("display: block;")
+                        logger.debug("Showing dropdown with backdrop")
+                    else:
+                        # Hide the dropdown and backdrop
+                        activity_feed_state.filter_dropdown.visible = False
+                        activity_feed_state.backdrop.style("display: none;")
+                        logger.debug("Hiding dropdown and backdrop")
+
+                filter_button = ui.button(
+                    icon="filter_list",
+                    text="FILTERS",
+                    on_click=toggle_filter_dropdown,
+                ).classes("control-button")
                 filter_button.props(_DOCK_BTN_PROPS)
 
-                # Create an invisible backdrop that covers the entire screen when dropdown is open
-                backdrop = ui.element("div").classes("fixed inset-0 z-40")
+                # Register click before style so NiceGUI 3.x does not treat it as a late listener.
+                backdrop = ui.element("div").on(
+                    "click", lambda e: close_filter_dropdown()
+                )
+                backdrop.classes("fixed inset-0 z-40")
                 backdrop.style("background: transparent; display: none;")
-                backdrop.on("click", lambda e: close_filter_dropdown())
 
                 # Create a custom dropdown container (start visible: false, initially hidden)
                 filter_dropdown = ui.element("div").classes(
@@ -2328,32 +2458,6 @@ def create_activity_feed_tab():
                 activity_feed_state.filter_dropdown = filter_dropdown
                 activity_feed_state.backdrop = backdrop
 
-                # Toggle the dropdown when the filter button is clicked
-                def toggle_filter_dropdown(e):
-                    logger.debug(
-                        f"Filter button clicked. Current state: {activity_feed_state.dropdown_visible}"
-                    )
-
-                    # Toggle the dropdown visibility using the activity_feed_state
-                    activity_feed_state.dropdown_visible = (
-                        not activity_feed_state.dropdown_visible
-                    )
-
-                    # Use the stored reference for reliable access
-                    if activity_feed_state.dropdown_visible:
-                        # Show the dropdown and backdrop
-                        activity_feed_state.filter_dropdown.visible = True
-                        activity_feed_state.backdrop.style("display: block;")
-                        logger.debug("Showing dropdown with backdrop")
-                    else:
-                        # Hide the dropdown and backdrop
-                        activity_feed_state.filter_dropdown.visible = False
-                        activity_feed_state.backdrop.style("display: none;")
-                        logger.debug("Hiding dropdown and backdrop")
-
-                # Add a direct click handler to the filter button
-                filter_button.on("click", toggle_filter_dropdown)
-
                 # Create a container for the checkboxes with the filter-dropdown-content class
                 with filter_dropdown:
                     with ui.element("div").classes("filter-dropdown-content"):
@@ -2363,10 +2467,6 @@ def create_activity_feed_tab():
                             def create_checkbox(key: str, label: str):
                                 def on_change(e):
                                     logger.debug(f"Checkbox {key} changed to {e.value}")
-                                    # Add a data attribute to identify this as a filter checkbox
-                                    e.sender.classes("filter-checkbox")
-
-                                    # Update the filter state (this is the important part)
                                     on_checkbox_change(key, e.value)
 
                                     # Only manage dropdown visibility if it's currently visible
@@ -2378,7 +2478,7 @@ def create_activity_feed_tab():
                                             "Maintained dropdown visibility after checkbox change"
                                         )
 
-                                checkbox = ui.checkbox(
+                                ui.checkbox(
                                     text=label,
                                     value=activity_feed_state.filter_state.get(
                                         key, True
@@ -3325,7 +3425,11 @@ def _collect_condensed_build_data() -> Dict[str, Any]:
 
 
 def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
-    """Render the condensed view from pre-fetched data (UI loop only)."""
+    """Render the condensed view from pre-fetched data (UI loop only).
+
+    Builds into a staging child first, then removes previous siblings so the
+    visible condensed surface never flashes empty mid-rebuild.
+    """
     container = activity_feed_state.condensed_container
     if not _element_alive(container):
         return False
@@ -3336,51 +3440,85 @@ def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
     historical_count = build_data["historical_count"]
     live_in_window = build_data["live_in_window"]
 
-    if not _element_alive(container):
-        return False
+    previous_children = _slot_child_count(container)
+    logger.warning(
+        "activity_feed: condensed render start (prev_children=%d users=%d alerts=%d)",
+        previous_children,
+        len(user_alerts),
+        len(alerts_to_process),
+    )
 
-    container.clear()
+    staging = None
+    try:
+        with container:
+            staging = ui.element("div").classes("condensed-staging w-full")
 
-    with container:
-        if not user_alerts:
-            ui.label(
-                f"No alerts to condense in the last {condense_historical_hours} hours"
-            ).classes("text-sm muted-text italic")
-        else:
-            if historical_count > 0 or live_in_window > 0:
+        with staging:
+            if not user_alerts:
                 ui.label(
-                    f"Showing {len(alerts_to_process)} alerts from past {condense_historical_hours} hours"
-                ).classes("text-xs muted-text mb-2 italic")
+                    f"No alerts to condense in the last {condense_historical_hours} hours"
+                ).classes("text-sm muted-text italic")
+            else:
+                if historical_count > 0 or live_in_window > 0:
+                    ui.label(
+                        f"Showing {len(alerts_to_process)} alerts from past {condense_historical_hours} hours"
+                    ).classes("text-xs muted-text mb-2 italic")
 
-            for username, alert_types in user_alerts.items():
-                if not alert_types:
-                    continue
-                with ui.element("div").classes("mb-4"):
-                    ui.label(f"{username}:").classes("font-semibold mb-1")
-                    with ui.element("div").classes("ml-4"):
-                        for grouping_key, data in alert_types.items():
-                            condensed_text = create_aggregated_alert_text(
-                                grouping_key, data
-                            )
-                            if condensed_text:
-                                ui.label(f"• {condensed_text}").classes(
-                                    "secondary-text text-sm mb-1"
+                for username, alert_types in user_alerts.items():
+                    if not alert_types:
+                        continue
+                    with ui.element("div").classes("mb-4"):
+                        ui.label(f"{username}:").classes("font-semibold mb-1")
+                        with ui.element("div").classes("ml-4"):
+                            for grouping_key, data in alert_types.items():
+                                condensed_text = create_aggregated_alert_text(
+                                    grouping_key, data
                                 )
+                                if condensed_text:
+                                    ui.label(f"• {condensed_text}").classes(
+                                        "secondary-text text-sm mb-1"
+                                    )
 
-    return True
+        # Drop previous siblings only after staging content exists.
+        slot = getattr(container, "default_slot", None)
+        if slot is not None:
+            for child in list(slot.children):
+                if child is staging:
+                    continue
+                try:
+                    child.delete()
+                except Exception:
+                    pass
+
+        child_count = _slot_child_count(container)
+        logger.warning(
+            "activity_feed: condensed render end (children=%d)",
+            child_count,
+        )
+        return child_count > 0
+    except Exception as exc:
+        logger.error(
+            "activity_feed: condensed staging render failed: %s", exc, exc_info=True
+        )
+        if staging is not None:
+            try:
+                staging.delete()
+            except Exception:
+                pass
+        return False
 
 
 def _apply_condensed_visibility(show_condensed: bool) -> None:
     """Show condensed view and hide regular feed, or the reverse."""
     if show_condensed:
-        if activity_feed_state.current_alerts_container:
+        if _element_alive(activity_feed_state.current_alerts_container):
             activity_feed_state.current_alerts_container.classes(add="hidden")
-        if activity_feed_state.condensed_container:
+        if _element_alive(activity_feed_state.condensed_container):
             activity_feed_state.condensed_container.classes(remove="hidden")
     else:
-        if activity_feed_state.condensed_container:
+        if _element_alive(activity_feed_state.condensed_container):
             activity_feed_state.condensed_container.classes(add="hidden")
-        if activity_feed_state.current_alerts_container:
+        if _element_alive(activity_feed_state.current_alerts_container):
             activity_feed_state.current_alerts_container.classes(remove="hidden")
 
 
@@ -3395,6 +3533,7 @@ def _schedule_condensed_rebuild(reason: str) -> None:
         )
         return
 
+    logger.warning("activity_feed: condensed rebuild scheduled (%s)", reason)
     background_tasks.create(
         _update_condensed_view_async(reason),
         name="activity_feed_condensed_rebuild",
@@ -3403,7 +3542,7 @@ def _schedule_condensed_rebuild(reason: str) -> None:
 
 async def _update_condensed_view_async(reason: str) -> None:
     """Fetch condensed data off the UI loop, then render on the loop."""
-    global _condensed_rebuild_running, _condensed_rebuild_rerun
+    global _condensed_rebuild_running, _condensed_rebuild_rerun, _condensed_integrity_failures
 
     _condensed_rebuild_running = True
     try:
@@ -3414,6 +3553,8 @@ async def _update_condensed_view_async(reason: str) -> None:
                 activity_feed_state.current_tab == "current"
                 and activity_feed_state.condense_list
             ):
+                _ensure_regular_feed_populated(f"condensed_aborted:{reason}")
+                _apply_condensed_visibility(False)
                 return
 
             build_data = await run.io_bound(_collect_condensed_build_data)
@@ -3422,6 +3563,8 @@ async def _update_condensed_view_async(reason: str) -> None:
                 activity_feed_state.current_tab == "current"
                 and activity_feed_state.condense_list
             ):
+                _ensure_regular_feed_populated(f"condensed_aborted_after_io:{reason}")
+                _apply_condensed_visibility(False)
                 return
 
             try:
@@ -3436,13 +3579,11 @@ async def _update_condensed_view_async(reason: str) -> None:
                 built = False
 
             if built:
+                _condensed_integrity_failures = 0
                 _apply_condensed_visibility(True)
+                schedule_feed_integrity_check(f"condensed_show:{reason}")
             else:
-                logger.warning(
-                    "activity_feed: condensed build failed (%s); showing regular feed",
-                    reason,
-                )
-                _apply_condensed_visibility(False)
+                _fallback_to_regular_feed(f"condensed_build_failed:{reason}")
 
             if not _condensed_rebuild_rerun:
                 break
@@ -3453,7 +3594,7 @@ async def _update_condensed_view_async(reason: str) -> None:
             exc,
             exc_info=True,
         )
-        _apply_condensed_visibility(False)
+        _fallback_to_regular_feed(f"condensed_async_failed:{reason}")
     finally:
         _condensed_rebuild_running = False
         if _condensed_rebuild_rerun:
@@ -3464,7 +3605,9 @@ def update_condensed_view() -> bool:
     """Update the condensed view based on the toggle state.
 
     Returns:
-        True if the visible feed surface is in a good state, False on build failure.
+        True when the toggle/tab UI was updated successfully. Scheduling a
+        condensed rebuild is not treated as a confirmed healthy surface —
+        callers must use integrity checks for that.
     """
     try:
         logger.debug(
@@ -3477,10 +3620,12 @@ def update_condensed_view() -> bool:
 
         # Show/hide condense toggle based on current tab
         if activity_feed_state.current_tab == "current":
-            activity_feed_state.condense_toggle.classes(remove="hidden")
+            if _element_alive(activity_feed_state.condense_toggle):
+                activity_feed_state.condense_toggle.classes(remove="hidden")
             logger.debug("Condense List toggle shown (Current Alerts tab)")
         else:
-            activity_feed_state.condense_toggle.classes(add="hidden")
+            if _element_alive(activity_feed_state.condense_toggle):
+                activity_feed_state.condense_toggle.classes(add="hidden")
             logger.debug(
                 "Condense List toggle hidden (tab=%s; only visible on Current Alerts)",
                 activity_feed_state.current_tab,
@@ -3497,29 +3642,18 @@ def update_condensed_view() -> bool:
             # regular feed stays visible until the condensed view is ready.
             logger.debug("Scheduling condensed view rebuild...")
             _schedule_condensed_rebuild("update_condensed_view")
+            # Scheduling is not confirmation that the surface is healthy.
             return True
 
         logger.debug("Showing regular alerts view...")
-        if activity_feed_state.current_alerts_container:
-            activity_feed_state.current_alerts_container.classes(remove="hidden")
-        if activity_feed_state.condensed_container:
-            activity_feed_state.condensed_container.classes(add="hidden")
-
+        _ensure_regular_feed_populated("update_condensed_view_regular")
+        _apply_condensed_visibility(False)
         schedule_feed_integrity_check("update_condensed_view_regular")
         return True
 
     except Exception as e:
         logger.error(f"Error updating condensed view: {str(e)}", exc_info=True)
-        if activity_feed_state.condensed_container:
-            try:
-                activity_feed_state.condensed_container.classes(add="hidden")
-            except Exception:
-                pass
-        if activity_feed_state.current_alerts_container:
-            try:
-                activity_feed_state.current_alerts_container.classes(remove="hidden")
-            except Exception:
-                pass
+        _fallback_to_regular_feed("update_condensed_view_exception")
         return False
 
 

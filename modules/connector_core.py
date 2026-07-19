@@ -45,7 +45,8 @@ class ComparisonOperator(Enum):
     LESS_THAN_OR_EQUAL = "less_than_or_equal"
     CONTAINS = "contains"
     NOT_CONTAINS = "not_contains"
-    STARTS_WITH = "starts_with"
+    STARTS_WITH = "starts_with"  # First word (exact token match)
+    BEGINS_WITH = "begins_with"  # Prefix match (legacy starts_with behavior)
     ENDS_WITH = "ends_with"
     REGEX_MATCH = "regex_match"
 
@@ -183,6 +184,7 @@ class TriggerCondition:
             ComparisonOperator.CONTAINS,
             ComparisonOperator.NOT_CONTAINS,
             ComparisonOperator.STARTS_WITH,
+            ComparisonOperator.BEGINS_WITH,
             ComparisonOperator.ENDS_WITH,
             ComparisonOperator.REGEX_MATCH,
         ]:
@@ -244,6 +246,10 @@ class TriggerCondition:
         elif operator == ComparisonOperator.NOT_CONTAINS:
             return expected_value not in field_value
         elif operator == ComparisonOperator.STARTS_WITH:
+            # Exact match on the first whitespace-delimited token
+            tokens = field_value.split(None, 1)
+            return bool(tokens) and tokens[0] == expected_value
+        elif operator == ComparisonOperator.BEGINS_WITH:
             return field_value.startswith(expected_value)
         elif operator == ComparisonOperator.ENDS_WITH:
             return field_value.endswith(expected_value)
@@ -265,7 +271,8 @@ def message_after_trigger_conditions(
     """Remove matched condition literals from ``message`` for use in action placeholders.
 
     Mirrors case-sensitivity rules in :meth:`TriggerCondition._compare_values` for
-    ``contains`` / ``starts_with`` / ``ends_with`` on field ``message`` only.
+    ``contains`` / ``starts_with`` / ``begins_with`` / ``ends_with`` on field
+    ``message`` only.
     """
     msg = "" if raw_message is None else str(raw_message)
     for cond in conditions:
@@ -275,6 +282,7 @@ def message_after_trigger_conditions(
         if op not in (
             ComparisonOperator.CONTAINS,
             ComparisonOperator.STARTS_WITH,
+            ComparisonOperator.BEGINS_WITH,
             ComparisonOperator.ENDS_WITH,
         ):
             continue
@@ -295,6 +303,14 @@ def message_after_trigger_conditions(
                 if i >= 0:
                     msg = (msg[:i] + msg[i + len(exp) :]).strip()
         elif op == ComparisonOperator.STARTS_WITH:
+            # First-word match: strip the first token when it equals the expected value
+            parts = msg.split(None, 1)
+            if parts:
+                check_tok = parts[0] if case_sensitive else parts[0].lower()
+                check_e = exp if case_sensitive else exp.lower()
+                if check_tok == check_e:
+                    msg = parts[1] if len(parts) > 1 else ""
+        elif op == ComparisonOperator.BEGINS_WITH:
             check_m = msg if case_sensitive else msg.lower()
             check_e = exp if case_sensitive else exp.lower()
             if check_m.startswith(check_e):
