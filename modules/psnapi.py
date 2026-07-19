@@ -24,10 +24,11 @@ SOFTWARE.
 """
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
-import requests
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from psnawp_api.core.psnawp_exceptions import (
     PSNAWPAuthenticationError,
@@ -57,6 +58,132 @@ logger = logging.getLogger(__name__)
 
 # Database path for PSN game data cache
 PSN_GAME_DATA_PATH = "PSNGameData/games"
+
+# Process-local index for fast np_title_id / name lookups (avoids full DB scans)
+_game_cache_index_lock = threading.Lock()
+_game_cache_by_title_id: dict[str, dict] = {}
+_game_cache_by_name: dict[str, dict] = {}
+_game_cache_index_loaded = False
+
+
+def _normalize_game_name_key(name: str | None) -> str:
+    if not name:
+        return ""
+    s = str(name).casefold()
+    for ch in ("\u2122", "\u00ae"):
+        s = s.replace(ch, "")
+    return " ".join(s.split())
+
+
+def _invalidate_game_cache_index() -> None:
+    global _game_cache_index_loaded
+    with _game_cache_index_lock:
+        _game_cache_by_title_id.clear()
+        _game_cache_by_name.clear()
+        _game_cache_index_loaded = False
+
+
+def _index_game_cache_doc(game_data: dict) -> None:
+    """Upsert one game document into the in-memory lookup index (caller holds lock)."""
+    if not isinstance(game_data, dict):
+        return
+    np_title_id = game_data.get("np_title_id")
+    if np_title_id:
+        _game_cache_by_title_id[str(np_title_id)] = game_data
+    for key in (
+        _normalize_game_name_key(game_data.get("presence_name")),
+        _normalize_game_name_key(game_data.get("trophy_name")),
+        (game_data.get("presence_name") or "").lower(),
+        (game_data.get("trophy_name") or "").lower(),
+    ):
+        if key:
+            _game_cache_by_name[key] = game_data
+
+
+def _ensure_game_cache_index() -> None:
+    global _game_cache_index_loaded
+    with _game_cache_index_lock:
+        if _game_cache_index_loaded:
+            return
+    # Load outside the lock so DB I/O does not block other index readers/writers
+    docs = load_all_psn_game_cache_docs_from_db()
+    with _game_cache_index_lock:
+        if _game_cache_index_loaded:
+            return
+        _game_cache_by_title_id.clear()
+        _game_cache_by_name.clear()
+        for game_data in docs:
+            _index_game_cache_doc(game_data)
+        _game_cache_index_loaded = True
+        logger.debug(
+            "Built PSN game cache index: %d title_id(s), %d name key(s)",
+            len(_game_cache_by_title_id),
+            len(_game_cache_by_name),
+        )
+
+
+def _trophy_set_to_counts(trophy_set: Any) -> dict[str, int]:
+    """Normalize TrophySet / dict into bronze/silver/gold/platinum/total counts."""
+    counts = {"bronze": 0, "silver": 0, "gold": 0, "platinum": 0, "total": 0}
+    if trophy_set is None:
+        return counts
+    if isinstance(trophy_set, dict):
+        counts["bronze"] = int(trophy_set.get("bronze", 0) or 0)
+        counts["silver"] = int(trophy_set.get("silver", 0) or 0)
+        counts["gold"] = int(trophy_set.get("gold", 0) or 0)
+        counts["platinum"] = int(trophy_set.get("platinum", 0) or 0)
+    else:
+        counts["bronze"] = int(getattr(trophy_set, "bronze", 0) or 0)
+        counts["silver"] = int(getattr(trophy_set, "silver", 0) or 0)
+        counts["gold"] = int(getattr(trophy_set, "gold", 0) or 0)
+        counts["platinum"] = int(getattr(trophy_set, "platinum", 0) or 0)
+    counts["total"] = (
+        counts["bronze"] + counts["silver"] + counts["gold"] + counts["platinum"]
+    )
+    return counts
+
+
+def _serialize_trophy_groups_for_cache(trophy_groups: Any) -> list[dict]:
+    """Serialize trophy group objects/dicts into the DB cache shape (defined counts only)."""
+    trophy_groups_list: list[dict] = []
+    if not trophy_groups:
+        return trophy_groups_list
+
+    for group in trophy_groups:
+        if isinstance(group, dict):
+            group_id = (
+                group.get("trophyGroupId") or group.get("trophy_group_id") or ""
+            )
+            group_name = (
+                group.get("trophyGroupName")
+                or group.get("trophy_group_name")
+                or "Unknown"
+            )
+            defined = (
+                group.get("definedTrophies") or group.get("defined_trophies") or {}
+            )
+            defined_counts = _trophy_set_to_counts(defined)
+        else:
+            group_id = getattr(group, "trophy_group_id", "") or ""
+            group_name = getattr(group, "trophy_group_name", "Unknown") or "Unknown"
+            defined_counts = _trophy_set_to_counts(
+                getattr(group, "defined_trophies", None)
+            )
+
+        trophy_groups_list.append(
+            {
+                "trophy_group_id": group_id,
+                "group_name": group_name,
+                "is_base_game": group_id == "default",
+                "defined_trophies": {
+                    "bronze": defined_counts["bronze"],
+                    "silver": defined_counts["silver"],
+                    "gold": defined_counts["gold"],
+                    "platinum": defined_counts["platinum"],
+                },
+            }
+        )
+    return trophy_groups_list
 
 
 def _is_psn_auth_expired_error(exc: BaseException) -> bool:
@@ -188,6 +315,9 @@ def update_psn_game_cache_in_db(np_communication_id: str, updates: dict) -> bool
         path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
         result = database_manager.set_data(path, existing_data)
         if result:
+            with _game_cache_index_lock:
+                if _game_cache_index_loaded:
+                    _index_game_cache_doc(existing_data)
             logger.info(
                 f"Updated game cache for {np_communication_id}: {list(updates.keys())}"
             )
@@ -207,6 +337,7 @@ def delete_psn_game_cache_in_db(np_communication_id: str) -> bool:
     try:
         path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
         if database_manager.delete_data(path):
+            _invalidate_game_cache_index()
             logger.info(f"Deleted game cache entry {np_communication_id}")
             return True
         logger.error(f"Failed to delete game cache for {np_communication_id}")
@@ -272,9 +403,15 @@ class PSNClient:
         self.authenticated: bool = False
         self._auth_expired: bool = False
         self._auth_expired_warned: bool = False
+        self._cached_target_account_id: str | None = None
+        self._cached_target_username_key: str | None = None
         self.psn_data: PSNData = PSNData()
         if npsso_code:
             self.psn_data.npsso_code = npsso_code
+
+    def _clear_target_account_cache(self) -> None:
+        self._cached_target_account_id = None
+        self._cached_target_username_key = None
 
     def update_npsso_code(self, npsso_code: str):
         """Updates the NPSSO code and resets authentication status."""
@@ -284,6 +421,7 @@ class PSNClient:
         self.authenticated = False
         self._auth_expired = False
         self._auth_expired_warned = False
+        self._clear_target_account_cache()
         self.psn_data.connection_status = (
             "Not Connected" if not (npsso_code or "").strip() else "Disconnected"
         )
@@ -292,6 +430,7 @@ class PSNClient:
     def update_psn_username(self, psn_username: str):
         """Updates the target PSN username for API calls."""
         self.psn_username = psn_username
+        self._clear_target_account_cache()
         logger.info(f"PSN username updated to: {psn_username}")
 
     def update_credentials(self, npsso_code: str, psn_username: str):
@@ -303,6 +442,7 @@ class PSNClient:
         self.authenticated = False
         self._auth_expired = False
         self._auth_expired_warned = False
+        self._clear_target_account_cache()
         self.psn_data.connection_status = (
             "Not Connected" if not (npsso_code or "").strip() else "Disconnected"
         )
@@ -346,6 +486,12 @@ class PSNClient:
             path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
             result = database_manager.set_data(path, game_data)
             if result:
+                with _game_cache_index_lock:
+                    if _game_cache_index_loaded:
+                        _index_game_cache_doc(game_data)
+                    else:
+                        # Index not built yet; next lookup will load from DB
+                        pass
                 logger.info(
                     f"Stored game data for {np_communication_id} ({game_data.get('presence_name', 'Unknown')})"
                 )
@@ -359,7 +505,7 @@ class PSNClient:
     def find_game_by_np_title_id(self, np_title_id: str) -> dict | None:
         """
         Find cached game data by np_title_id (from presence data).
-        Searches through all cached games to find a match.
+        Uses the in-memory index (built lazily from the DB cache).
 
         Args:
             np_title_id: The game's npTitleId from presence data (e.g., "CUSA12345_00")
@@ -370,13 +516,15 @@ class PSNClient:
         try:
             if not np_title_id:
                 return None
-            for game_data in load_all_psn_game_cache_docs_from_db():
-                if game_data.get("np_title_id") == np_title_id:
-                    logger.debug(
-                        f"Found cached game by np_title_id {np_title_id}: "
-                        f"{game_data.get('presence_name', 'unknown')}"
-                    )
-                    return game_data
+            _ensure_game_cache_index()
+            with _game_cache_index_lock:
+                game_data = _game_cache_by_title_id.get(str(np_title_id))
+            if game_data:
+                logger.debug(
+                    f"Found cached game by np_title_id {np_title_id}: "
+                    f"{game_data.get('presence_name', 'unknown')}"
+                )
+                return game_data
             logger.debug(f"No cached game found with np_title_id: {np_title_id}")
             return None
         except Exception as e:
@@ -386,7 +534,7 @@ class PSNClient:
     def find_game_by_name(self, game_name: str) -> dict | None:
         """
         Find cached game data by game name (presence_name or trophy_name).
-        Uses case-insensitive matching.
+        Uses case-insensitive / normalized matching via the in-memory index.
 
         Args:
             game_name: The game name to search for
@@ -397,19 +545,22 @@ class PSNClient:
         try:
             if not game_name:
                 return None
-            game_name_lower = game_name.lower()
-            for game_data in load_all_psn_game_cache_docs_from_db():
-                presence_name = (game_data.get("presence_name") or "").lower()
-                trophy_name = (game_data.get("trophy_name") or "").lower()
-                if (
-                    presence_name == game_name_lower
-                    or trophy_name == game_name_lower
-                ):
-                    logger.debug(
-                        f"Found cached game by name '{game_name}': "
-                        f"{game_data.get('np_communication_id', '')}"
-                    )
-                    return game_data
+            _ensure_game_cache_index()
+            keys = (
+                game_name.lower(),
+                _normalize_game_name_key(game_name),
+            )
+            with _game_cache_index_lock:
+                for key in keys:
+                    if not key:
+                        continue
+                    game_data = _game_cache_by_name.get(key)
+                    if game_data:
+                        logger.debug(
+                            f"Found cached game by name '{game_name}': "
+                            f"{game_data.get('np_communication_id', '')}"
+                        )
+                        return game_data
             logger.debug(f"No cached game found with name: {game_name}")
             return None
         except Exception as e:
@@ -535,6 +686,7 @@ class PSNClient:
     def _on_psn_auth_expired(self, context: str, exc: BaseException) -> None:
         self.authenticated = False
         self.api = None
+        self._clear_target_account_cache()
         self.psn_data.connection_status = "Token Expired"
         self._auth_expired = True
         if not self._auth_expired_warned:
@@ -711,6 +863,13 @@ class PSNClient:
 
     def get_trophy_target_account_id(self, _allow_retry: bool = True) -> str | None:
         """Account ID used for trophy APIs (tracked PSN user or authenticating user)."""
+        username_key = self.psn_username or ""
+        if (
+            self._cached_target_account_id
+            and self._cached_target_username_key == username_key
+        ):
+            return self._cached_target_account_id
+
         if not self.is_connected() or not self.api:
             logger.warning("Cannot resolve trophy account, not connected.")
             if not self.connect():
@@ -739,6 +898,7 @@ class PSNClient:
                     )
                     self.authenticated = False
                     self.api = None
+                    self._clear_target_account_cache()
                     if self.connect():
                         return self.get_trophy_target_account_id(_allow_retry=False)
                 else:
@@ -751,6 +911,8 @@ class PSNClient:
         if not target_account_id:
             logger.warning("No trophy target account_id available.")
             return None
+        self._cached_target_account_id = target_account_id
+        self._cached_target_username_key = username_key
         return target_account_id
 
     def resolve_np_communication_id_from_np_title_id(
@@ -959,7 +1121,6 @@ class PSNClient:
             )
         return None
 
-    # Placeholder for fetching overall trophy summary
     def get_overall_trophy_summary(self, _allow_retry: bool = True) -> dict | None:
         """Fetches the overall trophy summary for the user or specified PSN username."""
         if not self.is_connected() or not self.api:
@@ -967,44 +1128,7 @@ class PSNClient:
             if not self.connect():  # Try to reconnect
                 return None
 
-        # Use specified PSN username if available, otherwise use authenticated user's account_id
-        target_account_id = self.account_id
-
-        if self.psn_username:
-            # If we have a specific PSN username, we need to get their account_id
-            try:
-                logger.debug(
-                    f"Getting account_id for PSN username: {self.psn_username}"
-                )
-                target_user = self.api.user(online_id=self.psn_username)
-                target_account_id = target_user.account_id
-                logger.debug(
-                    f"Using PSN username {self.psn_username} for trophy summary with account_id {target_account_id}"
-                )
-            except Exception as e:
-                if _is_psn_auth_expired_error(e):
-                    self._on_psn_auth_expired(
-                        f"get_overall_trophy_summary account lookup({self.psn_username})",
-                        e,
-                    )
-                elif _allow_retry and _is_psn_connection_error(e):
-                    logger.warning(
-                        "Connection error resolving account_id for %s, retrying: %s",
-                        self.psn_username,
-                        e,
-                    )
-                    self.authenticated = False
-                    self.api = None
-                    if self.connect():
-                        return self.get_overall_trophy_summary(_allow_retry=False)
-                else:
-                    logger.warning(
-                        "Failed to get account_id for PSN username %s: %s",
-                        self.psn_username,
-                        e,
-                    )
-                return None
-
+        target_account_id = self.get_trophy_target_account_id(_allow_retry=_allow_retry)
         if not target_account_id:
             logger.warning("Cannot get trophy summary, no target account_id available.")
             return None
@@ -1135,22 +1259,7 @@ class PSNClient:
             if not self.connect():
                 return None
 
-        # Use specified PSN username if available, otherwise use authenticated user's account_id
-        target_account_id = self.account_id
-
-        if self.psn_username:
-            try:
-                logger.debug(
-                    f"Getting account_id for PSN username: {self.psn_username}"
-                )
-                target_user = self.api.user(online_id=self.psn_username)
-                target_account_id = target_user.account_id
-            except Exception as e:
-                logger.error(
-                    f"Failed to get account_id for PSN username {self.psn_username}: {e}"
-                )
-                return None
-
+        target_account_id = self.get_trophy_target_account_id()
         if not target_account_id:
             logger.warning(
                 "Cannot get game trophy groups, no target account_id available."
@@ -1269,157 +1378,137 @@ class PSNClient:
             )
         return None
 
+    def get_title_trophy_progress(self, np_title_id: str) -> dict | None:
+        """
+        Fetch title-level trophy progress for one presence ``npTitleId`` via
+        ``trophy_titles_for_title`` (single HTTP request). Updates psn_data progress
+        and trophy counts; returns summary including ``np_communication_id``.
+        """
+        if not np_title_id:
+            return None
+        if not self.is_connected() or not self.api:
+            logger.warning("Cannot get title trophy progress, not connected.")
+            if not self.connect():
+                return None
+
+        target_account_id = self.get_trophy_target_account_id()
+        if not target_account_id:
+            logger.warning(
+                "Cannot get title trophy progress, no target account_id available."
+            )
+            return None
+
+        logger.debug(
+            "Fetching title trophy progress for np_title_id=%s account=%s",
+            np_title_id,
+            target_account_id,
+        )
+        try:
+            user = self.api.user(account_id=target_account_id)  # type: ignore
+            titles = list(user.trophy_titles_for_title(title_ids=[np_title_id]))
+            if not titles:
+                logger.warning(
+                    "trophy_titles_for_title returned no titles for %s", np_title_id
+                )
+                return None
+
+            title = titles[0]
+            np_communication_id = getattr(title, "np_communication_id", None)
+            earned = _trophy_set_to_counts(getattr(title, "earned_trophies", None))
+            defined = _trophy_set_to_counts(getattr(title, "defined_trophies", None))
+            progress = getattr(title, "progress", None)
+            if progress is None and defined["total"] > 0:
+                progress = round((earned["total"] / defined["total"]) * 100)
+            elif progress is None:
+                progress = 0
+
+            self.psn_data.current_game_np_comm_id = np_communication_id
+            self.psn_data.current_game_progress = int(progress) if progress is not None else 0
+            # Title-level aggregates (may include DLC). Used until groups refresh splits base/all.
+            self.psn_data.current_game_trophies = {
+                "defined": dict(defined),
+                "earned": dict(earned),
+            }
+            self.psn_data.current_game_trophies_all = {
+                "defined": dict(defined),
+                "earned": dict(earned),
+            }
+
+            result = {
+                "np_title_id": np_title_id,
+                "np_communication_id": np_communication_id,
+                "title_name": getattr(title, "title_name", None),
+                "icon_url": getattr(title, "title_icon_url", None),
+                "progress": self.psn_data.current_game_progress,
+                "earned_trophies": earned,
+                "defined_trophies": defined,
+                "has_trophy_groups": bool(getattr(title, "has_trophy_groups", False)),
+                "platform": getattr(title, "title_platform", None),
+            }
+            logger.info(
+                "Title trophy progress for %s: %s%% (np_communication_id=%s)",
+                np_title_id,
+                self.psn_data.current_game_progress,
+                np_communication_id,
+            )
+            return result
+        except (PSNAWPForbiddenError, PSNAWPNotFoundError, PSNAWPBadRequestError) as e:
+            logger.error(
+                "API error fetching title trophy progress for %s: %s", np_title_id, e
+            )
+        except Exception as e:
+            if _is_psn_auth_expired_error(e):
+                self._on_psn_auth_expired(
+                    f"get_title_trophy_progress({np_title_id})", e
+                )
+            elif _is_psn_connection_error(e):
+                logger.warning(
+                    "Connection error fetching title trophy progress for %s: %s",
+                    np_title_id,
+                    e,
+                )
+                self.authenticated = False
+                self.api = None
+                self._clear_target_account_cache()
+            else:
+                logger.exception(
+                    "Unexpected error fetching title trophy progress for %s: %s",
+                    np_title_id,
+                    e,
+                )
+        return None
+
     def get_game_trophies(
         self, np_communication_id: str, platform: str, trophy_group_id: str = "default"
     ) -> dict | None:
         """
-        Fetches trophies for a specific game and optionally a specific trophy group.
-        Updates current_game_trophies and current_game_progress in psn_data.
+        Fetches per-group trophy progress via ``trophy_groups_summary`` (base vs DLC).
+        Prefer ``get_title_trophy_progress`` for the hot path; call this on a slower cadence.
         """
         if not self.is_connected() or not self.api:
             logger.warning("Cannot get game trophies, not connected.")
-            if not self.connect():  # Try to reconnect
+            if not self.connect():
                 return None
 
-        # Use specified PSN username if available, otherwise use authenticated user's account_id
-        target_account_id = self.account_id
-
-        if self.psn_username:
-            # If we have a specific PSN username, we need to get their account_id
-            try:
-                logger.debug(
-                    f"Getting account_id for PSN username: {self.psn_username}"
-                )
-                target_user = self.api.user(online_id=self.psn_username)
-                target_account_id = target_user.account_id
-                logger.debug(
-                    f"Using PSN username {self.psn_username} for game trophies with account_id {target_account_id}"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to get account_id for PSN username {self.psn_username}: {e}"
-                )
-                return None
-
+        target_account_id = self.get_trophy_target_account_id()
         if not target_account_id:
             logger.warning("Cannot get game trophies, no target account_id available.")
             return None
 
         logger.debug(
-            f"Fetching game trophies for: {np_communication_id} on {platform} (group: {trophy_group_id})"
+            "Fetching game trophy groups for: %s on %s (group: %s)",
+            np_communication_id,
+            platform,
+            trophy_group_id,
         )
 
         try:
             user = self.api.user(account_id=target_account_id)  # type: ignore
-            logger.debug("Created user object for game trophy fetch")
-
-            # Get user's trophy titles to find the correct npCommunicationId
-            logger.debug(
-                "Fetching user trophy titles to find correct npCommunicationId..."
-            )
-            trophy_titles = user.trophy_titles(limit=None, offset=0, page_size=800)
-            logger.debug(f"Trophy titles response type: {type(trophy_titles)}")
-
-            correct_np_comm_id = np_communication_id  # Default to original
-            # Full-title aggregates from trophy_titles (base + DLC); used only for np_comm_id resolution and fallback.
-            title_aggregate: dict | None = None
-            np_service_name = "trophy2"  # Default to newer service
-
-            # Iterate through trophy titles to find matching game
-            try:
-                for title in trophy_titles:
-                    logger.debug(
-                        f"Checking trophy title: {getattr(title, 'title_name', 'Unknown')} - npCommunicationId: {getattr(title, 'np_communication_id', 'Unknown')}"
-                    )
-
-                    # Look for a matching game name or np_communication_id
-                    title_name = getattr(title, "title_name", "") or ""
-                    title_np_comm_id = getattr(title, "np_communication_id", "") or ""
-
-                    # Check if this matches our current game by name comparison
-                    current_game_name = self.psn_data.current_game_name
-                    if current_game_name and (
-                        title_name.lower() == current_game_name.lower()
-                        or title_np_comm_id == np_communication_id
-                    ):
-                        logger.info(
-                            f"Found matching game in trophy titles: {title_name} -> {title_np_comm_id}"
-                        )
-                        correct_np_comm_id = title_np_comm_id
-                        np_service_name = (
-                            getattr(title, "np_service_name", "trophy2") or "trophy2"
-                        )
-
-                        # Extract current progress data if available
-                        progress = getattr(title, "progress", None)
-                        earned_trophies = getattr(title, "earned_trophies", None)
-                        defined_trophies = getattr(title, "defined_trophies", None)
-
-                        if (
-                            progress is not None
-                            and earned_trophies
-                            and defined_trophies
-                        ):
-                            title_aggregate = {
-                                "progress_percentage": progress,
-                                "earned_trophies": {
-                                    "bronze": getattr(earned_trophies, "bronze", 0),
-                                    "silver": getattr(earned_trophies, "silver", 0),
-                                    "gold": getattr(earned_trophies, "gold", 0),
-                                    "platinum": getattr(earned_trophies, "platinum", 0),
-                                },
-                                "defined_trophies": {
-                                    "bronze": getattr(defined_trophies, "bronze", 0),
-                                    "silver": getattr(defined_trophies, "silver", 0),
-                                    "gold": getattr(defined_trophies, "gold", 0),
-                                    "platinum": getattr(
-                                        defined_trophies, "platinum", 0
-                                    ),
-                                },
-                            }
-                            logger.info(
-                                f"Found existing progress data: {progress}% complete"
-                            )
-                        break
-
-            except Exception as e:
-                if _is_psn_auth_expired_error(e):
-                    self._on_psn_auth_expired("trophy title iteration", e)
-                elif _is_psn_connection_error(e):
-                    logger.warning(
-                        "Connection error iterating trophy titles, retrying next cycle: %s",
-                        e,
-                    )
-                    self.authenticated = False
-                    self.api = None
-                else:
-                    logger.warning("Error iterating through trophy titles: %s", e)
-
-            logger.debug(f"Final npCommunicationId to use: {correct_np_comm_id}")
-            logger.debug(f"Using npServiceName: {np_service_name}")
-
-            if title_aggregate:
-                logger.info(
-                    "Title-level trophy aggregate available (full title, may include DLC); "
-                    "fetching per-group summary for base vs total split."
-                )
-
-            # Fetch specific game's defined and earned trophies using trophy_groups_summary
             platform_type = presence_format_to_platform_type(platform)
-            logger.debug(
-                f"Fetching trophy groups summary for game with ID: {correct_np_comm_id} "
-                f"on {platform} ({platform_type})"
-            )
             trophy_groups_summary = user.trophy_groups_summary(  # type: ignore
-                np_communication_id=correct_np_comm_id,
+                np_communication_id=np_communication_id,
                 platform=platform_type,
-                include_progress=True,  # This gets earned trophy data as well
-            )
-            logger.debug(
-                f"Trophy groups summary response type: {type(trophy_groups_summary)}"
-            )
-            logger.debug(
-                f"Trophy groups summary attributes: {dir(trophy_groups_summary) if trophy_groups_summary else 'None'}"
+                include_progress=True,
             )
 
             defined_counts = {
@@ -1437,276 +1526,158 @@ class PSNClient:
                 "total": 0,
             }
 
-            if trophy_groups_summary:
-                # The trophy_groups_summary returns a list of trophy groups
-                # We need to iterate through them and sum up the trophy counts
-                try:
-                    trophy_groups = getattr(
-                        trophy_groups_summary, "trophy_groups", None
-                    ) or []
-                    logger.debug(f"Found {len(trophy_groups)} trophy groups")
-
-                    all_defined_counts = {
-                        "bronze": 0,
-                        "silver": 0,
-                        "gold": 0,
-                        "platinum": 0,
-                        "total": 0,
-                    }
-                    all_earned_counts = {
-                        "bronze": 0,
-                        "silver": 0,
-                        "gold": 0,
-                        "platinum": 0,
-                        "total": 0,
-                    }
-                    for agroup in trophy_groups:
-                        if hasattr(agroup, "defined_trophies"):
-                            adt = agroup.defined_trophies
-                            if hasattr(adt, "bronze"):
-                                all_defined_counts["bronze"] += int(
-                                    getattr(adt, "bronze", 0) or 0
-                                )
-                                all_defined_counts["silver"] += int(
-                                    getattr(adt, "silver", 0) or 0
-                                )
-                                all_defined_counts["gold"] += int(
-                                    getattr(adt, "gold", 0) or 0
-                                )
-                                all_defined_counts["platinum"] += int(
-                                    getattr(adt, "platinum", 0) or 0
-                                )
-                        if hasattr(agroup, "earned_trophies"):
-                            aet = agroup.earned_trophies
-                            if hasattr(aet, "bronze"):
-                                all_earned_counts["bronze"] += int(
-                                    getattr(aet, "bronze", 0) or 0
-                                )
-                                all_earned_counts["silver"] += int(
-                                    getattr(aet, "silver", 0) or 0
-                                )
-                                all_earned_counts["gold"] += int(
-                                    getattr(aet, "gold", 0) or 0
-                                )
-                                all_earned_counts["platinum"] += int(
-                                    getattr(aet, "platinum", 0) or 0
-                                )
-                    all_defined_counts["total"] = (
-                        all_defined_counts["bronze"]
-                        + all_defined_counts["silver"]
-                        + all_defined_counts["gold"]
-                        + all_defined_counts["platinum"]
-                    )
-                    all_earned_counts["total"] = (
-                        all_earned_counts["bronze"]
-                        + all_earned_counts["silver"]
-                        + all_earned_counts["gold"]
-                        + all_earned_counts["platinum"]
-                    )
-                    self.psn_data.current_game_trophies_all = {
-                        "defined": all_defined_counts,
-                        "earned": all_earned_counts,
-                    }
-
-                    for group in trophy_groups:
-                        # Check if this is the group we want (usually "default" for base game)
-                        group_id = getattr(group, "trophy_group_id", "")
-                        if group_id == trophy_group_id:
-                            logger.debug(f"Processing trophy group: {group_id}")
-
-                            # Get defined trophies for this group
-                            if hasattr(group, "defined_trophies"):
-                                defined_trophies = group.defined_trophies
-                                if hasattr(defined_trophies, "bronze"):
-                                    defined_counts["bronze"] = getattr(
-                                        defined_trophies, "bronze", 0
-                                    )
-                                    defined_counts["silver"] = getattr(
-                                        defined_trophies, "silver", 0
-                                    )
-                                    defined_counts["gold"] = getattr(
-                                        defined_trophies, "gold", 0
-                                    )
-                                    defined_counts["platinum"] = getattr(
-                                        defined_trophies, "platinum", 0
-                                    )
-                                    defined_counts["total"] = (
-                                        defined_counts["bronze"]
-                                        + defined_counts["silver"]
-                                        + defined_counts["gold"]
-                                        + defined_counts["platinum"]
-                                    )
-                                    logger.info(
-                                        f"Defined trophy counts: {defined_counts}"
-                                    )
-
-                            # Get earned trophies for this group
-                            if hasattr(group, "earned_trophies"):
-                                earned_trophies = group.earned_trophies
-                                if hasattr(earned_trophies, "bronze"):
-                                    earned_counts["bronze"] = getattr(
-                                        earned_trophies, "bronze", 0
-                                    )
-                                    earned_counts["silver"] = getattr(
-                                        earned_trophies, "silver", 0
-                                    )
-                                    earned_counts["gold"] = getattr(
-                                        earned_trophies, "gold", 0
-                                    )
-                                    earned_counts["platinum"] = getattr(
-                                        earned_trophies, "platinum", 0
-                                    )
-                                    earned_counts["total"] = (
-                                        earned_counts["bronze"]
-                                        + earned_counts["silver"]
-                                        + earned_counts["gold"]
-                                        + earned_counts["platinum"]
-                                    )
-                                    logger.info(
-                                        f"Earned trophy counts: {earned_counts}"
-                                    )
-
-                            # If we have progress directly available, log it (do not clobber title_aggregate)
-                            if hasattr(group, "progress"):
-                                group_progress = getattr(group, "progress", 0)
-                                logger.debug(
-                                    f"Progress from trophy group: {group_progress}%"
-                                )
-
-                            break  # Found our group, no need to continue
-
-                    if defined_counts["total"] == 0 and earned_counts["total"] == 0:
-                        logger.warning(
-                            f"No trophy data found for group '{trophy_group_id}' in trophy groups summary"
-                        )
-                        # Try to get data from any available group
-                        if trophy_groups:
-                            first_group = trophy_groups[0]
-                            logger.debug(
-                                f"Trying first available group: {getattr(first_group, 'trophy_group_id', 'unknown')}"
-                            )
-
-                            if hasattr(first_group, "defined_trophies"):
-                                defined_trophies = first_group.defined_trophies
-                                if hasattr(defined_trophies, "bronze"):
-                                    defined_counts["bronze"] = getattr(
-                                        defined_trophies, "bronze", 0
-                                    )
-                                    defined_counts["silver"] = getattr(
-                                        defined_trophies, "silver", 0
-                                    )
-                                    defined_counts["gold"] = getattr(
-                                        defined_trophies, "gold", 0
-                                    )
-                                    defined_counts["platinum"] = getattr(
-                                        defined_trophies, "platinum", 0
-                                    )
-                                    defined_counts["total"] = (
-                                        defined_counts["bronze"]
-                                        + defined_counts["silver"]
-                                        + defined_counts["gold"]
-                                        + defined_counts["platinum"]
-                                    )
-
-                            if hasattr(first_group, "earned_trophies"):
-                                earned_trophies = first_group.earned_trophies
-                                if hasattr(earned_trophies, "bronze"):
-                                    earned_counts["bronze"] = getattr(
-                                        earned_trophies, "bronze", 0
-                                    )
-                                    earned_counts["silver"] = getattr(
-                                        earned_trophies, "silver", 0
-                                    )
-                                    earned_counts["gold"] = getattr(
-                                        earned_trophies, "gold", 0
-                                    )
-                                    earned_counts["platinum"] = getattr(
-                                        earned_trophies, "platinum", 0
-                                    )
-                                    earned_counts["total"] = (
-                                        earned_counts["bronze"]
-                                        + earned_counts["silver"]
-                                        + earned_counts["gold"]
-                                        + earned_counts["platinum"]
-                                    )
-
-                except Exception as e:
-                    logger.warning(f"Error processing trophy groups summary: {e}")
-                    logger.debug(
-                        f"Trophy groups summary object: {vars(trophy_groups_summary) if hasattr(trophy_groups_summary, '__dict__') else 'No __dict__'}"
-                    )
-                    self.psn_data.current_game_trophies_all = {}
-            else:
+            if not trophy_groups_summary:
                 logger.warning("No trophy groups summary returned")
                 self.psn_data.current_game_trophies_all = {}
+                self.psn_data.current_game_trophies = {
+                    "defined": defined_counts,
+                    "earned": earned_counts,
+                }
+                return None
+
+            trophy_groups = getattr(trophy_groups_summary, "trophy_groups", None) or []
+            logger.debug("Found %d trophy groups", len(trophy_groups))
+            cached_trophy_groups = _serialize_trophy_groups_for_cache(trophy_groups)
+
+            all_defined_counts = {
+                "bronze": 0,
+                "silver": 0,
+                "gold": 0,
+                "platinum": 0,
+                "total": 0,
+            }
+            all_earned_counts = {
+                "bronze": 0,
+                "silver": 0,
+                "gold": 0,
+                "platinum": 0,
+                "total": 0,
+            }
+
+            def _add_set(dest: dict[str, int], src: Any) -> None:
+                counts = _trophy_set_to_counts(src)
+                for key in ("bronze", "silver", "gold", "platinum"):
+                    dest[key] += counts[key]
+
+            for agroup in trophy_groups:
+                _add_set(
+                    all_defined_counts, getattr(agroup, "defined_trophies", None)
+                )
+                _add_set(all_earned_counts, getattr(agroup, "earned_trophies", None))
+
+            all_defined_counts["total"] = (
+                all_defined_counts["bronze"]
+                + all_defined_counts["silver"]
+                + all_defined_counts["gold"]
+                + all_defined_counts["platinum"]
+            )
+            all_earned_counts["total"] = (
+                all_earned_counts["bronze"]
+                + all_earned_counts["silver"]
+                + all_earned_counts["gold"]
+                + all_earned_counts["platinum"]
+            )
+            self.psn_data.current_game_trophies_all = {
+                "defined": all_defined_counts,
+                "earned": all_earned_counts,
+            }
+
+            selected_group = None
+            for group in trophy_groups:
+                if getattr(group, "trophy_group_id", "") == trophy_group_id:
+                    selected_group = group
+                    break
+            if selected_group is None and trophy_groups:
+                selected_group = trophy_groups[0]
+                logger.debug(
+                    "Group %r not found; using first group %r",
+                    trophy_group_id,
+                    getattr(selected_group, "trophy_group_id", "unknown"),
+                )
+
+            if selected_group is not None:
+                defined_counts = _trophy_set_to_counts(
+                    getattr(selected_group, "defined_trophies", None)
+                )
+                earned_counts = _trophy_set_to_counts(
+                    getattr(selected_group, "earned_trophies", None)
+                )
 
             self.psn_data.current_game_trophies = {
                 "defined": defined_counts,
                 "earned": earned_counts,
             }
 
-            # Degraded mode: groups summary did not yield this game's group counts
-            if (
-                defined_counts["total"] == 0
-                and earned_counts["total"] == 0
-                and title_aggregate
-            ):
-                logger.warning(
-                    "No per-group trophy data from API; falling back to title-level "
-                    "aggregates (counts may include DLC in both fields)."
-                )
-                d = dict(title_aggregate["defined_trophies"])
-                e = dict(title_aggregate["earned_trophies"])
-                self.psn_data.current_game_trophies = {"defined": d, "earned": e}
-                self.psn_data.current_game_trophies_all = {
-                    "defined": dict(d),
-                    "earned": dict(e),
-                }
-                self.psn_data.current_game_progress = title_aggregate[
-                    "progress_percentage"
-                ]
-            elif defined_counts["total"] > 0:
+            if defined_counts["total"] > 0:
                 progress = round(
                     (earned_counts["total"] / defined_counts["total"]) * 100
                 )
                 self.psn_data.current_game_progress = progress
                 logger.info(
-                    f"Game progress calculated: {progress}% ({earned_counts['total']}/{defined_counts['total']})"
+                    "Game progress calculated: %s%% (%s/%s)",
+                    progress,
+                    earned_counts["total"],
+                    defined_counts["total"],
                 )
+            elif all_defined_counts["total"] > 0:
+                progress = round(
+                    (all_earned_counts["total"] / all_defined_counts["total"]) * 100
+                )
+                self.psn_data.current_game_progress = progress
             else:
-                if title_aggregate is not None:
-                    self.psn_data.current_game_progress = title_aggregate[
-                        "progress_percentage"
-                    ]
-                    logger.info(
-                        f"Using progress from trophy titles: {self.psn_data.current_game_progress}%"
-                    )
-                else:
-                    self.psn_data.current_game_progress = 0
-                    logger.warning("No defined trophies found, setting progress to 0%")
+                self.psn_data.current_game_progress = 0
+                logger.warning("No defined trophies found, setting progress to 0%")
 
+            self.psn_data.current_game_np_comm_id = np_communication_id
             target_desc = (
                 self.psn_username if self.psn_username else "authenticated user"
             )
             logger.info(
-                f"Successfully fetched trophies for game {correct_np_comm_id} for {target_desc}"
+                "Successfully fetched group trophies for game %s for %s",
+                np_communication_id,
+                target_desc,
             )
-            return {"trophy_groups_summary": trophy_groups_summary}
+            return {
+                "trophy_groups_summary": trophy_groups_summary,
+                "trophy_groups": cached_trophy_groups,
+            }
 
         except (PSNAWPForbiddenError, PSNAWPNotFoundError, PSNAWPBadRequestError) as e:
             target_desc = (
                 self.psn_username if self.psn_username else "authenticated user"
             )
             logger.error(
-                f"API error while fetching game trophies for {np_communication_id} for {target_desc}: {e}"
+                "API error while fetching game trophies for %s for %s: %s",
+                np_communication_id,
+                target_desc,
+                e,
             )
         except Exception as e:
             target_desc = (
                 self.psn_username if self.psn_username else "authenticated user"
             )
-            logger.exception(
-                f"Unexpected error fetching game trophies for {np_communication_id} for {target_desc}: {e}"
-            )
+            if _is_psn_auth_expired_error(e):
+                self._on_psn_auth_expired(
+                    f"get_game_trophies({np_communication_id}, {target_desc})",
+                    e,
+                )
+            elif _is_psn_connection_error(e):
+                logger.warning(
+                    "Connection error fetching game trophies for %s for %s: %s",
+                    np_communication_id,
+                    target_desc,
+                    e,
+                )
+                self.authenticated = False
+                self.api = None
+                self._clear_target_account_cache()
+            else:
+                logger.exception(
+                    "Unexpected error fetching game trophies for %s for %s: %s",
+                    np_communication_id,
+                    target_desc,
+                    e,
+                )
         return None
 
 
