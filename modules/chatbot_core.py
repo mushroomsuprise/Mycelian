@@ -143,105 +143,159 @@ def get_youtube_value(youtube_var: str) -> str:
         return f"YouTube error: {str(e)}"
 
 
-def format_time_with_options(format_options: str = "") -> str:
-    """Format current time with various options
+TIME_VAR_PATTERN = re.compile(r"\{time(?:\.([^}]+))?\}", re.IGNORECASE)
+_TIME_LAYOUT_PATTERN = re.compile(r"^(h{1,2}):mm(?::ss)?$", re.IGNORECASE)
+_KNOWN_TIMEZONES = {
+    "UTC": 0,
+    "EST": -5,
+    "CST": -6,
+    "MST": -7,
+    "PST": -8,
+    "EDT": -4,
+    "CDT": -5,
+    "MDT": -6,
+    "PDT": -7,
+}
 
-    Format options syntax: [timezone]:[hour_format]:[ampm_display]
-    - timezone: UTC, EST, PST, etc. (default: local)
-    - hour_format: 12 or 24 (default: 24)
-    - ampm_display: show or hide (default: hide for 24hr, show for 12hr)
+
+def format_time_variable(filters: str = "") -> str:
+    """Format current time using order-independent dot filters.
+
+    Bare ``{time}`` (empty filters) matches runtime default: 24-hour with seconds.
+
+    Filters (any order, case-insensitive):
+    - ``12`` / ``24`` — clock style
+    - ``ampm`` / ``noampm`` — show or hide AM/PM
+    - ``sec`` / ``nosec`` — include or omit seconds (ignored if a layout token is set)
+    - ``tz`` — append timezone abbreviation
+    - ``hh:mm``, ``h:mm``, ``hh:mm:ss``, ``h:mm:ss`` — explicit layout
+    - ``UTC``, ``EST``, ``EDT``, ``CST``, ``CDT``, ``MST``, ``MDT``, ``PST``, ``PDT``
+      — convert to that zone (label only when ``tz`` is also present)
 
     Examples:
-    - "EST:12:show" -> "02:30 PM EST"
-    - "UTC:24" -> "19:30 UTC"
-    - "PST:12:hide" -> "11:30 PST"
-    - "" -> "19:30" (local time, 24hr)
+    - ``""`` → ``19:30:45``
+    - ``"12.ampm"`` → ``07:30:45 PM``
+    - ``"hh:mm.12.ampm"`` → ``07:30 PM``
+    - ``"UTC.24.tz"`` → ``00:30:45 UTC``
     """
     try:
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta, timezone
 
-        # Parse format options
-        options = format_options.split(":") if format_options else []
-
-        # Default values
-        timezone_name = None
         hour_format = 24
+        show_seconds = True
         show_ampm = False
+        show_tz = False
+        timezone_name = None
+        layout = None
 
-        # Parse timezone
-        if len(options) >= 1 and options[0]:
-            timezone_name = options[0].upper()
+        if filters:
+            for raw_token in filters.split("."):
+                token = raw_token.strip()
+                if not token:
+                    continue
+                token_lower = token.lower()
 
-        # Parse hour format
-        if len(options) >= 2 and options[1]:
-            try:
-                hour_format = int(options[1])
-                if hour_format not in [12, 24]:
+                if token_lower == "12":
+                    hour_format = 12
+                elif token_lower == "24":
                     hour_format = 24
-            except ValueError:
-                hour_format = 24
+                elif token_lower == "ampm":
+                    show_ampm = True
+                elif token_lower == "noampm":
+                    show_ampm = False
+                elif token_lower in ("sec", "seconds"):
+                    show_seconds = True
+                elif token_lower in ("nosec", "noseconds"):
+                    show_seconds = False
+                elif token_lower == "tz":
+                    show_tz = True
+                elif _TIME_LAYOUT_PATTERN.match(token_lower):
+                    layout = token_lower
+                else:
+                    tz_candidate = token.upper()
+                    if tz_candidate in _KNOWN_TIMEZONES:
+                        timezone_name = tz_candidate
 
-        # Parse AM/PM display
-        if len(options) >= 3:
-            show_ampm = options[2].lower() == "show"
-        elif hour_format == 12:
-            # Default to showing AM/PM for 12-hour format
-            show_ampm = True
-
-        # Get current time
         now = datetime.now()
 
-        # Apply timezone if specified
         if timezone_name:
             try:
-                # Try to use pytz if available
                 try:
                     import pytz
-                    if timezone_name == "UTC":
-                        tz = pytz.UTC
-                    else:
-                        tz = pytz.timezone(timezone_name)
-                    now = now.astimezone(tz)
-                except ImportError:
-                    # Fallback to basic timezone handling for common timezones
-                    tz_offsets = {
-                        "UTC": 0,
-                        "EST": -5,
-                        "CST": -6,
-                        "MST": -7,
-                        "PST": -8,
-                        "EDT": -4,
-                        "CDT": -5,
-                        "MDT": -6,
-                        "PDT": -7,
+
+                    # Abbreviations like EST are not always valid pytz keys;
+                    # map common US abbreviations to IANA zones when needed.
+                    pytz_names = {
+                        "UTC": "UTC",
+                        "EST": "US/Eastern",
+                        "EDT": "US/Eastern",
+                        "CST": "US/Central",
+                        "CDT": "US/Central",
+                        "MST": "US/Mountain",
+                        "MDT": "US/Mountain",
+                        "PST": "US/Pacific",
+                        "PDT": "US/Pacific",
                     }
-                    if timezone_name in tz_offsets:
-                        offset_hours = tz_offsets[timezone_name]
+                    if timezone_name == "UTC":
+                        now = now.astimezone(pytz.UTC)
+                    else:
+                        tz = pytz.timezone(pytz_names.get(timezone_name, timezone_name))
+                        now = now.astimezone(tz)
+                except ImportError:
+                    offset_hours = _KNOWN_TIMEZONES.get(timezone_name)
+                    if offset_hours is not None:
                         tz = timezone(timedelta(hours=offset_hours))
                         now = now.astimezone(tz)
-                    # If timezone is not recognized, use local time
             except Exception:
-                # If timezone conversion fails, use local time
                 pass
 
-        # Format the time
-        if hour_format == 12:
-            time_str = now.strftime("%I:%M")
-            if show_ampm:
-                time_str += now.strftime(" %p")
+        if layout:
+            hour_token, rest = layout.split(":", 1)
+            use_padded = len(hour_token) == 2
+            include_seconds = rest == "mm:ss"
+            if hour_format == 12:
+                hour_fmt = "%I" if use_padded else "%-I"
+            else:
+                hour_fmt = "%H" if use_padded else "%-H"
+            # %-H / %-I are not supported on Windows; fall back to padded.
+            try:
+                time_str = now.strftime(
+                    f"{hour_fmt}:%M" + (":%S" if include_seconds else "")
+                )
+            except ValueError:
+                hour_fmt = "%I" if hour_format == 12 else "%H"
+                time_str = now.strftime(
+                    f"{hour_fmt}:%M" + (":%S" if include_seconds else "")
+                )
         else:
-            time_str = now.strftime("%H:%M")
+            if hour_format == 12:
+                time_str = now.strftime("%I:%M:%S" if show_seconds else "%I:%M")
+            else:
+                time_str = now.strftime("%H:%M:%S" if show_seconds else "%H:%M")
 
-        # Add timezone if specified
-        if timezone_name:
-            time_str += f" {timezone_name}"
+        if show_ampm:
+            time_str += now.strftime(" %p")
+
+        if show_tz:
+            label = timezone_name
+            if not label:
+                # Local abbreviation when no zone filter was given
+                label = now.strftime("%Z") or "LOCAL"
+            time_str += f" {label}"
 
         return time_str
 
     except Exception as e:
-        logger.error(f"Error formatting time with options '{format_options}': {e}")
-        # Fallback to basic time format
-        return datetime.now().strftime("%H:%M")
+        logger.error(f"Error formatting time with filters '{filters}': {e}")
+        return datetime.now().strftime("%H:%M:%S")
+
+
+def replace_time_variables(text: str) -> str:
+    """Replace ``{time}`` and ``{time.filter...}`` placeholders in text."""
+    return TIME_VAR_PATTERN.sub(
+        lambda m: format_time_variable(m.group(1) or ""),
+        text,
+    )
 
 
 class CommandType(Enum):
@@ -509,7 +563,8 @@ class ChatCommand:
             "{timestamp}", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
         processed = processed.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
-        processed = processed.replace("{time}", datetime.now().strftime("%H:%M:%S"))
+        # Resolve {time} / {time.filters} before the generic dotted-path walker
+        processed = replace_time_variables(processed)
 
         # Command-specific variables
         if self.command_type == CommandType.COUNTER:
@@ -1467,7 +1522,8 @@ class ChatEvent:
             "{timestamp}", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
         processed = processed.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
-        processed = processed.replace("{time}", datetime.now().strftime("%H:%M:%S"))
+        # Resolve {time} / {time.filters} before the generic dotted-path walker
+        processed = replace_time_variables(processed)
 
         # Event-specific variables
         if "amount" in data:

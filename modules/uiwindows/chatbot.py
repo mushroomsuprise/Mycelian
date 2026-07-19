@@ -43,12 +43,15 @@ from ..help_system.contextual_help import set_chatbot_ui_references
 
 # Import the chatbot modules
 from ..chatbot_core import (
+    TIME_VAR_PATTERN,
     ChatCommand,
     ChatEvent,
     CommandType,
     EventType,
+    format_time_variable,
     get_statistics_value,
     get_youtube_value,
+    replace_time_variables,
 )
 from ..chatbot_manager import get_manager as get_chatbot_manager
 from ..database_manager import get_data, set_data
@@ -145,7 +148,7 @@ def get_live_basic_variables() -> Dict[str, str]:
         now = datetime.now()
         timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
         date_str = now.strftime("%B %d, %Y")
-        time_str = now.strftime("%I:%M %p")
+        time_str = format_time_variable("")
 
         return {
             "username": username,
@@ -162,7 +165,7 @@ def get_live_basic_variables() -> Dict[str, str]:
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "date": datetime.now().strftime("%B %d, %Y"),
-            "time": datetime.now().strftime("%I:%M %p"),
+            "time": format_time_variable(""),
             "source": "Twitch",
         }
 
@@ -213,21 +216,15 @@ def evaluate_custom_variable_expression(
                 processed_expr,
             )
 
-        # Replace basic variables
+        # Resolve {time} / {time.filters} before basic vars (avoids prefix mangling)
+        processed_expr = replace_time_variables(processed_expr)
+
+        # Replace basic variables (skip time — already handled above)
         basic_vars = get_live_basic_variables()
         for var_key, var_value in basic_vars.items():
+            if var_key == "time":
+                continue
             processed_expr = processed_expr.replace(f"{{{var_key}}}", str(var_value))
-
-        # Handle advanced time formatting (e.g., {time:EST:12:show})
-        time_pattern = re.compile(r"\{time(?::([^}]*))?\}")
-
-        def replace_time_var(match):
-            format_options = match.group(1) or ""
-            from .chatbot_core import format_time_with_options
-
-            return format_time_with_options(format_options)
-
-        processed_expr = time_pattern.sub(replace_time_var, processed_expr)
 
         # Replace command-specific variables if context_data is available
         if context_data:
@@ -486,8 +483,16 @@ def resolve_variables_for_preview(
     # Get live basic variables
     basic_vars = get_live_basic_variables()
 
-    # 1. Replace basic variables
+    # 1a. Resolve {time} / {time.filters} before exact {time} basic replace
+    processed = TIME_VAR_PATTERN.sub(
+        lambda m: _wrap_variable_value(format_time_variable(m.group(1) or "")),
+        processed,
+    )
+
+    # 1. Replace basic variables (skip time — already handled above)
     for var_name, var_value in basic_vars.items():
+        if var_name == "time":
+            continue
         pattern = re.compile(re.escape(f"{{{var_name}}}"))
         processed = pattern.sub(lambda m: _wrap_variable_value(var_value), processed)
 
@@ -4976,7 +4981,7 @@ def show_custom_variable_dialog(
                         # Expression input - takes remaining space
                         expression_input = ui.textarea(
                             label="Expression",
-                            placeholder="e.g., {time:EST:12:show}, math({stats.alerts.bit_alerts_played} / 10), date_to_age({data.created_at})",
+                            placeholder="e.g., {time.hh:mm.12.ampm}, math({stats.alerts.bit_alerts_played} / 10), date_to_age({data.created_at})",
                             value=initial_expression,
                         ).classes("w-full flex-1 min-h-[120px]")
 
@@ -5000,13 +5005,13 @@ def show_custom_variable_dialog(
                                 "• {stats.alerts.bit_alerts_played} + {stats.alerts.resubs_played} → Combine values"
                             ).classes("text-xs secondary-text block mb-1")
                             ui.label(
-                                "• {time:EST:12:show} → 02:30 PM EST (12hr with AM/PM)"
+                                "• {time.hh:mm.12.ampm} → 07:30 PM (12hr with AM/PM)"
                             ).classes("text-xs secondary-text block mb-1")
                             ui.label(
-                                "• {time:UTC:24} → 19:30 UTC (24hr format)"
+                                "• {time.UTC.24.tz} → 19:30:45 UTC (24hr with timezone)"
                             ).classes("text-xs secondary-text block mb-1")
                             ui.label(
-                                "• {time:PST:12:hide} → 11:30 PST (12hr without AM/PM)"
+                                "• {time.nosec.12.ampm} → 07:30 PM (no seconds)"
                             ).classes("text-xs secondary-text block mb-1")
 
                         # Form buttons - fixed at bottom with no flex issues
@@ -5395,19 +5400,25 @@ def show_custom_variable_dialog(
                                     "color_class": "text-blue-400",
                                     "expressions": [
                                         (
-                                            "{time:timezone:hour_format:ampm_display}",
-                                            "Time formatting - replace timezone, hour_format, ampm_display",
-                                        ),
-                                        ("{time:UTC:24}", "UTC 24-hour time"),
-                                        (
-                                            "{time:EST:12:show}",
-                                            "EST 12-hour with AM/PM",
+                                            "{time}",
+                                            "Local time (24-hour with seconds)",
                                         ),
                                         (
-                                            "{time:PST:12:hide}",
-                                            "PST 12-hour without AM/PM",
+                                            "{time.hh:mm.12.ampm}",
+                                            "12-hour hh:mm with AM/PM",
                                         ),
-                                        ("{time}", "Local time (24-hour)"),
+                                        (
+                                            "{time.UTC.tz}",
+                                            "UTC time with timezone label",
+                                        ),
+                                        (
+                                            "{time.nosec.12.ampm}",
+                                            "12-hour without seconds",
+                                        ),
+                                        (
+                                            "{time.hh:mm.EST.12.ampm.tz}",
+                                            "EST 12-hour with AM/PM and zone",
+                                        ),
                                     ],
                                 },
                                 {
@@ -5548,10 +5559,7 @@ def show_custom_variable_dialog(
                                     ]:
                                         # Create template for insertion (remove example values)
                                         if category_name == "Time Formatting":
-                                            if "{time:" in expr_template:
-                                                insert_text = "{time:timezone:hour_format:ampm_display}"
-                                            else:
-                                                insert_text = "{time}"
+                                            insert_text = expr_template
                                         elif category_name == "Math Operations":
                                             if (
                                                 "math(" in expr_template
@@ -5785,7 +5793,7 @@ def get_available_variables(
         "timestamp": "{timestamp} - Current time",
         "datetime": "{datetime} - Full date and time",
         "date": "{date} - Current date",
-        "time": "{time} - Current time",
+        "time": "{time} - Current time (use {time.hh:mm.12.ampm} etc. for filters)",
     }
 
     # Quote variables available for all item types
@@ -6258,68 +6266,37 @@ def show_custom_variable_help_dialog():
                                 "text-lg font-semibold text-blue-400"
                             )
                             ui.label(
-                                "Format: {time:timezone:hour_format:ampm_display}"
+                                "Format: {time} or {time.filter.filter...} (filters in any order)"
                             ).classes("text-sm font-medium text-blue-300")
 
-                            # Timezones
                             with ui.column().classes("ml-4 space-y-1"):
-                                ui.label("Timezones:").classes(
+                                ui.label("Filters:").classes(
                                     "text-sm font-medium secondary-text"
                                 )
-                                timezones = [
-                                    "UTC - Coordinated Universal Time",
-                                    "EST - Eastern Standard Time (-5)",
-                                    "CST - Central Standard Time (-6)",
-                                    "MST - Mountain Standard Time (-7)",
-                                    "PST - Pacific Standard Time (-8)",
-                                    "EDT - Eastern Daylight Time (-4)",
-                                    "CDT - Central Daylight Time (-5)",
-                                    "MDT - Mountain Daylight Time (-6)",
-                                    "PDT - Pacific Daylight Time (-7)",
+                                filters = [
+                                    "12 / 24 - Clock style",
+                                    "ampm / noampm - Show or hide AM/PM",
+                                    "sec / nosec - Include or omit seconds",
+                                    "tz - Append timezone abbreviation",
+                                    "hh:mm, h:mm, hh:mm:ss, h:mm:ss - Explicit layout",
+                                    "UTC, EST, EDT, CST, CDT, MST, MDT, PST, PDT - Convert to zone",
                                 ]
-                                for tz in timezones:
-                                    ui.label(f"• {tz}").classes(
+                                for filt in filters:
+                                    ui.label(f"• {filt}").classes(
                                         "text-xs secondary-text"
                                     )
 
-                            # Hour formats
-                            with ui.column().classes("ml-4 space-y-1"):
-                                ui.label("Hour Formats:").classes(
-                                    "text-sm font-medium secondary-text"
-                                )
-                                formats = [
-                                    "12 - 12-hour format (1-12)",
-                                    "24 - 24-hour format (0-23)",
-                                ]
-                                for fmt in formats:
-                                    ui.label(f"• {fmt}").classes(
-                                        "text-xs secondary-text"
-                                    )
-
-                            # AM/PM display
-                            with ui.column().classes("ml-4 space-y-1"):
-                                ui.label("AM/PM Display:").classes(
-                                    "text-sm font-medium secondary-text"
-                                )
-                                displays = [
-                                    "show - Display AM/PM",
-                                    "hide - Hide AM/PM (12hr format only)",
-                                ]
-                                for disp in displays:
-                                    ui.label(f"• {disp}").classes(
-                                        "text-xs secondary-text"
-                                    )
-
-                            # Examples
                             with ui.column().classes("ml-4 space-y-1 mt-3"):
                                 ui.label("Examples:").classes(
                                     "text-sm font-medium secondary-text"
                                 )
                                 examples = [
-                                    "{time:EST:12:show} → 02:30 PM EST",
-                                    "{time:UTC:24} → 19:30 UTC",
-                                    "{time:PST:12:hide} → 11:30 PST",
-                                    "{time} → 19:30 (local time, 24hr)",
+                                    "{time} → 19:30:45 (local, 24hr with seconds)",
+                                    "{time.12.ampm} → 07:30:45 PM",
+                                    "{time.hh:mm.12.ampm} → 07:30 PM",
+                                    "{time.nosec.12.ampm} → 07:30 PM",
+                                    "{time.UTC.24.tz} → 00:30:45 UTC",
+                                    "{time.hh:mm.EST.12.ampm.tz} → 07:30 PM EST",
                                 ]
                                 for ex in examples:
                                     ui.label(f"• {ex}").classes(

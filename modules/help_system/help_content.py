@@ -1299,9 +1299,13 @@ For example, `{user}` becomes the actual username.
 ### Time Variables
 | Variable | Description | Example Output |
 |----------|-------------|----------------|
-| `{time}` | Current time | "3:45 PM" |
+| `{time}` | Current local time (24-hour with seconds) | "19:30:45" |
+| `{time.hh:mm.12.ampm}` | Filtered time (filters in any order) | "07:30 PM" |
+| `{time.UTC.tz}` | Time in UTC with zone label | "00:30:45 UTC" |
 | `{date}` | Current date | "Jan 19, 2026" |
 | `{countdown:TARGET}` | Time until target | "2h 15m" |
+
+Time filters (dot-separated, any order): `12`/`24`, `ampm`/`noampm`, `sec`/`nosec`, `tz`, layout tokens (`hh:mm`, `hh:mm:ss`, …), and zone codes (`UTC`, `EST`, `PST`, …).
 
 ## Using Variables
 
