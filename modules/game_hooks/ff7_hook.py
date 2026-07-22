@@ -151,8 +151,10 @@ ENEMY_OFF_MDEF = 0x27
 
 # Battle-actor ally-only fields
 BATTLE_OFF_LEVEL = 0x24
-# Battle AI address 0x4026 (back row) → byte offset 0x26 in 104-byte battle_char_base actor block
-BATTLE_OFF_BACK_ROW = 0x26
+# AI actor addrs are bit-indexed: physical byte = (ai - 0x4000) // 8.
+# AI 0x4026 (back row) → bit 6 of situation-flags byte at offset 0x04.
+BATTLE_OFF_SITUATION_FLAGS = 0x04
+BATTLE_SIT_FLAG_BACK_ROW = 0x40
 
 FF7_MENU_NAMES: List[str] = [
     "Item",
@@ -491,7 +493,9 @@ def _row_label_from_savemap_order(order: int) -> str:
 
 
 def _row_label_from_battle_raw(raw: bytes) -> str:
-    if len(raw) > BATTLE_OFF_BACK_ROW and raw[BATTLE_OFF_BACK_ROW]:
+    if len(raw) > BATTLE_OFF_SITUATION_FLAGS and (
+        raw[BATTLE_OFF_SITUATION_FLAGS] & BATTLE_SIT_FLAG_BACK_ROW
+    ):
         return "BR"
     return "FR"
 
@@ -2444,15 +2448,6 @@ class FF7Hook:
                 level = int(sm[off + REC_OFF_LEVEL])
         ailments = _ailments_from_status(status)
         row = _row_label_from_battle_raw(raw)
-        if party_id is not None and party_id < len(_CHAR_BLOCK):
-            sm = savemap
-            if sm is None:
-                sm, _ = self._read_savemap()
-            if sm:
-                savemap_row = _row_for_char_id(sm, party_id)
-                # Fallback when battle byte reads as front row but savemap says back row
-                if row == "FR" and savemap_row == "BR":
-                    row = savemap_row
         return {
             "party_slot": slot,
             "slot": slot,
