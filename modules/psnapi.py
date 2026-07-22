@@ -23,8 +23,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import difflib
 import logging
+import re
 import threading
+import unicodedata
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -59,20 +63,167 @@ logger = logging.getLogger(__name__)
 # Database path for PSN game data cache
 PSN_GAME_DATA_PATH = "PSNGameData/games"
 
+# Fuzzy name match (conservative; only after exact/normalized miss)
+FUZZY_MATCH_THRESHOLD = 0.92
+FUZZY_AMBIGUITY_GAP = 0.03
+FUZZY_MIN_QUERY_LEN = 4
+
+_APOSTROPHE_CHARS = (
+    "\u2019",  # ’
+    "\u2018",  # ‘
+    "\u02bb",  # ʻ
+    "\u02bc",  # ʼ
+    "\u0060",  # `
+    "\u00b4",  # ´
+)
+_DASH_CHARS = (
+    "\u2013",  # –
+    "\u2014",  # —
+    "\u2212",  # −
+)
+_TROPHY_SUFFIX_RE = re.compile(
+    r"\s+(trophies|trophy\s+set|trophy\s+collection)(\s+for\b.*)?$",
+    re.IGNORECASE,
+)
+
 # Process-local index for fast np_title_id / name lookups (avoids full DB scans)
 _game_cache_index_lock = threading.Lock()
 _game_cache_by_title_id: dict[str, dict] = {}
 _game_cache_by_name: dict[str, dict] = {}
+_game_cache_by_comm_id: dict[str, dict] = {}
 _game_cache_index_loaded = False
 
 
 def _normalize_game_name_key(name: str | None) -> str:
+    """Casefold + unicode fold for presence/trophy title matching.
+
+    Handles curly apostrophes, trademark symbols, trophy-list suffixes, and
+    punctuation noise so near-identical PSN names compare equal.
+    """
     if not name:
         return ""
-    s = str(name).casefold()
-    for ch in ("\u2122", "\u00ae"):
+    # Strip trademark glyphs before NFKC — NFKC maps ™→"tm", ®→"r", which
+    # would leave noisy letters in the key if removed afterward.
+    s = str(name)
+    for ch in ("\u2122", "\u00ae", "\u00a9"):  # ™ ® ©
         s = s.replace(ch, "")
-    return " ".join(s.split())
+    s = unicodedata.normalize("NFKC", s).casefold()
+    for ch in _APOSTROPHE_CHARS:
+        s = s.replace(ch, "'")
+    for ch in _DASH_CHARS:
+        s = s.replace(ch, " ")
+    s = _TROPHY_SUFFIX_RE.sub("", s)
+    cleaned: list[str] = []
+    for ch in s:
+        if ch.isalnum() or ch in ("'", "+", "&", " "):
+            cleaned.append(ch)
+        else:
+            cleaned.append(" ")
+    return " ".join("".join(cleaned).split())
+
+
+# Public alias for callers outside this module (e.g. psn_service)
+normalize_game_name_key = _normalize_game_name_key
+
+
+def _normalize_platform_token(platform: Any) -> str:
+    if platform is None:
+        return ""
+    return str(platform).strip().upper().replace(" ", "").replace("_", "")
+
+
+def _platforms_compatible(candidate_platform: Any, wanted: str | None) -> bool:
+    if not wanted:
+        return True
+    a = _normalize_platform_token(candidate_platform)
+    b = _normalize_platform_token(wanted)
+    if not a or not b:
+        return True
+    return a == b or a in b or b in a
+
+
+def find_best_fuzzy_game_name_match(
+    query: str,
+    candidates: Iterable[dict],
+    *,
+    platform: str | None = None,
+    name_fields: Sequence[str] = ("presence_name", "trophy_name", "name"),
+) -> dict | None:
+    """Return the unique best fuzzy name match, or None if none / ambiguous.
+
+    Uses SequenceMatcher ratio on normalized titles. Accepts only when the best
+    score is >= FUZZY_MATCH_THRESHOLD and clearly ahead of the runner-up.
+    When ``platform`` is set, prefers platform-compatible candidates first.
+    """
+    query_key = _normalize_game_name_key(query)
+    if len(query_key) < FUZZY_MIN_QUERY_LEN:
+        return None
+
+    scored: list[tuple[float, dict]] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        best_for_candidate = 0.0
+        for field_name in name_fields:
+            raw = candidate.get(field_name)
+            if not raw:
+                continue
+            cand_key = _normalize_game_name_key(str(raw))
+            if not cand_key:
+                continue
+            if cand_key == query_key:
+                best_for_candidate = 1.0
+                break
+            ratio = difflib.SequenceMatcher(None, query_key, cand_key).ratio()
+            if ratio > best_for_candidate:
+                best_for_candidate = ratio
+        if best_for_candidate > 0:
+            scored.append((best_for_candidate, candidate))
+
+    if not scored:
+        return None
+
+    def _pick_unique(
+        pool: list[tuple[float, dict]],
+    ) -> tuple[dict, float] | None:
+        if not pool:
+            return None
+        pool.sort(key=lambda item: item[0], reverse=True)
+        best_score, best_cand = pool[0]
+        if best_score < FUZZY_MATCH_THRESHOLD:
+            return None
+        if len(pool) > 1 and (best_score - pool[1][0]) < FUZZY_AMBIGUITY_GAP:
+            return None
+        return best_cand, best_score
+
+    picked: tuple[dict, float] | None = None
+    if platform:
+        platform_pool = [
+            (score, cand)
+            for score, cand in scored
+            if _platforms_compatible(cand.get("platform"), platform)
+        ]
+        picked = _pick_unique(platform_pool)
+    if picked is None:
+        picked = _pick_unique(scored)
+    if picked is None:
+        return None
+
+    best_cand, best_score = picked
+    matched_label = (
+        best_cand.get("presence_name")
+        or best_cand.get("trophy_name")
+        or best_cand.get("name")
+        or ""
+    )
+    logger.info(
+        "PSN fuzzy name match: %r -> %r (score=%.3f, platform=%s)",
+        query,
+        matched_label,
+        best_score,
+        platform or "",
+    )
+    return best_cand
 
 
 def _invalidate_game_cache_index() -> None:
@@ -80,6 +231,7 @@ def _invalidate_game_cache_index() -> None:
     with _game_cache_index_lock:
         _game_cache_by_title_id.clear()
         _game_cache_by_name.clear()
+        _game_cache_by_comm_id.clear()
         _game_cache_index_loaded = False
 
 
@@ -87,6 +239,9 @@ def _index_game_cache_doc(game_data: dict) -> None:
     """Upsert one game document into the in-memory lookup index (caller holds lock)."""
     if not isinstance(game_data, dict):
         return
+    np_comm_id = game_data.get("np_communication_id")
+    if np_comm_id:
+        _game_cache_by_comm_id[str(np_comm_id)] = game_data
     np_title_id = game_data.get("np_title_id")
     if np_title_id:
         _game_cache_by_title_id[str(np_title_id)] = game_data
@@ -112,13 +267,15 @@ def _ensure_game_cache_index() -> None:
             return
         _game_cache_by_title_id.clear()
         _game_cache_by_name.clear()
+        _game_cache_by_comm_id.clear()
         for game_data in docs:
             _index_game_cache_doc(game_data)
         _game_cache_index_loaded = True
         logger.debug(
-            "Built PSN game cache index: %d title_id(s), %d name key(s)",
+            "Built PSN game cache index: %d title_id(s), %d name key(s), %d doc(s)",
             len(_game_cache_by_title_id),
             len(_game_cache_by_name),
+            len(_game_cache_by_comm_id),
         )
 
 
@@ -531,13 +688,18 @@ class PSNClient:
             logger.error(f"Error finding game by np_title_id {np_title_id}: {e}")
             return None
 
-    def find_game_by_name(self, game_name: str) -> dict | None:
+    def find_game_by_name(
+        self, game_name: str, platform: str | None = None
+    ) -> dict | None:
         """
         Find cached game data by game name (presence_name or trophy_name).
-        Uses case-insensitive / normalized matching via the in-memory index.
+
+        Cascade: exact lower / normalized index keys, then conservative fuzzy
+        scan of cached docs (unique winner above threshold only).
 
         Args:
             game_name: The game name to search for
+            platform: Optional presence platform (PS4/PS5) to prefer on fuzzy ties
 
         Returns:
             Game data dict if found, None otherwise
@@ -561,6 +723,14 @@ class PSNClient:
                             f"{game_data.get('np_communication_id', '')}"
                         )
                         return game_data
+                cache_docs = list(_game_cache_by_comm_id.values())
+
+            fuzzy = find_best_fuzzy_game_name_match(
+                game_name, cache_docs, platform=platform
+            )
+            if fuzzy:
+                return fuzzy
+
             logger.debug(f"No cached game found with name: {game_name}")
             return None
         except Exception as e:

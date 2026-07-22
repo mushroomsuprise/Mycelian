@@ -33,19 +33,15 @@ from .dataobjects import PSNSettingsData  # PSNSettingsData for type hint
 from .dataobjects import state_manager
 
 # Assuming these modules are in paths accessible by your main script
-from .psnapi import PSNClient, PSNData, PSNGameMismatch  # PSNData for default object
+from .psnapi import (  # PSNData for default object
+    PSNClient,
+    PSNData,
+    PSNGameMismatch,
+    find_best_fuzzy_game_name_match,
+    normalize_game_name_key,
+)
 
 logger = logging.getLogger(__name__)  # Ensure logger is configured in your app
-
-
-def _normalize_psn_game_title(name: str) -> str:
-    """Casefold, strip common trademark symbols, collapse whitespace for title matching."""
-    if not name:
-        return ""
-    s = name.casefold()
-    for ch in ("\u2122", "\u00ae"):
-        s = s.replace(ch, "")
-    return " ".join(s.split())
 
 
 # --- Global PSN Module Variables ---
@@ -388,7 +384,9 @@ def psn_data_update_loop():
             # Resolve np_communication_id from cache when available
             cached_game = psn_client_instance.find_game_by_np_title_id(np_title_id)
             if not cached_game:
-                cached_game = psn_client_instance.find_game_by_name(presence_game_name)
+                cached_game = psn_client_instance.find_game_by_name(
+                    presence_game_name, platform=platform
+                )
             np_communication_id = (
                 cached_game.get("np_communication_id") if cached_game else None
             )
@@ -613,13 +611,13 @@ def _resolve_game_via_bulk_fallback(
     all_games = all_games_result if all_games_result is not None else {}
     np_communication_id = None
 
-    presence_key = _normalize_psn_game_title(presence_game_name)
+    presence_key = normalize_game_name_key(presence_game_name)
     if all_games:
         for game_id, game_data in all_games.items():
             game_name = game_data.get("name") or ""
             if game_name and (
                 game_name.lower() == presence_game_name.lower()
-                or _normalize_psn_game_title(game_name) == presence_key
+                or normalize_game_name_key(game_name) == presence_key
             ):
                 np_communication_id = game_id
                 logger.info(
@@ -628,6 +626,27 @@ def _resolve_game_via_bulk_fallback(
                     np_communication_id,
                 )
                 break
+
+        if not np_communication_id:
+            # Inject id onto candidates so fuzzy helper can return a usable dict
+            fuzzy_candidates = [
+                {**game_data, "np_communication_id": game_id}
+                for game_id, game_data in all_games.items()
+            ]
+            fuzzy_hit = find_best_fuzzy_game_name_match(
+                presence_game_name,
+                fuzzy_candidates,
+                platform=platform,
+                name_fields=("name",),
+            )
+            if fuzzy_hit:
+                np_communication_id = fuzzy_hit.get("np_communication_id")
+                logger.info(
+                    "Fuzzy matched game in all_games: %r -> %r (%s)",
+                    presence_game_name,
+                    fuzzy_hit.get("name"),
+                    np_communication_id,
+                )
 
     if not np_communication_id and np_title_id:
         resolved = psn_client_instance.resolve_np_communication_id_from_np_title_id(

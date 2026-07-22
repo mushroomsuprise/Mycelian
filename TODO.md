@@ -43,4 +43,13 @@ UI Improvements:
 
 General:
     [x] - Implement a callback logger system so template errors reach the mycelian.log file
-    [] - Condensed view in integrated activity feed causes the activity feed tab to be blank
+    [x] - Condensed view in integrated activity feed causes the activity feed tab to be blank
+
+YouTube Integration:
+    [] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file
+    [] - Add YouTube centered alerts, matching up the YouTube equivalent to the current Twitch configurations (memberships are subs, superchats are donations, etc etc)
+
+Kik Integration:
+    [] - Add in Kik integration service
+    [] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file
+    [] - Add Kik centered alerts, matching up the Kik equivalent to the current Twitch configurations
