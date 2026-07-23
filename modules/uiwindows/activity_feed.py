@@ -1836,6 +1836,13 @@ def on_checkbox_change(key, value):
     # Update alert visibility without affecting dropdown visibility
     update_alert_visibility()
 
+    # Condensed rows are rebuilt labels (not per-alert cards), so rebuild when filters change
+    if (
+        activity_feed_state.condense_list
+        and activity_feed_state.current_tab == "current"
+    ):
+        schedule_condensed_view_update("filter_change")
+
 
 def create_activity_feed_tab():
     """Create the activity feed tab UI"""
@@ -2215,130 +2222,141 @@ def create_activity_feed_tab():
     _DOCK_BTN_PROPS = "flat no-caps dense"
 
     with ui.element("div").classes("tab-surface w-full h-full relative flex flex-col p-4"):
-        # Control buttons row (nowrap + horizontal scroll avoids clipping toggle on narrow/scaled windows)
-        with ui.row().classes(
-            "w-full items-center gap-2 mb-4 flex-nowrap overflow-x-auto"
-        ):
+        # Control row: keep overflow scroll only on left buttons so the filter
+        # dropdown is not clipped into a scrollable top bar (CSS overflow-x:auto
+        # forces overflow-y:auto and swallows absolute menus).
+        with ui.row().classes("w-full items-center gap-2 mb-4 flex-nowrap"):
             from modules import web_engine
             from modules.mainuiwindow import toggle_alerts
 
-            def on_pause_button_click():
-                toggle_alerts()
-                update_pause_button_state()
+            with ui.row().classes(
+                "items-center gap-2 flex-nowrap overflow-x-auto min-w-0 shrink"
+            ):
+                def on_pause_button_click():
+                    toggle_alerts()
+                    update_pause_button_state()
 
-            pause_btn = ui.button(
-                icon="pause", text="PAUSE ALERTS", on_click=on_pause_button_click
-            ).classes("control-button pause-alerts-btn alerts-playing").props(
-                f"{_DOCK_BTN_PROPS} id=pause-alerts-btn"
-            )
-            activity_feed_state.pause_btn = pause_btn
-            global _pause_breath_timer_started
-            if not _pause_breath_timer_started:
-                _pause_breath_timer_started = True
-                app_schedule(0.1, _animate_pause_button_border, active=True)
+                pause_btn = ui.button(
+                    icon="pause", text="PAUSE ALERTS", on_click=on_pause_button_click
+                ).classes("control-button pause-alerts-btn alerts-playing").props(
+                    f"{_DOCK_BTN_PROPS} id=pause-alerts-btn"
+                )
+                activity_feed_state.pause_btn = pause_btn
+                global _pause_breath_timer_started
+                if not _pause_breath_timer_started:
+                    _pause_breath_timer_started = True
+                    app_schedule(0.1, _animate_pause_button_border, active=True)
 
-            def update_pause_button_state():
-                """Update the pause button state based on current ALERTS_PAUSED status"""
-                try:
-                    # Get the current pause state with better error handling
-                    paused = False
+                def update_pause_button_state():
+                    """Update the pause button state based on current ALERTS_PAUSED status"""
                     try:
-                        if hasattr(web_engine, "ALERTS_PAUSED"):
-                            paused = bool(web_engine.ALERTS_PAUSED)
-                            logger.debug(
-                                f"Got pause state from ALERTS_PAUSED: {paused}"
-                            )
-                        else:
-                            logger.debug(
-                                "web_engine not available, defaulting to False"
-                            )
-                    except Exception as state_err:
-                        logger.debug(
-                            f"Error getting pause state: {str(state_err)}, defaulting to False"
-                        )
+                        # Get the current pause state with better error handling
                         paused = False
+                        try:
+                            if hasattr(web_engine, "ALERTS_PAUSED"):
+                                paused = bool(web_engine.ALERTS_PAUSED)
+                                logger.debug(
+                                    f"Got pause state from ALERTS_PAUSED: {paused}"
+                                )
+                            else:
+                                logger.debug(
+                                    "web_engine not available, defaulting to False"
+                                )
+                        except Exception as state_err:
+                            logger.debug(
+                                f"Error getting pause state: {str(state_err)}, defaulting to False"
+                            )
+                            paused = False
 
-                    logger.debug(f"Final pause state: paused={paused}")
+                        logger.debug(f"Final pause state: paused={paused}")
 
-                    if paused:
-                        pause_btn.props(f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=play_arrow")
-                        pause_btn.text = "RESUME ALERTS"
-                        pause_btn.classes(remove="alerts-playing")
-                        pause_btn.classes(add="paused")
-                        pause_btn.style("box-shadow: none")
-                        logger.debug("Updated button to RESUME ALERTS state")
+                        if paused:
+                            pause_btn.props(
+                                f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=play_arrow"
+                            )
+                            pause_btn.text = "RESUME ALERTS"
+                            pause_btn.classes(remove="alerts-playing")
+                            pause_btn.classes(add="paused")
+                            pause_btn.style("box-shadow: none")
+                            logger.debug("Updated button to RESUME ALERTS state")
 
-                    else:
-                        pause_btn.props(f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=pause")
-                        pause_btn.text = "PAUSE ALERTS"
-                        pause_btn.classes(remove="paused")
-                        pause_btn.classes(add="alerts-playing")
-                        logger.debug("Updated button to PAUSE ALERTS state")
+                        else:
+                            pause_btn.props(
+                                f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=pause"
+                            )
+                            pause_btn.text = "PAUSE ALERTS"
+                            pause_btn.classes(remove="paused")
+                            pause_btn.classes(add="alerts-playing")
+                            logger.debug("Updated button to PAUSE ALERTS state")
 
-                except Exception as e:
-                    logger.error(
-                        f"Error updating pause button state: {str(e)}", exc_info=True
-                    )
-
-            # Event-based system doesn't need to store button update function reference
-
-            # Initialize the button state with error handling
-            try:
-                update_pause_button_state()
-            except Exception as e:
-                logger.error(
-                    f"Error initializing pause button state: {str(e)}", exc_info=True
-                )
-
-            def update_mute_button_state():
-                """Update mute button based on current ALERTS_MUTED status."""
-                try:
-                    muted = False
-                    try:
-                        if hasattr(web_engine, "ALERTS_MUTED"):
-                            muted = bool(web_engine.ALERTS_MUTED)
-                    except Exception as state_err:
-                        logger.debug(
-                            f"Error getting mute state: {state_err}, defaulting to False"
+                    except Exception as e:
+                        logger.error(
+                            f"Error updating pause button state: {str(e)}",
+                            exc_info=True,
                         )
-                    activity_feed_state.alerts_muted = muted
-                    btn = activity_feed_state.mute_btn
-                    if not _element_alive(btn):
-                        return
-                    if muted:
-                        btn.classes(add="muted")
-                    else:
-                        btn.classes(remove="muted")
+
+                # Event-based system doesn't need to store button update function reference
+
+                # Initialize the button state with error handling
+                try:
+                    update_pause_button_state()
                 except Exception as e:
                     logger.error(
-                        f"Error updating mute button state: {str(e)}", exc_info=True
+                        f"Error initializing pause button state: {str(e)}",
+                        exc_info=True,
                     )
 
-            def on_mute_button_click():
-                from modules.mainuiwindow import toggle_mute
+                def update_mute_button_state():
+                    """Update mute button based on current ALERTS_MUTED status."""
+                    try:
+                        muted = False
+                        try:
+                            if hasattr(web_engine, "ALERTS_MUTED"):
+                                muted = bool(web_engine.ALERTS_MUTED)
+                        except Exception as state_err:
+                            logger.debug(
+                                f"Error getting mute state: {state_err}, defaulting to False"
+                            )
+                        activity_feed_state.alerts_muted = muted
+                        btn = activity_feed_state.mute_btn
+                        if not _element_alive(btn):
+                            return
+                        if muted:
+                            btn.classes(add="muted")
+                        else:
+                            btn.classes(remove="muted")
+                    except Exception as e:
+                        logger.error(
+                            f"Error updating mute button state: {str(e)}",
+                            exc_info=True,
+                        )
 
-                toggle_mute()
-                update_mute_button_state()
+                def on_mute_button_click():
+                    from modules.mainuiwindow import toggle_mute
 
-            mute_btn = ui.button(
-                icon="notifications_off",
-                text="MUTE ALERTS",
-                on_click=on_mute_button_click,
-            ).classes("control-button mute-alerts-btn").props(
-                f"{_DOCK_BTN_PROPS} id=mute-alerts-btn"
-            )
-            activity_feed_state.mute_btn = mute_btn
+                    toggle_mute()
+                    update_mute_button_state()
 
-            try:
-                update_mute_button_state()
-            except Exception as e:
-                logger.error(
-                    f"Error initializing mute button state: {str(e)}", exc_info=True
+                mute_btn = ui.button(
+                    icon="notifications_off",
+                    text="MUTE ALERTS",
+                    on_click=on_mute_button_click,
+                ).classes("control-button mute-alerts-btn").props(
+                    f"{_DOCK_BTN_PROPS} id=mute-alerts-btn"
                 )
-            skip_btn = ui.button(icon="skip_next", text="SKIP ALERT").classes(
-                "control-button"
-            )
-            skip_btn.props(_DOCK_BTN_PROPS)
+                activity_feed_state.mute_btn = mute_btn
+
+                try:
+                    update_mute_button_state()
+                except Exception as e:
+                    logger.error(
+                        f"Error initializing mute button state: {str(e)}",
+                        exc_info=True,
+                    )
+                skip_btn = ui.button(icon="skip_next", text="SKIP ALERT").classes(
+                    "control-button"
+                )
+                skip_btn.props(_DOCK_BTN_PROPS)
 
             ui.element("div").classes("grow")
 
@@ -2364,8 +2382,8 @@ def create_activity_feed_tab():
                 getattr(activity_feed_state.condense_toggle, "id", None),
             )
 
-            # Create a container for the filter dropdown
-            with ui.element("div").classes("relative shrink-0"):
+            # Filter dropdown lives outside the overflow-x cluster so it can float
+            with ui.element("div").classes("relative shrink-0 z-50"):
                 def toggle_filter_dropdown(e):
                     logger.debug(
                         f"Filter button clicked. Current state: {activity_feed_state.dropdown_visible}"
@@ -2404,7 +2422,7 @@ def create_activity_feed_tab():
 
                 # Create a custom dropdown container (start visible: false, initially hidden)
                 filter_dropdown = ui.element("div").classes(
-                    "absolute top-full right-0 z-50 mt-1 bg-theme-base rounded-md shadow-lg w-56"
+                    "absolute top-full right-0 z-[60] mt-1 bg-theme-base rounded-md shadow-lg w-56"
                 )
                 filter_dropdown.visible = (
                     False  # Use NiceGUI's built-in visibility instead of CSS classes
@@ -3217,15 +3235,25 @@ def _group_alerts_for_condensed(alerts_to_process: List[Dict[str, Any]]):
     user_alerts: Dict[str, Dict[str, Any]] = {}
     excluded_count = 0
     unknown_username_count = 0
+    filter_state = activity_feed_state.filter_state
+    type_to_filter = activity_feed_state.alert_type_to_filter
 
     for alert_data in alerts_to_process:
         alert_type = alert_data.get("type", "").lower()
         badge_type = alert_data.get("badge_type", "").lower()
 
-        if alert_type in ["hype train", "point"] or badge_type in [
-            "hype_train",
-            "point",
-        ]:
+        # Exclude hype train only (channel points are included and grouped by reward)
+        if alert_type == "hype train" or badge_type == "hype_train":
+            excluded_count += 1
+            continue
+
+        # Apply the same filter rules as the regular card view
+        display_type = alert_data.get("type", "")
+        filter_key = type_to_filter.get(display_type)
+        if not (
+            filter_state.get("all", True)
+            or (filter_key and filter_state.get(filter_key, True))
+        ):
             excluded_count += 1
             continue
 
@@ -3241,6 +3269,7 @@ def _group_alerts_for_condensed(alerts_to_process: List[Dict[str, Any]]):
             user_alerts[username] = {}
 
         grouping_key = alert_type
+        reward_name = None
 
         if alert_type in ["sub", "resub", "giftsub"]:
             tier = alert_data.get("tier", 1)
@@ -3267,6 +3296,19 @@ def _group_alerts_for_condensed(alerts_to_process: List[Dict[str, Any]]):
                     grouping_key = f"{alert_type}_tier{tier}_multi_month"
                 else:
                     grouping_key = f"{alert_type}_tier{tier}_1month"
+        elif alert_type in ("point", "points") or badge_type in ("point", "points"):
+            stored_data = alert_data.get("stored_alert_data", {}) or {}
+            reward_name = stored_data.get("alert_name")
+            if not reward_name:
+                message = alert_data.get("message", "")
+                reward_match = re.search(
+                    r"redeemed\s+'(.+?)'!", message, re.IGNORECASE
+                )
+                if reward_match:
+                    reward_name = reward_match.group(1)
+            if not reward_name:
+                reward_name = "Unknown Reward"
+            grouping_key = f"points:{reward_name}"
 
         if grouping_key not in user_alerts[username]:
             user_alerts[username][grouping_key] = {
@@ -3276,6 +3318,8 @@ def _group_alerts_for_condensed(alerts_to_process: List[Dict[str, Any]]):
                 "months": 0,
                 "original_type": alert_type,
             }
+            if reward_name is not None:
+                user_alerts[username][grouping_key]["reward_name"] = reward_name
 
         user_alerts[username][grouping_key]["count"] += 1
 
@@ -3756,6 +3800,15 @@ def create_aggregated_alert_text(grouping_key, data):
             if sc < 1:
                 return "Watch streak!"
             return format_watch_streak_message("", sc, include_username=False)
+        elif grouping_key.startswith("points:") or original_type in ("point", "points"):
+            reward_name = data.get("reward_name")
+            if not reward_name and grouping_key.startswith("points:"):
+                reward_name = grouping_key.split(":", 1)[1]
+            if not reward_name:
+                reward_name = "Unknown Reward"
+            if count > 1:
+                return f"Redeemed '{reward_name}' {count} times!"
+            return f"Redeemed '{reward_name}'!"
         else:
             # Fallback for any other alert types
             display_name = grouping_key.replace("_", " ").title()

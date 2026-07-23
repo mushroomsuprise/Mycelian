@@ -2112,7 +2112,7 @@
 
         function createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours) {
 
-            // Group alerts by user and type, excluding hype train and point alerts
+            // Group alerts by user and type, excluding hype train; channel points grouped by reward
             var userAlerts = {};
             var excludedCount = 0;
             var unknownUsernameCount = 0;
@@ -2121,11 +2121,16 @@
                 var alertType = (alertData.type || '').toLowerCase();
                 var badgeType = (alertData.badge_type || '').toLowerCase();
 
-                // Exclude hype train and point alerts (channel point redemptions)
-                if (alertType === 'hype train' || alertType === 'point' ||
-                    badgeType === 'hype_train' || badgeType === 'point') {
+                // Exclude hype train only (channel points are included and grouped by reward)
+                if (alertType === 'hype train' || badgeType === 'hype_train') {
                     excludedCount++;
                     console.log('Excluding', alertType + '/' + badgeType, 'alert from condensed view');
+                    return;
+                }
+
+                // Apply the same filter rules as the regular card view
+                if (!shouldShowAlert(alertData.type)) {
+                    excludedCount++;
                     return;
                 }
 
@@ -2147,6 +2152,7 @@
 
                 // Create specific grouping key based on alert type, tier, and duration
                 var groupingKey = alertType;
+                var rewardName = null;
 
                 // For subs, resubs, and gift subs, include tier and duration information
                 if (alertType === 'sub' || alertType === 'resub' || alertType === 'giftsub') {
@@ -2178,6 +2184,20 @@
                             groupingKey = alertType + '_tier' + tier + '_1month';
                         }
                     }
+                } else if (alertType === 'point' || alertType === 'points' ||
+                    badgeType === 'point' || badgeType === 'points') {
+                    var pointsStored = alertData.stored_alert_data || {};
+                    rewardName = pointsStored.alert_name || null;
+                    if (!rewardName) {
+                        var rewardMatch = (alertData.message || '').match(/redeemed\s+'(.+?)'!/i);
+                        if (rewardMatch) {
+                            rewardName = rewardMatch[1];
+                        }
+                    }
+                    if (!rewardName) {
+                        rewardName = 'Unknown Reward';
+                    }
+                    groupingKey = 'points:' + rewardName;
                 }
 
                 // Group by the specific key and accumulate data
@@ -2189,6 +2209,9 @@
                         months: 0,  // For resubs, track months
                         originalType: alertType  // Keep track of original alert type
                     };
+                    if (rewardName !== null) {
+                        userAlerts[username][groupingKey].rewardName = rewardName;
+                    }
                 }
 
                 userAlerts[username][groupingKey].count += 1;
@@ -2299,7 +2322,7 @@
             // Debug summary
             console.log('Condensed view processing complete:');
             console.log('  - Processed', alertsToProcess.length, 'total alerts');
-            console.log('  - Excluded', excludedCount, 'hype train/point alerts');
+            console.log('  - Excluded', excludedCount, 'hype train/filtered alerts');
             console.log('  - Skipped', unknownUsernameCount, 'alerts with unknown usernames');
             console.log('  - Final result:', Object.keys(userAlerts).length, 'users with alerts');
 
@@ -2418,6 +2441,18 @@
                         return 'Watch streak!';
                     }
                     return formatWatchStreakMessage('', streakTotal, false);
+                } else if (groupingKey.indexOf('points:') === 0 || originalType === 'point' || originalType === 'points') {
+                    var rewardName = data.rewardName;
+                    if (!rewardName && groupingKey.indexOf('points:') === 0) {
+                        rewardName = groupingKey.split(':').slice(1).join(':');
+                    }
+                    if (!rewardName) {
+                        rewardName = 'Unknown Reward';
+                    }
+                    if (count > 1) {
+                        return "Redeemed '" + rewardName + "' " + count + " times!";
+                    }
+                    return "Redeemed '" + rewardName + "'!";
                 } else {
                     // Fallback for any other alert types
                     var displayName = groupingKey.replace(/_/g, ' ').replace(/\b\w/g, function(l){ return l.toUpperCase(); });
@@ -2580,6 +2615,11 @@
                     }
 
                     updateAlertVisibility();
+
+                    // Condensed rows are rebuilt labels (not per-alert cards), so rebuild when filters change
+                    if (activityFeedState.condenseList) {
+                        updateCondensedView();
+                    }
                 });
             });
         }

@@ -44,8 +44,8 @@ UI Improvements:
 General:
     [x] - Implement a callback logger system so template errors reach the mycelian.log file
     [x] - Condensed view in integrated activity feed causes the activity feed tab to be blank
-    [] - Condensed view filter button doesnt work
-    [] - Condensed view just displaying "points!" instead of a count of each unique point alert
+    [x] - Condensed view filter button doesnt work
+    [x] - Condensed view just displaying "points!" instead of a count of each unique point alert
 
 
 YouTube Integration:
