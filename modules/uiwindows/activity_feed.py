@@ -49,6 +49,34 @@ _condensed_rebuild_running = False
 _condensed_rebuild_rerun = False
 _condensed_integrity_failures = 0
 _ignore_condense_toggle_event = False
+_dom_desync_failures = 0
+_feed_watchdog_started = False
+_FEED_WATCHDOG_INTERVAL_SEC = 30.0
+_DOM_DESYNC_RELOAD_THRESHOLD = 3
+_stale_ui_skip_logged = False
+
+_FEED_DOM_PROBE_JS = """
+(function () {
+  function visible(el) {
+    if (!el) return false;
+    if (el.classList && el.classList.contains('hidden')) return false;
+    var s = getComputedStyle(el);
+    return s.display !== 'none' && s.visibility !== 'hidden';
+  }
+  var cur = document.querySelector('.activity-feed-current');
+  var con = document.querySelector('.activity-feed-condensed');
+  var prev = document.querySelector('.activity-feed-previous');
+  var targets = [cur, con, prev].filter(visible);
+  if (!targets.length) {
+    return {ok: false, reason: 'no_visible_surface', children: 0};
+  }
+  var children = 0;
+  for (var i = 0; i < targets.length; i++) {
+    children += targets[i].children.length;
+  }
+  return {ok: children > 0, reason: 'ok', children: children};
+})()
+"""
 
 
 def _is_stale_client_error(exc: BaseException) -> bool:
@@ -110,6 +138,19 @@ def _condensed_view_has_content() -> bool:
     return _slot_child_count(container) > 0
 
 
+def _element_has_hidden_class(el: Any) -> bool:
+    """Return True when NiceGUI's class list includes ``hidden``."""
+    if not _element_alive(el):
+        return True
+    try:
+        classes = getattr(el, "_classes", None)
+        if classes is None:
+            return False
+        return "hidden" in classes
+    except Exception:
+        return False
+
+
 def _count_rendered_live_alerts() -> int:
     """Return how many live alerts still have a bound, alive UI element."""
     count = 0
@@ -118,6 +159,76 @@ def _count_rendered_live_alerts() -> int:
         if element is not None and _element_alive(element):
             count += 1
     return count
+
+
+def _feed_expects_visible_content() -> bool:
+    """True when the Current Alerts tab should show at least one card/group."""
+    if activity_feed_state.current_tab != "current":
+        return False
+    return bool(activity_feed_state.live_alerts)
+
+
+def _fix_visibility_desync(reason: str) -> bool:
+    """Ensure a Current-tab surface is visible; return True if a fix was applied.
+
+    During condensed rebuilds the regular feed intentionally stays visible until
+    condensed content is ready — that is not treated as a desync.
+    """
+    if activity_feed_state.current_tab != "current":
+        return False
+
+    current = activity_feed_state.current_alerts_container
+    condensed = activity_feed_state.condensed_container
+    if not _element_alive(current) and not _element_alive(condensed):
+        return False
+
+    current_hidden = _element_has_hidden_class(current)
+    condensed_hidden = _element_has_hidden_class(condensed)
+    want_condensed = bool(activity_feed_state.condense_list)
+    rebuild_pending = _condensed_rebuild_running or _condensed_update_scheduled
+
+    both_hidden = current_hidden and condensed_hidden
+    regular_hidden_when_needed = (not want_condensed) and current_hidden
+    condensed_ready_but_hidden = (
+        want_condensed
+        and _condensed_view_has_content()
+        and condensed_hidden
+        and not rebuild_pending
+    )
+
+    if not (both_hidden or regular_hidden_when_needed or condensed_ready_but_hidden):
+        return False
+
+    logger.warning(
+        "activity_feed: visibility desync (%s) — "
+        "want_condensed=%s current_hidden=%s condensed_hidden=%s "
+        "both_hidden=%s ready_but_hidden=%s",
+        reason,
+        want_condensed,
+        current_hidden,
+        condensed_hidden,
+        both_hidden,
+        condensed_ready_but_hidden,
+    )
+
+    if both_hidden:
+        if want_condensed and _condensed_view_has_content():
+            _apply_condensed_visibility(True)
+        elif want_condensed and not rebuild_pending:
+            _fallback_to_regular_feed(f"visibility_desync:{reason}")
+        else:
+            _apply_condensed_visibility(False)
+            _ensure_regular_feed_populated(f"visibility_desync:{reason}")
+        return True
+
+    if condensed_ready_but_hidden:
+        _apply_condensed_visibility(True)
+        return True
+
+    # Regular mode but current surface hidden (condensed may still be showing).
+    _apply_condensed_visibility(False)
+    _ensure_regular_feed_populated(f"visibility_desync:{reason}")
+    return True
 
 
 def _ensure_regular_feed_populated(reason: str) -> None:
@@ -176,9 +287,16 @@ def _ensure_feed_integrity(reason: str) -> None:
     if not _containers_alive():
         return
 
+    # Fix both-hidden / wrong-surface class races before content checks.
+    if _fix_visibility_desync(reason):
+        schedule_feed_dom_probe(f"after_visibility_fix:{reason}")
+        return
+
     if activity_feed_state.condense_list:
         if _condensed_view_has_content():
             _condensed_integrity_failures = 0
+            # Python thinks condensed is healthy — still verify the browser DOM.
+            schedule_feed_dom_probe(f"condensed_ok:{reason}")
             return
         # A rebuild in flight is expected to leave the surface empty briefly;
         # re-check after it finishes instead of counting a failure.
@@ -213,6 +331,7 @@ def _ensure_feed_integrity(reason: str) -> None:
     if not activity_feed_state.live_alerts:
         return
     if _count_rendered_live_alerts() > 0:
+        schedule_feed_dom_probe(f"regular_ok:{reason}")
         return
 
     logger.warning(
@@ -266,6 +385,154 @@ def schedule_feed_integrity_check(reason: str) -> None:
         _ensure_feed_integrity(_integrity_check_reason or "unspecified")
 
     app_schedule(0.2, _deferred, once=True)
+
+
+_dom_probe_scheduled = False
+_dom_probe_reason: Optional[str] = None
+
+
+def schedule_feed_dom_probe(reason: str) -> None:
+    """Debounced client-side DOM probe (catches Vue remount / outbox desync)."""
+    global _dom_probe_scheduled, _dom_probe_reason
+
+    if not _feed_expects_visible_content():
+        return
+    _dom_probe_reason = reason
+    if _dom_probe_scheduled:
+        return
+    _dom_probe_scheduled = True
+
+    def _deferred() -> None:
+        global _dom_probe_scheduled
+        _dom_probe_scheduled = False
+        background_tasks.create(
+            _probe_feed_dom_async(_dom_probe_reason or "unspecified"),
+            name="activity_feed_dom_probe",
+        )
+
+    app_schedule(0.3, _deferred, once=True)
+
+
+def _get_connected_client() -> Any:
+    """Return a NiceGUI client with an active socket, if any."""
+    try:
+        from nicegui import Client
+
+        for inst in Client.instances.values():
+            if getattr(inst, "has_socket_connection", False):
+                return inst
+    except Exception:
+        pass
+    return None
+
+
+async def _probe_feed_dom_async(reason: str) -> None:
+    """Ask the browser whether a visible feed surface has children."""
+    global _dom_desync_failures
+
+    if not _feed_expects_visible_content():
+        _dom_desync_failures = 0
+        return
+    if _condensed_rebuild_running or _condensed_update_scheduled:
+        # Rebuild in flight — re-check shortly instead of false-positive desync.
+        app_schedule(
+            0.5,
+            lambda: schedule_feed_dom_probe(f"{reason}_await_rebuild"),
+            once=True,
+        )
+        return
+
+    client = _get_connected_client()
+    if client is None:
+        return
+
+    try:
+        result = await client.run_javascript(_FEED_DOM_PROBE_JS, timeout=5.0)
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "client" in msg and "deleted" in msg:
+            _handle_stale_client(f"dom_probe:{reason}")
+            return
+        logger.debug("activity_feed: dom probe failed (%s): %s", reason, exc)
+        return
+
+    if not isinstance(result, dict):
+        return
+
+    ok = bool(result.get("ok"))
+    probe_reason = str(result.get("reason") or "unknown")
+    children = int(result.get("children") or 0)
+    expected = len(activity_feed_state.live_alerts)
+
+    if ok and children > 0:
+        _dom_desync_failures = 0
+        return
+
+    _dom_desync_failures += 1
+    logger.warning(
+        "activity_feed: dom_desync (%s) — probe=%s children=%d expected=%d "
+        "(failure %d)",
+        reason,
+        probe_reason,
+        children,
+        expected,
+        _dom_desync_failures,
+    )
+
+    if _dom_desync_failures >= _DOM_DESYNC_RELOAD_THRESHOLD:
+        _dom_desync_failures = 0
+        _escalate_page_reload("feed_dom_desync")
+        return
+
+    # Prefer visibility fix, then panel recover / condensed fallback.
+    if probe_reason == "no_visible_surface":
+        if _fix_visibility_desync(f"dom:{reason}"):
+            schedule_feed_dom_probe(f"after_visibility:{reason}")
+            return
+
+    if activity_feed_state.condense_list:
+        # Show regular immediately so the panel is not blank, then rebuild
+        # condensed (it will hide regular again when ready).
+        _ensure_regular_feed_populated(f"dom_desync:{reason}")
+        _apply_condensed_visibility(False)
+        _schedule_condensed_rebuild(f"dom_desync:{reason}")
+        schedule_feed_integrity_check(f"dom_desync:{reason}")
+    else:
+        if not recover_activity_feed_panel():
+            _escalate_page_reload("feed_dom_desync_recover_failed")
+
+
+def _run_feed_watchdog() -> None:
+    """Periodic integrity + DOM probe — catches silent blanks with no mutations."""
+    try:
+        from modules.shutdown import is_shutdown_in_progress
+
+        if is_shutdown_in_progress():
+            return
+    except Exception:
+        pass
+
+    if not activity_feed_state.is_initialized:
+        return
+    if activity_feed_state.current_tab != "current":
+        return
+    if not _feed_expects_visible_content():
+        return
+
+    schedule_feed_integrity_check("periodic_watchdog")
+
+
+def _start_feed_watchdog() -> None:
+    """Start the repeating feed-blank watchdog (idempotent)."""
+    global _feed_watchdog_started
+    if _feed_watchdog_started:
+        return
+    _feed_watchdog_started = True
+    app_schedule(_FEED_WATCHDOG_INTERVAL_SEC, _run_feed_watchdog, active=True)
+    logger.warning(
+        "activity_feed: feed watchdog started (interval=%ss)",
+        int(_FEED_WATCHDOG_INTERVAL_SEC),
+    )
 
 
 def _run_on_ui_loop(fn: Callable[[], Any]) -> None:
@@ -345,6 +612,8 @@ def _escalate_page_reload(reason: str) -> None:
 
 def recover_activity_feed_panel() -> bool:
     """Rebuild visible feed content when containers are still bound to a live client."""
+    global _dom_desync_failures, _stale_ui_skip_logged
+
     if not _containers_alive():
         return False
 
@@ -355,9 +624,17 @@ def recover_activity_feed_panel() -> bool:
             # Schedule async condensed rebuild; regular feed stays populated as fallback.
             _schedule_condensed_rebuild("recover_activity_feed_panel")
             schedule_feed_integrity_check("recover_activity_feed_panel")
+        else:
+            _apply_condensed_visibility(False)
         update_alert_visibility()
         activity_feed_state.is_initialized = True
-        logger.info("activity_feed: recovered (%d live alerts)", len(activity_feed_state.live_alerts))
+        _stale_ui_skip_logged = False
+        _dom_desync_failures = 0
+        logger.warning(
+            "activity_feed: recovered (%d live alerts)",
+            len(activity_feed_state.live_alerts),
+        )
+        schedule_feed_dom_probe("after_recover")
         return True
     except Exception as exc:
         logger.error("activity_feed: recover_activity_feed_panel failed: %s", exc, exc_info=True)
@@ -399,24 +676,25 @@ def register_client_lifecycle_hooks() -> None:
     _hooks_registered_client_ids.add(client.id)
 
     def _on_disconnect(_client=None) -> None:
-        logger.info("activity_feed: client_disconnected")
-        activity_feed_state.is_initialized = False
+        # Transient socket blips are common under load. Do not flip
+        # is_initialized — that used to drop alerts until reconnect recovery.
+        logger.warning("activity_feed: client_disconnected")
 
     def _on_connect(_client=None) -> None:
         if not _connect_recovery_enabled:
             return
-        logger.info("activity_feed: client_connected — scheduling recovery")
+        logger.warning("activity_feed: client_connected — scheduling recovery")
         app_schedule(0.5, recover_after_client_reconnect, once=True)
 
     def _on_delete(_client=None) -> None:
-        logger.info("activity_feed: client_deleted — scheduling recovery")
+        logger.warning("activity_feed: client_deleted — scheduling recovery")
         _handle_stale_client("client_deleted")
 
     client.on_disconnect(_on_disconnect)
     client.on_connect(_on_connect)
     client.on_delete(_on_delete)
     app_schedule(3.0, _enable_connect_recovery, once=True)
-    logger.debug("activity_feed: client lifecycle hooks registered")
+    logger.warning("activity_feed: client lifecycle hooks registered")
 
 
 def _enable_connect_recovery() -> None:
@@ -488,15 +766,33 @@ class AlertEventHandler:
         self, new_alert_data: Dict[str, Any], alert_type: str
     ) -> None:
         """Apply a new alert to UI state (must run on NiceGUI loop)."""
-        if not (
-            activity_feed_state.is_initialized
-            and _containers_alive()
-        ):
-            logger.debug("UI not initialized or containers stale, skipping alert")
-            return
+        global _stale_ui_skip_logged
 
         with self._ui_update_lock:
+            # Always keep alert state so recovery can repaint after desync.
             activity_feed_state.live_alerts.insert(0, new_alert_data)
+
+            ui_ready = (
+                activity_feed_state.is_initialized and _containers_alive()
+            )
+            if not ui_ready:
+                if not _stale_ui_skip_logged:
+                    logger.warning(
+                        "activity_feed: UI stale — alert kept in state, "
+                        "skipping paint (%s); scheduling recovery",
+                        alert_type,
+                    )
+                    _stale_ui_skip_logged = True
+                # Only recover when containers existed and then went stale —
+                # never escalate during pre-init startup.
+                if (
+                    activity_feed_state.current_alerts_container is not None
+                    or activity_feed_state.condensed_container is not None
+                ):
+                    _handle_stale_client("apply_alert_on_ui")
+                return
+
+            _stale_ui_skip_logged = False
 
             should_display_new_alert = activity_feed_state.current_tab == "current"
             condensed_active = (
@@ -2553,15 +2849,15 @@ def create_activity_feed_tab():
 
             # Create separate containers for each tab
             activity_feed_state.current_alerts_container = ui.element("div").classes(
-                "w-full"
+                "w-full activity-feed-current"
             )
             activity_feed_state.previous_alerts_container = ui.element("div").classes(
-                "w-full hidden"
+                "w-full hidden activity-feed-previous"
             )
 
             # Create condensed view container (hidden by default)
             activity_feed_state.condensed_container = ui.element("div").classes(
-                "w-full hidden condensed-view"
+                "w-full hidden condensed-view activity-feed-condensed"
             )
 
             # Set the main container reference (for backward compatibility)
@@ -2583,6 +2879,9 @@ def create_activity_feed_tab():
 
             # Defer condensed-view setup so first paint is never blocked by storage I/O.
             app_schedule(0, update_condensed_view, once=True)
+
+            # Periodic DOM/integrity watchdog catches silent NiceGUI remount blanks.
+            _start_feed_watchdog()
 
             # Start on current alerts tab - no need to load restored alerts initially
 
@@ -3586,7 +3885,8 @@ def _schedule_condensed_rebuild(reason: str) -> None:
 
 async def _update_condensed_view_async(reason: str) -> None:
     """Fetch condensed data off the UI loop, then render on the loop."""
-    global _condensed_rebuild_running, _condensed_rebuild_rerun, _condensed_integrity_failures
+    global _condensed_rebuild_running, _condensed_rebuild_rerun
+    global _condensed_integrity_failures, _dom_desync_failures
 
     _condensed_rebuild_running = True
     try:
@@ -3624,6 +3924,7 @@ async def _update_condensed_view_async(reason: str) -> None:
 
             if built:
                 _condensed_integrity_failures = 0
+                _dom_desync_failures = 0
                 _apply_condensed_visibility(True)
                 schedule_feed_integrity_check(f"condensed_show:{reason}")
             else:
