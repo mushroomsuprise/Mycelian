@@ -682,6 +682,8 @@
         var isHoldQueueOnly = false; // Server: dedicated template — main overlay only holds queue duration
         var pendingQueueCompletionSeq = null; // Echo in alert_complete for current queue item
         var pendingCompleteTimeout = null; // Final delay before alert_complete (must clear on new alert)
+        var audioResolvePending = false; // True while folder/static audio source is still being resolved
+        var audioResolveGeneration = 0; // Bumps per startAlertPlayback so stale finally blocks cannot clear a newer resolve
         var pointAlertSilentNoMedia = {{ PointAlertSilentNoMedia | default(false) | tojson }};
         var showUsernameText = {{ EnableUsernameText | default(true) | tojson }};
         var showHeaderLineText = {{ EnableHeaderText | default(true) | tojson }};
@@ -917,7 +919,12 @@
         // Comprehensive alert state detection functions
         function isAudioPlaying() {
             const audioElement = document.getElementById('alertAudio');
-            return audioElement && !audioElement.paused && !audioElement.ended && audioElement.currentTime > 0;
+            if (!audioElement || !audioElement.getAttribute('src')) {
+                return false;
+            }
+            // Treat !paused && !ended as playing even when currentTime is still 0
+            // (avoids a one-frame false "done" right after play()).
+            return !audioElement.paused && !audioElement.ended;
         }
 
         function isTtsPlaying() {
@@ -1246,10 +1253,10 @@
                 const visualVisible = areVisualElementsVisible();
                 const ttsPlaying = isTtsPlaying();
 
-                console.log(`Randomized alert status - Audio playing: ${audioPlaying}, TTS playing: ${ttsPlaying}, Visual visible: ${visualVisible}`);
+                console.log(`Randomized alert status - Audio playing: ${audioPlaying}, TTS playing: ${ttsPlaying}, Visual visible: ${visualVisible}, Audio resolve pending: ${audioResolvePending}`);
 
-                if (audioPlaying || ttsPlaying || visualVisible) {
-                    // Still waiting for elements to finish
+                if (audioResolvePending || audioPlaying || ttsPlaying || visualVisible) {
+                    // Still waiting for elements to finish (or folder audio still resolving)
                     setTimeout(checkAndSendAlertComplete, 100); // Check again in 100ms
                     return;
                 }
@@ -1571,17 +1578,21 @@
 
             console.log(`Starting alert - Duration: ${alertDuration}ms, Randomized: ${isRandomizedAlert}, Exit animation duration: ${exitAnimationDuration}ms`);
 
-            // Start audio and TTS together when possible.
-            startAlertPlayback(alertData);
-
             // Check if this is an audio-only alert
             if (alertData.audio_only) {
                 console.log('Audio-only alert detected, skipping visual elements');
+
+                // Await playback setup so folder-list resolution finishes before completion polling
+                await startAlertPlayback(alertData);
 
                 // For audio-only alerts, use the new completion checking system
                 // Set up a periodic check to see when audio finishes
                 const checkAudioOnlyComplete = () => {
                     const ttsPlaying = isTtsPlaying();
+                    if (audioResolvePending) {
+                        setTimeout(checkAudioOnlyComplete, 100);
+                        return;
+                    }
                     if (isRandomizedAlert) {
                         // For randomized audio-only alerts, wait for audio to finish
                         if (isAudioPlaying() || ttsPlaying) {
@@ -1591,8 +1602,8 @@
                     } else {
                         // For regular audio-only alerts, respect duration
                         const timeRemaining = getTimeRemaining();
-                        if (timeRemaining > 0 || ttsPlaying) {
-                            setTimeout(checkAudioOnlyComplete, Math.min(100, timeRemaining));
+                        if (timeRemaining > 0 || ttsPlaying || isAudioPlaying()) {
+                            setTimeout(checkAudioOnlyComplete, Math.min(100, timeRemaining || 100));
                             return;
                         }
                     }
@@ -1606,6 +1617,9 @@
                 setTimeout(checkAudioOnlyComplete, 100);
                 return; // Skip all visual rendering
             }
+
+            // Start audio and TTS together when possible (visual alerts).
+            startAlertPlayback(alertData);
 
 
             // Get DOM elements for visual alerts
@@ -1881,68 +1895,77 @@
         }
 
         async function startAlertPlayback(alertData) {
-            const audioElement = document.getElementById('alertAudio');
-            const ttsEnabled = shouldPlayTts(alertData);
-            const audioSource = await resolveAlertAudioSource(alertData);
+            const generation = ++audioResolveGeneration;
+            audioResolvePending = true;
+            try {
+                const audioElement = document.getElementById('alertAudio');
+                const ttsEnabled = shouldPlayTts(alertData);
+                const audioSource = await resolveAlertAudioSource(alertData);
 
-            if (currentAlert !== alertData) {
-                console.log('Alert changed before playback started, aborting stale playback');
-                return;
-            }
-
-            if (alertsMuted) {
-                console.log('Alerts are muted, skipping audio playback');
-                return;
-            }
-
-            if (audioSource) {
-                console.log('Playing audio:', audioSource);
-                audioElement.pause();
-                audioElement.currentTime = 0;
-                audioElement.src = audioSource;
-
-                if (alertData.volume !== undefined && alertData.volume !== null) {
-                    let audioVolume = Math.max(0, Math.min(1, alertData.volume / 100));
-                    if (ttsEnabled) {
-                        audioVolume = Math.max(0, Math.min(1, audioVolume * 0.25));
-                    }
-                    audioElement.volume = audioVolume;
+                if (currentAlert !== alertData) {
+                    console.log('Alert changed before playback started, aborting stale playback');
+                    return;
                 }
 
-                audioElement.onerror = function () {
-                    var err = audioElement.error;
-                    if (err) {
-                        var codes = {
-                            1: 'MEDIA_ERR_ABORTED',
-                            2: 'MEDIA_ERR_NETWORK',
-                            3: 'MEDIA_ERR_DECODE',
-                            4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
-                        };
-                        console.warn('Alert audio error:', codes[err.code] || err.code, err.message || '');
-                    } else {
-                        console.warn('Alert audio error: unknown');
-                    }
-                };
-                audioElement.load();
-
-                const playPromise = audioElement.play();
-                if (ttsEnabled) {
-                    playAlertTts(alertData);
+                if (alertsMuted) {
+                    console.log('Alerts are muted, skipping audio playback');
+                    return;
                 }
-                if (playPromise !== undefined) {
-                    playPromise.catch(error => {
-                        if (error.name === 'NotAllowedError') {
-                            console.warn('Audio autoplay was prevented by browser policy. User interaction required.');
-                        } else {
-                            console.error('Error playing audio:', error);
+
+                if (audioSource) {
+                    console.log('Playing audio:', audioSource);
+                    audioElement.pause();
+                    audioElement.currentTime = 0;
+                    audioElement.src = audioSource;
+
+                    if (alertData.volume !== undefined && alertData.volume !== null) {
+                        let audioVolume = Math.max(0, Math.min(1, alertData.volume / 100));
+                        if (ttsEnabled) {
+                            audioVolume = Math.max(0, Math.min(1, audioVolume * 0.25));
                         }
-                    });
+                        audioElement.volume = audioVolume;
+                    }
+
+                    audioElement.onerror = function () {
+                        var err = audioElement.error;
+                        if (err) {
+                            var codes = {
+                                1: 'MEDIA_ERR_ABORTED',
+                                2: 'MEDIA_ERR_NETWORK',
+                                3: 'MEDIA_ERR_DECODE',
+                                4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+                            };
+                            console.warn('Alert audio error:', codes[err.code] || err.code, err.message || '');
+                        } else {
+                            console.warn('Alert audio error: unknown');
+                        }
+                    };
+                    audioElement.load();
+
+                    const playPromise = audioElement.play();
+                    if (ttsEnabled) {
+                        playAlertTts(alertData);
+                    }
+                    if (playPromise !== undefined) {
+                        playPromise.catch(error => {
+                            if (error.name === 'NotAllowedError') {
+                                console.warn('Audio autoplay was prevented by browser policy. User interaction required.');
+                            } else {
+                                console.error('Error playing audio:', error);
+                            }
+                        });
+                    }
+                } else if (ttsEnabled) {
+                    console.log('No audio source determined for alert, starting TTS only');
+                    playAlertTts(alertData);
+                } else {
+                    console.log('No audio source determined for alert');
                 }
-            } else if (ttsEnabled) {
-                console.log('No audio source determined for alert, starting TTS only');
-                playAlertTts(alertData);
-            } else {
-                console.log('No audio source determined for alert');
+            } finally {
+                // Only the latest playback setup may clear the pending flag
+                if (generation === audioResolveGeneration) {
+                    audioResolvePending = false;
+                }
             }
         }
 
@@ -1959,7 +1982,7 @@
                         const randomFile = cachedFiles[Math.floor(Math.random() * cachedFiles.length)];
                         // folderName contains the full path from the database
                         resolve(`${folderName}/${randomFile}`);
-                        console.log(`Selected random audio: ${randomFile} from ${data.files.length} files in ${folderName}`);
+                        console.log(`Selected random audio: ${randomFile} from ${cachedFiles.length} files in ${folderName}`);
                         return;
                     }
                 }
@@ -1980,9 +2003,13 @@
                 const requestId = 'audio_files_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 console.log('Requesting audio files from folder:', serverFolderPath);
                 console.log('Request ID:', requestId);
+                let timeoutId = null;
                 // Set up one-time listener for the response
                 const responseHandler = (data) => {
                     if (data.request_id === requestId) {
+                        if (timeoutId !== null) {
+                            clearTimeout(timeoutId);
+                        }
                         socket.off('audio_files_response', responseHandler);
 
                         if (data.success && data.files && data.files.length > 0) {
@@ -2005,7 +2032,7 @@
                 };
 
                 // Set timeout for the request
-                const timeoutId = setTimeout(() => {
+                timeoutId = setTimeout(() => {
                     socket.off('audio_files_response', responseHandler);
                     console.warn(`Timeout waiting for audio files from folder: ${folderName} (server path: ${serverFolderPath}), skipping audio playback`);
                     resolve(null); // Resolve with null instead of rejecting to avoid uncaught promise errors

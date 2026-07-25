@@ -4547,8 +4547,8 @@ class WebEngine:
                     )
                     return
 
-                # Build the full path to the audio folder
-                audio_folder_path = os.path.join("assets", "alerts", folder_name)
+                # Build the full path to the audio folder (same root as /assets HTTP serving)
+                audio_folder_path = get_assets_path(os.path.join("alerts", folder_name))
 
                 # Check if the folder exists
                 if not os.path.exists(audio_folder_path):
