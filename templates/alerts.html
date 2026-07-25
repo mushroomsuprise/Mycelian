@@ -178,6 +178,17 @@
             opacity: 0;
         }
 
+        /* Inner content: normal inline flow so text wraps around emotes like chat */
+        .alert-message-content {
+            display: block;
+            max-width: 100%;
+            min-width: 0;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            vertical-align: baseline;
+        }
+
+        /* Emotes: layout uses height (not transform scale) so inline flow matches visual size (~28px nominal) */
         .alert-message .emote-img,
         .alert-message .emote-base,
         .alert-message .emote-zw {
@@ -217,22 +228,31 @@
             box-sizing: border-box;
         }
 
+        .alert-message .emote-zw {
+            opacity: 0.8;
+            border: 1px dashed rgba(255, 255, 255, 0.3);
+            margin: 0 {{ EmoteMargin | default(2) }}px;
+        }
+
         .alert-message .cheermote-container {
-            display: inline-flex;
+            display: inline-block;
             align-items: center;
             gap: 2px;
+            margin: 0 {{ EmoteMargin | default(2) }}px;
             vertical-align: middle;
         }
 
         .alert-message .cheermote-img {
             height: calc(28px * {{ EmoteScale | default(1.4) }});
             width: auto;
+            object-fit: contain;
             vertical-align: middle;
         }
 
         .alert-message .cheermote-amount {
             font-weight: bold;
             font-size: 0.9em;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
         }
 
         /* Hidden audio element for playing alert sounds */
@@ -1607,7 +1627,10 @@
             // Set alert content
             alertUsername.innerHTML = formatUsername(alertData);
             alertText.innerHTML = formatAlertText(alertData);
-            alertMessage.innerHTML = formatAlertMessage(alertData);
+            var formattedMessage = formatAlertMessage(alertData);
+            alertMessage.innerHTML = formattedMessage
+                ? '<div class="alert-message-content">' + formattedMessage + '</div>'
+                : '';
 
             console.log('Alert content set - Username:', alertUsername.innerHTML, 'Text:', alertText.innerHTML, 'Message:', alertMessage.innerHTML);
 
@@ -2582,6 +2605,29 @@
             }
             if (config.MessageColor) {
                 messageElements.forEach(el => el.style.color = config.MessageColor);
+            }
+
+            // Live emote scale/margin/radius (same 28px × EmoteScale model as chat)
+            if (config.EmoteScale !== undefined || config.EmoteMargin !== undefined || config.EmoteRadius !== undefined) {
+                var emoteScale = config.EmoteScale !== undefined ? Number(config.EmoteScale) : {{ EmoteScale | default(1.4) }};
+                var emoteMargin = config.EmoteMargin !== undefined ? Number(config.EmoteMargin) : {{ EmoteMargin | default(2) }};
+                var emoteRadius = config.EmoteRadius !== undefined ? Number(config.EmoteRadius) : {{ EmoteRadius | default(0) }};
+                if (isNaN(emoteScale)) { emoteScale = 1.4; }
+                if (isNaN(emoteMargin)) { emoteMargin = 2; }
+                if (isNaN(emoteRadius)) { emoteRadius = 0; }
+                var emoteStyleEl = document.getElementById('alerts-emote-runtime');
+                if (!emoteStyleEl) {
+                    emoteStyleEl = document.createElement('style');
+                    emoteStyleEl.id = 'alerts-emote-runtime';
+                    document.head.appendChild(emoteStyleEl);
+                }
+                emoteStyleEl.textContent =
+                    '.alert-message .emote-img, .alert-message .emote-base, .alert-message .emote-zw, ' +
+                    '.alert-message .cheermote-img { height: calc(28px * ' + emoteScale + '); ' +
+                    'border-radius: ' + emoteRadius + 'px; }' +
+                    '.alert-message .emote-img, .alert-message .emote-zw { margin: 0 ' + emoteMargin + 'px; }' +
+                    '.alert-message .emote-container, .alert-message .cheermote-container { margin: 0 ' + emoteMargin + 'px; }' +
+                    '.alert-message .emote-overlay { border-radius: ' + emoteRadius + 'px; }';
             }
 
             // Apply shadow effects
