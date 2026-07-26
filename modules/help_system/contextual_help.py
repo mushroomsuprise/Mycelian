@@ -479,6 +479,10 @@ def twitch_help_button():
     """Help button specifically for Twitch settings"""
     return help_button(context="settings.twitch", tooltip="Twitch connection help")
 
+def discord_help_button():
+    """Help button specifically for Discord settings"""
+    return help_button(topic_id="integrations_discord", tooltip="Discord setup help")
+
 def alerts_help_button():
     """Help button specifically for alerts"""
     return help_button(topic_id="alerts_overview", tooltip="Alerts help")

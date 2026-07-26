@@ -5806,13 +5806,23 @@ messages to channels you choose for Chatbot replies, Connectors, and automatic
 
 ## Setup
 
-1. Open the [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create a **New Application**, then open the **Bot** tab
-3. Copy the **bot token** into **Settings → Discord** and click **Connect**
-4. Use **Invite bot** to add the bot to your server(s) (Send Messages permission)
-5. Add one or more channels under **Stream is live** if you want automatic announcements
+1. **Create an application** — Open the
+   [Discord Developer Portal](https://discord.com/developers/applications) and
+   create a **New Application**.
+2. **Add a bot** — Open the **Bot** tab, create/reset the bot token, and copy it.
+   Mycelian never needs your Discord password.
+3. **Paste the token** — Go to **Settings → Discord**, paste the bot token, and
+   click **Connect**.
+4. **Invite the bot** — After connecting, use **Invite bot** (or Copy invite) to
+   add the bot to your server(s) with **Send Messages** permission.
+5. **Choose channels** — Under **Stream is live**, add one or more
+   server/channel destinations for automatic announcements. The same servers
+   appear in Chatbot and Connectors once the bot is connected.
 
 Your bot token is stored encrypted in the app database.
+
+> **Tip:** Privileged intents such as Server Members or Message Content are
+> **not** required for Mycelian's send-only Discord features.
 
 ## Go-live announcements
 

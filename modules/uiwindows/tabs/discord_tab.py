@@ -14,6 +14,7 @@ from ... import discord_service
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_sensitive_input
+from ...help_system.contextual_help import help_button
 from ...ui_settings_layout import (
     THEME_CHIP_CLASSES,
     settings_form_grid,
@@ -25,29 +26,6 @@ from ...ui_settings_layout import (
 from ...ui_timer import layout_schedule
 
 logger = logging.getLogger(__name__)
-
-_SETUP_STEPS = [
-    (
-        "Create an application",
-        "Open the Discord Developer Portal and create a New Application.",
-    ),
-    (
-        "Add a bot",
-        "Open the Bot tab, click Reset Token / create a bot, and copy the bot token.",
-    ),
-    (
-        "Paste the token",
-        "Paste the bot token below and click Connect. Mycelian never needs your Discord password.",
-    ),
-    (
-        "Invite the bot",
-        "After connecting, use Invite bot to add it to your server(s) with Send Messages permission.",
-    ),
-    (
-        "Choose channels",
-        "Select one or more channels for go-live announcements (and use the same list in Chatbot / Connectors).",
-    ),
-]
 
 
 class DiscordTab:
@@ -344,22 +322,19 @@ class DiscordTab:
                     )
 
             with settings_section(
-                "Setup guide",
-                subtitle="Create your own Discord bot, then connect it here",
+                "Connection",
+                subtitle="Bot token from the Developer Portal — see Help for setup steps",
             ):
-                ui.link(
-                    "Open Discord Developer Portal",
-                    "https://discord.com/developers/applications",
-                    new_tab=True,
-                ).classes("text-sm mb-2")
-                for idx, (title, body) in enumerate(_SETUP_STEPS, start=1):
-                    with ui.row().classes("w-full items-start gap-2 mb-1"):
-                        ui.badge(str(idx)).props("color=primary")
-                        with ui.column().classes("gap-0 flex-1"):
-                            ui.label(title).classes("font-semibold text-sm")
-                            ui.label(body).classes("text-xs secondary-text")
+                with ui.row().classes("w-full items-center justify-between gap-2 mb-1"):
+                    ui.label(
+                        "Need a bot token? Open Help for the full Discord setup guide."
+                    ).classes("text-xs secondary-text")
+                    help_button(
+                        topic_id="integrations_discord",
+                        tooltip="Discord setup help",
+                        size="sm",
+                    )
 
-            with settings_section("Connection", subtitle="Bot token from the Developer Portal"):
                 with settings_form_grid(columns=1):
                     self.ui_elements["bot_token"] = form_sensitive_input(
                         tooltip="Discord bot token (kept encrypted in the app database)",
