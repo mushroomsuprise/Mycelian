@@ -49,10 +49,10 @@ General:
 
 
 YouTube Integration:
-    [] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file
-    [] - Add YouTube centered alerts, matching up the YouTube equivalent to the current Twitch configurations (memberships are subs, superchats are donations, etc etc)
+    [x] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file. Default to being off
+    [x] - Add YouTube to the alerts system, match up the YouTube equivalent to the current Twitch configurations (memberships are subs, superchats are donations, etc etc)
 
 Kik Integration:
     [] - Add in Kik integration service
-    [] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file
-    [] - Add Kik centered alerts, matching up the Kik equivalent to the current Twitch configurations
+    [] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file. Default to being off.
+    [] - Add Kik to the alerts alerts, matching up the Kik equivalent to the current Twitch configurations

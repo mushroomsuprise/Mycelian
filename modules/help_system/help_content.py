@@ -5583,12 +5583,13 @@ On your PlayStation console:
         id="integrations_youtube",
         title="YouTube Integration",
         category=HelpCategory.INTEGRATIONS,
-        summary="Monitor YouTube channels and use latest video data in automated messages",
+        summary="Monitor uploads, connect live chat via Google OAuth, and map memberships/Super Chats to alerts",
         content="""
 # YouTube Integration
 
-Monitor one or more YouTube channels and make their latest video information
-available for use in [chatbot commands](help:chatbot_commands) and automated messages.
+Monitor one or more YouTube channels for latest uploads, and optionally connect
+Google OAuth to ingest **live chat**, **memberships**, and **Super Chats** into
+Mycelian's chat overlay and alert system.
 
 ## Features
 
@@ -5602,8 +5603,11 @@ available for use in [chatbot commands](help:chatbot_commands) and automated mes
 - **Playlist Filter**: Exclude videos that belong to specific playlists so they
   are not surfaced as the "latest video"
 - **Auto-Refresh**: Video data refreshes automatically every 30 minutes
+- **Live Chat**: When authorized, poll your active broadcast's live chat
+- **Alerts**: Memberships map to sub/resub/giftsub alerts; Super Chats/Stickers
+  map to donation alerts (same alert configs as Twitch)
 
-## Setup Process
+## Setup Process — API Key (uploads)
 
 ### Prerequisites
 You need a **YouTube Data API v3** key from the Google Cloud Console:
@@ -5620,6 +5624,46 @@ You need a **YouTube Data API v3** key from the Google Cloud Console:
      `https://youtube.com/channel/UCxxxxxx`, `https://youtube.com/c/Name`
 4. Click **Test** to verify the connection
 5. Click **Save** to persist your settings
+
+## Setup Process — Live Chat & Alerts (OAuth)
+
+Live chat uses Google OAuth the same way Spotify uses its Client ID/Secret flow.
+
+### Quick Connect
+1. Go to **Settings** → **YouTube** → **Live chat & alerts**
+2. If Mycelian already has built-in YouTube OAuth credentials in
+   `api_credentials.json`, you can skip to step 3. Otherwise paste your
+   **OAuth Client ID** and **Client Secret**, then click **Save**.
+3. Click **Connect**
+4. Authorize Mycelian in the browser (Google account that owns the channel)
+5. Return to the app — live status should show **Offline** (authorized) or
+   **Live** when you are streaming
+
+### Create a Google OAuth app (optional / your own credentials)
+Use these steps when Mycelian should use **your** Google Cloud OAuth client:
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) and create/select a project
+2. Enable **YouTube Data API v3**
+3. Configure the **OAuth consent screen** (External is fine for personal use)
+4. Create credentials → **OAuth client ID** → Application type **Web application**
+5. Under **Authorized redirect URIs**, add exactly:
+   `http://127.0.0.1:9974`
+6. Copy the **Client ID** and **Client Secret** into Mycelian, click **Save**,
+   then **Connect**
+
+### Show chat in the overlay
+YouTube chat messages are **off by default**. In the chat template Source Settings,
+enable **Enable YouTube Chat** (`EnableYouTubeChat` in `chat.json`). Alerts for
+memberships and Super Chats still fire even when this toggle is off.
+
+### Event mapping
+| YouTube event | Mycelian alert / chat |
+|---|---|
+| Text message | Chat overlay (if Enable YouTube Chat) |
+| New membership | Sub alert |
+| Member milestone | Resub alert |
+| Gift memberships | Giftsub alert |
+| Super Chat / Super Sticker | Donation alert |
 
 ## Playlist Filter
 
@@ -5675,6 +5719,17 @@ characters removed):
 - Double-check that the channel URLs are correct and the channels are public
 - Verify your API key has not been revoked or restricted
 
+**Live chat stays "Not authorized"**
+- Confirm Client ID/Secret are filled (from `api_credentials.json` or the YouTube tab)
+- Confirm they belong to a **Web** OAuth client with redirect URI
+  `http://127.0.0.1:9974`
+- Complete the browser consent with the channel owner account
+
+**Live status stuck on Offline while streaming**
+- Live Streaming must be enabled on the YouTube channel
+- Wait up to ~60 seconds for rediscovery after going live
+- Confirm the OAuth account is the broadcast owner
+
 ### Quota Issues
 **"Quota Exceeded"**
 - The YouTube Data API has a daily quota of 10,000 units
@@ -5682,6 +5737,10 @@ characters removed):
 - Reduce the number of monitored channels if quota is a recurring problem
 - The playlist filter uses additional quota when active (one extra API call
   per filtered playlist per update cycle)
+- **Live chat polling** costs about **5 units per poll** and respects Google's
+  `pollingIntervalMillis` (often ~5 seconds). Long streams may need a
+  [quota extension](https://support.google.com/youtube/contact/yt_api_form)
+  in Google Cloud
 
 ### Data Issues
 **"Latest video not updating"**
@@ -5692,11 +5751,13 @@ characters removed):
 
 ## API Notes
 
-- Requires a YouTube Data API v3 key (free tier available)
-- Daily quota limit of 10,000 units; each check cycle uses a few units per
-  channel plus additional units if playlist filtering is active
-- Only public videos are detected
-- Data refreshes every 30 minutes automatically
+- Upload monitoring uses a YouTube Data API v3 key (free tier available)
+- Live chat uses OAuth scope `youtube.readonly` and redirect
+  `http://127.0.0.1:9974`
+- Daily quota limit of 10,000 units by default; request an extension for
+  reliable all-day live chat polling
+- Only public videos are detected for upload monitoring
+- Upload data refreshes every 30 minutes automatically
 
 > **Tip:** Use YouTube [chatbot variables](help:chatbot_variables) like `{youtube.latest_video_url}` in custom [commands](help:chatbot_commands) to automatically share your latest uploads with viewers.
         """,
@@ -5709,6 +5770,11 @@ characters removed):
             "content",
             "playlist",
             "filter",
+            "oauth",
+            "live chat",
+            "super chat",
+            "membership",
+            "donation",
             "exclude",
             "api key",
         ],

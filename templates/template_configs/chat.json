@@ -1128,6 +1128,17 @@
         },
         {
             "type": "separator",
+            "label": "Platform Sources"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableYouTubeChat",
+            "label": "Enable YouTube Chat",
+            "value": false,
+            "description": "Show YouTube live chat messages in this overlay (requires YouTube OAuth in Settings). Default off."
+        },
+        {
+            "type": "separator",
             "label": "Badge Settings"
         },
         {

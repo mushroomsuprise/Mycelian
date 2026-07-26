@@ -259,6 +259,17 @@ class YouTubeData:
     playlist_filter: list = field(default_factory=list)
     connection_status: str = "Disconnected"
     last_updated: str = ""
+    # Google OAuth for live chat / memberships / Super Chats
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
+    access_token: str = ""
+    refresh_token: str = ""
+    token_expiry: str = ""  # ISO format datetime string
+    oauth_channel_id: str = ""
+    oauth_channel_title: str = ""
+    # When True and OAuth tokens exist, run the live chat poller
+    live_chat_enabled: bool = True
+    live_chat_status: str = "Not authorized"  # Not authorized / Offline / Live / Error
 
     def __post_init__(self):
         """Log when a new YouTubeData instance is created"""
@@ -732,6 +743,16 @@ class StateManager:
             # Decrypt sensitive fields
             if "api_key" in filtered_dict:
                 filtered_dict["api_key"] = ensure_decrypted(filtered_dict["api_key"])
+            for _yt_secret in (
+                "oauth_client_id",
+                "oauth_client_secret",
+                "access_token",
+                "refresh_token",
+            ):
+                if _yt_secret in filtered_dict and filtered_dict[_yt_secret]:
+                    filtered_dict[_yt_secret] = ensure_decrypted(
+                        filtered_dict[_yt_secret]
+                    )
 
             self._youtube_data = YouTubeData(**filtered_dict)
 
@@ -1745,6 +1766,19 @@ class StateManager:
                         encrypted_youtube_data["api_key"] = ensure_encrypted(
                             encrypted_youtube_data["api_key"]
                         )
+                    for _yt_secret in (
+                        "oauth_client_id",
+                        "oauth_client_secret",
+                        "access_token",
+                        "refresh_token",
+                    ):
+                        if (
+                            _yt_secret in encrypted_youtube_data
+                            and encrypted_youtube_data[_yt_secret]
+                        ):
+                            encrypted_youtube_data[_yt_secret] = ensure_encrypted(
+                                encrypted_youtube_data[_yt_secret]
+                            )
                     writes.append(
                         (self._paths["youtube_data"], encrypted_youtube_data)
                     )

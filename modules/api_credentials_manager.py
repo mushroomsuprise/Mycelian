@@ -66,6 +66,10 @@ class APICredentials:
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
 
+    # YouTube OAuth credentials (live chat / memberships / Super Chats)
+    youtube_client_id: str = ""
+    youtube_client_secret: str = ""
+
     # Configuration metadata
     config_version: str = "1.0"
     last_updated: str = ""
@@ -348,6 +352,45 @@ class APICredentialsManager:
 
         return True
 
+    def get_youtube_credentials(self) -> Dict[str, str]:
+        """Get YouTube OAuth client credentials (decrypted)"""
+        if not self._initialized:
+            self.initialize()
+
+        if not self._credentials:
+            return {"client_id": "", "client_secret": ""}
+
+        return {
+            "client_id": ensure_decrypted(self._credentials.youtube_client_id),
+            "client_secret": ensure_decrypted(self._credentials.youtube_client_secret),
+        }
+
+    def update_youtube_credentials(
+        self, client_id: str = None, client_secret: str = None
+    ) -> bool:
+        """Update YouTube OAuth client credentials"""
+        if not self._initialized:
+            self.initialize()
+
+        if not self._credentials:
+            logger.error("No credentials available to update")
+            return False
+
+        updated = False
+        if client_id is not None:
+            self._credentials.youtube_client_id = ensure_encrypted(client_id)
+            updated = True
+
+        if client_secret is not None:
+            self._credentials.youtube_client_secret = ensure_encrypted(client_secret)
+            updated = True
+
+        if updated:
+            logger.info("Updated YouTube OAuth credentials")
+            return self._save_credentials()
+
+        return True
+
     def export_credentials(self, export_path: str) -> bool:
         """Export credentials to a different file"""
         try:
@@ -435,6 +478,18 @@ def get_spotify_credentials() -> Dict[str, str]:
     return api_credentials_manager.get_spotify_credentials()
 
 
+def get_youtube_credentials() -> Dict[str, str]:
+    """Get YouTube OAuth client credentials"""
+    return api_credentials_manager.get_youtube_credentials()
+
+
+def update_youtube_credentials(client_id: str = None, client_secret: str = None) -> bool:
+    """Update YouTube OAuth client credentials"""
+    return api_credentials_manager.update_youtube_credentials(
+        client_id=client_id, client_secret=client_secret
+    )
+
+
 def initialize_api_credentials() -> bool:
     """Initialize the API credentials manager"""
     return api_credentials_manager.initialize()
@@ -476,4 +531,21 @@ def get_encrypted_spotify_client_secret() -> str:
         return api_credentials_manager._credentials.spotify_client_secret
     return ""
 
+
+def get_encrypted_youtube_client_id() -> str:
+    """Get encrypted YouTube OAuth client ID"""
+    if not api_credentials_manager._initialized:
+        api_credentials_manager.initialize()
+    if api_credentials_manager._credentials:
+        return api_credentials_manager._credentials.youtube_client_id
+    return ""
+
+
+def get_encrypted_youtube_client_secret() -> str:
+    """Get encrypted YouTube OAuth client secret"""
+    if not api_credentials_manager._initialized:
+        api_credentials_manager.initialize()
+    if api_credentials_manager._credentials:
+        return api_credentials_manager._credentials.youtube_client_secret
+    return ""
 

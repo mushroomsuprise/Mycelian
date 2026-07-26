@@ -23,12 +23,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import http.server
 import logging
 import re
+import socketserver
 import threading
 import time
-from typing import Optional, Dict, Any
-from urllib.parse import urlparse
+import webbrowser
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Any, Set
+from urllib.parse import parse_qs, quote, urlparse
 
 import requests
 
@@ -39,12 +43,181 @@ logger = logging.getLogger(__name__)
 # Global variables
 youtube_client: Optional["YouTubeClient"] = None
 youtube_thread: Optional[threading.Thread] = None
+youtube_live_thread: Optional[threading.Thread] = None
 is_running = False
+
+# Google OAuth for live chat (loopback; must match Google Cloud redirect URI)
+YOUTUBE_OAUTH_REDIRECT_URI = "http://127.0.0.1:9974"
+YOUTUBE_OAUTH_PORT = 9974
+YOUTUBE_OAUTH_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+YOUTUBE_OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+YOUTUBE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
+YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
+
+_LIVE_OFFLINE_BACKOFF_SEC = 60.0
+_SEEN_MESSAGE_IDS_MAX = 5000
+
+
+class _YouTubeOAuthTCPServer(socketserver.TCPServer):
+    """TCP server with OAuth callback attributes."""
+
+    def __init__(self, server_address, RequestHandlerClass):
+        super().__init__(server_address, RequestHandlerClass)
+        self.auth_code: Optional[str] = None
+        self.auth_error: Optional[str] = None
+
+
+class _YouTubeOAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
+    """HTTP handler for Google OAuth redirect callbacks."""
+
+    def do_GET(self):
+        try:
+            parsed_url = urlparse(self.path)
+            query_params = parse_qs(parsed_url.query)
+
+            if "code" in query_params:
+                auth_code = query_params["code"][0]
+                if isinstance(self.server, _YouTubeOAuthTCPServer):
+                    self.server.auth_code = auth_code
+
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                success_html = """
+                <!DOCTYPE html>
+                <html>
+                <head><title>YouTube Authorization Complete</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center;
+                           margin-top: 50px; background-color: #FF0000; color: white; }
+                    .container { max-width: 400px; margin: 0 auto; padding: 20px; }
+                    .success { background-color: rgba(255,255,255,0.1); padding: 15px;
+                               border-radius: 5px; }
+                </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>Authorization Successful!</h1>
+                        <div class="success">
+                            <p>YouTube has been successfully connected to Mycelian.</p>
+                            <p>You can close this window and return to the application.</p>
+                        </div>
+                    </div>
+                    <script>setTimeout(function() { window.close(); }, 3000);</script>
+                </body>
+                </html>
+                """
+                self.wfile.write(success_html.encode())
+
+            elif "error" in query_params:
+                error = query_params["error"][0]
+                if isinstance(self.server, _YouTubeOAuthTCPServer):
+                    self.server.auth_error = error
+
+                self.send_response(400)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                error_html = f"""
+                <!DOCTYPE html>
+                <html>
+                <head><title>YouTube Authorization Error</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; text-align: center;
+                           margin-top: 50px; background-color: #333; color: white; }}
+                    .container {{ max-width: 400px; margin: 0 auto; padding: 20px; }}
+                    .error {{ background-color: rgba(255,255,255,0.1); padding: 15px;
+                              border-radius: 5px; }}
+                </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>Authorization Failed</h1>
+                        <div class="error">
+                            <p>Error: {error}</p>
+                            <p>Please try again from the Mycelian application.</p>
+                        </div>
+                    </div>
+                    <script>setTimeout(function() {{ window.close(); }}, 5000);</script>
+                </body>
+                </html>
+                """
+                self.wfile.write(error_html.encode())
+        except Exception as e:
+            logger.error("Error handling YouTube OAuth callback: %s", e, exc_info=True)
+            self.send_response(500)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+
+class YouTubeOAuthCallbackServer:
+    """Temporary HTTP server for Google OAuth callbacks on loopback."""
+
+    def __init__(self, port: int = YOUTUBE_OAUTH_PORT):
+        self.port = port
+        self.server: Optional[_YouTubeOAuthTCPServer] = None
+        self.server_thread: Optional[threading.Thread] = None
+
+    def start(self) -> bool:
+        try:
+            self.server = _YouTubeOAuthTCPServer(
+                ("127.0.0.1", self.port), _YouTubeOAuthCallbackHandler
+            )
+            self.server_thread = threading.Thread(
+                target=self.server.serve_forever, daemon=True
+            )
+            self.server_thread.start()
+            logger.debug("YouTube OAuth callback server started on port %s", self.port)
+            return True
+        except Exception as e:
+            logger.error(
+                "Error starting YouTube OAuth callback server: %s", e, exc_info=True
+            )
+            return False
+
+    def stop(self) -> None:
+        try:
+            if self.server:
+                self.server.shutdown()
+                self.server.server_close()
+            if self.server_thread and self.server_thread.is_alive():
+                self.server_thread.join(timeout=2)
+            logger.debug("YouTube OAuth callback server stopped")
+        except Exception as e:
+            logger.error(
+                "Error stopping YouTube OAuth callback server: %s", e, exc_info=True
+            )
+
+    def wait_for_callback(self, timeout: int = 300) -> Dict[str, Any]:
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if self.server and self.server.auth_code:
+                return {"success": True, "code": self.server.auth_code}
+            if self.server and self.server.auth_error:
+                return {"success": False, "error": self.server.auth_error}
+            time.sleep(0.5)
+        return {"success": False, "error": "timeout"}
+
+
+def _is_youtube_chat_overlay_enabled() -> bool:
+    """Read EnableYouTubeChat from chat template config (default False)."""
+    try:
+        from .template_config_parser import TemplateConfigParser, _config_element_value
+
+        cfg = TemplateConfigParser().load_config(
+            "chat", include_dynamic_controls=False
+        )
+        return bool(_config_element_value(cfg, "EnableYouTubeChat"))
+    except Exception as e:
+        logger.debug("Could not read EnableYouTubeChat: %s", e)
+        return False
 
 
 class YouTubeClient:
     """
-    YouTube Data API v3 client for fetching channel information and latest videos
+    YouTube Data API v3 client for fetching channel information and latest videos,
+    plus optional OAuth live chat / membership / Super Chat ingestion.
     """
 
     def __init__(self):
@@ -55,6 +228,13 @@ class YouTubeClient:
         self._last_api_success = False
         self._quota_exceeded_until = 0.0  # Timestamp when quota error expires
         self._excluded_video_ids_cache: Dict[str, set] = {}
+        self._refresh_lock = threading.Lock()
+        self._live_running = False
+        self._live_chat_id: Optional[str] = None
+        self._live_page_token: Optional[str] = None
+        self._seen_message_ids: Set[str] = set()
+        self._seen_message_id_order: list = []
+        self._live_bootstrap_done = False
 
         # Load existing data from state manager
         self.load_youtube_data()
@@ -85,9 +265,51 @@ class YouTubeClient:
             else:
                 logger.debug("YouTube data loaded - no API key or channel URLs found")
 
+            self._sync_oauth_client_credentials(persist=True)
+
         except Exception as e:
             logger.error(f"Error loading YouTube data: {str(e)}", exc_info=True)
             self.youtube_data = YouTubeData()
+
+    def _sync_oauth_client_credentials(self, persist: bool = False) -> bool:
+        """Merge OAuth client id/secret from api_credentials_manager into YouTubeData."""
+        try:
+            from .api_credentials_manager import api_credentials_manager
+
+            creds = api_credentials_manager.get_youtube_credentials()
+            cid = (creds.get("client_id") or "").strip()
+            secret = (creds.get("client_secret") or "").strip()
+            if not cid and not secret:
+                return bool(
+                    self.youtube_data.oauth_client_id
+                    and self.youtube_data.oauth_client_secret
+                )
+
+            changed = False
+            if cid and cid != self.youtube_data.oauth_client_id:
+                self.update_field("oauth_client_id", cid)
+                changed = True
+            if secret and secret != self.youtube_data.oauth_client_secret:
+                self.update_field("oauth_client_secret", secret)
+                changed = True
+
+            if persist and changed:
+                state_manager.save_changes()
+                logger.info(
+                    "Synced YouTube OAuth client credentials from api_credentials"
+                )
+            return bool(
+                self.youtube_data.oauth_client_id
+                and self.youtube_data.oauth_client_secret
+            )
+        except Exception as e:
+            logger.error(
+                "Error syncing YouTube OAuth credentials: %s", e, exc_info=True
+            )
+            return bool(
+                self.youtube_data.oauth_client_id
+                and self.youtube_data.oauth_client_secret
+            )
 
     def parse_channel_urls(self) -> list[str]:
         """Parse channel URLs from the pipe-separated string"""
@@ -1004,9 +1226,765 @@ class YouTubeClient:
     def disconnect(self):
         """Disconnect from YouTube API"""
         self.stop_monitoring()
+        self.stop_live_chat_monitoring()
         self.is_connected = False
         self.update_field("connection_status", "Disconnected")
         logger.info("Disconnected from YouTube API")
+
+    # ------------------------------------------------------------------
+    # Google OAuth (live chat / memberships / Super Chats)
+    # ------------------------------------------------------------------
+
+    def has_oauth_credentials(self) -> bool:
+        return bool(
+            (self.youtube_data.oauth_client_id or "").strip()
+            and (self.youtube_data.oauth_client_secret or "").strip()
+        )
+
+    def has_oauth_tokens(self) -> bool:
+        return bool((self.youtube_data.refresh_token or "").strip())
+
+    def build_oauth_url(self) -> str:
+        client_id = (self.youtube_data.oauth_client_id or "").strip()
+        if not client_id:
+            return ""
+        params = (
+            f"client_id={quote(client_id)}"
+            f"&redirect_uri={quote(YOUTUBE_OAUTH_REDIRECT_URI)}"
+            f"&response_type=code"
+            f"&scope={quote(YOUTUBE_OAUTH_SCOPE)}"
+            f"&access_type=offline"
+            f"&prompt=consent"
+        )
+        return f"{YOUTUBE_OAUTH_AUTH_URL}?{params}"
+
+    def start_oauth_flow_with_server(self) -> bool:
+        """Open browser and complete Google OAuth via localhost callback."""
+        try:
+            if not self.has_oauth_credentials():
+                self.update_field("live_chat_status", "OAuth credentials required")
+                return False
+
+            oauth_server = YouTubeOAuthCallbackServer()
+            if not oauth_server.start():
+                self.update_field("live_chat_status", "OAuth server error")
+                return False
+
+            auth_url = self.build_oauth_url()
+            if not auth_url:
+                oauth_server.stop()
+                return False
+
+            self.update_field("live_chat_status", "Opening browser...")
+            webbrowser.open(auth_url)
+            logger.info("Opened YouTube Google OAuth URL in browser")
+
+            result = oauth_server.wait_for_callback()
+            oauth_server.stop()
+
+            if result.get("success"):
+                if self.complete_oauth_flow(result["code"]):
+                    logger.info("Successfully completed YouTube OAuth flow")
+                    return True
+                self.update_field("live_chat_status", "Token exchange failed")
+                return False
+
+            error = result.get("error", "Unknown error")
+            logger.error("YouTube OAuth callback failed: %s", error)
+            if error == "timeout":
+                self.update_field("live_chat_status", "Authorization timeout")
+            else:
+                self.update_field("live_chat_status", f"Authorization error: {error}")
+            return False
+        except Exception as e:
+            logger.error(
+                "Error in YouTube OAuth flow with server: %s", e, exc_info=True
+            )
+            self.update_field("live_chat_status", "OAuth error")
+            return False
+
+    def complete_oauth_flow(self, authorization_code: str) -> bool:
+        """Exchange authorization code for tokens and resolve channel identity."""
+        try:
+            data = {
+                "grant_type": "authorization_code",
+                "code": authorization_code,
+                "redirect_uri": YOUTUBE_OAUTH_REDIRECT_URI,
+                "client_id": self.youtube_data.oauth_client_id,
+                "client_secret": self.youtube_data.oauth_client_secret,
+            }
+            response = requests.post(
+                YOUTUBE_OAUTH_TOKEN_URL, data=data, timeout=15
+            )
+            if response.status_code != 200:
+                logger.error(
+                    "YouTube token exchange failed: %s %s",
+                    response.status_code,
+                    response.text[:300],
+                )
+                return False
+
+            token_data = response.json()
+            access_token = token_data.get("access_token", "")
+            refresh_token = token_data.get("refresh_token") or self.youtube_data.refresh_token
+            expires_in = int(token_data.get("expires_in", 3600))
+            expiry = (
+                datetime.now(timezone.utc) + timedelta(seconds=max(expires_in - 60, 60))
+            ).isoformat()
+
+            self.update_field("access_token", access_token)
+            if refresh_token:
+                self.update_field("refresh_token", refresh_token)
+            self.update_field("token_expiry", expiry)
+
+            if not self._fetch_oauth_channel_identity():
+                self.update_field("live_chat_status", "Authorized (channel unknown)")
+            else:
+                self.update_field("live_chat_status", "Offline")
+
+            state_manager.save_changes()
+            return True
+        except Exception as e:
+            logger.error("Error completing YouTube OAuth: %s", e, exc_info=True)
+            return False
+
+    def disconnect_oauth(self) -> None:
+        """Clear OAuth tokens (keeps client id/secret). Live loop keeps idling."""
+        self.update_field("access_token", "")
+        self.update_field("refresh_token", "")
+        self.update_field("token_expiry", "")
+        self.update_field("oauth_channel_id", "")
+        self.update_field("oauth_channel_title", "")
+        self.update_field("live_chat_status", "Not authorized")
+        self._live_chat_id = None
+        self._live_page_token = None
+        self._live_bootstrap_done = False
+        self._seen_message_ids.clear()
+        self._seen_message_id_order.clear()
+        state_manager.save_changes()
+        logger.info("Disconnected YouTube OAuth")
+
+    def _parse_token_expiry(self) -> Optional[datetime]:
+        raw = (self.youtube_data.token_expiry or "").strip()
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            return None
+
+    def ensure_valid_access_token(self) -> bool:
+        """Refresh access token if missing or near expiry."""
+        with self._refresh_lock:
+            if not self.has_oauth_tokens():
+                return False
+            expiry = self._parse_token_expiry()
+            now = datetime.now(timezone.utc)
+            if (
+                (self.youtube_data.access_token or "").strip()
+                and expiry
+                and expiry > now
+            ):
+                return True
+            return self._refresh_access_token()
+
+    def _refresh_access_token(self) -> bool:
+        try:
+            refresh_token = (self.youtube_data.refresh_token or "").strip()
+            if not refresh_token:
+                return False
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": self.youtube_data.oauth_client_id,
+                "client_secret": self.youtube_data.oauth_client_secret,
+            }
+            response = requests.post(
+                YOUTUBE_OAUTH_TOKEN_URL, data=data, timeout=15
+            )
+            if response.status_code != 200:
+                logger.error(
+                    "YouTube token refresh failed: %s %s",
+                    response.status_code,
+                    response.text[:300],
+                )
+                self.update_field("live_chat_status", "Token refresh failed")
+                return False
+
+            token_data = response.json()
+            access_token = token_data.get("access_token", "")
+            expires_in = int(token_data.get("expires_in", 3600))
+            expiry = (
+                datetime.now(timezone.utc) + timedelta(seconds=max(expires_in - 60, 60))
+            ).isoformat()
+            self.update_field("access_token", access_token)
+            self.update_field("token_expiry", expiry)
+            if token_data.get("refresh_token"):
+                self.update_field("refresh_token", token_data["refresh_token"])
+            state_manager.save_changes()
+            return True
+        except Exception as e:
+            logger.error("Error refreshing YouTube access token: %s", e, exc_info=True)
+            return False
+
+    def _oauth_headers(self) -> Dict[str, str]:
+        return {"Authorization": f"Bearer {self.youtube_data.access_token}"}
+
+    def _oauth_get(self, path: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Authenticated GET against YouTube Data API. Handles quota / auth errors."""
+        if self.is_quota_blocked():
+            return None
+        if not self.ensure_valid_access_token():
+            return None
+        try:
+            url = f"{YOUTUBE_API_BASE}/{path.lstrip('/')}"
+            response = requests.get(
+                url, headers=self._oauth_headers(), params=params, timeout=15
+            )
+            if response.status_code == 401:
+                if self._refresh_access_token():
+                    response = requests.get(
+                        url,
+                        headers=self._oauth_headers(),
+                        params=params,
+                        timeout=15,
+                    )
+                else:
+                    return None
+
+            if response.status_code == 403:
+                try:
+                    err = response.json().get("error", {})
+                    reasons = [
+                        e.get("reason", "")
+                        for e in err.get("errors", [])
+                        if isinstance(e, dict)
+                    ]
+                    if "quotaExceeded" in reasons or "dailyLimitExceeded" in reasons:
+                        self._quota_exceeded_until = time.time() + 3600
+                        self.update_field("live_chat_status", "Quota exceeded")
+                        logger.warning("YouTube live chat hit API quota")
+                        return None
+                    if "liveChatEnded" in reasons or "liveChatDisabled" in reasons:
+                        return {"__live_chat_ended__": True}
+                except Exception:
+                    pass
+                logger.error(
+                    "YouTube OAuth GET 403: %s", response.text[:300]
+                )
+                return None
+
+            if response.status_code != 200:
+                logger.error(
+                    "YouTube OAuth GET %s failed: %s %s",
+                    path,
+                    response.status_code,
+                    response.text[:300],
+                )
+                return None
+            return response.json()
+        except Exception as e:
+            logger.error("YouTube OAuth GET error (%s): %s", path, e, exc_info=True)
+            return None
+
+    def _fetch_oauth_channel_identity(self) -> bool:
+        data = self._oauth_get(
+            "channels",
+            {"part": "snippet", "mine": "true"},
+        )
+        if not data or not data.get("items"):
+            return False
+        item = data["items"][0]
+        channel_id = item.get("id", "")
+        title = (item.get("snippet") or {}).get("title", "")
+        if channel_id:
+            self.update_field("oauth_channel_id", channel_id)
+        if title:
+            self.update_field("oauth_channel_title", title)
+        return bool(channel_id)
+
+    # ------------------------------------------------------------------
+    # Live chat poller
+    # ------------------------------------------------------------------
+
+    def should_run_live_chat(self) -> bool:
+        return (
+            bool(self.youtube_data.live_chat_enabled)
+            and self.has_oauth_tokens()
+            and self.has_oauth_credentials()
+        )
+
+    def start_live_chat_monitoring(self) -> None:
+        if self._live_running:
+            return
+        if not self.should_run_live_chat():
+            if not self.has_oauth_tokens():
+                self.update_field("live_chat_status", "Not authorized")
+            return
+        self._live_running = True
+        logger.info("Started YouTube live chat monitoring loop")
+        while self._live_running:
+            try:
+                if self.is_quota_blocked():
+                    wait = max(5.0, self._quota_exceeded_until - time.time())
+                    self._live_sleep(min(wait, 60.0))
+                    continue
+
+                if not self.should_run_live_chat():
+                    self.update_field("live_chat_status", "Not authorized")
+                    self._live_sleep(_LIVE_OFFLINE_BACKOFF_SEC)
+                    continue
+
+                if not self._live_chat_id:
+                    chat_id = self._discover_active_live_chat_id()
+                    if not chat_id:
+                        self.update_field("live_chat_status", "Offline")
+                        self._live_sleep(_LIVE_OFFLINE_BACKOFF_SEC)
+                        continue
+                    self._live_chat_id = chat_id
+                    self._live_page_token = None
+                    self._live_bootstrap_done = False
+                    self.update_field("live_chat_status", "Live")
+                    logger.info("YouTube live chat discovered: %s", chat_id)
+
+                interval_ms = self._poll_live_chat_once()
+                if interval_ms is None:
+                    # Ended or error — rediscover
+                    self._live_chat_id = None
+                    self._live_page_token = None
+                    self._live_bootstrap_done = False
+                    self._live_sleep(_LIVE_OFFLINE_BACKOFF_SEC)
+                else:
+                    self._live_sleep(max(interval_ms / 1000.0, 1.0))
+            except Exception as e:
+                logger.error(
+                    "Error in YouTube live chat loop: %s", e, exc_info=True
+                )
+                self.update_field("live_chat_status", "Error")
+                self._live_sleep(_LIVE_OFFLINE_BACKOFF_SEC)
+
+        logger.info("Stopped YouTube live chat monitoring loop")
+
+    def stop_live_chat_monitoring(self) -> None:
+        self._live_running = False
+        logger.info("Stopping YouTube live chat monitoring")
+
+    def _live_sleep(self, seconds: float) -> None:
+        end = time.time() + max(0.1, seconds)
+        while self._live_running and time.time() < end:
+            time.sleep(min(0.5, end - time.time()))
+
+    def _discover_active_live_chat_id(self) -> Optional[str]:
+        data = self._oauth_get(
+            "liveBroadcasts",
+            {
+                "part": "snippet",
+                "mine": "true",
+                "broadcastStatus": "active",
+                # Default is "event"; stream-key / persistent lives need "all"
+                "broadcastType": "all",
+            },
+        )
+        if not data or data.get("__live_chat_ended__"):
+            return None
+        items = data.get("items") or []
+        for item in items:
+            snippet = item.get("snippet") or {}
+            chat_id = snippet.get("liveChatId")
+            if chat_id:
+                return chat_id
+        return None
+
+    def _poll_live_chat_once(self) -> Optional[int]:
+        """
+        Poll liveChatMessages once.
+
+        Returns pollingIntervalMillis on success, or None if chat ended / fatal.
+        """
+        if not self._live_chat_id:
+            return None
+
+        params: Dict[str, Any] = {
+            "part": "snippet,authorDetails",
+            "liveChatId": self._live_chat_id,
+            "maxResults": 200,
+        }
+        if self._live_page_token:
+            params["pageToken"] = self._live_page_token
+
+        data = self._oauth_get("liveChat/messages", params)
+        if data is None:
+            return None
+        if data.get("__live_chat_ended__"):
+            self.update_field("live_chat_status", "Offline")
+            return None
+
+        next_token = data.get("nextPageToken")
+        if next_token:
+            self._live_page_token = next_token
+
+        items = data.get("items") or []
+        # First page without a prior token is history — mark seen, don't fire alerts
+        is_bootstrap = not self._live_bootstrap_done
+        for item in items:
+            msg_id = item.get("id") or ""
+            if not msg_id:
+                continue
+            if msg_id in self._seen_message_ids:
+                continue
+            self._remember_message_id(msg_id)
+            if is_bootstrap:
+                continue
+            try:
+                self._route_live_chat_message(item)
+            except Exception as e:
+                logger.error(
+                    "Error routing YouTube live chat message: %s", e, exc_info=True
+                )
+
+        if is_bootstrap:
+            self._live_bootstrap_done = True
+            logger.debug(
+                "YouTube live chat bootstrap complete (%s messages marked seen)",
+                len(items),
+            )
+
+        if any(
+            (i.get("snippet") or {}).get("type") == "chatEndedEvent" for i in items
+        ):
+            self.update_field("live_chat_status", "Offline")
+            return None
+
+        interval = data.get("pollingIntervalMillis")
+        try:
+            return int(interval) if interval is not None else 5000
+        except (TypeError, ValueError):
+            return 5000
+
+    def _remember_message_id(self, msg_id: str) -> None:
+        if msg_id in self._seen_message_ids:
+            return
+        self._seen_message_ids.add(msg_id)
+        self._seen_message_id_order.append(msg_id)
+        while len(self._seen_message_id_order) > _SEEN_MESSAGE_IDS_MAX:
+            old = self._seen_message_id_order.pop(0)
+            self._seen_message_ids.discard(old)
+
+    def _route_live_chat_message(self, item: Dict[str, Any]) -> None:
+        snippet = item.get("snippet") or {}
+        author = item.get("authorDetails") or {}
+        msg_type = snippet.get("type") or ""
+        username = author.get("displayName") or "YouTube User"
+        user_id = author.get("channelId") or snippet.get("authorChannelId") or ""
+
+        if msg_type == "textMessageEvent":
+            self._emit_youtube_chat_message(item, username, user_id)
+            return
+        if msg_type == "newSponsorEvent":
+            self._emit_membership_sub_alert(username, snippet)
+            return
+        if msg_type == "memberMilestoneChatEvent":
+            self._emit_membership_resub_alert(username, snippet)
+            return
+        if msg_type == "membershipGiftingEvent":
+            self._emit_membership_gift_alert(username, snippet)
+            return
+        if msg_type in ("superChatEvent", "superStickerEvent", "fanFundingEvent"):
+            self._emit_superchat_donation_alert(username, snippet, msg_type)
+            return
+        # giftMembershipReceivedEvent and others intentionally skipped
+
+    def _emit_youtube_chat_message(
+        self, item: Dict[str, Any], username: str, user_id: str
+    ) -> None:
+        if not _is_youtube_chat_overlay_enabled():
+            return
+        snippet = item.get("snippet") or {}
+        text_details = snippet.get("textMessageDetails") or {}
+        message = (
+            text_details.get("messageText")
+            or snippet.get("displayMessage")
+            or ""
+        )
+        if not message:
+            return
+
+        msg_dict = {
+            "id": item.get("id") or f"yt-{int(time.time() * 1000)}",
+            "username": username,
+            "userid": user_id,
+            "message": message,
+            "twmsgid": item.get("id") or "",
+            "fragments": None,
+            "color": "",
+            "badges": "",
+            "emotes": "",
+            "timestamp": time.time(),
+            "type": "chat",
+            "message_type": "text",
+            "platform": "youtube",
+        }
+        try:
+            from . import web_engine
+
+            if (
+                hasattr(web_engine, "web_engine_instance")
+                and web_engine.web_engine_instance
+            ):
+                web_engine.web_engine_instance.new_message(msg_dict)
+        except Exception as e:
+            logger.error("Error emitting YouTube chat message: %s", e, exc_info=True)
+
+    def _emit_membership_sub_alert(
+        self, username: str, snippet: Dict[str, Any]
+    ) -> None:
+        from . import alert_processor, alertutils
+        from .uiwindows.activity_feed import add_alert_to_feed
+
+        details = snippet.get("newSponsorDetails") or {}
+        level = details.get("memberLevelName") or ""
+        current_timestamp = time.time()
+        alert = alertutils.fetch_sub_alert(1)
+        if alert is None:
+            alert = alertutils.AlertObj()
+        alert.username = username
+        alert.alert_type = "sub"
+        alert.tier = 1
+        alert.message = snippet.get("displayMessage") or ""
+        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.timestamp = current_timestamp
+        alert_processor.ALERT_QUEUE.append(alert)
+        alertutils.alert_state_manager.store_completed_alert(
+            alert.alert_id, alert.__dict__
+        )
+        self._send_instant_alert(
+            {
+                "type": "sub",
+                "username": username,
+                "tier": 1,
+                "message": alert.message,
+                "alert_id": alert.alert_id,
+                "timestamp": alert.timestamp,
+                "source": "youtube",
+                "member_level": level,
+            }
+        )
+        add_alert_to_feed(
+            alert_type="Sub",
+            message=(
+                f"{username} became a channel member"
+                + (f" ({level})!" if level else "!")
+            ),
+            badge_type="sub",
+            timestamp=str(int(alert.timestamp)),
+            tier=1,
+            user_message=alert.message,
+            alert_id=alert.alert_id,
+        )
+
+    def _emit_membership_resub_alert(
+        self, username: str, snippet: Dict[str, Any]
+    ) -> None:
+        from . import alert_processor, alertutils
+        from .uiwindows.activity_feed import add_alert_to_feed
+
+        details = snippet.get("memberMilestoneChatDetails") or {}
+        try:
+            months = int(details.get("memberMonth") or 1)
+        except (TypeError, ValueError):
+            months = 1
+        months = max(months, 1)
+        level = details.get("memberLevelName") or ""
+        user_msg = details.get("userComment") or ""
+        current_timestamp = time.time()
+
+        if months <= 1:
+            alert = alertutils.fetch_sub_alert(1)
+            alert_type = "sub"
+        else:
+            alert = alertutils.fetch_resub_alert(months)
+            alert_type = "resub"
+        if alert is None:
+            alert = alertutils.AlertObj()
+
+        alert.username = username
+        alert.alert_type = alert_type
+        alert.tier = 1
+        alert.message = user_msg or snippet.get("displayMessage") or ""
+        alert.resub_month = months
+        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.timestamp = current_timestamp
+        alert_processor.ALERT_QUEUE.append(alert)
+        alertutils.alert_state_manager.store_completed_alert(
+            alert.alert_id, alert.__dict__
+        )
+        instant = {
+            "type": alert_type,
+            "username": username,
+            "tier": 1,
+            "message": alert.message,
+            "alert_id": alert.alert_id,
+            "timestamp": alert.timestamp,
+            "source": "youtube",
+            "member_level": level,
+        }
+        if alert_type == "resub":
+            instant["cumulative_months"] = months
+        self._send_instant_alert(instant)
+        if alert_type == "resub":
+            feed_msg = f"{username} continued membership for {months} months!"
+        else:
+            feed_msg = f"{username} became a channel member!"
+        if level:
+            feed_msg = feed_msg[:-1] + f" ({level})!"
+        add_alert_to_feed(
+            alert_type="Resub" if alert_type == "resub" else "Sub",
+            message=feed_msg,
+            badge_type="resub" if alert_type == "resub" else "sub",
+            timestamp=str(int(alert.timestamp)),
+            tier=1,
+            user_message=alert.message,
+            alert_id=alert.alert_id,
+        )
+
+    def _emit_membership_gift_alert(
+        self, username: str, snippet: Dict[str, Any]
+    ) -> None:
+        from . import alert_processor, alertutils
+        from .uiwindows.activity_feed import add_alert_to_feed
+
+        details = snippet.get("membershipGiftingDetails") or {}
+        try:
+            qty = int(details.get("giftMembershipsCount") or 1)
+        except (TypeError, ValueError):
+            qty = 1
+        qty = max(qty, 1)
+        level = details.get("giftMembershipsLevelName") or ""
+        current_timestamp = time.time()
+        alert = alertutils.fetch_giftsub_alert(qty)
+        if alert is None:
+            alert = alertutils.AlertObj()
+            alert.alert_type = "giftsub"
+        alert.username = username
+        alert.alert_type = "giftsub"
+        alert.tier = 1
+        alert.gift_qty = qty
+        alert.message = snippet.get("displayMessage") or ""
+        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.timestamp = current_timestamp
+        alert_processor.ALERT_QUEUE.append(alert)
+        alertutils.alert_state_manager.store_completed_alert(
+            alert.alert_id, alert.__dict__
+        )
+        self._send_instant_alert(
+            {
+                "type": "giftsub",
+                "username": username,
+                "tier": 1,
+                "gift_qty": qty,
+                "alert_id": alert.alert_id,
+                "timestamp": alert.timestamp,
+                "source": "youtube",
+                "member_level": level,
+            }
+        )
+        add_alert_to_feed(
+            alert_type="Giftsub",
+            message=(
+                f"{username} gifted {qty} membership"
+                + ("s" if qty != 1 else "")
+                + (f" ({level})!" if level else "!")
+            ),
+            badge_type="giftsub",
+            timestamp=str(int(alert.timestamp)),
+            tier=1,
+            alert_id=alert.alert_id,
+        )
+
+    def _emit_superchat_donation_alert(
+        self, username: str, snippet: Dict[str, Any], msg_type: str
+    ) -> None:
+        from . import alert_processor, alertutils
+        from .uiwindows.activity_feed import add_alert_to_feed
+
+        if msg_type == "superChatEvent":
+            details = snippet.get("superChatDetails") or {}
+        elif msg_type == "superStickerEvent":
+            details = snippet.get("superStickerDetails") or {}
+        else:
+            details = snippet.get("fanFundingEventDetails") or {}
+
+        try:
+            micros = int(details.get("amountMicros") or 0)
+        except (TypeError, ValueError):
+            micros = 0
+        amount = micros / 1_000_000.0 if micros else 0.0
+        currency = details.get("currency") or "USD"
+        display_amount = details.get("amountDisplayString") or f"{amount:.2f}"
+        user_msg = details.get("userComment") or ""
+        if msg_type == "superStickerEvent" and not user_msg:
+            meta = details.get("superStickerMetadata") or {}
+            user_msg = meta.get("altText") or snippet.get("displayMessage") or ""
+
+        quantity = max(1, int(round(amount))) if amount > 0 else 1
+        current_timestamp = time.time()
+        alert = alertutils.fetch_donation_alert(quantity)
+        if alert is None:
+            alert = alertutils.AlertObj()
+        alert.username = username
+        alert.alert_type = "donation"
+        alert.donation_amount = float(amount)
+        alert.currency = currency
+        alert.message = user_msg or snippet.get("displayMessage") or ""
+        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.timestamp = current_timestamp
+        alert_processor.ALERT_QUEUE.append(alert)
+        alertutils.alert_state_manager.store_completed_alert(
+            alert.alert_id, alert.__dict__
+        )
+        self._send_instant_alert(
+            {
+                "type": "donation",
+                "username": username,
+                "donation_amount": alert.donation_amount,
+                "currency": currency,
+                "message": alert.message,
+                "alert_id": alert.alert_id,
+                "timestamp": alert.timestamp,
+                "source": "youtube",
+                "display_amount": display_amount,
+            }
+        )
+        label = {
+            "superChatEvent": "Super Chat",
+            "superStickerEvent": "Super Sticker",
+            "fanFundingEvent": "Fan Funding",
+        }.get(msg_type, "Super Chat")
+        add_alert_to_feed(
+            alert_type="Donation",
+            message=f"{username} sent a {label} of {display_amount}!",
+            badge_type="donation",
+            timestamp=str(int(alert.timestamp)),
+            user_message=alert.message,
+            alert_id=alert.alert_id,
+        )
+
+    def _send_instant_alert(self, alert_data: Dict[str, Any]) -> None:
+        try:
+            from . import web_engine
+
+            if (
+                hasattr(web_engine, "web_engine_instance")
+                and web_engine.web_engine_instance
+            ):
+                web_engine.web_engine_instance.instant_alert(alert_data)
+        except Exception as e:
+            logger.error(
+                "Error sending YouTube instant alert: %s", e, exc_info=True
+            )
 
 
 # Module-level functions
@@ -1053,7 +2031,7 @@ def should_auto_initialize() -> bool:
 
 def start_youtube_service():
     """Start the YouTube service in a background thread"""
-    global youtube_thread, is_running, youtube_client
+    global youtube_thread, youtube_live_thread, is_running, youtube_client
 
     if is_running:
         logger.warning("YouTube service already running")
@@ -1069,11 +2047,18 @@ def start_youtube_service():
             logger.info("Auto-initializing YouTube service with existing credentials")
             youtube_client.authenticate()
 
-        # Start monitoring thread
+        # Start monitoring thread (upload / latest-video)
         youtube_thread = threading.Thread(
             target=youtube_client.start_monitoring, daemon=True
         )
         youtube_thread.start()
+
+        # Separate live chat poller (OAuth); harmless if not authorized
+        youtube_live_thread = threading.Thread(
+            target=youtube_client.start_live_chat_monitoring, daemon=True
+        )
+        youtube_live_thread.start()
+
         is_running = True
 
         logger.info("Started YouTube service")
@@ -1085,7 +2070,7 @@ def start_youtube_service():
 
 def stop_youtube_service(*, join_timeout: float = 5.0) -> None:
     """Stop the YouTube service"""
-    global youtube_thread, is_running, youtube_client
+    global youtube_thread, youtube_live_thread, is_running, youtube_client
 
     if not is_running:
         logger.warning("YouTube service not running")
@@ -1094,11 +2079,14 @@ def stop_youtube_service(*, join_timeout: float = 5.0) -> None:
     try:
         if youtube_client:
             youtube_client.stop_monitoring()
+            youtube_client.stop_live_chat_monitoring()
 
         is_running = False
 
         if youtube_thread and youtube_thread.is_alive():
             youtube_thread.join(timeout=join_timeout)
+        if youtube_live_thread and youtube_live_thread.is_alive():
+            youtube_live_thread.join(timeout=join_timeout)
 
         logger.info("Stopped YouTube service")
     except Exception as e:
@@ -1137,9 +2125,48 @@ def get_youtube_status() -> Dict[str, Any]:
             else 0,
             "latest_video_channel": youtube_client.youtube_data.latest_video_channel
             or "N/A",
+            "live_chat_status": youtube_client.youtube_data.live_chat_status
+            or "Not authorized",
+            "oauth_connected": youtube_client.has_oauth_tokens(),
+            "oauth_channel_title": youtube_client.youtube_data.oauth_channel_title
+            or "",
+            "live_chat_enabled": bool(youtube_client.youtube_data.live_chat_enabled),
         },
         valid_field="is_connected",
     )
+
+
+def trigger_youtube_oauth_flow() -> bool:
+    """Start the automatic Google OAuth browser flow for live chat."""
+    if not youtube_client:
+        initialize_youtube()
+    if not youtube_client:
+        return False
+    # Ensure latest credentials from state + api_credentials.json
+    youtube_client.load_youtube_data()
+    youtube_client._sync_oauth_client_credentials(persist=True)
+    return youtube_client.start_oauth_flow_with_server()
+
+
+def disconnect_youtube_oauth() -> None:
+    """Clear YouTube OAuth tokens."""
+    if not youtube_client:
+        initialize_youtube()
+    if youtube_client:
+        youtube_client.load_youtube_data()
+        youtube_client.disconnect_oauth()
+
+
+def restart_youtube_live_chat_if_needed() -> None:
+    """
+    Ensure the live chat loop is running after settings/OAuth changes.
+
+    The loop is already started with the service; this reloads data so the
+    next iteration picks up new tokens / enable flags.
+    """
+    if not youtube_client:
+        return
+    youtube_client.load_youtube_data()
 
 
 def update_youtube_settings(
