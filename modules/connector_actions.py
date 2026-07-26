@@ -347,6 +347,58 @@ class SendAnnouncementAction(BaseAction):
 
 
 @dataclass
+class SendDiscordMessageAction(BaseAction):
+    """Action to send a message to one or more Discord channels."""
+
+    message: str = ""
+    # [{guild_id, channel_id, guild_name?, channel_name?}, ...]
+    channels: List[Dict[str, Any]] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.action_type = ActionType.SEND_DISCORD_MESSAGE
+        if self.channels is None:
+            self.channels = []
+        elif not isinstance(self.channels, list):
+            self.channels = []
+
+    async def execute(
+        self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
+    ) -> bool:
+        try:
+            from . import discord_service
+            from .connector_placeholders import (
+                build_connector_placeholder_context,
+                substitute_connector_placeholders,
+            )
+
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            message = substitute_connector_placeholders(self.message, ctx)
+            success = discord_service.send_to_channels(message, self.channels)
+            if success:
+                logger.info(
+                    "Sent Discord message to %d channel(s)",
+                    len(self.channels or []),
+                )
+                return True
+            logger.error("Failed to send Discord message to any configured channel")
+            return False
+        except Exception as e:
+            logger.error(
+                "Error executing send Discord message action: %s", e, exc_info=True
+            )
+            return False
+
+    def validate_parameters(self) -> bool:
+        if not (self.message or "").strip():
+            logger.error("Send Discord message action missing message")
+            return False
+        if not self.channels:
+            logger.error("Send Discord message action missing channels")
+            return False
+        return True
+
+
+@dataclass
 class ApiCallAction(BaseAction):
     """Action to make an HTTP API call"""
 
@@ -2758,6 +2810,7 @@ def create_action(
         ActionType.TRIGGER_ALERT: TriggerAlertAction,
         ActionType.SEND_CHAT_MESSAGE: SendChatMessageAction,
         ActionType.SEND_ANNOUNCEMENT: SendAnnouncementAction,
+        ActionType.SEND_DISCORD_MESSAGE: SendDiscordMessageAction,
         ActionType.ADD_GREETING: AddGreetingAction,
         ActionType.UPDATE_GREETING: UpdateGreetingAction,
         ActionType.SEND_GREETING: SendGreetingAction,

@@ -65,6 +65,8 @@ class TriggerType(Enum):
     TWITCH_CHAT_MESSAGE = "twitch_chat_message"
     TWITCH_HYPE_TRAIN_START = "twitch_hype_train_start"
     TWITCH_HYPE_TRAIN_END = "twitch_hype_train_end"
+    TWITCH_STREAM_ONLINE = "twitch_stream_online"
+    TWITCH_STREAM_OFFLINE = "twitch_stream_offline"
 
     # YouTube Live Chat Triggers
     YOUTUBE_CHAT_MESSAGE = "youtube_chat_message"
@@ -111,6 +113,7 @@ class ActionType(Enum):
     # Chat Actions
     SEND_CHAT_MESSAGE = "send_chat_message"
     SEND_ANNOUNCEMENT = "send_announcement"
+    SEND_DISCORD_MESSAGE = "send_discord_message"
 
     # Greeting Actions
     ADD_GREETING = "add_greeting"

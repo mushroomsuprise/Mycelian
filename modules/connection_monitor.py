@@ -258,7 +258,7 @@ class _ServiceEntry:
 
 
 def _build_registry() -> List[_ServiceEntry]:
-    from . import chatbot, spotify, twitch, youtube
+    from . import chatbot, discord_service, spotify, twitch, youtube
     from . import database_manager
     from . import psn_service
     from .connection_status_tracker import is_remote_service_disconnected
@@ -287,6 +287,12 @@ def _build_registry() -> List[_ServiceEntry]:
             is_configured=psn_service.psn_configured_for_monitor,
             is_disconnected=lambda: is_remote_service_disconnected("psn"),
             attempt_reconnect=lambda: psn_service.attempt_auto_reconnect(),
+        ),
+        _ServiceEntry(
+            key="discord",
+            is_configured=discord_service.discord_configured_for_monitor,
+            is_disconnected=lambda: is_remote_service_disconnected("discord"),
+            attempt_reconnect=lambda: discord_service.attempt_auto_reconnect(),
         ),
         _ServiceEntry(
             key="chatbot",

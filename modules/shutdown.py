@@ -201,6 +201,12 @@ def _stop_spotify() -> None:
     spotify.stop_spotify_service(join_timeout=_SHUTDOWN_JOIN_TIMEOUT)
 
 
+def _stop_discord() -> None:
+    from . import discord_service
+
+    discord_service.disconnect()
+
+
 def _stop_psn() -> None:
     from . import psn_service
 
@@ -366,6 +372,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
             [
                 ("youtube", _stop_youtube),
                 ("spotify", _stop_spotify),
+                ("discord", _stop_discord),
                 ("psn", _stop_psn),
                 ("twitch", _stop_twitch),
                 ("chatbot", _stop_chatbot),

@@ -1017,7 +1017,10 @@ class ChatbotManager:
                         targets = list(
                             getattr(event, "reply_targets", None) or ["twitch"]
                         )
-                        return response, targets
+                        discord_channels = list(
+                            getattr(event, "discord_channels", None) or []
+                        )
+                        return response, targets, discord_channels
 
             return None
 
@@ -1147,6 +1150,9 @@ class ChatbotManager:
                                     dispatch_chatbot_response(
                                         response,
                                         getattr(command, "reply_targets", None),
+                                        discord_channels=getattr(
+                                            command, "discord_channels", None
+                                        ),
                                     )
                                 except Exception as send_err:
                                     logger.error(
@@ -1327,6 +1333,9 @@ class ChatbotManager:
                                     success = dispatch_chatbot_response(
                                         response,
                                         getattr(event, "reply_targets", None),
+                                        discord_channels=getattr(
+                                            event, "discord_channels", None
+                                        ),
                                     )
                                     if success:
                                         logger.info(
@@ -1452,6 +1461,9 @@ class ChatbotManager:
                                                         response,
                                                         getattr(
                                                             event, "reply_targets", None
+                                                        ),
+                                                        discord_channels=getattr(
+                                                            event, "discord_channels", None
                                                         ),
                                                     )
                                                     if success:
@@ -1596,7 +1608,9 @@ class ChatbotManager:
                 from .chatbot import dispatch_chatbot_response
 
                 success = dispatch_chatbot_response(
-                    response, getattr(command, "reply_targets", None)
+                    response,
+                    getattr(command, "reply_targets", None),
+                    discord_channels=getattr(command, "discord_channels", None),
                 )
                 if success:
                     logger.info(
@@ -1652,7 +1666,9 @@ class ChatbotManager:
                 from .chatbot import dispatch_chatbot_response
 
                 success = dispatch_chatbot_response(
-                    response, getattr(event, "reply_targets", None)
+                    response,
+                    getattr(event, "reply_targets", None),
+                    discord_channels=getattr(event, "discord_channels", None),
                 )
                 if success:
                     logger.info(f"Test event '{event.name}' sent message: {response}")

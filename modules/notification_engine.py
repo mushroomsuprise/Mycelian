@@ -678,6 +678,10 @@ def _service_status_notify_type(service_key: str, status: str) -> str:
         if s == "connected":
             return "positive"
         return "warning"
+    if service_key == "discord":
+        if s == "connected":
+            return "positive"
+        return "warning"
     if service_key == "webengine":
         s_lower = s.lower()
         if s_lower == "running":
@@ -700,7 +704,7 @@ def _service_status_notify_type(service_key: str, status: str) -> str:
     return "info"
 
 
-_SERVICE_KEYS = ("internet", "webengine", "twitch", "obs", "psn", "spotify", "youtube")
+_SERVICE_KEYS = ("internet", "webengine", "twitch", "obs", "psn", "spotify", "youtube", "discord")
 
 _SERVICE_LABELS: Dict[str, str] = {
     "internet": "Internet",
@@ -709,6 +713,7 @@ _SERVICE_LABELS: Dict[str, str] = {
     "youtube": "YouTube",
     "psn": "PSN",
     "obs": "OBS",
+    "discord": "Discord",
     "webengine": "Overlay Server",
 }
 
@@ -718,6 +723,7 @@ _SERVICE_SUBTABS: Dict[str, str] = {
     "youtube": "YouTube",
     "psn": "PSN",
     "obs": "OBS",
+    "discord": "Discord",
     "webengine": "App Settings",
 }
 

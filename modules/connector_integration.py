@@ -92,6 +92,16 @@ class ConnectorIntegration:
                     "on_hype_train_end",
                     self._handle_twitch_hype_train_end,
                 )
+                self._wrap_twitch_handler(
+                    twitch.twitch_api,
+                    "on_stream_online",
+                    self._handle_twitch_stream_online,
+                )
+                self._wrap_twitch_handler(
+                    twitch.twitch_api,
+                    "on_stream_offline",
+                    self._handle_twitch_stream_offline,
+                )
 
                 logger.info("Twitch integration set up for connector system")
                 self._twitch_integration_setup = True
@@ -387,6 +397,41 @@ class ConnectorIntegration:
         except Exception as e:
             logger.error(
                 f"Error handling Twitch hype train end for connector: {e}",
+                exc_info=True,
+            )
+
+    async def _handle_twitch_stream_online(self, data):
+        """Handle Twitch stream.online for connector system"""
+        try:
+            event_data = {
+                "event_type": "twitch_stream_online",
+                "stream_id": getattr(data.event, "id", ""),
+                "stream_type": getattr(data.event, "type", ""),
+                "started_at": getattr(data.event, "started_at", ""),
+                "timestamp": time.time(),
+                "source": "twitch",
+            }
+            await self.manager.add_event(event_data)
+        except Exception as e:
+            logger.error(
+                "Error handling Twitch stream online for connector: %s",
+                e,
+                exc_info=True,
+            )
+
+    async def _handle_twitch_stream_offline(self, data):
+        """Handle Twitch stream.offline for connector system"""
+        try:
+            event_data = {
+                "event_type": "twitch_stream_offline",
+                "timestamp": time.time(),
+                "source": "twitch",
+            }
+            await self.manager.add_event(event_data)
+        except Exception as e:
+            logger.error(
+                "Error handling Twitch stream offline for connector: %s",
+                e,
                 exc_info=True,
             )
 

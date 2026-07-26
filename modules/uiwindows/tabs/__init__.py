@@ -16,6 +16,7 @@ Tabs are intentionally independent and self-contained to avoid cross-tab state b
 from .app_settings_tab import AppSettingsTab
 from .base import TabBase  # re-export base class for convenience
 from .database_tab import DatabaseTab
+from .discord_tab import DiscordTab
 from .psn_tab import PSNTab
 from .spotify_tab import SpotifyTab
 from .statistics_tab import StatisticsTab
@@ -32,6 +33,7 @@ __all__ = [
     "PSNTab",
     "SpotifyTab",
     "YouTubeTab",
+    "DiscordTab",
     "ObsTab",
     "GameHooksTab",
     "DatabaseTab",

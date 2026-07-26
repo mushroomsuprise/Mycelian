@@ -30,6 +30,7 @@ SETTINGS_TAB_ORDER: List[str] = [
     "PSN",
     "Spotify",
     "YouTube",
+    "Discord",
     "Game Hooks",
     "Database",
     "Statistics",

@@ -1547,15 +1547,42 @@ class YouTubeClient:
                     self._live_chat_id = chat_id
                     self._live_page_token = None
                     self._live_bootstrap_done = False
+                    prev_status = (
+                        getattr(self.youtube_data, "live_chat_status", "") or ""
+                    )
                     self.update_field("live_chat_status", "Live")
                     logger.info("YouTube live chat discovered: %s", chat_id)
+                    if prev_status != "Live":
+                        try:
+                            from . import discord_service
+
+                            discord_service.notify_platform_live("youtube")
+                        except Exception:
+                            logger.debug(
+                                "Discord YouTube go-live hook failed",
+                                exc_info=True,
+                            )
 
                 interval_ms = self._poll_live_chat_once()
                 if interval_ms is None:
                     # Ended or error — rediscover
+                    was_live = (
+                        getattr(self.youtube_data, "live_chat_status", "") or ""
+                    ) == "Live"
                     self._live_chat_id = None
                     self._live_page_token = None
                     self._live_bootstrap_done = False
+                    if was_live:
+                        self.update_field("live_chat_status", "Offline")
+                        try:
+                            from . import discord_service
+
+                            discord_service.notify_platform_offline("youtube")
+                        except Exception:
+                            logger.debug(
+                                "Discord YouTube offline hook failed",
+                                exc_info=True,
+                            )
                     self._live_sleep(_LIVE_OFFLINE_BACKOFF_SEC)
                 else:
                     self._live_sleep(max(interval_ms / 1000.0, 1.0))
@@ -1721,9 +1748,12 @@ class YouTubeClient:
             if isinstance(result, tuple):
                 response = result[0]
                 targets = result[1] if len(result) > 1 else ["youtube"]
+                discord_channels = result[2] if len(result) > 2 else None
             else:
-                response, targets = result, ["youtube"]
-            dispatch_chatbot_response(response, targets)
+                response, targets, discord_channels = result, ["youtube"], None
+            dispatch_chatbot_response(
+                response, targets, discord_channels=discord_channels
+            )
         except Exception as e:
             logger.error(
                 "Error processing YouTube chatbot event: %s", e, exc_info=True

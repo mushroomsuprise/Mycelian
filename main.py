@@ -395,6 +395,12 @@ if __name__ == "__main__":
             service_manager.register("psn", psn_service.initialize_psn_module, priority=6)
             service_manager.register("youtube", youtube.start_youtube_service, priority=7)
 
+            from modules import discord_service as discord_svc
+
+            service_manager.register(
+                "discord", discord_svc.start_discord_service, priority=7
+            )
+
             from modules.obs_service import start_obs_service as _start_obs_ws
 
             service_manager.register("obs", _start_obs_ws, priority=5)

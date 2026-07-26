@@ -15,7 +15,7 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs", "webengine")
+SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs", "discord", "webengine")
 
 
 def twitch_configured() -> bool:
@@ -86,6 +86,18 @@ def obs_configured() -> bool:
         return False
 
 
+def discord_configured() -> bool:
+    try:
+        from .dataobjects import state_manager
+
+        d = state_manager.get_discord_data()
+        if not d:
+            return False
+        return bool((getattr(d, "bot_token", "") or "").strip())
+    except Exception:
+        return False
+
+
 def service_configured(key: str) -> bool:
     if key == "twitch":
         return twitch_configured()
@@ -97,6 +109,8 @@ def service_configured(key: str) -> bool:
         return psn_configured()
     if key == "obs":
         return obs_configured()
+    if key == "discord":
+        return discord_configured()
     if key == "webengine":
         # The overlay server always runs (OBS sources / Stream Deck / alerts).
         return True
@@ -109,6 +123,7 @@ _PROBE_INTERVAL_SEC: Dict[str, float] = {
     "spotify": 15.0,
     "youtube": 30.0,
     "psn": 12.0,
+    "discord": 15.0,
     "webengine": 5.0,
 }
 
@@ -274,6 +289,23 @@ def get_connection_status(key: str) -> str:
         else:
             base_status = "Disconnected"
 
+    elif key == "discord":
+        from . import discord_service
+
+        st = discord_service.get_discord_status()
+        status = str(st.get("status", "") or "").strip()
+        if status:
+            base_status = status
+        else:
+            from .dataobjects import state_manager
+
+            d = state_manager.get_discord_data()
+            base_status = (
+                (getattr(d, "connection_status", "") or "Unknown").strip()
+                if d
+                else "Unknown"
+            )
+
     elif key == "webengine":
         from .web_engine import get_webengine_health
 
@@ -346,6 +378,13 @@ def is_remote_service_disconnected(key: str) -> bool:
         from . import psn_service
 
         return psn_service.is_psn_api_disconnected()
+
+    if key == "discord":
+        from . import discord_service
+
+        if not discord_configured():
+            return False
+        return not discord_service.discord_service.is_connected()
 
     if key == "chatbot":
         from . import chatbot

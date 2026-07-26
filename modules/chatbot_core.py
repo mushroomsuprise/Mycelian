@@ -493,6 +493,12 @@ class ChatCommand:
         self.reply_targets = _normalize_reply_targets(
             kwargs.get("reply_targets"), default=["twitch"]
         )
+        # Discord channel targets (independent of reply_targets):
+        # [{guild_id, channel_id, guild_name?, channel_name?}, ...]
+        raw_discord = kwargs.get("discord_channels") or []
+        self.discord_channels = (
+            list(raw_discord) if isinstance(raw_discord, list) else []
+        )
 
     def should_trigger(self, data: Dict[str, Any]) -> bool:
         """Check if this command should trigger based on conditions"""
@@ -1255,6 +1261,7 @@ class ChatCommand:
             ),
             "argument_mappings": sanitize_value(self.argument_mappings),
             "reply_targets": sanitize_value(list(self.reply_targets)),
+            "discord_channels": sanitize_value(list(self.discord_channels or [])),
         }
 
     @classmethod
@@ -1334,6 +1341,10 @@ class ChatEvent:
         self.argument_mappings = kwargs.get("argument_mappings", {})
         self.reply_targets = _normalize_reply_targets(
             kwargs.get("reply_targets"), default=["twitch"]
+        )
+        raw_discord = kwargs.get("discord_channels") or []
+        self.discord_channels = (
+            list(raw_discord) if isinstance(raw_discord, list) else []
         )
 
         # Event-specific settings
@@ -1761,6 +1772,7 @@ class ChatEvent:
             "channel_point_reward_name": self.channel_point_reward_name,
             "argument_mappings": self.argument_mappings,
             "reply_targets": list(self.reply_targets),
+            "discord_channels": list(self.discord_channels or []),
         }
 
     @classmethod

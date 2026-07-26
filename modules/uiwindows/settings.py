@@ -55,6 +55,7 @@ from .service_brand_icons import service_tab_icon
 from .tabs import (
     AppSettingsTab,
     DatabaseTab,
+    DiscordTab,
     GameHooksTab,
     ObsTab,
     PSNTab,
@@ -4975,6 +4976,8 @@ class SettingsUI:
                 spotify_tab = SpotifyTab()
             with StartupTimer("settings_tab_objects_youtube"):
                 youtube_tab = YouTubeTab()
+            with StartupTimer("settings_tab_objects_discord"):
+                discord_tab = DiscordTab()
             with StartupTimer("settings_tab_objects_obs"):
                 obs_tab = ObsTab()
             with StartupTimer("settings_tab_objects_game_hooks"):
@@ -4991,6 +4994,7 @@ class SettingsUI:
                 "PSN": psn_tab,
                 "Spotify": spotify_tab,
                 "YouTube": youtube_tab,
+                "Discord": discord_tab,
                 "OBS": obs_tab,
                 "Game Hooks": game_hooks_tab,
                 "Database": database_tab,
@@ -5015,6 +5019,7 @@ class SettingsUI:
                         ui.tab("PSN", icon=service_tab_icon("psn"))
                         ui.tab("Spotify", icon=service_tab_icon("spotify"))
                         ui.tab("YouTube", icon=service_tab_icon("youtube"))
+                        ui.tab("Discord", icon=service_tab_icon("discord"))
                         ui.tab("Game Hooks", icon="memory")
                         ui.tab("Database", icon="storage")
                         ui.tab("Statistics", icon="analytics")
@@ -5081,6 +5086,8 @@ class SettingsUI:
                                         self._tabs_by_name["Spotify"].build(container)
                                     elif tab_name == "YouTube":
                                         self._tabs_by_name["YouTube"].build(container)
+                                    elif tab_name == "Discord":
+                                        self._tabs_by_name["Discord"].build(container)
                                     elif tab_name == "OBS":
                                         self._tabs_by_name["OBS"].build(container)
                                     elif tab_name == "Game Hooks":
@@ -5119,6 +5126,7 @@ class SettingsUI:
                             "PSN",
                             "Spotify",
                             "YouTube",
+                            "Discord",
                             "Game Hooks",
                             "Database",
                             "Statistics",

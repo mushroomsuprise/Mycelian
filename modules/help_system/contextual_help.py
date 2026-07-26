@@ -209,6 +209,7 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
             "PSN": "integrations_psn",
             "Spotify": "integrations_spotify",
             "YouTube": "integrations_youtube",
+            "Discord": "integrations_discord",
             "OBS": "obs_setup",
             "Database": "settings",
             "Statistics": "settings",

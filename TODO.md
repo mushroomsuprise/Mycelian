@@ -48,11 +48,11 @@ General:
     [x] - Condensed view just displaying "points!" instead of a count of each unique point alert
 
 Discord Integration:
-    [] - Add Discord as a 3rd party service (will need to make a new Settings sub-tab with Discord icon). use the "discord.py" package (already added to venv via uv)
-    [] - Create authentication flow and guided user setup for integrating Discord into Mycelian
-    [] - Add ability to send messages to specific channels of specific servers for the Chatbot
-    [] - Add Discord options to Connectors service, add "send discord message" as an action instead of expanding existing "send chat message" action.
-    [] - Add in a way to automatically send a "Stream is live" Discord message. Allow user to specify the server(s) and channel(s) to send the message too (allowing multiple servers/channels).
+    [x] - Add Discord as a 3rd party service (will need to make a new Settings sub-tab with Discord icon). use the "discord.py" package (already added to venv via uv)
+    [x] - Create authentication flow and guided user setup for integrating Discord into Mycelian
+    [x] - Add ability to send messages to specific channels of specific servers for the Chatbot
+    [x] - Add Discord options to Connectors service, add "send discord message" as an action instead of expanding existing "send chat message" action.
+    [x] - Add in a way to automatically send a "Stream is live" Discord message. Allow user to specify the server(s) and channel(s) to send the message too (allowing multiple servers/channels).
 
 
 YouTube Integration:

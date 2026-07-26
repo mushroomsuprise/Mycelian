@@ -1355,6 +1355,8 @@ def format_trigger_name(trigger_type: TriggerType) -> str:
         TriggerType.TWITCH_CHAT_MESSAGE: "Chat Message",
         TriggerType.TWITCH_HYPE_TRAIN_START: "Hype Train Start",
         TriggerType.TWITCH_HYPE_TRAIN_END: "Hype Train End",
+        TriggerType.TWITCH_STREAM_ONLINE: "Twitch Stream Online",
+        TriggerType.TWITCH_STREAM_OFFLINE: "Twitch Stream Offline",
         TriggerType.YOUTUBE_CHAT_MESSAGE: "YouTube Chat Message",
         TriggerType.YOUTUBE_MEMBER: "YouTube Membership",
         TriggerType.YOUTUBE_MEMBER_MILESTONE: "YouTube Member Milestone",
@@ -1401,6 +1403,13 @@ def get_action_display_name(action) -> str:
         elif action_type == "send_announcement":
             color = getattr(action, "color", "primary") or "primary"
             return f"Send Announcement ({color})"
+        elif action_type == "send_discord_message":
+            channels = getattr(action, "channels", None) or []
+            n = len(channels) if isinstance(channels, list) else 0
+            if n == 1 and isinstance(channels[0], dict):
+                name = channels[0].get("channel_name") or channels[0].get("channel_id")
+                return f"Send Discord → #{name}"
+            return f"Send Discord Message ({n} channels)"
         elif action_type == "trigger_alert":
             alert_type = getattr(action, "alert_type", "Alert")
             amount = getattr(action, "amount", "")
@@ -1616,6 +1625,12 @@ def create_connector_form(connector_id: str = None):
                     action_data["config"]["reply_targets"] = list(
                         getattr(action, "reply_targets", None) or ["twitch"]
                     )
+                at = getattr(action, "action_type", None)
+                at_val = getattr(at, "value", at)
+                if hasattr(action, "channels") and at_val == "send_discord_message":
+                    action_data["config"]["channels"] = list(
+                        getattr(action, "channels", None) or []
+                    )
                 if hasattr(action, "color"):
                     action_data["config"]["color"] = action.color
                 if hasattr(action, "file_path"):
@@ -1702,6 +1717,8 @@ def create_connector_form(connector_id: str = None):
                         "twitch_raid": "Twitch Raid",
                         "twitch_points": "Channel Points",
                         "twitch_chat_message": "Twitch Chat Message",
+                        "twitch_stream_online": "Twitch Stream Online",
+                        "twitch_stream_offline": "Twitch Stream Offline",
                         "youtube_chat_message": "YouTube Chat Message",
                         "youtube_member": "YouTube Membership",
                         "youtube_member_milestone": "YouTube Member Milestone",
@@ -2538,6 +2555,7 @@ def get_available_actions() -> Dict[str, str]:
         "trigger_alert": "Trigger Alert",
         "send_chat_message": "Send Chat Message",
         "send_announcement": "Send Announcement",
+        "send_discord_message": "Send Discord Message",
         "add_greeting": "Add Greeting",
         "update_greeting": "Update Greeting",
         "send_greeting": "Send Greeting",
@@ -2592,6 +2610,8 @@ def handle_action_type_change_with_data(
             create_chat_message_config(action_index, form_data, initial_config)
         elif action_type == "send_announcement":
             create_send_announcement_config(action_index, form_data, initial_config)
+        elif action_type == "send_discord_message":
+            create_discord_message_config(action_index, form_data, initial_config)
         elif action_type == "add_greeting":
             create_add_greeting_config(action_index, form_data, initial_config)
         elif action_type == "update_greeting":
@@ -4762,6 +4782,163 @@ def create_chat_message_config(
             value="youtube" in current_targets,
             on_change=lambda e: _toggle_reply_target("youtube", bool(e.value)),
         )
+
+    if action_index > 0:
+        aparts: List[str] = []
+        for j in range(1, action_index + 1):
+            aparts.append(
+                f"{{action{j}.item_name}}  {{action{j}.quantity}}  "
+                f"{{action{j}.resolved_name}}  {{action{j}.error}}"
+            )
+        ui.label("Prior action outputs: " + "  ".join(aparts)).classes(
+            "text-xs muted-text"
+        )
+    ui.label("Use single-brace placeholders for event and connector data").classes(
+        "text-xs muted-text"
+    )
+
+
+def create_discord_message_config(
+    action_index: int, form_data: dict, initial_config: dict = None
+):
+    """Create configuration for send Discord message action."""
+    if initial_config is None:
+        initial_config = {}
+
+    from .. import discord_service
+    from ..ui_settings_layout import THEME_CHIP_CLASSES, theme_chip_row
+
+    ui.textarea(
+        label="Message",
+        placeholder="Thanks {username}! Stream updates in Discord.",
+        value=initial_config.get("message", ""),
+        on_change=lambda e: update_action_config(
+            action_index, "message", e.value, form_data
+        ),
+    ).classes("w-full action-input")
+
+    channels = list(initial_config.get("channels") or [])
+    if not isinstance(channels, list):
+        channels = []
+    update_action_config(action_index, "channels", channels, form_data)
+
+    ui.label("Discord channels").classes("text-sm font-medium text-theme-muted mt-2")
+    chip_row = theme_chip_row()
+
+    def _channel_key(entry: dict) -> str:
+        return f"{entry.get('guild_id')}:{entry.get('channel_id')}"
+
+    def _persist(updated: list) -> None:
+        update_action_config(action_index, "channels", updated, form_data)
+
+    def _rebuild_chips() -> None:
+        chip_row.clear()
+        actions = form_data.get("actions") or []
+        if action_index >= len(actions):
+            return
+        current = list(actions[action_index].get("config", {}).get("channels") or [])
+        for entry in current:
+            if not isinstance(entry, dict):
+                continue
+            guild_name = entry.get("guild_name") or entry.get("guild_id") or "?"
+            channel_name = entry.get("channel_name") or entry.get("channel_id") or "?"
+            label = f"{guild_name} / #{channel_name}"
+            key = _channel_key(entry)
+            with chip_row:
+                with (
+                    ui.element("div")
+                    .classes(THEME_CHIP_CLASSES)
+                    .style("white-space: nowrap;")
+                ):
+                    ui.label(label).classes("text-sm").style("white-space: nowrap;")
+                    ui.button(
+                        icon="close",
+                        on_click=lambda _e, k=key: _remove(k),
+                    ).props("flat dense round size=xs")
+
+    def _remove(key: str) -> None:
+        actions = form_data.get("actions") or []
+        if action_index >= len(actions):
+            return
+        current = [
+            e
+            for e in (actions[action_index].get("config", {}).get("channels") or [])
+            if isinstance(e, dict) and _channel_key(e) != key
+        ]
+        _persist(current)
+        _rebuild_chips()
+
+    guild_options: Dict[str, str] = {}
+    channel_options: Dict[str, str] = {}
+    try:
+        if discord_service.discord_service.is_connected():
+            for g in discord_service.list_guilds():
+                guild_options[g["id"]] = g.get("name") or g["id"]
+    except Exception:
+        pass
+
+    guild_select = ui.select(
+        options=guild_options,
+        label="Server",
+        with_input=True,
+    ).classes("w-full mb-2 action-select")
+
+    channel_select = ui.select(
+        options={},
+        label="Channel",
+        with_input=True,
+    ).classes("w-full mb-2 action-select")
+
+    def _on_guild(e) -> None:
+        nonlocal channel_options
+        gid = str(getattr(e, "value", None) or "").strip()
+        channel_options = {}
+        if gid:
+            try:
+                for c in discord_service.list_text_channels(gid):
+                    channel_options[c["id"]] = f"#{c.get('name') or c['id']}"
+            except Exception:
+                pass
+        channel_select.set_options(channel_options)
+        channel_select.value = None
+
+    def _add() -> None:
+        guild_id = str(guild_select.value or "").strip()
+        channel_id = str(channel_select.value or "").strip()
+        if not guild_id or not channel_id:
+            notify("Select a Discord server and channel", type="warning")
+            return
+        guild_name = guild_options.get(guild_id, guild_id)
+        ch_label = channel_options.get(channel_id, channel_id)
+        channel_name = str(ch_label).lstrip("#")
+        entry = {
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "guild_name": guild_name,
+            "channel_name": channel_name,
+        }
+        actions = form_data.get("actions") or []
+        if action_index >= len(actions):
+            return
+        current = list(actions[action_index].get("config", {}).get("channels") or [])
+        key = _channel_key(entry)
+        if any(isinstance(e, dict) and _channel_key(e) == key for e in current):
+            notify("Channel already added", type="warning")
+            return
+        current.append(entry)
+        _persist(current)
+        _rebuild_chips()
+
+    guild_select.on_value_change(_on_guild)
+
+    with ui.row().classes("w-full gap-2 mb-2"):
+        outline_button("Add channel", _add, icon="add")
+        if not guild_options:
+            ui.label(
+                "Connect Discord in Settings to list servers/channels."
+            ).classes("text-xs muted-text")
+
+    _rebuild_chips()
 
     if action_index > 0:
         aparts: List[str] = []

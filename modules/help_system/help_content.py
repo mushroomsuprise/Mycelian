@@ -5792,4 +5792,58 @@ characters removed):
         related_topics=["templates_intro", "obs_setup"],
         ui_context="settings.youtube",
     ),
+    "integrations_discord": HelpTopic(
+        id="integrations_discord",
+        title="Discord Integration",
+        category=HelpCategory.INTEGRATIONS,
+        summary="Connect your own Discord bot to send chatbot replies, connector actions, and go-live announcements",
+        content="""
+# Discord Integration
+
+Mycelian connects using **your** Discord bot (via discord.py). The bot can send
+messages to channels you choose for Chatbot replies, Connectors, and automatic
+"Stream is live" announcements.
+
+## Setup
+
+1. Open the [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a **New Application**, then open the **Bot** tab
+3. Copy the **bot token** into **Settings → Discord** and click **Connect**
+4. Use **Invite bot** to add the bot to your server(s) (Send Messages permission)
+5. Add one or more channels under **Stream is live** if you want automatic announcements
+
+Your bot token is stored encrypted in the app database.
+
+## Go-live announcements
+
+When enabled, Mycelian sends your template message the first time **Twitch** or
+**YouTube** goes live in a session. If you multi-stream, the second platform
+going live will **not** send another Discord message.
+
+Placeholders: `{platform}`, `{title}`, `{url}`
+
+## Chatbot & Connectors
+
+- **Chatbot**: pick Discord channels per command/event (separate from Twitch/YouTube reply targets)
+- **Connectors**: use the **Send Discord Message** action (not the Twitch/YouTube chat action)
+
+## Troubleshooting
+
+- **Auth Failed**: regenerate the bot token in the Developer Portal and reconnect
+- **No servers listed**: invite the bot to at least one server, then click Refresh servers
+- **Messages not sending**: confirm the bot can View Channel and Send Messages in that channel
+        """,
+        keywords=[
+            "discord",
+            "bot",
+            "token",
+            "go live",
+            "announcement",
+            "channel",
+            "server",
+            "guild",
+        ],
+        related_topics=["integrations_twitch", "integrations_youtube", "connectors_actions"],
+        ui_context="settings.discord",
+    ),
 }

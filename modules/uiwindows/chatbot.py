@@ -3333,6 +3333,11 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
             if existing_item
             else ["twitch", "youtube"]
         ),
+        "discord_channels": (
+            list(getattr(existing_item, "discord_channels", None) or [])
+            if existing_item
+            else []
+        ),
     }
 
     # Command-specific fields
@@ -3663,6 +3668,127 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                             "youtube", bool(e.value)
                         ),
                     )
+
+                # Discord channel targets (independent of Twitch/YouTube checkboxes)
+                ui.label("Also send to Discord").classes(
+                    "text-sm font-medium text-theme-muted mt-3"
+                )
+                from .. import discord_service
+
+                discord_chip_row = theme_chip_row()
+
+                def _discord_key(entry: dict) -> str:
+                    return f"{entry.get('guild_id')}:{entry.get('channel_id')}"
+
+                def _rebuild_discord_chips() -> None:
+                    discord_chip_row.clear()
+                    for entry in list(form_data.get("discord_channels") or []):
+                        if not isinstance(entry, dict):
+                            continue
+                        guild_name = (
+                            entry.get("guild_name") or entry.get("guild_id") or "?"
+                        )
+                        channel_name = (
+                            entry.get("channel_name") or entry.get("channel_id") or "?"
+                        )
+                        label = f"{guild_name} / #{channel_name}"
+                        key = _discord_key(entry)
+                        with discord_chip_row:
+                            with (
+                                ui.element("div")
+                                .classes(THEME_CHIP_CLASSES)
+                                .style("white-space: nowrap;")
+                            ):
+                                ui.label(label).classes("text-sm").style(
+                                    "white-space: nowrap;"
+                                )
+                                ui.button(
+                                    icon="close",
+                                    on_click=lambda _e, k=key: _remove_discord(k),
+                                ).props("flat dense round size=xs")
+
+                def _remove_discord(key: str) -> None:
+                    form_data["discord_channels"] = [
+                        e
+                        for e in (form_data.get("discord_channels") or [])
+                        if isinstance(e, dict) and _discord_key(e) != key
+                    ]
+                    _rebuild_discord_chips()
+
+                discord_guild_options: Dict[str, str] = {}
+                discord_channel_options: Dict[str, str] = {}
+                try:
+                    if discord_service.discord_service.is_connected():
+                        for g in discord_service.list_guilds():
+                            discord_guild_options[g["id"]] = g.get("name") or g["id"]
+                except Exception:
+                    pass
+
+                discord_guild_select = ui.select(
+                    options=discord_guild_options,
+                    label="Discord server",
+                    with_input=True,
+                ).classes("w-full mt-1")
+                discord_channel_select = ui.select(
+                    options={},
+                    label="Discord channel",
+                    with_input=True,
+                ).classes("w-full")
+
+                def _on_discord_guild(e) -> None:
+                    nonlocal discord_channel_options
+                    gid = str(getattr(e, "value", None) or "").strip()
+                    discord_channel_options = {}
+                    if gid:
+                        try:
+                            for c in discord_service.list_text_channels(gid):
+                                discord_channel_options[c["id"]] = (
+                                    f"#{c.get('name') or c['id']}"
+                                )
+                        except Exception:
+                            pass
+                    discord_channel_select.set_options(discord_channel_options)
+                    discord_channel_select.value = None
+
+                def _add_discord_channel() -> None:
+                    guild_id = str(discord_guild_select.value or "").strip()
+                    channel_id = str(discord_channel_select.value or "").strip()
+                    if not guild_id or not channel_id:
+                        notify(
+                            "Select a Discord server and channel", type="warning"
+                        )
+                        return
+                    entry = {
+                        "guild_id": guild_id,
+                        "channel_id": channel_id,
+                        "guild_name": discord_guild_options.get(guild_id, guild_id),
+                        "channel_name": str(
+                            discord_channel_options.get(channel_id, channel_id)
+                        ).lstrip("#"),
+                    }
+                    current = list(form_data.get("discord_channels") or [])
+                    key = _discord_key(entry)
+                    if any(
+                        isinstance(e, dict) and _discord_key(e) == key for e in current
+                    ):
+                        notify("Channel already added", type="warning")
+                        return
+                    current.append(entry)
+                    form_data["discord_channels"] = current
+                    _rebuild_discord_chips()
+
+                discord_guild_select.on_value_change(_on_discord_guild)
+                with ui.row().classes("w-full gap-2 mt-1"):
+                    outline_button(
+                        "Add Discord channel",
+                        _add_discord_channel,
+                        icon="add",
+                    )
+                    if not discord_guild_options:
+                        ui.label(
+                            "Connect Discord in Settings to list servers."
+                        ).classes("text-xs muted-text")
+                _rebuild_discord_chips()
 
         # Event-specific options - Event Settings Section (separate location, after Basic Information)
         if item_type == "event":
@@ -7000,6 +7126,7 @@ def save_chatbot_command(form_data: dict):
             reset_command=form_data.get("reset_command", ""),
             enabled=form_data.get("enabled", True),
             reply_targets=form_data.get("reply_targets", ["twitch"]),
+            discord_channels=form_data.get("discord_channels", []),
             # API-related fields
             api_enabled=form_data.get("api_enabled", False),
             api_endpoint=form_data.get("api_endpoint", ""),
@@ -7113,6 +7240,7 @@ def save_chatbot_event(form_data: dict):
             enabled=form_data.get("enabled", True),
             interval=interval_seconds,
             reply_targets=form_data.get("reply_targets", ["twitch"]),
+            discord_channels=form_data.get("discord_channels", []),
             # Preserve runtime state from existing event
             trigger_count=getattr(existing_event, "trigger_count", 0)
             if existing_event

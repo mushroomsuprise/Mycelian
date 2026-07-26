@@ -53,6 +53,8 @@ from twitchAPI.object.eventsub import (
     ChannelUpdateEvent,
     HypeTrainEndEvent,
     HypeTrainEvent,
+    StreamOfflineEvent,
+    StreamOnlineEvent,
 )
 from twitchAPI.oauth import UserAuthenticator
 from twitchAPI.type import AuthScope, InvalidRefreshTokenException
@@ -143,7 +145,7 @@ def _add_twitch_alert_to_feed(*args, **kwargs) -> None:
 
 
 def _dispatch_chatbot_event_response(result) -> None:
-    """Handle process_event result (str or (str, targets))."""
+    """Handle process_event result (str or (str, targets[, discord_channels]))."""
     if not result:
         return
     from .chatbot import dispatch_chatbot_response
@@ -151,9 +153,12 @@ def _dispatch_chatbot_event_response(result) -> None:
     if isinstance(result, tuple):
         response = result[0]
         targets = result[1] if len(result) > 1 else ["twitch"]
+        discord_channels = result[2] if len(result) > 2 else None
     else:
-        response, targets = result, ["twitch"]
-    dispatch_chatbot_response(response, targets)
+        response, targets, discord_channels = result, ["twitch"], None
+    dispatch_chatbot_response(
+        response, targets, discord_channels=discord_channels
+    )
 
 
 _ANONYMOUS_USER_SENTINELS = frozenset({"anonymous", "anonymous gifter"})
@@ -2930,6 +2935,38 @@ class Twitch_API:
                 False, hype_train_data
             )
 
+    async def on_stream_online(self, data: StreamOnlineEvent):
+        """Twitch EventSub stream.online — Discord go-live + connector hook."""
+        self._note_event_received()
+        try:
+            ev = data.event
+            title = getattr(ev, "type", "") or ""
+            logger.info(
+                "Twitch stream online (id=%s type=%s)",
+                getattr(ev, "id", ""),
+                title,
+            )
+        except Exception:
+            logger.info("Twitch stream online")
+
+        try:
+            from . import discord_service
+
+            discord_service.notify_platform_live("twitch")
+        except Exception as e:
+            logger.debug("Discord go-live hook failed: %s", e, exc_info=True)
+
+    async def on_stream_offline(self, data: StreamOfflineEvent):
+        """Twitch EventSub stream.offline — reset Discord go-live session state."""
+        self._note_event_received()
+        logger.info("Twitch stream offline")
+        try:
+            from . import discord_service
+
+            discord_service.notify_platform_offline("twitch")
+        except Exception as e:
+            logger.debug("Discord go-live offline hook failed: %s", e, exc_info=True)
+
     async def send_shoutout(self, raider_id: str):
         """Send a shoutout to a raider using the Twitch API"""
         try:
@@ -3508,6 +3545,12 @@ class Twitch_API:
                 )
                 await self.eventsub.listen_hype_train_end(
                     self.user.id, self.on_hype_train_end
+                )
+                await eventsub.listen_stream_online(
+                    self.user.id, self.on_stream_online
+                )
+                await eventsub.listen_stream_offline(
+                    self.user.id, self.on_stream_offline
                 )
             except Exception as e:
                 logger.error(f"Error subscribing to events: {str(e)}", exc_info=True)

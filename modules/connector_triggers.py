@@ -250,6 +250,32 @@ class TwitchHypeTrainEndTrigger(BaseTrigger):
 
 
 @dataclass
+class TwitchStreamOnlineTrigger(BaseTrigger):
+    """Trigger for Twitch stream.online events"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_STREAM_ONLINE
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_stream_online":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchStreamOfflineTrigger(BaseTrigger):
+    """Trigger for Twitch stream.offline events"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_STREAM_OFFLINE
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_stream_offline":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
 class DonationTrigger(BaseTrigger):
     """Trigger for donation events from the connector system"""
 
@@ -482,6 +508,8 @@ CONNECTOR_EVENT_TYPES = frozenset(
         "twitch_chat_message",
         "twitch_hype_train_start",
         "twitch_hype_train_end",
+        "twitch_stream_online",
+        "twitch_stream_offline",
         "youtube_chat_message",
         "youtube_member",
         "youtube_member_milestone",
@@ -531,6 +559,8 @@ def create_trigger(
         TriggerType.TWITCH_CHAT_MESSAGE: TwitchChatMessageTrigger,
         TriggerType.TWITCH_HYPE_TRAIN_START: TwitchHypeTrainStartTrigger,
         TriggerType.TWITCH_HYPE_TRAIN_END: TwitchHypeTrainEndTrigger,
+        TriggerType.TWITCH_STREAM_ONLINE: TwitchStreamOnlineTrigger,
+        TriggerType.TWITCH_STREAM_OFFLINE: TwitchStreamOfflineTrigger,
         TriggerType.YOUTUBE_CHAT_MESSAGE: YouTubeChatMessageTrigger,
         TriggerType.YOUTUBE_MEMBER: YouTubeMemberTrigger,
         TriggerType.YOUTUBE_MEMBER_MILESTONE: YouTubeMemberMilestoneTrigger,

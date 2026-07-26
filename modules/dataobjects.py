@@ -293,6 +293,28 @@ class OBSData:
     last_error: str = ""
 
 
+@dataclass
+class DiscordData:
+    """Discord bot integration settings (persisted in app database)."""
+
+    bot_token: str = ""
+    connection_status: str = "Disconnected"
+    bot_user_id: str = ""
+    bot_username: str = ""
+    application_id: str = ""
+    # Automatic "Stream is live" announcement
+    go_live_enabled: bool = False
+    go_live_message: str = (
+        "Stream is live on {platform}! {url}"
+    )
+    # [{guild_id, channel_id, guild_name?, channel_name?}, ...]
+    go_live_channels: list = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.go_live_channels is None:
+            self.go_live_channels = []
+
+
 class StateManager:
     """
     Manages application state including TwitchData and AppSettings.
@@ -312,6 +334,7 @@ class StateManager:
             "youtube_data": {},  # Added for YouTube
             "chatbot_data": {},  # Added for Chatbot
             "obs_data": {},  # OBS WebSocket settings
+            "discord_data": {},  # Discord bot integration
         }
         self._paths = {
             "twitch_data": "TwitchData",
@@ -322,6 +345,7 @@ class StateManager:
             "youtube_data": "YouTubeData",  # Firebase path for YouTube data
             "chatbot_data": "ChatbotData",  # Firebase path for Chatbot data
             "obs_data": "OBSData",
+            "discord_data": "DiscordData",
         }
         self._initialized = False
         self._changes_pending = False
@@ -343,6 +367,7 @@ class StateManager:
         self._youtube_data = YouTubeData()  # Initialize default YouTube data
         self._chatbot_data = ChatbotData()  # Initialize default Chatbot data
         self._obs_data = OBSData()
+        self._discord_data = DiscordData()
 
     def initialize(self):
         """Initialize the state manager by loading data from Firebase"""
@@ -435,6 +460,7 @@ class StateManager:
             self._state["youtube_data"] = all_data.get(self._paths["youtube_data"], {})
             self._state["chatbot_data"] = all_data.get(self._paths["chatbot_data"], {})
             self._state["obs_data"] = all_data.get(self._paths["obs_data"], {})
+            self._state["discord_data"] = all_data.get(self._paths["discord_data"], {})
 
             # Update the local objects
             self._update_local_objects()
@@ -522,6 +548,9 @@ class StateManager:
 
             obs_data = database_manager.get_data(self._paths["obs_data"]) or {}
             self._state["obs_data"] = obs_data
+
+            discord_data = database_manager.get_data(self._paths["discord_data"]) or {}
+            self._state["discord_data"] = discord_data
 
             # Update the local objects
             self._update_local_objects()
@@ -798,6 +827,30 @@ class StateManager:
             for field in OBSData.__dataclass_fields__.values()
         }
 
+        # Update Discord data
+        discord_dict = self._state.get("discord_data") or {}
+        if discord_dict:
+            valid_keys = [f.name for f in DiscordData.__dataclass_fields__.values()]
+            filtered_dict = {k: v for k, v in discord_dict.items() if k in valid_keys}
+
+            if "bot_token" in filtered_dict and filtered_dict["bot_token"]:
+                filtered_dict["bot_token"] = ensure_decrypted(filtered_dict["bot_token"])
+
+            channels = filtered_dict.get("go_live_channels")
+            if channels is None:
+                filtered_dict["go_live_channels"] = []
+            elif not isinstance(channels, list):
+                filtered_dict["go_live_channels"] = []
+
+            self._discord_data = DiscordData(**filtered_dict)
+        else:
+            self._discord_data = DiscordData()
+
+        self._state["discord_data"] = {
+            field.name: getattr(self._discord_data, field.name)
+            for field in DiscordData.__dataclass_fields__.values()
+        }
+
         # Update Chatbot data
         chatbot_dict = self._state["chatbot_data"]
         if chatbot_dict:
@@ -1006,6 +1059,39 @@ class StateManager:
                 return True
             except Exception as e:
                 logger.error("Error updating OBS data: %s", e, exc_info=True)
+                return False
+
+    def get_discord_data(self) -> DiscordData:
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+            return copy.deepcopy(self._discord_data)
+
+    def set_discord_data(self, discord_data: dict) -> bool:
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+
+            try:
+                self._state["discord_data"] = copy.deepcopy(discord_data)
+
+                for key, value in discord_data.items():
+                    if hasattr(self._discord_data, key):
+                        setattr(self._discord_data, key, value)
+
+                if self._discord_data.go_live_channels is None:
+                    self._discord_data.go_live_channels = []
+
+                self._state["discord_data"] = {
+                    f.name: getattr(self._discord_data, f.name)
+                    for f in DiscordData.__dataclass_fields__.values()
+                }
+
+                self._changed_fields.add("discord_data")
+                self._changes_pending = True
+                return True
+            except Exception as e:
+                logger.error("Error updating Discord data: %s", e, exc_info=True)
                 return False
 
     def _persist_unlocked(self, path: str, data: dict, changed_prefix: str) -> bool:
@@ -1585,6 +1671,39 @@ class StateManager:
                 logger.error("Error updating OBS field %s: %s", field, e, exc_info=True)
                 return False
 
+    def update_discord_field(self, field: str, value: Any) -> bool:
+        """Update one field on Discord integration settings."""
+
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+
+            try:
+                if not hasattr(self._discord_data, field):
+                    logger.error("Invalid Discord data field: %s", field)
+                    return False
+
+                current_value = getattr(self._discord_data, field)
+
+                if isinstance(current_value, bool) and not isinstance(value, bool):
+                    value = bool(value)
+                elif isinstance(current_value, int) and not isinstance(value, int):
+                    value = int(value)
+                elif isinstance(current_value, float) and not isinstance(value, float):
+                    value = float(value)
+
+                self._state["discord_data"][field] = value
+                self._changed_fields.add(f"discord_data.{field}")
+                self._changes_pending = True
+
+                self._update_local_objects()
+                return True
+            except Exception as e:
+                logger.error(
+                    "Error updating Discord field %s: %s", field, e, exc_info=True
+                )
+                return False
+
     def update_chatbot_field(self, field: str, value: Any) -> bool:
         """Update a single field in the Chatbot data
 
@@ -1795,6 +1914,15 @@ class StateManager:
                             encrypted_obs["password"]
                         )
                     writes.append((self._paths["obs_data"], encrypted_obs))
+
+                # Discord bot settings (encrypt bot token)
+                if _changed("discord_data"):
+                    encrypted_discord = self._state["discord_data"].copy()
+                    if "bot_token" in encrypted_discord and encrypted_discord["bot_token"]:
+                        encrypted_discord["bot_token"] = ensure_encrypted(
+                            encrypted_discord["bot_token"]
+                        )
+                    writes.append((self._paths["discord_data"], encrypted_discord))
 
                 # Database settings
                 if _changed("database_settings"):

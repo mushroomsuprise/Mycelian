@@ -1644,11 +1644,14 @@ def dispatch_chatbot_response(
     message: str,
     reply_targets=None,
     reply_to_message_id: Optional[str] = None,
+    discord_channels=None,
 ) -> bool:
     """
-    Send a chatbot response to Twitch and/or YouTube based on reply_targets.
+    Send a chatbot response to Twitch and/or YouTube based on reply_targets,
+    and optionally to Discord channels listed in discord_channels.
 
     reply_targets: list containing 'twitch' and/or 'youtube'. Missing/empty → twitch.
+    discord_channels: list of {guild_id, channel_id, ...} dicts (optional).
     Returns True if any selected target succeeds.
     """
     from .chatbot_core import _normalize_reply_targets
@@ -1673,6 +1676,16 @@ def dispatch_chatbot_response(
                 logger.warning("Chatbot YouTube send failed (not live or auth issue)")
         except Exception as e:
             logger.error("Chatbot YouTube dispatch error: %s", e, exc_info=True)
+    if discord_channels:
+        try:
+            from . import discord_service
+
+            if discord_service.send_to_channels(message, list(discord_channels)):
+                any_ok = True
+            else:
+                logger.warning("Chatbot Discord send failed")
+        except Exception as e:
+            logger.error("Chatbot Discord dispatch error: %s", e, exc_info=True)
     return any_ok
 
 
