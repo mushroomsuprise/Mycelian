@@ -37,6 +37,7 @@ dependencies = [
     "pytz>=2025.2",
     "pillow>=10.0.0",
     "obsws-python>=1.8.0",
+    "discord-py>=2.7.1",
 ]
 
 [build-system]
