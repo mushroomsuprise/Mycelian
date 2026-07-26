@@ -99,6 +99,63 @@ ensure_channel_chat_notification_watch_streak_patch()
 
 logger = logging.getLogger(__name__)
 
+
+def _twitch_alerts_enabled() -> bool:
+    """Whether Twitch events should enter the alert pipeline (queue/feed/instant)."""
+    try:
+        from .dataobjects import state_manager
+
+        td = state_manager.get_twitch_data()
+        if td is None:
+            return True
+        return bool(getattr(td, "alerts_enabled", True))
+    except Exception:
+        return True
+
+
+def _queue_twitch_alert(alert, stored=None) -> bool:
+    """Append to ALERT_QUEUE and store when Twitch alerts are enabled."""
+    if not _twitch_alerts_enabled():
+        return False
+    alert_processor.ALERT_QUEUE.append(alert)
+    payload = stored if stored is not None else alert.__dict__
+    alertutils.alert_state_manager.store_completed_alert(alert.alert_id, payload)
+    return True
+
+
+def _send_twitch_instant_alert(alert_data: dict) -> None:
+    if not _twitch_alerts_enabled():
+        return
+    try:
+        if (
+            hasattr(web_engine, "web_engine_instance")
+            and web_engine.web_engine_instance
+        ):
+            web_engine.web_engine_instance.instant_alert(alert_data)
+    except Exception as e:
+        logger.error("Error sending instant alert: %s", e, exc_info=True)
+
+
+def _add_twitch_alert_to_feed(*args, **kwargs) -> None:
+    if not _twitch_alerts_enabled():
+        return
+    add_alert_to_feed(*args, **kwargs)
+
+
+def _dispatch_chatbot_event_response(result) -> None:
+    """Handle process_event result (str or (str, targets))."""
+    if not result:
+        return
+    from .chatbot import dispatch_chatbot_response
+
+    if isinstance(result, tuple):
+        response = result[0]
+        targets = result[1] if len(result) > 1 else ["twitch"]
+    else:
+        response, targets = result, ["twitch"]
+    dispatch_chatbot_response(response, targets)
+
+
 _ANONYMOUS_USER_SENTINELS = frozenset({"anonymous", "anonymous gifter"})
 
 
@@ -1255,18 +1312,26 @@ class Twitch_API:
             chatbot_response = chatbot_manager.process_chat_message(msg_dict)
 
             if chatbot_response:
-                response_message, command_name = chatbot_response
+                if len(chatbot_response) >= 3:
+                    response_message, command_name, reply_targets = (
+                        chatbot_response[0],
+                        chatbot_response[1],
+                        chatbot_response[2],
+                    )
+                else:
+                    response_message, command_name = chatbot_response
+                    reply_targets = ["twitch"]
                 logger.debug(
                     "Command '%s' triggered, response: %s",
                     command_name,
                     safe_console_str(response_message),
                 )
 
-                # Send chatbot response back to chat
+                # Send chatbot response back to chat targets
                 try:
-                    from .chatbot import send_chatbot_message
+                    from .chatbot import dispatch_chatbot_response
 
-                    send_chatbot_message(response_message)
+                    dispatch_chatbot_response(response_message, reply_targets)
                     logger.debug(
                         f"Chatbot responded to command '{command_name}': {response_message}"
                     )
@@ -1311,9 +1376,7 @@ class Twitch_API:
 
                     # Send chatbot response back to chat
                     try:
-                        from .chatbot import send_chatbot_message
-
-                        send_chatbot_message(chatbot_response)
+                        _dispatch_chatbot_event_response(chatbot_response)
                         logger.debug(
                             f"Chatbot responded to chat message event: {chatbot_response}"
                         )
@@ -1416,10 +1479,7 @@ class Twitch_API:
             alert.alert_id = alert_id
             alert.timestamp = current_timestamp
 
-            alert_processor.ALERT_QUEUE.append(alert)
-            alertutils.alert_state_manager.store_completed_alert(
-                alert.alert_id, alert.__dict__
-            )
+            _queue_twitch_alert(alert)
             alert_name_for_stats = getattr(alert, "alert_name", None) or ""
 
             try:
@@ -1437,7 +1497,7 @@ class Twitch_API:
                         "alert_id": alert.alert_id,
                         "timestamp": alert.timestamp,
                     }
-                    web_engine.web_engine_instance.instant_alert(alert_data)
+                    _send_twitch_instant_alert(alert_data)
                     logger.debug(f"Sent instant alert for watch streak: {username}")
             except Exception as e:
                 logger.error(
@@ -1458,11 +1518,12 @@ class Twitch_API:
                 "timestamp": current_timestamp,
                 "alert_name": "",
             }
-            alertutils.alert_state_manager.store_completed_alert(
+            if _twitch_alerts_enabled():
+                alertutils.alert_state_manager.store_completed_alert(
                 alert_id, streak_storage
-            )
+                )
 
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Streak",
             message=format_watch_streak_message(username, streak_count),
             badge_type="streak",
@@ -1591,7 +1652,7 @@ class Twitch_API:
                     "title": data.event.title,
                     "timestamp": time.time(),
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(
                     f"Sent instant alert for category change: {current_category}"
                 )
@@ -1650,11 +1711,7 @@ class Twitch_API:
         alert.alert_type = "follow"
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
-        alert_processor.ALERT_QUEUE.append(alert)
-        # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        _queue_twitch_alert(alert)
 
         # Send instant alert
         try:
@@ -1668,7 +1725,7 @@ class Twitch_API:
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(f"Sent instant alert for follow: {alert.username}")
         except Exception as e:
             logger.error(
@@ -1699,9 +1756,7 @@ class Twitch_API:
 
             if chatbot_response:
                 try:
-                    from .chatbot import send_chatbot_message
-
-                    send_chatbot_message(chatbot_response)
+                    _dispatch_chatbot_event_response(chatbot_response)
                     logger.debug(
                         f"Chatbot responded to follow from {alert.username}: {chatbot_response}"
                     )
@@ -1716,7 +1771,7 @@ class Twitch_API:
             )
 
         # Add to activity feed
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Follow",
             message=f"{alert.username} just followed!",
             badge_type="follow",
@@ -1761,11 +1816,7 @@ class Twitch_API:
         if user_msg:
             register_alert_user_message(str(data.event.user_id), user_msg)
 
-        alert_processor.ALERT_QUEUE.append(alert)
-        # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        _queue_twitch_alert(alert)
 
         # Track new subscription statistics
         try:
@@ -1790,7 +1841,7 @@ class Twitch_API:
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(f"Sent instant alert for sub: {username}")
         except Exception as e:
             logger.error(
@@ -1814,9 +1865,7 @@ class Twitch_API:
 
             if chatbot_response:
                 try:
-                    from .chatbot import send_chatbot_message
-
-                    send_chatbot_message(chatbot_response)
+                    _dispatch_chatbot_event_response(chatbot_response)
                     logger.debug(
                         f"Chatbot responded to subscription from {username}: {chatbot_response}"
                     )
@@ -1832,7 +1881,7 @@ class Twitch_API:
             )
 
         # Add to activity feed for new subscription
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Sub",
             message=f"{username} subscribed (Tier {tier})!",
             badge_type="sub",
@@ -1873,11 +1922,7 @@ class Twitch_API:
         if user_msg:
             register_alert_user_message(str(data.event.user_id), user_msg)
 
-        alert_processor.ALERT_QUEUE.append(alert)
-        # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        _queue_twitch_alert(alert)
 
         # Track resubscription statistics
         try:
@@ -1903,7 +1948,7 @@ class Twitch_API:
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(f"Sent instant alert for resub: {username}")
         except Exception as e:
             logger.error(
@@ -1927,9 +1972,7 @@ class Twitch_API:
 
             if chatbot_response:
                 try:
-                    from .chatbot import send_chatbot_message
-
-                    send_chatbot_message(chatbot_response)
+                    _dispatch_chatbot_event_response(chatbot_response)
                     logger.debug(
                         f"Chatbot responded to resubscription from {username}: {chatbot_response}"
                     )
@@ -1945,7 +1988,7 @@ class Twitch_API:
             )
 
         # Add to activity feed for resubscription
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Resub",
             message=f"{username} resubscribed for {cumulative_months} months (Tier {tier})!",
             badge_type="resub",
@@ -1995,11 +2038,7 @@ class Twitch_API:
         alert.message = user_msg or ""  # Use empty string if None
         alert.emotes = _subscription_message_emotes(sub_message)
 
-        alert_processor.ALERT_QUEUE.append(alert)
-        # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        _queue_twitch_alert(alert)
 
         # Track new subscription statistics
         try:
@@ -2024,7 +2063,7 @@ class Twitch_API:
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(f"Sent instant alert for sub: {username}")
         except Exception as e:
             logger.error(
@@ -2048,9 +2087,7 @@ class Twitch_API:
 
             if chatbot_response:
                 try:
-                    from .chatbot import send_chatbot_message
-
-                    send_chatbot_message(chatbot_response)
+                    _dispatch_chatbot_event_response(chatbot_response)
                     logger.debug(
                         f"Chatbot responded to subscription from {username}: {chatbot_response}"
                     )
@@ -2066,7 +2103,7 @@ class Twitch_API:
             )
 
         # Add to activity feed for new subscription
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Sub",
             message=f"{username} subscribed (Tier {tier})!",
             badge_type="sub",
@@ -2099,11 +2136,7 @@ class Twitch_API:
         alert.gift_qty = int(str(data.event.total))
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
-        alert_processor.ALERT_QUEUE.append(alert)
-        # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        _queue_twitch_alert(alert)
 
         # Send instant alert
         try:
@@ -2120,7 +2153,7 @@ class Twitch_API:
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(f"Sent instant alert for giftsub: {gifter_name}")
         except Exception as e:
             logger.error(
@@ -2143,9 +2176,7 @@ class Twitch_API:
 
             if chatbot_response:
                 try:
-                    from .chatbot import send_chatbot_message
-
-                    send_chatbot_message(chatbot_response)
+                    _dispatch_chatbot_event_response(chatbot_response)
                     logger.debug(
                         f"Chatbot responded to gift subscription from {gifter_name}: {chatbot_response}"
                     )
@@ -2175,7 +2206,7 @@ class Twitch_API:
             logger.error(f"Error tracking gift sub statistics: {e}")
 
         # Add to activity feed
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Giftsub",
             message=f"{gifter_name} gifted {alert.gift_qty} Tier {alert.tier} subs!",
             badge_type="giftsub",
@@ -2229,10 +2260,7 @@ class Twitch_API:
             and data.event.power_up
             and hasattr(data.event.power_up, "type")
         ):
-            alert_processor.ALERT_QUEUE.append(alert)
-            alertutils.alert_state_manager.store_completed_alert(
-                alert.alert_id, alert.__dict__
-            )
+            _queue_twitch_alert(alert)
             # Determine activity feed message based on power_up field
             power_up_type = str(data.event.power_up.type).replace("_", " ").title()
             activity_message = f"{alert.username} has redeemed {power_up_type} for {alert.amt_cheered} bits!"
@@ -2255,7 +2283,7 @@ class Twitch_API:
                         "alert_id": alert.alert_id,
                         "timestamp": alert.timestamp,
                     }
-                    web_engine.web_engine_instance.instant_alert(alert_data)
+                    _send_twitch_instant_alert(alert_data)
                     logger.debug(f"Sent instant alert for bits_use: {alert.username}")
             except Exception as e:
                 logger.error(
@@ -2280,9 +2308,7 @@ class Twitch_API:
 
                 if chatbot_response:
                     try:
-                        from .chatbot import send_chatbot_message
-
-                        send_chatbot_message(chatbot_response)
+                        _dispatch_chatbot_event_response(chatbot_response)
                         logger.debug(
                             f"Chatbot responded to bits from {alert.username}: {chatbot_response}"
                         )
@@ -2311,7 +2337,7 @@ class Twitch_API:
                 logger.error(f"Error tracking power-up bit statistics: {e}")
 
             # Add to activity feed
-            add_alert_to_feed(
+            _add_twitch_alert_to_feed(
                 alert_type="Bits",
                 message=activity_message,
                 badge_type="bits",
@@ -2350,11 +2376,7 @@ class Twitch_API:
             register_alert_user_message(cache_user_id, alert.message)
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
-        alert_processor.ALERT_QUEUE.append(alert)
-        # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        _queue_twitch_alert(alert)
 
         # Send instant alert
         try:
@@ -2373,7 +2395,7 @@ class Twitch_API:
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(f"Sent instant alert for cheer: {username_display}")
         except Exception as e:
             logger.error(
@@ -2410,9 +2432,7 @@ class Twitch_API:
 
             if chatbot_response:
                 try:
-                    from .chatbot import send_chatbot_message
-
-                    send_chatbot_message(chatbot_response)
+                    _dispatch_chatbot_event_response(chatbot_response)
                     logger.debug(
                         f"Chatbot responded to cheer from {username_display}: {chatbot_response}"
                     )
@@ -2427,7 +2447,7 @@ class Twitch_API:
             )
 
         # Add to activity feed
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Bits",
             message=activity_message,
             badge_type="bits",
@@ -2461,11 +2481,7 @@ class Twitch_API:
                 f"Could not fetch channel info for raider {alert.username}: {e}"
             )
 
-        alert_processor.ALERT_QUEUE.append(alert)
-        # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        _queue_twitch_alert(alert)
 
         # Send instant alert
         try:
@@ -2480,7 +2496,7 @@ class Twitch_API:
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(f"Sent instant alert for raid: {alert.username}")
         except Exception as e:
             logger.error(
@@ -2528,9 +2544,7 @@ class Twitch_API:
 
             if chatbot_response:
                 try:
-                    from .chatbot import send_chatbot_message
-
-                    send_chatbot_message(chatbot_response)
+                    _dispatch_chatbot_event_response(chatbot_response)
                     logger.debug(
                         f"Chatbot responded to raid from {alert.username}: {chatbot_response}"
                     )
@@ -2545,7 +2559,7 @@ class Twitch_API:
             )
 
         # Add to activity feed
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Raid",
             message=format_raid_activity_message(
                 alert.username, alert.raider_count, game_name
@@ -2566,9 +2580,10 @@ class Twitch_API:
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
         alert.point_cost = int(data.event.reward.cost or 0)
-        alertutils.alert_state_manager.store_completed_alert(
+        if _twitch_alerts_enabled():
+            alertutils.alert_state_manager.store_completed_alert(
             alert.alert_id, alert.__dict__
-        )
+            )
 
         dedicated = match_point_reward_dedicated_template(alert.alert_name)
         send_instant = True
@@ -2585,7 +2600,8 @@ class Twitch_API:
             hold.duration = float(dedicated["duration_seconds"])
             hold.hold_queue_only = True
             hold.enable_alert = False
-            alert_processor.ALERT_QUEUE.append(hold)
+            if _twitch_alerts_enabled():
+                alert_processor.ALERT_QUEUE.append(hold)
             send_instant = False
             logger.debug(
                 "Queued dedicated template point redemption (no DB alert): %s",
@@ -2608,7 +2624,7 @@ class Twitch_API:
                         "timestamp": alert.timestamp,
                         "point_cost": int(data.event.reward.cost or 0),
                     }
-                    web_engine.web_engine_instance.instant_alert(alert_data)
+                    _send_twitch_instant_alert(alert_data)
                     logger.debug(
                         "Sent instant alert for unconfigured points redemption: %s",
                         alert.username,
@@ -2620,7 +2636,7 @@ class Twitch_API:
                 )
 
         # Add to activity feed
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Points",
             message=f"{data.event.user_name} redeemed '{data.event.reward.title}'!",
             badge_type="points",
@@ -2660,11 +2676,7 @@ class Twitch_API:
                 if not gif_ok and not audio_ok and not alert.randomized:
                     alert.hold_queue_only = True
                     alert.duration = float(dedicated["duration_seconds"])
-            alert_processor.ALERT_QUEUE.append(alert)
-        # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+            _queue_twitch_alert(alert)
 
         # Send instant alert
         try:
@@ -2682,7 +2694,7 @@ class Twitch_API:
                     "timestamp": alert.timestamp,
                     "point_cost": int(alert.point_cost or 0),
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(
                     f"Sent instant alert for points redemption: {alert.username}"
                 )
@@ -2709,7 +2721,7 @@ class Twitch_API:
             logger.error(f"Error tracking point redemption statistics: {e}")
 
         # Add to activity feed
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Points",
             message=f"{alert.username} redeemed '{alert.alert_name}'!",
             badge_type="points",
@@ -2742,7 +2754,7 @@ class Twitch_API:
                     "level": level,
                     "timestamp": current_ts,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(
                     f"Sent instant alert for hype train start: {conductor_name}"
                 )
@@ -2753,7 +2765,7 @@ class Twitch_API:
             )
 
         # For activity feed - Note: hype train start doesn't create an AlertObj, so no alert_id available
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Hype Train",
             message=f"Hype Train started by {conductor_name}! Level {level}.",
             badge_type="hype_train",
@@ -2796,7 +2808,7 @@ class Twitch_API:
                     "goal": data.event.goal,
                     "timestamp": time.time(),
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(
                     f"Sent instant alert for hype train progress: Level {data.event.level}"
                 )
@@ -2839,9 +2851,10 @@ class Twitch_API:
         alert.alert_id = f"Alert{round(current_ts)}"
         alert.timestamp = current_ts  # Set the timestamp for the AlertObj
         # Store completed alert using AlertStateManager
-        alertutils.alert_state_manager.store_completed_alert(
+        if _twitch_alerts_enabled():
+            alertutils.alert_state_manager.store_completed_alert(
             alert.alert_id, alert.__dict__
-        )
+            )
         # Optional: if Hype Train End should trigger an OBS alert:
         # alert_processor.ALERT_QUEUE.append(alert)
 
@@ -2870,7 +2883,7 @@ class Twitch_API:
                     "alert_id": alert.alert_id,
                     "timestamp": current_ts,
                 }
-                web_engine.web_engine_instance.instant_alert(alert_data)
+                _send_twitch_instant_alert(alert_data)
                 logger.debug(f"Sent instant alert for hype train end: Level {level}")
         except Exception as e:
             logger.error(
@@ -2878,7 +2891,7 @@ class Twitch_API:
                 exc_info=True,
             )
 
-        add_alert_to_feed(
+        _add_twitch_alert_to_feed(
             alert_type="Hype Train",
             message=f"Hype Train ended at Level {level}!",
             badge_type="hype_train",

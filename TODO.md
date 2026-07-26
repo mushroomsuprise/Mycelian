@@ -47,12 +47,23 @@ General:
     [x] - Condensed view filter button doesnt work
     [x] - Condensed view just displaying "points!" instead of a count of each unique point alert
 
+Discord Integration:
+    [] - Add Discord as a 3rd party service
+    [] - Add ability to send messages to specific channels of specific servers for the Chatbot
+    [] - Add Discord options to Connectors service
+    [] - Add in a way to automatically send a "Stream is live" Discord message. Allow user to specify the server(s) and channel(s) to send the message too (allowing multiple servers/channels).
+
 
 YouTube Integration:
     [x] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file. Default to being off
     [x] - Add YouTube to the alerts system, match up the YouTube equivalent to the current Twitch configurations (memberships are subs, superchats are donations, etc etc)
+    [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system
 
 Kik Integration:
     [] - Add in Kik integration service
     [] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file. Default to being off.
     [] - Add Kik to the alerts alerts, matching up the Kik equivalent to the current Twitch configurations
+    [] - Add options to the chatbot and connectors that parity Twitch options to allow platform specific targetting for Chatbot and Connectors
+    [] - Add as a send target to the chatbot
+    [] - Add Kik specific badging to activity feeds
+    [] - Add secondary credentials system for Kik to have a "chatbot", similar to the Twitch system

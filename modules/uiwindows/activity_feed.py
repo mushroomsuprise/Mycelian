@@ -842,6 +842,14 @@ class AlertEventHandler:
             filter_key = "giftsubs"
         elif alert_type == "Donation":
             filter_key = "donations"
+        elif alert_type == "Membership":
+            filter_key = "subs"
+        elif alert_type == "Member Milestone":
+            filter_key = "resubs"
+        elif alert_type == "Gift Membership":
+            filter_key = "giftsubs"
+        elif alert_type in ("Super Chat", "Super Sticker"):
+            filter_key = "donations"
         elif alert_type == "Raid":
             filter_key = "raids"
         elif alert_type == "Streak":
@@ -1053,6 +1061,12 @@ class ActivityFeedState:
             "Raid": "raids",
             "Streak": "streaks",
             "Hype Train": "hype_train",
+            # YouTube-native labels (map onto existing filter chips)
+            "Membership": "subs",
+            "Member Milestone": "resubs",
+            "Gift Membership": "giftsubs",
+            "Super Chat": "donations",
+            "Super Sticker": "donations",
         }
         # Track dropdown visibility state
         self.dropdown_visible: bool = False
@@ -2333,6 +2347,33 @@ def create_activity_feed_tab():
             color: white;
             border-color: var(--color-primary);
         }
+
+        /* YouTube-native badges */
+        .badge.membership {
+            background: var(--color-info);
+            color: white;
+            border-color: var(--color-info);
+        }
+        .badge.member_milestone {
+            background: var(--color-info);
+            color: white;
+            border-color: var(--color-info);
+        }
+        .badge.gift_membership {
+            background: #e91e63;
+            color: white;
+            border-color: #e91e63;
+        }
+        .badge.superchat {
+            background: var(--color-success);
+            color: white;
+            border-color: var(--color-success);
+        }
+        .badge.supersticker {
+            background: #ff9800;
+            color: white;
+            border-color: #ff9800;
+        }
         
         /* NEW badge styling */
         .new-badge {
@@ -3053,6 +3094,30 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
 
         original_type = stored_alert_data.get("alert_type", "unknown")
         display_type = alert_type_mapping.get(original_type, original_type.title())
+        source = (stored_alert_data.get("source") or "").lower()
+        youtube_badge = None
+
+        # Restore YouTube-native labels when stored with source=youtube
+        if source == "youtube":
+            if original_type == "sub":
+                display_type = "Membership"
+                youtube_badge = "membership"
+            elif original_type == "resub":
+                display_type = "Member Milestone"
+                youtube_badge = "member_milestone"
+            elif original_type == "giftsub":
+                display_type = "Gift Membership"
+                youtube_badge = "gift_membership"
+            elif original_type == "donation":
+                # Prefer supersticker if flagged; otherwise Super Chat
+                if stored_alert_data.get("is_supersticker") or stored_alert_data.get(
+                    "supersticker"
+                ):
+                    display_type = "Super Sticker"
+                    youtube_badge = "supersticker"
+                else:
+                    display_type = "Super Chat"
+                    youtube_badge = "superchat"
 
         # Get username with fallback and debugging
         username = stored_alert_data.get("username", None)
@@ -3076,7 +3141,13 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
         elif original_type == "sub":
             tier = stored_alert_data.get("tier", 1)
             resub_month = stored_alert_data.get("resub_month", 0)
-            if resub_month > 1:
+            if source == "youtube":
+                level = stored_alert_data.get("member_level") or ""
+                message = (
+                    f"{username} became a channel member"
+                    + (f" ({level})!" if level else "!")
+                )
+            elif resub_month > 1:
                 display_type = "Resub"
                 message = f"{username} has resubscribed for {resub_month} months!"
             else:
@@ -3090,11 +3161,23 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
                 or stored_alert_data.get("total_months", 0)
                 or 1
             )
-            message = f"{username} has resubscribed for {resub_month} months!"
+            if source == "youtube":
+                level = stored_alert_data.get("member_level") or ""
+                message = (
+                    f"{username} reached a member milestone"
+                    f" ({resub_month} months"
+                    + (f", {level}" if level else "")
+                    + ")!"
+                )
+            else:
+                message = f"{username} has resubscribed for {resub_month} months!"
         elif original_type == "giftsub":
             gift_qty = stored_alert_data.get("gift_qty", 1)
             tier = stored_alert_data.get("tier", 1)
-            message = f"{username} gifted {gift_qty} Tier {tier} subs!"
+            if source == "youtube":
+                message = f"{username} gifted {gift_qty} memberships!"
+            else:
+                message = f"{username} gifted {gift_qty} Tier {tier} subs!"
         elif original_type == "follow":
             message = f"{username} just followed!"
         elif original_type == "point":
@@ -3109,7 +3192,21 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             )
         elif original_type == "donation":
             donation_amount = stored_alert_data.get("donation_amount", 0)
-            message = f"{username} donated ${donation_amount}!"
+            if source == "youtube":
+                display_amount = stored_alert_data.get("display_amount")
+                currency = stored_alert_data.get("currency") or ""
+                if display_amount:
+                    amount_str = str(display_amount)
+                else:
+                    amount_str = f"{donation_amount} {currency}".strip()
+                label = (
+                    "Super Sticker"
+                    if youtube_badge == "supersticker"
+                    else "Super Chat"
+                )
+                message = f"{username} sent a {label} ({amount_str})!"
+            else:
+                message = f"{username} donated ${donation_amount}!"
         elif original_type.startswith("hype_train"):
             hype_train_level = stored_alert_data.get("hype_train_level", 1)
             # For hype train, username might not be relevant
@@ -3124,7 +3221,7 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
         result = {
             "type": display_type,
             "message": message,
-            "badge_type": original_type,
+            "badge_type": youtube_badge or original_type,
             "timestamp": stored_alert_data.get("timestamp", time.time()),
             "created_at": stored_alert_data.get("timestamp", time.time()),
             "tier": stored_alert_data.get("tier"),
@@ -3134,6 +3231,7 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
                 "alert_id"
             ),  # Include original alert ID for debugging
             "username": username,  # Include the resolved username
+            "source": source or stored_alert_data.get("source"),
             # Preserve the full original stored alert data for replay functionality
             "stored_alert_data": stored_alert_data,
         }
@@ -3371,6 +3469,14 @@ def add_restored_alert_to_feed(alert_data):
             filter_key = "giftsubs"
         elif alert_type == "Donation":
             filter_key = "donations"
+        elif alert_type == "Membership":
+            filter_key = "subs"
+        elif alert_type == "Member Milestone":
+            filter_key = "resubs"
+        elif alert_type == "Gift Membership":
+            filter_key = "giftsubs"
+        elif alert_type in ("Super Chat", "Super Sticker"):
+            filter_key = "donations"
         elif alert_type == "Raid":
             filter_key = "raids"
         elif alert_type == "Streak":
@@ -3595,6 +3701,37 @@ def _group_alerts_for_condensed(alerts_to_process: List[Dict[str, Any]]):
                     grouping_key = f"{alert_type}_tier{tier}_multi_month"
                 else:
                     grouping_key = f"{alert_type}_tier{tier}_1month"
+        elif alert_type in (
+            "membership",
+            "member milestone",
+            "gift membership",
+            "super chat",
+            "super sticker",
+        ) or badge_type in (
+            "membership",
+            "member_milestone",
+            "gift_membership",
+            "superchat",
+            "supersticker",
+        ):
+            if badge_type in (
+                "membership",
+                "member_milestone",
+                "gift_membership",
+                "superchat",
+                "supersticker",
+            ):
+                grouping_key = badge_type
+            elif alert_type == "membership":
+                grouping_key = "membership"
+            elif alert_type == "member milestone":
+                grouping_key = "member_milestone"
+            elif alert_type == "gift membership":
+                grouping_key = "gift_membership"
+            elif alert_type == "super chat":
+                grouping_key = "superchat"
+            elif alert_type == "super sticker":
+                grouping_key = "supersticker"
         elif alert_type in ("point", "points") or badge_type in ("point", "points"):
             stored_data = alert_data.get("stored_alert_data", {}) or {}
             reward_name = stored_data.get("alert_name")
@@ -4082,6 +4219,32 @@ def create_aggregated_alert_text(grouping_key, data):
             else:
                 formatted_amount = f"${total_amount:.2f}"
             return f"Donated {formatted_amount}!"
+        elif grouping_key in ("membership", "member"):
+            if count > 1:
+                return f"Joined as member {count} times!"
+            return "Became a channel member!"
+        elif grouping_key in ("member_milestone", "member milestone"):
+            if count > 1:
+                return f"Reached member milestones {count} times!"
+            return "Reached a member milestone!"
+        elif grouping_key in ("gift_membership", "gift membership"):
+            try:
+                formatted_amount = f"{int(total_amount):,}"
+            except (ValueError, TypeError):
+                formatted_amount = str(total_amount or count)
+            return f"Gifted {formatted_amount} memberships!"
+        elif grouping_key in ("superchat", "super chat"):
+            if total_amount == int(total_amount):
+                formatted_amount = f"{int(total_amount)}"
+            else:
+                formatted_amount = f"{total_amount:.2f}"
+            return f"Sent Super Chat ({formatted_amount})!"
+        elif grouping_key in ("supersticker", "super sticker"):
+            if total_amount == int(total_amount):
+                formatted_amount = f"{int(total_amount)}"
+            else:
+                formatted_amount = f"{total_amount:.2f}"
+            return f"Sent Super Sticker ({formatted_amount})!"
         elif grouping_key == "raid":
             # For raids, show the largest raid
             try:
@@ -4174,6 +4337,16 @@ def create_condensed_alert_text(alert_data):
             )
             amount = donation_match.group(1) if donation_match else "?"
             return f"Donated ${amount}!"
+        elif alert_type in ("membership", "member"):
+            return "Became a channel member!"
+        elif alert_type in ("member_milestone", "member milestone"):
+            return "Reached a member milestone!"
+        elif alert_type in ("gift_membership", "gift membership"):
+            return "Gifted memberships!"
+        elif alert_type in ("superchat", "super chat"):
+            return "Sent a Super Chat!"
+        elif alert_type in ("supersticker", "super sticker"):
+            return "Sent a Super Sticker!"
         elif alert_type == "raid":
             stored_data = alert_data.get("stored_alert_data") or {}
             raider_count = alert_data.get("raider_count") or stored_data.get(

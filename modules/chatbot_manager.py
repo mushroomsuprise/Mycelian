@@ -816,7 +816,10 @@ class ChatbotManager:
                         logger.info(
                             f"Command triggered: {command_name} by {message_data.get('username', 'Unknown')}"
                         )
-                        return response, command_name
+                        targets = list(
+                            getattr(command, "reply_targets", None) or ["twitch"]
+                        )
+                        return response, command_name, targets
 
             return None
 
@@ -989,7 +992,7 @@ class ChatbotManager:
             event_data: Dictionary containing event information
 
         Returns:
-            Response message if event triggered, None otherwise
+            (response, reply_targets) if event triggered, None otherwise
         """
         try:
             with self._lock:
@@ -1011,7 +1014,10 @@ class ChatbotManager:
                         logger.info(
                             f"Event triggered: {event.name} for {event_type.value}"
                         )
-                        return response
+                        targets = list(
+                            getattr(event, "reply_targets", None) or ["twitch"]
+                        )
+                        return response, targets
 
             return None
 
@@ -1135,7 +1141,18 @@ class ChatbotManager:
                             can_use, reason = command.can_use(event_data)
                             if can_use:
                                 response = command.use_command(event_data)
-                                # Send the response (this would need to be connected to the actual sending mechanism)
+                                try:
+                                    from .chatbot import dispatch_chatbot_response
+
+                                    dispatch_chatbot_response(
+                                        response,
+                                        getattr(command, "reply_targets", None),
+                                    )
+                                except Exception as send_err:
+                                    logger.error(
+                                        "Error sending repeating command: %s",
+                                        send_err,
+                                    )
                                 logger.info(
                                     f"Repeating command {command.command_name} executed: {response}"
                                 )
@@ -1293,7 +1310,7 @@ class ChatbotManager:
                             try:
                                 from .chatbot import (
                                     is_chatbot_connected,
-                                    send_chatbot_message,
+                                    dispatch_chatbot_response,
                                 )
 
                                 # Check if chatbot is ready before attempting to send
@@ -1307,7 +1324,10 @@ class ChatbotManager:
                                     logger.info(
                                         f"Sending message for event {event.name} in loop"
                                     )
-                                    success = send_chatbot_message(response)
+                                    success = dispatch_chatbot_response(
+                                        response,
+                                        getattr(event, "reply_targets", None),
+                                    )
                                     if success:
                                         logger.info(
                                             f"Repeating event {event.name} sent message: {response}"
@@ -1425,11 +1445,14 @@ class ChatbotManager:
                                                 # Send the response through the chatbot
                                                 try:
                                                     from .chatbot import (
-                                                        send_chatbot_message,
+                                                        dispatch_chatbot_response,
                                                     )
 
-                                                    success = send_chatbot_message(
-                                                        response
+                                                    success = dispatch_chatbot_response(
+                                                        response,
+                                                        getattr(
+                                                            event, "reply_targets", None
+                                                        ),
                                                     )
                                                     if success:
                                                         logger.info(
@@ -1568,11 +1591,13 @@ class ChatbotManager:
 
             response = command.use_command(test_data)
 
-            # Send the response to Twitch chat
+            # Send the response to configured reply targets
             try:
-                from .chatbot import send_chatbot_message
+                from .chatbot import dispatch_chatbot_response
 
-                success = send_chatbot_message(response)
+                success = dispatch_chatbot_response(
+                    response, getattr(command, "reply_targets", None)
+                )
                 if success:
                     logger.info(
                         f"Test command '{command.command_name}' sent message: {response}"
@@ -1583,7 +1608,7 @@ class ChatbotManager:
                     )
                     return {
                         "success": False,
-                        "error": "Failed to send message to Twitch chat",
+                        "error": "Failed to send message to chat targets",
                     }
             except Exception as send_error:
                 logger.error(
@@ -1622,11 +1647,13 @@ class ChatbotManager:
 
             response = event.trigger_event(test_data)
 
-            # Send the response to Twitch chat
+            # Send the response to configured reply targets
             try:
-                from .chatbot import send_chatbot_message
+                from .chatbot import dispatch_chatbot_response
 
-                success = send_chatbot_message(response)
+                success = dispatch_chatbot_response(
+                    response, getattr(event, "reply_targets", None)
+                )
                 if success:
                     logger.info(f"Test event '{event.name}' sent message: {response}")
                 else:
@@ -1635,7 +1662,7 @@ class ChatbotManager:
                     )
                     return {
                         "success": False,
-                        "error": "Failed to send message to Twitch chat",
+                        "error": "Failed to send message to chat targets",
                     }
             except Exception as send_error:
                 logger.error(

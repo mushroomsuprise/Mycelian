@@ -2600,6 +2600,12 @@ def format_event_name(event_type: EventType) -> str:
         EventType.INTERVAL: "Interval",
         EventType.SPECIFIC_TIME: "Specific Time",
         EventType.CHAT_MESSAGE: "Chat Message",
+        EventType.YOUTUBE_CHAT_MESSAGE: "YouTube Chat Message",
+        EventType.YOUTUBE_MEMBERSHIP: "YouTube Membership",
+        EventType.YOUTUBE_MEMBERSHIP_MILESTONE: "YouTube Member Milestone",
+        EventType.YOUTUBE_GIFT_MEMBERSHIP: "YouTube Gift Membership",
+        EventType.YOUTUBE_SUPERCHAT: "YouTube Super Chat",
+        EventType.YOUTUBE_SUPERSTICKER: "YouTube Super Sticker",
     }
     return name_mapping.get(event_type, event_type.value.replace("_", " ").title())
 
@@ -3322,6 +3328,11 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
         "description": existing_item.description if existing_item else "",
         "response_text": existing_item.response_text if existing_item else "",
         "enabled": existing_item.enabled if existing_item else True,
+        "reply_targets": (
+            list(getattr(existing_item, "reply_targets", None) or ["twitch"])
+            if existing_item
+            else ["twitch", "youtube"]
+        ),
     }
 
     # Command-specific fields
@@ -3579,6 +3590,12 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                         "interval": "Interval",
                         "specific_time": "Specific Time",
                         "chat_message": "Chat Message",
+                        "youtube_chat_message": "YouTube Chat Message",
+                        "youtube_membership": "YouTube Membership",
+                        "youtube_membership_milestone": "YouTube Member Milestone",
+                        "youtube_gift_membership": "YouTube Gift Membership",
+                        "youtube_superchat": "YouTube Super Chat",
+                        "youtube_supersticker": "YouTube Super Sticker",
                     }
 
                     event_select = ui.select(
@@ -3614,6 +3631,38 @@ def create_chatbot_form(item_id: Optional[str] = None, item_type: Optional[str] 
                     value=form_data.get("enabled", True),
                     on_change=lambda value: form_data.update({"enabled": value}),
                 ).classes("w-full")
+
+                # Reply targets (Twitch / YouTube)
+                ui.label("Send reply to").classes(
+                    "text-sm font-medium text-theme-muted mt-2"
+                )
+                with ui.row().classes("items-center gap-4 w-full"):
+                    current_targets = list(form_data.get("reply_targets") or ["twitch"])
+
+                    def _toggle_reply_target(platform: str, enabled: bool) -> None:
+                        targets = list(form_data.get("reply_targets") or [])
+                        if enabled and platform not in targets:
+                            targets.append(platform)
+                        if not enabled and platform in targets:
+                            targets = [t for t in targets if t != platform]
+                        if not targets:
+                            targets = ["twitch"]
+                        form_data["reply_targets"] = targets
+
+                    ui.checkbox(
+                        text="Twitch",
+                        value="twitch" in current_targets,
+                        on_change=lambda e: _toggle_reply_target(
+                            "twitch", bool(e.value)
+                        ),
+                    )
+                    ui.checkbox(
+                        text="YouTube",
+                        value="youtube" in current_targets,
+                        on_change=lambda e: _toggle_reply_target(
+                            "youtube", bool(e.value)
+                        ),
+                    )
 
         # Event-specific options - Event Settings Section (separate location, after Basic Information)
         if item_type == "event":
@@ -6050,6 +6099,50 @@ def get_available_variables(
                     "message": "{message} - The chat message that triggered this event",
                 }
             )
+        elif event_type == "youtube_chat_message":
+            event_variables.update(
+                {
+                    "message": "{message} - YouTube chat message text",
+                    "source": "{source} - Event source (youtube)",
+                }
+            )
+        elif event_type == "youtube_membership":
+            event_variables.update(
+                {
+                    "member_level": "{member_level} - YouTube membership level name",
+                    "months": "{months} - Membership months",
+                    "message": "{message} - Membership message",
+                    "source": "{source} - Event source (youtube)",
+                }
+            )
+        elif event_type == "youtube_membership_milestone":
+            event_variables.update(
+                {
+                    "member_level": "{member_level} - YouTube membership level name",
+                    "months": "{months} - Milestone months",
+                    "message": "{message} - Milestone chat message",
+                    "source": "{source} - Event source (youtube)",
+                }
+            )
+        elif event_type == "youtube_gift_membership":
+            event_variables.update(
+                {
+                    "member_level": "{member_level} - Gifted membership level",
+                    "total_gifts": "{total_gifts} - Number of memberships gifted",
+                    "message": "{message} - Gift message",
+                    "source": "{source} - Event source (youtube)",
+                }
+            )
+        elif event_type in ("youtube_superchat", "youtube_supersticker"):
+            event_variables.update(
+                {
+                    "amount": "{amount} - Super Chat / sticker amount (micros/1000000)",
+                    "display_amount": "{display_amount} - Formatted amount string",
+                    "currency": "{currency} - Currency code",
+                    "message": "{message} - Super Chat / sticker message",
+                    "source": "{source} - Event source (youtube)",
+                }
+            )
 
         # Combine all variables for events
         combined_variables = {
@@ -6906,6 +6999,7 @@ def save_chatbot_command(form_data: dict):
             persistent_counter=form_data.get("persistent_counter", False),
             reset_command=form_data.get("reset_command", ""),
             enabled=form_data.get("enabled", True),
+            reply_targets=form_data.get("reply_targets", ["twitch"]),
             # API-related fields
             api_enabled=form_data.get("api_enabled", False),
             api_endpoint=form_data.get("api_endpoint", ""),
@@ -7018,6 +7112,7 @@ def save_chatbot_event(form_data: dict):
             ),
             enabled=form_data.get("enabled", True),
             interval=interval_seconds,
+            reply_targets=form_data.get("reply_targets", ["twitch"]),
             # Preserve runtime state from existing event
             trigger_count=getattr(existing_event, "trigger_count", 0)
             if existing_event

@@ -154,6 +154,72 @@ class TwitchChatMessageTrigger(BaseTrigger):
 
 
 @dataclass
+class YouTubeChatMessageTrigger(BaseTrigger):
+    def __post_init__(self):
+        self.trigger_type = TriggerType.YOUTUBE_CHAT_MESSAGE
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "youtube_chat_message":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class YouTubeMemberTrigger(BaseTrigger):
+    def __post_init__(self):
+        self.trigger_type = TriggerType.YOUTUBE_MEMBER
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "youtube_member":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class YouTubeMemberMilestoneTrigger(BaseTrigger):
+    def __post_init__(self):
+        self.trigger_type = TriggerType.YOUTUBE_MEMBER_MILESTONE
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "youtube_member_milestone":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class YouTubeGiftMembershipTrigger(BaseTrigger):
+    def __post_init__(self):
+        self.trigger_type = TriggerType.YOUTUBE_GIFT_MEMBERSHIP
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "youtube_gift_membership":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class YouTubeSuperChatTrigger(BaseTrigger):
+    def __post_init__(self):
+        self.trigger_type = TriggerType.YOUTUBE_SUPERCHAT
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "youtube_superchat":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class YouTubeSuperStickerTrigger(BaseTrigger):
+    def __post_init__(self):
+        self.trigger_type = TriggerType.YOUTUBE_SUPERSTICKER
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "youtube_supersticker":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
 class TwitchHypeTrainStartTrigger(BaseTrigger):
     """Trigger for Twitch hype train start events"""
 
@@ -416,6 +482,12 @@ CONNECTOR_EVENT_TYPES = frozenset(
         "twitch_chat_message",
         "twitch_hype_train_start",
         "twitch_hype_train_end",
+        "youtube_chat_message",
+        "youtube_member",
+        "youtube_member_milestone",
+        "youtube_gift_membership",
+        "youtube_superchat",
+        "youtube_supersticker",
         "donation",
         "timer",
         "schedule",
@@ -459,6 +531,12 @@ def create_trigger(
         TriggerType.TWITCH_CHAT_MESSAGE: TwitchChatMessageTrigger,
         TriggerType.TWITCH_HYPE_TRAIN_START: TwitchHypeTrainStartTrigger,
         TriggerType.TWITCH_HYPE_TRAIN_END: TwitchHypeTrainEndTrigger,
+        TriggerType.YOUTUBE_CHAT_MESSAGE: YouTubeChatMessageTrigger,
+        TriggerType.YOUTUBE_MEMBER: YouTubeMemberTrigger,
+        TriggerType.YOUTUBE_MEMBER_MILESTONE: YouTubeMemberMilestoneTrigger,
+        TriggerType.YOUTUBE_GIFT_MEMBERSHIP: YouTubeGiftMembershipTrigger,
+        TriggerType.YOUTUBE_SUPERCHAT: YouTubeSuperChatTrigger,
+        TriggerType.YOUTUBE_SUPERSTICKER: YouTubeSuperStickerTrigger,
         TriggerType.DONATION: DonationTrigger,
         TriggerType.TIMER: TimerTrigger,
         TriggerType.SCHEDULE: ScheduleTrigger,

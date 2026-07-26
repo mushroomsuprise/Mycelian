@@ -49,7 +49,7 @@ is_running = False
 # Google OAuth for live chat (loopback; must match Google Cloud redirect URI)
 YOUTUBE_OAUTH_REDIRECT_URI = "http://127.0.0.1:9974"
 YOUTUBE_OAUTH_PORT = 9974
-YOUTUBE_OAUTH_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+YOUTUBE_OAUTH_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 YOUTUBE_OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 YOUTUBE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
@@ -1695,13 +1695,95 @@ class YouTubeClient:
         if msg_type in ("superChatEvent", "superStickerEvent", "fanFundingEvent"):
             self._emit_superchat_donation_alert(username, snippet, msg_type)
             return
-        # giftMembershipReceivedEvent and others intentionally skipped
+
+    def _alerts_enabled(self) -> bool:
+        return bool(getattr(self.youtube_data, "alerts_enabled", True))
+
+    def _schedule_connector_event(self, event_data: Dict[str, Any]) -> None:
+        try:
+            from .connector_manager import get_manager
+
+            mgr = get_manager()
+            if mgr and mgr.is_running:
+                mgr._schedule_event_on_connector_loop(event_data)
+        except Exception as e:
+            logger.debug("YouTube connector event drop: %s", e)
+
+    def _process_chatbot_event(self, event_type, event_data: Dict[str, Any]) -> None:
+        try:
+            from .chatbot_manager import get_manager as get_chatbot_manager
+            from .chatbot import dispatch_chatbot_response
+
+            chatbot_manager = get_chatbot_manager()
+            result = chatbot_manager.process_event(event_type, event_data)
+            if not result:
+                return
+            if isinstance(result, tuple):
+                response = result[0]
+                targets = result[1] if len(result) > 1 else ["youtube"]
+            else:
+                response, targets = result, ["youtube"]
+            dispatch_chatbot_response(response, targets)
+        except Exception as e:
+            logger.error(
+                "Error processing YouTube chatbot event: %s", e, exc_info=True
+            )
+
+    def _enqueue_alert(self, alert) -> None:
+        if not self._alerts_enabled():
+            return
+        from . import alert_processor, alertutils
+
+        stored = dict(alert.__dict__)
+        stored["source"] = "youtube"
+        alert_processor.ALERT_QUEUE.append(alert)
+        alertutils.alert_state_manager.store_completed_alert(alert.alert_id, stored)
+
+    def send_live_chat_message(self, text: str) -> bool:
+        message = (text or "").strip()
+        if not message:
+            return False
+        if not self._live_chat_id:
+            logger.warning("Cannot send YouTube chat: no active liveChatId")
+            return False
+        if not self.ensure_valid_access_token():
+            logger.warning("Cannot send YouTube chat: OAuth token unavailable")
+            return False
+        try:
+            url = f"{YOUTUBE_API_BASE}/liveChat/messages"
+            body = {
+                "snippet": {
+                    "liveChatId": self._live_chat_id,
+                    "type": "textMessageEvent",
+                    "textMessageDetails": {"messageText": message},
+                }
+            }
+            response = requests.post(
+                url,
+                headers={
+                    **self._oauth_headers(),
+                    "Content-Type": "application/json",
+                },
+                params={"part": "snippet"},
+                json=body,
+                timeout=15,
+            )
+            if response.status_code in (200, 201):
+                logger.info("Sent YouTube live chat message")
+                return True
+            logger.error(
+                "YouTube live chat insert failed: %s %s",
+                response.status_code,
+                response.text[:300],
+            )
+            return False
+        except Exception as e:
+            logger.error("Error sending YouTube live chat: %s", e, exc_info=True)
+            return False
 
     def _emit_youtube_chat_message(
         self, item: Dict[str, Any], username: str, user_id: str
     ) -> None:
-        if not _is_youtube_chat_overlay_enabled():
-            return
         snippet = item.get("snippet") or {}
         text_details = snippet.get("textMessageDetails") or {}
         message = (
@@ -1710,6 +1792,28 @@ class YouTubeClient:
             or ""
         )
         if not message:
+            return
+
+        from .connector_core import EventData
+        from .chatbot_core import EventType
+
+        self._schedule_connector_event(
+            EventData.from_youtube_chat(
+                username=username, message=message, user_id=user_id
+            )
+        )
+        self._process_chatbot_event(
+            EventType.YOUTUBE_CHAT_MESSAGE,
+            {
+                "username": username,
+                "message": message,
+                "userid": user_id,
+                "timestamp": time.time(),
+                "source": "youtube",
+            },
+        )
+
+        if not _is_youtube_chat_overlay_enabled():
             return
 
         msg_dict = {
@@ -1741,25 +1845,50 @@ class YouTubeClient:
     def _emit_membership_sub_alert(
         self, username: str, snippet: Dict[str, Any]
     ) -> None:
-        from . import alert_processor, alertutils
+        from . import alertutils
+        from .chatbot_core import EventType
+        from .connector_core import EventData
         from .uiwindows.activity_feed import add_alert_to_feed
 
         details = snippet.get("newSponsorDetails") or {}
         level = details.get("memberLevelName") or ""
         current_timestamp = time.time()
+        message = snippet.get("displayMessage") or ""
+
+        self._schedule_connector_event(
+            EventData.from_youtube_member(
+                username=username, member_level=level, message=message
+            )
+        )
+        self._process_chatbot_event(
+            EventType.YOUTUBE_MEMBERSHIP,
+            {
+                "username": username,
+                "tier": 1,
+                "months": 1,
+                "message": message,
+                "member_level": level,
+                "timestamp": current_timestamp,
+                "source": "youtube",
+            },
+        )
+
         alert = alertutils.fetch_sub_alert(1)
         if alert is None:
             alert = alertutils.AlertObj()
         alert.username = username
         alert.alert_type = "sub"
         alert.tier = 1
-        alert.message = snippet.get("displayMessage") or ""
+        alert.message = message
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
-        alert_processor.ALERT_QUEUE.append(alert)
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        try:
+            alert.member_level = level
+        except Exception:
+            pass
+        self._enqueue_alert(alert)
+        if not self._alerts_enabled():
+            return
         self._send_instant_alert(
             {
                 "type": "sub",
@@ -1773,22 +1902,25 @@ class YouTubeClient:
             }
         )
         add_alert_to_feed(
-            alert_type="Sub",
+            alert_type="Membership",
             message=(
                 f"{username} became a channel member"
                 + (f" ({level})!" if level else "!")
             ),
-            badge_type="sub",
+            badge_type="membership",
             timestamp=str(int(alert.timestamp)),
             tier=1,
             user_message=alert.message,
             alert_id=alert.alert_id,
+            username=username,
         )
 
     def _emit_membership_resub_alert(
         self, username: str, snippet: Dict[str, Any]
     ) -> None:
-        from . import alert_processor, alertutils
+        from . import alertutils
+        from .chatbot_core import EventType
+        from .connector_core import EventData
         from .uiwindows.activity_feed import add_alert_to_feed
 
         details = snippet.get("memberMilestoneChatDetails") or {}
@@ -1800,27 +1932,57 @@ class YouTubeClient:
         level = details.get("memberLevelName") or ""
         user_msg = details.get("userComment") or ""
         current_timestamp = time.time()
+        message = user_msg or snippet.get("displayMessage") or ""
+
+        self._schedule_connector_event(
+            EventData.from_youtube_member_milestone(
+                username=username,
+                months=months,
+                member_level=level,
+                message=message,
+            )
+        )
+        self._process_chatbot_event(
+            EventType.YOUTUBE_MEMBERSHIP_MILESTONE,
+            {
+                "username": username,
+                "tier": 1,
+                "months": months,
+                "cumulative_months": months,
+                "message": message,
+                "member_level": level,
+                "timestamp": current_timestamp,
+                "source": "youtube",
+            },
+        )
 
         if months <= 1:
             alert = alertutils.fetch_sub_alert(1)
             alert_type = "sub"
+            feed_type = "Membership"
+            badge = "membership"
         else:
             alert = alertutils.fetch_resub_alert(months)
             alert_type = "resub"
+            feed_type = "Member Milestone"
+            badge = "member_milestone"
         if alert is None:
             alert = alertutils.AlertObj()
 
         alert.username = username
         alert.alert_type = alert_type
         alert.tier = 1
-        alert.message = user_msg or snippet.get("displayMessage") or ""
+        alert.message = message
         alert.resub_month = months
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
-        alert_processor.ALERT_QUEUE.append(alert)
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        try:
+            alert.member_level = level
+        except Exception:
+            pass
+        self._enqueue_alert(alert)
+        if not self._alerts_enabled():
+            return
         instant = {
             "type": alert_type,
             "username": username,
@@ -1841,19 +2003,22 @@ class YouTubeClient:
         if level:
             feed_msg = feed_msg[:-1] + f" ({level})!"
         add_alert_to_feed(
-            alert_type="Resub" if alert_type == "resub" else "Sub",
+            alert_type=feed_type,
             message=feed_msg,
-            badge_type="resub" if alert_type == "resub" else "sub",
+            badge_type=badge,
             timestamp=str(int(alert.timestamp)),
             tier=1,
             user_message=alert.message,
             alert_id=alert.alert_id,
+            username=username,
         )
 
     def _emit_membership_gift_alert(
         self, username: str, snippet: Dict[str, Any]
     ) -> None:
-        from . import alert_processor, alertutils
+        from . import alertutils
+        from .chatbot_core import EventType
+        from .connector_core import EventData
         from .uiwindows.activity_feed import add_alert_to_feed
 
         details = snippet.get("membershipGiftingDetails") or {}
@@ -1864,6 +2029,27 @@ class YouTubeClient:
         qty = max(qty, 1)
         level = details.get("giftMembershipsLevelName") or ""
         current_timestamp = time.time()
+        message = snippet.get("displayMessage") or ""
+
+        self._schedule_connector_event(
+            EventData.from_youtube_gift_membership(
+                username=username, gift_count=qty, member_level=level
+            )
+        )
+        self._process_chatbot_event(
+            EventType.YOUTUBE_GIFT_MEMBERSHIP,
+            {
+                "username": username,
+                "tier": 1,
+                "amount": qty,
+                "total_gifts": qty,
+                "quantity": qty,
+                "member_level": level,
+                "timestamp": current_timestamp,
+                "source": "youtube",
+            },
+        )
+
         alert = alertutils.fetch_giftsub_alert(qty)
         if alert is None:
             alert = alertutils.AlertObj()
@@ -1872,13 +2058,16 @@ class YouTubeClient:
         alert.alert_type = "giftsub"
         alert.tier = 1
         alert.gift_qty = qty
-        alert.message = snippet.get("displayMessage") or ""
+        alert.message = message
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
-        alert_processor.ALERT_QUEUE.append(alert)
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        try:
+            alert.member_level = level
+        except Exception:
+            pass
+        self._enqueue_alert(alert)
+        if not self._alerts_enabled():
+            return
         self._send_instant_alert(
             {
                 "type": "giftsub",
@@ -1892,22 +2081,25 @@ class YouTubeClient:
             }
         )
         add_alert_to_feed(
-            alert_type="Giftsub",
+            alert_type="Gift Membership",
             message=(
                 f"{username} gifted {qty} membership"
                 + ("s" if qty != 1 else "")
                 + (f" ({level})!" if level else "!")
             ),
-            badge_type="giftsub",
+            badge_type="gift_membership",
             timestamp=str(int(alert.timestamp)),
             tier=1,
             alert_id=alert.alert_id,
+            username=username,
         )
 
     def _emit_superchat_donation_alert(
         self, username: str, snippet: Dict[str, Any], msg_type: str
     ) -> None:
-        from . import alert_processor, alertutils
+        from . import alertutils
+        from .chatbot_core import EventType
+        from .connector_core import EventData
         from .uiwindows.activity_feed import add_alert_to_feed
 
         if msg_type == "superChatEvent":
@@ -1928,9 +2120,44 @@ class YouTubeClient:
         if msg_type == "superStickerEvent" and not user_msg:
             meta = details.get("superStickerMetadata") or {}
             user_msg = meta.get("altText") or snippet.get("displayMessage") or ""
+        message = user_msg or snippet.get("displayMessage") or ""
+        current_timestamp = time.time()
+
+        is_sticker = msg_type == "superStickerEvent"
+        connector_type = (
+            "youtube_supersticker" if is_sticker else "youtube_superchat"
+        )
+        self._schedule_connector_event(
+            EventData.from_youtube_superchat(
+                username=username,
+                amount=amount,
+                currency=currency,
+                message=message,
+                display_amount=display_amount,
+                event_type=connector_type,
+            )
+        )
+        chatbot_type = (
+            EventType.YOUTUBE_SUPERSTICKER
+            if is_sticker
+            else EventType.YOUTUBE_SUPERCHAT
+        )
+        self._process_chatbot_event(
+            chatbot_type,
+            {
+                "username": username,
+                "amount": amount,
+                "currency": currency,
+                "formatted_amount": display_amount,
+                "display_amount": display_amount,
+                "message": message,
+                "donation_message": message,
+                "timestamp": current_timestamp,
+                "source": "youtube",
+            },
+        )
 
         quantity = max(1, int(round(amount))) if amount > 0 else 1
-        current_timestamp = time.time()
         alert = alertutils.fetch_donation_alert(quantity)
         if alert is None:
             alert = alertutils.AlertObj()
@@ -1938,13 +2165,17 @@ class YouTubeClient:
         alert.alert_type = "donation"
         alert.donation_amount = float(amount)
         alert.currency = currency
-        alert.message = user_msg or snippet.get("displayMessage") or ""
+        alert.message = message
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
-        alert_processor.ALERT_QUEUE.append(alert)
-        alertutils.alert_state_manager.store_completed_alert(
-            alert.alert_id, alert.__dict__
-        )
+        try:
+            alert.is_supersticker = bool(is_sticker)
+            alert.display_amount = display_amount
+        except Exception:
+            pass
+        self._enqueue_alert(alert)
+        if not self._alerts_enabled():
+            return
         self._send_instant_alert(
             {
                 "type": "donation",
@@ -1958,18 +2189,18 @@ class YouTubeClient:
                 "display_amount": display_amount,
             }
         )
-        label = {
-            "superChatEvent": "Super Chat",
-            "superStickerEvent": "Super Sticker",
-            "fanFundingEvent": "Fan Funding",
-        }.get(msg_type, "Super Chat")
+        if is_sticker:
+            feed_type, badge, label = "Super Sticker", "supersticker", "Super Sticker"
+        else:
+            feed_type, badge, label = "Super Chat", "superchat", "Super Chat"
         add_alert_to_feed(
-            alert_type="Donation",
+            alert_type=feed_type,
             message=f"{username} sent a {label} of {display_amount}!",
-            badge_type="donation",
+            badge_type=badge,
             timestamp=str(int(alert.timestamp)),
             user_message=alert.message,
             alert_id=alert.alert_id,
+            username=username,
         )
 
     def _send_instant_alert(self, alert_data: Dict[str, Any]) -> None:
@@ -2168,6 +2399,14 @@ def restart_youtube_live_chat_if_needed() -> None:
         return
     youtube_client.load_youtube_data()
 
+
+def send_youtube_chat_message(message: str) -> bool:
+    """Send a message to the active YouTube live chat (OAuth required)."""
+    if not youtube_client:
+        initialize_youtube()
+    if not youtube_client:
+        return False
+    return youtube_client.send_live_chat_message(message)
 
 def update_youtube_settings(
     api_key: Optional[str] = None, channel_url: Optional[str] = None

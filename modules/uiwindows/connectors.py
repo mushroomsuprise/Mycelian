@@ -1355,6 +1355,12 @@ def format_trigger_name(trigger_type: TriggerType) -> str:
         TriggerType.TWITCH_CHAT_MESSAGE: "Chat Message",
         TriggerType.TWITCH_HYPE_TRAIN_START: "Hype Train Start",
         TriggerType.TWITCH_HYPE_TRAIN_END: "Hype Train End",
+        TriggerType.YOUTUBE_CHAT_MESSAGE: "YouTube Chat Message",
+        TriggerType.YOUTUBE_MEMBER: "YouTube Membership",
+        TriggerType.YOUTUBE_MEMBER_MILESTONE: "YouTube Member Milestone",
+        TriggerType.YOUTUBE_GIFT_MEMBERSHIP: "YouTube Gift Membership",
+        TriggerType.YOUTUBE_SUPERCHAT: "YouTube Super Chat",
+        TriggerType.YOUTUBE_SUPERSTICKER: "YouTube Super Sticker",
         TriggerType.DONATION: "Donation",
         TriggerType.TIMER: "Timer",
         TriggerType.SCHEDULE: "Schedule",
@@ -1386,7 +1392,12 @@ def get_action_display_name(action) -> str:
             event_name = getattr(action, "event_name", "Custom Event")
             return f"WebSocket → {event_name}"
         elif action_type == "send_chat_message":
-            return "Send Chat Message"
+            targets = getattr(action, "reply_targets", None) or ["twitch"]
+            if set(targets) >= {"twitch", "youtube"}:
+                return "Send Chat Message → All"
+            if targets == ["youtube"]:
+                return "Send Chat Message → YouTube"
+            return "Send Chat Message → Twitch"
         elif action_type == "send_announcement":
             color = getattr(action, "color", "primary") or "primary"
             return f"Send Announcement ({color})"
@@ -1601,6 +1612,10 @@ def create_connector_form(connector_id: str = None):
                     action_data["config"]["event_data"] = action.event_data
                 if hasattr(action, "message"):
                     action_data["config"]["message"] = action.message
+                if hasattr(action, "reply_targets"):
+                    action_data["config"]["reply_targets"] = list(
+                        getattr(action, "reply_targets", None) or ["twitch"]
+                    )
                 if hasattr(action, "color"):
                     action_data["config"]["color"] = action.color
                 if hasattr(action, "file_path"):
@@ -1686,7 +1701,13 @@ def create_connector_form(connector_id: str = None):
                         "twitch_follow": "Twitch Follow",
                         "twitch_raid": "Twitch Raid",
                         "twitch_points": "Channel Points",
-                        "twitch_chat_message": "Chat Message",
+                        "twitch_chat_message": "Twitch Chat Message",
+                        "youtube_chat_message": "YouTube Chat Message",
+                        "youtube_member": "YouTube Membership",
+                        "youtube_member_milestone": "YouTube Member Milestone",
+                        "youtube_gift_membership": "YouTube Gift Membership",
+                        "youtube_superchat": "YouTube Super Chat",
+                        "youtube_supersticker": "YouTube Super Sticker",
                         "any": "Any (all events)",
                         "donation": "Donation",
                         "hotkey": "Hotkey Trigger",
@@ -2221,6 +2242,42 @@ def _trigger_field_mappings() -> Dict[str, Dict[str, str]]:
             "reward_id": "Reward ID",
             "username": "Username",
             "user_input": "User Input",
+        },
+        "youtube_chat_message": {
+            "username": "Username",
+            "message": "Message",
+            "user_id": "User ID",
+        },
+        "youtube_member": {
+            "username": "Username",
+            "member_level": "Member Level",
+            "message": "Message",
+        },
+        "youtube_member_milestone": {
+            "username": "Username",
+            "months": "Months",
+            "member_level": "Member Level",
+            "message": "Message",
+        },
+        "youtube_gift_membership": {
+            "username": "Username",
+            "gift_count": "Gift Count",
+            "quantity": "Quantity",
+            "member_level": "Member Level",
+        },
+        "youtube_superchat": {
+            "amount": "Amount",
+            "username": "Username",
+            "message": "Message",
+            "currency": "Currency",
+            "display_amount": "Display Amount",
+        },
+        "youtube_supersticker": {
+            "amount": "Amount",
+            "username": "Username",
+            "message": "Message",
+            "currency": "Currency",
+            "display_amount": "Display Amount",
         },
         "obs_scene_changed": {
             "scene_name": "Scene name",
@@ -4666,6 +4723,46 @@ def create_chat_message_config(
         ),
     ).classes("w-full action-input")
 
+    # Default: both platforms for new actions; existing missing field → twitch only
+    raw_targets = initial_config.get("reply_targets")
+    if raw_targets is None and not initial_config.get("message"):
+        current_targets = ["twitch", "youtube"]
+    elif raw_targets is None:
+        current_targets = ["twitch"]
+    else:
+        current_targets = list(raw_targets) if isinstance(raw_targets, list) else ["twitch"]
+    if not current_targets:
+        current_targets = ["twitch"]
+    update_action_config(action_index, "reply_targets", current_targets, form_data)
+
+    ui.label("Send message to").classes("text-sm font-medium text-theme-muted mt-2")
+
+    def _toggle_reply_target(platform: str, enabled: bool) -> None:
+        actions = form_data.get("actions") or []
+        if action_index >= len(actions):
+            return
+        cfg = actions[action_index].setdefault("config", {})
+        targets = list(cfg.get("reply_targets") or [])
+        if enabled and platform not in targets:
+            targets.append(platform)
+        if not enabled and platform in targets:
+            targets = [t for t in targets if t != platform]
+        if not targets:
+            targets = ["twitch"]
+        update_action_config(action_index, "reply_targets", targets, form_data)
+
+    with ui.row().classes("items-center gap-4 w-full mb-2"):
+        ui.checkbox(
+            text="Twitch",
+            value="twitch" in current_targets,
+            on_change=lambda e: _toggle_reply_target("twitch", bool(e.value)),
+        )
+        ui.checkbox(
+            text="YouTube",
+            value="youtube" in current_targets,
+            on_change=lambda e: _toggle_reply_target("youtube", bool(e.value)),
+        )
+
     if action_index > 0:
         aparts: List[str] = []
         for j in range(1, action_index + 1):
@@ -5517,6 +5614,60 @@ def create_test_data_for_trigger(trigger_type: TriggerType) -> Dict[str, Any]:
             "message": "Hello test!",
             "user_id": "12345",
             "is_moderator": False,
+        }
+    elif trigger_type == TriggerType.YOUTUBE_CHAT_MESSAGE:
+        return {
+            **base_data,
+            "source": "youtube",
+            "event_type": "youtube_chat_message",
+            "message": "Hello from YouTube!",
+            "user_id": "UCtest",
+        }
+    elif trigger_type == TriggerType.YOUTUBE_MEMBER:
+        return {
+            **base_data,
+            "source": "youtube",
+            "event_type": "youtube_member",
+            "member_level": "Bronze",
+            "message": "Welcome!",
+        }
+    elif trigger_type == TriggerType.YOUTUBE_MEMBER_MILESTONE:
+        return {
+            **base_data,
+            "source": "youtube",
+            "event_type": "youtube_member_milestone",
+            "months": 6,
+            "member_level": "Silver",
+            "message": "6 months!",
+        }
+    elif trigger_type == TriggerType.YOUTUBE_GIFT_MEMBERSHIP:
+        return {
+            **base_data,
+            "source": "youtube",
+            "event_type": "youtube_gift_membership",
+            "gift_count": 5,
+            "quantity": 5,
+            "member_level": "Bronze",
+        }
+    elif trigger_type == TriggerType.YOUTUBE_SUPERCHAT:
+        return {
+            **base_data,
+            "source": "youtube",
+            "event_type": "youtube_superchat",
+            "amount": 5.0,
+            "currency": "USD",
+            "display_amount": "$5.00",
+            "message": "Test Super Chat!",
+        }
+    elif trigger_type == TriggerType.YOUTUBE_SUPERSTICKER:
+        return {
+            **base_data,
+            "source": "youtube",
+            "event_type": "youtube_supersticker",
+            "amount": 2.0,
+            "currency": "USD",
+            "display_amount": "$2.00",
+            "message": "Sticker",
         }
     elif trigger_type == TriggerType.ANY:
         return {

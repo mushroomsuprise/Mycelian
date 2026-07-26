@@ -68,6 +68,8 @@ class TwitchData:
     user: object = None
     eventsub: object = None
     log_level: str = "INFO"
+    # When False, Twitch events skip ALERT_QUEUE / instant_alert / activity feed
+    alerts_enabled: bool = True
 
     def __post_init__(self):
         """Log when a new TwitchData instance is created"""
@@ -270,6 +272,8 @@ class YouTubeData:
     # When True and OAuth tokens exist, run the live chat poller
     live_chat_enabled: bool = True
     live_chat_status: str = "Not authorized"  # Not authorized / Offline / Live / Error
+    # When False, YouTube monetization events skip alert pipeline
+    alerts_enabled: bool = True
 
     def __post_init__(self):
         """Log when a new YouTubeData instance is created"""

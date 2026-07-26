@@ -323,6 +323,13 @@ class EventType(Enum):
     INTERVAL = "interval"
     SPECIFIC_TIME = "specific_time"
     CHAT_MESSAGE = "chat_message"
+    # YouTube live chat / monetization
+    YOUTUBE_CHAT_MESSAGE = "youtube_chat_message"
+    YOUTUBE_MEMBERSHIP = "youtube_membership"
+    YOUTUBE_MEMBERSHIP_MILESTONE = "youtube_membership_milestone"
+    YOUTUBE_GIFT_MEMBERSHIP = "youtube_gift_membership"
+    YOUTUBE_SUPERCHAT = "youtube_superchat"
+    YOUTUBE_SUPERSTICKER = "youtube_supersticker"
 
 
 class ComparisonOperator(Enum):
@@ -352,6 +359,29 @@ class VariableType(Enum):
     LEVEL = "level"
     COOLDOWN = "cooldown"
     USAGE_LEFT = "usage_left"
+
+
+def _normalize_reply_targets(
+    raw, *, default: Optional[List[str]] = None
+) -> List[str]:
+    """Normalize reply_targets to a list of 'twitch' and/or 'youtube'."""
+    if default is None:
+        default = ["twitch"]
+    allowed = {"twitch", "youtube"}
+    if raw is None:
+        return list(default)
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return list(default)
+    out: List[str] = []
+    for item in raw:
+        s = str(item or "").strip().lower()
+        if s == "all":
+            return ["twitch", "youtube"]
+        if s in allowed and s not in out:
+            out.append(s)
+    return out if out else list(default)
 
 
 class TriggerCondition:
@@ -459,6 +489,10 @@ class ChatCommand:
         # Argument mappings for custom variable names
         # Format: {"variable_name": position} where position is 1-based
         self.argument_mappings = kwargs.get("argument_mappings", {})
+        # Where to send the response: "twitch", "youtube" (missing → twitch only)
+        self.reply_targets = _normalize_reply_targets(
+            kwargs.get("reply_targets"), default=["twitch"]
+        )
 
     def should_trigger(self, data: Dict[str, Any]) -> bool:
         """Check if this command should trigger based on conditions"""
@@ -1220,6 +1254,7 @@ class ChatCommand:
                 ]
             ),
             "argument_mappings": sanitize_value(self.argument_mappings),
+            "reply_targets": sanitize_value(list(self.reply_targets)),
         }
 
     @classmethod
@@ -1297,6 +1332,9 @@ class ChatEvent:
         # Argument mappings for custom variable names (primarily for chat message events)
         # Format: {"variable_name": position} where position is 1-based
         self.argument_mappings = kwargs.get("argument_mappings", {})
+        self.reply_targets = _normalize_reply_targets(
+            kwargs.get("reply_targets"), default=["twitch"]
+        )
 
         # Event-specific settings
         self.specific_time = kwargs.get("specific_time", "")  # HH:MM format
@@ -1722,6 +1760,7 @@ class ChatEvent:
             "raid_raider_name": self.raid_raider_name,
             "channel_point_reward_name": self.channel_point_reward_name,
             "argument_mappings": self.argument_mappings,
+            "reply_targets": list(self.reply_targets),
         }
 
     @classmethod

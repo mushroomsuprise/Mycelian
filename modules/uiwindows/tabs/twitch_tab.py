@@ -303,6 +303,22 @@ class TwitchTab:
                 ui.label("Options").classes("text-base font-semibold")
                 with ui.row().classes("items-center gap-6 flex-wrap"):
                     with ui.row().classes("items-center gap-2"):
+                        self.ui_elements["alerts_enabled"] = (
+                            ui.switch(
+                                value=bool(
+                                    getattr(self.buffer, "alerts_enabled", True)
+                                )
+                            )
+                            .classes("q-switch")
+                            .on_value_change(
+                                lambda e: self._set(
+                                    "alerts_enabled",
+                                    bool(e.value),
+                                )
+                            )
+                        )
+                        ui.label("Process Twitch alerts").classes("text-sm")
+                    with ui.row().classes("items-center gap-2"):
                         self.ui_elements["auto_raid_helix_shoutout"] = (
                             ui.switch(
                                 value=bool(

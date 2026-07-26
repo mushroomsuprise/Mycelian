@@ -29,7 +29,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field, fields
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .connector_core import ActionType, BaseAction
 from .connector_placeholders import (
@@ -236,56 +236,46 @@ class TriggerAlertAction(BaseAction):
 
 @dataclass
 class SendChatMessageAction(BaseAction):
-    """Action to send a message to Twitch chat"""
+    """Action to send a message to Twitch and/or YouTube chat"""
 
     message: str = ""
+    reply_targets: List[str] = field(default_factory=lambda: ["twitch"])
 
     def __post_init__(self):
         self.action_type = ActionType.SEND_CHAT_MESSAGE
+        try:
+            from .chatbot_core import _normalize_reply_targets
+
+            self.reply_targets = _normalize_reply_targets(
+                self.reply_targets, default=["twitch"]
+            )
+        except Exception:
+            self.reply_targets = ["twitch"]
 
     async def execute(
         self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
     ) -> bool:
         """Execute send chat message action"""
         try:
-            from . import chatbot
-
-            # Check if chatbot is available and connected
-            if not chatbot.is_chatbot_connected():
-                logger.warning(
-                    "Chatbot not connected, attempting to send via main Twitch API as fallback"
-                )
-
-                # Fallback to main Twitch API if chatbot is not available
-                from . import twitch
-
-                if not twitch.twitch_api or not twitch.twitch_api.is_connected:
-                    logger.error(
-                        "Neither chatbot nor main Twitch API available for chat message action"
-                    )
-                    return False
-
-                # Replace placeholders (include hooks.ff7 e.g. after Query inventory)
-                ctx = build_connector_placeholder_context(event_data, trigger_data)
-                message = substitute_connector_placeholders(self.message, ctx)
-
-                # Send via main Twitch API (this would need implementation in twitch.py)
-                logger.info(f"Would send chat message via main API: {message}")
-                # TODO: Implement direct chat message sending in twitch.py if needed
-                return True
+            from .chatbot import dispatch_chatbot_response
 
             # Replace placeholders (include hooks.ff7 e.g. after Query inventory)
             ctx = build_connector_placeholder_context(event_data, trigger_data)
             message = substitute_connector_placeholders(self.message, ctx)
 
-            # Send chat message using chatbot system
-            success = chatbot.send_chatbot_message(message)
+            success = dispatch_chatbot_response(message, self.reply_targets)
             if success:
-                logger.info(f"Sent chat message via chatbot: {message}")
+                logger.info(
+                    "Sent chat message to %s: %s",
+                    ",".join(self.reply_targets),
+                    message,
+                )
                 return True
-            else:
-                logger.error("Failed to send chat message via chatbot")
-                return False
+            logger.error(
+                "Failed to send chat message to any of %s",
+                self.reply_targets,
+            )
+            return False
 
         except Exception as e:
             logger.error(
@@ -297,6 +287,9 @@ class SendChatMessageAction(BaseAction):
         """Validate send chat message action parameters"""
         if not self.message.strip():
             logger.error("Send chat message action missing message")
+            return False
+        if not self.reply_targets:
+            logger.error("Send chat message action missing reply targets")
             return False
         return True
 

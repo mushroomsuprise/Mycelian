@@ -5656,14 +5656,25 @@ YouTube chat messages are **off by default**. In the chat template Source Settin
 enable **Enable YouTube Chat** (`EnableYouTubeChat` in `chat.json`). Alerts for
 memberships and Super Chats still fire even when this toggle is off.
 
+### OAuth scope (chat send)
+Live chat uses the `youtube.force-ssl` scope so Mycelian can **read** live chat and
+**send** chatbot replies to YouTube. If you previously connected with the older
+readonly scope, click **Disconnect** then **Connect** (Reconnect) to grant the new
+permission.
+
+### Process YouTube alerts
+The **Process YouTube alerts** switch gates only the alert pipeline (queue, instant
+alerts, activity feed). Chat overlay, Connectors, and Chatbot events still run when
+alerts are disabled.
+
 ### Event mapping
 | YouTube event | Mycelian alert / chat |
 |---|---|
 | Text message | Chat overlay (if Enable YouTube Chat) |
-| New membership | Sub alert |
-| Member milestone | Resub alert |
-| Gift memberships | Giftsub alert |
-| Super Chat / Super Sticker | Donation alert |
+| New membership | Sub alert (feed: Membership) |
+| Member milestone | Resub alert (feed: Member Milestone) |
+| Gift memberships | Giftsub alert (feed: Gift Membership) |
+| Super Chat / Super Sticker | Donation alert (feed: Super Chat / Super Sticker) |
 
 ## Playlist Filter
 

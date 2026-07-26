@@ -66,6 +66,14 @@ class TriggerType(Enum):
     TWITCH_HYPE_TRAIN_START = "twitch_hype_train_start"
     TWITCH_HYPE_TRAIN_END = "twitch_hype_train_end"
 
+    # YouTube Live Chat Triggers
+    YOUTUBE_CHAT_MESSAGE = "youtube_chat_message"
+    YOUTUBE_MEMBER = "youtube_member"
+    YOUTUBE_MEMBER_MILESTONE = "youtube_member_milestone"
+    YOUTUBE_GIFT_MEMBERSHIP = "youtube_gift_membership"
+    YOUTUBE_SUPERCHAT = "youtube_superchat"
+    YOUTUBE_SUPERSTICKER = "youtube_supersticker"
+
     # Donation / tip triggers (e.g. connector webhooks)
     DONATION = "donation"
 
@@ -591,5 +599,92 @@ class EventData:
             "currency": currency,
             "timestamp": time.time(),
             "source": kwargs.get("source", "donation"),
+            **kwargs,
+        }
+
+    @staticmethod
+    def from_youtube_chat(
+        username: str, message: str, user_id: str = "", **kwargs
+    ) -> Dict[str, Any]:
+        return {
+            "event_type": "youtube_chat_message",
+            "username": username,
+            "message": message,
+            "user_id": user_id,
+            "timestamp": time.time(),
+            "source": "youtube",
+            **kwargs,
+        }
+
+    @staticmethod
+    def from_youtube_member(
+        username: str, member_level: str = "", message: str = "", **kwargs
+    ) -> Dict[str, Any]:
+        return {
+            "event_type": "youtube_member",
+            "username": username,
+            "member_level": member_level,
+            "message": message,
+            "timestamp": time.time(),
+            "source": "youtube",
+            **kwargs,
+        }
+
+    @staticmethod
+    def from_youtube_member_milestone(
+        username: str,
+        months: int = 1,
+        member_level: str = "",
+        message: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        return {
+            "event_type": "youtube_member_milestone",
+            "username": username,
+            "months": months,
+            "member_level": member_level,
+            "message": message,
+            "timestamp": time.time(),
+            "source": "youtube",
+            **kwargs,
+        }
+
+    @staticmethod
+    def from_youtube_gift_membership(
+        username: str,
+        gift_count: int = 1,
+        member_level: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        return {
+            "event_type": "youtube_gift_membership",
+            "username": username,
+            "gift_count": gift_count,
+            "quantity": gift_count,
+            "member_level": member_level,
+            "timestamp": time.time(),
+            "source": "youtube",
+            **kwargs,
+        }
+
+    @staticmethod
+    def from_youtube_superchat(
+        username: str,
+        amount: float,
+        currency: str = "USD",
+        message: str = "",
+        display_amount: str = "",
+        event_type: str = "youtube_superchat",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        return {
+            "event_type": event_type,
+            "username": username,
+            "amount": amount,
+            "currency": currency,
+            "message": message,
+            "display_amount": display_amount,
+            "timestamp": time.time(),
+            "source": "youtube",
             **kwargs,
         }

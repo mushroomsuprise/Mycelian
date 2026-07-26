@@ -1581,7 +1581,7 @@ def get_chatbot_token_status():
 def send_chatbot_message(
     message: str, reply_to_message_id: Optional[str] = None
 ) -> bool:
-    """Send a chat message as the chatbot (sync wrapper)"""
+    """Send a chat message as the chatbot to Twitch (sync wrapper)"""
     try:
         import concurrent.futures
 
@@ -1638,6 +1638,42 @@ def send_chatbot_message(
     except Exception as e:
         logger.error(f"Error sending chatbot message: {str(e)}", exc_info=True)
         return False
+
+
+def dispatch_chatbot_response(
+    message: str,
+    reply_targets=None,
+    reply_to_message_id: Optional[str] = None,
+) -> bool:
+    """
+    Send a chatbot response to Twitch and/or YouTube based on reply_targets.
+
+    reply_targets: list containing 'twitch' and/or 'youtube'. Missing/empty → twitch.
+    Returns True if any selected target succeeds.
+    """
+    from .chatbot_core import _normalize_reply_targets
+
+    targets = _normalize_reply_targets(reply_targets, default=["twitch"])
+    any_ok = False
+    if "twitch" in targets:
+        try:
+            if send_chatbot_message(message, reply_to_message_id):
+                any_ok = True
+            else:
+                logger.warning("Chatbot Twitch send failed")
+        except Exception as e:
+            logger.error("Chatbot Twitch dispatch error: %s", e, exc_info=True)
+    if "youtube" in targets:
+        try:
+            from . import youtube
+
+            if youtube.send_youtube_chat_message(message):
+                any_ok = True
+            else:
+                logger.warning("Chatbot YouTube send failed (not live or auth issue)")
+        except Exception as e:
+            logger.error("Chatbot YouTube dispatch error: %s", e, exc_info=True)
+    return any_ok
 
 
 def trigger_chatbot_oauth_reconnection():

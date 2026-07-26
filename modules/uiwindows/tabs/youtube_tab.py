@@ -596,6 +596,17 @@ class YouTubeTab:
                         "Chat overlay display is controlled separately in the chat template "
                         "(EnableYouTubeChat, default off)."
                     )
+                    self.ui_elements["alerts_enabled"] = ui.switch(
+                        "Process YouTube alerts",
+                        value=bool(getattr(self.buffer, "alerts_enabled", True)),
+                        on_change=lambda e: self._set(
+                            "alerts_enabled", bool(e.value)
+                        ),
+                    ).tooltip(
+                        "When off, memberships and Super Chats still reach chat, "
+                        "Connectors, and Chatbot — but skip the alert queue, "
+                        "instant alerts, and activity feed."
+                    )
 
                 with ui.row().classes(
                     "button-row w-full justify-end gap-2 mt-2 flex-wrap"
