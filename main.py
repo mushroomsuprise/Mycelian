@@ -107,7 +107,7 @@ def get_data_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-LOG_MAX_BYTES = 50 * 1024 * 1024  # 50 MiB cap for mycelian.log
+LOG_MAX_BYTES = 15 * 1024 * 1024  # 15 MiB cap for mycelian.log
 
 
 class CappedFileHandler(logging.FileHandler):
@@ -163,7 +163,7 @@ def setup_logging():
     log_dir = Path(get_data_path("logs"))
     log_dir.mkdir(exist_ok=True)
 
-    # Single log file capped at 50MB; oldest entries trimmed in place on startup and rollover
+    # Single log file capped at 15MB; oldest entries trimmed in place on startup and rollover
     logging.basicConfig(
         level=logging.WARNING,  # Changed to WARNING to reduce log noise while keeping errors
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
