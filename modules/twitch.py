@@ -1317,7 +1317,20 @@ class Twitch_API:
             chatbot_response = chatbot_manager.process_chat_message(msg_dict)
 
             if chatbot_response:
-                if len(chatbot_response) >= 3:
+                discord_channels = None
+                if len(chatbot_response) >= 4:
+                    (
+                        response_message,
+                        command_name,
+                        reply_targets,
+                        discord_channels,
+                    ) = (
+                        chatbot_response[0],
+                        chatbot_response[1],
+                        chatbot_response[2],
+                        chatbot_response[3],
+                    )
+                elif len(chatbot_response) >= 3:
                     response_message, command_name, reply_targets = (
                         chatbot_response[0],
                         chatbot_response[1],
@@ -1336,7 +1349,11 @@ class Twitch_API:
                 try:
                     from .chatbot import dispatch_chatbot_response
 
-                    dispatch_chatbot_response(response_message, reply_targets)
+                    dispatch_chatbot_response(
+                        response_message,
+                        reply_targets,
+                        discord_channels=discord_channels,
+                    )
                     logger.debug(
                         f"Chatbot responded to command '{command_name}': {response_message}"
                     )

@@ -726,14 +726,15 @@ class ChatbotManager:
     # Command Processing
     def process_chat_message(
         self, message_data: Dict[str, Any]
-    ) -> Optional[tuple[str, str]]:
+    ) -> Optional[tuple]:
         """Process a chat message for commands
 
         Args:
             message_data: Dictionary containing message information
 
         Returns:
-            tuple of (response_message, command_name) if command triggered, None otherwise
+            On success: (response_message, command_name, reply_targets, discord_channels).
+            Quote/blocked paths may return a shorter tuple. None if no command matched.
         """
         try:
             message = message_data.get("message", "").strip()
@@ -819,7 +820,10 @@ class ChatbotManager:
                         targets = list(
                             getattr(command, "reply_targets", None) or ["twitch"]
                         )
-                        return response, command_name, targets
+                        discord_channels = list(
+                            getattr(command, "discord_channels", None) or []
+                        )
+                        return response, command_name, targets, discord_channels
 
             return None
 

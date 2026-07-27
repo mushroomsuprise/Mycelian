@@ -225,15 +225,31 @@ class DiscordTab:
         self.dirty = True
         self._rebuild_go_live_chips()
 
+    def _sync_token_from_ui(self) -> str:
+        """Prefer a non-empty UI token; never replace a buffer token with empty UI."""
+        if not self.buffer:
+            return ""
+        ui_token = ""
+        if "bot_token" in self.ui_elements:
+            ui_token = (self.ui_elements["bot_token"].value or "").strip()
+        buffer_token = (getattr(self.buffer, "bot_token", "") or "").strip()
+        if ui_token:
+            self._set("bot_token", ui_token)
+            return ui_token
+        return buffer_token
+
+    def _refresh_token_input(self) -> None:
+        if self.buffer is None:
+            return
+        if "bot_token" in self.ui_elements:
+            self.ui_elements["bot_token"].value = self.buffer.bot_token or ""
+
     def _handle_connect(self) -> None:
         if self._connect_in_progress:
             return
         if not self.buffer:
             return
-        token = (getattr(self.buffer, "bot_token", "") or "").strip()
-        if not token and "bot_token" in self.ui_elements:
-            token = (self.ui_elements["bot_token"].value or "").strip()
-            self._set("bot_token", token)
+        token = self._sync_token_from_ui()
         if not token:
             notify("Enter a Discord bot token first", type="warning")
             return
@@ -261,6 +277,7 @@ class DiscordTab:
 
         def poll():
             if not result["done"]:
+                layout_schedule(0.5, poll, once=True)
                 return
             self._connect_in_progress = False
             if "connect_button" in self.ui_elements:
@@ -268,13 +285,14 @@ class DiscordTab:
             if result.get("ok"):
                 notify("Discord bot connected", type="positive")
                 self._load_from_state()
+                self._refresh_token_input()
                 self._reload_guilds()
             else:
                 err = result.get("error") or "Check the bot token and try again"
                 notify(f"Discord connect failed: {err}", type="negative")
             self._refresh_status()
 
-        layout_schedule(0.5, poll)
+        layout_schedule(0.5, poll, once=True)
 
     def _handle_disconnect(self) -> None:
         try:
@@ -447,16 +465,9 @@ class DiscordTab:
     def save(self, silent: bool = False) -> None:
         if not self.buffer:
             return
-        if "bot_token" in self.ui_elements:
-            self._set(
-                "bot_token",
-                (self.ui_elements["bot_token"].value or "").strip(),
-            )
-        if "go_live_message" in self.ui_elements:
-            self._set(
-                "go_live_message",
-                self.ui_elements["go_live_message"].value or "",
-            )
+        # Save from buffer only (like OBS). Password inputs often report empty
+        # .value and would wipe a typed/stored token if re-read blindly.
+        self._sync_token_from_ui()
         payload = {
             f.name: getattr(self.buffer, f.name)
             for f in DiscordData.__dataclass_fields__.values()
@@ -474,8 +485,7 @@ class DiscordTab:
         self._load_from_state()
         if self.buffer is None:
             return
-        if "bot_token" in self.ui_elements:
-            self.ui_elements["bot_token"].value = self.buffer.bot_token or ""
+        self._refresh_token_input()
         if "go_live_enabled" in self.ui_elements:
             self.ui_elements["go_live_enabled"].value = bool(
                 self.buffer.go_live_enabled
