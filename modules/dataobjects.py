@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from nicegui import ui
 
-from .encryption_utils import ensure_decrypted, ensure_encrypted
+from .encryption_utils import ensure_decrypted, ensure_encrypted, is_encrypted
 from .notification_engine import nav_actions_settings, notify_critical
 from .psnapi import PSNData
 
@@ -48,6 +48,45 @@ from .psnapi import PSNData
 # This avoids circular import issues
 
 logger = logging.getLogger(__name__)
+
+# Serialize DiscordData DB read-modify-writes so a blank concurrent save cannot
+# overwrite a token that was just persisted on another thread.
+_discord_db_write_lock = threading.Lock()
+
+
+def _write_discord_data_merged(payload: Dict[str, Any]) -> bool:
+    """Atomically merge and write DiscordData. Never blank an existing bot_token."""
+    from . import database_manager
+
+    path = "DiscordData"
+    with _discord_db_write_lock:
+        existing = database_manager.get_data(path) or {}
+        if not isinstance(existing, dict):
+            existing = {}
+        merged = dict(existing)
+        merged.update(payload or {})
+
+        incoming_token = str((payload or {}).get("bot_token") or "").strip()
+        existing_token = str(existing.get("bot_token") or "").strip()
+        if incoming_token:
+            merged["bot_token"] = (
+                incoming_token
+                if is_encrypted(incoming_token)
+                else ensure_encrypted(incoming_token)
+            )
+            logger.info(
+                "DiscordData write: persisting bot_token (len=%s)",
+                len(incoming_token),
+            )
+        elif existing_token:
+            merged["bot_token"] = existing["bot_token"]
+            logger.info(
+                "DiscordData write: preserving existing bot_token (blank in payload)"
+            )
+        else:
+            merged["bot_token"] = ""
+
+        return bool(database_manager.set_data(path, merged))
 
 
 @dataclass
@@ -551,11 +590,19 @@ class StateManager:
 
             discord_data = database_manager.get_data(self._paths["discord_data"]) or {}
             self._state["discord_data"] = discord_data
+            raw_tok = str((discord_data or {}).get("bot_token") or "")
+            logger.info(
+                "Loaded DiscordData from DB (bot_token_len=%s encrypted=%s)",
+                len(raw_tok),
+                bool(raw_tok),
+            )
 
             # Update the local objects
             self._update_local_objects()
-
-            logger.debug("Loaded data from database")
+            logger.info(
+                "Discord bot_token after decrypt (len=%s)",
+                len((getattr(self._discord_data, "bot_token", "") or "").strip()),
+            )
         except Exception as e:
             logger.error(f"Error loading data from database: {str(e)}", exc_info=True)
             notify_critical(
@@ -1068,31 +1115,67 @@ class StateManager:
             return copy.deepcopy(self._discord_data)
 
     def set_discord_data(self, discord_data: dict) -> bool:
+        """Set Discord data and sync with database (immediate write like Spotify)."""
         with self._lock:
             if not self._initialized:
                 self.initialize()
 
             try:
-                self._state["discord_data"] = copy.deepcopy(discord_data)
+                incoming = copy.deepcopy(discord_data) if discord_data else {}
+                new_token = str(incoming.get("bot_token") or "").strip()
+                existing_token = str(
+                    getattr(self._discord_data, "bot_token", "") or ""
+                ).strip()
+                if not new_token and existing_token:
+                    incoming["bot_token"] = existing_token
 
-                for key, value in discord_data.items():
+                for key, value in incoming.items():
                     if hasattr(self._discord_data, key):
+                        self._state.setdefault("discord_data", {})[key] = value
                         setattr(self._discord_data, key, value)
+                        self._changed_fields.add(f"discord_data.{key}")
 
                 if self._discord_data.go_live_channels is None:
                     self._discord_data.go_live_channels = []
+                    self._state["discord_data"]["go_live_channels"] = []
 
                 self._state["discord_data"] = {
                     f.name: getattr(self._discord_data, f.name)
                     for f in DiscordData.__dataclass_fields__.values()
                 }
-
                 self._changed_fields.add("discord_data")
                 self._changes_pending = True
-                return True
+
+                # Snapshot for immediate write (blank-token preserve in merged writer)
+                payload = self._state["discord_data"].copy()
+                path = self._paths["discord_data"]
             except Exception as e:
                 logger.error("Error updating Discord data: %s", e, exc_info=True)
                 return False
+
+        if not _write_discord_data_merged(payload):
+            logger.error("DiscordData immediate write failed")
+            return False
+
+        with self._lock:
+            self._changed_fields = {
+                f for f in self._changed_fields if not f.startswith("discord_data")
+            }
+            self._changes_pending = len(self._changed_fields) > 0
+        return True
+
+    def persist_discord_bot_token(self, token: str) -> bool:
+        """Thin wrapper: update bot_token field and flush via save_changes / merge write."""
+        token = (token or "").strip()
+        if not token:
+            logger.warning("persist_discord_bot_token called with empty token")
+            return False
+        if not self.update_discord_field("bot_token", token):
+            return False
+        ok = bool(self.save_changes())
+        if not ok:
+            logger.warning("persist_discord_bot_token: save_changes failed")
+        return ok
 
     def _persist_unlocked(self, path: str, data: dict, changed_prefix: str) -> bool:
         """Write a single payload to the database WITHOUT holding ``_lock``.
@@ -1683,6 +1766,16 @@ class StateManager:
                     logger.error("Invalid Discord data field: %s", field)
                     return False
 
+                # Never clear a stored bot token via an empty field update
+                if field == "bot_token":
+                    new_tok = str(value or "").strip()
+                    old_tok = str(
+                        getattr(self._discord_data, "bot_token", "") or ""
+                    ).strip()
+                    if not new_tok and old_tok:
+                        return True
+                    value = new_tok
+
                 current_value = getattr(self._discord_data, field)
 
                 if isinstance(current_value, bool) and not isinstance(value, bool):
@@ -1692,6 +1785,7 @@ class StateManager:
                 elif isinstance(current_value, float) and not isinstance(value, float):
                     value = float(value)
 
+                setattr(self._discord_data, field, value)
                 self._state["discord_data"][field] = value
                 self._changed_fields.add(f"discord_data.{field}")
                 self._changes_pending = True
@@ -1915,13 +2009,10 @@ class StateManager:
                         )
                     writes.append((self._paths["obs_data"], encrypted_obs))
 
-                # Discord bot settings (encrypt bot token)
+                # Discord bot settings (encrypt bot token; never blank stored token)
                 if _changed("discord_data"):
                     encrypted_discord = self._state["discord_data"].copy()
-                    if "bot_token" in encrypted_discord and encrypted_discord["bot_token"]:
-                        encrypted_discord["bot_token"] = ensure_encrypted(
-                            encrypted_discord["bot_token"]
-                        )
+                    # Encryption + blank-token preserve happen inside the merged writer
                     writes.append((self._paths["discord_data"], encrypted_discord))
 
                 # Database settings
@@ -1972,7 +2063,11 @@ class StateManager:
         # --- Perform the (potentially blocking) writes WITHOUT holding _lock ---
         try:
             for path, data in writes:
-                database_manager.set_data(path, data)
+                if path == self._paths["discord_data"]:
+                    if not _write_discord_data_merged(data):
+                        raise RuntimeError("DiscordData merged write failed")
+                else:
+                    database_manager.set_data(path, data)
 
             if db_config_to_apply is not None:
                 try:

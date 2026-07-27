@@ -399,8 +399,15 @@ class DiscordService:
             self._client = None
             self._ready.clear()
             self._set_status("Disconnected")
+            session_token = (self._token or "").strip()
 
         try:
+            data = state_manager.get_discord_data()
+            stored = (getattr(data, "bot_token", "") or "").strip()
+            # Shutdown/disconnect must not wipe a session token if state was cleared
+            # by a blank password-field save race.
+            if not stored and session_token:
+                state_manager.update_discord_field("bot_token", session_token)
             state_manager.update_discord_field("connection_status", "Disconnected")
             state_manager.save_changes()
         except Exception:
@@ -414,9 +421,9 @@ class DiscordService:
             data = state_manager.get_discord_data()
             token = (getattr(data, "bot_token", "") or "").strip()
             if not token:
-                logger.info("Discord: no bot token configured, skipping connect")
+                logger.warning("Discord: no bot token configured, skipping connect")
                 return
-            logger.info("Discord: connecting with stored bot token")
+            logger.info("Discord: connecting with stored bot token (len=%s)", len(token))
             ok = self.connect_with_token(token)
             if ok:
                 # Seed YouTube live flag from current status for session accuracy
@@ -454,25 +461,22 @@ class DiscordService:
 
     def _persist_status_fields(self, token: Optional[str] = None) -> None:
         try:
+            if token is not None and str(token).strip():
+                state_manager.update_discord_field("bot_token", str(token).strip())
+
             info = self.get_status()
-            updates = {
-                "connection_status": info["status"],
-                "bot_user_id": info.get("bot_user_id") or "",
-                "bot_username": info.get("bot_username") or "",
-                "application_id": info.get("application_id") or "",
-            }
-            if token is not None:
-                updates["bot_token"] = token
-            data = state_manager.get_discord_data()
-            payload = {
-                f.name: getattr(data, f.name)
-                for f in DiscordData.__dataclass_fields__.values()
-            }
-            payload.update(updates)
-            state_manager.set_discord_data(payload)
-            state_manager.save_changes()
+            for field, value in (
+                ("connection_status", info["status"]),
+                ("bot_user_id", info.get("bot_user_id") or ""),
+                ("bot_username", info.get("bot_username") or ""),
+                ("application_id", info.get("application_id") or ""),
+            ):
+                state_manager.update_discord_field(field, value)
+
+            if not state_manager.save_changes():
+                logger.warning("Discord status persist: save_changes failed")
         except Exception:
-            logger.debug("Failed to persist Discord status fields", exc_info=True)
+            logger.warning("Failed to persist Discord status fields", exc_info=True)
 
     def _thread_main(self) -> None:
         loop = asyncio.new_event_loop()

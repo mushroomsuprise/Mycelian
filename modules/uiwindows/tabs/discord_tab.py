@@ -35,6 +35,7 @@ class DiscordTab:
         self.dirty: bool = False
         self.buffer: Optional[dataobjects.DiscordData] = None
         self.ui_elements: Dict[str, Any] = {}
+        self._creds: Dict[str, str] = {"bot_token": ""}
         self._status_timer: Optional[Any] = None
         self._connect_in_progress: bool = False
         self._go_live_chip_container: Optional[Any] = None
@@ -42,6 +43,22 @@ class DiscordTab:
         self._channel_select: Optional[Any] = None
         self._guilds_cache: List[Dict[str, str]] = []
         self._channels_cache: List[Dict[str, str]] = []
+
+    @staticmethod
+    def _str_from_value_event(e: Any) -> str:
+        """
+        Read full string from input value events. Do not use e.args[0] when
+        args is already a str — that would keep only the first character.
+        """
+        v = getattr(e, "value", None)
+        if v is not None and not isinstance(v, (list, tuple)):
+            return str(v)
+        args = getattr(e, "args", None)
+        if isinstance(args, str):
+            return args
+        if isinstance(args, (list, tuple)) and len(args) > 0:
+            return str(args[0])
+        return ""
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
@@ -63,6 +80,9 @@ class DiscordTab:
         )
         if self.buffer.go_live_channels is None:
             self.buffer.go_live_channels = []
+        self._creds = {
+            "bot_token": (getattr(self.buffer, "bot_token", "") or "").strip(),
+        }
         self.dirty = False
 
     def _set(self, field: str, value: Any) -> None:
@@ -71,6 +91,53 @@ class DiscordTab:
         if getattr(self.buffer, field) != value:
             setattr(self.buffer, field, value)
             self.dirty = True
+
+    def _set_cred(self, field: str, value: str) -> None:
+        text = (value or "").strip()
+        # Password fields often emit blank events on mount/blur; do not wipe a
+        # known-good token (Discord tokens commonly contain '.', '_', '+', '=').
+        if not text and (self._creds.get(field) or "").strip():
+            return
+        if self._creds.get(field) != text:
+            self._creds[field] = text
+            self.dirty = True
+
+    def _persist_credentials_to_state(self) -> None:
+        """Write credential buffer into DiscordData state (Spotify-style)."""
+        token = (self._creds.get("bot_token") or "").strip()
+        if self.buffer is not None:
+            self.buffer.bot_token = token
+        state_manager.update_discord_field("bot_token", token)
+
+    def _save_settings_only(self) -> bool:
+        """Persist Discord credentials + buffer fields. Returns True on success."""
+        try:
+            self._persist_credentials_to_state()
+            if self.buffer is not None:
+                for field in DiscordData.__dataclass_fields__:
+                    if field == "bot_token":
+                        continue
+                    state_manager.update_discord_field(
+                        field, getattr(self.buffer, field)
+                    )
+            ok = bool(state_manager.save_changes())
+            if not ok:
+                logger.warning("Discord save_changes returned False")
+                return False
+            # Readback verify (log level is WARNING in production)
+            stored = (state_manager.get_discord_data().bot_token or "").strip()
+            expected = (self._creds.get("bot_token") or "").strip()
+            if expected and not stored:
+                logger.warning(
+                    "Discord token save readback empty after save_changes "
+                    "(expected len=%s)",
+                    len(expected),
+                )
+                return False
+            return True
+        except Exception as e:
+            logger.error("Error saving Discord settings: %s", e, exc_info=True)
+            return False
 
     def _channel_key(self, entry: Dict[str, Any]) -> str:
         return f"{entry.get('guild_id')}:{entry.get('channel_id')}"
@@ -225,42 +292,29 @@ class DiscordTab:
         self.dirty = True
         self._rebuild_go_live_chips()
 
-    def _sync_token_from_ui(self) -> str:
-        """Prefer a non-empty UI token; never replace a buffer token with empty UI."""
-        if not self.buffer:
-            return ""
-        ui_token = ""
-        if "bot_token" in self.ui_elements:
-            ui_token = (self.ui_elements["bot_token"].value or "").strip()
-        buffer_token = (getattr(self.buffer, "bot_token", "") or "").strip()
-        if ui_token:
-            self._set("bot_token", ui_token)
-            return ui_token
-        return buffer_token
-
-    def _refresh_token_input(self) -> None:
-        if self.buffer is None:
-            return
-        if "bot_token" in self.ui_elements:
-            self.ui_elements["bot_token"].value = self.buffer.bot_token or ""
-
     def _handle_connect(self) -> None:
         if self._connect_in_progress:
             return
         if not self.buffer:
             return
-        token = self._sync_token_from_ui()
+
+        token = (self._creds.get("bot_token") or "").strip()
         if not token:
             notify("Enter a Discord bot token first", type="warning")
+            return
+
+        # Persist from _creds only (never re-read password UI .value) — hard-fail
+        if not self._save_settings_only():
+            notify(
+                "Could not save Discord bot token. Connect aborted.",
+                type="negative",
+            )
             return
 
         self._connect_in_progress = True
         if "connect_button" in self.ui_elements:
             self.ui_elements["connect_button"].disable()
             self.ui_elements["connect_button"].set_text("Connecting…")
-
-        # Persist token before connect so reconnect works after restart
-        self.save(silent=True)
 
         result: Dict[str, Any] = {"done": False, "ok": False}
 
@@ -284,8 +338,14 @@ class DiscordTab:
                 self.ui_elements["connect_button"].enable()
             if result.get("ok"):
                 notify("Discord bot connected", type="positive")
+                self._creds["bot_token"] = token
                 self._load_from_state()
-                self._refresh_token_input()
+                if not (self._creds.get("bot_token") or "").strip():
+                    self._creds["bot_token"] = token
+                if "bot_token" in self.ui_elements:
+                    self.ui_elements["bot_token"].value = self._creds.get(
+                        "bot_token", ""
+                    )
                 self._reload_guilds()
             else:
                 err = result.get("error") or "Check the bot token and try again"
@@ -357,12 +417,13 @@ class DiscordTab:
                     self.ui_elements["bot_token"] = form_sensitive_input(
                         tooltip="Discord bot token (kept encrypted in the app database)",
                         label="Bot token",
-                        value=getattr(self.buffer, "bot_token", ""),
+                        value=self._creds.get("bot_token", ""),
                         placeholder="Bot token",
-                        on_change=lambda e: self._set(
-                            "bot_token",
-                            "" if e.value is None else str(e.value).strip(),
-                        ),
+                    )
+                    self.ui_elements["bot_token"].on_value_change(
+                        lambda e: self._set_cred(
+                            "bot_token", self._str_from_value_event(e)
+                        )
                     )
 
                 with settings_form_grid(columns=1):
@@ -465,15 +526,7 @@ class DiscordTab:
     def save(self, silent: bool = False) -> None:
         if not self.buffer:
             return
-        # Save from buffer only (like OBS). Password inputs often report empty
-        # .value and would wipe a typed/stored token if re-read blindly.
-        self._sync_token_from_ui()
-        payload = {
-            f.name: getattr(self.buffer, f.name)
-            for f in DiscordData.__dataclass_fields__.values()
-        }
-        state_manager.set_discord_data(payload)
-        if state_manager.save_changes():
+        if self._save_settings_only():
             self.dirty = False
             if not silent:
                 notify("Discord settings saved", type="positive")
@@ -485,7 +538,8 @@ class DiscordTab:
         self._load_from_state()
         if self.buffer is None:
             return
-        self._refresh_token_input()
+        if "bot_token" in self.ui_elements:
+            self.ui_elements["bot_token"].value = self._creds.get("bot_token", "")
         if "go_live_enabled" in self.ui_elements:
             self.ui_elements["go_live_enabled"].value = bool(
                 self.buffer.go_live_enabled
