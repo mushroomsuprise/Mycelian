@@ -420,6 +420,26 @@ class DiscordService:
                 state_manager.initialize()
             data = state_manager.get_discord_data()
             token = (getattr(data, "bot_token", "") or "").strip()
+            # Fallback: preload list may have omitted DiscordData; read DB directly.
+            if not token:
+                try:
+                    from . import database_manager
+                    from .encryption_utils import ensure_decrypted
+
+                    raw = database_manager.get_data("DiscordData") or {}
+                    raw_tok = str((raw or {}).get("bot_token") or "").strip()
+                    if raw_tok:
+                        token = ensure_decrypted(raw_tok).strip()
+                        if token:
+                            state_manager.update_discord_field("bot_token", token)
+                            logger.info(
+                                "Discord: seeded bot_token from DB fallback (len=%s)",
+                                len(token),
+                            )
+                except Exception:
+                    logger.debug(
+                        "Discord: DB fallback token load failed", exc_info=True
+                    )
             if not token:
                 logger.warning("Discord: no bot token configured, skipping connect")
                 return

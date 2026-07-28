@@ -1727,6 +1727,7 @@ async def load_all_initial_data() -> Dict[str, Any]:
         "ChatbotData",  # Chatbot is auto-started
         "DatabaseSettings",
         "OBSData",
+        "DiscordData",  # Discord bot auto-connect on startup
         "Statistics",
         # Core alert types (remove extended ranges that aren't needed immediately)
         "Alerts/BitAlerts",
