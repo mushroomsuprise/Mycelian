@@ -34,6 +34,7 @@ Chat template:
 
 FF7 Template:
     [x] - Add row display to the Party segment. Put in the same row as the character name and justified to the right so it sits above the MP number. Font size should match the username size. We should just show a label "FR" for front row and "BR" for back row.
+    [] - Double check materia color mapping, a couple could be wrong (cover?), or first slot is wrong
 
 UI Improvements:
     [x] - Move the two Twitch toggles from App Settings to the Twitch tab. Put inside an "Options" card that will be below the connection cards
