@@ -44,6 +44,13 @@
             "description": "Character names, HP, MP, Limit, and ATB bars"
         },
         {
+            "type": "checkbox",
+            "id": "ShowPartyRowIndicators",
+            "label": "Show FR / BR row indicators",
+            "value": true,
+            "description": "Show each party member's front-row or back-row indicator"
+        },
+        {
             "type": "number",
             "id": "PartyGridRow",
             "label": "Grid row",
@@ -168,6 +175,13 @@
             "min": 500,
             "max": 30000,
             "description": "Cycle time in battle between limit+ATB and status ailments"
+        },
+        {
+            "type": "checkbox",
+            "id": "PartyUseBattleRotation",
+            "label": "Use battle-specific rotation",
+            "value": true,
+            "description": "When off, the party panel continues showing the field gear, materia, and bars rotation during battle"
         },
         {
             "type": "checkbox",

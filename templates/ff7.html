@@ -1362,12 +1362,13 @@
             var st = window._ff7RenderState;
             if (!st || !st.d || !st.d.attached) return;
             var battle = typeof st.d.battle_ui === 'boolean' ? st.d.battle_ui : st.d.battle;
+            var partyBattle = battle && asBool(cfg.PartyUseBattleRotation, true);
             var party = st.d.party || [];
             var enemies = st.d.enemies || [];
 
             var partyModes;
             var partyMs;
-            if (battle) {
+            if (partyBattle) {
                 partyModes = ['bars', 'ailments'];
                 partyMs = num(cfg.PartyBattleRotateMs, 3500);
             } else {
@@ -1378,7 +1379,7 @@
             var partyPhase = Math.floor(Date.now() / partyMs) % partyN;
             var partyMode = partyModes[partyPhase] || partyModes[0];
             var hdr = document.getElementById('partyStatusHeader');
-            if (hdr) hdr.textContent = partyFieldStatusHeaderLabel(partyMode, battle);
+            if (hdr) hdr.textContent = partyFieldStatusHeaderLabel(partyMode, partyBattle);
 
             var ems = ['atb', 'ailments'];
             var emsMs = num(cfg.EnemyBattleRotateMs, 3500);
@@ -1403,7 +1404,7 @@
                     ff7RotorClear(el);
                     return;
                 }
-                ff7RotorSetContent(el, buildPartyRotorInnerHtml(actor, partyMode, battle), partyMode);
+                ff7RotorSetContent(el, buildPartyRotorInnerHtml(actor, partyMode, partyBattle), partyMode);
             });
 
             document.querySelectorAll('[data-enemy-rotor]').forEach(function (el) {
@@ -1557,7 +1558,8 @@
 
         function applyTemplateConfig(c) {
             cfg = Object.assign({
-                ShowParty: true, ShowEnemies: true, ShowStats: true, ShowBosses: true,
+                ShowParty: true, ShowPartyRowIndicators: true,
+                ShowEnemies: true, ShowStats: true, ShowBosses: true,
                 ShowGil: true, ShowPlaytime: true, ShowFieldName: true, ShowModuleName: true,
                 ShowAvgPartyLevel: true, ShowMateriaCount: true,
                 ShowBattleAtbMode: true, ShowRecentItem: true, ShowBattleLog: false,
@@ -1575,6 +1577,7 @@
                 PartyHPBarHeight: 4, PartyMPBarHeight: 4,
                 PartyLimitBarHeight: 8, PartyTimeBarHeight: 8,
                 PartyFieldRotateMs: 4000, PartyBattleRotateMs: 3500,
+                PartyUseBattleRotation: true,
                 PartyRotateGear: true, PartyRotateMateria: true, PartyRotateBars: true,
                 EnemiesTitleFontSize: 11, EnemiesNameFontSize: 15,
                 EnemiesHPFontSize: 14, EnemiesMPFontSize: 14,
@@ -1594,6 +1597,9 @@
             grid.style.gap = num(cfg.GridGap, 8) + 'px';
 
             document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
+            document.querySelectorAll('#partyBody .char-party-row').forEach(function (el) {
+                el.classList.toggle('hidden', !asBool(cfg.ShowPartyRowIndicators, true));
+            });
             document.getElementById('panelStats').classList.toggle('hidden', !recordsPanelVisible());
             document.getElementById('panelBosses').classList.toggle('hidden', !asBool(cfg.ShowBosses, true));
             var epan = document.getElementById('panelEnemies');
@@ -1973,6 +1979,7 @@
 
             var rowLbl = document.createElement('span');
             rowLbl.className = 'char-party-row';
+            rowLbl.classList.toggle('hidden', !asBool(cfg.ShowPartyRowIndicators, true));
             rowLbl.textContent = ff7PartyRowLabel(actor);
             nameRow.appendChild(rowLbl);
 
