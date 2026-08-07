@@ -575,7 +575,7 @@ class WebEngine:
     _BN_COUNTER_WINDOW_SEC = 60.0
     _HEARTBEAT_EXPECTED_INTERVAL_SEC = 10.0
 
-    def __init__(self, template_dir="templates", host="127.0.0.1", port=5000):
+    def __init__(self, template_dir="templates", host="0.0.0.0", port=5000):
         """
         Initialize the WebEngine server
 
@@ -3044,6 +3044,17 @@ class WebEngine:
     def _is_zombie_thread(self) -> bool:
         return self._thread_alive() and not self.is_running
 
+    def _local_connect_host(self) -> str:
+        """Return an address local clients can connect to.
+
+        Wildcard addresses are valid listener addresses, but they are not
+        destinations. Internal health checks and generated local URLs must use
+        loopback while the server continues to bind to all interfaces.
+        """
+        if self.host in ("0.0.0.0", ""):
+            return "127.0.0.1"
+        return self.host
+
     def get_health(self) -> Dict[str, Any]:
         """Structured overlay-server health for footer and supervisor."""
         from .shutdown import is_shutdown_in_progress
@@ -3135,7 +3146,9 @@ class WebEngine:
 
     def _port_is_open(self) -> bool:
         try:
-            with socket.create_connection((self.host, self.port), timeout=0.5):
+            with socket.create_connection(
+                (self._local_connect_host(), self.port), timeout=0.5
+            ):
                 return True
         except OSError:
             return False
@@ -3143,7 +3156,7 @@ class WebEngine:
     def _probe_health_endpoint(self) -> bool:
         try:
             req = Request(
-                f"http://{self.host}:{self.port}/api/health",
+                f"http://{self._local_connect_host()}:{self.port}/api/health",
                 headers={"User-Agent": "Mycelian-WebEngine-Probe"},
             )
             with urlopen(req, timeout=2.0) as resp:
@@ -8802,7 +8815,10 @@ class WebEngine:
 
         try:
             # Get base URL
-            base_url = f"http://{self.host}:{self.port}"
+            # A wildcard is only a listener address. Local clients use
+            # loopback; clients on another PC must replace it with this
+            # computer's LAN IPv4 address.
+            base_url = f"http://{self._local_connect_host()}:{self.port}"
 
             # Use our tracked template routes instead of iterating through Flask rules
             for template_name in sorted(self._registered_template_routes):
