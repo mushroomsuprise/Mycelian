@@ -257,6 +257,16 @@
             margin-top: 0;
             line-height: 1.15;
         }
+        #panelParty .char-status-effect {
+            flex: 0 0 auto;
+            font-size: var(--name-font, 15px);
+            line-height: 1.15;
+            white-space: nowrap;
+            color: #bf3fbf;
+        }
+        #panelParty .char-status-effect.hidden {
+            display: none;
+        }
         #panelParty .char-party-row {
             flex: 0.71;
             min-width: 0;
@@ -265,6 +275,21 @@
             line-height: 1.15;
             white-space: nowrap;
             color: var(--ff7-hp-yellow);
+        }
+        #panelParty .char-portrait {
+            flex: 0 0 auto;
+            width: auto;
+            height: var(--party-rotor-max-h, 40px);
+            max-height: var(--party-rotor-max-h, 40px);
+            object-fit: contain;
+            display: none;
+            align-self: center;
+        }
+        #panelParty .char-portrait.portrait-visible {
+            display: block;
+        }
+        #panelParty.portraits-off .char-portrait {
+            display: none !important;
         }
         #panelParty .char-hpmp-row {
             display: flex;
@@ -947,6 +972,13 @@
             return 0;
         }
 
+        function ff7RotorKey(actor) {
+            if (actor && actor.id != null && Number(actor.id) >= 0) {
+                return 'id:' + String(Number(actor.id));
+            }
+            return 'ps:' + String(ff7PartySlot(actor));
+        }
+
         function formatGil(n) {
             var x = Math.floor(Number(n) || 0);
             if (x < 0) x = 0;
@@ -1363,7 +1395,9 @@
             if (!st || !st.d || !st.d.attached) return;
             var battle = typeof st.d.battle_ui === 'boolean' ? st.d.battle_ui : st.d.battle;
             var partyBattle = battle && asBool(cfg.PartyUseBattleRotation, true);
-            var party = st.d.party || [];
+            var party = (st.partyDisplay && st.partyDisplay.length)
+                ? st.partyDisplay
+                : (st.d.party || []);
             var enemies = st.d.enemies || [];
 
             var partyModes;
@@ -1390,12 +1424,12 @@
             if (ehdr) ehdr.textContent = battle ? enemyBattleStatusHeaderLabel(emode) : 'ATB';
 
             document.querySelectorAll('[data-party-rotor]').forEach(function (el) {
-                var slot = parseInt(el.getAttribute('data-party-rotor'), 10);
+                var key = el.getAttribute('data-party-rotor');
                 var actor = null;
                 for (var i = 0; i < party.length; i++) {
                     var p = party[i];
                     if (p.slot_empty) continue;
-                    if (ff7PartySlot(p) === slot) {
+                    if (ff7RotorKey(p) === key) {
                         actor = p;
                         break;
                     }
@@ -1559,6 +1593,7 @@
         function applyTemplateConfig(c) {
             cfg = Object.assign({
                 ShowParty: true, ShowPartyRowIndicators: true,
+                ShowAllCharacters: false, ShowPortraits: false,
                 ShowEnemies: true, ShowStats: true, ShowBosses: true,
                 ShowGil: true, ShowPlaytime: true, ShowFieldName: true, ShowModuleName: true,
                 ShowAvgPartyLevel: true, ShowMateriaCount: true,
@@ -1597,9 +1632,17 @@
             grid.style.gap = num(cfg.GridGap, 8) + 'px';
 
             document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
+            document.getElementById('panelParty').classList.toggle('portraits-off', !asBool(cfg.ShowPortraits, false));
             document.querySelectorAll('#partyBody .char-party-row').forEach(function (el) {
                 el.classList.toggle('hidden', !asBool(cfg.ShowPartyRowIndicators, true));
             });
+            if (asBool(cfg.ShowPortraits, false)) {
+                document.querySelectorAll('#partyBody .char-portrait').forEach(function (img) {
+                    if (img.getAttribute('data-portrait-ok') === '1') {
+                        img.classList.add('portrait-visible');
+                    }
+                });
+            }
             document.getElementById('panelStats').classList.toggle('hidden', !recordsPanelVisible());
             document.getElementById('panelBosses').classList.toggle('hidden', !asBool(cfg.ShowBosses, true));
             var epan = document.getElementById('panelEnemies');
@@ -1744,6 +1787,91 @@
             return 'FR';
         }
 
+        function ff7StatusEffectLabel(actor) {
+            var s = actor && actor.status_effect ? String(actor.status_effect) : '';
+            if (s === 'Sadness' || s === 'Fury') return s;
+            return '';
+        }
+
+        var FF7_PORTRAIT_BY_ID = {
+            0: 'cloud',
+            1: 'barrett',
+            2: 'tifa',
+            3: 'aerith',
+            4: 'red13',
+            5: 'yuffie',
+            6: 'caitsith',
+            7: 'vincent',
+            8: 'cid'
+        };
+
+        function ff7PortraitStem(actor) {
+            var id = actor && actor.id != null ? Number(actor.id) : -1;
+            var nm = ((actor && actor.name) || '').trim().toLowerCase();
+            if (id === 6 && (nm === 'cloud' || nm.indexOf('cloud') === 0)) return 'youngcloud';
+            if (id === 7 && (nm === 'sephiroth' || nm.indexOf('sephiroth') === 0)) return 'sephiroth';
+            if (FF7_PORTRAIT_BY_ID[id]) return FF7_PORTRAIT_BY_ID[id];
+            return '';
+        }
+
+        function ff7BindPortrait(img, actor) {
+            var stem = ff7PortraitStem(actor);
+            img.classList.remove('portrait-visible');
+            img.removeAttribute('data-portrait-ok');
+            img.onload = function () {
+                img.setAttribute('data-portrait-ok', '1');
+                if (asBool(cfg.ShowPortraits, false)) {
+                    img.classList.add('portrait-visible');
+                }
+            };
+            img.onerror = function () {
+                img.classList.remove('portrait-visible');
+                img.removeAttribute('data-portrait-ok');
+                img.removeAttribute('src');
+            };
+            if (!stem) {
+                img.removeAttribute('src');
+                return;
+            }
+            var next = '/assets/ff7/' + stem + '.png';
+            if (img.getAttribute('src') === next) {
+                if (img.complete && img.naturalWidth > 0) {
+                    img.setAttribute('data-portrait-ok', '1');
+                    if (asBool(cfg.ShowPortraits, false)) {
+                        img.classList.add('portrait-visible');
+                    }
+                }
+                return;
+            }
+            img.setAttribute('src', next);
+        }
+
+        function ff7BuildPartyDisplayList(d) {
+            var active = [];
+            var party = Array.isArray(d.party) ? d.party : [];
+            for (var i = 0; i < party.length; i++) {
+                if (!party[i].slot_empty) active.push(party[i]);
+            }
+            if (!asBool(cfg.ShowAllCharacters, false)) return active;
+            var seen = {};
+            for (var a = 0; a < active.length; a++) {
+                var aid = active[a].id;
+                if (aid != null && aid >= 0) seen[String(aid)] = true;
+            }
+            var out = active.slice();
+            var roster = Array.isArray(d.characters) ? d.characters : [];
+            for (var r = 0; r < roster.length; r++) {
+                var ch = roster[r];
+                if (!ch || ch.slot_empty) continue;
+                var cid = ch.id;
+                if (cid == null || cid < 0) continue;
+                if (seen[String(cid)]) continue;
+                seen[String(cid)] = true;
+                out.push(ch);
+            }
+            return out;
+        }
+
         function patchPartyRowStats(container, party) {
             var members = [];
             for (var i = 0; i < party.length; i++) {
@@ -1773,8 +1901,18 @@
                     nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
                 }
 
+                var stEl = row.querySelector('.char-party-name-row .char-status-effect');
+                if (stEl) {
+                    var st = ff7StatusEffectLabel(actor);
+                    stEl.textContent = st;
+                    stEl.classList.toggle('hidden', !st);
+                }
+
                 var rowEl = row.querySelector('.char-party-row');
                 if (rowEl) rowEl.textContent = ff7PartyRowLabel(actor);
+
+                var portrait = row.querySelector('.char-portrait');
+                if (portrait) ff7BindPortrait(portrait, actor);
 
                 var hpCell = row.querySelector('.hp-block .stat-cell.hp-cell');
                 if (hpCell) {
@@ -1964,6 +2102,13 @@
             var row = document.createElement('div');
             row.className = 'char-row';
 
+            var portrait = document.createElement('img');
+            portrait.className = 'char-portrait';
+            portrait.alt = '';
+            portrait.setAttribute('draggable', 'false');
+            ff7BindPortrait(portrait, actor);
+            row.appendChild(portrait);
+
             var partyMain = document.createElement('div');
             partyMain.className = 'char-party-main';
 
@@ -1976,6 +2121,13 @@
             var nm = actor.name || '?';
             nameEl.textContent = lv > 0 ? ('Lv ' + lv + ' ' + nm) : nm;
             nameRow.appendChild(nameEl);
+
+            var stEl = document.createElement('span');
+            stEl.className = 'char-status-effect';
+            var st = ff7StatusEffectLabel(actor);
+            stEl.textContent = st;
+            stEl.classList.toggle('hidden', !st);
+            nameRow.appendChild(stEl);
 
             var rowLbl = document.createElement('span');
             rowLbl.className = 'char-party-row';
@@ -2019,7 +2171,7 @@
 
             var rotor = document.createElement('div');
             rotor.className = 'bar-cell party-rotor';
-            rotor.setAttribute('data-party-rotor', String(ff7PartySlot(actor)));
+            rotor.setAttribute('data-party-rotor', ff7RotorKey(actor));
             row.appendChild(rotor);
 
             container.appendChild(row);
@@ -2151,6 +2303,7 @@
             }
 
             document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
+            document.getElementById('panelParty').classList.toggle('portraits-off', !asBool(cfg.ShowPortraits, false));
 
             var partyEl = document.getElementById('partyBody');
             if (typeof window._ff7PartyDomKey === 'undefined') {
@@ -2160,11 +2313,10 @@
                 window._ff7PartyDomKey = '';
                 partyEl.innerHTML = '';
             } else {
-                var partyFiltered = [];
-                for (var pi = 0; pi < d.party.length; pi++) {
-                    if (!d.party[pi].slot_empty) partyFiltered.push(d.party[pi]);
-                }
-                var partyDomKey = ff7PartyDomKey(d.party);
+                var partyFiltered = ff7BuildPartyDisplayList(d);
+                var partyDomKey = ff7PartyDomKey(partyFiltered) +
+                    '|all:' + (asBool(cfg.ShowAllCharacters, false) ? '1' : '0') +
+                    '|port:' + (asBool(cfg.ShowPortraits, false) ? '1' : '0');
                 var partyRowCount = partyEl.querySelectorAll('.char-row').length;
                 var needPartyRebuild =
                     partyDomKey !== window._ff7PartyDomKey ||
@@ -2172,12 +2324,11 @@
                 if (needPartyRebuild) {
                     window._ff7PartyDomKey = partyDomKey;
                     partyEl.innerHTML = '';
-                    d.party.forEach(function (p) {
-                        if (p.slot_empty) return;
+                    partyFiltered.forEach(function (p) {
                         renderPartyRow(partyEl, p);
                     });
                 } else {
-                    patchPartyRowStats(partyEl, d.party);
+                    patchPartyRowStats(partyEl, partyFiltered);
                 }
             }
 
@@ -2210,7 +2361,10 @@
                 window._ff7EnemyDomKey = '';
                 enemyEl.innerHTML = '';
             }
-            window._ff7RenderState = { d: d };
+            window._ff7RenderState = {
+                d: d,
+                partyDisplay: asBool(cfg.ShowParty, true) ? ff7BuildPartyDisplayList(d) : []
+            };
             updateFf7Rotors();
 
             document.getElementById('panelEnemies').classList.toggle('hidden', hideEnemyPanel);

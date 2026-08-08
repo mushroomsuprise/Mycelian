@@ -372,6 +372,8 @@ def _load_ff7_gear_layout_assets() -> None:
         _load_battle_log_name_assets()
     except OSError as e:
         logger.warning("FF7 layout/materia name assets unreadable: %s", e)
+    except json.JSONDecodeError as e:
+        logger.warning("FF7 layout/materia name assets invalid JSON: %s", e)
 
 
 def _weapon_materia_slot_types(weapon_id: int) -> List[int]:
@@ -486,6 +488,25 @@ def _ailments_from_status(status: int) -> List[str]:
         if st & mask:
             out.append(label)
     return out
+
+
+def _status_effect_from_bits(sadness: bool, fury: bool) -> str:
+    """FF7 menu-style lasting status for the party name row (Sadness / Fury)."""
+    if fury:
+        return "Fury"
+    if sadness:
+        return "Sadness"
+    return ""
+
+
+def _status_effect_from_field_byte(field_status: int) -> str:
+    b = int(field_status) & 0xFF
+    return _status_effect_from_bits(bool(b & 0x10), bool(b & 0x20))
+
+
+def _status_effect_from_battle_status(status: int) -> str:
+    st = int(status) & 0xFFFFFFFF
+    return _status_effect_from_bits(bool(st & 0x10), bool(st & 0x20))
 
 
 def _row_label_from_savemap_order(order: int) -> str:
@@ -2339,6 +2360,7 @@ class FF7Hook:
                     "limit": 0,
                     "atb": 0.0,
                     "slot_empty": True,
+                    "status_effect": "",
                 }
                 row.update(_empty_gear_materia())
                 members.append(row)
@@ -2354,6 +2376,7 @@ class FF7Hook:
             max_hp = struct.unpack_from("<H", rec, REC_OFF_MAX_HP)[0]
             mp = struct.unpack_from("<H", rec, REC_OFF_MP)[0]
             max_mp = struct.unpack_from("<H", rec, REC_OFF_MAX_MP)[0]
+            field_st = rec[REC_OFF_FIELD_STATUS] if len(rec) > REC_OFF_FIELD_STATUS else 0
             row = {
                 "party_slot": party_slot,
                 "id": cid,
@@ -2367,10 +2390,50 @@ class FF7Hook:
                 "atb": 0.0,
                 "slot_empty": False,
                 "row": _row_for_char_id(savemap, cid),
+                "status_effect": _status_effect_from_field_byte(field_st),
             }
             row.update(_char_gear_materia(rec))
             members.append(row)
         return members, party_ids
+
+    def _parse_all_characters(self, savemap: bytes) -> List[Dict[str, Any]]:
+        """Full roster (ids 0..8) with non-empty names; same row shape as field party."""
+        out: List[Dict[str, Any]] = []
+        if not savemap:
+            return out
+        for cid in range(len(_CHAR_BLOCK)):
+            off = _CHAR_BLOCK[cid]
+            if off + 0x84 > len(savemap):
+                continue
+            rec = savemap[off : off + 0x84]
+            name = _decode_ff7_name(rec[0x10:0x1C])
+            if not (name or "").strip():
+                continue
+            level = rec[0x01]
+            limit_bar = rec[0x0F]
+            hp = struct.unpack_from("<H", rec, REC_OFF_HP)[0]
+            max_hp = struct.unpack_from("<H", rec, REC_OFF_MAX_HP)[0]
+            mp = struct.unpack_from("<H", rec, REC_OFF_MP)[0]
+            max_mp = struct.unpack_from("<H", rec, REC_OFF_MAX_MP)[0]
+            field_st = rec[REC_OFF_FIELD_STATUS] if len(rec) > REC_OFF_FIELD_STATUS else 0
+            row: Dict[str, Any] = {
+                "party_slot": -1,
+                "id": cid,
+                "name": name,
+                "level": int(level),
+                "hp": int(hp),
+                "max_hp": int(max_hp) if max_hp else int(hp),
+                "mp": int(mp),
+                "max_mp": int(max_mp) if max_mp else int(mp),
+                "limit": int(limit_bar),
+                "atb": 0.0,
+                "slot_empty": False,
+                "row": _row_for_char_id(savemap, cid),
+                "status_effect": _status_effect_from_field_byte(field_st),
+            }
+            row.update(_char_gear_materia(rec))
+            out.append(row)
+        return out
 
     def _read_battle_common(
         self, slot: int
@@ -2451,9 +2514,11 @@ class FF7Hook:
         return {
             "party_slot": slot,
             "slot": slot,
+            "id": int(party_id) if party_id is not None else -1,
             "status": status,
             "status_raw": status,
             "ailments": ailments,
+            "status_effect": _status_effect_from_battle_status(status),
             "flags": flags,
             "hp": max(hp, 0),
             "max_hp": max(max_hp, 0),
@@ -3554,9 +3619,8 @@ class FF7Hook:
         prev = self._prev_inventory_sig
         prev_mat = self._prev_materia_inv_sig
 
-        # Unified items — multiset diff (stable when stacks move between slots).
-        best_item: Optional[Tuple[int, int]] = None
-        best_item_score: Optional[Tuple[int, int, int]] = None
+        # Unified items — collect all positive multiset deltas, then drop unequips.
+        item_candidates: List[Tuple[int, int, int]] = []
         if prev is not None and len(prev) == len(inv_slice):
             pic = _parse_inv_items_multiset(prev)
             cic = _parse_inv_items_multiset(inv_slice)
@@ -3566,15 +3630,16 @@ class FF7Hook:
                 dlt = cur_c - prev_c
                 if dlt <= 0:
                     continue
+                iid = int(ci) & 0x1FF
+                if _gain_explained_by_party_unequip(
+                    iid, int(dlt), prev_eq_items, cur_eq_items
+                ):
+                    continue
                 is_new = 1 if prev_c == 0 else 0
-                score = (dlt, is_new, int(ci))
-                if best_item_score is None or score > best_item_score:
-                    best_item_score = score
-                    best_item = (dlt, int(ci))
+                item_candidates.append((int(dlt), int(is_new), iid))
 
-        # Materia inventory — kernel materia id (per-slot orbs; multiset diffs are stable
-        # if the player reorders the grid).
-        best_materia: Optional[Tuple[int, int]] = None
+        # Materia inventory — same: all gains, drop unequip-explained.
+        materia_candidates: List[Tuple[int, int, int]] = []
         if prev_mat is not None and len(prev_mat) == len(mat_slice):
             pmc = _parse_inv_materia_multiset(prev_mat)
             cmc = _parse_inv_materia_multiset(mat_slice)
@@ -3583,10 +3648,26 @@ class FF7Hook:
                 d_g = int(cur_c) - int(prev_c)
                 if d_g <= 0:
                     continue
-                if best_materia is None or d_g > best_materia[0] or (
-                    d_g == best_materia[0] and mid > best_materia[1]
+                mid_i = int(mid) & 0xFF
+                if _gain_explained_by_materia_unequip(
+                    mid_i, int(d_g), prev_eq_materia, cur_eq_materia
                 ):
-                    best_materia = (d_g, int(mid))
+                    continue
+                is_new = 1 if int(prev_c) == 0 else 0
+                materia_candidates.append((int(d_g), int(is_new), mid_i))
+
+        def _best_gain(
+            cands: List[Tuple[int, int, int]],
+        ) -> Optional[Tuple[int, int]]:
+            """Largest delta; ties prefer new stack, then lower id."""
+            if not cands:
+                return None
+            # Sort key: max delta, then max is_new, then min id → negate id for max().
+            best = max(cands, key=lambda t: (t[0], t[1], -t[2]))
+            return (best[0], best[2])
+
+        best_item = _best_gain(item_candidates)
+        best_materia = _best_gain(materia_candidates)
 
         chosen: Optional[Dict[str, Any]] = None
         if best_item is not None and best_materia is not None:
@@ -3594,52 +3675,6 @@ class FF7Hook:
             mdlt, mid = best_materia
             # Same tick: show the single largest gain; tie — prefer item over materia.
             if idlt >= mdlt:
-                if not _gain_explained_by_party_unequip(
-                    int(ci) & 0x1FF, int(idlt), prev_eq_items, cur_eq_items
-                ):
-                    chosen = {
-                        "kind": "item",
-                        "name": _ff7_unified_item_name(int(ci)),
-                        "delta": int(idlt),
-                        "item_id": int(ci) & 0x1FF,
-                        "materia_id": None,
-                    }
-                elif not _gain_explained_by_materia_unequip(
-                    int(mid) & 0xFF, int(mdlt), prev_eq_materia, cur_eq_materia
-                ):
-                    chosen = {
-                        "kind": "materia",
-                        "name": _materia_id_display_name(int(mid)),
-                        "delta": int(mdlt),
-                        "item_id": None,
-                        "materia_id": int(mid) & 0xFF,
-                    }
-            else:
-                if not _gain_explained_by_materia_unequip(
-                    int(mid) & 0xFF, int(mdlt), prev_eq_materia, cur_eq_materia
-                ):
-                    chosen = {
-                        "kind": "materia",
-                        "name": _materia_id_display_name(int(mid)),
-                        "delta": int(mdlt),
-                        "item_id": None,
-                        "materia_id": int(mid) & 0xFF,
-                    }
-                elif not _gain_explained_by_party_unequip(
-                    int(ci) & 0x1FF, int(idlt), prev_eq_items, cur_eq_items
-                ):
-                    chosen = {
-                        "kind": "item",
-                        "name": _ff7_unified_item_name(int(ci)),
-                        "delta": int(idlt),
-                        "item_id": int(ci) & 0x1FF,
-                        "materia_id": None,
-                    }
-        elif best_item is not None:
-            idlt, ci = best_item
-            if not _gain_explained_by_party_unequip(
-                int(ci) & 0x1FF, int(idlt), prev_eq_items, cur_eq_items
-            ):
                 chosen = {
                     "kind": "item",
                     "name": _ff7_unified_item_name(int(ci)),
@@ -3647,11 +3682,7 @@ class FF7Hook:
                     "item_id": int(ci) & 0x1FF,
                     "materia_id": None,
                 }
-        elif best_materia is not None:
-            mdlt, mid = best_materia
-            if not _gain_explained_by_materia_unequip(
-                int(mid) & 0xFF, int(mdlt), prev_eq_materia, cur_eq_materia
-            ):
+            else:
                 chosen = {
                     "kind": "materia",
                     "name": _materia_id_display_name(int(mid)),
@@ -3659,6 +3690,24 @@ class FF7Hook:
                     "item_id": None,
                     "materia_id": int(mid) & 0xFF,
                 }
+        elif best_item is not None:
+            idlt, ci = best_item
+            chosen = {
+                "kind": "item",
+                "name": _ff7_unified_item_name(int(ci)),
+                "delta": int(idlt),
+                "item_id": int(ci) & 0x1FF,
+                "materia_id": None,
+            }
+        elif best_materia is not None:
+            mdlt, mid = best_materia
+            chosen = {
+                "kind": "materia",
+                "name": _materia_id_display_name(int(mid)),
+                "delta": int(mdlt),
+                "item_id": None,
+                "materia_id": int(mid) & 0xFF,
+            }
 
         if chosen is not None:
             self._last_item_gain = chosen
@@ -4878,6 +4927,7 @@ class FF7Hook:
                 "battle_ui": False,
                 "current_module": 0,
                 "party": [],
+                "characters": [],
                 "enemies": [],
                 "gil": 0,
                 "playtime_seconds": 0,
@@ -4905,6 +4955,7 @@ class FF7Hook:
                 "battle_ui": False,
                 "current_module": 0,
                 "party": [],
+                "characters": [],
                 "enemies": [],
                 "gil": 0,
                 "playtime_seconds": 0,
@@ -4938,6 +4989,7 @@ class FF7Hook:
                 "battle_ui": False,
                 "current_module": 0,
                 "party": [],
+                "characters": [],
                 "enemies": [],
                 "gil": 0,
                 "playtime_seconds": 0,
@@ -4966,9 +5018,9 @@ class FF7Hook:
         gil = 0
         play_sec = 0
         party: List[Dict[str, Any]] = []
+        characters: List[Dict[str, Any]] = []
         enemies: List[Dict[str, Any]] = []
         menu_theme: Optional[Dict[str, str]] = None
-
         field_name = ""
         disp_addr = _rebase(self._proc.module_base, ADDR_MENU_COLOR_DISPLAY_BASE)
         disp_raw = self._read(disp_addr, 16)
@@ -4981,6 +5033,7 @@ class FF7Hook:
             except struct.error:
                 pass
             party, _ = self._parse_field_party(savemap)
+            characters = self._parse_all_characters(savemap)
             if menu_theme is None:
                 menu_theme = menu_theme_from_savemap(savemap)
             field_name = _field_name_from_savemap(savemap)
@@ -5066,6 +5119,7 @@ class FF7Hook:
             "current_module_name": _current_module_label(int(cur_mod)),
             "field_name": field_name,
             "party": party,
+            "characters": characters,
             "enemies": enemies,
             "gil": int(gil),
             "playtime_seconds": int(play_sec),

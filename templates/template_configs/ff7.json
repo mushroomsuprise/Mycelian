@@ -51,6 +51,20 @@
             "description": "Show each party member's front-row or back-row indicator"
         },
         {
+            "type": "checkbox",
+            "id": "ShowAllCharacters",
+            "label": "Show all characters",
+            "value": false,
+            "description": "Include roster characters outside the active 3-slot party (full rows)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowPortraits",
+            "label": "Show character portraits",
+            "value": false,
+            "description": "Show portrait images beside each party row (assets/ff7/*.png)"
+        },
+        {
             "type": "number",
             "id": "PartyGridRow",
             "label": "Grid row",
@@ -388,7 +402,7 @@
             "id": "ShowRecentItem",
             "label": "Show most recent item",
             "value": true,
-            "description": "Heuristic: new stack or increased quantity when gil did not decrease"
+            "description": "Largest inventory gain since last poll (unequips filtered; includes shop buys)"
         },
         {
             "type": "number",

@@ -1,64 +1,15 @@
 Legacy Templates:
     [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
-Spore Studio:
-    [x] - Add in additional text options: text leading, kerning, bold, italic, underlined, strikethrough, etc etc
-    [x] - Dragging text element box did not update the size, could also effect other elements
-    [x] - Make sections in the Properties tab collapsable (compressed by default)
-    [x] - Align checkboxes with their text in the Properties tab, instead of being above or below it
-    [x] - Utilize more tooltips for options so title text can be simpler
-    [x] - Make right panel resizable
-    [x] - Make it easier to see what tab youre in for the right panel. Add better separation between the tabs. Make the tabs a "carousel" if they overflow the panel width
-    [x] - Remove the bottom black bar, remove the "Loaded" text and move "Unsaved Changes" text to be to the left of the Preview button. See first image for how it currently looks.
-    [x] - Update the Progress Bar element's icon. it currently appears as a small square
-    [x] - Remove the extra "?" button to open the help next to the reload editor button. there is a global button in the top right of the app that handles this already
-    [x] - Add some new "blocks" for users, include all adjustment options, features, ways to display live data, etc etc. The end users will likely be creating elaborate displays of wildly varying content to display in OBS, so we should ensure we expose as many options as possible. Right now we have basic items such as text, videos, images, and progress bars. We should add in more options to help end users achieve unique displays.
-    [x] - Reorganize block list into groups, then have the groups listed in alphabetical order, and the items inside each group in alphabetical order.
-    [x] - Inspect the undo/redo logic. ive ran into several situations where the redo will not work
-    [x] - Remove the very top "Spore Studio", and the description text underneath. Move the Reload Editor and Open Externally buttons to be to the left of the "Preview" button instead.
-
-
-Chat template:
-    [x] - Add option to change the chat message for an alert (bits, subs, resubs, etc) from a regular chat message, to a special event type message that will display the alert image/video and the alert message. This should have the option to do either message type or both. Will need to scale the image to the font size, and the font size should be based on the event text font size
-    [x] - Fix reply message font size to be based on the event message font size
-    [x] - Fix reply messages so that the reply is only a single text line that gets truncated with 3 dots
-    [x] - Fix reply messages not stripping the leading username from the main message
-    [x] - Add padding options to the alert event display for the images and fonts
-    [x] - Update reply font size to be driven off the chat message. It should use a user definable scaler value to make it smaller (default 0.75x).
-    [x] - Fix missing "simple" event messages for non media rich events. it should always default back to the simple message if the media alert errors, or if an alert is not configured. this should happen even if the toggle is disabled for simple event messages.
-    [x] - Fix media-rich alert always saying people resubscribed for 1 month. it should display the total number of months they have been subscribed for. IE: "TestUser has resubscribed for 51 months!"
-    [x] - Fix message formatting so it automatically pluralizes the gift sub and bit donation messages. Example: it current says something like "TestUser gifted 1 tier 1 subs!" when only a single gifted sub is sent, instead it should be something like "TestUser gift a tier 1 sub!". The bit messages should be similar.
-    [x] - Fix media-rich events displaying alerts that arent configured (follow alert for sure)
-    [x] - Fix username color matching to check as case insensitive
-    [x] - Fix event message only saying "Hype train started by A viewer! Level X". It reads sort of weird, and the starting users name is never filled it. It should read something more like "Level {lvl} started by {user}!" and fallback to "Level {lvl} started!" if the username is unresolvable.
-
 FF7 Template:
     [x] - Add row display to the Party segment. Put in the same row as the character name and justified to the right so it sits above the MP number. Font size should match the username size. We should just show a label "FR" for front row and "BR" for back row.
-    [] - Double check materia color mapping, a couple could be wrong (cover?), or first slot is wrong
-
-UI Improvements:
-    [x] - Move the two Twitch toggles from App Settings to the Twitch tab. Put inside an "Options" card that will be below the connection cards
-    [x] - Change the "Save As" button on the Theme tab, the "View on GitHub", and the "View Changelog" buttons to match the theme, instead of being the teal color.
-    [x] - On the OBS Source Controls dock, toast notifications are fired every time something is clicked. This results in excessive notifications. We should only send notifications upon failures.
-    [x] - Remove the background from the preview area so it does not display as white
-
-General:
-    [x] - Implement a callback logger system so template errors reach the mycelian.log file
-    [x] - Condensed view in integrated activity feed causes the activity feed tab to be blank
-    [x] - Condensed view filter button doesnt work
-    [x] - Condensed view just displaying "points!" instead of a count of each unique point alert
-
-Discord Integration:
-    [x] - Add Discord as a 3rd party service (will need to make a new Settings sub-tab with Discord icon). use the "discord.py" package (already added to venv via uv)
-    [x] - Create authentication flow and guided user setup for integrating Discord into Mycelian
-    [x] - Add ability to send messages to specific channels of specific servers for the Chatbot
-    [x] - Add Discord options to Connectors service, add "send discord message" as an action instead of expanding existing "send chat message" action.
-    [x] - Add in a way to automatically send a "Stream is live" Discord message. Allow user to specify the server(s) and channel(s) to send the message too (allowing multiple servers/channels).
-
+    [x] - Double check materia color mapping, a couple could be wrong (cover maybe?), or it could be slots are being read wrong. someone mentioned there was an error with the first slot a couple of times.
+    [x] - Add option to display all characters in the party section (including characters not part of the main 3-slot party), make this a togglable option.
+    [x] - Add character portraits, make this a toggleable option. portraits will be placed in the assets folder and named like "cloud.png". Must be sized to stay within the current party member row height. Note: Until you pass the "Kalm Flashback", Cait Sith and Vincent's character data is actually Young Cloud and Sephiroth.
+    [x] - Recheck the recent items setup. it still appears to display the incorrect item occasionally (mapping issue?)
+    [x] - Add a setup to the party member segment to display if someone has "sadness" or "fury". See pasted image for how these should be color for font. i want this to be put to the right of the name (inbetween the name and where the row indicator is at)
 
 YouTube Integration:
-    [x] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file. Default to being off
-    [x] - Add YouTube to the alerts system, match up the YouTube equivalent to the current Twitch configurations (memberships are subs, superchats are donations, etc etc)
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system
 
 Kik Integration:
