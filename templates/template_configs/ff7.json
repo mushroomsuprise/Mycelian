@@ -52,6 +52,13 @@
         },
         {
             "type": "checkbox",
+            "id": "ShowPartyStatusEffects",
+            "label": "Show Sadness / Fury",
+            "value": true,
+            "description": "Show Sadness or Fury beside each party member's name"
+        },
+        {
+            "type": "checkbox",
             "id": "ShowAllCharacters",
             "label": "Show all characters",
             "value": false,

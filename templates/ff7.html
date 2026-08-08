@@ -1593,6 +1593,7 @@
         function applyTemplateConfig(c) {
             cfg = Object.assign({
                 ShowParty: true, ShowPartyRowIndicators: true,
+                ShowPartyStatusEffects: true,
                 ShowAllCharacters: false, ShowPortraits: false,
                 ShowEnemies: true, ShowStats: true, ShowBosses: true,
                 ShowGil: true, ShowPlaytime: true, ShowFieldName: true, ShowModuleName: true,
@@ -1635,6 +1636,10 @@
             document.getElementById('panelParty').classList.toggle('portraits-off', !asBool(cfg.ShowPortraits, false));
             document.querySelectorAll('#partyBody .char-party-row').forEach(function (el) {
                 el.classList.toggle('hidden', !asBool(cfg.ShowPartyRowIndicators, true));
+            });
+            document.querySelectorAll('#partyBody .char-status-effect').forEach(function (el) {
+                var hasText = !!(el.textContent || '').trim();
+                el.classList.toggle('hidden', !asBool(cfg.ShowPartyStatusEffects, true) || !hasText);
             });
             if (asBool(cfg.ShowPortraits, false)) {
                 document.querySelectorAll('#partyBody .char-portrait').forEach(function (img) {
@@ -1905,7 +1910,7 @@
                 if (stEl) {
                     var st = ff7StatusEffectLabel(actor);
                     stEl.textContent = st;
-                    stEl.classList.toggle('hidden', !st);
+                    stEl.classList.toggle('hidden', !asBool(cfg.ShowPartyStatusEffects, true) || !st);
                 }
 
                 var rowEl = row.querySelector('.char-party-row');
@@ -2126,7 +2131,7 @@
             stEl.className = 'char-status-effect';
             var st = ff7StatusEffectLabel(actor);
             stEl.textContent = st;
-            stEl.classList.toggle('hidden', !st);
+            stEl.classList.toggle('hidden', !asBool(cfg.ShowPartyStatusEffects, true) || !st);
             nameRow.appendChild(stEl);
 
             var rowLbl = document.createElement('span');
