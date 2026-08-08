@@ -68,7 +68,7 @@
             "type": "checkbox",
             "id": "ShowPortraits",
             "label": "Show character portraits",
-            "value": false,
+            "value": true,
             "description": "Show portrait images beside each party row (assets/ff7/*.png)"
         },
         {
