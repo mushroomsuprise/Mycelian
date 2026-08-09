@@ -100,6 +100,8 @@ Tabbed interface for everything in one place:
 
 **Requirements:** Python 3.10+, Windows / macOS / Linux, internet for service integrations
 
+On Linux, the native window uses Qt via pywebview (`QtPy` + `PyQt6` + `PyQt6-WebEngine`). Those packages are installed automatically by `uv sync` on Linux only and are not required on Windows or macOS. If the native window fails to open, try `PYWEBVIEW_GUI=qt uv run python main.py`.
+
 ```bash
 # Install uv: https://docs.astral.sh/uv/getting-started/installation/
 git clone https://github.com/mushroomsuprise/Mycelian.git
@@ -151,6 +153,7 @@ The built app lands in the `builds/` directory.
 
 - **npm** is required to build the Stream Deck plugin (`streamdeck-plugin/mycelian/`)
 - **macOS:** Xcode command line tools must be installed (`xcode-select --install`)
+- **Linux:** Native window support requires the Qt packages from `uv sync` (see Quick Start); they are kept in Linux PyInstaller builds and excluded on Windows/macOS
 
 ---
 

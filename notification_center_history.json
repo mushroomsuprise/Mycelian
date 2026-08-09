@@ -1,1 +1,444 @@
-[]
+[
+  {
+    "id": "40601b66-19c7-4875-929c-7a13948cc50a",
+    "ts": 1786300402.8960257,
+    "message": "Twitch: Authenticated but Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:twitch:Authenticated but Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "e8c64c5b-66b7-40c8-9c83-03ffbb4b9d36",
+    "ts": 1786300402.8991425,
+    "message": "Discord: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:discord:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
+  },
+  {
+    "id": "374beca3-d51c-4870-9bfe-a41d0fa8c333",
+    "ts": 1786300404.8954697,
+    "message": "Discord: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:discord:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
+  },
+  {
+    "id": "0538e24b-0588-43ff-bb78-5777f5687815",
+    "ts": 1786300406.8952303,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "4fe6127e-1316-4b91-a701-d92f38cad3b4",
+    "ts": 1786300409.1663086,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "0671a78d-2b44-4551-a560-a11d354378e4",
+    "ts": 1786300410.8954418,
+    "message": "PSN: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:psn:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "PSN"
+      }
+    ]
+  },
+  {
+    "id": "026d6d5e-7256-4ea4-93d8-cd3d1517007b",
+    "ts": 1786300412.120268,
+    "message": "Loading bitcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "93186c25-fdec-41c3-b584-cf83a6825a7f",
+    "ts": 1786300415.8693802,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "467e6086-2163-4bf0-8661-77a3d8303292",
+    "ts": 1786300429.2194378,
+    "message": "PSN: Offline",
+    "type": "warning",
+    "dedupe_key": "svc:psn:Offline",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "PSN"
+      }
+    ]
+  },
+  {
+    "id": "8678171f-7ff1-4077-b4c0-de1743999a8d",
+    "ts": 1786300746.8879404,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "62223272-044a-44eb-b15a-7ce345d8ccbc",
+    "ts": 1786300747.7433703,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "a623a7e7-c1f9-4862-bc6b-fe615dffd210",
+    "ts": 1786300748.888579,
+    "message": "Discord: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:discord:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
+  },
+  {
+    "id": "4a202439-e773-4fdc-b3dd-6a0d483b7ebb",
+    "ts": 1786300749.807475,
+    "message": "Loading bitcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "ac3a73a4-9e29-410e-8eb7-4851df5a3199",
+    "ts": 1786300754.887897,
+    "message": "PSN: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:psn:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "PSN"
+      }
+    ]
+  },
+  {
+    "id": "dca2d738-dbf2-41a2-9b64-f40633ab6913",
+    "ts": 1786300756.1607492,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "d651c852-9c36-4224-bd0a-5f3d4fc7181c",
+    "ts": 1786300756.8883598,
+    "message": "Twitch: Authenticated but Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:twitch:Authenticated but Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "9bfd6314-324f-4f2d-8ac8-131ea3abc400",
+    "ts": 1786300758.8873398,
+    "message": "PSN: Offline",
+    "type": "warning",
+    "dedupe_key": "svc:psn:Offline",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "PSN"
+      }
+    ]
+  },
+  {
+    "id": "3776cf06-09ae-4eb0-a9b5-68b5eb8d2afd",
+    "ts": 1786300797.6559918,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "b03e0bc1-29f9-44df-890d-c98a5dfd34a8",
+    "ts": 1786300797.6714728,
+    "message": "Discord: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:discord:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
+  },
+  {
+    "id": "9e90e109-774a-4e0f-8182-88e841af839b",
+    "ts": 1786300798.5516572,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "239e20f4-4b97-45d6-a39f-a3ec88b2eb16",
+    "ts": 1786300799.6565962,
+    "message": "Discord: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:discord:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
+  },
+  {
+    "id": "99e474c0-a49b-4b18-92a5-ce3ce488d29d",
+    "ts": 1786300804.4990742,
+    "message": "Loading bitcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "0ced9faa-d4f3-4997-bd19-a925693a53d4",
+    "ts": 1786300805.656082,
+    "message": "PSN: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:psn:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "PSN"
+      }
+    ]
+  },
+  {
+    "id": "51370279-8248-4a92-9ec3-2666998d5c03",
+    "ts": 1786300806.933617,
+    "message": "Twitch is not connected. If your browser opened for authorization, complete that login\u2014or reconnect in Settings \u2192 Twitch.",
+    "type": "warning",
+    "dedupe_key": "twitch:connect_failed",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "73538a42-ac93-47b2-bede-0903a931c7f2",
+    "ts": 1786300807.656334,
+    "message": "Twitch: Authenticated but Disconnected",
+    "type": "warning",
+    "dedupe_key": "svc:twitch:Authenticated but Disconnected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "ac171147-14c2-4cde-8dff-aa199f11e546",
+    "ts": 1786301153.072079,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "664a86ea-a37f-4a56-ab40-7b1c53a1b377",
+    "ts": 1786301153.0913503,
+    "message": "Discord: Connecting",
+    "type": "warning",
+    "dedupe_key": "svc:discord:Connecting",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
+  },
+  {
+    "id": "67931bd2-5116-418e-906d-29027754fbd1",
+    "ts": 1786301155.0720608,
+    "message": "Discord: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:discord:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
+  },
+  {
+    "id": "f8bfd028-5e7c-48ea-9447-bacf59a2f887",
+    "ts": 1786301161.0716937,
+    "message": "PSN: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:psn:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "PSN"
+      }
+    ]
+  },
+  {
+    "id": "d7890bc6-db23-4146-8dd7-b84329513d54",
+    "ts": 1786301237.7520313,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "67485fe4-fda3-407f-8e0f-b3a097866cc2",
+    "ts": 1786301239.7524848,
+    "message": "Discord: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:discord:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
+  },
+  {
+    "id": "3f2bd786-18cb-48ba-b7bc-2782dfff4bea",
+    "ts": 1786301245.0897753,
+    "message": "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+    "type": "warning",
+    "dedupe_key": null,
+    "actions": []
+  },
+  {
+    "id": "6c370b24-2c45-4aa7-8ade-7c16812878a0",
+    "ts": 1786301245.7522876,
+    "message": "PSN: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:psn:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "PSN"
+      }
+    ]
+  },
+  {
+    "id": "ffa48168-3982-426a-ac48-c2331b5c35fa",
+    "ts": 1786301251.808377,
+    "message": "PSN: Offline",
+    "type": "warning",
+    "dedupe_key": "svc:psn:Offline",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "PSN"
+      }
+    ]
+  },
+  {
+    "id": "547e1b14-22ed-424a-8320-2bf01f72ceea",
+    "ts": 1786301270.2141728,
+    "message": "Loading bitcounter\u2026",
+    "type": "info",
+    "dedupe_key": null,
+    "actions": []
+  }
+]

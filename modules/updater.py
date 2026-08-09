@@ -109,18 +109,14 @@ def _select_os_appropriate_asset(assets: list) -> str:
                     if download_url:
                         logger.info(f"Selected OS-appropriate asset for {current_os}: {asset.get('name')} ({extension})")
                         return download_url
-        
-        # If no OS-specific asset found, try to find any executable format
-        fallback_extensions = [".exe", ".dmg", ".pkg", ".deb", ".rpm", ".appimage", ".msi"]
-        for asset in assets:
-            asset_name = asset.get("name", "").lower()
-            if any(asset_name.endswith(ext) for ext in fallback_extensions):
-                download_url = asset.get("browser_download_url", "")
-                if download_url:
-                    logger.warning(f"No OS-specific asset found for {current_os}, using fallback: {asset.get('name')}")
-                    return download_url
-        
-        logger.warning(f"No appropriate installer asset found for OS: {current_os}")
+
+        # Do not fall back across OS families (e.g. offering a Windows .exe on Linux).
+        logger.warning(
+            "No appropriate installer asset found for OS: %s "
+            "(looked for %s)",
+            current_os,
+            ", ".join(preferred_extensions),
+        )
         return ""
         
     except Exception as e:

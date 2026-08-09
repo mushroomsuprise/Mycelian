@@ -173,10 +173,19 @@ NOTIFICATION_LEAVE_PIN_SCRIPT = """
         boot();
     }
 
-    new MutationObserver(function () {
-        attachLists();
-        ensureTracking();
-    }).observe(document.body, { childList: true, subtree: true });
+    // Qt WebEngine may execute head scripts before <body> exists.
+    (function startBodyObserver() {
+        if (!document.body) {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', startBodyObserver, { once: true });
+            }
+            return;
+        }
+        new MutationObserver(function () {
+            attachLists();
+            ensureTracking();
+        }).observe(document.body, { childList: true, subtree: true });
+    })();
 })();
 </script>
 """

@@ -74,7 +74,10 @@ from .chatbot_core import EventType
 from .chatbot_manager import get_manager as get_chatbot_manager
 from .template_config_parser import match_point_reward_dedicated_template
 from .text_safe import safe_console_str
-from .twitch_eventsub_patch import ensure_channel_chat_notification_watch_streak_patch
+from .twitch_eventsub_patch import (
+    ensure_channel_chat_notification_watch_streak_patch,
+    ensure_hype_train_v2_patch,
+)
 from .twitch_oauth import run_user_authentication, stop_active_oauth
 from .twitch_token_auth import (
     TOKEN_PROACTIVE_REFRESH_BUFFER,
@@ -98,6 +101,7 @@ from .uiwindows.activity_feed import (
 )
 
 ensure_channel_chat_notification_watch_streak_patch()
+ensure_hype_train_v2_patch()
 
 logger = logging.getLogger(__name__)
 
@@ -449,6 +453,8 @@ def _apply_bits_message_to_alert(alert, message_obj) -> None:
 def _hype_train_type_from_event(event) -> Optional[str]:
     """Read Hype Train variant (regular, treasure, golden_kappa) from EventSub payload."""
     train_type = getattr(event, "type", None) or getattr(event, "type_", None)
+    if train_type is None and getattr(event, "is_golden_kappa_train", False):
+        return "golden_kappa"
     if train_type is None:
         return None
     if hasattr(train_type, "value"):
@@ -3554,15 +3560,25 @@ class Twitch_API:
                 await eventsub.listen_channel_points_custom_reward_redemption_add(
                     self.user.id, self.on_points
                 )
-                await eventsub.listen_hype_train_begin(
-                    self.user.id, self.on_hype_train_start
-                )
-                await self.eventsub.listen_hype_train_progress(
-                    self.user.id, self.on_hype_train_progress
-                )
-                await self.eventsub.listen_hype_train_end(
-                    self.user.id, self.on_hype_train_end
-                )
+                # Hype Train v1 was withdrawn by Twitch; isolate so a subscribe
+                # failure cannot abort the rest of EventSub setup.
+                try:
+                    await eventsub.listen_hype_train_begin(
+                        self.user.id, self.on_hype_train_start
+                    )
+                    await eventsub.listen_hype_train_progress(
+                        self.user.id, self.on_hype_train_progress
+                    )
+                    await eventsub.listen_hype_train_end(
+                        self.user.id, self.on_hype_train_end
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to subscribe to Hype Train events "
+                        "(other EventSub topics will continue): %s",
+                        e,
+                        exc_info=True,
+                    )
                 await eventsub.listen_stream_online(
                     self.user.id, self.on_stream_online
                 )

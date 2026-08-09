@@ -974,11 +974,20 @@ ANIMATION_OBSERVER_SCRIPT = """
         }
     });
     
-    // Observe DOM changes
-    mutationObserver.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+    // Observe DOM changes once body exists (Qt WebEngine can run head scripts early)
+    function startMutationObserver() {
+        if (!document.body) {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', startMutationObserver, { once: true });
+            }
+            return;
+        }
+        mutationObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+    startMutationObserver();
     
     // Cleanup on page unload
     window.addEventListener('beforeunload', function() {

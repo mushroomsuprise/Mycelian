@@ -2405,8 +2405,17 @@ SUB_TAB_SEAM_SCRIPT = """
 
     window.addEventListener('resize', updateAll);
 
-    var bodyObs = new MutationObserver(function () { initAll(); });
-    bodyObs.observe(document.body, { childList: true, subtree: true });
+    // Qt WebEngine may execute head scripts before <body> exists.
+    (function startBodyObserver() {
+        if (!document.body) {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', startBodyObserver, { once: true });
+            }
+            return;
+        }
+        var bodyObs = new MutationObserver(function () { initAll(); });
+        bodyObs.observe(document.body, { childList: true, subtree: true });
+    })();
 })();
 </script>
 """

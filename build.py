@@ -834,7 +834,7 @@ def get_data_files():
 
 def get_excluded_modules():
     """Get list of modules to exclude from build (conservative exclusions only)"""
-    return [
+    excludes = [
         # Development tools only (safe to exclude)
         "pytest",
         "black",
@@ -854,11 +854,6 @@ def get_excluded_modules():
         # Version control (safe to exclude)
         "git",
         "mercurial",
-        # Large unused GUI frameworks (safe to exclude)
-        "PyQt5",
-        "PyQt6",
-        "PySide2",
-        "PySide6",
         "tkinter",  # We use NiceGUI, not tkinter
         # Large scientific libraries we don't use (safe to exclude)
         "tensorflow",
@@ -874,6 +869,20 @@ def get_excluded_modules():
         # Specific PIL components we don't need
         "PIL.ImageQt",  # Qt-specific PIL components
     ]
+
+    # Windows/macOS use WebView2/Cocoa; Qt is unused there. On Linux, pywebview
+    # needs PyQt6 (+ WebEngine) for the native window — do not exclude it.
+    if CURRENT_OS in ("windows", "macos"):
+        excludes.extend(
+            [
+                "PyQt5",
+                "PyQt6",
+                "PySide2",
+                "PySide6",
+            ]
+        )
+
+    return excludes
 
 
 def create_runtime_hook():
