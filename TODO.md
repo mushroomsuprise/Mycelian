@@ -1,6 +1,9 @@
 Legacy Templates:
     [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
+Alerts Template:
+    [] - Add toggle option to display usernames of gift sub recipients when the gift sub amount is only to a single person.
+
 FF7 Template:
     [x] - Add row display to the Party segment. Put in the same row as the character name and justified to the right so it sits above the MP number. Font size should match the username size. We should just show a label "FR" for front row and "BR" for back row.
     [x] - Double check materia color mapping, a couple could be wrong (cover maybe?), or it could be slots are being read wrong. someone mentioned there was an error with the first slot a couple of times.
