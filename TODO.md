@@ -4,6 +4,12 @@ Legacy Templates:
 Alerts Template:
     [] - Add toggle option to display usernames of gift sub recipients when the gift sub amount is only to a single person.
 
+Twitch:
+    [] - Create system to filter out new subs from resubs so brand new subs appear, but alerts dont hit twice for resubs.
+
+Chat Template:
+    [] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.
+
 FF7 Template:
     [x] - Add row display to the Party segment. Put in the same row as the character name and justified to the right so it sits above the MP number. Font size should match the username size. We should just show a label "FR" for front row and "BR" for back row.
     [x] - Double check materia color mapping, a couple could be wrong (cover maybe?), or it could be slots are being read wrong. someone mentioned there was an error with the first slot a couple of times.
@@ -11,6 +17,9 @@ FF7 Template:
     [x] - Add character portraits, make this a toggleable option. portraits will be placed in the assets folder and named like "cloud.png". Must be sized to stay within the current party member row height. Note: Until you pass the "Kalm Flashback", Cait Sith and Vincent's character data is actually Young Cloud and Sephiroth.
     [x] - Recheck the recent items setup. it still appears to display the incorrect item occasionally (mapping issue?)
     [x] - Add a setup to the party member segment to display if someone has "sadness" or "fury". See pasted image for how these should be color for font. i want this to be put to the right of the name (inbetween the name and where the row indicator is at)
+    [x] - Make sadness/fury display shrink to "S" and "F" if the space is too small for names to appear properly (if names are ellipsed)
+    [x] - Update limit bar so it appears the blueish color when someone is in sadness. you will need to look up the color for this as i dont have an example
+    [x] - When portraits and row indicators are enabled, shift portraits to show the row indicator instead of the "FR" and "BR" labels. If portraits are turned off, then use the "FR" and "BR" setup. Portraits should be shifted more left if the character is in front row and shifted more right for back row.
 
 YouTube Integration:
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system

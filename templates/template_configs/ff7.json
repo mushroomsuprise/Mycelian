@@ -46,16 +46,16 @@
         {
             "type": "checkbox",
             "id": "ShowPartyRowIndicators",
-            "label": "Show FR / BR row indicators",
+            "label": "Show row indicators",
             "value": true,
-            "description": "Show each party member's front-row or back-row indicator"
+            "description": "Show front/back row: FR/BR text labels when portraits are off; when portraits are on, hide labels and shift each portrait left (front) or right (back)"
         },
         {
             "type": "checkbox",
             "id": "ShowPartyStatusEffects",
             "label": "Show Sadness / Fury",
             "value": true,
-            "description": "Show Sadness or Fury beside each party member's name"
+            "description": "Show Sadness or Fury beside each party member's name (shrinks to S/F when the name would otherwise ellipsis)"
         },
         {
             "type": "checkbox",
@@ -69,7 +69,7 @@
             "id": "ShowPortraits",
             "label": "Show character portraits",
             "value": true,
-            "description": "Show portrait images beside each party row (assets/ff7/*.png)"
+            "description": "Show portrait images beside each party row (assets/ff7/*.png). With row indicators on, portraits also encode front/back row via horizontal shift"
         },
         {
             "type": "number",

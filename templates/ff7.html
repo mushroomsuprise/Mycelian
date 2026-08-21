@@ -47,6 +47,9 @@
             --ff7-mp-fill-white: #ffffff;
             --ff7-limit-fill-top: #f0899e;
             --ff7-limit-fill-bot: #c83a55;
+            --ff7-limit-sad-fill-top: #89d0f0;
+            --ff7-limit-sad-fill-bot: #3a7ec8;
+            --ff7-portrait-row-shift: 12px;
             --ff7-limit-flash-pink: #e85d7a;
             --ff7-limit-flash-yellow: #facc15;
             --ff7-limit-flash-blue: #3b82f6;
@@ -276,14 +279,31 @@
             white-space: nowrap;
             color: var(--ff7-hp-yellow);
         }
-        #panelParty .char-portrait {
+        #panelParty .char-portrait-wrap {
             flex: 0 0 auto;
+            display: none;
+            align-self: center;
+            line-height: 0;
+        }
+        #panelParty .char-portrait-wrap.portrait-wrap-visible {
+            display: block;
+        }
+        #panelParty.portraits-off .char-portrait-wrap {
+            display: none !important;
+        }
+        /* When portraits + row indicators: shift portrait left (front) or right (back). */
+        #panelParty:not(.portraits-off):not(.row-indicators-off) .char-row.row-front .char-portrait-wrap.portrait-wrap-visible {
+            padding-right: var(--ff7-portrait-row-shift, 12px);
+        }
+        #panelParty:not(.portraits-off):not(.row-indicators-off) .char-row.row-back .char-portrait-wrap.portrait-wrap-visible {
+            padding-left: var(--ff7-portrait-row-shift, 12px);
+        }
+        #panelParty .char-portrait {
             width: auto;
             height: var(--party-rotor-max-h, 40px);
             max-height: var(--party-rotor-max-h, 40px);
             object-fit: contain;
             display: none;
-            align-self: center;
         }
         #panelParty .char-portrait.portrait-visible {
             display: block;
@@ -439,6 +459,14 @@
                 var(--ff7-limit-fill-bot) 100%
             );
             transition: width 0.15s linear;
+        }
+
+        .ff7-limitbar.sadness .fill {
+            background: linear-gradient(
+                180deg,
+                var(--ff7-limit-sad-fill-top) 0%,
+                var(--ff7-limit-sad-fill-bot) 100%
+            );
         }
 
         .ff7-limitbar.full .fill {
@@ -1147,10 +1175,11 @@
                 return '<div class="ailment-strip">' + t + '</div>';
             }
             /* bars */
+            var limSad = ff7StatusEffectLabel(actor) === 'Sadness';
             return (
                 '<div class="party-rotor-inner-bars">' +
                     '<div class="bar-cell limit-cell">' +
-                        '<div class="ff7-limitbar' + (limFull ? ' full' : '') + '">' +
+                        '<div class="ff7-limitbar' + (limFull ? ' full' : '') + (limSad ? ' sadness' : '') + '">' +
                             '<div class="fill" style="width:' + limPctVal + '%"></div>' +
                         '</div>' +
                     '</div>' +
@@ -1634,20 +1663,33 @@
 
             document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
             document.getElementById('panelParty').classList.toggle('portraits-off', !asBool(cfg.ShowPortraits, false));
-            document.querySelectorAll('#partyBody .char-party-row').forEach(function (el) {
-                el.classList.toggle('hidden', !asBool(cfg.ShowPartyRowIndicators, true));
+            document.getElementById('panelParty').classList.toggle(
+                'row-indicators-off',
+                !asBool(cfg.ShowPartyRowIndicators, true)
+            );
+            document.querySelectorAll('#partyBody .char-row').forEach(function (row) {
+                ff7SyncPartyRowIndicator(row);
             });
             document.querySelectorAll('#partyBody .char-status-effect').forEach(function (el) {
-                var hasText = !!(el.textContent || '').trim();
+                var full = el.getAttribute('data-status-full') || '';
+                var hasText = !!full;
                 el.classList.toggle('hidden', !asBool(cfg.ShowPartyStatusEffects, true) || !hasText);
+                if (hasText) el.textContent = full;
             });
             if (asBool(cfg.ShowPortraits, false)) {
                 document.querySelectorAll('#partyBody .char-portrait').forEach(function (img) {
                     if (img.getAttribute('data-portrait-ok') === '1') {
                         img.classList.add('portrait-visible');
                     }
+                    ff7SyncPortraitWrap(img);
+                });
+            } else {
+                document.querySelectorAll('#partyBody .char-portrait').forEach(function (img) {
+                    img.classList.remove('portrait-visible');
+                    ff7SyncPortraitWrap(img);
                 });
             }
+            scheduleRefreshPartyStatusAbbrevs();
             document.getElementById('panelStats').classList.toggle('hidden', !recordsPanelVisible());
             document.getElementById('panelBosses').classList.toggle('hidden', !asBool(cfg.ShowBosses, true));
             var epan = document.getElementById('panelEnemies');
@@ -1798,6 +1840,92 @@
             return '';
         }
 
+        function ff7StatusEffectAbbrev(full) {
+            if (full === 'Sadness') return 'S';
+            if (full === 'Fury') return 'F';
+            return full || '';
+        }
+
+        function ff7ApplyPartyRowPosition(row, actor) {
+            var label = ff7PartyRowLabel(actor);
+            row.setAttribute('data-party-row', label);
+            row.classList.toggle('row-front', label === 'FR');
+            row.classList.toggle('row-back', label === 'BR');
+        }
+
+        function ff7PortraitActuallyVisible(img) {
+            return !!(
+                img &&
+                asBool(cfg.ShowPortraits, false) &&
+                img.getAttribute('data-portrait-ok') === '1' &&
+                img.classList.contains('portrait-visible')
+            );
+        }
+
+        function ff7SyncPartyRowIndicator(row) {
+            if (!row) return;
+            var rowLbl = row.querySelector('.char-party-row');
+            if (!rowLbl) return;
+            var indicatorsOn = asBool(cfg.ShowPartyRowIndicators, true);
+            if (!indicatorsOn) {
+                rowLbl.classList.add('hidden');
+                return;
+            }
+            var portrait = row.querySelector('.char-portrait');
+            var usePortraitShift = ff7PortraitActuallyVisible(portrait);
+            rowLbl.classList.toggle('hidden', usePortraitShift);
+        }
+
+        function ff7SyncPortraitWrap(img) {
+            if (!img) return;
+            var wrap = img.parentElement;
+            if (!wrap || wrap.className.indexOf('char-portrait-wrap') === -1) return;
+            var ok = img.getAttribute('data-portrait-ok') === '1' && asBool(cfg.ShowPortraits, false);
+            wrap.classList.toggle('portrait-wrap-visible', ok);
+            var row = wrap.closest ? wrap.closest('.char-row') : null;
+            if (!row) {
+                var p = wrap.parentElement;
+                while (p && (!p.className || p.className.indexOf('char-row') === -1)) p = p.parentElement;
+                row = p;
+            }
+            ff7SyncPartyRowIndicator(row);
+        }
+
+        function refreshPartyStatusAbbrevs() {
+            var root = document.getElementById('partyBody');
+            if (!root) return;
+            root.querySelectorAll('.char-party-name-row').forEach(function (nameRow) {
+                var stEl = nameRow.querySelector('.char-status-effect');
+                if (!stEl || stEl.classList.contains('hidden')) return;
+                var full = stEl.getAttribute('data-status-full') || '';
+                if (!full) return;
+                stEl.textContent = full;
+                var nameEl = nameRow.querySelector('.char-name');
+                if (!nameEl) return;
+                if (nameEl.scrollWidth > nameEl.clientWidth + 0.5) {
+                    stEl.textContent = ff7StatusEffectAbbrev(full);
+                }
+            });
+        }
+
+        function scheduleRefreshPartyStatusAbbrevs() {
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    refreshPartyStatusAbbrevs();
+                });
+            });
+        }
+
+        (function initPartyStatusAbbrevResizeObserver() {
+            var el = document.getElementById('partyBody');
+            if (!el || typeof ResizeObserver === 'undefined') return;
+            if (window._ff7PartyStatusAbbrevRoInit) return;
+            window._ff7PartyStatusAbbrevRoInit = true;
+            new ResizeObserver(function () {
+                refreshPartyStatusAbbrevs();
+            }).observe(el);
+        })();
+
         var FF7_PORTRAIT_BY_ID = {
             0: 'cloud',
             1: 'barrett',
@@ -1823,19 +1951,25 @@
             var stem = ff7PortraitStem(actor);
             img.classList.remove('portrait-visible');
             img.removeAttribute('data-portrait-ok');
+            ff7SyncPortraitWrap(img);
             img.onload = function () {
                 img.setAttribute('data-portrait-ok', '1');
                 if (asBool(cfg.ShowPortraits, false)) {
                     img.classList.add('portrait-visible');
                 }
+                ff7SyncPortraitWrap(img);
+                scheduleRefreshPartyStatusAbbrevs();
             };
             img.onerror = function () {
                 img.classList.remove('portrait-visible');
                 img.removeAttribute('data-portrait-ok');
                 img.removeAttribute('src');
+                ff7SyncPortraitWrap(img);
+                scheduleRefreshPartyStatusAbbrevs();
             };
             if (!stem) {
                 img.removeAttribute('src');
+                ff7SyncPortraitWrap(img);
                 return;
             }
             var next = '/assets/ff7/' + stem + '.png';
@@ -1845,6 +1979,7 @@
                     if (asBool(cfg.ShowPortraits, false)) {
                         img.classList.add('portrait-visible');
                     }
+                    ff7SyncPortraitWrap(img);
                 }
                 return;
             }
@@ -1909,15 +2044,18 @@
                 var stEl = row.querySelector('.char-party-name-row .char-status-effect');
                 if (stEl) {
                     var st = ff7StatusEffectLabel(actor);
+                    stEl.setAttribute('data-status-full', st);
                     stEl.textContent = st;
                     stEl.classList.toggle('hidden', !asBool(cfg.ShowPartyStatusEffects, true) || !st);
                 }
 
+                ff7ApplyPartyRowPosition(row, actor);
                 var rowEl = row.querySelector('.char-party-row');
                 if (rowEl) rowEl.textContent = ff7PartyRowLabel(actor);
 
                 var portrait = row.querySelector('.char-portrait');
                 if (portrait) ff7BindPortrait(portrait, actor);
+                ff7SyncPartyRowIndicator(row);
 
                 var hpCell = row.querySelector('.hp-block .stat-cell.hp-cell');
                 if (hpCell) {
@@ -1944,6 +2082,7 @@
                     if (mpFill) mpFill.style.width = mpPctVal + '%';
                 }
             }
+            scheduleRefreshPartyStatusAbbrevs();
         }
 
         function patchEnemyRowStats(container, enemies) {
@@ -2106,13 +2245,17 @@
 
             var row = document.createElement('div');
             row.className = 'char-row';
+            ff7ApplyPartyRowPosition(row, actor);
 
+            var portraitWrap = document.createElement('div');
+            portraitWrap.className = 'char-portrait-wrap';
             var portrait = document.createElement('img');
             portrait.className = 'char-portrait';
             portrait.alt = '';
             portrait.setAttribute('draggable', 'false');
+            portraitWrap.appendChild(portrait);
             ff7BindPortrait(portrait, actor);
-            row.appendChild(portrait);
+            row.appendChild(portraitWrap);
 
             var partyMain = document.createElement('div');
             partyMain.className = 'char-party-main';
@@ -2130,13 +2273,13 @@
             var stEl = document.createElement('span');
             stEl.className = 'char-status-effect';
             var st = ff7StatusEffectLabel(actor);
+            stEl.setAttribute('data-status-full', st);
             stEl.textContent = st;
             stEl.classList.toggle('hidden', !asBool(cfg.ShowPartyStatusEffects, true) || !st);
             nameRow.appendChild(stEl);
 
             var rowLbl = document.createElement('span');
             rowLbl.className = 'char-party-row';
-            rowLbl.classList.toggle('hidden', !asBool(cfg.ShowPartyRowIndicators, true));
             rowLbl.textContent = ff7PartyRowLabel(actor);
             nameRow.appendChild(rowLbl);
 
@@ -2173,6 +2316,7 @@
             hpMpRow.appendChild(mpBlock);
             partyMain.appendChild(hpMpRow);
             row.appendChild(partyMain);
+            ff7SyncPartyRowIndicator(row);
 
             var rotor = document.createElement('div');
             rotor.className = 'bar-cell party-rotor';
@@ -2180,6 +2324,7 @@
             row.appendChild(rotor);
 
             container.appendChild(row);
+            scheduleRefreshPartyStatusAbbrevs();
         }
 
         function renderEnemyRow(container, actor) {
@@ -2309,6 +2454,10 @@
 
             document.getElementById('panelParty').classList.toggle('hidden', !asBool(cfg.ShowParty, true));
             document.getElementById('panelParty').classList.toggle('portraits-off', !asBool(cfg.ShowPortraits, false));
+            document.getElementById('panelParty').classList.toggle(
+                'row-indicators-off',
+                !asBool(cfg.ShowPartyRowIndicators, true)
+            );
 
             var partyEl = document.getElementById('partyBody');
             if (typeof window._ff7PartyDomKey === 'undefined') {

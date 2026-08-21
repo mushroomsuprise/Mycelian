@@ -48,6 +48,7 @@ from twitchAPI.object.eventsub import (
     ChannelPointsCustomRewardRedemptionAddEvent,
     ChannelRaidEvent,
     ChannelSubscribeEvent,
+    ChannelSubscriptionEndEvent,
     ChannelSubscriptionGiftEvent,
     ChannelSubscriptionMessageEvent,
     ChannelUpdateEvent,
@@ -254,6 +255,162 @@ def build_token_timing_fields(
         "token_refresh_due": until_refresh.total_seconds() <= 0,
         "token_expired": until_expiry.total_seconds() <= 0,
     }
+
+
+
+_NEW_SUB_DEBOUNCE_SECONDS = 2.0
+
+
+def _badge_field(badge, name: str):
+    value = getattr(badge, name, None)
+    if value is None and isinstance(badge, dict):
+        value = badge.get(name)
+    return value
+
+
+def _parse_badge_months(badge) -> Optional[int]:
+    """Parse months from an EventSub chat badge.
+
+    Prefer ``info`` (Twitch: months subscribed for subscriber badges), then ``id``.
+    """
+    for candidate in (_badge_field(badge, "info"), _badge_field(badge, "id")):
+        if candidate is None or candidate == "":
+            continue
+        try:
+            return int(str(candidate).split(",")[0].strip())
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _subscriber_months_from_badges(badges) -> Optional[int]:
+    """Return subscriber-badge months when > 1 (safe definitive returning sub)."""
+    if not badges:
+        return None
+    for badge in badges:
+        if _badge_field(badge, "set_id") != "subscriber":
+            continue
+        months = _parse_badge_months(badge)
+        if months is not None and months > 1:
+            return months
+    return None
+
+
+def _harvest_chat_badges_into_subscriber_registry(
+    badges,
+    *,
+    user_id=None,
+    user_login=None,
+) -> None:
+    """Record ever-subscribed users from ``channel.chat.message`` badges.
+
+    EventSub badge shape: ``{set_id, id, info}``. For ``subscriber``, ``info`` is
+    months subscribed. ``founder`` also means ever-subscribed.
+
+    Month-1 subscriber badges are recorded only when no new-sub debounce is
+    pending for that user, so a brand-new sub who chats within the debounce
+    window does not get falsely suppressed.
+    """
+    if not badges:
+        return
+
+    from .twitch_subscriber_registry import get_subscriber_registry
+
+    registry = get_subscriber_registry()
+    founder = False
+    subscriber_months: Optional[int] = None
+
+    for badge in badges:
+        set_id = _badge_field(badge, "set_id")
+        if set_id == "founder":
+            founder = True
+        elif set_id == "subscriber":
+            months = _parse_badge_months(badge)
+            if months is not None:
+                subscriber_months = (
+                    months
+                    if subscriber_months is None
+                    else max(subscriber_months, months)
+                )
+            elif subscriber_months is None:
+                # Badge present but months unparseable — still a current sub.
+                subscriber_months = 1
+
+    if founder:
+        registry.cancel_pending(user_id)
+        _record_known_subscriber(
+            user_id=user_id,
+            user_login=user_login,
+            source="chat.badge.founder",
+            cumulative_months=subscriber_months,
+        )
+        return
+
+    if subscriber_months is None:
+        return
+
+    if subscriber_months > 1:
+        registry.cancel_pending(user_id)
+        _record_known_subscriber(
+            user_id=user_id,
+            user_login=user_login,
+            source="chat.badge.subscriber",
+            cumulative_months=subscriber_months,
+        )
+        return
+
+    # months == 1: record only when not racing a pending channel.subscribe alert
+    if not registry.has_pending(user_id):
+        _record_known_subscriber(
+            user_id=user_id,
+            user_login=user_login,
+            source="chat.badge.subscriber",
+            cumulative_months=1,
+        )
+
+
+def _record_known_subscriber(
+    user_id=None,
+    user_login=None,
+    *,
+    source: str = "",
+    cumulative_months=None,
+) -> None:
+    try:
+        from .twitch_subscriber_registry import get_subscriber_registry
+
+        get_subscriber_registry().record(
+            user_id=user_id,
+            user_login=user_login,
+            source=source,
+            cumulative_months=cumulative_months,
+        )
+    except Exception as e:
+        logger.debug("Failed to record known subscriber: %s", e)
+
+
+async def _emit_connector_new_sub(data) -> None:
+    """Emit connector event for a confirmed new sub (on_new_sub is not wrapped)."""
+    try:
+        from .connector_core import EventData
+        from .connector_manager import get_manager
+
+        event = data.event
+        message = ""
+        msg_obj = getattr(event, "message", None)
+        if msg_obj is not None:
+            message = getattr(msg_obj, "text", "") or ""
+        event_data = EventData.from_twitch_sub(
+            tier=event.tier,
+            username=event.user_name,
+            message=message,
+            months=1,
+            user_id=event.user_id,
+            is_gift=bool(getattr(event, "is_gift", False)),
+        )
+        await get_manager().add_event(event_data)
+    except Exception as e:
+        logger.error("Error emitting connector new-sub event: %s", e, exc_info=True)
 
 
 class TwitchSessionNotReadyError(Exception):
@@ -1162,6 +1319,16 @@ class Twitch_API:
             logger.debug(
                 f"Badges details: {[f'{badge.set_id}/{badge.id}' for badge in badges]}"
             )
+            # EventSub channel.chat.message badges ({set_id,id,info}) continuously
+            # seed the ever-subscribed registry as chatters talk.
+            try:
+                _harvest_chat_badges_into_subscriber_registry(
+                    badges,
+                    user_id=user_id,
+                    user_login=username,
+                )
+            except Exception as badge_err:
+                logger.debug("Subscriber badge harvest failed: %s", badge_err)
 
         # Extract emotes from fragments and format as traditional emote string
         emotes_string = None
@@ -1459,7 +1626,70 @@ class Twitch_API:
         notice_type = (
             notice_raw.value if hasattr(notice_raw, "value") else str(notice_raw or "")
         )
-        if str(notice_type) != "watch_streak":
+        notice_type_str = str(notice_type)
+
+        # Harvest subscription-related notices into ever-subscribed registry (no alerts).
+        if notice_type_str in {
+            "sub",
+            "resub",
+            "sub_gift",
+            "community_sub_gift",
+            "gift_paid_upgrade",
+            "prime_paid_upgrade",
+            "pay_it_forward",
+            "shared_chat_sub",
+            "shared_chat_resub",
+            "shared_chat_sub_gift",
+            "shared_chat_community_sub_gift",
+            "shared_chat_gift_paid_upgrade",
+            "shared_chat_prime_paid_upgrade",
+            "shared_chat_pay_it_forward",
+        }:
+            try:
+                chatter_id = getattr(ev, "chatter_user_id", None)
+                chatter_login = getattr(ev, "chatter_user_login", None) or getattr(
+                    ev, "chatter_user_name", None
+                )
+                months = None
+                resub_meta = getattr(ev, "resub", None) or getattr(
+                    ev, "shared_chat_resub", None
+                )
+                if resub_meta is not None:
+                    months = getattr(resub_meta, "cumulative_months", None)
+                # Gift recipient id when present on sub_gift notices
+                gift_meta = getattr(ev, "sub_gift", None) or getattr(
+                    ev, "shared_chat_sub_gift", None
+                )
+                if gift_meta is not None:
+                    recip_id = getattr(gift_meta, "recipient_user_id", None)
+                    recip_login = getattr(gift_meta, "recipient_user_login", None) or getattr(
+                        gift_meta, "recipient_user_name", None
+                    )
+                    if recip_id or recip_login:
+                        _record_known_subscriber(
+                            user_id=str(recip_id) if recip_id else None,
+                            user_login=recip_login,
+                            source=f"chat.notification.{notice_type_str}.recipient",
+                        )
+                if chatter_id or chatter_login:
+                    from .twitch_subscriber_registry import get_subscriber_registry
+
+                    if months is not None and int(months) > 1:
+                        get_subscriber_registry().cancel_pending(
+                            str(chatter_id) if chatter_id else None
+                        )
+                    _record_known_subscriber(
+                        user_id=str(chatter_id) if chatter_id else None,
+                        user_login=chatter_login,
+                        source=f"chat.notification.{notice_type_str}",
+                        cumulative_months=int(months) if months is not None else None,
+                    )
+            except Exception as harvest_err:
+                logger.debug(
+                    "Chat notification subscriber harvest failed: %s", harvest_err
+                )
+
+        if notice_type_str != "watch_streak":
             return
 
         watch = getattr(ev, "watch_streak", None)
@@ -1819,6 +2049,21 @@ class Twitch_API:
         user_msg = data.event.message.text if data.event.message else None
         cumulative_months = data.event.cumulative_months or 1  # Default to 1 if None
         current_timestamp = time.time()
+        user_id = str(getattr(data.event, "user_id", "") or "") or None
+        user_login = getattr(data.event, "user_login", None) or username
+
+        from .twitch_subscriber_registry import get_subscriber_registry
+
+        _sub_registry = get_subscriber_registry()
+        _sub_registry.cancel_pending(user_id)
+        _record_known_subscriber(
+            user_id=user_id,
+            user_login=user_login,
+            source="channel.subscription.message",
+            cumulative_months=cumulative_months,
+        )
+        if cumulative_months <= 1:
+            _sub_registry.mark_new_sub_alerted(user_id)
 
         # If this is a resub (cumulative_months > 1), delegate to the resub handler
         if cumulative_months > 1:
@@ -1932,6 +2177,19 @@ class Twitch_API:
         user_msg = data.event.message.text if data.event.message else None
         cumulative_months = data.event.cumulative_months or 1  # Default to 1 if None
         current_timestamp = time.time()
+        user_id = str(getattr(data.event, "user_id", "") or "") or None
+        user_login = getattr(data.event, "user_login", None) or username
+
+        from .twitch_subscriber_registry import get_subscriber_registry
+
+        _sub_registry = get_subscriber_registry()
+        _sub_registry.cancel_pending(user_id)
+        _record_known_subscriber(
+            user_id=user_id,
+            user_login=user_login,
+            source="channel.subscription.message.resub",
+            cumulative_months=cumulative_months,
+        )
 
         # Fetch the appropriate resub alert from the database
         alert = alertutils.fetch_resub_alert(cumulative_months)
@@ -2027,32 +2285,156 @@ class Twitch_API:
         )
 
     async def on_new_sub(self, data: ChannelSubscribeEvent):
-        """Handle channel.subscribe events (subs without a shared chat message)."""
+        """Handle channel.subscribe; alert only for verified first-time subs."""
         self._note_event_received()
-        if getattr(data.event, "is_gift", False):
-            logger.debug(
-                "Skipping channel.subscribe for gift recipient %s (handled via gift sub)",
-                data.event.user_name,
+        event = data.event
+        user_id = str(getattr(event, "user_id", "") or "") or None
+        user_login = getattr(event, "user_login", None) or None
+        username = event.user_name
+        is_gift = bool(getattr(event, "is_gift", False))
+
+        from .twitch_subscriber_registry import get_subscriber_registry
+
+        registry = get_subscriber_registry()
+
+        # Fail closed: never alert until Helix snapshot for this session succeeded.
+        if not is_gift and not registry.is_session_ready():
+            logger.info(
+                "Suppressing channel.subscribe for %s: registry Helix snapshot not ready",
+                username,
+            )
+            _record_known_subscriber(
+                user_id=user_id,
+                user_login=user_login or username,
+                source="channel.subscribe.not_ready",
             )
             return
 
-        logger.debug(f"New subscription from {data.event.user_name}")
+        already_known = registry.is_known(
+            user_id=user_id, user_login=user_login or username
+        )
 
-        if getattr(data.event, "cumulative_months", 1) > 1:
+        if is_gift:
+            _record_known_subscriber(
+                user_id=user_id,
+                user_login=user_login or username,
+                source="channel.subscribe.gift",
+            )
             logger.debug(
-                f"Ignoring new subscription for {data.event.user_name} with {data.event.cumulative_months} cumulative months, handled by subscription_message callback."
+                "Skipping channel.subscribe alert for gift recipient %s",
+                username,
             )
             return
 
-        username = data.event.user_name
-        tier_str = str(data.event.tier)
-        tier = int(tier_str[:-3]) if tier_str else 1  # Default to 1 if tier is weird
-        sub_message = getattr(data.event, "message", None)
+        if already_known:
+            _record_known_subscriber(
+                user_id=user_id,
+                user_login=user_login or username,
+                source="channel.subscribe.known",
+            )
+            logger.info(
+                "Suppressing channel.subscribe for %s: already in ever-subscribed registry",
+                username,
+            )
+            return
+
+        if registry.was_new_sub_alerted_recently(user_id):
+            _record_known_subscriber(
+                user_id=user_id,
+                user_login=user_login or username,
+                source="channel.subscribe.dedup",
+            )
+            logger.info(
+                "Suppressing channel.subscribe for %s: new-sub alert already emitted recently",
+                username,
+            )
+            return
+
+        # Debounce: wait for subscription.message / chat resub that may prove renewal.
+        if not user_id:
+            logger.info(
+                "Suppressing channel.subscribe for %s: missing user_id",
+                username,
+            )
+            _record_known_subscriber(
+                user_login=user_login or username,
+                source="channel.subscribe.missing_id",
+            )
+            return
+
+        async def _confirm_and_emit():
+            try:
+                await asyncio.sleep(_NEW_SUB_DEBOUNCE_SECONDS)
+            except asyncio.CancelledError:
+                logger.debug(
+                    "Pending new-sub alert for %s cancelled (likely message/resub path)",
+                    username,
+                )
+                raise
+
+            # Re-check after wait (on_sub / chat may have recorded or alerted).
+            if registry.was_new_sub_alerted_recently(user_id):
+                logger.info(
+                    "Skipping delayed channel.subscribe for %s: already alerted via message path",
+                    username,
+                )
+                _record_known_subscriber(
+                    user_id=user_id,
+                    user_login=user_login or username,
+                    source="channel.subscribe.after_wait_dedup",
+                )
+                return
+
+            if registry.is_known(user_id=user_id, user_login=user_login or username):
+                logger.info(
+                    "Skipping delayed channel.subscribe for %s: became known during debounce",
+                    username,
+                )
+                return
+
+            await self._emit_verified_new_sub(data)
+            registry.clear_pending(user_id)
+
+        task = asyncio.create_task(_confirm_and_emit())
+        registry.store_pending_task(user_id, task)
+        logger.debug(
+            "Debouncing channel.subscribe for %s (%.1fs)",
+            username,
+            _NEW_SUB_DEBOUNCE_SECONDS,
+        )
+
+    async def _emit_verified_new_sub(self, data: ChannelSubscribeEvent):
+        """Emit alert/feed/stats/chatbot/connector for a verified first-time sub."""
+        event = data.event
+        user_id = str(getattr(event, "user_id", "") or "") or None
+        user_login = getattr(event, "user_login", None)
+        username = event.user_name
+
+        from .twitch_subscriber_registry import get_subscriber_registry
+
+        registry = get_subscriber_registry()
+        if registry.was_new_sub_alerted_recently(user_id):
+            logger.info(
+                "Skipping verified new-sub emit for %s: already alerted",
+                username,
+            )
+            return
+
+        # Mark known + alerted before emitting to collapse races.
+        _record_known_subscriber(
+            user_id=user_id,
+            user_login=user_login or username,
+            source="channel.subscribe.verified_new",
+        )
+        registry.mark_new_sub_alerted(user_id)
+
+        tier_str = str(event.tier)
+        tier = int(tier_str[:-3]) if tier_str else 1
+        sub_message = getattr(event, "message", None)
         user_msg = getattr(sub_message, "text", None) if sub_message else None
         current_timestamp = time.time()
 
-        # Handle as new subscription
-        logger.debug(f"Processing as new sub: {username}")
+        logger.info("Verified new subscription from %s (channel.subscribe)", username)
         alert = alertutils.fetch_sub_alert(1)
         if alert is None:
             logger.warning("No sub alert configured, using default for %s", username)
@@ -2063,20 +2445,17 @@ class Twitch_API:
         alert.tier = tier
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
-        alert.message = user_msg or ""  # Use empty string if None
+        alert.message = user_msg or ""
         alert.emotes = _subscription_message_emotes(sub_message)
 
         _queue_twitch_alert(alert)
 
-        # Track new subscription statistics
         try:
             stats_manager = statistics_manager.get_statistics_manager()
             stats_manager.increment_new_subs(username=username)
-            logger.debug(f"Tracked new subscription statistics for {username}")
         except Exception as e:
             logger.error(f"Error tracking new subscription statistics: {e}")
 
-        # Send instant alert
         try:
             if (
                 hasattr(web_engine, "web_engine_instance")
@@ -2092,19 +2471,17 @@ class Twitch_API:
                     "timestamp": alert.timestamp,
                 }
                 _send_twitch_instant_alert(alert_data)
-                logger.debug(f"Sent instant alert for sub: {username}")
         except Exception as e:
             logger.error(
                 f"Error sending instant alert for sub: {str(e)}", exc_info=True
             )
 
-        # Process through chatbot system
         try:
             chatbot_manager = get_chatbot_manager()
             sub_data = {
                 "username": username,
                 "tier": tier,
-                "months": 1,  # New subscription is always 1 month
+                "months": 1,
                 "message": user_msg,
                 "timestamp": alert.timestamp,
                 "source": "twitch",
@@ -2112,25 +2489,19 @@ class Twitch_API:
             chatbot_response = chatbot_manager.process_event(
                 EventType.SUBSCRIPTION, sub_data
             )
-
             if chatbot_response:
                 try:
                     _dispatch_chatbot_event_response(chatbot_response)
-                    logger.debug(
-                        f"Chatbot responded to subscription from {username}: {chatbot_response}"
-                    )
                 except Exception as send_error:
                     logger.error(
                         f"Error sending chatbot subscription response: {str(send_error)}"
                     )
-
         except Exception as e:
             logger.error(
                 f"Error processing subscription through chatbot: {str(e)}",
                 exc_info=True,
             )
 
-        # Add to activity feed for new subscription
         _add_twitch_alert_to_feed(
             alert_type="Sub",
             message=f"{username} subscribed (Tier {tier})!",
@@ -2139,6 +2510,33 @@ class Twitch_API:
             tier=tier,
             user_message=user_msg,
             alert_id=alert.alert_id,
+        )
+
+        await _emit_connector_new_sub(data)
+
+
+    async def on_subscription_end(self, data: ChannelSubscriptionEndEvent):
+        """Keep lapsed subscribers in the ever-subscribed registry (no alert)."""
+        self._note_event_received()
+        event = data.event
+        user_id = str(getattr(event, "user_id", "") or "") or None
+        user_login = getattr(event, "user_login", None) or getattr(
+            event, "user_name", None
+        )
+        _record_known_subscriber(
+            user_id=user_id,
+            user_login=user_login,
+            source="channel.subscription.end",
+        )
+        try:
+            from .twitch_subscriber_registry import get_subscriber_registry
+
+            get_subscriber_registry().cancel_pending(user_id)
+        except Exception:
+            pass
+        logger.debug(
+            "Recorded subscription end for %s (kept in ever-subscribed registry)",
+            user_login or user_id,
         )
 
     async def on_sub_gift(self, data: ChannelSubscriptionGiftEvent):
@@ -3453,6 +3851,39 @@ class Twitch_API:
             except Exception as mod_err:
                 logger.debug("Moderator cache refresh on connect: %s", mod_err)
 
+            # Seed + Helix-sync ever-subscribed registry (gates channel.subscribe alerts)
+            try:
+                from .twitch_subscriber_registry import get_subscriber_registry
+
+                sub_registry = get_subscriber_registry()
+                sub_registry.reset_session_ready()
+                try:
+                    sub_registry.seed_from_statistics()
+                except Exception as seed_err:
+                    logger.debug("Subscriber registry stats seed failed: %s", seed_err)
+                for _ in range(20):
+                    if is_twitch_api_ready():
+                        ok = await sub_registry.sync_from_helix()
+                        if ok:
+                            logger.info(
+                                "Subscriber registry Helix snapshot ready for new-sub filtering"
+                            )
+                        else:
+                            logger.warning(
+                                "Subscriber registry Helix snapshot failed; "
+                                "channel.subscribe alerts will stay suppressed"
+                            )
+                        break
+                    await asyncio.sleep(0.25)
+                else:
+                    logger.debug(
+                        "Subscriber registry Helix sync deferred: Twitch HTTP session not ready"
+                    )
+            except Exception as sub_reg_err:
+                logger.debug(
+                    "Subscriber registry sync on connect failed: %s", sub_reg_err
+                )
+
             if (
                 is_shutdown_in_progress()
                 or self._connection_epoch != epoch
@@ -3537,19 +3968,35 @@ class Twitch_API:
                     )
                     raise
 
-                # Subscribe to channel subscription events
-                # try:
-                #     await eventsub.listen_channel_subscribe(
-                #         self.user.id, self.on_new_sub
-                #     )
-                #     logger.debug(
-                #         "Successfully subscribed to channel subscription events"
-                #     )
-                # except Exception as e:
-                #     logger.error(
-                #         f"Failed to subscribe to channel subscription events: {str(e)}"
-                #     )
-                #     raise
+                # Subscribe to channel subscription events (filtered to true first-timers)
+                try:
+                    await eventsub.listen_channel_subscribe(
+                        self.user.id, self.on_new_sub
+                    )
+                    logger.debug(
+                        "Successfully subscribed to channel subscription events"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to subscribe to channel subscription events: {str(e)}"
+                    )
+                    raise
+
+                # Keep ever-subscribed registry warm when subs lapse
+                try:
+                    await eventsub.listen_channel_subscription_end(
+                        self.user.id, self.on_subscription_end
+                    )
+                    logger.debug(
+                        "Successfully subscribed to channel subscription end events"
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to subscribe to channel subscription end events "
+                        "(other EventSub topics will continue): %s",
+                        e,
+                        exc_info=True,
+                    )
 
                 await eventsub.listen_channel_subscription_gift(
                     self.user.id, self.on_sub_gift
