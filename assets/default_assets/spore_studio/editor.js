@@ -336,6 +336,11 @@
         socket: null,
         previewToken: "",
         previewZoomPct: 100,
+        previewWidth: null,
+        previewHeight: null,
+        previewSizeSource: "",
+        previewSizeHint: "",
+        _suppressPreviewSizeInput: false,
         idCounter: 0,
         dirty: false,
         assetSnapshot: null,
@@ -5474,11 +5479,17 @@
                 state.selectedId = null;
                 state.history = [];
                 state.future = [];
+                state.previewWidth = null;
+                state.previewHeight = null;
+                state.previewSizeSource = "";
+                state.previewSizeHint = "";
                 pushHistory();
                 renderAll();
                 renderPreviewMockToolbar();
                 refreshAssetsForCurrent();
-                refreshPreview();
+                fetchPreviewResolution().then(function () {
+                    refreshPreview();
+                });
                 setDirty(false);
                 if (model.legacy) {
                     toast("Legacy template (advanced mode)", "info");
@@ -5673,6 +5684,17 @@
     function previewDesignSize() {
         var dw = 800;
         var dh = 200;
+        if (state.previewWidth != null && state.previewHeight != null) {
+            dw = Math.max(
+                320,
+                parseInt(state.previewWidth, 10) || 800
+            );
+            dh = Math.max(
+                240,
+                parseInt(state.previewHeight, 10) || 200
+            );
+            return { width: dw, height: dh };
+        }
         if (state.model && state.model.design) {
             dw = Math.max(
                 DESIGN_CANVAS_MIN_PX,
@@ -5684,6 +5706,83 @@
             );
         }
         return { width: dw, height: dh };
+    }
+
+    function syncPreviewSizeInputs() {
+        var wIn = $("#ss-preview-size-w");
+        var hIn = $("#ss-preview-size-h");
+        var hint = $("#ss-preview-size-hint");
+        var size = previewDesignSize();
+        state._suppressPreviewSizeInput = true;
+        if (wIn) { wIn.value = String(size.width); }
+        if (hIn) { hIn.value = String(size.height); }
+        state._suppressPreviewSizeInput = false;
+        if (hint) {
+            if (state.previewSizeSource === "obs" && state.previewSizeHint) {
+                hint.textContent = "From OBS: " + state.previewSizeHint;
+            } else if (state.previewSizeSource === "obs") {
+                hint.textContent = "From OBS";
+            } else if (state.previewSizeSource === "stored") {
+                hint.textContent = "Saved preview size";
+            } else {
+                hint.textContent = "";
+            }
+        }
+    }
+
+    function fetchPreviewResolution() {
+        if (!state.model || !state.model.template_name) {
+            return Promise.resolve();
+        }
+        var key = state.model.template_name;
+        var design = state.model.design || {};
+        var qs =
+            "?key=" + encodeURIComponent(key) +
+            "&route=" + encodeURIComponent(key) +
+            "&design_width=" + encodeURIComponent(design.width || 800) +
+            "&design_height=" + encodeURIComponent(design.height || 200);
+        return fetch("/api/template-preview-settings/resolution" + qs)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.ok) { return; }
+                if (!state.model || state.model.template_name !== key) { return; }
+                state.previewWidth = parseInt(data.width, 10) || null;
+                state.previewHeight = parseInt(data.height, 10) || null;
+                state.previewSizeSource = data.source || "";
+                state.previewSizeHint = data.obs_source_name || "";
+                syncPreviewSizeInputs();
+                if (previewDialogOpen()) { applyPreviewLayout(); }
+            })
+            .catch(function () { /* best-effort */ });
+    }
+
+    function savePreviewResolution(width, height) {
+        if (!state.model || !state.model.template_name) {
+            return Promise.resolve();
+        }
+        return fetch("/api/template-preview-settings/resolution", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                key: state.model.template_name,
+                width: width,
+                height: height
+            })
+        }).catch(function () { /* best-effort */ });
+    }
+
+    function clearPreviewResolution() {
+        if (!state.model || !state.model.template_name) {
+            return Promise.resolve();
+        }
+        return fetch("/api/template-preview-settings/resolution", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                key: state.model.template_name,
+                clear: true
+            })
+        }).catch(function () { /* best-effort */ });
     }
 
     function applyPreviewLayout() {
@@ -5708,20 +5807,52 @@
         if (zoomRange && String(zoomRange.value) !== String(Math.round(zoom))) {
             zoomRange.value = String(Math.round(zoom));
         }
+        syncPreviewSizeInputs();
     }
 
     function setupPreviewZoom() {
         var zoomRange = $("#ss-preview-zoom-range");
         var zoomReset = $("#ss-preview-zoom-reset");
-        if (!zoomRange) { return; }
-        zoomRange.addEventListener("input", function () {
-            state.previewZoomPct = parseInt(zoomRange.value, 10) || 100;
-            applyPreviewLayout();
-        });
+        var wIn = $("#ss-preview-size-w");
+        var hIn = $("#ss-preview-size-h");
+        var sizeReset = $("#ss-preview-size-reset");
+        if (zoomRange) {
+            zoomRange.addEventListener("input", function () {
+                state.previewZoomPct = parseInt(zoomRange.value, 10) || 100;
+                applyPreviewLayout();
+            });
+        }
         if (zoomReset) {
             zoomReset.addEventListener("click", function () {
                 state.previewZoomPct = 100;
                 applyPreviewLayout();
+            });
+        }
+        function onSizeInput() {
+            if (state._suppressPreviewSizeInput) { return; }
+            var w = parseInt(wIn && wIn.value, 10);
+            var h = parseInt(hIn && hIn.value, 10);
+            if (!isFinite(w) || !isFinite(h) || w < 320 || h < 240) { return; }
+            w = Math.min(7680, w);
+            h = Math.min(4320, h);
+            state.previewWidth = w;
+            state.previewHeight = h;
+            state.previewSizeSource = "stored";
+            state.previewSizeHint = "";
+            savePreviewResolution(w, h);
+            applyPreviewLayout();
+        }
+        if (wIn) { wIn.addEventListener("change", onSizeInput); }
+        if (hIn) { hIn.addEventListener("change", onSizeInput); }
+        if (sizeReset) {
+            sizeReset.addEventListener("click", function () {
+                clearPreviewResolution().then(function () {
+                    state.previewWidth = null;
+                    state.previewHeight = null;
+                    state.previewSizeSource = "";
+                    state.previewSizeHint = "";
+                    return fetchPreviewResolution();
+                });
             });
         }
     }
@@ -5730,8 +5861,10 @@
         var dlg = $("#ss-preview-dialog");
         if (!dlg) { return; }
         dlg.removeAttribute("hidden");
-        applyPreviewLayout();
-        refreshPreview(true);
+        fetchPreviewResolution().then(function () {
+            applyPreviewLayout();
+            refreshPreview(true);
+        });
     }
 
     function closePreviewDialog() {

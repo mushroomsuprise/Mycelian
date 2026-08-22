@@ -26,6 +26,7 @@ SOFTWARE.
 import asyncio
 import copy
 import dataclasses  # Added for converting PSNData to dict
+import errno
 import faulthandler
 import glob
 import json
@@ -99,6 +100,83 @@ from .template_log import (
 from .theme_manager import generate_css_variables, get_theme_manager
 
 logger = logging.getLogger(__name__)
+
+# Windows WSAEADDRINUSE (not always exposed as errno.EADDRINUSE on all builds).
+_WIN_EADDRINUSE = 10048
+_FOREIGN_PORT_WAIT_POLL_SEC = 5.0
+_FOREIGN_PORT_RECOVERY_SEC = 15.0
+
+
+def _is_addr_in_use(exc: BaseException) -> bool:
+    """True for bind failures: macOS errno 48, Linux 98, Windows 10048, EADDRINUSE text."""
+    if isinstance(exc, OSError):
+        if exc.errno in (errno.EADDRINUSE, _WIN_EADDRINUSE):
+            return True
+        if getattr(exc, "winerror", None) == _WIN_EADDRINUSE:
+            return True
+    msg = str(exc).upper()
+    return (
+        "10048" in msg
+        or "EADDRINUSE" in msg
+        or "ADDRESS ALREADY IN USE" in msg
+        or "[ERRNO 48]" in msg
+        or "ERRNO 48" in msg
+    )
+
+
+def _process_cmdline(pid: int) -> str:
+    """Best-effort command line for *pid* (empty string if unavailable)."""
+    try:
+        if sys.platform == "win32":
+            out = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+                check=False,
+            )
+            return (out.stdout or "").strip()
+        if sys.platform == "darwin":
+            out = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "command="],
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+                check=False,
+            )
+            return (out.stdout or "").strip()
+        # Linux and other POSIX
+        proc_cmdline = Path(f"/proc/{pid}/cmdline")
+        if proc_cmdline.is_file():
+            raw = proc_cmdline.read_bytes().replace(b"\x00", b" ").decode(
+                "utf-8", errors="replace"
+            )
+            return raw.strip()
+        out = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "args="],
+            capture_output=True,
+            text=True,
+            timeout=3.0,
+            check=False,
+        )
+        return (out.stdout or "").strip()
+    except Exception:
+        return ""
+
+
+def _cmdline_looks_like_mycelian(cmdline: str) -> bool:
+    """True when *cmdline* is clearly this app (not Control Center / AirPlay)."""
+    if not cmdline:
+        return False
+    lower = cmdline.lower()
+    # Explicit denials for known macOS system holders of port 5000.
+    if "controlce" in lower or "control center" in lower:
+        return False
+    if "airplay" in lower:
+        return False
+    return "mycelian" in lower or (
+        "main.py" in lower and ("python" in lower or "uv " in lower or "uv.exe" in lower)
+    )
 
 
 def _dynamic_counter_control_default_data(element: Dict[str, Any]) -> Dict[str, Any]:
@@ -246,13 +324,10 @@ _DEMO_ALERT_PRESETS = (
 )
 
 # Snippet appended to a template's HTML response when served in preview mode
-# (i.e. with ``__preview_token``). Forces elements opted-in via the
-# ``mycelian-preview-show`` CSS class to remain visible in the previewer
-# even when the template's normal data-driven logic would hide them
-# (e.g. FF7 enemy panel when no game is attached, Spotify panel when
-# nothing is playing). The override is "display only" — opacity / visibility
-# / animation states are intentionally untouched so entrance fades and
-# legitimate transient UI keep working.
+# (i.e. with ``__preview_token``). Provides preview chrome background, sound
+# mute, ``loadTemplateConfig`` refresh hooks, and socket registration.
+# Visibility must follow the template's normal config/data logic so preview
+# matches OBS — do not force-show toggled-off panels.
 #
 # Real OBS overlays never receive this snippet (no preview token, no
 # cookie, no injection).
@@ -308,51 +383,6 @@ body {
       return origPlay.apply(this, arguments);
     };
   })();
-  var SEL = ".mycelian-preview-show";
-  function unhide(el) {
-    if (!el || !el.classList) { return; }
-    if (el.classList.contains("hidden")) { el.classList.remove("hidden"); }
-    if (el.style && el.style.display === "none") {
-      el.style.removeProperty("display");
-    }
-  }
-  function bindAttrObserver(el, attrObs) {
-    if (!el || el.__mycelianPreviewBound) { return; }
-    el.__mycelianPreviewBound = true;
-    attrObs.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
-  }
-  function init() {
-    var attrObs = new MutationObserver(function (muts) {
-      for (var i = 0; i < muts.length; i++) {
-        var t = muts[i].target;
-        if (t && t.matches && t.matches(SEL)) { unhide(t); }
-      }
-    });
-    document.querySelectorAll(SEL).forEach(function (el) {
-      unhide(el);
-      bindAttrObserver(el, attrObs);
-    });
-    var treeObs = new MutationObserver(function (muts) {
-      for (var i = 0; i < muts.length; i++) {
-        var added = muts[i].addedNodes;
-        for (var j = 0; j < added.length; j++) {
-          var n = added[j];
-          if (!n || n.nodeType !== 1) { continue; }
-          if (n.matches && n.matches(SEL)) {
-            unhide(n);
-            bindAttrObserver(n, attrObs);
-          }
-          if (n.querySelectorAll) {
-            n.querySelectorAll(SEL).forEach(function (c) {
-              unhide(c);
-              bindAttrObserver(c, attrObs);
-            });
-          }
-        }
-      }
-    });
-    treeObs.observe(document.documentElement, { childList: true, subtree: true });
-  }
   var __mycelianTemplateLoadTemplateConfig =
     typeof loadTemplateConfig === "function" ? loadTemplateConfig : null;
   function mycelianSyncStylesFromPreviewHtml(html) {
@@ -428,11 +458,6 @@ body {
         sock.emit("mycelian_preview_client_ready");
       } catch (err) {}
     }, 50);
-  }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
   }
   attachPreviewSocketHooks();
 })();
@@ -1308,6 +1333,127 @@ class WebEngine:
                     "Spore Studio preview release error: %s",
                     e,
                     exc_info=True,
+                )
+                return (
+                    {"error": str(e)},
+                    500,
+                    {"Content-Type": "application/json"},
+                )
+
+        @self.app.route(
+            "/api/template-preview-settings/resolution", methods=["GET", "POST"]
+        )
+        def template_preview_resolution_api():
+            """Get/set per-template preview W×H; GET also tries OBS browser-source match."""
+            try:
+                from .template_preview_settings import (
+                    clear_template_preview_resolution,
+                    get_template_preview_resolution,
+                    set_template_preview_resolution,
+                )
+
+                if request.method == "GET":
+                    key = (request.args.get("key") or "").strip()
+                    route = (request.args.get("route") or key).strip()
+                    design_w = request.args.get("design_width")
+                    design_h = request.args.get("design_height")
+                    if not key:
+                        return (
+                            {"error": "key is required"},
+                            400,
+                            {"Content-Type": "application/json"},
+                        )
+                    width = height = None
+                    source = "estimate"
+                    obs_name = ""
+                    try:
+                        from .obs_service import obs_service
+
+                        port = int(getattr(self, "port", 5000) or 5000)
+                        matched = obs_service.lookup_browser_source_size(
+                            route or key, port
+                        )
+                        if isinstance(matched, dict):
+                            width = int(matched["width"])
+                            height = int(matched["height"])
+                            source = "obs"
+                            obs_name = str(matched.get("source_name") or "")
+                    except Exception as e:
+                        logger.debug(
+                            "Preview resolution OBS lookup skipped: %s", e
+                        )
+                    if width is None:
+                        stored = get_template_preview_resolution(key)
+                        if stored is not None:
+                            width, height = stored
+                            source = "stored"
+                    if width is None:
+                        try:
+                            width = (
+                                int(float(design_w))
+                                if design_w not in (None, "")
+                                else 800
+                            )
+                            height = (
+                                int(float(design_h))
+                                if design_h not in (None, "")
+                                else 200
+                            )
+                        except (TypeError, ValueError):
+                            width, height = 800, 200
+                        source = "estimate"
+                    return (
+                        {
+                            "ok": True,
+                            "key": key,
+                            "width": int(width),
+                            "height": int(height),
+                            "source": source,
+                            "obs_source_name": obs_name,
+                        },
+                        200,
+                        {"Content-Type": "application/json"},
+                    )
+
+                payload = request.get_json(silent=True) or {}
+                key = str(payload.get("key") or "").strip()
+                if not key:
+                    return (
+                        {"error": "key is required"},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                if payload.get("clear"):
+                    clear_template_preview_resolution(key)
+                    return (
+                        {"ok": True, "cleared": True},
+                        200,
+                        {"Content-Type": "application/json"},
+                    )
+                ok = set_template_preview_resolution(
+                    key, payload.get("width"), payload.get("height")
+                )
+                if not ok:
+                    return (
+                        {"error": "Invalid width/height"},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                stored = get_template_preview_resolution(key)
+                return (
+                    {
+                        "ok": True,
+                        "key": key,
+                        "width": stored[0] if stored else None,
+                        "height": stored[1] if stored else None,
+                        "source": "stored",
+                    },
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error(
+                    "template preview resolution API error: %s", e, exc_info=True
                 )
                 return (
                     {"error": str(e)},
@@ -2390,6 +2536,7 @@ class WebEngine:
         self._supervisor_thread: Optional[threading.Thread] = None
         self._restart_giveup_notified = False
         self._restart_in_progress = False
+        self._foreign_port_wait_active = False
         self._last_run_error: Optional[str] = None
         self._server_started_at: Optional[float] = None
 
@@ -3389,6 +3536,9 @@ class WebEngine:
             if is_shutdown_in_progress():
                 return
             try:
+                if self._foreign_port_wait_active:
+                    time.sleep(self._SUPERVISOR_POLL_SEC)
+                    continue
                 thread_alive = self._thread_alive()
                 if self._is_zombie_thread():
                     self.request_restart(
@@ -3577,8 +3727,27 @@ class WebEngine:
             logger.warning("Could not extract port %s holder PID: %s", self.port, e)
         return None
 
+    def _is_own_overlay_pid(self, pid: int) -> bool:
+        """Allow terminate only for this process or a leftover Mycelian overlay.
+
+        Never treat macOS Control Center / AirPlay (ControlCe) or other foreign
+        apps as safe to kill — even if they hold port 5000.
+        """
+        if pid == os.getpid():
+            return True
+        # A live Mycelian /api/health response means our overlay still owns the port.
+        if self._probe_health_endpoint():
+            return True
+        cmdline = _process_cmdline(pid)
+        if _cmdline_looks_like_mycelian(cmdline):
+            return True
+        return False
+
     def _try_terminate_stale_port_holder(self) -> bool:
-        """Terminate a foreign process still holding our port after stop."""
+        """Terminate a leftover Mycelian process still holding our port after stop.
+
+        Foreign holders (e.g. macOS AirPlay Receiver / ControlCe) are never killed.
+        """
         pid = self._extract_listening_pid()
         if pid is None:
             logger.warning(
@@ -3596,8 +3765,16 @@ class WebEngine:
             self._close_listener()
             self._join_known_server_threads(join_timeout=5.0)
             return not self._port_is_open()
+        if not self._is_own_overlay_pid(pid):
+            logger.warning(
+                "Port %s held by foreign process %s; will not terminate it",
+                self.port,
+                pid,
+            )
+            self._log_port_holder_hint()
+            return False
         logger.warning(
-            "Attempting to terminate stale process %s holding port %s",
+            "Attempting to terminate stale Mycelian process %s holding port %s",
             pid,
             self.port,
         )
@@ -3637,10 +3814,19 @@ class WebEngine:
         try:
             from .notification_engine import notify_critical
 
-            notify_critical(
+            message = (
                 f"The overlay server could not bind to port {self.port} ({context}). "
-                "OBS browser sources and alerts may not work until you restart Mycelian "
-                "or close the other application using that port.",
+                "OBS browser sources and alerts may not work until the other "
+                "application releases that port. Mycelian will keep running and "
+                "retry automatically."
+            )
+            if sys.platform == "darwin":
+                message += (
+                    " On macOS, disable AirPlay Receiver in System Settings → "
+                    "General → AirDrop & Handoff."
+                )
+            notify_critical(
+                message,
                 dedupe_key=f"web_engine:port_conflict:{context}",
                 dedupe_cooldown_sec=120.0,
             )
@@ -3648,7 +3834,7 @@ class WebEngine:
             logger.debug("WebEngine port conflict notification failed: %s", e)
 
     def prepare_port_for_startup(self) -> None:
-        """Release a stale listener before the first WebEngine bind."""
+        """Release a stale Mycelian listener before the first WebEngine bind."""
         if not self._port_is_open():
             return
 
@@ -3670,7 +3856,7 @@ class WebEngine:
             logger.warning(
                 "Port %s is in use by another application (not Mycelian). "
                 "The overlay server may fail to bind. On macOS, disable AirPlay "
-                "Receiver in System Settings or change the WebEngine port.",
+                "Receiver in System Settings → General → AirDrop & Handoff.",
                 self.port,
             )
             return
@@ -3683,7 +3869,12 @@ class WebEngine:
             )
 
     def _prepare_port_for_restart(self) -> None:
-        """Release or validate port 5000 before binding a new server thread."""
+        """Release or validate port 5000 before binding a new server thread.
+
+        Only aggressive-stop / terminate when Mycelian's own /api/health is
+        still serving. Foreign holders are left alone; the wait/retry path
+        binds once the port is free.
+        """
         if not self._port_is_open():
             return
         if self._probe_health_endpoint():
@@ -3692,16 +3883,81 @@ class WebEngine:
                 self.port,
             )
             self._aggressive_stop()
-        else:
+            if self._port_is_open():
+                self._try_terminate_stale_port_holder()
+            self._wait_for_port_free(timeout=8.0)
+            return
+
+        self._log_port_holder_hint()
+        logger.warning(
+            "Port %s is open but health probe failed; not terminating foreign holder. "
+            "On macOS, disable AirPlay Receiver if Control Center holds the port.",
+            self.port,
+        )
+
+    def _schedule_foreign_port_wait(self) -> None:
+        """Background wait until port 5000 is free, then bind (no restart budget)."""
+        from .shutdown import is_shutdown_in_progress
+
+        if is_shutdown_in_progress():
+            return
+        with self._restart_lock:
+            if self._foreign_port_wait_active:
+                return
+            self._foreign_port_wait_active = True
+        self._notify_port_conflict("foreign-holder")
+        threading.Thread(
+            target=self._foreign_port_wait_loop,
+            name="WebEnginePortWait",
+            daemon=True,
+        ).start()
+
+    def _foreign_port_wait_loop(self) -> None:
+        """Poll until a foreign holder releases port 5000, then start the overlay."""
+        from .shutdown import is_shutdown_in_progress
+
+        try:
             logger.warning(
-                "Port %s is open but health probe failed; attempting aggressive stop",
+                "WebEngine waiting for port %s to become free (foreign holder); "
+                "overlay will start automatically when available",
                 self.port,
             )
-            self._log_port_holder_hint()
-            self._aggressive_stop()
-        if self._port_is_open():
-            self._try_terminate_stale_port_holder()
-        self._wait_for_port_free(timeout=8.0)
+            while not is_shutdown_in_progress():
+                if self._is_healthy():
+                    return
+                if not self._port_is_open():
+                    try:
+                        self._start_server_thread()
+                    except Exception as e:
+                        logger.warning(
+                            "WebEngine port-wait bind failed: %s", e, exc_info=True
+                        )
+                        time.sleep(_FOREIGN_PORT_WAIT_POLL_SEC)
+                        continue
+                    recovery_deadline = time.time() + _FOREIGN_PORT_RECOVERY_SEC
+                    while time.time() < recovery_deadline:
+                        if is_shutdown_in_progress():
+                            return
+                        time.sleep(1.0)
+                        if self._is_healthy():
+                            logger.warning(
+                                "WebEngine bound to port %s after foreign holder released it",
+                                self.port,
+                            )
+                            with self._restart_lock:
+                                self._restart_attempts = 0
+                                self._restart_giveup_notified = False
+                            self._last_run_error = None
+                            self._notify_restart_recovered()
+                            return
+                    logger.warning(
+                        "WebEngine port-wait: bind attempted but health not confirmed; "
+                        "will keep waiting"
+                    )
+                time.sleep(_FOREIGN_PORT_WAIT_POLL_SEC)
+        finally:
+            with self._restart_lock:
+                self._foreign_port_wait_active = False
 
     def _do_restart(self, reason: str, attempt: int) -> None:
         logger.error("WebEngine auto-restart (attempt %s): %s", attempt, reason)
@@ -3722,6 +3978,21 @@ class WebEngine:
 
             self._prepare_port_for_restart()
 
+            # Foreign holder still on the port: do not burn remaining restart
+            # attempts; hand off to the wait/retry loop instead.
+            if self._port_is_open() and not self._probe_health_endpoint():
+                logger.error(
+                    "WebEngine restart: port %s held by foreign process; "
+                    "switching to wait/retry (not counting toward restart limit)",
+                    self.port,
+                )
+                self._last_run_error = f"port {self.port} held by foreign process"
+                with self._restart_lock:
+                    # Refund this attempt — foreign holders are not our failure.
+                    self._restart_attempts = max(0, self._restart_attempts - 1)
+                self._schedule_foreign_port_wait()
+                return
+
             bind_backoff = min(2.0 ** (attempt - 1), 8.0)
             if self._port_is_open():
                 logger.warning(
@@ -3731,6 +4002,18 @@ class WebEngine:
                 )
                 time.sleep(bind_backoff)
                 self._prepare_port_for_restart()
+
+            if self._port_is_open() and not self._probe_health_endpoint():
+                logger.error(
+                    "WebEngine restart: port %s still held by foreign process; "
+                    "switching to wait/retry",
+                    self.port,
+                )
+                self._last_run_error = f"port {self.port} held by foreign process"
+                with self._restart_lock:
+                    self._restart_attempts = max(0, self._restart_attempts - 1)
+                self._schedule_foreign_port_wait()
+                return
 
             if self._port_is_open():
                 logger.error(
@@ -3745,6 +4028,13 @@ class WebEngine:
                 except Exception as e:
                     logger.error("WebEngine restart: failed to start new thread: %s", e)
                     self._last_run_error = str(e)
+                    if _is_addr_in_use(e):
+                        with self._restart_lock:
+                            self._restart_attempts = max(
+                                0, self._restart_attempts - 1
+                            )
+                        self._schedule_foreign_port_wait()
+                        return
 
             # Poll for recovery instead of a single fixed-delay probe: on slow
             # machines the server can need >3s to serve /api/health, and a
@@ -3768,6 +4058,12 @@ class WebEngine:
                 logger.error(
                     "WebEngine auto-restart did not recover (attempt %s)", attempt
                 )
+                if self._port_is_open() and not self._probe_health_endpoint():
+                    self._log_port_holder_hint()
+                    with self._restart_lock:
+                        self._restart_attempts = max(0, self._restart_attempts - 1)
+                    self._schedule_foreign_port_wait()
+                    return
                 if self._port_is_open():
                     self._log_port_holder_hint()
                     self._notify_port_conflict("auto-restart")
@@ -8657,16 +8953,37 @@ class WebEngine:
             logger.error(f"Error running WebEngine server: {str(e)}", exc_info=True)
             self.is_running = False
             web_engine_running = False
-            if "10048" in str(e) or "EADDRINUSE" in str(e).upper():
+            if _is_addr_in_use(e):
                 self._log_port_holder_hint()
-            # Schedule recovery immediately instead of waiting for the next
-            # supervisor poll (cooldown/attempt-gated inside request_restart).
-            try:
-                self.request_restart(f"server exited with error: {e}")
-            except Exception as restart_exc:
-                logger.debug(
-                    "WebEngine post-crash restart scheduling failed: %s", restart_exc
-                )
+                # Foreign holder (e.g. macOS AirPlay): wait/retry on 5000 without
+                # consuming auto-restart attempts. Own leftover with health still
+                # serving goes through the normal restart path.
+                if self._probe_health_endpoint():
+                    try:
+                        self.request_restart(f"server exited with error: {e}")
+                    except Exception as restart_exc:
+                        logger.debug(
+                            "WebEngine post-crash restart scheduling failed: %s",
+                            restart_exc,
+                        )
+                else:
+                    try:
+                        self._schedule_foreign_port_wait()
+                    except Exception as wait_exc:
+                        logger.debug(
+                            "WebEngine foreign port wait scheduling failed: %s",
+                            wait_exc,
+                        )
+            else:
+                # Schedule recovery immediately instead of waiting for the next
+                # supervisor poll (cooldown/attempt-gated inside request_restart).
+                try:
+                    self.request_restart(f"server exited with error: {e}")
+                except Exception as restart_exc:
+                    logger.debug(
+                        "WebEngine post-crash restart scheduling failed: %s",
+                        restart_exc,
+                    )
         finally:
             self.is_running = False
             web_engine_running = False

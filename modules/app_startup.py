@@ -14,3 +14,12 @@ def critical_startup_done() -> bool:
 def mark_critical_startup_done() -> None:
     global _critical_startup_done
     _critical_startup_done = True
+
+
+def should_run_blocking_ui() -> bool:
+    """False when NiceGUI re-executed the script while the UI is already running.
+
+    After ``mark_critical_startup_done()``, a 404-driven ``runpy.run_path`` of
+    ``main.py`` must not call ``start_ui()`` / ``sys.exit``.
+    """
+    return not _critical_startup_done

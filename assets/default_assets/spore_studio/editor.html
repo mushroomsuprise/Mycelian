@@ -191,6 +191,17 @@
              title="Click to emit one mock socket event into the preview">
         </div>
         <div class="ss-preview-dialog__zoom" id="ss-preview-zoom">
+            <label class="ss-preview-dialog__zoom-label" for="ss-preview-size-w">Size</label>
+            <input type="number" id="ss-preview-size-w" class="ss-preview-dialog__size-input"
+                   min="320" max="7680" step="1" value="800"
+                   title="Preview width (px). Auto-matched from OBS when connected." />
+            <span class="ss-preview-dialog__size-x" aria-hidden="true">×</span>
+            <input type="number" id="ss-preview-size-h" class="ss-preview-dialog__size-input"
+                   min="240" max="4320" step="1" value="200"
+                   title="Preview height (px). Auto-matched from OBS when connected." />
+            <button type="button" class="ss-btn ss-btn--ghost" id="ss-preview-size-reset"
+                    title="Clear saved size and re-detect from OBS or canvas">Reset</button>
+            <span id="ss-preview-size-hint" class="ss-preview-dialog__size-hint"></span>
             <label class="ss-preview-dialog__zoom-label" for="ss-preview-zoom-range">Zoom</label>
             <input type="range" id="ss-preview-zoom-range" class="ss-preview-dialog__zoom-range"
                    min="25" max="200" step="5" value="100"

@@ -41,13 +41,20 @@ from ..notification_engine import notify
 from ..path_utils import get_assets_path, get_template_path
 from ..template_config_parser import TemplateConfigParser
 from ..template_preview_settings import (
+    PREVIEW_HEIGHT_MAX,
+    PREVIEW_HEIGHT_MIN,
+    PREVIEW_WIDTH_MAX,
+    PREVIEW_WIDTH_MIN,
+    clear_template_preview_resolution,
+    get_template_preview_resolution,
     load_template_preview_settings,
     save_template_preview_settings,
+    set_template_preview_resolution,
 )
 from ..ui_buttons import destructive_button, outline_button, primary_button
 from ..ui_color_control import is_color_transparent, render_color_field
 from ..ui_form_controls import form_input, form_number, form_select, form_textarea
-from ..ui_timer import layout_schedule
+from ..ui_timer import app_schedule, layout_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +108,15 @@ CUSTOM_SOURCES_PREVIEW_TOKEN = str(uuid.uuid4())
 _custom_sources_preview_gen: list[int] = [0]
 _custom_sources_ctx: Dict[str, Any] = {}
 _popout_preview_is_open = False
+# Active iframe design size (OBS / stored / estimate); used by scale helpers.
+_active_preview_size: Dict[str, Any] = {
+    "width": 1920,
+    "height": 1080,
+    "config": "",
+    "source": "estimate",
+    "obs_source_name": "",
+}
+_preview_size_resolve_gen: list[int] = [0]
 
 # Maps config file stem -> overlay HTML route (JSON ``template_name``).
 _preview_route_cache: Dict[str, str] = {}
@@ -353,8 +369,249 @@ def _estimate_design_size(form_data: Dict[str, Any]) -> Tuple[int, int]:
                 break
             except (TypeError, ValueError):
                 pass
-    w = max(320, min(w, 7680))
-    h = max(240, min(h, 4320))
+    w = max(PREVIEW_WIDTH_MIN, min(w, PREVIEW_WIDTH_MAX))
+    h = max(PREVIEW_HEIGHT_MIN, min(h, PREVIEW_HEIGHT_MAX))
+    return w, h
+
+
+def _stored_or_estimated_size(config_name: str, form_data: Dict[str, Any]) -> Tuple[int, int, str]:
+    """Return ``(w, h, source)`` from stored resolution or form-data estimate."""
+    stored = get_template_preview_resolution(config_name) if config_name else None
+    if stored is not None:
+        return stored[0], stored[1], "stored"
+    w, h = _estimate_design_size(form_data or {})
+    return w, h, "estimate"
+
+
+def _get_active_preview_size(form_data: Optional[Dict[str, Any]] = None) -> Tuple[int, int]:
+    """Iframe design size for the current config (falls back to estimate)."""
+    ctx = _custom_sources_ctx
+    sel = ctx.get("config_select")
+    config_name = sel.value if sel and sel.value else str(_active_preview_size.get("config") or "")
+    if (
+        config_name
+        and _active_preview_size.get("config") == config_name
+        and _active_preview_size.get("width")
+        and _active_preview_size.get("height")
+    ):
+        try:
+            return int(_active_preview_size["width"]), int(_active_preview_size["height"])
+        except (TypeError, ValueError):
+            pass
+    fd = form_data if form_data is not None else form_data_store.get(config_name, {})
+    w, h, _src = _stored_or_estimated_size(config_name, fd)
+    return w, h
+
+
+def _set_active_preview_size(
+    config_name: str,
+    width: int,
+    height: int,
+    *,
+    source: str,
+    obs_source_name: str = "",
+) -> None:
+    _active_preview_size["config"] = config_name or ""
+    _active_preview_size["width"] = int(width)
+    _active_preview_size["height"] = int(height)
+    _active_preview_size["source"] = source
+    _active_preview_size["obs_source_name"] = obs_source_name or ""
+
+
+def _sync_preview_size_inputs(width: int, height: int) -> None:
+    ctx = _custom_sources_ctx
+    w_in = ctx.get("preview_width_input")
+    h_in = ctx.get("preview_height_input")
+    suppressing = ctx.setdefault("_suppress_size_input", [False])
+    suppressing[0] = True
+    try:
+        if w_in is not None:
+            w_in.value = int(width)
+        if h_in is not None:
+            h_in.value = int(height)
+    finally:
+        suppressing[0] = False
+    hint = ctx.get("preview_size_hint")
+    if hint is not None:
+        src = str(_active_preview_size.get("source") or "")
+        name = str(_active_preview_size.get("obs_source_name") or "")
+        if src == "obs" and name:
+            hint.text = f"From OBS: {name}"
+        elif src == "obs":
+            hint.text = "From OBS"
+        elif src == "stored":
+            hint.text = "Saved preview size"
+        else:
+            hint.text = ""
+
+
+def _resize_preview_iframes(width: int, height: int) -> None:
+    """Update iframe CSS dimensions and re-fit without reloading src."""
+    ctx = _custom_sources_ctx
+    z = _current_preview_zoom_pct()
+    pairs = [
+        (ctx.get("preview_outer_id"), ctx.get("preview_inner_id")),
+    ]
+    if _popout_preview_is_open:
+        pairs.append(
+            (ctx.get("popout_preview_outer_id"), ctx.get("popout_preview_inner_id"))
+        )
+    for oid, iid in pairs:
+        if not oid or not iid:
+            continue
+        js = (
+            "(function(){"
+            f"var inner=document.getElementById({json.dumps(iid)});"
+            "if(!inner){return;}"
+            "var iframe=inner.querySelector('iframe');"
+            "if(!iframe){return;}"
+            f"iframe.width={int(width)};"
+            f"iframe.height={int(height)};"
+            f"iframe.style.width='{int(width)}px';"
+            f"iframe.style.height='{int(height)}px';"
+            "if(window.mycelianCsPreviewScale){"
+            f"window.mycelianCsPreviewScale({json.dumps(oid)},{json.dumps(iid)},"
+            f"{int(width)},{int(height)},{int(z)},false);"
+            "}"
+            "})();"
+        )
+        try:
+            ui.run_javascript(js)
+        except Exception as e:
+            logger.debug("Preview resize JS skipped: %s", e)
+
+
+def _apply_preview_size(
+    config_name: str,
+    width: int,
+    height: int,
+    *,
+    source: str,
+    obs_source_name: str = "",
+    resize: bool = True,
+) -> None:
+    _set_active_preview_size(
+        config_name, width, height, source=source, obs_source_name=obs_source_name
+    )
+    _sync_preview_size_inputs(width, height)
+    if resize:
+        _resize_preview_iframes(width, height)
+
+
+def _overlay_port() -> int:
+    inst = getattr(web_engine_module, "web_engine_instance", None)
+    return int(getattr(inst, "port", 5000) or 5000)
+
+
+def _lookup_obs_size_blocking(route: str, port: int) -> Optional[Dict[str, Any]]:
+    try:
+        from ..obs_service import obs_service
+
+        return obs_service.lookup_browser_source_size(route, port)
+    except Exception as e:
+        logger.debug("OBS preview size lookup skipped: %s", e)
+        return None
+
+
+def _schedule_obs_preview_size_resolve(config_name: str) -> None:
+    """Background OBS lookup; applies size only if still on the same config."""
+    if not config_name:
+        return
+    route = _effective_preview_route(config_name)
+    if not route:
+        return
+    _preview_size_resolve_gen[0] += 1
+    gen = _preview_size_resolve_gen[0]
+    port = _overlay_port()
+
+    # Capture NiceGUI client on the UI thread — layout_schedule from a
+    # background worker has no client context and silently no-ops.
+    client = None
+    try:
+        from nicegui import context
+
+        client = context.client
+    except Exception:
+        client = None
+
+    def _worker() -> None:
+        payload = _lookup_obs_size_blocking(route, port)
+        logger.info(
+            "Custom Sources OBS size lookup route=%s port=%s result=%s",
+            route,
+            port,
+            payload,
+        )
+
+        def _apply() -> None:
+            if _preview_size_resolve_gen[0] != gen:
+                return
+            sel = _custom_sources_ctx.get("config_select")
+            if not sel or sel.value != config_name:
+                return
+            if not isinstance(payload, dict):
+                return
+            try:
+                w = int(payload.get("width"))
+                h = int(payload.get("height"))
+            except (TypeError, ValueError):
+                return
+            w = max(PREVIEW_WIDTH_MIN, min(w, PREVIEW_WIDTH_MAX))
+            h = max(PREVIEW_HEIGHT_MIN, min(h, PREVIEW_HEIGHT_MAX))
+            _apply_preview_size(
+                config_name,
+                w,
+                h,
+                source="obs",
+                obs_source_name=str(payload.get("source_name") or ""),
+                resize=True,
+            )
+
+        def _apply_safe() -> None:
+            if client is not None:
+                try:
+                    with client:
+                        _apply()
+                    return
+                except Exception as e:
+                    logger.debug("OBS size apply with client failed: %s", e)
+            try:
+                _apply()
+            except Exception as e:
+                logger.debug("OBS size apply failed: %s", e)
+
+        # app.timer does not need a layout slot (unlike layout_schedule).
+        try:
+            app_schedule(0.05, _apply_safe, once=True)
+        except Exception as e:
+            logger.debug("OBS size app_schedule failed: %s", e)
+
+    try:
+        import threading
+
+        threading.Thread(
+            target=_worker, name="CsPreviewObsSize", daemon=True
+        ).start()
+    except Exception as e:
+        logger.debug("Could not start OBS size resolve thread: %s", e)
+
+
+def _resolve_preview_size_for_config(
+    config_name: str,
+    form_data: Optional[Dict[str, Any]] = None,
+    *,
+    try_obs: bool = True,
+) -> Tuple[int, int]:
+    """
+    Apply stored/estimate immediately; optionally schedule OBS override.
+
+    Returns the size applied synchronously (before OBS completes).
+    """
+    fd = form_data if form_data is not None else form_data_store.get(config_name, {})
+    w, h, src = _stored_or_estimated_size(config_name, fd or {})
+    _apply_preview_size(config_name, w, h, source=src, resize=False)
+    if try_obs:
+        _schedule_obs_preview_size_resolve(config_name)
     return w, h
 
 
@@ -804,7 +1061,7 @@ def _popout_preview_scale_args() -> Tuple[Optional[str], Optional[str], int, int
     dw, dh, z = 1920, 1080, 100
     if sel and sel.value:
         fd = form_data_store.get(sel.value, {})
-        dw, dh = _estimate_design_size(fd)
+        dw, dh = _get_active_preview_size(fd)
         z = _current_preview_zoom_pct()
     return popout_oid, popout_iid, dw, dh, z
 
@@ -852,7 +1109,7 @@ def _load_popout_preview(config_name: str, fd: dict) -> None:
         f"http://127.0.0.1:{port}/{route}"
         f"?__preview_token={CUSTOM_SOURCES_PREVIEW_TOKEN}&_cb={cache_bust}"
     )
-    dw, dh = _estimate_design_size(fd)
+    dw, dh = _get_active_preview_size(fd)
     z = _current_preview_zoom_pct()
 
     if ph:
@@ -920,7 +1177,7 @@ def _run_preview_scale_js(reset_pan: bool) -> None:
     if not sel or not sel.value:
         return
     fd = form_data_store.get(sel.value, {})
-    dw, dh = _estimate_design_size(fd)
+    dw, dh = _get_active_preview_size(fd)
     z = _current_preview_zoom_pct()
     oid = ctx.get("preview_outer_id")
     iid = ctx.get("preview_inner_id")
@@ -1021,7 +1278,7 @@ def _sync_preview_iframe(
         f"http://127.0.0.1:{port}/{route}"
         f"?__preview_token={CUSTOM_SOURCES_PREVIEW_TOKEN}&_cb={cache_bust}"
     )
-    design_w, design_h = _estimate_design_size(fd)
+    design_w, design_h = _get_active_preview_size(fd)
     z = zoom_pct if zoom_pct is not None else _current_preview_zoom_pct()
 
     if inner_id:
@@ -1249,8 +1506,9 @@ def _flush_template_preview() -> None:
     if config_name:
         route = _effective_preview_route(config_name)
         inst = getattr(web_engine_module, "web_engine_instance", None)
+        fd = form_data_store.get(config_name, {})
+        _resolve_preview_size_for_config(config_name, fd, try_obs=True)
         if inst and getattr(inst, "is_running", False) and _route_html_exists(route):
-            fd = form_data_store.get(config_name, {})
             try:
                 inst.push_preview_overrides(
                     CUSTOM_SOURCES_PREVIEW_TOKEN, route, fd
@@ -1506,10 +1764,46 @@ def create_custom_sources_tab():
             with preview_panel:
                 with ui.row().classes("w-full items-center gap-2 shrink-0 flex-wrap"):
                     ui.label("Preview").classes("text-sm font-medium shrink-0")
+                    ui.label("Size").classes("text-xs opacity-70 shrink-0")
+                    preview_width_input = (
+                        ui.number(
+                            value=1920,
+                            min=PREVIEW_WIDTH_MIN,
+                            max=PREVIEW_WIDTH_MAX,
+                            step=1,
+                            format="%.0f",
+                        )
+                        .classes("w-20 shrink-0")
+                        .props("dense outlined")
+                    )
+                    preview_width_input.tooltip(
+                        "Preview width (px). Matches OBS browser source when connected."
+                    )
+                    ui.label("×").classes("text-xs opacity-70 shrink-0")
+                    preview_height_input = (
+                        ui.number(
+                            value=1080,
+                            min=PREVIEW_HEIGHT_MIN,
+                            max=PREVIEW_HEIGHT_MAX,
+                            step=1,
+                            format="%.0f",
+                        )
+                        .classes("w-20 shrink-0")
+                        .props("dense outlined")
+                    )
+                    preview_height_input.tooltip(
+                        "Preview height (px). Matches OBS browser source when connected."
+                    )
+                    preview_size_reset_btn = ui.button(text="Reset").props(
+                        "dense flat size=sm"
+                    )
+                    preview_size_reset_btn.tooltip(
+                        "Clear saved size and re-detect from OBS or template defaults"
+                    )
                     ui.label("Zoom").classes("text-xs opacity-70 shrink-0")
                     preview_zoom_slider = (
                         ui.slider(min=25, max=200, value=100, step=1)
-                        .classes("flex-1 min-w-[140px]")
+                        .classes("flex-1 min-w-[100px]")
                         .props("dense label-always")
                     )
                     preview_zoom_slider.tooltip("Preview zoom (% of fit-to-area)")
@@ -1522,6 +1816,9 @@ def create_custom_sources_tab():
                     )
                     preview_settings_btn.tooltip("Preview settings")
                     preview_settings_btn.on_click(open_preview_settings_dialog)
+                preview_size_hint = ui.label("").classes(
+                    "text-xs opacity-60 min-h-[1rem] shrink-0"
+                )
                 preview_dirty_label = ui.label("").classes(
                     "text-xs opacity-70 min-h-[1.25rem]"
                 )
@@ -1571,8 +1868,38 @@ def create_custom_sources_tab():
                 preview_zoom_slider.value = 100
                 _run_preview_zoom_js(True)
 
+            def on_preview_size_change(_: Any = None) -> None:
+                if (_custom_sources_ctx.get("_suppress_size_input") or [False])[0]:
+                    return
+                sel = _custom_sources_ctx.get("config_select")
+                if not sel or not sel.value:
+                    return
+                try:
+                    w = int(float(preview_width_input.value))
+                    h = int(float(preview_height_input.value))
+                except (TypeError, ValueError):
+                    return
+                w = max(PREVIEW_WIDTH_MIN, min(w, PREVIEW_WIDTH_MAX))
+                h = max(PREVIEW_HEIGHT_MIN, min(h, PREVIEW_HEIGHT_MAX))
+                set_template_preview_resolution(sel.value, w, h)
+                _apply_preview_size(sel.value, w, h, source="stored", resize=True)
+
+            def reset_preview_size() -> None:
+                sel = _custom_sources_ctx.get("config_select")
+                if not sel or not sel.value:
+                    return
+                clear_template_preview_resolution(sel.value)
+                fd = form_data_store.get(sel.value, {})
+                w, h = _resolve_preview_size_for_config(
+                    sel.value, fd, try_obs=True
+                )
+                _resize_preview_iframes(w, h)
+
             preview_zoom_slider.on_value_change(apply_preview_zoom)
             preview_zoom_reset_btn.on_click(reset_preview_zoom)
+            preview_width_input.on_value_change(on_preview_size_change)
+            preview_height_input.on_value_change(on_preview_size_change)
+            preview_size_reset_btn.on_click(reset_preview_size)
 
         popout_preview_iframe = None
         popout_preview_placeholder = None
@@ -1636,6 +1963,10 @@ def create_custom_sources_tab():
                 "preview_outer_id": preview_outer_id,
                 "preview_inner_id": preview_inner_id,
                 "preview_zoom_slider": preview_zoom_slider,
+                "preview_width_input": preview_width_input,
+                "preview_height_input": preview_height_input,
+                "preview_size_hint": preview_size_hint,
+                "_suppress_size_input": [False],
                 "preview_split_row_id": preview_split_row_id,
                 "preview_editor_panel_id": preview_editor_panel_id,
                 "preview_panel_id": preview_panel_id,

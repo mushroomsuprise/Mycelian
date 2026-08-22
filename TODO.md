@@ -5,7 +5,7 @@ Alerts Template:
     [] - Add toggle option to display usernames of gift sub recipients when the gift sub amount is only to a single person.
 
 Twitch:
-    [] - Create system to filter out new subs from resubs so brand new subs appear, but alerts dont hit twice for resubs.
+    [x] - Create system to filter out new subs from resubs so brand new subs appear, but alerts dont hit twice for resubs.
 
 Chat Template:
     [] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.

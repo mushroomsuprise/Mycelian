@@ -1220,6 +1220,31 @@ def start_ui():
 
         register_native_window_close_handler()
 
+        # Accidental pre-run access to ``context.client`` (e.g. overlay toasts)
+        # flips NiceGUI into script mode and replaces ``root=build_root_ui`` with
+        # ``runpy.run_path(main.py)``. Clear that before starting so the real
+        # root builder is used.
+        try:
+            from nicegui import core as ng_core
+
+            if ng_core.script_mode and not ng_core.app.is_started:
+                logger.warning(
+                    "NiceGUI script_mode was set before ui.run; clearing so "
+                    "root=build_root_ui is used"
+                )
+                script_client = ng_core.script_client
+                ng_core.script_mode = False
+                ng_core.script_client = None
+                if script_client is not None:
+                    try:
+                        script_client.delete()
+                    except Exception as clear_err:
+                        logger.debug(
+                            "Could not delete accidental script_client: %s", clear_err
+                        )
+        except Exception as e:
+            logger.debug("script_mode pre-run check failed: %s", e)
+
         with StartupTimer("mainuiwindow.ui_run_native"):
             # NiceGUI 3.x: pass the UI builder as the positional ``root`` so it runs
             # inside a real client context (the 2.x auto-index client is gone).

@@ -3547,8 +3547,10 @@ Custom Sources preview toolbar as well.
 > **Tip:** Build bindings in [Event Bindings & Actions](help:spore_studio_bindings), then verify
 > with mocks before adding the browser source to OBS.
 
-**Not supported:** device size presets (iPhone/tablet), responsive breakpoints — resize the
-preview window manually to approximate your OBS browser source size.
+**Preview size:** use the Width × Height fields in the live preview dialog to match
+your OBS browser source. When OBS WebSocket is connected, Mycelian auto-detects a
+browser source whose URL matches this template and fills those values; otherwise it
+uses your last saved preview size or the design canvas.
 
 ## Advanced JS Tab
 

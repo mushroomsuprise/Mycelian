@@ -911,11 +911,37 @@ html, body {
     background: var(--ss-bg-input);
     border-bottom: 1px solid var(--ss-border);
     flex: 0 0 auto;
+    flex-wrap: wrap;
 }
 .ss-preview-dialog__zoom-label {
     font-size: 11px;
     color: var(--ss-text-muted);
     flex: 0 0 auto;
+}
+.ss-preview-dialog__size-input {
+    width: 72px;
+    flex: 0 0 auto;
+    font-size: 12px;
+    padding: 2px 6px;
+    background: var(--ss-bg-elevated);
+    color: var(--ss-text);
+    border: 1px solid var(--ss-border);
+    border-radius: var(--ss-radius);
+}
+.ss-preview-dialog__size-x {
+    font-size: 11px;
+    color: var(--ss-text-muted);
+    flex: 0 0 auto;
+}
+.ss-preview-dialog__size-hint {
+    font-size: 11px;
+    color: var(--ss-text-muted);
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 160px;
 }
 .ss-preview-dialog__zoom-range {
     flex: 1;

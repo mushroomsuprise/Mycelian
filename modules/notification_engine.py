@@ -436,26 +436,32 @@ def _build_toast_opts(
 
 
 def _deliver_toast(message: str, opts: Dict[str, Any]) -> bool:
-    """Show a toast if the UI is ready. Returns False when delivery should be retried."""
+    """Show a toast if the UI is ready. Returns False when delivery should be retried.
+
+    Never calls ``ui.notify``: that reads ``context.client``, which before
+    ``ui.run`` creates a NiceGUI pseudo-client and flips ``core.script_mode``.
+    That causes ``ui.run(root=...)`` to be replaced with script re-execution and
+    can shut the whole app down on a 404. Background threads (overlay restart)
+    must only use the broadcast path, or queue until clients exist.
+    """
     inject_notification_ui_assets()
     try:
-        ui.notify(message, **opts)
-        return True
-    except RuntimeError:
-        pass
-    except Exception as e:
-        logger.error("ui.notify failed: %s", e, exc_info=True)
-        return True
+        from nicegui import Client, core
 
-    try:
-        from nicegui import Client
-
-        if not Client.instances:
+        app = getattr(core, "app", None)
+        if app is None or not getattr(app, "is_started", False):
+            return False
+        live_clients = [
+            c
+            for c in list(Client.instances.values())
+            if not getattr(c, "_deleted", False)
+        ]
+        if not live_clients:
             return False
         _broadcast_notify(message, opts)
         return True
     except Exception as e:
-        logger.warning("broadcast notify fallback failed: %s", e)
+        logger.warning("broadcast notify failed: %s", e)
         return False
 
 
@@ -559,6 +565,8 @@ def _broadcast_notify(message: str, opts: Dict[str, Any]) -> None:
         # every connected client; the outbox loop already skips clients without a
         # socket connection, so no extra filter is needed here.
         for client in list(Client.instances.values()):
+            if getattr(client, "_deleted", False):
+                continue
             try:
                 client.outbox.enqueue_message(
                     "notify", dict(payload), client.id

@@ -364,6 +364,10 @@ class ObsServiceImpl:
                 if fut is not None:
                     fut.set_result((False, "Not connected"))
                 continue
+            if op == "__browser_source_size__":
+                if fut is not None:
+                    fut.set_result((False, "OBS is not connected", None))
+                continue
             if fut is not None:
                 fut.set_result((False, "OBS is not connected", None))
 
@@ -408,6 +412,22 @@ class ObsServiceImpl:
                         self._refresh_snapshot_locked()
                         if fut:
                             fut.set_result((True, None))
+                    continue
+                if op == "__browser_source_size__":
+                    if self._req_client is None:
+                        if fut:
+                            fut.set_result((False, "Not connected", None))
+                    else:
+                        try:
+                            payload = self._lookup_browser_source_size_locked(
+                                str(kw.get("route") or ""),
+                                kw.get("port"),
+                            )
+                            if fut:
+                                fut.set_result((True, None, payload))
+                        except Exception as e:
+                            if fut:
+                                fut.set_result((False, str(e), None))
                     continue
                 if op not in _CONNECTOR_OPS:
                     raise ValueError(f"Unknown OBS connector operation '{op}'")
@@ -812,6 +832,205 @@ class ObsServiceImpl:
             self._snapshot["scene_names"] = sorted(set(scene_names), key=lambda x: x.lower())
             self._snapshot["input_names"] = sorted(set(input_names), key=lambda x: x.lower())
             self._snapshot["sources_by_scene"] = by_scene
+
+    def lookup_browser_source_size(
+        self,
+        route: str,
+        port: Optional[int] = None,
+        *,
+        timeout_s: float = 8.0,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find an OBS browser source whose URL matches ``/{route}`` and return
+        ``{width, height, source_name}``, or ``None``.
+
+        Safe to call from a worker / ``run.io_bound`` thread — never from the
+        NiceGUI main thread (blocks on the OBS websocket worker queue).
+        """
+        if not self.is_connected():
+            return None
+        if not route or not str(route).strip():
+            return None
+        fut = self.enqueue_obs_request(
+            "__browser_source_size__",
+            {"route": str(route).strip(), "port": port},
+        )
+        try:
+            raw = fut.result(timeout=timeout_s)
+        except Exception as e:
+            logger.debug("OBS browser source size lookup failed: %s", e)
+            return None
+        if not isinstance(raw, tuple) or not raw or not raw[0]:
+            return None
+        payload = raw[2] if len(raw) > 2 else None
+        return payload if isinstance(payload, dict) else None
+
+    def _lookup_browser_source_size_locked(
+        self, route: str, port: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Worker-thread: scan browser_source inputs for a URL matching *route*."""
+        from .obs_browser_source_match import (
+            browser_url_matches_route,
+            coerce_browser_wh,
+            is_browser_input_kind,
+            pick_browser_source_size,
+        )
+
+        cl = self._req_client
+        if cl is None:
+            return None
+        route = (route or "").strip()
+        if not route:
+            return None
+        overlay_port: Optional[int] = None
+        if port is not None and port != "":
+            try:
+                overlay_port = int(port)
+            except (TypeError, ValueError):
+                overlay_port = None
+
+        defaults: Dict[str, Any] = {}
+        try:
+            def_resp = cl.get_input_default_settings("browser_source")
+            raw_defs = _attr(def_resp, "default_input_settings", "defaultInputSettings")
+            if isinstance(raw_defs, dict):
+                defaults = raw_defs
+        except Exception as e:
+            logger.debug("OBS browser_source defaults skipped: %s", e)
+
+        inputs_list: List[Any] = []
+        try:
+            inp = cl.get_input_list(kind="browser_source")
+            inputs_list = list(_attr(inp, "inputs", None) or [])
+        except Exception as e:
+            logger.debug("OBS get_input_list(browser_source) failed: %s", e)
+        if not inputs_list:
+            # Some OBS builds ignore the kind filter; scan all inputs.
+            try:
+                inp = cl.get_input_list()
+                raw_list = _attr(inp, "inputs", None) or []
+                if isinstance(raw_list, list):
+                    for row in raw_list:
+                        kind = _attr(
+                            row,
+                            "input_kind",
+                            "inputKind",
+                            "unversioned_input_kind",
+                            "unversionedInputKind",
+                        )
+                        if is_browser_input_kind(kind):
+                            inputs_list.append(row)
+            except Exception as e:
+                logger.debug("OBS get_input_list() fallback failed: %s", e)
+
+        if not isinstance(inputs_list, list) or not inputs_list:
+            logger.info(
+                "OBS browser source size: no browser_source inputs for route=%s",
+                route,
+            )
+            return None
+
+        def _collect(require_port: bool) -> List[Dict[str, Any]]:
+            found: List[Dict[str, Any]] = []
+            for row in inputs_list:
+                name = _attr(row, "input_name", "inputName")
+                if not name:
+                    continue
+                try:
+                    settings_resp = cl.get_input_settings(str(name))
+                except Exception:
+                    continue
+                settings = _attr(settings_resp, "input_settings", "inputSettings")
+                if not isinstance(settings, dict):
+                    settings = {}
+                url = settings.get("url")
+                if not browser_url_matches_route(
+                    url,
+                    route,
+                    overlay_port=overlay_port,
+                    require_port=require_port,
+                ):
+                    continue
+                wh = coerce_browser_wh(settings, defaults)
+                if wh is None:
+                    continue
+                found.append(
+                    {
+                        "source_name": str(name),
+                        "width": int(wh[0]),
+                        "height": int(wh[1]),
+                        "url": str(url or ""),
+                    }
+                )
+            return found
+
+        matches = _collect(require_port=True)
+        if not matches and overlay_port is not None:
+            # Soft fallback: path match only (wrong/missing port in OBS URL).
+            matches = _collect(require_port=False)
+            if matches:
+                logger.info(
+                    "OBS browser source size: path-only match for route=%s "
+                    "(ignored port %s)",
+                    route,
+                    overlay_port,
+                )
+
+        if not matches:
+            sample_urls: List[str] = []
+            for row in inputs_list[:8]:
+                name = _attr(row, "input_name", "inputName")
+                if not name:
+                    continue
+                try:
+                    settings_resp = cl.get_input_settings(str(name))
+                    settings = _attr(
+                        settings_resp, "input_settings", "inputSettings"
+                    )
+                    if isinstance(settings, dict) and settings.get("url"):
+                        sample_urls.append(str(settings.get("url")))
+                except Exception:
+                    continue
+            logger.info(
+                "OBS browser source size: no URL match for route=%s port=%s "
+                "(browser_inputs=%s sample_urls=%s)",
+                route,
+                overlay_port,
+                len(inputs_list),
+                sample_urls,
+            )
+            return None
+
+        program_names: Optional[set] = None
+        try:
+            prog = cl.get_current_program_scene()
+            scene = (
+                _attr(prog, "current_program_scene_name", "currentProgramSceneName")
+                or _attr(prog, "scene_name", "sceneName")
+                or ""
+            )
+            if scene:
+                items = cl.get_scene_item_list(str(scene))
+                lst = _attr(items, "scene_items", "sceneItems") or []
+                if isinstance(lst, list):
+                    program_names = set()
+                    for it in lst:
+                        src = _attr(it, "source_name", "sourceName")
+                        if src:
+                            program_names.add(str(src))
+        except Exception as e:
+            logger.debug("OBS program-scene filter skipped: %s", e)
+
+        picked = pick_browser_source_size(matches, program_source_names=program_names)
+        if picked:
+            logger.info(
+                "OBS browser source size: matched %s → %sx%s for route=%s",
+                picked.get("source_name"),
+                picked.get("width"),
+                picked.get("height"),
+                route,
+            )
+        return picked
 
     # --- Dispatcher ---
     def _dispatch_connector_operation(self, op: str, obs_args: Dict[str, Any]) -> None:

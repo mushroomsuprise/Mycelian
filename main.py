@@ -261,10 +261,12 @@ if __name__ == "__main__":
     from modules.app_startup import critical_startup_done, mark_critical_startup_done
 
     # NiceGUI native mode re-executes this script on some HTTP 404 paths while its
-    # asyncio loop is already running. Skip the blocking startup phases on re-entry.
+    # asyncio loop is already running. Skip ALL blocking work on re-entry —
+    # including Phase 4 — otherwise start_ui()/ui.run returns immediately and
+    # we call sys.exit(0), tearing down the live app.
     if critical_startup_done():
         logger.debug(
-            "Skipping critical startup phases (already completed in this process)"
+            "NiceGUI script re-entry — skipping startup phases and UI start"
         )
     else:
         startup_start = time.perf_counter()
@@ -443,29 +445,29 @@ if __name__ == "__main__":
 
         mark_critical_startup_done()
 
-    # =========================================
-    # Phase 4: Start UI Server (Blocking)
-    # =========================================
-    try:
-        logger.info("Starting NiceGUI server...")
-        print_startup_message(
-            "starting UI server (ui.run will block until shutdown)..."
-        )
-        mainuiwindow.start_ui()
-        print_startup_message("ui.run returned (application shutdown)")
-        logger.warning("ui.run returned — finalizing shutdown and exiting process")
+        # =========================================
+        # Phase 4: Start UI Server (Blocking)
+        # =========================================
+        try:
+            logger.info("Starting NiceGUI server...")
+            print_startup_message(
+                "starting UI server (ui.run will block until shutdown)..."
+            )
+            mainuiwindow.start_ui()
+            print_startup_message("ui.run returned (application shutdown)")
+            logger.warning("ui.run returned — finalizing shutdown and exiting process")
 
-        from modules.shutdown import shutdown_application
+            from modules.shutdown import shutdown_application
 
-        shutdown_application(reason="ui_run_returned", force=False)
-        sys.exit(0)
-    except Exception as e:
-        from modules.shutdown import is_shutdown_in_progress, shutdown_application
-        from modules.mainuiwindow import _is_benign_shutdown_websocket_error
-
-        if is_shutdown_in_progress() or _is_benign_shutdown_websocket_error(e):
-            logger.warning("UI server stopped during shutdown: %s", e)
             shutdown_application(reason="ui_run_returned", force=False)
             sys.exit(0)
-        logger.error(f"Error starting UI server: {str(e)}", exc_info=True)
-        sys.exit(1)
+        except Exception as e:
+            from modules.shutdown import is_shutdown_in_progress, shutdown_application
+            from modules.mainuiwindow import _is_benign_shutdown_websocket_error
+
+            if is_shutdown_in_progress() or _is_benign_shutdown_websocket_error(e):
+                logger.warning("UI server stopped during shutdown: %s", e)
+                shutdown_application(reason="ui_run_returned", force=False)
+                sys.exit(0)
+            logger.error(f"Error starting UI server: {str(e)}", exc_info=True)
+            sys.exit(1)

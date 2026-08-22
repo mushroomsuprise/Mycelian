@@ -20,12 +20,26 @@ class AppStartupTests(unittest.TestCase):
     def setUp(self) -> None:
         app_startup._critical_startup_done = False
 
+    def tearDown(self) -> None:
+        app_startup._critical_startup_done = False
+
     def test_startup_flag_defaults_false(self) -> None:
         self.assertFalse(app_startup.critical_startup_done())
+        self.assertTrue(app_startup.should_run_blocking_ui())
 
     def test_mark_startup_done_persists(self) -> None:
         app_startup.mark_critical_startup_done()
         self.assertTrue(app_startup.critical_startup_done())
+        self.assertFalse(app_startup.should_run_blocking_ui())
+
+    def test_reentry_must_not_run_blocking_ui(self) -> None:
+        """After first boot, NiceGUI 404 re-exec must not call start_ui/sys.exit."""
+        self.assertTrue(app_startup.should_run_blocking_ui())
+        app_startup.mark_critical_startup_done()
+        self.assertFalse(
+            app_startup.should_run_blocking_ui(),
+            "re-entry after critical startup must skip Phase 4 (ui.run / sys.exit)",
+        )
 
 
 if __name__ == "__main__":
