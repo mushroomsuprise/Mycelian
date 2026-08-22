@@ -6327,6 +6327,7 @@ class WebEngine:
                     "title",
                     "tier",
                     "gift_qty",
+                    "recipient",
                     "resub_month",
                     "months_prepaid",
                     "amt_cheered",

@@ -689,6 +689,7 @@
         var showHeaderLineText = {{ EnableHeaderText | default(true) | tojson }};
         var showMessageText = {{ EnableMessageText | default(true) | tojson }};
         var enableEmotes = {{ EnableEmotes | default(true) | tojson }};
+        var enableGiftSubRecipientName = {{ EnableGiftSubRecipientName | default(true) | tojson }};
         var streamerID = null;
         var alertEmoteFetchInProgress = false;
         var alertEmoteCache = {
@@ -707,6 +708,8 @@
             streakPlural: {{ TextStreakPlural | default('{streak_count} stream watch streak!') | tojson }},
             giftsub: {{ TextGiftsub | default('gifted {gift_qty} sub(s)!') | tojson }},
             giftsubTier: {{ TextGiftsubTier | default('gifted {gift_qty} Tier {tier} sub(s)!') | tojson }},
+            giftsubSingle: {{ TextGiftsubSingle | default('gave {recipient} a sub!') | tojson }},
+            giftsubSingleTier: {{ TextGiftsubSingleTier | default('gave {recipient} a Tier {tier} sub!') | tojson }},
             bit: {{ TextBit | default('cheered {amt_cheered} bit(s)!') | tojson }},
             raid: {{ TextRaid | default('raided with {raider_count} viewers!') | tojson }},
             point: {{ TextPoint | default('redeemed: {title}!') | tojson }},
@@ -2459,12 +2462,15 @@
             var giftQty = alertData.gift_qty != null ? alertData.gift_qty : 0;
             var subsLabel = giftQty === 1 ? 'sub' : 'subs';
             var bitsLabel = alertData.amt_cheered === 1 ? 'bit' : 'bits';
+            var recipient = alertData.recipient || alertData.recipient_name || '';
             return String(template)
                 .replace(/\{tier\}/g, String(alertData.tier != null ? alertData.tier : ''))
                 .replace(/\{resub_month\}/g, String(alertData.resub_month != null ? alertData.resub_month : ''))
                 .replace(/\{streak_count\}/g, String(alertData.streak_count != null ? alertData.streak_count : ''))
                 .replace(/\{gift_qty\}/g, String(giftQty))
                 .replace(/\{subs\}/g, subsLabel)
+                .replace(/\{recipient_name\}/g, String(recipient))
+                .replace(/\{recipient\}/g, String(recipient))
                 .replace(/\{amt_cheered\}/g, String(alertData.amt_cheered != null ? alertData.amt_cheered : ''))
                 .replace(/\{bits\}/g, bitsLabel)
                 .replace(/\{raider_count\}/g, String(alertData.raider_count != null ? alertData.raider_count : ''))
@@ -2502,9 +2508,21 @@
                     }
                     break;
                 case 'giftsub':
-                    template = (alertData.tier && alertData.tier > 1)
-                        ? alertTextTemplates.giftsubTier
-                        : alertTextTemplates.giftsub;
+                    {
+                        var giftQty = alertData.gift_qty != null ? Number(alertData.gift_qty) : 0;
+                        var recipient = String(alertData.recipient || alertData.recipient_name || '').trim();
+                        var useRecipient = enableGiftSubRecipientName && giftQty === 1 && recipient !== '';
+                        var higherTier = alertData.tier && alertData.tier > 1;
+                        if (useRecipient) {
+                            template = higherTier
+                                ? alertTextTemplates.giftsubSingleTier
+                                : alertTextTemplates.giftsubSingle;
+                        } else {
+                            template = higherTier
+                                ? alertTextTemplates.giftsubTier
+                                : alertTextTemplates.giftsub;
+                        }
+                    }
                     break;
                 case 'bit':
                     template = alertTextTemplates.bit;
@@ -2717,9 +2735,13 @@
             if (config.EnableEmotes !== undefined) {
                 enableEmotes = Boolean(config.EnableEmotes);
             }
+            if (config.EnableGiftSubRecipientName !== undefined) {
+                enableGiftSubRecipientName = Boolean(config.EnableGiftSubRecipientName);
+            }
             var textTemplateKeys = [
                 'TextFollow', 'TextSub', 'TextSubTier', 'TextResub', 'TextStreakSingular',
-                'TextStreakPlural', 'TextGiftsub', 'TextGiftsubTier', 'TextBit', 'TextRaid',
+                'TextStreakPlural', 'TextGiftsub', 'TextGiftsubTier', 'TextGiftsubSingle',
+                'TextGiftsubSingleTier', 'TextBit', 'TextRaid',
                 'TextPoint', 'TextPointWithCost', 'TextDonation', 'TextHypeTrainStart',
                 'TextHypeTrainProgress', 'TextHypeTrainEnd', 'TextDefault', 'TextAnonymous',
                 'TextUnknownUser'
@@ -2733,6 +2755,8 @@
                 TextStreakPlural: 'streakPlural',
                 TextGiftsub: 'giftsub',
                 TextGiftsubTier: 'giftsubTier',
+                TextGiftsubSingle: 'giftsubSingle',
+                TextGiftsubSingleTier: 'giftsubSingleTier',
                 TextBit: 'bit',
                 TextRaid: 'raid',
                 TextPoint: 'point',

@@ -259,6 +259,264 @@ def build_token_timing_fields(
 
 
 _NEW_SUB_DEBOUNCE_SECONDS = 2.0
+# Wait window for attaching a recipient name to a single gifted sub alert.
+_SINGLE_GIFT_RECIPIENT_WAIT_SECONDS = _NEW_SUB_DEBOUNCE_SECONDS
+_RECENT_GIFT_RECIPIENT_TTL_SECONDS = 5.0
+
+# Pending qty==1 gifts waiting for a recipient name.
+# Each entry: {alert, gifter_login, gifter_id, created_at, task, resolved}
+_pending_single_gifts: list = []
+_pending_single_gifts_lock = threading.Lock()
+
+# Recipients observed before the matching channel.subscription.gift event.
+# Each entry: {recipient, gifter_login, gifter_id, ts}
+_recent_gift_recipients: list = []
+_recent_gift_recipients_lock = threading.Lock()
+
+
+def _normalize_gift_match_key(value: Optional[str]) -> str:
+    return str(value or "").strip().lower()
+
+
+def _prune_recent_gift_recipients(now: Optional[float] = None) -> None:
+    """Drop expired recent-recipient entries. Caller must hold the lock."""
+    cutoff = (now if now is not None else time.time()) - _RECENT_GIFT_RECIPIENT_TTL_SECONDS
+    while _recent_gift_recipients and _recent_gift_recipients[0]["ts"] < cutoff:
+        _recent_gift_recipients.pop(0)
+
+
+def _gifter_keys_match(
+    pending_login: Optional[str],
+    pending_id: Optional[str],
+    note_login: Optional[str],
+    note_id: Optional[str],
+) -> bool:
+    """True when gifter identity overlaps, or when either side lacks gifter info."""
+    p_login = _normalize_gift_match_key(pending_login)
+    p_id = _normalize_gift_match_key(pending_id)
+    n_login = _normalize_gift_match_key(note_login)
+    n_id = _normalize_gift_match_key(note_id)
+    if not n_login and not n_id:
+        return True
+    if not p_login and not p_id:
+        return True
+    if p_id and n_id and p_id == n_id:
+        return True
+    if p_login and n_login and p_login == n_login:
+        return True
+    return False
+
+
+def _take_matching_recent_recipient(
+    gifter_login: Optional[str] = None,
+    gifter_id: Optional[str] = None,
+) -> str:
+    """Pop and return the best matching recent recipient, or empty string."""
+    with _recent_gift_recipients_lock:
+        _prune_recent_gift_recipients()
+        for idx, entry in enumerate(_recent_gift_recipients):
+            if _gifter_keys_match(
+                gifter_login,
+                gifter_id,
+                entry.get("gifter_login"),
+                entry.get("gifter_id"),
+            ):
+                _recent_gift_recipients.pop(idx)
+                return str(entry.get("recipient") or "").strip()
+        return ""
+
+
+def _attach_recipient_to_pending_gift(
+    recipient: str,
+    *,
+    gifter_login: Optional[str] = None,
+    gifter_id: Optional[str] = None,
+) -> bool:
+    """Attach recipient to a waiting qty==1 gift alert. Returns True if attached."""
+    recipient = str(recipient or "").strip()
+    if not recipient:
+        return False
+    with _pending_single_gifts_lock:
+        for entry in _pending_single_gifts:
+            if entry.get("resolved"):
+                continue
+            if not _gifter_keys_match(
+                entry.get("gifter_login"),
+                entry.get("gifter_id"),
+                gifter_login,
+                gifter_id,
+            ):
+                continue
+            alert = entry.get("alert")
+            if alert is None:
+                continue
+            alert.recipient = recipient
+            entry["resolved"] = True
+            task = entry.get("task")
+            if task is not None and not task.done():
+                task.cancel()
+            logger.debug(
+                "Attached gift recipient %s to pending giftsub alert %s",
+                recipient,
+                getattr(alert, "alert_id", ""),
+            )
+            return True
+    return False
+
+
+def note_gift_recipient(
+    recipient: str,
+    *,
+    gifter_login: Optional[str] = None,
+    gifter_id: Optional[str] = None,
+) -> bool:
+    """
+    Record a gift recipient for single-gift alert text.
+
+    If a pending qty==1 giftsub is waiting, attach immediately and finalize.
+    Otherwise buffer briefly so a later gift event can pick it up.
+    Returns True if attached to a pending alert.
+    """
+    recipient = str(recipient or "").strip()
+    if not recipient:
+        return False
+
+    if _attach_recipient_to_pending_gift(
+        recipient, gifter_login=gifter_login, gifter_id=gifter_id
+    ):
+        # Finalize any resolved pending gifts that cancelled their wait task.
+        _finalize_resolved_pending_single_gifts()
+        return True
+
+    with _recent_gift_recipients_lock:
+        _prune_recent_gift_recipients()
+        _recent_gift_recipients.append(
+            {
+                "recipient": recipient,
+                "gifter_login": gifter_login,
+                "gifter_id": str(gifter_id) if gifter_id else None,
+                "ts": time.time(),
+            }
+        )
+    return False
+
+
+def _finalize_resolved_pending_single_gifts() -> None:
+    """Queue any pending single gifts that already have a recipient attached."""
+    to_finalize = []
+    with _pending_single_gifts_lock:
+        remaining = []
+        for entry in _pending_single_gifts:
+            if entry.get("resolved") and entry.get("alert") is not None:
+                to_finalize.append(entry)
+            else:
+                remaining.append(entry)
+        _pending_single_gifts[:] = remaining
+    for entry in to_finalize:
+        _emit_giftsub_alert_and_instant(entry["alert"])
+
+
+def _emit_giftsub_alert_and_instant(alert: alertutils.AlertObj) -> None:
+    """Queue a giftsub alert and emit the matching instant_alert payload."""
+    _queue_twitch_alert(alert)
+    try:
+        alert_data = {
+            "type": "giftsub",
+            "username": alert.username,
+            "anonymous": bool(getattr(alert, "anonymous", False)),
+            "tier": alert.tier,
+            "gift_qty": alert.gift_qty,
+            "recipient": getattr(alert, "recipient", "") or "",
+            "alert_id": alert.alert_id,
+            "timestamp": alert.timestamp,
+        }
+        _send_twitch_instant_alert(alert_data)
+        logger.debug(
+            "Sent instant alert for giftsub: %s (recipient=%s)",
+            alert.username,
+            alert_data["recipient"] or "-",
+        )
+    except Exception as e:
+        logger.error(
+            "Error sending instant alert for giftsub: %s", str(e), exc_info=True
+        )
+
+
+def _clear_pending_single_gifts_for_tests() -> None:
+    """Reset single-gift correlation state (unit tests only)."""
+    with _pending_single_gifts_lock:
+        for entry in _pending_single_gifts:
+            task = entry.get("task")
+            if task is not None and not task.done():
+                task.cancel()
+        _pending_single_gifts.clear()
+    with _recent_gift_recipients_lock:
+        _recent_gift_recipients.clear()
+
+
+async def _wait_and_emit_single_giftsub(entry: dict) -> None:
+    """Wait briefly for a recipient, then queue the giftsub alert."""
+    try:
+        await asyncio.sleep(_SINGLE_GIFT_RECIPIENT_WAIT_SECONDS)
+    except asyncio.CancelledError:
+        # Recipient attached early; finalize outside the wait.
+        pass
+
+    alert = entry.get("alert")
+    should_emit = False
+    with _pending_single_gifts_lock:
+        if entry in _pending_single_gifts:
+            _pending_single_gifts.remove(entry)
+            should_emit = alert is not None
+            entry["resolved"] = True
+
+    if should_emit and alert is not None:
+        if not (getattr(alert, "recipient", "") or "").strip():
+            logger.debug(
+                "Single giftsub %s timed out without recipient; emitting without name",
+                getattr(alert, "alert_id", ""),
+            )
+        _emit_giftsub_alert_and_instant(alert)
+
+
+def begin_single_gift_wait(
+    alert: alertutils.AlertObj,
+    *,
+    gifter_login: Optional[str] = None,
+    gifter_id: Optional[str] = None,
+) -> bool:
+    """
+    Hold a qty==1 giftsub briefly to attach a recipient name.
+
+    Returns True if a recent recipient was already available (alert emitted now).
+    Returns False if a wait was started (or alert emitted immediately on failure
+    to schedule the wait).
+    """
+    recipient = _take_matching_recent_recipient(gifter_login, gifter_id)
+    if recipient:
+        alert.recipient = recipient
+        _emit_giftsub_alert_and_instant(alert)
+        return True
+
+    entry = {
+        "alert": alert,
+        "gifter_login": gifter_login,
+        "gifter_id": str(gifter_id) if gifter_id else None,
+        "created_at": time.time(),
+        "task": None,
+        "resolved": False,
+    }
+    try:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(_wait_and_emit_single_giftsub(entry))
+        entry["task"] = task
+        with _pending_single_gifts_lock:
+            _pending_single_gifts.append(entry)
+        return False
+    except RuntimeError:
+        # No running loop (tests / unexpected context): emit without waiting.
+        _emit_giftsub_alert_and_instant(alert)
+        return True
 
 
 def _badge_field(badge, name: str):
@@ -1671,6 +1929,17 @@ class Twitch_API:
                             user_login=recip_login,
                             source=f"chat.notification.{notice_type_str}.recipient",
                         )
+                    recip_display = getattr(gift_meta, "recipient_user_name", None) or recip_login
+                    if recip_display and notice_type_str in {
+                        "sub_gift",
+                        "shared_chat_sub_gift",
+                    }:
+                        # chatter is the gifter for individual sub_gift notices
+                        note_gift_recipient(
+                            recip_display,
+                            gifter_login=chatter_login,
+                            gifter_id=str(chatter_id) if chatter_id else None,
+                        )
                 if chatter_id or chatter_login:
                     from .twitch_subscriber_registry import get_subscriber_registry
 
@@ -2320,6 +2589,7 @@ class Twitch_API:
                 user_login=user_login or username,
                 source="channel.subscribe.gift",
             )
+            note_gift_recipient(username or user_login or "")
             logger.debug(
                 "Skipping channel.subscribe alert for gift recipient %s",
                 username,
@@ -2555,36 +2825,18 @@ class Twitch_API:
         gifter_name = (
             data.event.user_name if not data.event.is_anonymous else "Anonymous"
         )
+        gifter_login = getattr(data.event, "user_login", None) or (
+            None if data.event.is_anonymous else data.event.user_name
+        )
+        gifter_id = getattr(data.event, "user_id", None)
         alert.username = gifter_name or "Anonymous"
         alert.anonymous = bool(data.event.is_anonymous)
         alert.alert_type = "giftsub"
         alert.tier = int(str(data.event.tier)[:-3])
         alert.gift_qty = int(str(data.event.total))
+        alert.recipient = ""
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
-        _queue_twitch_alert(alert)
-
-        # Send instant alert
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                alert_data = {
-                    "type": "giftsub",
-                    "username": gifter_name,
-                    "anonymous": alert.anonymous,
-                    "tier": alert.tier,
-                    "gift_qty": alert.gift_qty,
-                    "alert_id": alert.alert_id,
-                    "timestamp": alert.timestamp,
-                }
-                _send_twitch_instant_alert(alert_data)
-                logger.debug(f"Sent instant alert for giftsub: {gifter_name}")
-        except Exception as e:
-            logger.error(
-                f"Error sending instant alert for giftsub: {str(e)}", exc_info=True
-            )
 
         # Process through chatbot system
         try:
@@ -2640,6 +2892,21 @@ class Twitch_API:
             tier=alert.tier,
             alert_id=alert.alert_id,
         )
+
+        # Queue + instant: multi-gifts emit immediately; single gifts wait briefly
+        # for recipient name from channel.subscribe / chat sub_gift.
+        if alert.gift_qty == 1:
+            begin_single_gift_wait(
+                alert,
+                gifter_login=None if alert.anonymous else gifter_login,
+                gifter_id=(
+                    None
+                    if alert.anonymous
+                    else (str(gifter_id) if gifter_id else None)
+                ),
+            )
+        else:
+            _emit_giftsub_alert_and_instant(alert)
 
     async def on_bits_use(self, data: ChannelBitsUseEvent):
         self._note_event_received()

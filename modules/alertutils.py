@@ -1802,6 +1802,7 @@ class AlertObj:
     gift_qty: int = 0
     resub_month: int = 0
     months_prepaid: int = 0
+    recipient: str = ""  # Gift recipient username (single gifts)
 
     # Bit options:
     amt_cheered: int = 0

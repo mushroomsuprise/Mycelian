@@ -2455,6 +2455,8 @@ def _collect_test_alert_data(alert_type: str, elements: dict) -> dict:
         else:
             alert_data["gift_qty"] = 1
         alert_data["tier"] = 1
+        if int(alert_data.get("gift_qty") or 0) == 1:
+            alert_data["recipient"] = "TestRecipient"
     elif alert_type == "donations":
         if use_range and min_amount is not None:
             alert_data["donation_amount"] = float(min_amount)

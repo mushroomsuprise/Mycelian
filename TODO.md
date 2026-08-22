@@ -2,7 +2,7 @@ Legacy Templates:
     [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
 Alerts Template:
-    [] - Add toggle option to display usernames of gift sub recipients when the gift sub amount is only to a single person.
+    [x] - Add toggle option to display usernames of gift sub recipients when the gift sub amount is only to a single person.
 
 Twitch:
     [x] - Create system to filter out new subs from resubs so brand new subs appear, but alerts dont hit twice for resubs.

@@ -193,18 +193,39 @@
             "description": "Header line when streak count is greater than 1. Use {streak_count}."
         },
         {
+            "type": "checkbox",
+            "id": "EnableGiftSubRecipientName",
+            "label": "Show recipient name on single gift subs",
+            "value": true,
+            "description": "When on, a single gifted sub shows the recipient in the header (e.g. gave {recipient} a sub!). Multiple gifts are unchanged. Falls back to the normal gift text if no recipient is known."
+        },
+        {
             "type": "text",
             "id": "TextGiftsub",
             "label": "Gift sub header text",
             "value": "gifted {gift_qty} sub(s)!",
-            "description": "Header line for gift subs. Use {gift_qty} for the number gifted."
+            "description": "Header line for gift subs (multiple gifts, or single gifts when recipient name is off). Use {gift_qty} for the number gifted."
         },
         {
             "type": "text",
             "id": "TextGiftsubTier",
             "label": "Gift sub header text (higher tier)",
             "value": "gifted {gift_qty} Tier {tier} sub(s)!",
-            "description": "Header line for tier 2+ gift subs. Use {gift_qty} and {tier}."
+            "description": "Header line for tier 2+ gift subs (multiple gifts, or single gifts when recipient name is off). Use {gift_qty} and {tier}."
+        },
+        {
+            "type": "text",
+            "id": "TextGiftsubSingle",
+            "label": "Single gift sub header text (with recipient)",
+            "value": "gave {recipient} a sub!",
+            "description": "Header line when one gift sub is given and recipient name is enabled. Use {recipient} for the recipient username."
+        },
+        {
+            "type": "text",
+            "id": "TextGiftsubSingleTier",
+            "label": "Single gift sub header text (higher tier, with recipient)",
+            "value": "gave {recipient} a Tier {tier} sub!",
+            "description": "Header line for a single tier 2+ gift when recipient name is enabled. Use {recipient} and {tier}."
         },
         {
             "type": "text",
