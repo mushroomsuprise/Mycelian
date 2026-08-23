@@ -440,5 +440,33 @@
     "type": "info",
     "dedupe_key": null,
     "actions": []
+  },
+  {
+    "id": "eaca0190-a7db-4c25-9d00-35a36bc31b5b",
+    "ts": 1787525950.661233,
+    "message": "Twitch: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:twitch:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Twitch"
+      }
+    ]
+  },
+  {
+    "id": "887eae6b-f18a-44e2-b58f-9b0007858afb",
+    "ts": 1787525950.6817763,
+    "message": "Discord: Connected",
+    "type": "positive",
+    "dedupe_key": "svc:discord:Connected",
+    "actions": [
+      {
+        "kind": "navigate",
+        "main_tab": "Settings",
+        "settings_subtab": "Discord"
+      }
+    ]
   }
 ]
