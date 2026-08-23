@@ -1674,7 +1674,6 @@
                 var full = el.getAttribute('data-status-full') || '';
                 var hasText = !!full;
                 el.classList.toggle('hidden', !asBool(cfg.ShowPartyStatusEffects, true) || !hasText);
-                if (hasText) el.textContent = full;
             });
             if (asBool(cfg.ShowPortraits, false)) {
                 document.querySelectorAll('#partyBody .char-portrait').forEach(function (img) {
@@ -1891,6 +1890,22 @@
             ff7SyncPartyRowIndicator(row);
         }
 
+        var FF7_STATUS_ABBREV_HYSTERESIS_PX = 8;
+
+        function ff7CreateStatusWidthProbe(stEl) {
+            var probe = stEl.cloneNode(false);
+            probe.removeAttribute('data-status-full');
+            probe.removeAttribute('data-status-abbrev');
+            probe.classList.remove('hidden');
+            probe.style.position = 'absolute';
+            probe.style.visibility = 'hidden';
+            probe.style.pointerEvents = 'none';
+            probe.style.left = '0';
+            probe.style.top = '0';
+            stEl.parentNode.appendChild(probe);
+            return probe;
+        }
+
         function refreshPartyStatusAbbrevs() {
             var root = document.getElementById('partyBody');
             if (!root) return;
@@ -1899,12 +1914,25 @@
                 if (!stEl || stEl.classList.contains('hidden')) return;
                 var full = stEl.getAttribute('data-status-full') || '';
                 if (!full) return;
-                stEl.textContent = full;
                 var nameEl = nameRow.querySelector('.char-name');
                 if (!nameEl) return;
-                if (nameEl.scrollWidth > nameEl.clientWidth + 0.5) {
-                    stEl.textContent = ff7StatusEffectAbbrev(full);
-                }
+                var abbrev = ff7StatusEffectAbbrev(full);
+                var probe = ff7CreateStatusWidthProbe(stEl);
+                probe.textContent = full;
+                var fullW = probe.offsetWidth;
+                probe.textContent = abbrev;
+                var abbrevW = probe.offsetWidth;
+                probe.parentNode.removeChild(probe);
+                if (!(fullW > 0) || !(abbrevW > 0)) return;
+                var currentW = stEl.offsetWidth;
+                var nameWidthIfFull = nameEl.clientWidth - (fullW - currentW);
+                var currentlyAbbrev = stEl.getAttribute('data-status-abbrev') === '1';
+                var useAbbrev = currentlyAbbrev
+                    ? (nameEl.scrollWidth > nameWidthIfFull - FF7_STATUS_ABBREV_HYSTERESIS_PX)
+                    : (nameEl.scrollWidth > nameWidthIfFull + 0.5);
+                var nextText = useAbbrev ? abbrev : full;
+                stEl.setAttribute('data-status-abbrev', useAbbrev ? '1' : '0');
+                if (stEl.textContent !== nextText) stEl.textContent = nextText;
             });
         }
 
@@ -2044,9 +2072,13 @@
                 var stEl = row.querySelector('.char-party-name-row .char-status-effect');
                 if (stEl) {
                     var st = ff7StatusEffectLabel(actor);
+                    var prev = stEl.getAttribute('data-status-full') || '';
                     stEl.setAttribute('data-status-full', st);
-                    stEl.textContent = st;
                     stEl.classList.toggle('hidden', !asBool(cfg.ShowPartyStatusEffects, true) || !st);
+                    if (st !== prev) {
+                        stEl.removeAttribute('data-status-abbrev');
+                        stEl.textContent = st;
+                    }
                 }
 
                 ff7ApplyPartyRowPosition(row, actor);
