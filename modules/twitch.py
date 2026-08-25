@@ -4095,7 +4095,8 @@ class Twitch_API:
                     )
             eventsub = self.eventsub
 
-            # Start the websocket connection first
+            # Start the websocket connection first. The first listen_* must
+            # happen within 10s or Twitch closes the unused session (4003).
             eventsub.start()
 
             # Update connection state
@@ -4103,52 +4104,16 @@ class Twitch_API:
             twitch_connected = True
             self.last_health_check = datetime.now()
 
-            try:
-                from .twitch_moderators import get_moderator_cache
-
-                for _ in range(20):
-                    if is_twitch_api_ready():
-                        await get_moderator_cache().refresh(force=True)
-                        break
-                    await asyncio.sleep(0.25)
-                else:
-                    logger.debug(
-                        "Moderator cache refresh deferred: Twitch HTTP session not ready"
-                    )
-            except Exception as mod_err:
-                logger.debug("Moderator cache refresh on connect: %s", mod_err)
-
-            # Seed + Helix-sync ever-subscribed registry (gates channel.subscribe alerts)
+            # Fail-closed for channel.subscribe until Helix snapshot finishes
+            # after EventSub topics are registered (must not delay listen_*).
             try:
                 from .twitch_subscriber_registry import get_subscriber_registry
 
-                sub_registry = get_subscriber_registry()
-                sub_registry.reset_session_ready()
-                try:
-                    sub_registry.seed_from_statistics()
-                except Exception as seed_err:
-                    logger.debug("Subscriber registry stats seed failed: %s", seed_err)
-                for _ in range(20):
-                    if is_twitch_api_ready():
-                        ok = await sub_registry.sync_from_helix()
-                        if ok:
-                            logger.info(
-                                "Subscriber registry Helix snapshot ready for new-sub filtering"
-                            )
-                        else:
-                            logger.warning(
-                                "Subscriber registry Helix snapshot failed; "
-                                "channel.subscribe alerts will stay suppressed"
-                            )
-                        break
-                    await asyncio.sleep(0.25)
-                else:
-                    logger.debug(
-                        "Subscriber registry Helix sync deferred: Twitch HTTP session not ready"
-                    )
-            except Exception as sub_reg_err:
+                get_subscriber_registry().reset_session_ready()
+            except Exception as sub_reg_reset_err:
                 logger.debug(
-                    "Subscriber registry sync on connect failed: %s", sub_reg_err
+                    "Subscriber registry reset on connect failed: %s",
+                    sub_reg_reset_err,
                 )
 
             if (
@@ -4158,7 +4123,7 @@ class Twitch_API:
             ):
                 return False
 
-            # Register event handlers
+            # Register event handlers immediately (Twitch unused-connection window)
             try:
                 # Subscribe to channel chat messages
                 try:
@@ -4321,6 +4286,55 @@ class Twitch_API:
                 logger.debug(
                     "overlay recovery broadcast failed: %s", broadcast_err
                 )
+
+            # Post-subscribe work: EventSub is live, so these waits cannot
+            # trip Twitch's 10s unused-connection close.
+            try:
+                from .twitch_moderators import get_moderator_cache
+
+                for _ in range(20):
+                    if is_twitch_api_ready():
+                        await get_moderator_cache().refresh(force=True)
+                        break
+                    await asyncio.sleep(0.25)
+                else:
+                    logger.debug(
+                        "Moderator cache refresh deferred: Twitch HTTP session not ready"
+                    )
+            except Exception as mod_err:
+                logger.debug("Moderator cache refresh on connect: %s", mod_err)
+
+            try:
+                from .twitch_subscriber_registry import get_subscriber_registry
+
+                sub_registry = get_subscriber_registry()
+                try:
+                    sub_registry.seed_from_statistics()
+                except Exception as seed_err:
+                    logger.debug("Subscriber registry stats seed failed: %s", seed_err)
+                for _ in range(20):
+                    if is_twitch_api_ready():
+                        ok = await sub_registry.sync_from_helix()
+                        if ok:
+                            logger.info(
+                                "Subscriber registry Helix snapshot ready for new-sub filtering"
+                            )
+                        else:
+                            logger.warning(
+                                "Subscriber registry Helix snapshot failed; "
+                                "channel.subscribe alerts will stay suppressed"
+                            )
+                        break
+                    await asyncio.sleep(0.25)
+                else:
+                    logger.debug(
+                        "Subscriber registry Helix sync deferred: Twitch HTTP session not ready"
+                    )
+            except Exception as sub_reg_err:
+                logger.debug(
+                    "Subscriber registry sync on connect failed: %s", sub_reg_err
+                )
+
             return True
         except Exception as e:
             logger.error(f"Failed to initialize Twitch API: {str(e)}", exc_info=True)

@@ -396,7 +396,7 @@ class SubscriberRegistry:
 
     async def _fetch_helix_subscribers(self) -> bool:
         from . import twitch
-        from .twitch import TwitchSessionNotReadyError
+        from .twitch import TwitchPermissionError, TwitchSessionNotReadyError
 
         api = twitch.twitch_api
         if not api or not getattr(api, "user_id", None):
@@ -440,10 +440,25 @@ class SubscriberRegistry:
         except TwitchSessionNotReadyError as e:
             logger.debug("Subscriber Helix sync deferred: %s", e)
             return False
+        except TwitchPermissionError as e:
+            logger.warning(
+                "Helix subscriber snapshot unavailable: the channel must have "
+                "Affiliate or Partner status."
+            )
+            logger.debug("Helix GET /subscriptions forbidden: %s", e)
+            return False
         except Exception as e:
             err = str(e).lower()
             if "session not ready" in err:
                 logger.debug("Subscriber Helix sync deferred: %s", e)
+                return False
+            if "partner or affiliate" in err or (
+                "403" in err and "forbidden" in err
+            ):
+                logger.warning(
+                    "Helix subscriber snapshot unavailable: the channel must have "
+                    "Affiliate or Partner status."
+                )
                 return False
             logger.error(
                 "Error syncing subscribers from Helix: %s", e, exc_info=True

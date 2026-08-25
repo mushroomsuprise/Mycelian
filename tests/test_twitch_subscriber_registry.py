@@ -100,6 +100,58 @@ class SubscriberRegistryTests(unittest.TestCase):
         self.assertTrue(self.registry.is_known(user_login="seedresub"))
         self.assertFalse(self.registry.is_known(user_login="seedgifter"))
 
+    def test_helix_permission_error_does_not_set_session_ready(self) -> None:
+        async def _run() -> None:
+            api = MagicMock()
+            api.user_id = "123"
+            api.generic_api_call = AsyncMock(
+                side_effect=twitch_module.TwitchPermissionError(
+                    "Twitch API Error 403: The broadcaster must have "
+                    "partner or affiliate status."
+                )
+            )
+            with patch("modules.twitch.twitch_api", api), patch(
+                "modules.twitch_subscriber_registry.logger"
+            ) as log:
+                ok = await self.registry.sync_from_helix()
+            self.assertFalse(ok)
+            self.assertFalse(self.registry.is_session_ready())
+            log.error.assert_not_called()
+            log.warning.assert_called()
+
+        asyncio.run(_run())
+
+    def test_helix_forbidden_message_does_not_set_session_ready(self) -> None:
+        async def _run() -> None:
+            api = MagicMock()
+            api.user_id = "123"
+            api.generic_api_call = AsyncMock(
+                side_effect=Exception("Twitch API Error 403: Forbidden")
+            )
+            with patch("modules.twitch.twitch_api", api):
+                ok = await self.registry.sync_from_helix()
+            self.assertFalse(ok)
+            self.assertFalse(self.registry.is_session_ready())
+
+        asyncio.run(_run())
+
+
+class EventSubInitOrderTests(unittest.TestCase):
+    def test_first_listen_is_before_helix_snapshot(self) -> None:
+        import inspect
+
+        src = inspect.getsource(twitch_module.Twitch_API.intialize_twitch_api)
+        start_idx = src.find("eventsub.start()")
+        listen_idx = src.find("listen_channel_chat_message")
+        established_idx = src.find(
+            "Twitch API websocket connection established successfully"
+        )
+        helix_idx = src.find("sync_from_helix")
+        self.assertGreater(start_idx, -1)
+        self.assertGreater(listen_idx, start_idx)
+        self.assertGreater(established_idx, listen_idx)
+        self.assertGreater(helix_idx, established_idx)
+
 
 class SubscriberBadgeHelperTests(unittest.TestCase):
     def test_months_prefers_eventsub_info_over_id(self) -> None:
