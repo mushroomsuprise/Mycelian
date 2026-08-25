@@ -40,20 +40,33 @@
             --ff7-bar-bg: #181828;
             --ff7-bar-border: #404060;
             --ff7-bar-track-red: #401018;
-            --ff7-bar-track-grey: #242428;
+            /* LIMIT / TIME empty track + shared near-bottom shine */
+            --ff7-bar-track-grey: #2e2e32;
+            --ff7-bar-track-shine: #5a5a62;
+            --ff7-bar-fill-shine: #ffffff;
+            --ff7-bar-inner-line: #0a0a0c;
             --ff7-hp-fill-teal: #0d9488;
             --ff7-hp-fill-white: #ffffff;
             --ff7-mp-fill-green: #22c55e;
             --ff7-mp-fill-white: #ffffff;
             --ff7-limit-fill-top: #f0899e;
             --ff7-limit-fill-bot: #c83a55;
-            --ff7-limit-sad-fill-top: #89d0f0;
-            --ff7-limit-sad-fill-bot: #3a7ec8;
+            --ff7-limit-sad-fill-top: #7170c3;
+            --ff7-limit-sad-fill-bot: #3f3d68;
             --ff7-portrait-row-shift: 12px;
-            --ff7-limit-flash-pink: #e85d7a;
-            --ff7-limit-flash-yellow: #facc15;
-            --ff7-limit-flash-blue: #3b82f6;
-            --ff7-limit-flash-green: #22c55e;
+            /* Full-limit flash: green → cyan → magenta → gold (0.08s each) */
+            --ff7-limit-flash-green-top: #3a8a3a;
+            --ff7-limit-flash-green-body: #9ee87a;
+            --ff7-limit-flash-green-bot: #4a9a4a;
+            --ff7-limit-flash-cyan-top: #1a8a9a;
+            --ff7-limit-flash-cyan-body: #5ee8f0;
+            --ff7-limit-flash-cyan-bot: #2aaaba;
+            --ff7-limit-flash-magenta-top: #8a2a6a;
+            --ff7-limit-flash-magenta-body: #e85aa8;
+            --ff7-limit-flash-magenta-bot: #a03a7a;
+            --ff7-limit-flash-gold-top: #9a6a2a;
+            --ff7-limit-flash-gold-body: #f0c860;
+            --ff7-limit-flash-gold-bot: #c09040;
             --ff7-time-charging-top: #ecfdf5;
             --ff7-time-charging-mid: #86efac;
             --ff7-time-charging-bot: #4ade80;
@@ -440,14 +453,34 @@
             transition: width 0.15s linear;
         }
 
-        /* --- Limit bar (boxed with border) --- */
-        .ff7-limitbar {
+        /* Shared track lighting: dark top, body, near-bottom shine, bottom sliver */
+        .ff7-limitbar,
+        .ff7-timebar {
             width: 100%;
-            height: var(--limit-bar-h, 8px);
-            background: var(--ff7-bar-track-grey);
-            border: 1px solid var(--ff7-bar-border);
-            border-radius: 1px;
+            border-radius: 0;
             overflow: hidden;
+            /* Raised metallic outer bevel (light top/left, dark bottom/right) */
+            border-top: 1px solid var(--ff7-chrome-highlight);
+            border-left: 1px solid var(--ff7-chrome-highlight);
+            border-bottom: 1px solid var(--ff7-chrome-shadow);
+            border-right: 1px solid var(--ff7-chrome-shadow);
+            /* Keep fill out of the 1px well so the hairline is not covered */
+            padding: 1px;
+            box-shadow: inset 0 0 0 1px var(--ff7-bar-inner-line);
+            /* Empty track with same near-bottom highlight as fills */
+            background: linear-gradient(
+                180deg,
+                var(--ff7-bar-track-grey) 0%,
+                var(--ff7-bar-track-grey) 62%,
+                var(--ff7-bar-track-shine) 78%,
+                var(--ff7-bar-track-grey) 92%,
+                var(--ff7-bar-track-grey) 100%
+            );
+        }
+
+        /* --- Limit bar --- */
+        .ff7-limitbar {
+            height: var(--limit-bar-h, 8px);
         }
 
         .ff7-limitbar .fill {
@@ -455,7 +488,11 @@
             width: 0%;
             background: linear-gradient(
                 180deg,
-                var(--ff7-limit-fill-top) 0%,
+                var(--ff7-limit-fill-bot) 0%,
+                var(--ff7-limit-fill-top) 12%,
+                var(--ff7-limit-fill-top) 62%,
+                var(--ff7-bar-fill-shine) 78%,
+                var(--ff7-limit-fill-bot) 92%,
                 var(--ff7-limit-fill-bot) 100%
             );
             transition: width 0.15s linear;
@@ -464,31 +501,81 @@
         .ff7-limitbar.sadness .fill {
             background: linear-gradient(
                 180deg,
-                var(--ff7-limit-sad-fill-top) 0%,
+                var(--ff7-limit-sad-fill-bot) 0%,
+                var(--ff7-limit-sad-fill-top) 12%,
+                var(--ff7-limit-sad-fill-top) 62%,
+                var(--ff7-bar-fill-shine) 78%,
+                var(--ff7-limit-sad-fill-bot) 92%,
                 var(--ff7-limit-sad-fill-bot) 100%
             );
         }
 
         .ff7-limitbar.full .fill {
-            animation: limitFullFlash 0.36s linear infinite;
+            animation: limitFullFlash 0.32s steps(4) infinite;
         }
 
+        /* green → cyan → magenta → gold; equal 0.08s holds (no double first color) */
         @keyframes limitFullFlash {
-            0%, 22% { background: var(--ff7-limit-flash-pink); }
-            25%, 47% { background: var(--ff7-limit-flash-yellow); }
-            50%, 72% { background: var(--ff7-limit-flash-blue); }
-            75%, 97% { background: var(--ff7-limit-flash-green); }
-            100% { background: var(--ff7-limit-flash-pink); }
+            0% {
+                background: linear-gradient(
+                    180deg,
+                    var(--ff7-limit-flash-green-top) 0%,
+                    var(--ff7-limit-flash-green-body) 12%,
+                    var(--ff7-limit-flash-green-body) 62%,
+                    var(--ff7-bar-fill-shine) 78%,
+                    var(--ff7-limit-flash-green-bot) 92%,
+                    var(--ff7-limit-flash-green-bot) 100%
+                );
+            }
+            25% {
+                background: linear-gradient(
+                    180deg,
+                    var(--ff7-limit-flash-cyan-top) 0%,
+                    var(--ff7-limit-flash-cyan-body) 12%,
+                    var(--ff7-limit-flash-cyan-body) 62%,
+                    var(--ff7-bar-fill-shine) 78%,
+                    var(--ff7-limit-flash-cyan-bot) 92%,
+                    var(--ff7-limit-flash-cyan-bot) 100%
+                );
+            }
+            50% {
+                background: linear-gradient(
+                    180deg,
+                    var(--ff7-limit-flash-magenta-top) 0%,
+                    var(--ff7-limit-flash-magenta-body) 12%,
+                    var(--ff7-limit-flash-magenta-body) 62%,
+                    var(--ff7-bar-fill-shine) 78%,
+                    var(--ff7-limit-flash-magenta-bot) 92%,
+                    var(--ff7-limit-flash-magenta-bot) 100%
+                );
+            }
+            75% {
+                background: linear-gradient(
+                    180deg,
+                    var(--ff7-limit-flash-gold-top) 0%,
+                    var(--ff7-limit-flash-gold-body) 12%,
+                    var(--ff7-limit-flash-gold-body) 62%,
+                    var(--ff7-bar-fill-shine) 78%,
+                    var(--ff7-limit-flash-gold-bot) 92%,
+                    var(--ff7-limit-flash-gold-bot) 100%
+                );
+            }
+            100% {
+                background: linear-gradient(
+                    180deg,
+                    var(--ff7-limit-flash-green-top) 0%,
+                    var(--ff7-limit-flash-green-body) 12%,
+                    var(--ff7-limit-flash-green-body) 62%,
+                    var(--ff7-bar-fill-shine) 78%,
+                    var(--ff7-limit-flash-green-bot) 92%,
+                    var(--ff7-limit-flash-green-bot) 100%
+                );
+            }
         }
 
-        /* --- Time / ATB bar (boxed with border) --- */
+        /* --- Time / ATB bar --- */
         .ff7-timebar {
-            width: 100%;
             height: var(--time-bar-h, 8px);
-            background: var(--ff7-bar-track-grey);
-            border: 1px solid var(--ff7-bar-border);
-            border-radius: 1px;
-            overflow: hidden;
         }
 
         .ff7-timebar .fill {
@@ -496,8 +583,11 @@
             width: 0%;
             background: linear-gradient(
                 180deg,
-                var(--ff7-time-charging-top) 0%,
-                var(--ff7-time-charging-mid) 55%,
+                var(--ff7-time-charging-bot) 0%,
+                var(--ff7-time-charging-mid) 12%,
+                var(--ff7-time-charging-mid) 62%,
+                var(--ff7-bar-fill-shine) 78%,
+                var(--ff7-time-charging-bot) 92%,
                 var(--ff7-time-charging-bot) 100%
             );
             transition: width 0.12s linear;
@@ -506,8 +596,11 @@
         .ff7-timebar.ready .fill {
             background: linear-gradient(
                 180deg,
-                var(--ff7-time-ready-top) 0%,
-                var(--ff7-time-ready-mid) 55%,
+                var(--ff7-time-ready-bot) 0%,
+                var(--ff7-time-ready-mid) 12%,
+                var(--ff7-time-ready-mid) 62%,
+                var(--ff7-bar-fill-shine) 78%,
+                var(--ff7-time-ready-bot) 92%,
                 var(--ff7-time-ready-bot) 100%
             );
         }

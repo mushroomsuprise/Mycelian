@@ -10,6 +10,15 @@ Twitch:
 Chat Template:
     [] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.
 
+General:
+    [] - Create a "minimize to tray" option. Add as a toggle to the general app settings, with its value being saved and reloaded.
+    [] - When app is minized to the tray, it should "unload" the UI to save processing power and resources. 
+    [] - Add a right click menu on the tray icon with the option to "restore" the app that will reload the UI window, as well as an option to close it
+    [] - Add a "start app minimized" option as a toggle to the general app settings, with its value being saved and reloaded. this option will load the app in the "minimized" state with no UI window and just a tray icon.
+    [] - Add a "run at startup" option as a toggle to the general app settings, with its value being saved and reloaded
+    [] - Create OS agnostic method that will allow the app to launch when the user logs in. this should respect the toggle option and be robust.
+    [] - Verify the auto-update checker remains active when app is minimized, and send a system notification when an update is available. This notification should respect the "enable notifications" option that is already in the app. The system notification must be OS agnostic.
+
 FF7 Template:
     [x] - Add row display to the Party segment. Put in the same row as the character name and justified to the right so it sits above the MP number. Font size should match the username size. We should just show a label "FR" for front row and "BR" for back row.
     [x] - Double check materia color mapping, a couple could be wrong (cover maybe?), or it could be slots are being read wrong. someone mentioned there was an error with the first slot a couple of times.
