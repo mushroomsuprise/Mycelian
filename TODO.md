@@ -18,6 +18,8 @@ General:
     [] - Add a "run at startup" option as a toggle to the general app settings, with its value being saved and reloaded
     [] - Create OS agnostic method that will allow the app to launch when the user logs in. this should respect the toggle option and be robust.
     [] - Verify the auto-update checker remains active when app is minimized, and send a system notification when an update is available. This notification should respect the "enable notifications" option that is already in the app. The system notification must be OS agnostic.
+    [] - Scan through all areas of the app (especially integration connections) to ensure full functionality for 24/7 app operation. with the app running in the background constantly, its important all items are robust and do not crash from extended use.
+    [] - Add notification to warn users that running the app constantly when using a Firebase database setup will cause increased bandwidth usage, with the potential for the end user to run out of bandwidth
 
 FF7 Template:
     [x] - Add row display to the Party segment. Put in the same row as the character name and justified to the right so it sits above the MP number. Font size should match the username size. We should just show a label "FR" for front row and "BR" for back row.

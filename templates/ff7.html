@@ -40,6 +40,7 @@
             --ff7-bar-bg: #181828;
             --ff7-bar-border: #404060;
             --ff7-bar-track-red: #401018;
+            --ff7-bar-drain: #e41818;
             /* LIMIT / TIME empty track + shared near-bottom shine */
             --ff7-bar-track-grey: #5a5a5a;
             --ff7-bar-track-shine: #8a8a8a;
@@ -416,6 +417,7 @@
 
         /* --- HP bar (thin gradient under values) --- */
         .ff7-hpbar {
+            position: relative;
             width: 100%;
             height: var(--hp-bar-h, 4px);
             background: var(--ff7-bar-track-red);
@@ -423,10 +425,22 @@
             overflow: hidden;
         }
 
+        .ff7-hpbar .drain,
         .ff7-hpbar .fill {
+            position: absolute;
+            left: 0;
+            top: 0;
             height: 100%;
             width: 0%;
-            transition: width 0.15s linear;
+        }
+
+        .ff7-hpbar .drain {
+            background: var(--ff7-bar-drain);
+            z-index: 0;
+        }
+
+        .ff7-hpbar .fill {
+            z-index: 1;
             background: linear-gradient(
                 90deg,
                 var(--ff7-hp-fill-teal) 0%,
@@ -436,6 +450,7 @@
 
         /* --- MP bar (thin green gradient under value) --- */
         .ff7-mpbar {
+            position: relative;
             width: 90%;
             margin-left: auto;
             height: var(--mp-bar-h, 4px);
@@ -444,15 +459,27 @@
             overflow: hidden;
         }
 
+        .ff7-mpbar .drain,
         .ff7-mpbar .fill {
+            position: absolute;
+            left: 0;
+            top: 0;
             height: 100%;
             width: 0%;
+        }
+
+        .ff7-mpbar .drain {
+            background: var(--ff7-bar-drain);
+            z-index: 0;
+        }
+
+        .ff7-mpbar .fill {
+            z-index: 1;
             background: linear-gradient(
                 90deg,
                 var(--ff7-mp-fill-green) 0%,
                 var(--ff7-mp-fill-white) 100%
             );
-            transition: width 0.15s linear;
         }
 
         /* Shared track lighting: dark top, body, near-bottom shine, bottom sliver */
@@ -1936,6 +1963,151 @@
             return Math.max(0, Math.min(100, (hp / maxHp) * 100));
         }
 
+        var FF7_HPMP_TWEEN_MS = 1000;
+        var _ff7HpMpTweens = [];
+        var _ff7HpMpRaf = null;
+
+        function ff7HpMpEnsureRaf() {
+            if (_ff7HpMpRaf != null) return;
+            function tick(now) {
+                _ff7HpMpRaf = null;
+                var still = [];
+                for (var i = 0; i < _ff7HpMpTweens.length; i++) {
+                    var t = _ff7HpMpTweens[i];
+                    var numEl = t.numEl;
+                    if (!numEl || !numEl.isConnected) continue;
+                    var elapsed = now - t.startTime;
+                    var p = Math.min(1, elapsed / FF7_HPMP_TWEEN_MS);
+                    var disp = t.startVal + (t.targetVal - t.startVal) * p;
+                    if (p >= 1) disp = t.targetVal;
+                    numEl._ff7DisplayVal = disp;
+                    numEl.textContent = String(Math.round(disp));
+                    if (t.drainAnim && t.drainEl) {
+                        var drainPct = t.startDrainPct + (t.targetDrainPct - t.startDrainPct) * p;
+                        if (p >= 1) drainPct = t.targetDrainPct;
+                        numEl._ff7DrainPct = drainPct;
+                        t.drainEl.style.width = drainPct + '%';
+                    }
+                    if (typeof t.colorFn === 'function') {
+                        t.colorFn(Math.round(disp), t.maxVal);
+                    }
+                    if (p < 1) {
+                        still.push(t);
+                    } else {
+                        numEl._ff7DisplayVal = t.targetVal;
+                        numEl._ff7TargetVal = t.targetVal;
+                        numEl._ff7DrainPct = t.targetDrainPct;
+                        numEl._ff7Tween = null;
+                    }
+                }
+                _ff7HpMpTweens = still;
+                if (_ff7HpMpTweens.length) {
+                    _ff7HpMpRaf = requestAnimationFrame(tick);
+                }
+            }
+            _ff7HpMpRaf = requestAnimationFrame(tick);
+        }
+
+        /**
+         * Classic FF7 HP/MP feedback:
+         * - numbers count over ~1s
+         * - gradient fill snaps immediately
+         * - on decrease, a red drain bar shrinks from old% → new% over the same 1s
+         */
+        function ff7TweenHpMp(opts) {
+            var numEl = opts.numEl;
+            var fillEl = opts.fillEl;
+            var drainEl = opts.drainEl;
+            var targetVal = Number(opts.targetVal);
+            if (isNaN(targetVal)) targetVal = 0;
+            var maxVal = Number(opts.maxVal);
+            if (isNaN(maxVal) || maxVal < 0) maxVal = 0;
+            var colorFn = opts.colorFn;
+            if (!numEl) return;
+
+            var targetPct = hpPct(targetVal, maxVal);
+            if (fillEl) fillEl.style.width = targetPct + '%';
+
+            var displayVal = numEl._ff7DisplayVal;
+            if (displayVal === undefined || displayVal === null) {
+                var parsed = parseInt(numEl.textContent, 10);
+                displayVal = isNaN(parsed) ? targetVal : parsed;
+                numEl._ff7DisplayVal = displayVal;
+            }
+
+            var drainPctNow = numEl._ff7DrainPct;
+            if (drainPctNow === undefined || drainPctNow === null) {
+                if (drainEl && drainEl.style.width) {
+                    var dParsed = parseFloat(drainEl.style.width);
+                    drainPctNow = isNaN(dParsed) ? hpPct(displayVal, maxVal) : dParsed;
+                } else {
+                    drainPctNow = hpPct(displayVal, maxVal);
+                }
+                numEl._ff7DrainPct = drainPctNow;
+            }
+
+            /* Same target mid-tween: keep counting; refresh max / fill / color refs. */
+            if (numEl._ff7Tween && numEl._ff7TargetVal === targetVal) {
+                numEl._ff7Tween.maxVal = maxVal;
+                numEl._ff7Tween.colorFn = colorFn;
+                numEl._ff7Tween.fillEl = fillEl;
+                numEl._ff7Tween.drainEl = drainEl;
+                numEl._ff7Tween.targetDrainPct = targetPct;
+                if (!numEl._ff7Tween.drainAnim) {
+                    if (drainEl) drainEl.style.width = targetPct + '%';
+                    numEl._ff7DrainPct = targetPct;
+                    numEl._ff7Tween.startDrainPct = targetPct;
+                }
+                if (typeof colorFn === 'function') {
+                    colorFn(Math.round(displayVal), maxVal);
+                }
+                return;
+            }
+
+            /* Already showing the target and idle: snap bars (handles max-only changes). */
+            if (!numEl._ff7Tween && Math.round(displayVal) === targetVal) {
+                if (drainEl) drainEl.style.width = targetPct + '%';
+                numEl._ff7DrainPct = targetPct;
+                numEl._ff7TargetVal = targetVal;
+                numEl._ff7DisplayVal = targetVal;
+                numEl.textContent = String(targetVal);
+                if (typeof colorFn === 'function') colorFn(targetVal, maxVal);
+                return;
+            }
+
+            var decreasing = targetVal < displayVal;
+            if (!decreasing) {
+                if (drainEl) drainEl.style.width = targetPct + '%';
+                numEl._ff7DrainPct = targetPct;
+                drainPctNow = targetPct;
+            }
+
+            _ff7HpMpTweens = _ff7HpMpTweens.filter(function (t) {
+                return t.numEl !== numEl;
+            });
+
+            var tween = {
+                numEl: numEl,
+                fillEl: fillEl,
+                drainEl: drainEl,
+                startVal: displayVal,
+                targetVal: targetVal,
+                maxVal: maxVal,
+                startTime: performance.now(),
+                drainAnim: decreasing,
+                startDrainPct: decreasing ? drainPctNow : targetPct,
+                targetDrainPct: targetPct,
+                colorFn: colorFn
+            };
+            numEl._ff7TargetVal = targetVal;
+            numEl._ff7Tween = tween;
+            _ff7HpMpTweens.push(tween);
+            if (typeof colorFn === 'function') {
+                colorFn(Math.round(displayVal), maxVal);
+            }
+            ff7HpMpEnsureRaf();
+        }
+
         function limitPct(lim) {
             if (lim === undefined || lim === null) return 0;
             var v = Number(lim);
@@ -2198,19 +2370,12 @@
                 var hp = actor.hp || 0;
                 var maxMp = actor.max_mp || 0;
                 var mp = actor.mp || 0;
-                var hpPctVal = hpPct(hp, maxHp);
-                var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
-                var dead = hp <= 0;
-                var lowHp = !dead && maxHp > 0 && (hp / maxHp) < 0.25;
-                var lowMp = !dead && maxMp > 0 && (mp / maxMp) < 0.25;
-                var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
 
                 var nameEl = row.querySelector('.char-party-name-row .char-name');
                 if (nameEl) {
                     var lv = (actor.level !== undefined && actor.level !== null) ? Number(actor.level) : 0;
                     var nm = actor.name || '?';
                     nameEl.textContent = lv > 0 ? ('Lv ' + lv + ' ' + nm) : nm;
-                    nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
                 }
 
                 var stEl = row.querySelector('.char-party-name-row .char-status-effect');
@@ -2234,28 +2399,74 @@
                 ff7SyncPartyRowIndicator(row);
 
                 var hpCell = row.querySelector('.hp-block .stat-cell.hp-cell');
+                var mpCell = row.querySelector('.mp-block .stat-cell.mp-cell');
+                var hpCurEl = null;
+                var hpMaxEl = null;
+                var mpVal = null;
+                if (mpCell) {
+                    mpVal = mpCell.querySelector('.stat-val.mp-current') || mpCell.querySelector('.stat-val');
+                }
                 if (hpCell) {
-                    hpCell.className = hpCellClass;
                     var hpVals = hpCell.querySelectorAll('.stat-val');
                     if (hpVals.length >= 2) {
-                        hpVals[0].textContent = String(hp);
-                        hpVals[1].textContent = String(maxHp);
-                        hpVals[0].className = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
-                        hpVals[1].className = 'stat-val hp-max' + (dead ? ' val-dead' : '');
+                        hpCurEl = hpVals[0];
+                        hpMaxEl = hpVals[1];
+                        hpMaxEl.textContent = String(maxHp);
                     }
                     var hpFill = hpCell.querySelector('.ff7-hpbar .fill');
-                    if (hpFill) hpFill.style.width = hpPctVal + '%';
+                    var hpDrain = hpCell.querySelector('.ff7-hpbar .drain');
+                    ff7TweenHpMp({
+                        numEl: hpCurEl,
+                        fillEl: hpFill,
+                        drainEl: hpDrain,
+                        targetVal: hp,
+                        maxVal: maxHp,
+                        colorFn: function (dispHp, dispMax) {
+                            var dead = dispHp <= 0;
+                            var lowHp = !dead && dispMax > 0 && (dispHp / dispMax) < 0.25;
+                            if (hpCell) {
+                                hpCell.className = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
+                            }
+                            if (hpCurEl) {
+                                hpCurEl.className = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
+                            }
+                            if (hpMaxEl) {
+                                hpMaxEl.className = 'stat-val hp-max' + (dead ? ' val-dead' : '');
+                            }
+                            if (nameEl) {
+                                nameEl.className = 'char-name' + (dead ? ' name-dead' : '');
+                            }
+                            if (mpVal) {
+                                var mpDisp = mpVal._ff7DisplayVal != null
+                                    ? Math.round(mpVal._ff7DisplayVal)
+                                    : (parseInt(mpVal.textContent, 10) || 0);
+                                var lowMp = !dead && maxMp > 0 && (mpDisp / maxMp) < 0.25;
+                                mpVal.className = 'stat-val mp-current' + (lowMp ? ' val-warn' : '');
+                            }
+                        }
+                    });
                 }
 
-                var mpCell = row.querySelector('.mp-block .stat-cell.mp-cell');
                 if (mpCell) {
-                    var mpVal = mpCell.querySelector('.stat-val.mp-current') || mpCell.querySelector('.stat-val');
-                    if (mpVal) {
-                        mpVal.textContent = String(mp);
-                        mpVal.className = 'stat-val mp-current' + (lowMp ? ' val-warn' : '');
-                    }
                     var mpFill = mpCell.querySelector('.ff7-mpbar .fill');
-                    if (mpFill) mpFill.style.width = mpPctVal + '%';
+                    var mpDrain = mpCell.querySelector('.ff7-mpbar .drain');
+                    ff7TweenHpMp({
+                        numEl: mpVal,
+                        fillEl: mpFill,
+                        drainEl: mpDrain,
+                        targetVal: mp,
+                        maxVal: maxMp,
+                        colorFn: function (dispMp, dispMaxMp) {
+                            var hpDisp = hpCurEl && hpCurEl._ff7DisplayVal != null
+                                ? Math.round(hpCurEl._ff7DisplayVal)
+                                : hp;
+                            var dead = hpDisp <= 0;
+                            var lowMp = !dead && dispMaxMp > 0 && (dispMp / dispMaxMp) < 0.25;
+                            if (mpVal) {
+                                mpVal.className = 'stat-val mp-current' + (lowMp ? ' val-warn' : '');
+                            }
+                        }
+                    });
                 }
             }
             scheduleRefreshPartyStatusAbbrevs();
@@ -2271,35 +2482,57 @@
                 var hp = actor.hp || 0;
                 var maxMp = actor.max_mp || 0;
                 var mp = actor.mp || 0;
-                var hpPctVal = hpPct(hp, maxHp);
-                var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
-                var dead = hp <= 0;
-                var lowHp = !dead && maxHp > 0 && (hp / maxHp) < 0.25;
-                var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
 
                 var nameWrap = row.querySelector('.char-name');
-                if (nameWrap) {
-                    nameWrap.className = 'char-name' + (dead ? ' name-dead' : '');
-                }
                 var hpCell = row.querySelector('.stat-cell.hp-cell');
+                var hpCurEl = null;
+                var hpMaxEl = null;
                 if (hpCell) {
-                    hpCell.className = hpCellClass;
                     var hpVals = hpCell.querySelectorAll('.stat-val');
                     if (hpVals.length >= 2) {
-                        hpVals[0].textContent = String(hp);
-                        hpVals[1].textContent = String(maxHp);
-                        hpVals[0].className = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
-                        hpVals[1].className = 'stat-val hp-max' + (dead ? ' val-dead' : '');
+                        hpCurEl = hpVals[0];
+                        hpMaxEl = hpVals[1];
+                        hpMaxEl.textContent = String(maxHp);
                     }
                     var hpFill = hpCell.querySelector('.ff7-hpbar .fill');
-                    if (hpFill) hpFill.style.width = hpPctVal + '%';
+                    var hpDrain = hpCell.querySelector('.ff7-hpbar .drain');
+                    ff7TweenHpMp({
+                        numEl: hpCurEl,
+                        fillEl: hpFill,
+                        drainEl: hpDrain,
+                        targetVal: hp,
+                        maxVal: maxHp,
+                        colorFn: function (dispHp, dispMax) {
+                            var dead = dispHp <= 0;
+                            var lowHp = !dead && dispMax > 0 && (dispHp / dispMax) < 0.25;
+                            if (hpCell) {
+                                hpCell.className = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
+                            }
+                            if (hpCurEl) {
+                                hpCurEl.className = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
+                            }
+                            if (hpMaxEl) {
+                                hpMaxEl.className = 'stat-val hp-max' + (dead ? ' val-dead' : '');
+                            }
+                            if (nameWrap) {
+                                nameWrap.className = 'char-name' + (dead ? ' name-dead' : '');
+                            }
+                        }
+                    });
                 }
                 var mpCell = row.querySelector('.stat-cell.mp-cell');
                 if (mpCell) {
                     var mpVal = mpCell.querySelector('.stat-val');
-                    if (mpVal) mpVal.textContent = String(mp);
                     var mpFill = mpCell.querySelector('.ff7-mpbar .fill');
-                    if (mpFill) mpFill.style.width = mpPctVal + '%';
+                    var mpDrain = mpCell.querySelector('.ff7-mpbar .drain');
+                    ff7TweenHpMp({
+                        numEl: mpVal,
+                        fillEl: mpFill,
+                        drainEl: mpDrain,
+                        targetVal: mp,
+                        maxVal: maxMp,
+                        colorFn: null
+                    });
                 }
             }
         }
@@ -2474,7 +2707,7 @@
                     '<span class="stat-sep">/</span>' +
                     '<span class="' + hpMaxClass + '">' + maxHp + '</span>' +
                 '</div>' +
-                '<div class="ff7-hpbar"><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
+                '<div class="ff7-hpbar"><div class="drain" style="width:' + hpPctVal + '%"></div><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
             hpBlock.appendChild(hpCell);
 
             var mpBlock = document.createElement('div');
@@ -2485,7 +2718,7 @@
                 '<div class="stat-values">' +
                     '<span class="' + mpValClass + '">' + mp + '</span>' +
                 '</div>' +
-                '<div class="ff7-mpbar"><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
+                '<div class="ff7-mpbar"><div class="drain" style="width:' + mpPctVal + '%"></div><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
             mpBlock.appendChild(mpCell);
 
             hpMpRow.appendChild(hpBlock);
@@ -2535,7 +2768,7 @@
                     '<span class="stat-sep">/</span>' +
                     '<span class="' + maxCls + '">' + maxHp + '</span>' +
                 '</div>' +
-                '<div class="ff7-hpbar"><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
+                '<div class="ff7-hpbar"><div class="drain" style="width:' + hpPctVal + '%"></div><div class="fill" style="width:' + hpPctVal + '%"></div></div>';
             row.appendChild(hpCell);
 
             var mpCell = document.createElement('div');
@@ -2544,7 +2777,7 @@
                 '<div class="stat-values">' +
                     '<span class="stat-val">' + mp + '</span>' +
                 '</div>' +
-                '<div class="ff7-mpbar"><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
+                '<div class="ff7-mpbar"><div class="drain" style="width:' + mpPctVal + '%"></div><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
             row.appendChild(mpCell);
 
             var rotor = document.createElement('div');
