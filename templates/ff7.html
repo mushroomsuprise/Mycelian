@@ -41,10 +41,12 @@
             --ff7-bar-border: #404060;
             --ff7-bar-track-red: #401018;
             /* LIMIT / TIME empty track + shared near-bottom shine */
-            --ff7-bar-track-grey: #2e2e32;
-            --ff7-bar-track-shine: #5a5a62;
+            --ff7-bar-track-grey: #3b3b3b;
+            --ff7-bar-track-shine: #6a6a6a;
             --ff7-bar-fill-shine: #ffffff;
-            --ff7-bar-inner-line: #0a0a0c;
+            --ff7-bar-inner-line: #1a1a1a;
+            --ff7-bar-frame-hi: #c8c8c8;
+            --ff7-bar-frame-lo: #4a4a4a;
             --ff7-hp-fill-teal: #0d9488;
             --ff7-hp-fill-white: #ffffff;
             --ff7-mp-fill-green: #22c55e;
@@ -459,12 +461,14 @@
             width: 100%;
             border-radius: 0;
             overflow: hidden;
-            /* Raised metallic outer bevel (light top/left, dark bottom/right) */
-            border-top: 1px solid var(--ff7-chrome-highlight);
-            border-left: 1px solid var(--ff7-chrome-highlight);
-            border-bottom: 1px solid var(--ff7-chrome-shadow);
-            border-right: 1px solid var(--ff7-chrome-shadow);
-            /* Keep fill out of the 1px well so the hairline is not covered */
+            /* Thick raised metallic bevel (light top/left, dark bottom/right) */
+            border-style: solid;
+            border-width: 2px;
+            border-top-color: var(--ff7-bar-frame-hi);
+            border-left-color: var(--ff7-bar-frame-hi);
+            border-bottom-color: var(--ff7-bar-frame-lo);
+            border-right-color: var(--ff7-bar-frame-lo);
+            /* Inner dark hairline; padding keeps fill from covering it */
             padding: 1px;
             box-shadow: inset 0 0 0 1px var(--ff7-bar-inner-line);
             /* Empty track with same near-bottom highlight as fills */
@@ -480,7 +484,8 @@
 
         /* --- Limit bar --- */
         .ff7-limitbar {
-            height: var(--limit-bar-h, 8px);
+            /* Default taller so 2px bevel + inner line still leave usable fill */
+            height: var(--limit-bar-h, 12px);
         }
 
         .ff7-limitbar .fill {
@@ -511,12 +516,13 @@
         }
 
         .ff7-limitbar.full .fill {
-            animation: limitFullFlash 0.32s steps(4) infinite;
+            /* linear + hold ranges: steps(N) applies between keyframes and skips colors */
+            animation: limitFullFlash 0.32s linear infinite;
         }
 
         /* green → cyan → magenta → gold; equal 0.08s holds (no double first color) */
         @keyframes limitFullFlash {
-            0% {
+            0%, 24.999% {
                 background: linear-gradient(
                     180deg,
                     var(--ff7-limit-flash-green-top) 0%,
@@ -527,7 +533,7 @@
                     var(--ff7-limit-flash-green-bot) 100%
                 );
             }
-            25% {
+            25%, 49.999% {
                 background: linear-gradient(
                     180deg,
                     var(--ff7-limit-flash-cyan-top) 0%,
@@ -538,7 +544,7 @@
                     var(--ff7-limit-flash-cyan-bot) 100%
                 );
             }
-            50% {
+            50%, 74.999% {
                 background: linear-gradient(
                     180deg,
                     var(--ff7-limit-flash-magenta-top) 0%,
@@ -549,7 +555,7 @@
                     var(--ff7-limit-flash-magenta-bot) 100%
                 );
             }
-            75% {
+            75%, 100% {
                 background: linear-gradient(
                     180deg,
                     var(--ff7-limit-flash-gold-top) 0%,
@@ -560,22 +566,11 @@
                     var(--ff7-limit-flash-gold-bot) 100%
                 );
             }
-            100% {
-                background: linear-gradient(
-                    180deg,
-                    var(--ff7-limit-flash-green-top) 0%,
-                    var(--ff7-limit-flash-green-body) 12%,
-                    var(--ff7-limit-flash-green-body) 62%,
-                    var(--ff7-bar-fill-shine) 78%,
-                    var(--ff7-limit-flash-green-bot) 92%,
-                    var(--ff7-limit-flash-green-bot) 100%
-                );
-            }
         }
 
         /* --- Time / ATB bar --- */
         .ff7-timebar {
-            height: var(--time-bar-h, 8px);
+            height: var(--time-bar-h, 12px);
         }
 
         .ff7-timebar .fill {
@@ -683,8 +678,8 @@
         }
         .enemy-rotor {
             /* Fixed height so inner rotor-viewport can measure (min-height alone breaks height:100%) */
-            height: calc(var(--limit-bar-h, 8px) + var(--time-bar-h, 8px) + 6px);
-            min-height: calc(var(--limit-bar-h, 8px) + var(--time-bar-h, 8px) + 6px);
+            height: calc(var(--limit-bar-h, 12px) + var(--time-bar-h, 12px) + 6px);
+            min-height: calc(var(--limit-bar-h, 12px) + var(--time-bar-h, 12px) + 6px);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1340,6 +1335,56 @@
             pane.style.minHeight = H + 'px';
         }
 
+        function ff7PatchBarEl(oldBar, newBar) {
+            if (!oldBar || !newBar) return false;
+            var oldFill = oldBar.querySelector(':scope > .fill');
+            var newFill = newBar.querySelector(':scope > .fill');
+            if (!oldFill || !newFill) return false;
+            oldFill.style.width = newFill.style.width || '0%';
+            /* Toggle classes without replacing the node so CSS animations keep running. */
+            var names = ['full', 'sadness', 'ready'];
+            for (var i = 0; i < names.length; i++) {
+                var n = names[i];
+                var on = newBar.classList.contains(n);
+                if (oldBar.classList.contains(n) !== on) {
+                    oldBar.classList.toggle(n, on);
+                }
+            }
+            return true;
+        }
+
+        /* Update bar widths/classes in place. Replacing innerHTML every rotor tick
+           restarts limitFullFlash from green and makes colors look skipped. */
+        function ff7PatchRotorBarsPane(pane, html) {
+            var tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            var newLimits = tmp.querySelectorAll('.ff7-limitbar');
+            var newTimes = tmp.querySelectorAll('.ff7-timebar');
+            var oldLimits = pane.querySelectorAll('.ff7-limitbar');
+            var oldTimes = pane.querySelectorAll('.ff7-timebar');
+            if (
+                newLimits.length !== oldLimits.length ||
+                newTimes.length !== oldTimes.length ||
+                (oldLimits.length === 0 && oldTimes.length === 0)
+            ) {
+                pane.innerHTML = html;
+                return;
+            }
+            var i;
+            for (i = 0; i < oldLimits.length; i++) {
+                if (!ff7PatchBarEl(oldLimits[i], newLimits[i])) {
+                    pane.innerHTML = html;
+                    return;
+                }
+            }
+            for (i = 0; i < oldTimes.length; i++) {
+                if (!ff7PatchBarEl(oldTimes[i], newTimes[i])) {
+                    pane.innerHTML = html;
+                    return;
+                }
+            }
+        }
+
         function ff7RotorSetContent(rotorEl, html, modeKey) {
             if (!html) {
                 ff7RotorClear(rotorEl);
@@ -1356,7 +1401,13 @@
 
             if (sameMode && vp && track && track.children.length === 1) {
                 var onlyPane = track.querySelector(':scope > .rotor-pane');
-                if (onlyPane) onlyPane.innerHTML = html;
+                if (onlyPane) {
+                    if (modeKey === 'bars' || modeKey === 'atb') {
+                        ff7PatchRotorBarsPane(onlyPane, html);
+                    } else {
+                        onlyPane.innerHTML = html;
+                    }
+                }
                 return;
             }
 
@@ -1733,14 +1784,14 @@
                 PartyTitleFontSize: 11, PartyNameFontSize: 15,
                 PartyHPFontSize: 14, PartyMPFontSize: 14,
                 PartyHPBarHeight: 4, PartyMPBarHeight: 4,
-                PartyLimitBarHeight: 8, PartyTimeBarHeight: 8,
+                PartyLimitBarHeight: 12, PartyTimeBarHeight: 12,
                 PartyFieldRotateMs: 4000, PartyBattleRotateMs: 3500,
                 PartyUseBattleRotation: true,
                 PartyRotateGear: true, PartyRotateMateria: true, PartyRotateBars: true,
                 EnemiesTitleFontSize: 11, EnemiesNameFontSize: 15,
                 EnemiesHPFontSize: 14, EnemiesMPFontSize: 14,
                 EnemiesHPBarHeight: 4, EnemiesMPBarHeight: 4,
-                EnemiesTimeBarHeight: 8,
+                EnemiesTimeBarHeight: 12,
                 EnemyBattleRotateMs: 3500,
                 StatsTitleFontSize: 11, StatsLabelFontSize: 11, StatsValueFontSize: 15,
                 BattleLogFontSize: 11, BattleLogMaxLines: 40, BattleLogVisibleRows: 8,
@@ -1807,8 +1858,8 @@
             pp.style.setProperty('--mp-font', num(cfg.PartyMPFontSize, 14) + 'px');
             pp.style.setProperty('--hp-bar-h', num(cfg.PartyHPBarHeight, 4) + 'px');
             pp.style.setProperty('--mp-bar-h', num(cfg.PartyMPBarHeight, 4) + 'px');
-            pp.style.setProperty('--limit-bar-h', num(cfg.PartyLimitBarHeight, 8) + 'px');
-            pp.style.setProperty('--time-bar-h', num(cfg.PartyTimeBarHeight, 8) + 'px');
+            pp.style.setProperty('--limit-bar-h', num(cfg.PartyLimitBarHeight, 12) + 'px');
+            pp.style.setProperty('--time-bar-h', num(cfg.PartyTimeBarHeight, 12) + 'px');
             /* Name line + one HP/MP bar row — matches .char-party-main height (tighter party rows; +4px = .char-hpmp-row margin-top) */
             pp.style.setProperty(
                 '--party-rotor-max-h',
@@ -1825,7 +1876,7 @@
             ep.style.setProperty('--mp-font', num(cfg.EnemiesMPFontSize, 14) + 'px');
             ep.style.setProperty('--hp-bar-h', num(cfg.EnemiesHPBarHeight, 4) + 'px');
             ep.style.setProperty('--mp-bar-h', num(cfg.EnemiesMPBarHeight, 4) + 'px');
-            ep.style.setProperty('--time-bar-h', num(cfg.EnemiesTimeBarHeight, 8) + 'px');
+            ep.style.setProperty('--time-bar-h', num(cfg.EnemiesTimeBarHeight, 12) + 'px');
 
             var sp = document.getElementById('panelStats');
             sp.style.setProperty('--title-font', num(cfg.StatsTitleFontSize, 11) + 'px');
