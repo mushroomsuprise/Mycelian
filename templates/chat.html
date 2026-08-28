@@ -1328,8 +1328,23 @@
 
         function formatGiftSubMessage(alertData) {
             var username = lookupChatAlertField(alertData, 'username') || extractUsernameFromMessage(alertData) || 'Someone';
-            var qty = parseInt(lookupChatAlertField(alertData, 'gift_qty', 'quantity'), 10) || 1;
+            var qtyRaw = lookupChatAlertField(alertData, 'gift_qty', 'quantity');
+            var qty = parseInt(qtyRaw, 10);
+            if (isNaN(qty) || qty < 1) {
+                var message = alertData.message || '';
+                var qtyMatch = message.match(/gifted\s+(\d+)/i);
+                qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+            }
+            if (isNaN(qty) || qty < 1) {
+                qty = 1;
+            }
             var tier = lookupChatAlertField(alertData, 'tier') || 1;
+            var recipient = String(
+                lookupChatAlertField(alertData, 'recipient', 'recipient_name') || ''
+            ).trim();
+            if (qty === 1 && recipient) {
+                return username + ' gifted a tier ' + tier + ' sub to ' + recipient + '!';
+            }
             if (qty === 1) {
                 return username + ' gifted a tier ' + tier + ' sub!';
             }

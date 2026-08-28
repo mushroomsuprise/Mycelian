@@ -417,8 +417,32 @@ def _finalize_resolved_pending_single_gifts() -> None:
 
 
 def _emit_giftsub_alert_and_instant(alert: alertutils.AlertObj) -> None:
-    """Queue a giftsub alert and emit the matching instant_alert payload."""
+    """Queue a giftsub alert, add to activity feed, and emit instant_alert."""
     _queue_twitch_alert(alert)
+    recipient = str(getattr(alert, "recipient", "") or "").strip()
+    gift_qty = int(getattr(alert, "gift_qty", 0) or 0)
+    tier = getattr(alert, "tier", 1) or 1
+    gifter_name = alert.username or "Anonymous"
+    if gift_qty == 1 and recipient:
+        feed_message = (
+            f"{gifter_name} gifted a Tier {tier} sub to {recipient}!"
+        )
+    elif gift_qty == 1:
+        feed_message = f"{gifter_name} gifted a Tier {tier} sub!"
+    else:
+        feed_message = (
+            f"{gifter_name} gifted {gift_qty} Tier {tier} subs!"
+        )
+    _add_twitch_alert_to_feed(
+        alert_type="Giftsub",
+        message=feed_message,
+        badge_type="giftsub",
+        timestamp=str(int(alert.timestamp)),
+        tier=tier,
+        alert_id=alert.alert_id,
+        gift_qty=gift_qty,
+        recipient=recipient or None,
+    )
     try:
         alert_data = {
             "type": "giftsub",
@@ -426,7 +450,7 @@ def _emit_giftsub_alert_and_instant(alert: alertutils.AlertObj) -> None:
             "anonymous": bool(getattr(alert, "anonymous", False)),
             "tier": alert.tier,
             "gift_qty": alert.gift_qty,
-            "recipient": getattr(alert, "recipient", "") or "",
+            "recipient": recipient,
             "alert_id": alert.alert_id,
             "timestamp": alert.timestamp,
         }
@@ -434,7 +458,7 @@ def _emit_giftsub_alert_and_instant(alert: alertutils.AlertObj) -> None:
         logger.debug(
             "Sent instant alert for giftsub: %s (recipient=%s)",
             alert.username,
-            alert_data["recipient"] or "-",
+            recipient or "-",
         )
     except Exception as e:
         logger.error(
@@ -2883,18 +2907,8 @@ class Twitch_API:
         except Exception as e:
             logger.error(f"Error tracking gift sub statistics: {e}")
 
-        # Add to activity feed
-        _add_twitch_alert_to_feed(
-            alert_type="Giftsub",
-            message=f"{gifter_name} gifted {alert.gift_qty} Tier {alert.tier} subs!",
-            badge_type="giftsub",
-            timestamp=str(int(alert.timestamp)),
-            tier=alert.tier,
-            alert_id=alert.alert_id,
-        )
-
-        # Queue + instant: multi-gifts emit immediately; single gifts wait briefly
-        # for recipient name from channel.subscribe / chat sub_gift.
+        # Queue + instant + activity feed: multi-gifts emit immediately; single
+        # gifts wait briefly for recipient name from channel.subscribe / chat sub_gift.
         if alert.gift_qty == 1:
             begin_single_gift_wait(
                 alert,

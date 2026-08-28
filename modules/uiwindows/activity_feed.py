@@ -1182,6 +1182,7 @@ def replay_alert(alert_data):
             "title",
             "tier",
             "gift_qty",
+            "recipient",
             "resub_month",
             "months_prepaid",
             "amt_cheered",
@@ -1362,6 +1363,8 @@ def build_activity_feed_alert_payload(
     point_cost=None,
     level=None,
     hype_train_type=None,
+    gift_qty=None,
+    recipient=None,
 ):
     """
     Build the same dict that is sent over ``activity_feed_alert`` WebSocket events.
@@ -1392,6 +1395,17 @@ def build_activity_feed_alert_payload(
 
     if hype_train_type:
         alert_data["hype_train_type"] = str(hype_train_type).strip().lower()
+
+    if gift_qty is not None:
+        try:
+            alert_data["gift_qty"] = int(gift_qty)
+        except (TypeError, ValueError):
+            pass
+
+    if recipient is not None:
+        recip = str(recipient).strip()
+        if recip:
+            alert_data["recipient"] = recip
 
     if alert_id:
         try:
@@ -1428,7 +1442,13 @@ def build_activity_feed_alert_payload(
                             alert_data["point_cost"] = int(point_cost)
                         except (TypeError, ValueError):
                             pass
-                    for field in ("resub_month", "gift_qty", "amt_cheered", "tier"):
+                    for field in (
+                        "resub_month",
+                        "gift_qty",
+                        "amt_cheered",
+                        "tier",
+                        "recipient",
+                    ):
                         value = stored_alert_data.get(field)
                         if value is not None and field not in alert_data:
                             alert_data[field] = value
@@ -1529,12 +1549,25 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
         qty = random.randint(1, 10)
         stored_alert_data["tier"] = tier
         stored_alert_data["gift_qty"] = qty
+        recipient = None
+        if qty == 1:
+            recipient = random.choice(
+                ("ViewerOne", "LuckyFan", "SubReceiver", "ChatBuddy")
+            )
+            stored_alert_data["recipient"] = recipient
+            gift_message = (
+                f"{username} gifted a Tier {tier} sub to {recipient}!"
+            )
+        else:
+            gift_message = f"{username} gifted {qty} Tier {tier} subs!"
         payload = build_activity_feed_alert_payload(
             "Giftsub",
-            f"{username} gifted {qty} Tier {tier} subs!",
+            gift_message,
             "giftsub",
             timestamp=ts,
             tier=tier,
+            gift_qty=qty,
+            recipient=recipient,
         )
     elif at == "raid":
         count = random.randint(25, 250)
@@ -1699,12 +1732,22 @@ def iter_activity_feed_preview_payloads():
     gift_user = pick()
     gift_qty = random.randint(1, 25)
     gift_tier = random.choice((1, 2, 3))
+    gift_recipient = None
+    if gift_qty == 1:
+        gift_recipient = pick()
+        gift_msg = (
+            f"{gift_user} gifted a Tier {gift_tier} sub to {gift_recipient}!"
+        )
+    else:
+        gift_msg = f"{gift_user} gifted {gift_qty} Tier {gift_tier} subs!"
     yield build_activity_feed_alert_payload(
         "Giftsub",
-        f"{gift_user} gifted {gift_qty} Tier {gift_tier} subs!",
+        gift_msg,
         "giftsub",
         timestamp=ts,
         tier=gift_tier,
+        gift_qty=gift_qty,
+        recipient=gift_recipient,
     )
 
     points_user = pick()
@@ -1769,6 +1812,8 @@ def add_alert_to_feed(
     point_cost=None,
     level=None,
     hype_train_type=None,
+    gift_qty=None,
+    recipient=None,
 ):
     """Add a new alert card to the activity feed container.
 
@@ -1780,6 +1825,8 @@ def add_alert_to_feed(
         tier (int, optional): The tier level for subscriptions (1, 2, or 3)
         user_message (str, optional): User's message for resubs, bits, points, or donations
         alert_id (str, optional): The alert ID to look up stored alert data
+        gift_qty (int, optional): Number of gift subs (giftsub alerts)
+        recipient (str, optional): Gift recipient username (single gifts)
     """
     alert_data = build_activity_feed_alert_payload(
         alert_type,
@@ -1792,6 +1839,8 @@ def add_alert_to_feed(
         point_cost=point_cost,
         level=level,
         hype_train_type=hype_train_type,
+        gift_qty=gift_qty,
+        recipient=recipient,
     )
 
     # Process the alert immediately using the event-based system
@@ -3173,9 +3222,18 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
                 message = f"{username} has resubscribed for {resub_month} months!"
         elif original_type == "giftsub":
             gift_qty = stored_alert_data.get("gift_qty", 1)
+            try:
+                gift_qty = int(gift_qty) if gift_qty is not None else 1
+            except (TypeError, ValueError):
+                gift_qty = 1
             tier = stored_alert_data.get("tier", 1)
+            recipient = str(stored_alert_data.get("recipient") or "").strip()
             if source == "youtube":
                 message = f"{username} gifted {gift_qty} memberships!"
+            elif gift_qty == 1 and recipient:
+                message = f"{username} gifted a Tier {tier} sub to {recipient}!"
+            elif gift_qty == 1:
+                message = f"{username} gifted a Tier {tier} sub!"
             else:
                 message = f"{username} gifted {gift_qty} Tier {tier} subs!"
         elif original_type == "follow":
@@ -3235,6 +3293,13 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             # Preserve the full original stored alert data for replay functionality
             "stored_alert_data": stored_alert_data,
         }
+        if original_type == "giftsub":
+            gift_qty = stored_alert_data.get("gift_qty")
+            if gift_qty is not None:
+                result["gift_qty"] = gift_qty
+            recipient = str(stored_alert_data.get("recipient") or "").strip()
+            if recipient:
+                result["recipient"] = recipient
 
         logger.debug(
             f"Converted alert {stored_alert_data.get('alert_id', 'unknown')} - type: {display_type}, username: '{username}', message: '{message}'"
