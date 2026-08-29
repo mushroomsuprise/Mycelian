@@ -31,7 +31,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from nicegui import ui
+from nicegui import run, ui
 from ..notification_engine import notify
 from ..ui_buttons import apply_flat_btn_props, outline_button, primary_button, themed_control_button
 from ..ui_dialog_layout import app_form_dialog
@@ -64,6 +64,7 @@ logger = logging.getLogger(__name__)
 
 # Custom Variables Storage
 CUSTOM_VARIABLES_PATH = "chatbot_custom_variables"
+_giveaway_entrants_timer = None
 
 
 def save_custom_variables(custom_variables: dict) -> bool:
@@ -1553,6 +1554,18 @@ def create_chatbot_tab():
 
 def render_giveaways_tab(container_el) -> None:
     """Build the Giveaways sub-tab (settings, actions, entrants panel)."""
+    global _giveaway_entrants_timer
+    if _giveaway_entrants_timer is not None:
+        try:
+            _giveaway_entrants_timer.active = False
+        except Exception:
+            pass
+        try:
+            _giveaway_entrants_timer.cancel()
+        except Exception:
+            pass
+        _giveaway_entrants_timer = None
+
     gm = get_giveaway_manager()
     cfg = gm.get_config()
     blocked_names = list(cfg.get("blocked_usernames") or [])
@@ -1693,7 +1706,15 @@ def render_giveaways_tab(container_el) -> None:
                         )
 
                         def _build_entrants_list():
-                            entrants_container.clear()
+                            try:
+                                if getattr(entrants_container, "is_deleted", False):
+                                    return
+                            except Exception:
+                                return
+                            try:
+                                entrants_container.clear()
+                            except Exception:
+                                return
                             names = get_giveaway_manager().get_pool_entries()
                             with entrants_container:
                                 with (
@@ -1723,7 +1744,9 @@ def render_giveaways_tab(container_el) -> None:
                                                 )
 
                         _build_entrants_list()
-                        layout_schedule(2.5, callback=_build_entrants_list)
+                        _giveaway_entrants_timer = layout_schedule(
+                            2.5, callback=_build_entrants_list
+                        )
 
                 with ui.column().classes("w-52 shrink-0 gap-1 min-w-[12rem]"):
                     blocked_input = form_input(
@@ -7410,7 +7433,7 @@ def update_quote(quote_id: str, text: str, author: str):
         notify(f"Error updating quote: {str(e)}", type="negative")
 
 
-def test_chatbot_item(item_id: str, item_type: str):
+async def test_chatbot_item(item_id: str, item_type: str):
     """Test a chatbot item with sample data"""
     try:
         manager = get_chatbot_manager()
@@ -7425,61 +7448,46 @@ def test_chatbot_item(item_id: str, item_type: str):
         else:
             test_data = create_test_data_for_event(item_type)
 
-        # Test the item using a thread to avoid event loop conflicts with NiceGUI
-        try:
-            import threading
+        def run_async_test():
+            """Run the async test off the NiceGUI thread with its own event loop."""
+            try:
+                import asyncio as async_module
 
-            result_container = {}
-
-            def run_async_test():
-                """Run the async test in a separate thread with its own event loop"""
+                new_loop = async_module.new_event_loop()
+                async_module.set_event_loop(new_loop)
                 try:
-                    import asyncio as async_module
 
-                    # Create a new event loop for this thread
-                    new_loop = async_module.new_event_loop()
-                    async_module.set_event_loop(new_loop)
-
-                    # Run the async test
                     async def async_test():
                         if item_type == "command":
                             return await manager.test_command(item_id, test_data)
                         else:
                             return await manager.test_event(item_id, test_data)
 
-                    result = new_loop.run_until_complete(async_test())
-                    result_container["result"] = result
+                    return {"result": new_loop.run_until_complete(async_test())}
+                finally:
                     new_loop.close()
-                except Exception as e:
-                    logger.error(f"Error in async test thread: {e}", exc_info=True)
-                    result_container["error"] = str(e)
+            except Exception as e:
+                logger.error(f"Error in async test thread: {e}", exc_info=True)
+                return {"error": str(e)}
 
-            # Run the test in a separate thread
-            test_thread = threading.Thread(target=run_async_test)
-            test_thread.daemon = True
-            test_thread.start()
-            test_thread.join()
+        result_container = await run.io_bound(run_async_test)
 
-            # Check for errors
-            if "error" in result_container:
-                notify(f"Test error: {result_container['error']}", type="negative")
-                return
+        if "error" in result_container:
+            notify(f"Test error: {result_container['error']}", type="negative")
+            return
 
-            result = result_container.get("result", {})
+        result = result_container.get("result", {})
 
-            if result.get("success"):
-                notify(
-                    f"Test successful: {result.get('message', 'Item triggered')}",
-                    type="positive",
-                )
-            else:
-                notify(
-                    f"Test failed: {result.get('error', 'Unknown error')}",
-                    type="negative",
-                )
-        except Exception as test_error:
-            logger.error(f"Error during test execution: {test_error}", exc_info=True)
-            notify(f"Test error: {str(test_error)}", type="negative")
+        if result.get("success"):
+            notify(
+                f"Test successful: {result.get('message', 'Item triggered')}",
+                type="positive",
+            )
+        else:
+            notify(
+                f"Test failed: {result.get('error', 'Unknown error')}",
+                type="negative",
+            )
 
     except Exception as e:
         logger.error(f"Error testing chatbot item: {e}", exc_info=True)
@@ -7663,8 +7671,8 @@ def show_create_greeting_dialog():
     create_dialog.open()
 
 
-def handle_greeting_save(username: str, greeting_text: str, enabled: bool):
-    """Handle greeting save synchronously"""
+async def handle_greeting_save(username: str, greeting_text: str, enabled: bool):
+    """Handle greeting save without blocking the NiceGUI thread on Helix lookup."""
     global create_dialog
     try:
         # Validate inputs first
@@ -7679,8 +7687,9 @@ def handle_greeting_save(username: str, greeting_text: str, enabled: bool):
         # Show loading state
         notify("Looking up Twitch user...", type="info")
 
-        # Make the API call synchronously
-        result = save_new_greeting_sync(username, greeting_text, enabled)
+        result = await run.io_bound(
+            save_new_greeting_sync, username, greeting_text, enabled
+        )
 
         if result and result.get("success"):
             notify(

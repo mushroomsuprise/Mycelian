@@ -162,6 +162,13 @@
 
         var animationTimeout = null;
         var hideTimeout = null;
+        var resumeAnimGeneration = 0;
+        var resumeAnimTimeouts = [];
+
+        function clearResumeAnimTimeouts() {
+            resumeAnimTimeouts.forEach(function (id) { clearTimeout(id); });
+            resumeAnimTimeouts = [];
+        }
 
         // Socket event listeners
         socket.on('connect', function() {
@@ -234,6 +241,8 @@
                 clearTimeout(animationTimeout);
                 animationTimeout = null;
             }
+            resumeAnimGeneration += 1;
+            clearResumeAnimTimeouts();
             
             // Show the container
             container.style.setProperty('--Displayimg', 'block');
@@ -281,6 +290,8 @@
             var container = document.getElementById('pauseContainer');
             var icon = document.getElementById('pauseIcon');
             
+            resumeAnimGeneration += 1;
+            clearResumeAnimTimeouts();
             // Clear any existing timeouts
             if (animationTimeout) {
                 clearTimeout(animationTimeout);
@@ -307,54 +318,52 @@
         function showResumeAnimation() {
             var container = document.getElementById('pauseContainer');
             var icon = document.getElementById('pauseIcon');
+            resumeAnimGeneration += 1;
+            var gen = resumeAnimGeneration;
+            clearResumeAnimTimeouts();
+
+            function later(fn, ms) {
+                var id = setTimeout(function () {
+                    if (gen !== resumeAnimGeneration) { return; }
+                    fn();
+                }, ms);
+                resumeAnimTimeouts.push(id);
+            }
             
             // First, fade out the current pause icon
             if (settings.enableAnimations) {
                 icon.classList.remove('fade-in', 'pulse', 'bounce');
                 icon.classList.add('fade-out');
                 
-                // After fade out, change to play icon and start resume sequence (faster)
-                setTimeout(function() {
-                    // Change to play icon
+                later(function() {
                     icon.src = 'assets/pausedalerts/PlayBtnDM.png';
                     icon.alt = 'Alerts Resumed';
-                    
-                    // Add green filter
-                    // icon.classList.add('green-filter');
-                    
-                    // Remove fade-out and add fade-in
                     icon.classList.remove('fade-out');
                     icon.classList.add('fade-in');
                     
-                    // After fade in completes, start pulsing (reduced delay)
-                    setTimeout(function() {
+                    later(function() {
                         icon.classList.remove('fade-in');
                         icon.classList.add('resume-pulse');
                         
-                        // After 3 seconds of pulsing, fade out and hide
-                        setTimeout(function() {
+                        later(function() {
                             icon.classList.remove('resume-pulse');
                             icon.classList.add('fade-out');
                             
-                            // Hide container after final fade out
-                            setTimeout(function() {
+                            later(function() {
                                 container.style.setProperty('--Displayimg', 'none');
                                 icon.classList.remove('fade-out');
-                                // Reset to original pause icon for next time
                                 icon.src = '{{IconSource}}';
                                 icon.alt = 'Alerts Paused';
                             }, {{FadeAnimationDuration}} * 1000);
-                        }, 3000); // 3 seconds of pulsing
-                    }, 300); // Reduced from full fade duration to 300ms
-                }, 300); // Reduced from full fade duration to 300ms
+                        }, 3000);
+                    }, 300);
+                }, 300);
             } else {
-                // If animations disabled, just hide immediately
                 container.style.setProperty('--Displayimg', 'none');
             }
             
-            // Auto-hide functionality (keeping original logic)
             if (settings.autoHide && settings.hideDelay > 0) {
-                hideTimeout = setTimeout(function() {
+                later(function() {
                     container.style.setProperty('--Displayimg', 'none');
                 }, settings.hideDelay);
             }
@@ -447,28 +456,39 @@
             const pauseContainer = document.getElementById('pauseContainer');
             const pauseIcon = document.getElementById('pauseIcon');
             
-            // Apply container position and size
-            if (config.ContainerLeft !== undefined) {
-                pauseContainer.style.left = config.ContainerLeft + 'px';
+            // Apply container position and size (JSON ids: IconLeft/Top/Width/Height)
+            var left = config.IconLeft != null ? config.IconLeft : config.ContainerLeft;
+            var top = config.IconTop != null ? config.IconTop : config.ContainerTop;
+            var width = config.IconWidth != null ? config.IconWidth : config.ContainerWidth;
+            var height = config.IconHeight != null ? config.IconHeight : config.ContainerHeight;
+            if (left !== undefined) {
+                pauseContainer.style.left = left + 'px';
             }
-            if (config.ContainerTop !== undefined) {
-                pauseContainer.style.top = config.ContainerTop + 'px';
+            if (top !== undefined) {
+                pauseContainer.style.top = top + 'px';
             }
-            if (config.ContainerWidth !== undefined) {
-                pauseContainer.style.width = config.ContainerWidth + 'px';
+            if (width !== undefined) {
+                pauseContainer.style.width = width + 'px';
             }
-            if (config.ContainerHeight !== undefined) {
-                pauseContainer.style.height = config.ContainerHeight + 'px';
+            if (height !== undefined) {
+                pauseContainer.style.height = height + 'px';
             }
 
             // Apply icon settings
             if (pauseIcon) {
-                if (config.PauseImageSource) {
-                    pauseIcon.src = config.PauseImageSource;
+                var iconSrc = config.IconSource || config.PauseImageSource;
+                if (iconSrc) {
+                    pauseIcon.src = iconSrc;
                 }
                 if (config.IconSize !== undefined) {
                     pauseIcon.style.width = config.IconSize + 'px';
                     pauseIcon.style.height = config.IconSize + 'px';
+                }
+                if (config.IconWidth !== undefined) {
+                    pauseIcon.style.width = config.IconWidth + 'px';
+                }
+                if (config.IconHeight !== undefined) {
+                    pauseIcon.style.height = config.IconHeight + 'px';
                 }
                 if (config.IconBorderRadius !== undefined) {
                     pauseIcon.style.borderRadius = config.IconBorderRadius + 'px';
@@ -476,7 +496,8 @@
             }
 
             // Apply background settings
-            if (config.EnableBackground) {
+            var showBg = config.ShowBackground != null ? config.ShowBackground : config.EnableBackground;
+            if (showBg) {
                 pauseContainer.style.backgroundColor = config.BackgroundColor || 'rgba(0,0,0,0.5)';
                 pauseContainer.style.padding = (config.BackgroundPadding || 10) + 'px';
                 pauseContainer.style.borderRadius = (config.BackgroundBorderRadius || 5) + 'px';

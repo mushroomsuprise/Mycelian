@@ -36,7 +36,7 @@ from nicegui import app, background_tasks, run, ui
 
 from ..notification_engine import notify
 from .. import alertutils
-from ..ui_timer import app_schedule
+from ..ui_timer import app_schedule, run_on_ui_loop
 
 logger = logging.getLogger(__name__)
 
@@ -566,20 +566,36 @@ def _start_feed_watchdog() -> None:
 
 
 def _run_on_ui_loop(fn: Callable[[], Any]) -> None:
-    """Marshal UI mutations onto NiceGUI's asyncio loop (safe from worker threads)."""
-    try:
-        from nicegui import core
+    """Marshal UI mutations onto NiceGUI's loop and into a live client slot.
 
-        loop = getattr(core, "loop", None)
-        if loop is not None and loop.is_running():
-            loop.call_soon_threadsafe(fn)
-            return
-    except Exception:
-        pass
-    try:
-        fn()
-    except Exception as exc:
-        logger.error("activity_feed UI callback failed: %s", exc, exc_info=True)
+    ``app.timer`` / raw ``call_soon_threadsafe`` have no client context, so creating
+    feed elements after tray restore fails with a slot-stack error. Enter the
+    connected client the same way custom-sources OBS apply does.
+    """
+
+    def _invoke() -> None:
+        client = None
+        try:
+            from nicegui import Client
+
+            for inst in list(Client.instances.values()):
+                if getattr(inst, "is_deleted", False):
+                    continue
+                if getattr(inst, "has_socket_connection", False):
+                    client = inst
+                    break
+        except Exception:
+            client = None
+        try:
+            if client is not None:
+                with client:
+                    fn()
+            else:
+                fn()
+        except Exception as exc:
+            logger.error("activity_feed UI callback failed: %s", exc, exc_info=True)
+
+    run_on_ui_loop(_invoke)
 
 
 def _handle_stale_client(reason: str) -> None:
@@ -1269,7 +1285,7 @@ def replay_alert(alert_data):
         )
 
         # Append the created AlertObj to the ALERT_QUEUE for processing
-        alert_processor.ALERT_QUEUE.append(replay_alert_obj)
+        alert_processor.enqueue_alert(replay_alert_obj)
         logger.debug(
             f"Added replay alert to ALERT_QUEUE: {replay_alert_obj.alert_type} (ID: {replay_alert_obj.alert_id})"
         )

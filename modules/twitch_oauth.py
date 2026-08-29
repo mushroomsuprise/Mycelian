@@ -11,12 +11,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-import time
 from typing import Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 _oauth_lock = threading.Lock()
+_oauth_handoff_lock = threading.Lock()
 _active_authenticator: Any = None
 
 
@@ -30,13 +30,34 @@ async def run_user_authentication(authenticator) -> Tuple[str, str]:
     global _active_authenticator
 
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _oauth_lock.acquire)
-    _active_authenticator = authenticator
+    cancelled = threading.Event()
+    acquired_box = {"ok": False}
+
+    def _acquire() -> bool:
+        _oauth_lock.acquire()
+        with _oauth_handoff_lock:
+            if cancelled.is_set():
+                _oauth_lock.release()
+                return False
+            acquired_box["ok"] = True
+            return True
+
     try:
+        got = await loop.run_in_executor(None, _acquire)
+        if not got:
+            raise asyncio.CancelledError()
+        _active_authenticator = authenticator
         return await authenticator.authenticate()
     finally:
-        _active_authenticator = None
-        _oauth_lock.release()
+        with _oauth_handoff_lock:
+            cancelled.set()
+            if acquired_box["ok"]:
+                _active_authenticator = None
+                try:
+                    _oauth_lock.release()
+                except RuntimeError:
+                    logger.debug("OAuth lock already released")
+                acquired_box["ok"] = False
 
 
 def stop_active_oauth(timeout: float = 2.0) -> None:
@@ -50,18 +71,8 @@ def stop_active_oauth(timeout: float = 2.0) -> None:
     except Exception as e:
         logger.debug("Error stopping active Twitch OAuth: %s", e)
 
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if getattr(auth, "_is_closed", False):
-            break
-        thread: Optional[threading.Thread] = getattr(auth, "_thread", None)
-        if thread is not None and not thread.is_alive():
-            break
-        time.sleep(0.05)
-
-    thread = getattr(auth, "_thread", None)
+    thread: Optional[threading.Thread] = getattr(auth, "_thread", None)
     if thread is not None and thread.is_alive():
-        remaining = max(0.0, deadline - time.monotonic())
-        thread.join(timeout=remaining)
+        thread.join(timeout=timeout)
         if thread.is_alive():
             logger.warning("Twitch OAuth thread did not exit within %.1fs", timeout)

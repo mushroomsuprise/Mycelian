@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import http.server
+import hashlib
 import logging
 import re
 import socketserver
@@ -55,6 +56,18 @@ YOUTUBE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 
 _LIVE_OFFLINE_BACKOFF_SEC = 60.0
+_LIVE_CHAT_ERROR_BACKOFF_SEC = 5.0
+_LIVE_CHAT_ENDED = object()
+_YOUTUBE_VIDEO_PERSIST_FIELDS = (
+    "channels",
+    "latest_video_id",
+    "latest_video_title",
+    "latest_video_url",
+    "latest_video_published_at",
+    "latest_video_thumbnail",
+    "latest_video_channel",
+    "last_updated",
+)
 _SEEN_MESSAGE_IDS_MAX = 5000
 
 
@@ -331,7 +344,7 @@ class YouTubeClient:
         if channel_id:
             return channel_id
         # Fallback to URL hash if we can't extract channel ID
-        return str(hash(channel_url))
+        return hashlib.sha256(channel_url.encode("utf-8")).hexdigest()
 
     def save_youtube_data(self):
         """Save current YouTube data to state manager"""
@@ -1147,8 +1160,7 @@ class YouTubeClient:
                     ]
                     self.youtube_data.last_updated = time.strftime("%Y-%m-%d %H:%M:%S")
 
-                    # Save changes
-                    self.save_youtube_data()
+                    self._persist_video_fields()
 
                     logger.info(
                         f"New global latest YouTube video: {global_latest['video_title']} from {global_latest['channel_title']}"
@@ -1187,7 +1199,7 @@ class YouTubeClient:
                 elapsed = time.time() - start_time
                 sleep_time = max(0, self.update_interval - elapsed)
                 if sleep_time > 0:
-                    time.sleep(sleep_time)
+                    self._interruptible_sleep(sleep_time)
                 else:
                     logger.debug(
                         "YouTube update loop exceeded interval: %.3fs", elapsed
@@ -1196,10 +1208,10 @@ class YouTubeClient:
                 logger.error(
                     f"Error in YouTube monitoring loop: {str(e)}", exc_info=True
                 )
-                time.sleep(30)  # Wait longer on error
+                self._interruptible_sleep(30)
 
     def send_websocket_data(self):
-        """Send current YouTube data via websocket"""
+        """Send public YouTube status/video fields via websocket (no secrets)."""
         try:
             from . import web_engine
 
@@ -1207,10 +1219,24 @@ class YouTubeClient:
                 hasattr(web_engine, "web_engine_instance")
                 and web_engine.web_engine_instance
             ):
+                data = self.youtube_data
                 youtube_dict = {
-                    field.name: getattr(self.youtube_data, field.name)
-                    for field in YouTubeData.__dataclass_fields__.values()
-                    if not field.name.startswith("_")
+                    "channel_urls": data.channel_urls,
+                    "channels": data.channels,
+                    "latest_video_id": data.latest_video_id,
+                    "latest_video_title": data.latest_video_title,
+                    "latest_video_url": data.latest_video_url,
+                    "latest_video_published_at": data.latest_video_published_at,
+                    "latest_video_thumbnail": data.latest_video_thumbnail,
+                    "latest_video_channel": data.latest_video_channel,
+                    "playlist_filter": data.playlist_filter,
+                    "connection_status": data.connection_status,
+                    "last_updated": data.last_updated,
+                    "oauth_channel_id": data.oauth_channel_id,
+                    "oauth_channel_title": data.oauth_channel_title,
+                    "live_chat_enabled": data.live_chat_enabled,
+                    "live_chat_status": data.live_chat_status,
+                    "alerts_enabled": data.alerts_enabled,
                 }
                 web_engine.web_engine_instance.safe_emit(
                     "youtube_data_update", youtube_dict
@@ -1578,8 +1604,8 @@ class YouTubeClient:
                             )
 
                 interval_ms = self._poll_live_chat_once()
-                if interval_ms is None:
-                    # Ended or error — rediscover
+                if interval_ms is _LIVE_CHAT_ENDED:
+                    # Ended — rediscover
                     was_live = (
                         getattr(self.youtube_data, "live_chat_status", "") or ""
                     ) == "Live"
@@ -1598,6 +1624,8 @@ class YouTubeClient:
                                 exc_info=True,
                             )
                     self._live_sleep(_LIVE_OFFLINE_BACKOFF_SEC)
+                elif interval_ms is None:
+                    self._live_sleep(_LIVE_CHAT_ERROR_BACKOFF_SEC)
                 else:
                     self._live_sleep(max(interval_ms / 1000.0, 1.0))
             except Exception as e:
@@ -1617,6 +1645,20 @@ class YouTubeClient:
         end = time.time() + max(0.1, seconds)
         while self._live_running and time.time() < end:
             time.sleep(min(0.5, end - time.time()))
+
+    def _interruptible_sleep(self, seconds: float) -> None:
+        end = time.time() + max(0.0, seconds)
+        while self.running and time.time() < end:
+            time.sleep(min(0.5, end - time.time()))
+
+    def _persist_video_fields(self) -> None:
+        for field in _YOUTUBE_VIDEO_PERSIST_FIELDS:
+            try:
+                state_manager.update_youtube_field(
+                    field, getattr(self.youtube_data, field)
+                )
+            except Exception as e:
+                logger.debug("Failed to persist YouTube field %s: %s", field, e)
 
     def _discover_active_live_chat_id(self) -> Optional[str]:
         data = self._oauth_get(
@@ -1661,7 +1703,7 @@ class YouTubeClient:
             return None
         if data.get("__live_chat_ended__"):
             self.update_field("live_chat_status", "Offline")
-            return None
+            return _LIVE_CHAT_ENDED
 
         next_token = data.get("nextPageToken")
         if next_token:
@@ -1697,7 +1739,7 @@ class YouTubeClient:
             (i.get("snippet") or {}).get("type") == "chatEndedEvent" for i in items
         ):
             self.update_field("live_chat_status", "Offline")
-            return None
+            return _LIVE_CHAT_ENDED
 
         interval = data.get("pollingIntervalMillis")
         try:
@@ -1780,7 +1822,7 @@ class YouTubeClient:
 
         stored = dict(alert.__dict__)
         stored["source"] = "youtube"
-        alert_processor.ALERT_QUEUE.append(alert)
+        alert_processor.enqueue_alert(alert)
         alertutils.alert_state_manager.store_completed_alert(alert.alert_id, stored)
 
     def send_live_chat_message(self, text: str) -> bool:
@@ -2311,6 +2353,12 @@ def start_youtube_service():
     if is_running:
         logger.warning("YouTube service already running")
         return False
+    if youtube_thread is not None and youtube_thread.is_alive():
+        logger.warning("YouTube video thread still alive; not starting another")
+        return False
+    if youtube_live_thread is not None and youtube_live_thread.is_alive():
+        logger.warning("YouTube live chat thread still alive; not starting another")
+        return False
 
     try:
         youtube_client = initialize_youtube()
@@ -2463,9 +2511,9 @@ def update_youtube_settings(
         if api_key is not None:
             youtube_client.update_field("api_key", api_key)
         if channel_url is not None:
-            youtube_client.update_field("channel_url", channel_url)
-            # Clear channel ID when URL changes so it gets re-resolved
-            youtube_client.update_field("channel_id", "")
+            youtube_client.update_field("channel_urls", channel_url)
+            # Clear cached per-channel data so URLs get re-resolved
+            youtube_client.update_field("channels", {})
 
         # If we now have credentials, try to authenticate
         if should_auto_initialize() and not youtube_client.is_connected:

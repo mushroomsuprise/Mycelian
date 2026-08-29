@@ -480,11 +480,10 @@ class Connector:
             for idx, act in enumerate(self.actions)
             if act.enabled
         ]
-        for seq_index, (action_index, action) in enumerate(enabled_slots):
-            if seq_index > 0:
-                delay = float(getattr(action, "delay_seconds", 0) or 0)
-                if delay > 0:
-                    await asyncio.sleep(delay)
+        for _seq_index, (action_index, action) in enumerate(enabled_slots):
+            delay = float(getattr(action, "delay_seconds", 0) or 0)
+            if delay > 0:
+                await asyncio.sleep(delay)
             try:
                 success = await action.execute(
                     trigger_data={

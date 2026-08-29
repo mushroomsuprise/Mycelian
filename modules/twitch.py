@@ -124,7 +124,7 @@ def _queue_twitch_alert(alert, stored=None) -> bool:
     """Append to ALERT_QUEUE and store when Twitch alerts are enabled."""
     if not _twitch_alerts_enabled():
         return False
-    alert_processor.ALERT_QUEUE.append(alert)
+    alert_processor.enqueue_alert(alert)
     payload = stored if stored is not None else alert.__dict__
     alertutils.alert_state_manager.store_completed_alert(alert.alert_id, payload)
     return True
@@ -164,6 +164,18 @@ def _dispatch_chatbot_event_response(result) -> None:
     dispatch_chatbot_response(
         response, targets, discord_channels=discord_channels
     )
+
+
+def _overlay_alert_or_placeholder(alert, *, username, alert_type, timestamp):
+    """Return (alert, emit_overlay). Avoid AttributeError when fetch_* is None."""
+    if alert is not None:
+        return alert, True
+    placeholder = alertutils.AlertObj()
+    placeholder.alert_type = alert_type
+    placeholder.username = username or ""
+    placeholder.timestamp = timestamp
+    placeholder.alert_id = f"Alert{round(timestamp)}"
+    return placeholder, False
 
 
 _ANONYMOUS_USER_SENTINELS = frozenset({"anonymous", "anonymous gifter"})
@@ -314,16 +326,20 @@ def _take_matching_recent_recipient(
     """Pop and return the best matching recent recipient, or empty string."""
     with _recent_gift_recipients_lock:
         _prune_recent_gift_recipients()
-        for idx, entry in enumerate(_recent_gift_recipients):
+        matches = [
+            idx
+            for idx, entry in enumerate(_recent_gift_recipients)
             if _gifter_keys_match(
                 gifter_login,
                 gifter_id,
                 entry.get("gifter_login"),
                 entry.get("gifter_id"),
-            ):
-                _recent_gift_recipients.pop(idx)
-                return str(entry.get("recipient") or "").strip()
-        return ""
+            )
+        ]
+        if len(matches) != 1:
+            return ""
+        entry = _recent_gift_recipients.pop(matches[0])
+        return str(entry.get("recipient") or "").strip()
 
 
 def _attach_recipient_to_pending_gift(
@@ -337,6 +353,7 @@ def _attach_recipient_to_pending_gift(
     if not recipient:
         return False
     with _pending_single_gifts_lock:
+        matches = []
         for entry in _pending_single_gifts:
             if entry.get("resolved"):
                 continue
@@ -347,21 +364,29 @@ def _attach_recipient_to_pending_gift(
                 gifter_id,
             ):
                 continue
-            alert = entry.get("alert")
-            if alert is None:
+            if entry.get("alert") is None:
                 continue
-            alert.recipient = recipient
-            entry["resolved"] = True
-            task = entry.get("task")
-            if task is not None and not task.done():
-                task.cancel()
-            logger.debug(
-                "Attached gift recipient %s to pending giftsub alert %s",
-                recipient,
-                getattr(alert, "alert_id", ""),
-            )
-            return True
-    return False
+            matches.append(entry)
+        if len(matches) != 1:
+            if len(matches) > 1:
+                logger.debug(
+                    "Skipping gift recipient attach for %s: ambiguous pending gifts",
+                    recipient,
+                )
+            return False
+        entry = matches[0]
+        alert = entry.get("alert")
+        alert.recipient = recipient
+        entry["resolved"] = True
+        task = entry.get("task")
+        if task is not None and not task.done():
+            task.cancel()
+        logger.debug(
+            "Attached gift recipient %s to pending giftsub alert %s",
+            recipient,
+            getattr(alert, "alert_id", ""),
+        )
+        return True
 
 
 def note_gift_recipient(
@@ -724,6 +749,30 @@ async def _ephemeral_client_session():
         yield session
 
 
+def _helix_session_usable(session) -> bool:
+    """True when an aiohttp session can be used on the current running loop."""
+    if session is None:
+        return False
+    try:
+        if getattr(session, "closed", False):
+            return False
+    except Exception:
+        return False
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    session_loop = getattr(session, "_loop", None)
+    if session_loop is None:
+        connector = getattr(session, "connector", None)
+        session_loop = getattr(connector, "_loop", None) if connector is not None else None
+    if session_loop is not None and (
+        session_loop.is_closed() or session_loop is not running
+    ):
+        return False
+    return True
+
+
 _CHEER_BITS_CACHE_TTL = 10.0
 _cheer_bits_cache: dict[str, dict[str, Any]] = {}
 
@@ -964,6 +1013,7 @@ class Twitch_API:
         # Token refresh synchronization
         self._refresh_lock = threading.Lock()
         self._last_refresh_attempt = None
+        self._health_stop = threading.Event()
         self._connection_epoch = 0
 
         # EventSub liveness / revocation recovery
@@ -1212,36 +1262,20 @@ class Twitch_API:
 
     async def refresh_auth_token(self):
         """Refresh the authentication token using the refresh token."""
-
-        # Check if another refresh is already in progress
-        if not self._refresh_lock.acquire(blocking=False):
-            logger.info("Token refresh already in progress, waiting...")
-            with self._refresh_lock:
-                logger.info(
-                    "Other token refresh completed, checking if we still need to refresh"
-                )
-                if await is_token_currently_valid(
-                    self.auth_token, self.client_id or None
-                ):
-                    logger.info("Token was already refreshed by another process")
-                    return True
-            return False
-
+        loop = asyncio.get_running_loop()
+        acquired = False
+        attempted = False
         try:
-            now = datetime.now()
-            if (
-                self._last_refresh_attempt
-                and (now - self._last_refresh_attempt).total_seconds() < 30
+            # Acquire off the event-loop thread so waiters never block the socket loop.
+            acquired = await loop.run_in_executor(None, self._refresh_lock.acquire)
+            if await is_token_currently_valid(
+                self.auth_token, self.client_id or None
             ):
-                logger.info(
-                    "Token refresh attempted recently, skipping duplicate refresh"
-                )
-                return await is_token_currently_valid(
-                    self.auth_token, self.client_id or None
-                )
+                logger.info("Token was already refreshed by another process")
+                return True
 
-            self._last_refresh_attempt = now
             logger.info("Refreshing authentication token")
+            attempted = True
 
             # Only sync client credentials — never overwrite in-memory tokens from state.
             self.sync_client_credentials()
@@ -1313,10 +1347,13 @@ class Twitch_API:
             )
             return False
         finally:
-            try:
-                self._refresh_lock.release()
-            except Exception:
-                pass
+            if attempted:
+                self._last_refresh_attempt = datetime.now()
+            if acquired:
+                try:
+                    self._refresh_lock.release()
+                except Exception:
+                    pass
 
     def _clear_tokens_after_refresh_failure(self) -> None:
         """Clear stored tokens after a failed refresh (invalid/revoked token)."""
@@ -2257,31 +2294,38 @@ class Twitch_API:
     async def on_follow(self, data: ChannelFollowEvent):
         self._note_event_received()
         logger.debug(f"New follower: {data.event.user_name}")
-        alert = alertutils.fetch_follow_alert()
+        current_timestamp = time.time()
+        alert, emit_overlay = _overlay_alert_or_placeholder(
+            alertutils.fetch_follow_alert(),
+            username=data.event.user_name,
+            alert_type="follow",
+            timestamp=current_timestamp,
+        )
         alert.username = data.event.user_name
         alert.alert_type = "follow"
-        alert.alert_id = f"Alert{round(time.time())}"
-        alert.timestamp = time.time()
-        _queue_twitch_alert(alert)
+        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.timestamp = current_timestamp
+        if emit_overlay:
+            _queue_twitch_alert(alert)
 
-        # Send instant alert
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                alert_data = {
-                    "type": "follow",
-                    "username": alert.username,
-                    "alert_id": alert.alert_id,
-                    "timestamp": alert.timestamp,
-                }
-                _send_twitch_instant_alert(alert_data)
-                logger.debug(f"Sent instant alert for follow: {alert.username}")
-        except Exception as e:
-            logger.error(
-                f"Error sending instant alert for follow: {str(e)}", exc_info=True
-            )
+            # Send instant alert
+            try:
+                if (
+                    hasattr(web_engine, "web_engine_instance")
+                    and web_engine.web_engine_instance
+                ):
+                    alert_data = {
+                        "type": "follow",
+                        "username": alert.username,
+                        "alert_id": alert.alert_id,
+                        "timestamp": alert.timestamp,
+                    }
+                    _send_twitch_instant_alert(alert_data)
+                    logger.debug(f"Sent instant alert for follow: {alert.username}")
+            except Exception as e:
+                logger.error(
+                    f"Error sending instant alert for follow: {str(e)}", exc_info=True
+                )
 
         # Track follow statistics immediately when event occurs
         try:
@@ -2355,20 +2399,38 @@ class Twitch_API:
             source="channel.subscription.message",
             cumulative_months=cumulative_months,
         )
-        if cumulative_months <= 1:
-            _sub_registry.mark_new_sub_alerted(user_id)
 
         # If this is a resub (cumulative_months > 1), delegate to the resub handler
         if cumulative_months > 1:
+            if _sub_registry.was_new_sub_alerted_recently(user_id):
+                logger.info(
+                    "Skipping resub overlay for %s: verified new-sub already emitted",
+                    username,
+                )
+                return
             logger.debug(
                 f"Delegating to resub handler for {username} with {cumulative_months} cumulative months"
             )
             await self.on_resub(data)
             return
 
+        if _sub_registry.was_new_sub_alerted_recently(user_id):
+            logger.info(
+                "Skipping duplicate new-sub overlay for %s: already alerted recently",
+                username,
+            )
+            return
+
+        _sub_registry.mark_new_sub_alerted(user_id)
+
         # Handle as new subscription (cumulative_months == 1)
         logger.debug(f"Processing as new sub: {username}")
-        alert = alertutils.fetch_sub_alert(1)
+        alert, emit_overlay = _overlay_alert_or_placeholder(
+            alertutils.fetch_sub_alert(1),
+            username=username,
+            alert_type="sub",
+            timestamp=current_timestamp,
+        )
         alert.username = username
         alert.alert_type = "sub"
         alert.tier = tier
@@ -2382,7 +2444,8 @@ class Twitch_API:
         if user_msg:
             register_alert_user_message(str(data.event.user_id), user_msg)
 
-        _queue_twitch_alert(alert)
+        if emit_overlay:
+            _queue_twitch_alert(alert)
 
         # Track new subscription statistics
         try:
@@ -2393,26 +2456,27 @@ class Twitch_API:
             logger.error(f"Error tracking new subscription statistics: {e}")
 
         # Send instant alert
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                alert_data = {
-                    "type": "sub",
-                    "username": username,
-                    "tier": tier,
-                    "message": user_msg,
-                    "emotes": alert.emotes,
-                    "alert_id": alert.alert_id,
-                    "timestamp": alert.timestamp,
-                }
-                _send_twitch_instant_alert(alert_data)
-                logger.debug(f"Sent instant alert for sub: {username}")
-        except Exception as e:
-            logger.error(
-                f"Error sending instant alert for sub: {str(e)}", exc_info=True
-            )
+        if emit_overlay:
+            try:
+                if (
+                    hasattr(web_engine, "web_engine_instance")
+                    and web_engine.web_engine_instance
+                ):
+                    alert_data = {
+                        "type": "sub",
+                        "username": username,
+                        "tier": tier,
+                        "message": user_msg,
+                        "emotes": alert.emotes,
+                        "alert_id": alert.alert_id,
+                        "timestamp": alert.timestamp,
+                    }
+                    _send_twitch_instant_alert(alert_data)
+                    logger.debug(f"Sent instant alert for sub: {username}")
+            except Exception as e:
+                logger.error(
+                    f"Error sending instant alert for sub: {str(e)}", exc_info=True
+                )
 
         # Process through chatbot system
         try:
@@ -2485,7 +2549,12 @@ class Twitch_API:
         )
 
         # Fetch the appropriate resub alert from the database
-        alert = alertutils.fetch_resub_alert(cumulative_months)
+        alert, emit_overlay = _overlay_alert_or_placeholder(
+            alertutils.fetch_resub_alert(cumulative_months),
+            username=username,
+            alert_type="resub",
+            timestamp=current_timestamp,
+        )
         alert.username = username
         alert.alert_type = "resub"
         alert.tier = tier
@@ -2501,7 +2570,8 @@ class Twitch_API:
         if user_msg:
             register_alert_user_message(str(data.event.user_id), user_msg)
 
-        _queue_twitch_alert(alert)
+        if emit_overlay:
+            _queue_twitch_alert(alert)
 
         # Track resubscription statistics
         try:
@@ -2512,27 +2582,28 @@ class Twitch_API:
             logger.error(f"Error tracking resubscription statistics: {e}")
 
         # Send instant alert
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                alert_data = {
-                    "type": "resub",
-                    "username": username,
-                    "tier": tier,
-                    "message": user_msg,
-                    "emotes": alert.emotes,
-                    "cumulative_months": cumulative_months,
-                    "alert_id": alert.alert_id,
-                    "timestamp": alert.timestamp,
-                }
-                _send_twitch_instant_alert(alert_data)
-                logger.debug(f"Sent instant alert for resub: {username}")
-        except Exception as e:
-            logger.error(
-                f"Error sending instant alert for resub: {str(e)}", exc_info=True
-            )
+        if emit_overlay:
+            try:
+                if (
+                    hasattr(web_engine, "web_engine_instance")
+                    and web_engine.web_engine_instance
+                ):
+                    alert_data = {
+                        "type": "resub",
+                        "username": username,
+                        "tier": tier,
+                        "message": user_msg,
+                        "emotes": alert.emotes,
+                        "cumulative_months": cumulative_months,
+                        "alert_id": alert.alert_id,
+                        "timestamp": alert.timestamp,
+                    }
+                    _send_twitch_instant_alert(alert_data)
+                    logger.debug(f"Sent instant alert for resub: {username}")
+            except Exception as e:
+                logger.error(
+                    f"Error sending instant alert for resub: {str(e)}", exc_info=True
+                )
 
         # Process through chatbot system
         try:
@@ -2613,7 +2684,15 @@ class Twitch_API:
                 user_login=user_login or username,
                 source="channel.subscribe.gift",
             )
-            note_gift_recipient(username or user_login or "")
+            gifter_id = getattr(event, "gifter_user_id", None) or getattr(
+                event, "gifter_id", None
+            )
+            note_gift_recipient(
+                username or user_login or "",
+                gifter_login=getattr(event, "gifter_user_login", None)
+                or getattr(event, "gifter_login", None),
+                gifter_id=str(gifter_id) if gifter_id else None,
+            )
             logger.debug(
                 "Skipping channel.subscribe alert for gift recipient %s",
                 username,
@@ -2949,7 +3028,12 @@ class Twitch_API:
             )
             return
 
-        alert = alertutils.fetch_cheer_alert(data.event.bits)
+        alert, emit_overlay = _overlay_alert_or_placeholder(
+            alertutils.fetch_cheer_alert(data.event.bits),
+            username=data.event.user_name if not bool(getattr(data.event, "is_anonymous", False)) else "Anonymous",
+            alert_type="bit",
+            timestamp=time.time(),
+        )
         is_anonymous = bool(getattr(data.event, "is_anonymous", False))
         username_display = (
             data.event.user_name if not is_anonymous else "Anonymous"
@@ -2967,35 +3051,37 @@ class Twitch_API:
             and data.event.power_up
             and hasattr(data.event.power_up, "type")
         ):
-            _queue_twitch_alert(alert)
+            if emit_overlay:
+                _queue_twitch_alert(alert)
             # Determine activity feed message based on power_up field
             power_up_type = str(data.event.power_up.type).replace("_", " ").title()
             activity_message = f"{alert.username} has redeemed {power_up_type} for {alert.amt_cheered} bits!"
 
             # Send instant alert
-            try:
-                if (
-                    hasattr(web_engine, "web_engine_instance")
-                    and web_engine.web_engine_instance
-                ):
-                    alert_data = {
-                        "type": "bits_use",
-                        "username": alert.username,
-                        "anonymous": alert.anonymous,
-                        "amt_cheered": alert.amt_cheered,
-                        "message": alert.message,
-                        "fragments": alert.fragments,
-                        "emotes": alert.emotes,
-                        "power_up_type": power_up_type,
-                        "alert_id": alert.alert_id,
-                        "timestamp": alert.timestamp,
-                    }
-                    _send_twitch_instant_alert(alert_data)
-                    logger.debug(f"Sent instant alert for bits_use: {alert.username}")
-            except Exception as e:
-                logger.error(
-                    f"Error sending instant alert for bits_use: {str(e)}", exc_info=True
-                )
+            if emit_overlay:
+                try:
+                    if (
+                        hasattr(web_engine, "web_engine_instance")
+                        and web_engine.web_engine_instance
+                    ):
+                        alert_data = {
+                            "type": "bits_use",
+                            "username": alert.username,
+                            "anonymous": alert.anonymous,
+                            "amt_cheered": alert.amt_cheered,
+                            "message": alert.message,
+                            "fragments": alert.fragments,
+                            "emotes": alert.emotes,
+                            "power_up_type": power_up_type,
+                            "alert_id": alert.alert_id,
+                            "timestamp": alert.timestamp,
+                        }
+                        _send_twitch_instant_alert(alert_data)
+                        logger.debug(f"Sent instant alert for bits_use: {alert.username}")
+                except Exception as e:
+                    logger.error(
+                        f"Error sending instant alert for bits_use: {str(e)}", exc_info=True
+                    )
 
             # Process through chatbot system
             try:
@@ -3056,7 +3142,12 @@ class Twitch_API:
     async def on_cheer(self, data: ChannelCheerEvent):
         self._note_event_received()
         logger.debug(f"Bits cheered by {data.event.user_name}: {data.event.bits}")
-        alert = alertutils.fetch_cheer_alert(data.event.bits)
+        alert, emit_overlay = _overlay_alert_or_placeholder(
+            alertutils.fetch_cheer_alert(data.event.bits),
+            username=data.event.user_name if not bool(getattr(data.event, "is_anonymous", False)) else "Anonymous",
+            alert_type="bit",
+            timestamp=time.time(),
+        )
         is_anonymous = bool(getattr(data.event, "is_anonymous", False))
         username_display = (
             data.event.user_name if not is_anonymous else "Anonymous"
@@ -3083,31 +3174,33 @@ class Twitch_API:
             register_alert_user_message(cache_user_id, alert.message)
         alert.alert_id = f"Alert{round(time.time())}"
         alert.timestamp = time.time()
-        _queue_twitch_alert(alert)
+        if emit_overlay:
+            _queue_twitch_alert(alert)
 
         # Send instant alert
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                alert_data = {
-                    "type": "cheer",
-                    "username": username_display,
-                    "anonymous": alert.anonymous,
-                    "amt_cheered": alert.amt_cheered,
-                    "message": alert.message,
-                    "fragments": alert.fragments,
-                    "emotes": alert.emotes,
-                    "alert_id": alert.alert_id,
-                    "timestamp": alert.timestamp,
-                }
-                _send_twitch_instant_alert(alert_data)
-                logger.debug(f"Sent instant alert for cheer: {username_display}")
-        except Exception as e:
-            logger.error(
-                f"Error sending instant alert for cheer: {str(e)}", exc_info=True
-            )
+        if emit_overlay:
+            try:
+                if (
+                    hasattr(web_engine, "web_engine_instance")
+                    and web_engine.web_engine_instance
+                ):
+                    alert_data = {
+                        "type": "cheer",
+                        "username": username_display,
+                        "anonymous": alert.anonymous,
+                        "amt_cheered": alert.amt_cheered,
+                        "message": alert.message,
+                        "fragments": alert.fragments,
+                        "emotes": alert.emotes,
+                        "alert_id": alert.alert_id,
+                        "timestamp": alert.timestamp,
+                    }
+                    _send_twitch_instant_alert(alert_data)
+                    logger.debug(f"Sent instant alert for cheer: {username_display}")
+            except Exception as e:
+                logger.error(
+                    f"Error sending instant alert for cheer: {str(e)}", exc_info=True
+                )
 
         # Track bit statistics immediately when event occurs
         try:
@@ -3168,7 +3261,12 @@ class Twitch_API:
         logger.debug(
             f"Raid from {data.event.from_broadcaster_user_name} with {data.event.viewers} viewers"
         )
-        alert = alertutils.fetch_raid_alert(data.event.viewers)
+        alert, emit_overlay = _overlay_alert_or_placeholder(
+            alertutils.fetch_raid_alert(data.event.viewers),
+            username=data.event.from_broadcaster_user_name,
+            alert_type="raid",
+            timestamp=time.time(),
+        )
         alert.username = data.event.from_broadcaster_user_name
         alert.alert_type = "raid"
         alert.raider_count = int(str(data.event.viewers))
@@ -3188,27 +3286,29 @@ class Twitch_API:
                 f"Could not fetch channel info for raider {alert.username}: {e}"
             )
 
-        _queue_twitch_alert(alert)
+        if emit_overlay:
+            _queue_twitch_alert(alert)
 
         # Send instant alert
-        try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                alert_data = {
-                    "type": "raid",
-                    "username": alert.username,
-                    "raider_count": alert.raider_count,
-                    "alert_id": alert.alert_id,
-                    "timestamp": alert.timestamp,
-                }
-                _send_twitch_instant_alert(alert_data)
-                logger.debug(f"Sent instant alert for raid: {alert.username}")
-        except Exception as e:
-            logger.error(
-                f"Error sending instant alert for raid: {str(e)}", exc_info=True
-            )
+        if emit_overlay:
+            try:
+                if (
+                    hasattr(web_engine, "web_engine_instance")
+                    and web_engine.web_engine_instance
+                ):
+                    alert_data = {
+                        "type": "raid",
+                        "username": alert.username,
+                        "raider_count": alert.raider_count,
+                        "alert_id": alert.alert_id,
+                        "timestamp": alert.timestamp,
+                    }
+                    _send_twitch_instant_alert(alert_data)
+                    logger.debug(f"Sent instant alert for raid: {alert.username}")
+            except Exception as e:
+                logger.error(
+                    f"Error sending instant alert for raid: {str(e)}", exc_info=True
+                )
 
         # Track raid statistics immediately when event occurs
         try:
@@ -3308,7 +3408,7 @@ class Twitch_API:
             hold.hold_queue_only = True
             hold.enable_alert = False
             if _twitch_alerts_enabled():
-                alert_processor.ALERT_QUEUE.append(hold)
+                alert_processor.enqueue_alert(hold)
             send_instant = False
             logger.debug(
                 "Queued dedicated template point redemption (no DB alert): %s",
@@ -3701,6 +3801,7 @@ class Twitch_API:
     def start_health_check(self):
         """Start the health check thread"""
         if self.health_check_thread is None or not self.health_check_thread.is_alive():
+            self._health_stop.clear()
             self.health_check_thread = threading.Thread(target=self._health_check_loop)
             self.health_check_thread.daemon = True
             self.health_check_thread.start()
@@ -3717,10 +3818,12 @@ class Twitch_API:
 
     def stop_health_check(self):
         """Stop the health check thread"""
+        self._health_stop.set()
         if self.health_check_thread and self.health_check_thread.is_alive():
-            # The thread will exit on its own when the main thread exits
-            # since it's a daemon thread
             logger.debug("Stopping Twitch connection health check thread")
+            self.health_check_thread.join(timeout=2.0)
+            if self.health_check_thread.is_alive():
+                logger.debug("Twitch health check thread still running after stop")
 
     def cancel_oauth(self) -> None:
         """Stop an in-flight OAuth callback server for this integration."""
@@ -3733,7 +3836,7 @@ class Twitch_API:
         from .shutdown import is_shutdown_in_progress
 
         global twitch_connected
-        while True:
+        while not self._health_stop.is_set():
             try:
                 if is_shutdown_in_progress():
                     break
@@ -3846,7 +3949,8 @@ class Twitch_API:
                         )
 
                 # Sleep for the check interval
-                time.sleep(self.health_check_interval)
+                if self._health_stop.wait(self.health_check_interval):
+                    break
             except Exception as e:
                 logger.error(
                     f"Error in Twitch health check thread: {str(e)}", exc_info=True
@@ -3854,7 +3958,8 @@ class Twitch_API:
                 self.is_connected = False
                 twitch_connected = False
                 # Sleep a bit before retrying
-                time.sleep(10)
+                if self._health_stop.wait(10):
+                    break
 
     def _sync_tokens_to_state_manager(self):
         """Sync current tokens back to state manager - used after token refresh"""
@@ -3944,10 +4049,35 @@ class Twitch_API:
             pass
         return True
 
-    def _stop_eventsub_safely(self) -> None:
-        """Stop EventSub without raising when the session is already dead."""
+    def _is_on_eventsub_socket_loop(self) -> bool:
+        """True when the current asyncio loop is EventSub's websocket loop."""
         eventsub = self.eventsub
         if eventsub is None:
+            return False
+        socket_loop = getattr(eventsub, "_socket_loop", None)
+        if socket_loop is None:
+            return False
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            return False
+        return running is socket_loop
+
+    def _stop_eventsub_safely(self) -> None:
+        """Stop EventSub without raising when the session is already dead.
+
+        twitchAPI EventSubWebsocket.stop() is async and internally does
+        run_coroutine_threadsafe(self._stop(), self._socket_loop).result().
+        That deadlocks if stop() itself is scheduled on the socket loop, so
+        stop() must run on a different thread while the socket loop stays free.
+        """
+        eventsub = self.eventsub
+        if eventsub is None:
+            return
+        if self._is_on_eventsub_socket_loop():
+            logger.warning(
+                "Refusing EventSub stop on the websocket loop (would deadlock)"
+            )
             return
         try:
             _run_twitch_coro_sync(eventsub.stop(), timeout=15)
@@ -3966,7 +4096,8 @@ class Twitch_API:
         except Exception as e:
             logger.debug("EventSub stop error (ignored): %s", e)
         finally:
-            self.eventsub = None
+            if self.eventsub is eventsub:
+                self.eventsub = None
 
     def _note_event_received(self) -> None:
         """Record that a Twitch EventSub event arrived (liveness signal)."""
@@ -4018,6 +4149,16 @@ class Twitch_API:
         from .shutdown import is_shutdown_in_progress
 
         if is_shutdown_in_progress():
+            return
+
+        # EventSub callbacks run on the websocket loop. Hop off before stop()
+        # or that loop cannot run EventSubWebsocket._stop().
+        if self._is_on_eventsub_socket_loop():
+            threading.Thread(
+                target=self.reconnect,
+                daemon=True,
+                name="TwitchEventSubReconnect",
+            ).start()
             return
 
         try:
@@ -4593,13 +4734,17 @@ class Twitch_API:
                         )
 
         try:
-            if (
-                self.twitch
-                and hasattr(self.twitch, "_Twitch__session")
-                and self.twitch._Twitch__session
-            ):
+            session = None
+            if self.twitch and hasattr(self.twitch, "_Twitch__session"):
+                session = self.twitch._Twitch__session
+            if session is not None and _helix_session_usable(session):
                 logger.debug("Using existing authenticated Twitch session for API call")
-                return await _perform_request(self.twitch._Twitch__session)
+                return await _perform_request(session)
+            if session is not None:
+                logger.debug(
+                    "Twitch HTTP session closed or bound to another loop; "
+                    "using ephemeral session"
+                )
             if self.auth_token and self.client_id:
                 logger.debug(
                     "Twitch HTTP session not open yet; using ephemeral session for Helix call"
@@ -5337,31 +5482,56 @@ def notify_twitch_connect_failed() -> None:
 
 
 def trigger_oauth_reconnection():
-    """Trigger OAuth reconnection from the UI (sync wrapper)"""
+    """Trigger OAuth reconnection from the UI (sync wrapper).
+
+    Returns True once the browser flow has started (or completed quickly).
+    Does not treat a long consent wait as failure.
+    """
     try:
-        import concurrent.futures
-        import threading
+        from .twitch_oauth import is_oauth_in_progress
 
         if not twitch_api:
             logger.error("Twitch API not initialized")
             return False
 
-        # Use a thread pool to run the async function
+        result = {"ok": False}
+        done = threading.Event()
+
         def run_async():
             try:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    return loop.run_until_complete(twitch_api.reconnect_with_oauth())
+                    result["ok"] = bool(
+                        loop.run_until_complete(twitch_api.reconnect_with_oauth())
+                    )
                 finally:
                     loop.close()
             except Exception as e:
                 logger.error(f"Error in async OAuth reconnection thread: {str(e)}")
-                return False
+                result["ok"] = False
+            finally:
+                done.set()
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            return future.result(timeout=30)  # 30 second timeout for OAuth
+        thread = threading.Thread(
+            target=run_async, daemon=True, name="TwitchOAuthReconnect"
+        )
+        thread.start()
+
+        # Wait until the local OAuth server is up, the thread finishes, or a
+        # generous bound for pre-browser work (stop + client create).
+        deadline = time.monotonic() + 90.0
+        while time.monotonic() < deadline:
+            if is_oauth_in_progress() or getattr(twitch_api, "authenticator", None):
+                logger.info("Twitch OAuth flow started")
+                return True
+            if done.is_set():
+                return bool(result["ok"])
+            done.wait(timeout=0.1)
+        logger.info(
+            "Twitch OAuth still in progress after start wait; not treating as failure"
+        )
+        return True
 
     except Exception as e:
         logger.error(f"Error triggering OAuth reconnection: {str(e)}", exc_info=True)

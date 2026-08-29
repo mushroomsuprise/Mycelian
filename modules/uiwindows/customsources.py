@@ -54,7 +54,7 @@ from ..template_preview_settings import (
 from ..ui_buttons import destructive_button, outline_button, primary_button
 from ..ui_color_control import is_color_transparent, render_color_field
 from ..ui_form_controls import form_input, form_number, form_select, form_textarea
-from ..ui_timer import app_schedule, layout_schedule
+from ..ui_timer import app_schedule, layout_schedule, run_on_ui_loop
 
 logger = logging.getLogger(__name__)
 
@@ -580,9 +580,10 @@ def _schedule_obs_preview_size_resolve(config_name: str) -> None:
             except Exception as e:
                 logger.debug("OBS size apply failed: %s", e)
 
-        # app.timer does not need a layout slot (unlike layout_schedule).
+        # app.timer does not need a layout slot (unlike layout_schedule), but
+        # timer creation is not thread-safe — hop onto the NiceGUI loop first.
         try:
-            app_schedule(0.05, _apply_safe, once=True)
+            run_on_ui_loop(lambda: app_schedule(0.05, _apply_safe, once=True))
         except Exception as e:
             logger.debug("OBS size app_schedule failed: %s", e)
 

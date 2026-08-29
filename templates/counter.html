@@ -244,8 +244,18 @@
         });
 
         socket.on('counter_update', function (data) {
-            if (data && data.message !== undefined) {
+            if (!data) { return; }
+            var action = data.action;
+            if (action === 'increment') {
+                handleCounterOperation('increment', data.increment_value != null ? data.increment_value : data.value);
+            } else if (action === 'decrement') {
+                handleCounterOperation('decrement', data.decrement_value != null ? data.decrement_value : data.value);
+            } else if (action === 'reset') {
+                handleCounterOperation('reset');
+            } else if (data.message !== undefined) {
                 updateCounter(data.message);
+            } else if (data.value !== undefined) {
+                handleCounterOperation('update', data.value);
             }
         });
 
@@ -271,20 +281,15 @@
             handleCounterOperation('reset');
         });
 
-        socket.on('counter_update', function (data) {
-            console.log('Counter update received');
-            handleCounterOperation('update', data.value);
-        });
-
         // Connector action event listeners
         socket.on('counter_increase_counter', function (data) {
             console.log('Connector action: increase counter', data);
-            handleCounterOperation('increment');
+            handleCounterOperation('increment', data && (data.increment_value != null ? data.increment_value : data.value));
         });
 
         socket.on('counter_decrease_counter', function (data) {
             console.log('Connector action: decrease counter', data);
-            handleCounterOperation('decrement');
+            handleCounterOperation('decrement', data && (data.decrement_value != null ? data.decrement_value : data.value));
         });
 
         socket.on('counter_reset_counter', function (data) {
@@ -318,10 +323,18 @@
 
             switch (operation) {
                 case 'increment':
-                    newValue = currentValue + 1;
+                    {
+                        var inc = (value != null && value !== '') ? parseInt(value, 10) : 1;
+                        if (isNaN(inc)) { inc = 1; }
+                        newValue = currentValue + inc;
+                    }
                     break;
                 case 'decrement':
-                    newValue = Math.max(0, currentValue - 1);
+                    {
+                        var dec = (value != null && value !== '') ? parseInt(value, 10) : 1;
+                        if (isNaN(dec)) { dec = 1; }
+                        newValue = Math.max(0, currentValue - dec);
+                    }
                     break;
                 case 'reset':
                     newValue = 0;

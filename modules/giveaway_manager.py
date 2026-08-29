@@ -151,6 +151,21 @@ class GiveawayManager:
         with self._lock:
             return [e.display_name for e in reversed(self._pool)]
 
+    def get_overlay_state(self) -> Dict[str, Any]:
+        """Snapshot for overlay reconnect (keyword, accepting, pool)."""
+        with self._lock:
+            return {
+                "keyword": self._config.get("keyword", "") or "",
+                "accepting": bool(
+                    self._accepting_entries and self._config.get("keyword", "").strip()
+                ),
+                "pool_size": len(self._pool),
+                "pool_entries": [e.display_name for e in reversed(self._pool)],
+            }
+
+    def get_overlay_snapshot(self) -> Dict[str, Any]:
+        return self.get_overlay_state()
+
     def _emit_event(self, event: str, data: Dict[str, Any]) -> None:
         """Emit a Socket.IO event to the giveaway browser template."""
         try:
@@ -298,15 +313,18 @@ class GiveawayManager:
             winners_text = ", ".join(winners)
             text = template.replace("{winners}", winners_text).replace("{winner}", winners_text)
 
+        announce_ok = True
         try:
             from .chatbot import send_chatbot_announcement
 
             ok = send_chatbot_announcement(text, "primary")
             if not ok:
+                announce_ok = False
                 with self._lock:
                     self._last_error = "Failed to send announcement (check chatbot connection)."
-                return False, self._last_error, []
+                logger.warning("Giveaway announcement failed; overlay winners still emitted")
         except Exception as e:
+            announce_ok = False
             logger.error("Giveaway announcement error: %s", e, exc_info=True)
             try:
                 from .notification_engine import nav_actions_main_tab, notify_critical
@@ -320,7 +338,6 @@ class GiveawayManager:
                 pass
             with self._lock:
                 self._last_error = str(e)
-            return False, self._last_error, []
 
         try:
             from .statistics_manager import get_statistics_manager
@@ -340,5 +357,7 @@ class GiveawayManager:
                 "pool_entries": pool_entries,
             },
         )
+        if not announce_ok:
+            return True, "Drew winner(s) but announcement failed.", winners
         return True, f"Drew {len(winners)} winner(s).", winners
 

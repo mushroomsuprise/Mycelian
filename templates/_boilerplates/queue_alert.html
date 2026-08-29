@@ -52,9 +52,24 @@
     </div>
 
     <script>
-        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port);
         var alertActive = false;
         var alertQueue = [];
+        var sporeHoldTimeout = null;
+        var sporeQueueDuration = {{ Duration | default(5) }};
+
+        function sporeResetLocalQueue() {
+            alertQueue = [];
+            alertActive = false;
+            if (sporeHoldTimeout) {
+                clearTimeout(sporeHoldTimeout);
+                sporeHoldTimeout = null;
+            }
+        }
+
+        var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port, {
+            onDisconnect: sporeResetLocalQueue,
+            onRecovery: sporeResetLocalQueue
+        });
 
         var SPORE_ANIM_CLASS_MAP = {
             fade: { in: 'spore-anim-fade-in', out: 'spore-anim-fade-out' },
@@ -311,6 +326,14 @@
             });
         });
 
+        socket.on('disconnect', function () {
+            sporeResetLocalQueue();
+        });
+
+        socket.on('overlay-recovery', function () {
+            sporeResetLocalQueue();
+        });
+
         socket.on('next_alert', function (data) {
             alertQueue.push(data || {});
             if (!alertActive) { sporeProcessNext(); }
@@ -327,11 +350,19 @@
             } catch (err) {
                 console.error('[__TEMPLATE_NAME__] binding error', err);
             }
-            var hold = (data && typeof data.duration === 'number') ? data.duration : 5;
-            setTimeout(function () {
+            var hold = sporeQueueDuration;
+            if (data && data.duration != null && data.duration !== '') {
+                var parsedHold = parseFloat(data.duration);
+                if (!isNaN(parsedHold)) { hold = parsedHold; }
+            }
+            if (typeof hold !== 'number' || isNaN(hold) || hold < 0) { hold = 5; }
+            sporeHoldTimeout = setTimeout(function () {
+                sporeHoldTimeout = null;
                 alertActive = false;
                 var seq = data && data.queue_seq != null ? parseInt(data.queue_seq, 10) : null;
-                if (seq == null || Number.isNaN(seq)) {
+                if (seq != null && !Number.isNaN(seq)) {
+                    socket.emit('alert_complete', { queue_seq: seq });
+                } else {
                     console.warn('[__TEMPLATE_NAME__] queue item had no queue_seq; emit alert_complete from Advanced JS when your overlay should release the server queue.');
                 }
                 sporeProcessNext();

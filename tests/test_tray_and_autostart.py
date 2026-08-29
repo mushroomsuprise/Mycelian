@@ -615,6 +615,39 @@ def test_blanking_suppresses_the_vue_load_warning():
     assert unrelated in remaining, "unrelated handlers must be left alone"
 
 
+def test_mark_started_minimized_hides_the_dock(monkeypatch):
+    """Start-minimized must drop the Dock icon the same way minimize-to-tray does."""
+    calls = []
+    monkeypatch.setattr(tray_controller, "set_dock_visible", lambda visible: calls.append(visible))
+    monkeypatch.setattr(tray_controller, "_suspend_ui_health_monitor", lambda flag: None)
+    monkeypatch.setattr(tray_controller, "_send_to_tray", lambda payload: None)
+    monkeypatch.setattr(tray_controller, "_minimized", False, raising=False)
+
+    tray_controller._mark_started_minimized()
+    assert calls == [False]
+    assert tray_controller.is_minimized() is True
+
+
+def test_initialize_restores_if_start_minimized_but_tray_fails(monkeypatch):
+    """A hidden about:blank window with no tray icon is unreachable."""
+    restored = []
+    monkeypatch.setattr(tray_controller, "register_native_event_handlers", lambda: None)
+    monkeypatch.setattr(tray_controller, "tray_wanted", lambda: True)
+    monkeypatch.setattr(tray_controller, "start_tray", lambda: False)
+    monkeypatch.setattr(tray_controller, "is_tray_running", lambda: False)
+    monkeypatch.setattr(tray_controller, "start_minimized_enabled", lambda: True)
+    monkeypatch.setattr(
+        tray_controller,
+        "restore_from_tray",
+        lambda *, reason: restored.append(reason) or True,
+    )
+    monkeypatch.setattr(tray_controller, "warn_background_database_usage", lambda: None)
+    monkeypatch.setattr(tray_controller, "_minimized", False, raising=False)
+
+    tray_controller.initialize()
+    assert restored == ["start_minimized_no_tray"]
+
+
 def test_minimize_hides_the_dock_icon_before_hiding_the_window(monkeypatch):
     """A hidden window with a live Dock icon can be reopened behind our back."""
     order = []

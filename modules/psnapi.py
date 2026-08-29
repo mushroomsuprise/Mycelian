@@ -260,11 +260,7 @@ def _ensure_game_cache_index() -> None:
     with _game_cache_index_lock:
         if _game_cache_index_loaded:
             return
-    # Load outside the lock so DB I/O does not block other index readers/writers
-    docs = load_all_psn_game_cache_docs_from_db()
-    with _game_cache_index_lock:
-        if _game_cache_index_loaded:
-            return
+        docs = load_all_psn_game_cache_docs_from_db()
         _game_cache_by_title_id.clear()
         _game_cache_by_name.clear()
         _game_cache_by_comm_id.clear()

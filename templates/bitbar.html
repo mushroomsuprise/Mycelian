@@ -274,11 +274,25 @@
             message: {{ DefaultMessage | tojson }}
         };
 
+        function normalizeExcludedUsers(raw) {
+            var parts = [];
+            if (Array.isArray(raw)) {
+                raw.forEach(function (item) {
+                    String(item == null ? '' : item).split(',').forEach(function (p) { parts.push(p); });
+                });
+            } else if (raw != null && raw !== '') {
+                String(raw).split(',').forEach(function (p) { parts.push(p); });
+            }
+            return parts.map(function (u) {
+                return String(u).trim().replace(/^['"]+|['"]+$/g, '').toLowerCase();
+            }).filter(function (u) { return u.length > 0; });
+        }
+
         var settings = {
             nearGoalThreshold: {{ NearGoalThreshold| tojson }},
             autoReset: {{ AutoReset | tojson }},
             resetDelay: {{ ResetDelay | tojson }},
-            excludedUsers: [{{ ExcludedUsers| tojson }}],
+            excludedUsers: normalizeExcludedUsers({{ ExcludedUsers | tojson }}),
             skipTestAlerts: {{ SkipTestAlerts | tojson }},
             processReplays: {{ ProcessReplays | tojson }},
             processTests: {{ ProcessTests | tojson }}
@@ -348,7 +362,7 @@
         // Connector action event listeners
         socket.on('bitbar_add_bits', function (data) {
             console.log('Connector action: add bits', data);
-            var amount = (data && data.amount) ? parseInt(data.amount) : 100; // Default 100 bits
+            var amount = (data && (data.bits_amount != null ? data.bits_amount : data.amount)) ? parseInt(data.bits_amount != null ? data.bits_amount : data.amount, 10) : 100;
             if (amount > 0) {
                 var oldBits = bitbarData.currentBits;
                 bitbarData.currentBits += amount;
@@ -373,7 +387,7 @@
 
         socket.on('bitbar_remove_bits', function (data) {
             console.log('Connector action: remove bits', data);
-            var amount = (data && data.amount) ? parseInt(data.amount) : 100; // Default 100 bits
+            var amount = (data && (data.bits_amount != null ? data.bits_amount : data.amount)) ? parseInt(data.bits_amount != null ? data.bits_amount : data.amount, 10) : 100;
             if (amount > 0) {
                 bitbarData.currentBits = Math.max(0, bitbarData.currentBits - amount);
 
@@ -825,7 +839,7 @@
                 settings.skipTestAlerts = config.SkipTestAlerts;
             }
             if (config.ExcludedUsers !== undefined) {
-                settings.excludedUsers = config.ExcludedUsers;
+                settings.excludedUsers = normalizeExcludedUsers(config.ExcludedUsers);
             }
 
             // Update display with new settings

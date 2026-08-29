@@ -318,6 +318,11 @@
             }
         });
 
+        socket.on('template_config_updated', function (data) {
+            var name = (data && (data.template_name || data.templateName || data.template)) || '';
+            if (name === '__TEMPLATE_NAME__') location.reload();
+        });
+
         // SPORE_STUDIO:user-begin
         // Place advanced custom JavaScript below. Anything between the
         // user-begin and user-end markers is preserved across Spore Studio

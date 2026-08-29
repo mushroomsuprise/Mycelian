@@ -65,6 +65,7 @@ class HelpBrowser:
         self.back_btn = None
         self.forward_btn = None
         self._nav_bridge = None
+        self._help_click_installed = False
 
     def show(self, initial_topic: str = None, category: str = None):
         """Show help browser in a dialog
@@ -96,6 +97,10 @@ class HelpBrowser:
                         js_handler='(e) => emit(e.detail)')
 
             self._setup_help_link_handler()
+            try:
+                self.dialog.on("hide", lambda: self._teardown_help_link_handler())
+            except Exception:
+                pass
 
             if initial_topic:
                 self.navigate_to(initial_topic)
@@ -139,49 +144,71 @@ class HelpBrowser:
             logger.error(f"Error opening external link: {ex}")
 
     def _setup_help_link_handler(self):
-        """Install document-level click handler for help: and external links."""
+        """Install a single document-level click handler for help: and external links."""
         if not self._nav_bridge:
             return
+        if self._help_click_installed:
+            return
+        self._help_click_installed = True
         bridge_id = self._nav_bridge.id
         ui.run_javascript(f"""
-        document.addEventListener('click', function(e) {{
-            const link = e.target.closest('a[href]');
-            if (!link) return;
-            const href = link.getAttribute('href');
-            if (!href) return;
-
-            if (href.startsWith('help:')) {{
-                e.preventDefault();
-                e.stopPropagation();
-                const topicId = href.substring(5);
-                try {{
-                    const el = getHtmlElement({bridge_id});
-                    if (el) {{
-                        el.dispatchEvent(new CustomEvent('helpnav', {{
-                            detail: topicId,
-                            bubbles: false
-                        }}));
-                    }}
-                }} catch(err) {{
-                    console.error('Help link navigation error:', err);
-                }}
-            }} else if (href.startsWith('http://') || href.startsWith('https://')) {{
-                e.preventDefault();
-                e.stopPropagation();
-                try {{
-                    const el = getHtmlElement({bridge_id});
-                    if (el) {{
-                        el.dispatchEvent(new CustomEvent('externallink', {{
-                            detail: href,
-                            bubbles: false
-                        }}));
-                    }}
-                }} catch(err) {{
-                    console.error('External link open error:', err);
-                }}
+        (function() {{
+            if (window.__mycelianHelpClickHandler) {{
+                document.removeEventListener('click', window.__mycelianHelpClickHandler, true);
             }}
-        }});
+            window.__mycelianHelpClickHandler = function(e) {{
+                const link = e.target.closest('a[href]');
+                if (!link) return;
+                const href = link.getAttribute('href');
+                if (!href) return;
+
+                if (href.startsWith('help:')) {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const topicId = href.substring(5);
+                    try {{
+                        const el = getHtmlElement({bridge_id});
+                        if (el) {{
+                            el.dispatchEvent(new CustomEvent('helpnav', {{
+                                detail: topicId,
+                                bubbles: false
+                            }}));
+                        }}
+                    }} catch(err) {{
+                        console.error('Help link navigation error:', err);
+                    }}
+                }} else if (href.startsWith('http://') || href.startsWith('https://')) {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {{
+                        const el = getHtmlElement({bridge_id});
+                        if (el) {{
+                            el.dispatchEvent(new CustomEvent('externallink', {{
+                                detail: href,
+                                bubbles: false
+                            }}));
+                        }}
+                    }} catch(err) {{
+                        console.error('External link open error:', err);
+                    }}
+                }}
+            }};
+            document.addEventListener('click', window.__mycelianHelpClickHandler, true);
+        }})();
         """)
+
+    def _teardown_help_link_handler(self):
+        """Remove the document click listener when the help dialog closes."""
+        self._help_click_installed = False
+        try:
+            ui.run_javascript("""
+            if (window.__mycelianHelpClickHandler) {
+                document.removeEventListener('click', window.__mycelianHelpClickHandler, true);
+                window.__mycelianHelpClickHandler = null;
+            }
+            """)
+        except Exception:
+            pass
 
     def _inject_content_enhancements(self):
         """Post-process rendered markdown: callout styling and external link icons."""
@@ -529,9 +556,9 @@ class HelpBrowser:
                 notify(f"Help topic not found: {topic_id}", type="warning")
                 return
 
-            if self.current_topic and self.current_topic.id != topic_id:
-                self.history = self.history[:self.history_index + 1]
-                self.history.append(self.current_topic.id)
+            if not self.current_topic or self.current_topic.id != topic_id:
+                self.history = self.history[: self.history_index + 1]
+                self.history.append(topic_id)
                 self.history_index = len(self.history) - 1
 
             if len(self.history) > 50:

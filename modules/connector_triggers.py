@@ -26,7 +26,7 @@ SOFTWARE.
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from .connector_core import BaseTrigger, TriggerType
 
@@ -327,6 +327,7 @@ class ScheduleTrigger(BaseTrigger):
         ""  # Cron-like pattern (e.g., "0 */15 * * *" for every 15 minutes)
     )
     timezone: str = "UTC"
+    specific_time: str = ""  # Daily HH:MM when cron is not a full expression
 
     def __post_init__(self):
         self.trigger_type = TriggerType.SCHEDULE
@@ -336,9 +337,42 @@ class ScheduleTrigger(BaseTrigger):
         if event_data.get("event_type") != "schedule":
             return False
 
-        # This would require a cron library implementation
-        # For now, just evaluate conditions
+        tid = event_data.get("trigger_id")
+        if tid and self.trigger_id and tid != self.trigger_id:
+            return False
+
         return self.evaluate_conditions(event_data)
+
+
+def parse_schedule_hhmm(trigger: Any) -> Optional[Tuple[int, int]]:
+    """Parse daily (hour, minute) from schedule_pattern or specific_time.
+
+    Accepts ``HH:MM`` or a 5-field cron ``M H * * *``. Returns None if unparseable.
+    """
+    specific = str(getattr(trigger, "specific_time", "") or "").strip()
+    pattern = str(getattr(trigger, "schedule_pattern", "") or "").strip()
+    for text in (specific, pattern):
+        if not text:
+            continue
+        parts = text.split()
+        if len(parts) >= 5:
+            try:
+                minute = int(parts[0])
+                hour = int(parts[1])
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    return hour, minute
+            except ValueError:
+                pass
+        if ":" in text:
+            try:
+                hour_s, rest = text.strip().split(":", 1)
+                hour = int(hour_s)
+                minute = int(rest.split()[0])
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    return hour, minute
+            except ValueError:
+                pass
+    return None
 
 
 @dataclass

@@ -81,14 +81,19 @@ class GoLiveAnnouncer:
         if platform not in ("twitch", "youtube"):
             return False
 
+        need_helix = False
         with self._lock:
             if platform == "twitch":
                 self.twitch_live = True
             else:
-                # YouTube went live: probe Twitch Helix if EventSub state is unknown
-                if not self.twitch_live:
-                    if _helix_twitch_is_live():
-                        self.twitch_live = True
+                need_helix = not self.twitch_live
+
+        helix_live = _helix_twitch_is_live() if need_helix else False
+
+        with self._lock:
+            if platform == "youtube":
+                if helix_live:
+                    self.twitch_live = True
                 self.youtube_live = True
 
             try:

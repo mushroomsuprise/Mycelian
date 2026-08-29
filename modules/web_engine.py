@@ -225,6 +225,80 @@ def _mimetype_for_asset_filename(filename: str) -> Optional[str]:
     return _ASSET_MEDIA_MIMETYPES.get(ext)
 
 
+_LOCALHOST_REMOTE_ADDRS = frozenset(
+    {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+)
+_RELAY_EVENT_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+_TC_NO_COALESCE_MARKERS = (
+    "increment",
+    "decrement",
+    "add_",
+    "subtract_",
+    "_adjust",
+    "counter",
+)
+
+
+def _is_localhost_remote_addr(addr: Optional[str]) -> bool:
+    return (addr or "").strip().lower() in _LOCALHOST_REMOTE_ADDRS
+
+
+def _reject_non_localhost_socket() -> bool:
+    """Return True if the current Socket.IO client is not localhost (caller should abort)."""
+    if _is_localhost_remote_addr(getattr(request, "remote_addr", None)):
+        return False
+    logger.warning(
+        "Rejected mutating Socket.IO event from %s",
+        getattr(request, "remote_addr", None),
+    )
+    return True
+
+
+def _dev_debug_endpoints_enabled() -> bool:
+    return bool(os.environ.get("MYCELIAN_DEV") or not getattr(sys, "frozen", False))
+
+
+def _is_twitch_helix_url(url: str) -> bool:
+    try:
+        parsed = urlparse(str(url).strip())
+    except Exception:
+        return False
+    return (
+        parsed.scheme.lower() == "https"
+        and (parsed.hostname or "").lower() == "api.twitch.tv"
+    )
+
+
+def _resolved_assets_file(filename: str) -> Optional[str]:
+    """Return realpath of *filename* under the assets root, or None if unsafe/missing."""
+    assets_root = os.path.realpath(get_assets_path())
+    if not filename or "\x00" in str(filename):
+        return None
+    full_path = os.path.realpath(os.path.join(assets_root, filename))
+    try:
+        if os.path.commonpath([assets_root, full_path]) != assets_root:
+            return None
+    except ValueError:
+        return None
+    if os.path.isfile(full_path):
+        return full_path
+    return None
+
+
+def _template_control_should_coalesce(event_name: str, event_data: Any) -> bool:
+    """Coalesce text/slider SET events only; keep increment/decrement/buttons in order."""
+    name = (event_name or "").lower()
+    if any(marker in name for marker in _TC_NO_COALESCE_MARKERS):
+        return False
+    if isinstance(event_data, dict):
+        action = str(event_data.get("action") or "").lower()
+        if action in ("increment", "decrement"):
+            return False
+        if "text" in event_data or "value" in event_data:
+            return True
+    return False
+
+
 # Mock data pools shared with :mod:`spore_studio.preview_mocks` for manual
 # preview toolbar emits (Custom Sources + Spore Studio).
 _DEMO_USERNAMES = (
@@ -792,11 +866,10 @@ class WebEngine:
                 logger.debug(
                     "Custom route: Attempting to serve static file: %s", filename
                 )
-            assets_path = get_assets_path()
-            full_path = os.path.join(assets_path, filename)
+            full_path = _resolved_assets_file(filename)
 
             try:
-                if os.path.exists(full_path) and os.path.isfile(full_path):
+                if full_path:
                     directory_path = os.path.dirname(full_path)
                     filename_only = os.path.basename(full_path)
                     mimetype = _mimetype_for_asset_filename(filename_only)
@@ -806,7 +879,7 @@ class WebEngine:
                         )
                     return send_from_directory(directory_path, filename_only)
                 else:
-                    logger.warning(f"Static file not found: {full_path}")
+                    logger.warning("Static file not found or outside assets: %s", filename)
                     return f"File not found: {filename}", 404
             except Exception as e:
                 logger.error(
@@ -817,11 +890,10 @@ class WebEngine:
         # Also add the standard /static/ route with the same functionality for backward compatibility
         @self.app.route("/static/<path:filename>")
         def serve_static_file_standard(filename):
-            assets_path = get_assets_path()
-            full_path = os.path.join(assets_path, filename)
+            full_path = _resolved_assets_file(filename)
 
             try:
-                if os.path.exists(full_path) and os.path.isfile(full_path):
+                if full_path:
                     directory_path = os.path.dirname(full_path)
                     filename_only = os.path.basename(full_path)
                     mimetype = _mimetype_for_asset_filename(filename_only)
@@ -831,7 +903,7 @@ class WebEngine:
                         )
                     return send_from_directory(directory_path, filename_only)
                 else:
-                    logger.warning(f"Static file not found: {full_path}")
+                    logger.warning("Static file not found or outside assets: %s", filename)
                     return f"File not found: {filename}", 404
             except Exception as e:
                 logger.error(
@@ -842,6 +914,8 @@ class WebEngine:
         # Add debug route to list available static files
         @self.app.route("/debug/static")
         def debug_static():
+            if not _dev_debug_endpoints_enabled():
+                return {"error": "Not found"}, 404
             assets_path = get_assets_path()
             files_list = []
 
@@ -987,9 +1061,12 @@ class WebEngine:
                 name = (template_name or "").strip()
                 if not name or "/" in name or "\\" in name:
                     return {"error": "Invalid template name"}, 400
+                parser = self.template_config_parser
+                if not parser.config_file_exists(name):
+                    return {"error": "Template configuration not found"}, 404
                 preview_tok = request.cookies.get("mycelian_preview_token")
-                config = self.template_config_parser.load_config(
-                    name, include_dynamic_controls=False
+                config = parser.load_config(
+                    name, include_dynamic_controls=False, create=False
                 )
                 self._merge_preview_session_into_config(preview_tok, name, config)
                 return config, 200, {"Content-Type": "application/json"}
@@ -1171,6 +1248,8 @@ class WebEngine:
 
                 snapshot = _aw.request_snapshot(template_name)
                 return snapshot, 200, {"Content-Type": "application/json"}
+            except ValueError as e:
+                return ({"error": str(e)}, 400, {"Content-Type": "application/json"})
             except Exception as e:
                 logger.error("Spore Studio assets endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
@@ -1322,7 +1401,7 @@ class WebEngine:
                     )
                 with self._preview_sessions_lock:
                     self._preview_sessions.pop(str(token), None)
-                self._preview_iframe_sids.pop(str(token), None)
+                    self._preview_iframe_sids.pop(str(token), None)
                 return (
                     {"ok": True},
                     200,
@@ -3634,6 +3713,11 @@ class WebEngine:
             with self._listener_cache_lock:
                 self._cached_listener = None
 
+    def _prune_known_server_threads(self) -> None:
+        self._known_server_threads = [
+            t for t in self._known_server_threads if t is not None and t.is_alive()
+        ]
+
     def _join_known_server_threads(self, join_timeout: float) -> None:
         """Join every WebEngine thread this instance has started."""
         threads = list(self._known_server_threads)
@@ -3649,6 +3733,7 @@ class WebEngine:
                     thread.name,
                     join_timeout,
                 )
+        self._prune_known_server_threads()
 
     def _wait_for_port_free(self, timeout: float = 20.0) -> bool:
         deadline = time.time() + timeout
@@ -4110,6 +4195,7 @@ class WebEngine:
             )
         thread = threading.Thread(target=self.run, name="WebEngine", daemon=True)
         self.server_thread = thread
+        self._prune_known_server_threads()
         self._known_server_threads.append(thread)
         thread.start()
         web_engine_instance = self
@@ -4499,18 +4585,39 @@ class WebEngine:
         tok = str(token)
         if not tok or not sid:
             return
-        bucket = self._preview_iframe_sids.get(tok)
-        if bucket is None:
-            bucket = set()
-            self._preview_iframe_sids[tok] = bucket
-        bucket.add(sid)
-        self._preview_iframe_tokens[sid] = tok
+        with self._preview_sessions_lock:
+            bucket = self._preview_iframe_sids.get(tok)
+            if bucket is None:
+                bucket = set()
+                self._preview_iframe_sids[tok] = bucket
+            bucket.add(sid)
+            self._preview_iframe_tokens[sid] = tok
 
     def _preview_iframe_sid_list(self, token: str) -> List[str]:
-        sids = self._preview_iframe_sids.get(str(token))
-        if not sids:
-            return []
-        return list(sids)
+        with self._preview_sessions_lock:
+            sids = self._preview_iframe_sids.get(str(token))
+            if not sids:
+                return []
+            return list(sids)
+
+    def _unregister_preview_iframe_sid(self, sid: str) -> None:
+        with self._preview_sessions_lock:
+            stale_token = self._preview_iframe_tokens.pop(sid, None)
+            if stale_token is None:
+                return
+            sids = self._preview_iframe_sids.get(stale_token)
+            if sids:
+                sids.discard(sid)
+                if not sids:
+                    self._preview_iframe_sids.pop(stale_token, None)
+
+    def _preview_iframe_has_sid(self, sid: str) -> bool:
+        with self._preview_sessions_lock:
+            return sid in self._preview_iframe_tokens
+
+    def _preview_token_for_sid(self, sid: str) -> Optional[str]:
+        with self._preview_sessions_lock:
+            return self._preview_iframe_tokens.get(sid)
 
     def push_preview_overrides(
         self, token: str, template_name: str, overrides: Dict[str, Any]
@@ -4969,7 +5076,7 @@ class WebEngine:
                 """Avoid spamming preview iframes with live pause/theme payloads."""
                 try:
                     self.socketio.sleep(0.12)
-                    if connect_sid in self._preview_iframe_tokens:
+                    if self._preview_iframe_has_sid(connect_sid):
                         return
                     global ALERTS_PAUSED, ALERTS_MUTED
                     logger.debug(
@@ -5064,7 +5171,7 @@ class WebEngine:
         def handle_mycelian_preview_client_ready():
             """Preview iframe registered hooks; push persisted preview-only settings."""
             try:
-                token = self._preview_iframe_tokens.get(request.sid)
+                token = self._preview_token_for_sid(request.sid)
                 if not token:
                     return
                 from .template_preview_settings import load_template_preview_settings
@@ -5113,13 +5220,7 @@ class WebEngine:
             # marking the sid only accumulated a key per disconnect. OBS browser
             # sources reconnect constantly, so drop the entry instead.
             self._preview_demo_stop.pop(request.sid, None)
-            stale_token = self._preview_iframe_tokens.pop(request.sid, None)
-            if stale_token is not None:
-                sids = self._preview_iframe_sids.get(stale_token)
-                if sids:
-                    sids.discard(request.sid)
-                    if not sids:
-                        self._preview_iframe_sids.pop(stale_token, None)
+            self._unregister_preview_iframe_sid(request.sid)
 
         @self.socketio.on("game_hook_command")
         def handle_game_hook_command(data):
@@ -5148,6 +5249,9 @@ class WebEngine:
                     "alert_complete ignored (missing or invalid queue_seq): %s", data
                 )
                 return
+            if seq < 0:
+                logger.debug("alert_complete ignored (preview seq=%s)", seq)
+                return
             if EXPECTED_ALERT_COMPLETE_SEQ is None:
                 logger.debug("alert_complete ignored (no active expected queue_seq)")
                 return
@@ -5166,8 +5270,9 @@ class WebEngine:
 
         @self.socketio.on("pause_alerts")
         def handle_pause_alerts():
-            # Delegate to the main toggle_alerts method for consistency
-            self.toggle_alerts()
+            global ALERTS_PAUSED
+            if not ALERTS_PAUSED:
+                self.toggle_alerts()
 
         @self.socketio.on("resume_alerts")
         def handle_resume_alerts():
@@ -5190,6 +5295,8 @@ class WebEngine:
                     - path (str): The path in the database to set the data
                     - data (dict): The data to set at the specified path
             """
+            if _reject_non_localhost_socket():
+                return False
             try:
                 if (
                     not isinstance(data, dict)
@@ -5220,6 +5327,8 @@ class WebEngine:
                     - path (str): The path in the database to update the data
                     - data (dict): The data to update at the specified path
             """
+            if _reject_non_localhost_socket():
+                return False
             try:
                 if (
                     not isinstance(data, dict)
@@ -5251,11 +5360,18 @@ class WebEngine:
                     - request_etag (bool, optional): Whether to request the etag with the data
             """
             try:
+                request_id = data.get("request_id") if isinstance(data, dict) else None
+
+                def _emit_get_data(payload):
+                    if request_id is not None:
+                        payload = dict(payload)
+                        payload["request_id"] = request_id
+                    self.socketio.emit("get_data", payload, to=request.sid)
+                    return payload
+
                 if not isinstance(data, dict) or "path" not in data:
                     logger.error("Invalid data format received in get_data event")
-                    self.socketio.emit(
-                        "get_data", {"error": "Invalid data format"}, to=request.sid
-                    )
+                    _emit_get_data({"error": "Invalid data format"})
                     return False
 
                 path = data["path"]
@@ -5275,7 +5391,7 @@ class WebEngine:
                             "cheers": int(alerts.bit_alerts_played or 0),
                         }
                         result = {"data": session_doc, "path": path}
-                        self.socketio.emit("get_data", result, to=request.sid)
+                        _emit_get_data(result)
                         return result
                     except Exception as exc:
                         logger.debug("statistics/session snapshot failed: %s", exc)
@@ -5292,12 +5408,14 @@ class WebEngine:
                 else:
                     result = {"path": path, "data": result}
 
-                # Emit the result back to the client
-                self.socketio.emit("get_data", result, to=request.sid)
+                _emit_get_data(result)
                 return result
             except Exception as e:
                 logger.error(f"Error getting data: {str(e)}", exc_info=True)
-                self.socketio.emit("get_data", {"error": str(e)}, to=request.sid)
+                err_payload = {"error": str(e)}
+                if isinstance(data, dict) and data.get("request_id") is not None:
+                    err_payload["request_id"] = data.get("request_id")
+                self.socketio.emit("get_data", err_payload, to=request.sid)
                 return False
 
         @self.socketio.on("get_alert_state")
@@ -5361,6 +5479,8 @@ class WebEngine:
             Returns:
                 dict: Success/error response
             """
+            if _reject_non_localhost_socket():
+                return {"success": False, "error": "Forbidden"}
             try:
                 if (
                     not isinstance(data, dict)
@@ -5409,6 +5529,8 @@ class WebEngine:
             Returns:
                 dict: Success/error response
             """
+            if _reject_non_localhost_socket():
+                return {"success": False, "error": "Forbidden"}
             try:
                 if not isinstance(data, dict) or "alert_id" not in data:
                     logger.error(
@@ -5480,7 +5602,7 @@ class WebEngine:
                     logger.error(
                         "Invalid data format for twitch_api_proxy: 'url' is required."
                     )
-                    self.socketio.emit(
+                    self.safe_emit(
                         "twitch_api_proxy_response",
                         {
                             "error": "Invalid data format: 'url' is required.",
@@ -5491,6 +5613,16 @@ class WebEngine:
                     return
 
                 url = data["url"]
+                if not _is_twitch_helix_url(url):
+                    self.safe_emit(
+                        "twitch_api_proxy_response",
+                        {
+                            "error": "url must be https://api.twitch.tv/…",
+                            "success": False,
+                        },
+                        to=client_sid,
+                    )
+                    return
                 method = data.get("method", "GET").upper()
                 params = data.get("params")
                 json_payload = data.get(
@@ -5503,7 +5635,7 @@ class WebEngine:
                             logger.error(
                                 "Twitch API module not initialized or twitch_api instance not found."
                             )
-                            self.socketio.emit(
+                            self.safe_emit(
                                 "twitch_api_proxy_response",
                                 {
                                     "error": "Twitch API not initialized.",
@@ -5525,7 +5657,7 @@ class WebEngine:
                             logger.warning(
                                 "Twitch API not authenticated - no valid tokens in state manager"
                             )
-                            self.socketio.emit(
+                            self.safe_emit(
                                 "twitch_api_proxy_response",
                                 {
                                     "error": "Twitch authentication required.",
@@ -5613,7 +5745,7 @@ class WebEngine:
                         logger.debug(
                             "Twitch API proxy call successful for URL: %s", url
                         )
-                        self.socketio.emit(
+                        self.safe_emit(
                             "twitch_api_proxy_response",
                             {"success": True, "data": api_response},
                             to=client_sid,
@@ -5625,7 +5757,7 @@ class WebEngine:
                             e,
                             exc_info=True,
                         )
-                        self.socketio.emit(
+                        self.safe_emit(
                             "twitch_api_proxy_response",
                             {"error": str(e), "success": False},
                             to=client_sid,
@@ -5635,7 +5767,7 @@ class WebEngine:
 
             except Exception as e:
                 logger.error(f"Error in twitch_api_proxy: {str(e)}", exc_info=True)
-                self.socketio.emit(
+                self.safe_emit(
                     "twitch_api_proxy_response",
                     {"error": str(e), "success": False},
                     to=client_sid,
@@ -5662,8 +5794,9 @@ class WebEngine:
                 logger.debug(f"Live PSN data retrieved: {live_psn_data}")
 
                 if live_psn_data:
-                    # Convert dataclass to dict for JSON serialization
-                    psn_data_dict = dataclasses.asdict(live_psn_data)
+                    from .psn_service import _public_psn_payload
+
+                    psn_data_dict = _public_psn_payload(live_psn_data)
                     logger.debug(f"PSN data converted to dict: {psn_data_dict}")
                     logger.debug(f"PSN data dict keys: {list(psn_data_dict.keys())}")
 
@@ -5693,9 +5826,9 @@ class WebEngine:
                 else:
                     logger.warning("No live PSN data available - sending default data")
                     # Send a default/empty state if no data is available
-                    default_data_dict = dataclasses.asdict(
-                        PSNData()
-                    )  # Send a default empty PSNData structure
+                    from .psn_service import _public_psn_payload
+
+                    default_data_dict = _public_psn_payload(PSNData())
                     logger.debug(f"Default PSN data dict: {default_data_dict}")
                     self.socketio.emit(
                         "psn_data_update", default_data_dict, to=client_sid
@@ -5743,6 +5876,20 @@ class WebEngine:
             )
             return {"paused": ALERTS_PAUSED}
 
+        @self.socketio.on("giveaway_request_state")
+        def handle_giveaway_request_state(data=None):
+            """Replay current giveaway overlay state on connect/refresh."""
+            client_sid = request.sid
+            try:
+                from .giveaway_manager import get_giveaway_manager
+
+                snapshot = get_giveaway_manager().get_overlay_state()
+                self.safe_emit("giveaway_sync", snapshot, to=client_sid)
+                return snapshot
+            except Exception as e:
+                logger.debug("giveaway_request_state failed: %s", e)
+                return {}
+
         @self.socketio.on("set_pause_status")
         def handle_set_pause_status(data):
             """
@@ -5754,7 +5901,7 @@ class WebEngine:
                     - paused (bool): Whether alerts should be paused
             """
             global ALERTS_PAUSED
-            print("set_pause_status called")
+            logger.debug("set_pause_status called")
             try:
                 if not isinstance(data, dict) or "paused" not in data:
                     logger.error(
@@ -5768,7 +5915,7 @@ class WebEngine:
                 new_status = bool(data["paused"])
                 old_status = ALERTS_PAUSED
                 ALERTS_PAUSED = new_status
-                print(f"ALERTS_PAUSED set to {ALERTS_PAUSED}")
+                logger.debug("ALERTS_PAUSED set to %s", ALERTS_PAUSED)
 
                 logger.debug(
                     f"Pause status changed from {old_status} to {new_status} by {request.sid}"
@@ -5777,13 +5924,10 @@ class WebEngine:
                 # Broadcast the status change to all connected clients
                 if new_status:
                     self.socketio.emit("alerts_paused", {"paused": True})
-                    print("alerts_paused emitted")
                 else:
                     self.socketio.emit("alerts_resumed", {"paused": False})
-                    print("alerts_resumed emitted")
                 # Also send the general status update
                 self.socketio.emit("pause_status_update", {"paused": new_status})
-                print("pause_status_update emitted")
                 return {"success": True, "paused": new_status}
             except Exception as e:
                 logger.error(f"Error setting pause status: {str(e)}", exc_info=True)
@@ -5843,10 +5987,7 @@ class WebEngine:
                 spotify_data = state_manager.get_spotify_data()
 
                 if spotify_data:
-                    # Convert dataclass to dict for JSON serialization
-                    import dataclasses
-
-                    spotify_data_dict = dataclasses.asdict(spotify_data)
+                    spotify_data_dict = spotify.public_spotify_payload(spotify_data)
                     self.socketio.emit(
                         "spotify_data_update", spotify_data_dict, to=request.sid
                     )
@@ -5854,12 +5995,7 @@ class WebEngine:
                         f"Sent spotify_data_update to {request.sid}: {spotify_data.track_name}"
                     )
                 else:
-                    # Send empty data if no data is available
-                    import dataclasses
-
-                    from .dataobjects import SpotifyData
-
-                    default_data_dict = dataclasses.asdict(SpotifyData())
+                    default_data_dict = spotify.public_spotify_payload(None)
                     self.socketio.emit(
                         "spotify_data_update", default_data_dict, to=request.sid
                     )
@@ -6385,7 +6521,7 @@ class WebEngine:
                 )
 
                 # Append the created AlertObj to the ALERT_QUEUE for processing
-                alert_processor.ALERT_QUEUE.append(replay_alert_obj)
+                alert_processor.enqueue_alert(replay_alert_obj)
                 logger.debug(
                     f"Added replay alert to ALERT_QUEUE: {replay_alert_obj.alert_type} (ID: {replay_alert_obj.alert_id})"
                 )
@@ -6461,6 +6597,8 @@ class WebEngine:
             Handle force_route_resync websocket event.
             Forces a complete resynchronization of template routes.
             """
+            if _reject_non_localhost_socket():
+                return {"success": False, "error": "Forbidden"}
             logger.debug(f"Received force_route_resync request from {request.sid}")
             try:
                 logger.info("Force route resync triggered by client")
@@ -6594,7 +6732,7 @@ class WebEngine:
                         "error": "Invalid data format: endpoint and requestId required",
                         "requestId": data.get("requestId", "unknown"),
                     }
-                    self.socketio.emit(
+                    self.safe_emit(
                         "twitch-api-response", response_data, to=client_sid
                     )
                     return
@@ -6603,17 +6741,8 @@ class WebEngine:
                 endpoint = str(data["endpoint"]).strip()
                 method = data.get("method", "GET").upper()
 
-                try:
-                    parsed = urlparse(endpoint)
-                except Exception:
-                    parsed = None
-                allowed_host = (
-                    parsed
-                    and parsed.scheme.lower() == "https"
-                    and (parsed.hostname or "").lower() == "api.twitch.tv"
-                )
-                if not allowed_host:
-                    self.socketio.emit(
+                if not _is_twitch_helix_url(endpoint):
+                    self.safe_emit(
                         "twitch-api-response",
                         {
                             "success": False,
@@ -6626,7 +6755,7 @@ class WebEngine:
 
                 params = data.get("params")
                 if params is not None and not isinstance(params, dict):
-                    self.socketio.emit(
+                    self.safe_emit(
                         "twitch-api-response",
                         {
                             "success": False,
@@ -6640,7 +6769,7 @@ class WebEngine:
                 if json_data is None:
                     json_data = data.get("json")
                 if json_data is not None and not isinstance(json_data, dict):
-                    self.socketio.emit(
+                    self.safe_emit(
                         "twitch-api-response",
                         {
                             "success": False,
@@ -6661,7 +6790,7 @@ class WebEngine:
                         "error": "Twitch API not initialized",
                         "requestId": request_id,
                     }
-                    self.socketio.emit(
+                    self.safe_emit(
                         "twitch-api-response", response_data, to=client_sid
                     )
                     return
@@ -6685,7 +6814,7 @@ class WebEngine:
                         "error": "Twitch authentication required",
                         "requestId": request_id,
                     }
-                    self.socketio.emit(
+                    self.safe_emit(
                         "twitch-api-response", response_data, to=client_sid
                     )
                     return
@@ -6723,7 +6852,7 @@ class WebEngine:
                         "Skipping twitch-api-request helix/users for login=%r",
                         users_login,
                     )
-                    self.socketio.emit(
+                    self.safe_emit(
                         "twitch-api-response",
                         {
                             "success": False,
@@ -6747,7 +6876,7 @@ class WebEngine:
                             "data": api_response,
                             "requestId": request_id,
                         }
-                        self.socketio.emit(
+                        self.safe_emit(
                             "twitch-api-response", response_data, to=client_sid
                         )
                         logger.debug("Twitch API request successful for %s", endpoint)
@@ -6797,7 +6926,7 @@ class WebEngine:
                             "error": err,
                             "requestId": request_id,
                         }
-                        self.socketio.emit(
+                        self.safe_emit(
                             "twitch-api-response", response_data, to=client_sid
                         )
 
@@ -6812,13 +6941,15 @@ class WebEngine:
                     "error": str(e),
                     "requestId": request_id,
                 }
-                self.socketio.emit("twitch-api-response", response_data, to=client_sid)
+                self.safe_emit("twitch-api-response", response_data, to=client_sid)
 
         @self.socketio.on("debug_psn_data")
         def handle_debug_psn_data(data=None):
             """
             Handle debug_psn_data websocket event for testing PSN data flow.
             """
+            if not _dev_debug_endpoints_enabled():
+                return {"error": "Not found"}
             client_sid = request.sid
             logger.debug(
                 f"=== WEB ENGINE: Debug PSN data request from {client_sid} ==="
@@ -6827,19 +6958,16 @@ class WebEngine:
                 # Get PSN data from state manager
                 live_psn_data = state_manager.get_live_psn_data()
 
+                from .psn_service import _public_psn_payload
+
+                public = _public_psn_payload(live_psn_data) if live_psn_data else None
                 debug_info = {
                     "timestamp": datetime.now().isoformat(),
                     "client_sid": client_sid,
                     "psn_data_available": live_psn_data is not None,
                     "psn_data_type": str(type(live_psn_data)),
-                    "psn_data_fields": (
-                        list(dataclasses.asdict(live_psn_data).keys())
-                        if live_psn_data
-                        else []
-                    ),
-                    "psn_data_content": (
-                        dataclasses.asdict(live_psn_data) if live_psn_data else None
-                    ),
+                    "psn_data_fields": list(public.keys()) if public else [],
+                    "psn_data_content": public,
                 }
 
                 # Send debug info back to client
@@ -7399,23 +7527,22 @@ class WebEngine:
     def _execute_dynamic_control_action(
         self, template_name: str, element_config: dict, action_data: dict
     ):
-        """Execute a dynamic control action"""
+        """Execute a dynamic control action using namespaced events (HTTP Stream Deck shape)."""
         try:
-            action = element_config.get("action", "")
-
-            # For counter controls, handle specific actions
+            action = str(element_config.get("action") or "")
+            payload = dict(action_data) if isinstance(action_data, dict) else {}
             if element_config.get("type") == "counter_control":
-                if action.endswith("_increment") or action == "increment":
-                    self.safe_emit("counter_update", {"action": "increment"})
-                elif action.endswith("_decrement") or action == "decrement":
-                    self.safe_emit("counter_update", {"action": "decrement"})
-                elif action.endswith("_reset") or action == "reset":
-                    self.safe_emit("counter_update", {"action": "reset"})
-            else:
-                # Generic action emission
-                event_name = f"{template_name}_{action}"
-                self.safe_emit(event_name, action_data or {})
-                logger.debug(f"Emitted dynamic control event: {event_name}")
+                defaults = _dynamic_counter_control_default_data(element_config)
+                merged = dict(defaults)
+                merged.update(payload)
+                payload = merged
+            event_name = (
+                f"{template_name}_{action}"
+                if action
+                else f"{template_name}_counter_update"
+            )
+            self.safe_emit(event_name, payload)
+            logger.debug("Emitted dynamic control event: %s", event_name)
 
         except Exception as e:
             logger.error(
@@ -7457,7 +7584,6 @@ class WebEngine:
         ALERTS_PAUSED = not ALERTS_PAUSED  # Toggle the status
 
         logger.info(f"Toggling ALERTS_PAUSED from {old_status} to {ALERTS_PAUSED}")
-        print(f"ALERTS_PAUSED toggled: {old_status} -> {ALERTS_PAUSED}")
 
         # Broadcast to all connected clients to ensure synchronization
         self.pause_status_update()
@@ -7934,16 +8060,32 @@ class WebEngine:
                         for _ in batch:
                             if self._tc_enqueue_times:
                                 self._tc_enqueue_times.popleft()
-                    # Preserve order across event names; coalesce rapid duplicates (typing).
-                    order: List[str] = []
-                    latest: Dict[str, Tuple[float, str, Dict[str, Any]]] = {}
+                    # Preserve order; coalesce text/slider SET only (typing).
+                    emits: List[Tuple[float, str, Dict[str, Any]]] = []
+                    pending: Dict[str, Tuple[float, str, Dict[str, Any]]] = {}
+                    pending_order: List[str] = []
+
+                    def _flush_pending_sets() -> None:
+                        for name in pending_order:
+                            emits.append(pending[name])
+                        pending.clear()
+                        pending_order.clear()
+
                     for enqueued_at, event_name, event_data in batch:
-                        if event_name not in latest:
-                            order.append(event_name)
-                        latest[event_name] = (enqueued_at, event_name, event_data)
+                        if _template_control_should_coalesce(event_name, event_data):
+                            if event_name not in pending:
+                                pending_order.append(event_name)
+                            pending[event_name] = (
+                                enqueued_at,
+                                event_name,
+                                event_data,
+                            )
+                        else:
+                            _flush_pending_sets()
+                            emits.append((enqueued_at, event_name, event_data))
+                    _flush_pending_sets()
                     max_lag_ms = 0.0
-                    for event_name in order:
-                        enqueued_at, _, event_data = latest[event_name]
+                    for enqueued_at, event_name, event_data in emits:
                         if enqueued_at > 0:
                             max_lag_ms = max(
                                 max_lag_ms, (time.monotonic() - enqueued_at) * 1000.0
@@ -7960,7 +8102,7 @@ class WebEngine:
                                 exc_info=True,
                             )
                     _bottleneck_print(
-                        f"tc_drain batch={len(batch)} coalesced={len(order)} "
+                        f"tc_drain batch={len(batch)} coalesced={len(emits)} "
                         f"max_lag={max_lag_ms:.0f}ms"
                     )
 
@@ -8247,6 +8389,8 @@ class WebEngine:
                         - target_template (str): The target template name (for logging)
                         - event_data (dict): The data to send with the event
                 """
+                if _reject_non_localhost_socket():
+                    return {"success": False, "error": "Forbidden"}
                 try:
                     if not isinstance(data, dict):
                         logger.error(
@@ -8261,6 +8405,20 @@ class WebEngine:
                     if not event_name:
                         logger.error("Missing event_name in source_controls_relay")
                         return {"success": False, "error": "Missing event_name"}
+                    if not isinstance(event_name, str) or not _RELAY_EVENT_NAME_RE.match(
+                        event_name
+                    ):
+                        logger.warning(
+                            "Rejected source_controls_relay event_name %r", event_name
+                        )
+                        return {"success": False, "error": "Invalid event_name"}
+                    catalog = getattr(self, "_registered_dynamic_handlers", None)
+                    if catalog and event_name not in catalog:
+                        logger.warning(
+                            "Rejected source_controls_relay unknown event %s",
+                            event_name,
+                        )
+                        return {"success": False, "error": "Unknown event_name"}
 
                     # Log the relay
                     logger.debug(

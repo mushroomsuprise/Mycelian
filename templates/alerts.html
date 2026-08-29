@@ -682,6 +682,7 @@
         var isHoldQueueOnly = false; // Server: dedicated template — main overlay only holds queue duration
         var pendingQueueCompletionSeq = null; // Echo in alert_complete for current queue item
         var pendingCompleteTimeout = null; // Final delay before alert_complete (must clear on new alert)
+        var alertShowGeneration = 0; // Bumps per showAlert so stale complete/exit timers are ignored
         var audioResolvePending = false; // True while folder/static audio source is still being resolved
         var audioResolveGeneration = 0; // Bumps per startAlertPlayback so stale finally blocks cannot clear a newer resolve
         var pointAlertSilentNoMedia = {{ PointAlertSilentNoMedia | default(false) | tojson }};
@@ -1248,6 +1249,10 @@
 
         // Alert completion handling with proper timing
         function checkAndSendAlertComplete() {
+            var gen = alertShowGeneration;
+            function stillCurrent() {
+                return gen === alertShowGeneration;
+            }
             console.log('Checking if alert can be completed...');
 
             // For randomized alerts, wait for both audio and visual elements to finish
@@ -1260,7 +1265,10 @@
 
                 if (audioResolvePending || audioPlaying || ttsPlaying || visualVisible) {
                     // Still waiting for elements to finish (or folder audio still resolving)
-                    setTimeout(checkAndSendAlertComplete, 100); // Check again in 100ms
+                    setTimeout(function () {
+                        if (!stillCurrent()) { return; }
+                        checkAndSendAlertComplete();
+                    }, 100); // Check again in 100ms
                     return;
                 }
             }
@@ -1272,15 +1280,24 @@
 
                 if (timeRemaining > 0 && !visualVisible) {
                     // Alert duration not finished and no visual elements showing, wait
-                    setTimeout(checkAndSendAlertComplete, Math.min(100, timeRemaining));
+                    setTimeout(function () {
+                        if (!stillCurrent()) { return; }
+                        checkAndSendAlertComplete();
+                    }, Math.min(100, timeRemaining));
                     return;
                 } else if (visualVisible) {
                     // Visual elements still animating, wait for them to finish
-                    setTimeout(checkAndSendAlertComplete, 100);
+                    setTimeout(function () {
+                        if (!stillCurrent()) { return; }
+                        checkAndSendAlertComplete();
+                    }, 100);
                     return;
                 } else if (ttsPlaying) {
                     // Keep the queue paused while speech is still active.
-                    setTimeout(checkAndSendAlertComplete, 100);
+                    setTimeout(function () {
+                        if (!stillCurrent()) { return; }
+                        checkAndSendAlertComplete();
+                    }, 100);
                     return;
                 }
             }
@@ -1293,6 +1310,7 @@
             const seqToEmit = pendingQueueCompletionSeq;
             pendingCompleteTimeout = setTimeout(() => {
                 pendingCompleteTimeout = null;
+                if (!stillCurrent()) { return; }
                 if (silentPointHoldStale) {
                     console.log('Skipping alert_complete emit (silent hold already finished via next_alert override)');
                     silentPointHoldStale = false;
@@ -1302,7 +1320,9 @@
                 }
                 console.log('Delay completed, sending alert_complete signal');
                 emitQueueAlertComplete(seqToEmit);
-                pendingQueueCompletionSeq = null;
+                if (pendingQueueCompletionSeq === seqToEmit) {
+                    pendingQueueCompletionSeq = null;
+                }
                 currentAlert = null;
                 alertStartTime = null;
                 exitAnimationStartTime = null;
@@ -1410,6 +1430,7 @@
             // If a queue timing hold is active, a new next_alert overrides: complete the current slot first.
             if (isSilentEmptyPoint || isHoldQueueOnly) {
                 clearPendingCompletionTimer();
+                alertShowGeneration += 1;
                 const doneSeq = pendingQueueCompletionSeq;
                 silentPointHoldId++;
                 isSilentEmptyPoint = false;
@@ -1458,7 +1479,22 @@
                 message: 'Test alert triggered by connector',
                 timestamp: Date.now() / 1000
             };
-            // Process the alert through the normal alert system
+            // Do not steal a live queued alert's queue_seq for connector tests.
+            if (pendingQueueCompletionSeq != null) {
+                clearPendingCompletionTimer();
+                alertShowGeneration += 1;
+                silentPointHoldId++;
+                emitQueueAlertComplete(pendingQueueCompletionSeq);
+                pendingQueueCompletionSeq = null;
+                currentAlert = null;
+                alertStartTime = null;
+                exitAnimationStartTime = null;
+                isSilentEmptyPoint = false;
+                isHoldQueueOnly = false;
+            }
+            if (alertData && alertData.queue_seq != null) {
+                delete alertData.queue_seq;
+            }
             void showAlert(alertData);
         });
 
@@ -1467,6 +1503,7 @@
             // Skip current alert if one is playing
             if (currentAlert) {
                 clearPendingCompletionTimer();
+                alertShowGeneration += 1;
                 stopAlertMediaPlayback();
                 const wasSilentEmpty = isSilentEmptyPoint;
                 if (wasSilentEmpty || isHoldQueueOnly) {
@@ -1491,9 +1528,15 @@
         });
 
         async function showAlert(alertData) {
+            alertShowGeneration += 1;
+            var showGen = alertShowGeneration;
             clearPendingCompletionTimer();
-            pendingQueueCompletionSeq =
-                alertData.queue_seq != null ? Number(alertData.queue_seq) : null;
+            if (alertData && alertData.queue_seq != null && alertData.queue_seq !== '') {
+                var incomingSeq = Number(alertData.queue_seq);
+                if (!Number.isNaN(incomingSeq)) {
+                    pendingQueueCompletionSeq = incomingSeq;
+                }
+            }
             // Clear any existing alert
             if (currentAlert) {
                 stopAlertMediaPlayback();
@@ -1591,6 +1634,9 @@
                 // For audio-only alerts, use the new completion checking system
                 // Set up a periodic check to see when audio finishes
                 const checkAudioOnlyComplete = () => {
+                    if (showGen !== alertShowGeneration) {
+                        return;
+                    }
                     const ttsPlaying = isTtsPlaying();
                     if (audioResolvePending) {
                         setTimeout(checkAudioOnlyComplete, 100);
@@ -1726,6 +1772,9 @@
 
         // Set up timing-based exit animation trigger
         const checkForExitAnimation = () => {
+            if (showGen !== alertShowGeneration) {
+                return;
+            }
             if (shouldStartExitAnimation()) {
                 console.log('Starting exit animation');
                 exitAnimationStartTime = Date.now();
@@ -2458,33 +2507,33 @@
             if (amount == null) {
                 amount = 0;
             }
-            var title = alertData.title || 'Channel Points';
+            var title = escapeAlertHtml(String(alertData.title || 'Channel Points'));
             var giftQty = alertData.gift_qty != null ? alertData.gift_qty : 0;
             var subsLabel = giftQty === 1 ? 'sub' : 'subs';
             var bitsLabel = alertData.amt_cheered === 1 ? 'bit' : 'bits';
-            var recipient = alertData.recipient || alertData.recipient_name || '';
+            var recipient = escapeAlertHtml(String(alertData.recipient || alertData.recipient_name || ''));
             return String(template)
-                .replace(/\{tier\}/g, String(alertData.tier != null ? alertData.tier : ''))
-                .replace(/\{resub_month\}/g, String(alertData.resub_month != null ? alertData.resub_month : ''))
-                .replace(/\{streak_count\}/g, String(alertData.streak_count != null ? alertData.streak_count : ''))
-                .replace(/\{gift_qty\}/g, String(giftQty))
+                .replace(/\{tier\}/g, escapeAlertHtml(String(alertData.tier != null ? alertData.tier : '')))
+                .replace(/\{resub_month\}/g, escapeAlertHtml(String(alertData.resub_month != null ? alertData.resub_month : '')))
+                .replace(/\{streak_count\}/g, escapeAlertHtml(String(alertData.streak_count != null ? alertData.streak_count : '')))
+                .replace(/\{gift_qty\}/g, escapeAlertHtml(String(giftQty)))
                 .replace(/\{subs\}/g, subsLabel)
-                .replace(/\{recipient_name\}/g, String(recipient))
-                .replace(/\{recipient\}/g, String(recipient))
-                .replace(/\{amt_cheered\}/g, String(alertData.amt_cheered != null ? alertData.amt_cheered : ''))
+                .replace(/\{recipient_name\}/g, recipient)
+                .replace(/\{recipient\}/g, recipient)
+                .replace(/\{amt_cheered\}/g, escapeAlertHtml(String(alertData.amt_cheered != null ? alertData.amt_cheered : '')))
                 .replace(/\{bits\}/g, bitsLabel)
-                .replace(/\{raider_count\}/g, String(alertData.raider_count != null ? alertData.raider_count : ''))
-                .replace(/\{title\}/g, String(title))
-                .replace(/\{point_cost\}/g, String(alertData.point_cost != null ? alertData.point_cost : ''))
-                .replace(/\{amount\}/g, Number(amount).toFixed(2))
-                .replace(/\{hype_train_level\}/g, String(alertData.hype_train_level != null ? alertData.hype_train_level : ''));
+                .replace(/\{raider_count\}/g, escapeAlertHtml(String(alertData.raider_count != null ? alertData.raider_count : '')))
+                .replace(/\{title\}/g, title)
+                .replace(/\{point_cost\}/g, escapeAlertHtml(String(alertData.point_cost != null ? alertData.point_cost : '')))
+                .replace(/\{amount\}/g, escapeAlertHtml(Number(amount).toFixed(2)))
+                .replace(/\{hype_train_level\}/g, escapeAlertHtml(String(alertData.hype_train_level != null ? alertData.hype_train_level : '')));
         }
 
         function formatUsername(alertData) {
             if (alertData.anonymous) {
-                return alertTextTemplates.anonymous;
+                return escapeAlertHtml(alertTextTemplates.anonymous);
             }
-            return alertData.username || alertTextTemplates.unknownUser;
+            return escapeAlertHtml(alertData.username || alertTextTemplates.unknownUser);
         }
 
         function formatAlertText(alertData) {

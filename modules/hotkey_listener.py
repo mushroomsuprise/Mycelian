@@ -40,6 +40,8 @@ class HotkeyListener:
         self.listener_thread = None
         self.hotkey_mappings = {}  # key_combination -> list of connector_ids
         self._lock = threading.RLock()
+        self._hotkeys_dirty = True
+        self._pynput_hotkeys = []
 
     def start(self):
         """Start the hotkey listener"""
@@ -79,6 +81,7 @@ class HotkeyListener:
                     logger.info(
                         f"Registered hotkey '{key_combination}' for connector {connector_id}"
                     )
+                self._hotkeys_dirty = True
 
         except Exception as e:
             logger.error(f"Error registering hotkey: {e}", exc_info=True)
@@ -115,6 +118,7 @@ class HotkeyListener:
                     # Clean up empty mappings
                     for key_combo in keys_to_remove:
                         del self.hotkey_mappings[key_combo]
+                self._hotkeys_dirty = True
 
         except Exception as e:
             logger.error(f"Error unregistering hotkey: {e}", exc_info=True)
@@ -148,35 +152,64 @@ class HotkeyListener:
         """Run hotkey listener using pynput"""
         try:
             from pynput import keyboard
-            from pynput.keyboard import Key, KeyCode
 
-            # Create hotkey combinations
-            hotkeys = []
-            for key_combination in self.hotkey_mappings.keys():
-                try:
-                    keys = self._parse_key_combination(key_combination)
-                    if keys:
-                        hotkey = keyboard.HotKey(keys, self._on_hotkey_pressed)
-                        hotkeys.append((hotkey, key_combination))
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to parse hotkey combination '{key_combination}': {e}"
-                    )
+            listener_holder = {"listener": None}
 
-            if not hotkeys:
-                logger.info("No valid hotkey combinations to listen for")
-                return
+            def _rebuild_hotkeys() -> None:
+                with self._lock:
+                    if not self._hotkeys_dirty:
+                        combos = list(self.hotkey_mappings.keys())
+                    else:
+                        combos = list(self.hotkey_mappings.keys())
+                        self._hotkeys_dirty = False
+                hotkeys = []
+                for key_combination in combos:
+                    try:
+                        keys = self._parse_key_combination(key_combination)
+                        if keys:
+                            hotkey = keyboard.HotKey(
+                                keys,
+                                lambda combo=key_combination: self._on_hotkey_pressed(
+                                    combo
+                                ),
+                            )
+                            hotkeys.append(hotkey)
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to parse hotkey combination '{key_combination}': {e}"
+                        )
+                self._pynput_hotkeys = hotkeys
 
-            # Start listener
-            with keyboard.Listener(
-                on_press=self._on_key_press, on_release=self._on_key_release
-            ) as listener:
-                # Keep track of active hotkeys
-                active_hotkeys = {combo: hotkey for hotkey, combo in hotkeys}
+            def on_press(key):
+                if self._hotkeys_dirty:
+                    _rebuild_hotkeys()
+                listener = listener_holder["listener"]
+                ck = listener.canonical(key) if listener else key
+                for hotkey in list(self._pynput_hotkeys):
+                    try:
+                        hotkey.press(ck)
+                    except Exception:
+                        pass
 
+            def on_release(key):
+                listener = listener_holder["listener"]
+                ck = listener.canonical(key) if listener else key
+                for hotkey in list(self._pynput_hotkeys):
+                    try:
+                        hotkey.release(ck)
+                    except Exception:
+                        pass
+
+            _rebuild_hotkeys()
+            listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+            listener_holder["listener"] = listener
+            listener.start()
+            try:
                 while self.is_running:
+                    if self._hotkeys_dirty:
+                        _rebuild_hotkeys()
                     time.sleep(0.1)
-
+            finally:
                 listener.stop()
 
         except Exception as e:
@@ -187,34 +220,39 @@ class HotkeyListener:
         try:
             import keyboard
 
-            # Register hotkeys
-            registered_hotkeys = []
-            for key_combination in self.hotkey_mappings.keys():
-                try:
-                    # The keyboard library uses different syntax
-                    keyboard.add_hotkey(
-                        key_combination, self._on_hotkey_pressed, args=[key_combination]
-                    )
-                    registered_hotkeys.append(key_combination)
-                    logger.info(f"Registered hotkey: {key_combination}")
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to register hotkey '{key_combination}': {e}"
-                    )
+            registered_hotkeys: List[str] = []
+            last_combos = None
 
-            if not registered_hotkeys:
-                logger.info("No valid hotkey combinations registered")
-                return
-
-            # Keep the listener running
             while self.is_running:
+                with self._lock:
+                    combos = list(self.hotkey_mappings.keys())
+                if combos != last_combos:
+                    for key_combination in registered_hotkeys:
+                        try:
+                            keyboard.remove_hotkey(key_combination)
+                        except Exception:
+                            pass
+                    registered_hotkeys = []
+                    for key_combination in combos:
+                        try:
+                            keyboard.add_hotkey(
+                                key_combination,
+                                self._on_hotkey_pressed,
+                                args=[key_combination],
+                            )
+                            registered_hotkeys.append(key_combination)
+                            logger.info(f"Registered hotkey: {key_combination}")
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to register hotkey '{key_combination}': {e}"
+                            )
+                    last_combos = list(combos)
                 time.sleep(0.1)
 
-            # Clean up hotkeys
             for key_combination in registered_hotkeys:
                 try:
                     keyboard.remove_hotkey(key_combination)
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -299,12 +337,13 @@ class HotkeyListener:
 
             logger.debug(f"Hotkey pressed: {pressed_combo}")
 
-            # Trigger connectors
-            connector_ids = self.hotkey_mappings.get(pressed_combo, [])
+            with self._lock:
+                connector_ids = list(self.hotkey_mappings.get(pressed_combo, []))
             for connector_id in connector_ids:
                 try:
                     # Send hotkey event to connector system
                     from .connector_integration import get_integration
+                    from .connector_manager import get_connector_loop
 
                     integration = get_integration()
 
@@ -322,10 +361,15 @@ class HotkeyListener:
                         "source": "hotkey",
                     }
 
-                    # Send to connector system asynchronously
+                    loop = get_connector_loop()
+                    if loop is None or not loop.is_running() or loop.is_closed():
+                        logger.warning(
+                            "Connector loop not ready, dropping hotkey event"
+                        )
+                        continue
                     asyncio.run_coroutine_threadsafe(
                         integration.manager.add_event(event_data),
-                        asyncio.get_event_loop(),
+                        loop,
                     )
 
                 except Exception as e:
@@ -338,8 +382,6 @@ class HotkeyListener:
 
     def _on_key_press(self, key):
         """Handle individual key press (for pynput)"""
-        # This is called for each key press, we could implement custom hotkey detection here
-        # For now, let pynput handle the hotkey combinations
         pass
 
     def _on_key_release(self, key):

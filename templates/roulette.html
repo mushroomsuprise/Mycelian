@@ -852,6 +852,14 @@
             spin(data);
         });
 
+        socket.on('roulette_land_on_option', function (data) {
+            console.log('Connector action: land on option', data);
+            spin(data);
+        });
+        socket.on('land_on_option', function (data) {
+            spin(data);
+        });
+
         socket.on('refresh', function () {
             // Reset the wheel state and redraw
             startAngle = 0;
@@ -1256,6 +1264,8 @@
 
             clickValues = [];
 
+            rouletteData.pendingLandIndex = resolveLandOnIndex(customData);
+
             // Calculate click positions for sound
             for (var i = 0; i < 12000 / (360 / rouletteData.options.length); i++) {
                 clickValues.push(((360 / rouletteData.options.length) * i) - 90);
@@ -1305,6 +1315,24 @@
             }
         }
 
+        function resolveLandOnIndex(customData) {
+            if (!customData) { return -1; }
+            var target = customData.target_option != null ? customData.target_option
+                : (customData.targetOption != null ? customData.targetOption
+                    : (customData.option != null ? customData.option : customData.target));
+            if (target == null || target === '') { return -1; }
+            var opts = rouletteData.options || [];
+            var s = String(target);
+            var i;
+            for (i = 0; i < opts.length; i++) {
+                if (String(opts[i]) === s) { return i; }
+            }
+            var n = parseInt(s, 10);
+            if (!isNaN(n) && n >= 1 && n <= opts.length) { return n - 1; }
+            if (!isNaN(n) && n >= 0 && n < opts.length) { return n; }
+            return -1;
+        }
+
         // Stop wheel rotation and show result with enhanced effects
         function stopRotateWheel() {
             clearTimeout(spinTimeout);
@@ -1312,6 +1340,18 @@
 
             // Remove spinning class
             document.getElementById('canvas').classList.remove('wheel-spinning');
+
+            var arcd = arc * 180 / Math.PI;
+            var landIndex = rouletteData.pendingLandIndex;
+            rouletteData.pendingLandIndex = -1;
+            if (landIndex != null && landIndex >= 0 && rouletteData.options && landIndex < rouletteData.options.length) {
+                var desiredDegrees = 360 - (landIndex + 0.5) * arcd;
+                var targetStart = (desiredDegrees - 90) * Math.PI / 180;
+                var twoPi = Math.PI * 2;
+                while (targetStart < startAngle - Math.PI) { targetStart += twoPi; }
+                while (targetStart > startAngle + Math.PI) { targetStart -= twoPi; }
+                startAngle = targetStart;
+            }
 
             var degrees = startAngle * 180 / Math.PI + 90;
             var arcd = arc * 180 / Math.PI;

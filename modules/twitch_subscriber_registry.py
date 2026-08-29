@@ -34,8 +34,7 @@ class SubscriberRegistry:
         self._session_helix_ready = False
         self._recent_new_sub_alerts: dict[str, float] = {}
         self._pending_tasks: dict[str, asyncio.Task] = {}
-        self._sync_lock = asyncio.Lock()
-        self._sync_inflight: Optional[asyncio.Task[bool]] = None
+        self._sync_lock = threading.Lock()
         self._db_path = db_path or self._default_db_path()
         self._ensure_db()
         self._load_from_db()
@@ -388,21 +387,18 @@ class SubscriberRegistry:
 
         Sets session ready only on success.
         """
-        async with self._sync_lock:
-            if self._sync_inflight is not None:
-                try:
-                    return await asyncio.shield(self._sync_inflight)
-                except Exception:
-                    return False
-
-            self._sync_inflight = asyncio.create_task(self._fetch_helix_subscribers())
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._sync_lock.acquire)
+        try:
+            ok = await self._fetch_helix_subscribers()
+            if ok:
+                self.set_session_ready(True)
+            return ok
+        finally:
             try:
-                ok = await self._sync_inflight
-                if ok:
-                    self.set_session_ready(True)
-                return ok
-            finally:
-                self._sync_inflight = None
+                self._sync_lock.release()
+            except RuntimeError:
+                pass
 
     async def _fetch_helix_subscribers(self) -> bool:
         from . import twitch

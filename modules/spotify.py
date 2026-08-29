@@ -454,6 +454,11 @@ class SpotifyClient:
         auth_rem = max(0.0, self._auth_failure_until - now)
         return max(base, backoff_rem, auth_rem)
 
+    def _interruptible_sleep(self, seconds: float) -> None:
+        end = time.time() + max(0.0, seconds)
+        while self.running and time.time() < end:
+            time.sleep(min(0.5, end - time.time()))
+
     def save_spotify_data(self):
         """Save current Spotify data to state manager"""
         try:
@@ -839,17 +844,17 @@ class SpotifyClient:
                 elapsed = time.time() - start_time
                 sleep_time = max(0, self._get_monitor_sleep_seconds() - elapsed)
                 if sleep_time > 0:
-                    time.sleep(sleep_time)
+                    self._interruptible_sleep(sleep_time)
                 else:
                     logger.debug(
                         f"Spotify update took longer than interval: {elapsed:.3f}s"
                     )
             except Exception as e:
                 logger.error(f"Error in monitoring loop: {str(e)}", exc_info=True)
-                time.sleep(5)  # Wait longer on error
+                self._interruptible_sleep(5)
 
     def send_websocket_data(self):
-        """Send current Spotify data via websocket"""
+        """Send current Spotify playback fields via websocket (no secrets)."""
         try:
             from . import web_engine
 
@@ -857,9 +862,8 @@ class SpotifyClient:
                 hasattr(web_engine, "web_engine_instance")
                 and web_engine.web_engine_instance
             ):
-                spotify_dict = asdict(self.spotify_data)
                 web_engine.web_engine_instance.safe_emit(
-                    "spotify_data_update", spotify_dict
+                    "spotify_data_update", public_spotify_payload(self.spotify_data)
                 )
         except Exception as e:
             logger.debug(f"Error sending websocket data: {str(e)}")
@@ -1008,6 +1012,38 @@ class SpotifyClient:
 
 
 # Module-level functions
+def public_spotify_payload(data) -> Dict[str, Any]:
+    """Overlay payload — never include client secret or OAuth tokens."""
+    if data is None:
+        return {
+            "track_name": "",
+            "artist_name": "",
+            "album_name": "",
+            "album_image_url": "",
+            "current_tracktime": "0:00",
+            "track_length": "0:00",
+            "current_tracktime_seconds": 0,
+            "track_length_seconds": 0,
+            "is_playing": False,
+            "progress_percentage": 0,
+            "connection_status": "Disconnected",
+        }
+    return {
+        "track_name": getattr(data, "track_name", "") or "",
+        "artist_name": getattr(data, "artist_name", "") or "",
+        "album_name": getattr(data, "album_name", "") or "",
+        "album_image_url": getattr(data, "album_image_url", "") or "",
+        "current_tracktime": getattr(data, "current_tracktime", "0:00") or "0:00",
+        "track_length": getattr(data, "track_length", "0:00") or "0:00",
+        "current_tracktime_seconds": getattr(data, "current_tracktime_seconds", 0) or 0,
+        "track_length_seconds": getattr(data, "track_length_seconds", 0) or 0,
+        "is_playing": bool(getattr(data, "is_playing", False)),
+        "progress_percentage": getattr(data, "progress_percentage", 0) or 0,
+        "connection_status": getattr(data, "connection_status", "Disconnected")
+        or "Disconnected",
+    }
+
+
 def initialize_spotify():
     """Initialize the Spotify client"""
     global spotify_client
@@ -1128,7 +1164,7 @@ def start_spotify_service():
     global _spotify_start_thread, is_running, spotify_thread
 
     with _start_lock:
-        if is_running and spotify_thread and spotify_thread.is_alive():
+        if spotify_thread is not None and spotify_thread.is_alive():
             logger.warning("Spotify service already running")
             return False
         if _spotify_start_thread is not None and _spotify_start_thread.is_alive():

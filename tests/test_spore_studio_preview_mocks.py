@@ -20,6 +20,21 @@ class SporeStudioPreviewMocksTests(unittest.TestCase):
         self.assertIn("amt_cheered", body)
         self.assertIn("queue_seq", body)
 
+    def test_preview_queue_seq_does_not_steal_live_counter(self):
+        from unittest.mock import patch
+
+        with patch(
+            "modules.web_engine.assign_next_alert_queue_seq",
+            side_effect=AssertionError("live seq must not be used for preview"),
+        ):
+            spec = preview_mocks.build_mock_payload("next_alert", alert_type="follow")
+            payload = preview_mocks._next_alert_queue_payload(
+                preview_mocks._demo_pools()
+            )
+        self.assertIsNotNone(spec)
+        self.assertLess(spec[1]["queue_seq"], 0)
+        self.assertLess(payload["queue_seq"], 0)
+
     def test_typed_giftsub_instant_alert(self):
         spec = preview_mocks.build_mock_payload("instant_alert", alert_type="giftsub")
         self.assertIsNotNone(spec)

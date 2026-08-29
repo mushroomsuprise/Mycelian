@@ -165,6 +165,25 @@ class DeferredServiceManager:
                                 dedupe_key=f"deferred_init:{name}",
                                 actions=nav_actions_settings("App Settings"),
                             )
+                            try:
+                                from nicegui import Client
+
+                                from . import tray_controller
+                                from .system_notify import notify_async
+
+                                has_client = any(
+                                    getattr(c, "has_socket_connection", False)
+                                    and not getattr(c, "is_deleted", False)
+                                    for c in Client.instances.values()
+                                )
+                                if (not has_client) or tray_controller.is_minimized():
+                                    notify_async(
+                                        f"A background service failed to start ({name}). "
+                                        "Check logs.",
+                                        title="Mycelian",
+                                    )
+                            except Exception:
+                                pass
                 pending = still_pending
                 delay = min(delay * 2, 60.0)
 

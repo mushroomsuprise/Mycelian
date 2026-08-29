@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 from dataclasses import dataclass, field, fields
 from typing import Any, Dict, List, Optional
 
@@ -217,7 +218,7 @@ class TriggerAlertAction(BaseAction):
                     setattr(alert, key, value)
 
             # Add to alert queue
-            alert_processor.ALERT_QUEUE.append(alert)
+            alert_processor.enqueue_alert(alert)
 
             logger.info(f"Alert triggered: {alert.alert_type} ({alert.alert_id})")
             return True
@@ -532,8 +533,9 @@ class ExecuteCommandAction(BaseAction):
                 else None
             )
 
-            # Execute command
-            result = subprocess.run(
+            # Execute command off the connector asyncio loop
+            result = await asyncio.to_thread(
+                subprocess.run,
                 command,
                 shell=True,
                 cwd=working_dir,
@@ -703,11 +705,13 @@ class KeyPressAction(BaseAction):
                         keyboard_controller, target, action == "release"
                     )
                 elif step_type == "mouse":
+                    from pynput.mouse import Button
+
                     # Simple mouse click for macro
                     if target.lower() in ["left_click", "left"]:
-                        mouse_controller.click(mouse_controller.Button.left)
+                        mouse_controller.click(Button.left)
                     elif target.lower() in ["right_click", "right"]:
-                        mouse_controller.click(mouse_controller.Button.right)
+                        mouse_controller.click(Button.right)
                 elif step_type == "delay":
                     await asyncio.sleep(float(target))
 
@@ -874,6 +878,7 @@ class AudioControlAction(BaseAction):
 
     # Global registry for tracking active audio changes by source
     _audio_change_registry: Dict[str, AudioChangeEntry] = None
+    _registry_lock = threading.Lock()
 
     def __post_init__(self):
         self.action_type = ActionType.AUDIO_CONTROL
@@ -885,34 +890,38 @@ class AudioControlAction(BaseAction):
     @classmethod
     def cancel_all_restoration_tasks(cls):
         """Cancel all active restoration tasks"""
-        if cls._active_restoration_tasks:
-            for task_id, task in cls._active_restoration_tasks.items():
-                if not task.done():
-                    task.cancel()
-                    logger.info(f"Cancelled restoration task: {task_id}")
-            cls._active_restoration_tasks.clear()
+        with cls._registry_lock:
+            if cls._active_restoration_tasks:
+                for task_id, task in cls._active_restoration_tasks.items():
+                    if not task.done():
+                        task.cancel()
+                        logger.info(f"Cancelled restoration task: {task_id}")
+                cls._active_restoration_tasks.clear()
 
     @classmethod
     def cleanup_audio_change_registry(cls):
         """Clean up the audio change registry"""
-        if cls._audio_change_registry:
-            # Cancel any active restoration tasks in the registry
-            for source_key, entry in cls._audio_change_registry.items():
-                if entry.restoration_task and not entry.restoration_task.done():
-                    entry.restoration_task.cancel()
-                    logger.info(f"Cancelled restoration task for {source_key}")
-            cls._audio_change_registry.clear()
+        with cls._registry_lock:
+            if cls._audio_change_registry:
+                # Cancel any active restoration tasks in the registry
+                for source_key, entry in cls._audio_change_registry.items():
+                    if entry.restoration_task and not entry.restoration_task.done():
+                        entry.restoration_task.cancel()
+                        logger.info(f"Cancelled restoration task for {source_key}")
+                cls._audio_change_registry.clear()
 
     def add_restoration_task(self, task_id: str, task: asyncio.Task):
         """Add a restoration task to the active tasks"""
-        if AudioControlAction._active_restoration_tasks is None:
-            AudioControlAction._active_restoration_tasks = {}
-        AudioControlAction._active_restoration_tasks[task_id] = task
+        with AudioControlAction._registry_lock:
+            if AudioControlAction._active_restoration_tasks is None:
+                AudioControlAction._active_restoration_tasks = {}
+            AudioControlAction._active_restoration_tasks[task_id] = task
 
     def remove_restoration_task(self, task_id: str):
         """Remove a restoration task from the active tasks"""
-        if AudioControlAction._active_restoration_tasks:
-            AudioControlAction._active_restoration_tasks.pop(task_id, None)
+        with AudioControlAction._registry_lock:
+            if AudioControlAction._active_restoration_tasks:
+                AudioControlAction._active_restoration_tasks.pop(task_id, None)
 
     def get_audio_source_key(
         self, target_app: str, target_device: str, device_name: str
@@ -927,33 +936,38 @@ class AudioControlAction(BaseAction):
         self, source_key: str, target_app: str, target_device: str, device_name: str
     ) -> AudioChangeEntry:
         """Get existing registry entry or create a new one"""
-        if source_key not in AudioControlAction._audio_change_registry:
-            # Create new entry with baseline values
-            original_values = {}
-            success = False
+        with AudioControlAction._registry_lock:
+            if source_key in AudioControlAction._audio_change_registry:
+                return AudioControlAction._audio_change_registry[source_key]
 
-            if self.control_type == "device":
-                success = await self._get_current_device_values(
-                    target_device or device_name, original_values
-                )
-            elif self.control_type == "application":
-                success = await self._get_current_app_values(
-                    target_app, original_values
-                )
+        # Create new entry with baseline values (I/O outside the lock)
+        original_values = {}
+        success = False
 
-            if success:
-                entry = AudioChangeEntry(
-                    original_values=original_values.copy(),
-                    current_values=original_values.copy(),
-                    remaining_duration=0.0,
-                )
+        if self.control_type == "device":
+            success = await self._get_current_device_values(
+                target_device or device_name, original_values
+            )
+        elif self.control_type == "application":
+            success = await self._get_current_app_values(
+                target_app, original_values
+            )
+
+        if success:
+            entry = AudioChangeEntry(
+                original_values=original_values.copy(),
+                current_values=original_values.copy(),
+                remaining_duration=0.0,
+            )
+            with AudioControlAction._registry_lock:
+                # Another task may have created the entry while we fetched baseline
+                if source_key in AudioControlAction._audio_change_registry:
+                    return AudioControlAction._audio_change_registry[source_key]
                 AudioControlAction._audio_change_registry[source_key] = entry
                 return entry
-            else:
-                logger.warning(f"Failed to get baseline values for {source_key}")
-                return None
-
-        return AudioControlAction._audio_change_registry[source_key]
+        else:
+            logger.warning(f"Failed to get baseline values for {source_key}")
+            return None
 
     def update_registry_entry(
         self,
@@ -963,19 +977,20 @@ class AudioControlAction(BaseAction):
         is_random: bool = False,
     ):
         """Update registry entry with new values and duration"""
-        entry = AudioControlAction._audio_change_registry.get(source_key)
-        if not entry:
-            return
+        with AudioControlAction._registry_lock:
+            entry = AudioControlAction._audio_change_registry.get(source_key)
+            if not entry:
+                return
 
-        # Update current values
-        entry.current_values.update(new_values)
+            # Update current values
+            entry.current_values.update(new_values)
 
-        if is_random:
-            # For random actions, reset the duration
-            entry.reset_duration(duration)
-        else:
-            # For other actions, add to remaining duration
-            entry.update_remaining_duration(duration)
+            if is_random:
+                # For random actions, reset the duration
+                entry.reset_duration(duration)
+            else:
+                # For other actions, add to remaining duration
+                entry.update_remaining_duration(duration)
 
     async def execute(
         self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
@@ -1012,14 +1027,15 @@ class AudioControlAction(BaseAction):
                 )
             else:
                 # Permanent change - clear any existing duration tracking
-                if source_key in AudioControlAction._audio_change_registry:
-                    entry = AudioControlAction._audio_change_registry[source_key]
-                    if entry.restoration_task and not entry.restoration_task.done():
-                        entry.restoration_task.cancel()
-                        logger.info(
-                            f"Cancelled existing restoration task for {source_key}"
-                        )
-                    AudioControlAction._audio_change_registry.pop(source_key, None)
+                with AudioControlAction._registry_lock:
+                    if source_key in AudioControlAction._audio_change_registry:
+                        entry = AudioControlAction._audio_change_registry[source_key]
+                        if entry.restoration_task and not entry.restoration_task.done():
+                            entry.restoration_task.cancel()
+                            logger.info(
+                                f"Cancelled existing restoration task for {source_key}"
+                            )
+                        AudioControlAction._audio_change_registry.pop(source_key, None)
 
                 # Apply permanent change
                 if self.control_type == "device":
@@ -1249,16 +1265,32 @@ class AudioControlAction(BaseAction):
     ):
         """Schedule or update the restoration task for this entry"""
         try:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                logger.warning(
+                    "Skipping audio restoration: no running event loop"
+                )
+                return
+            from .connector_manager import get_connector_loop
+
+            connector_loop = get_connector_loop()
+            if connector_loop is None or loop is not connector_loop:
+                logger.warning(
+                    "Skipping audio restoration: not on connector loop"
+                )
+                return
+
             # Cancel existing task if any
             if entry.restoration_task and not entry.restoration_task.done():
                 entry.restoration_task.cancel()
 
             # Create new task ID
-            task_id = f"restore_{source_key}_{int(asyncio.get_event_loop().time())}"
+            task_id = f"restore_{source_key}_{int(loop.time())}"
             entry.task_id = task_id
 
-            # Schedule restoration
-            restoration_task = asyncio.create_task(
+            # Schedule restoration on the connector loop
+            restoration_task = loop.create_task(
                 self._restore_with_stacking(
                     entry, source_key, target_app, target_device, device_name, task_id
                 )
@@ -1302,7 +1334,8 @@ class AudioControlAction(BaseAction):
             if success:
                 logger.info(f"Successfully restored audio values for {source_key}")
                 # Remove from registry
-                AudioControlAction._audio_change_registry.pop(source_key, None)
+                with AudioControlAction._registry_lock:
+                    AudioControlAction._audio_change_registry.pop(source_key, None)
             else:
                 logger.error(f"Failed to restore audio values for {source_key}")
 
@@ -1316,10 +1349,11 @@ class AudioControlAction(BaseAction):
             # Always cleanup
             self.remove_restoration_task(task_id)
             # Remove from registry if this was the last task
-            if source_key in AudioControlAction._audio_change_registry:
-                registry_entry = AudioControlAction._audio_change_registry[source_key]
-                if registry_entry.task_id == task_id:
-                    AudioControlAction._audio_change_registry.pop(source_key, None)
+            with AudioControlAction._registry_lock:
+                if source_key in AudioControlAction._audio_change_registry:
+                    registry_entry = AudioControlAction._audio_change_registry[source_key]
+                    if registry_entry.task_id == task_id:
+                        AudioControlAction._audio_change_registry.pop(source_key, None)
 
     async def _execute_with_duration(
         self, target_app: str, target_device: str, device_name: str
@@ -1575,7 +1609,8 @@ class AudioControlAction(BaseAction):
 
             # Get current volume
             get_vol_cmd = "osascript -e 'output volume of (get volume settings)'"
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 get_vol_cmd, shell=True, capture_output=True, text=True
             )
             if result.returncode == 0:
@@ -1585,7 +1620,8 @@ class AudioControlAction(BaseAction):
 
             # Get current mute state
             get_mute_cmd = "osascript -e 'output muted of (get volume settings)'"
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 get_mute_cmd, shell=True, capture_output=True, text=True
             )
             values_dict["muted"] = result.stdout.strip().lower() == "true"
@@ -1680,13 +1716,13 @@ class AudioControlAction(BaseAction):
             # Restore volume
             if "volume" in original_values:
                 cmd = f"osascript -e 'set volume output volume {int(original_values['volume'])}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
 
             # Restore mute state
             if "muted" in original_values:
                 mute_state = "true" if original_values["muted"] else "false"
                 cmd = f"osascript -e 'set volume output muted {mute_state}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
 
             return True
 
@@ -1792,13 +1828,13 @@ class AudioControlAction(BaseAction):
             # Apply volume
             if "volume" in values:
                 cmd = f"osascript -e 'set volume output volume {int(values['volume'])}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
 
             # Apply mute state
             if "muted" in values:
                 mute_state = "true" if values["muted"] else "false"
                 cmd = f"osascript -e 'set volume output muted {mute_state}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
 
             return True
 
@@ -1957,44 +1993,47 @@ class AudioControlAction(BaseAction):
                 cmd = (
                     f"osascript -e 'set volume output volume {int(self.volume_level)}'"
                 )
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "set_random":
                 cmd = (
                     f"osascript -e 'set volume output volume {int(self.volume_level)}'"
                 )
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "increase":
                 get_vol_cmd = "osascript -e 'output volume of (get volume settings)'"
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                subprocess.run,
                     get_vol_cmd, shell=True, capture_output=True, text=True
                 )
                 current_vol = int(result.stdout.strip())
                 new_vol = min(100, current_vol + int(self.volume_step))
                 cmd = f"osascript -e 'set volume output volume {new_vol}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "decrease":
                 get_vol_cmd = "osascript -e 'output volume of (get volume settings)'"
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                subprocess.run,
                     get_vol_cmd, shell=True, capture_output=True, text=True
                 )
                 current_vol = int(result.stdout.strip())
                 new_vol = max(0, current_vol - int(self.volume_step))
                 cmd = f"osascript -e 'set volume output volume {new_vol}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "mute":
                 cmd = "osascript -e 'set volume output muted true'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "unmute":
                 cmd = "osascript -e 'set volume output muted false'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "toggle_mute":
                 get_mute_cmd = "osascript -e 'output muted of (get volume settings)'"
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                subprocess.run,
                     get_mute_cmd, shell=True, capture_output=True, text=True
                 )
                 is_muted = result.stdout.strip().lower() == "true"
                 cmd = f"osascript -e 'set volume output muted {not is_muted}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
 
             return True
 
@@ -2272,48 +2311,51 @@ class AudioControlAction(BaseAction):
                 cmd = (
                     f"osascript -e 'set volume output volume {int(self.volume_level)}'"
                 )
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "set_random":
                 # Set random volume (0-100)
                 cmd = (
                     f"osascript -e 'set volume output volume {int(self.volume_level)}'"
                 )
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "increase":
                 # Get current volume and increase
                 get_vol_cmd = "osascript -e 'output volume of (get volume settings)'"
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                subprocess.run,
                     get_vol_cmd, shell=True, capture_output=True, text=True
                 )
                 current_vol = int(result.stdout.strip())
                 new_vol = min(100, current_vol + int(self.volume_step))
                 cmd = f"osascript -e 'set volume output volume {new_vol}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "decrease":
                 # Get current volume and decrease
                 get_vol_cmd = "osascript -e 'output volume of (get volume settings)'"
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                subprocess.run,
                     get_vol_cmd, shell=True, capture_output=True, text=True
                 )
                 current_vol = int(result.stdout.strip())
                 new_vol = max(0, current_vol - int(self.volume_step))
                 cmd = f"osascript -e 'set volume output volume {new_vol}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "mute":
                 cmd = "osascript -e 'set volume output muted true'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "unmute":
                 cmd = "osascript -e 'set volume output muted false'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "toggle_mute":
                 # Get current mute state and toggle
                 get_mute_cmd = "osascript -e 'output muted of (get volume settings)'"
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                subprocess.run,
                     get_mute_cmd, shell=True, capture_output=True, text=True
                 )
                 is_muted = result.stdout.strip().lower() == "true"
                 cmd = f"osascript -e 'set volume output muted {not is_muted}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
 
             return True
 
@@ -2334,7 +2376,8 @@ class AudioControlAction(BaseAction):
                 elif self.action_mode == "toggle_mute":
                     # Get current input volume to determine if muted
                     get_vol_cmd = "osascript -e 'input volume of (get volume settings)'"
-                    result = subprocess.run(
+                    result = await asyncio.to_thread(
+                subprocess.run,
                         get_vol_cmd, shell=True, capture_output=True, text=True
                     )
                     current_vol = int(result.stdout.strip())
@@ -2343,13 +2386,13 @@ class AudioControlAction(BaseAction):
                     else:
                         cmd = "osascript -e 'set volume input volume 0'"  # Mute
 
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "set":
                 cmd = f"osascript -e 'set volume input volume {int(self.volume_level)}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
             elif self.action_mode == "set_random":
                 cmd = f"osascript -e 'set volume input volume {int(self.volume_level)}'"
-                subprocess.run(cmd, shell=True, check=True)
+                await asyncio.to_thread(subprocess.run, cmd, shell=True, check=True)
 
             return True
 
@@ -2589,7 +2632,7 @@ class SendGreetingAction(BaseAction):
     ) -> bool:
         """Execute send greeting action"""
         try:
-            from . import chatbot_manager, twitch
+            from . import chatbot_manager
 
             # Replace placeholders in parameters
             user_id = substitute_connector_placeholders(self.user_id, event_data)
@@ -2606,17 +2649,14 @@ class SendGreetingAction(BaseAction):
             )
 
             if greeting_message:
-                # Send the greeting via chat
-                if twitch.twitch_api and twitch.twitch_api.is_connected:
-                    # For now, just log what would be sent
-                    logger.info(
-                        f"Would send greeting to {username}: {greeting_message}"
-                    )
-                    # TODO: Implement actual chat message sending in twitch.py
+                from .chatbot import dispatch_chatbot_response
+
+                success = dispatch_chatbot_response(greeting_message, ["twitch"])
+                if success:
+                    logger.info("Sent greeting to %s: %s", username, greeting_message)
                     return True
-                else:
-                    logger.error("Twitch API not available for sending greeting")
-                    return False
+                logger.error("Failed to send greeting to %s", username)
+                return False
             else:
                 if self.force_send:
                     # Try to send default greeting even if user was already greeted
@@ -2626,17 +2666,22 @@ class SendGreetingAction(BaseAction):
                             "{username}", username
                         )
 
-                        if twitch.twitch_api and twitch.twitch_api.is_connected:
+                        from .chatbot import dispatch_chatbot_response
+
+                        success = dispatch_chatbot_response(
+                            greeting_message, ["twitch"]
+                        )
+                        if success:
                             logger.info(
-                                f"Force sending default greeting to {username}: {greeting_message}"
+                                "Force-sent default greeting to %s: %s",
+                                username,
+                                greeting_message,
                             )
-                            # TODO: Implement actual chat message sending in twitch.py
                             return True
-                        else:
-                            logger.error(
-                                "Twitch API not available for sending greeting"
-                            )
-                            return False
+                        logger.error(
+                            "Failed to force-send greeting to %s", username
+                        )
+                        return False
 
                 logger.info(f"No greeting to send for user {username}")
                 return True  # Not an error, just no greeting to send

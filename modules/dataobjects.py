@@ -52,6 +52,22 @@ logger = logging.getLogger(__name__)
 # Serialize DiscordData DB read-modify-writes so a blank concurrent save cannot
 # overwrite a token that was just persisted on another thread.
 _discord_db_write_lock = threading.Lock()
+_SECRET_FIELDS = {
+    "twitch_data": ("client_secret", "auth_token", "refresh_token"),
+    "spotify_data": ("client_secret", "access_token", "refresh_token"),
+    "youtube_data": ("api_key", "oauth_client_secret", "access_token", "refresh_token"),
+    "chatbot_data": ("auth_token", "refresh_token"),
+}
+
+
+def _is_blank_secret(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not str(value).strip())
+
+
+def _keep_existing_if_blank_secret(field: str, incoming: Any, existing: Any, secret_names) -> Any:
+    if field in secret_names and _is_blank_secret(incoming) and existing:
+        return existing
+    return incoming
 
 
 def _write_discord_data_merged(payload: Dict[str, Any]) -> bool:
@@ -788,6 +804,14 @@ class StateManager:
                 filtered_dict["client_secret"] = ensure_decrypted(
                     filtered_dict["client_secret"]
                 )
+            if "access_token" in filtered_dict:
+                filtered_dict["access_token"] = ensure_decrypted(
+                    filtered_dict["access_token"]
+                )
+            if "refresh_token" in filtered_dict:
+                filtered_dict["refresh_token"] = ensure_decrypted(
+                    filtered_dict["refresh_token"]
+                )
 
             self._spotify_data = SpotifyData(**filtered_dict)
         else:
@@ -1057,11 +1081,19 @@ class StateManager:
                 self.initialize()
 
             try:
-                # Update the state
-                self._state["youtube_data"] = copy.deepcopy(youtube_data)
+                secrets = _SECRET_FIELDS["youtube_data"]
+                existing_state = dict(self._state.get("youtube_data") or {})
+                merged = copy.deepcopy(youtube_data)
+                for key in secrets:
+                    incoming = merged.get(key)
+                    existing = existing_state.get(key)
+                    merged[key] = _keep_existing_if_blank_secret(
+                        key, incoming, existing, secrets
+                    )
+                self._state["youtube_data"] = merged
 
                 # Update the local instance
-                for key, value in youtube_data.items():
+                for key, value in merged.items():
                     if hasattr(self._youtube_data, key):
                         setattr(self._youtube_data, key, value)
 
@@ -1222,6 +1254,10 @@ class StateManager:
                 # Update the state
                 for key, value in chatbot_data.items():
                     if hasattr(self._chatbot_data, key):
+                        existing = self._state["chatbot_data"].get(key)
+                        value = _keep_existing_if_blank_secret(
+                            key, value, existing, _SECRET_FIELDS["chatbot_data"]
+                        )
                         self._state["chatbot_data"][key] = value
                         self._changed_fields.add(f"chatbot_data.{key}")
 
@@ -1266,6 +1302,10 @@ class StateManager:
                 # Update the state
                 for key, value in twitch_data.items():
                     if hasattr(self._twitch_data, key):
+                        existing = self._state["twitch_data"].get(key)
+                        value = _keep_existing_if_blank_secret(
+                            key, value, existing, _SECRET_FIELDS["twitch_data"]
+                        )
                         self._state["twitch_data"][key] = value
                         self._changed_fields.add(f"twitch_data.{key}")
 
@@ -1278,6 +1318,14 @@ class StateManager:
                 if "client_secret" in encrypted_data:
                     encrypted_data["client_secret"] = ensure_encrypted(
                         encrypted_data["client_secret"]
+                    )
+                if encrypted_data.get("auth_token"):
+                    encrypted_data["auth_token"] = ensure_encrypted(
+                        encrypted_data["auth_token"]
+                    )
+                if encrypted_data.get("refresh_token"):
+                    encrypted_data["refresh_token"] = ensure_encrypted(
+                        encrypted_data["refresh_token"]
                     )
 
                 # Update the local object
@@ -1396,6 +1444,10 @@ class StateManager:
                 # Update the state
                 for key, value in spotify_data.items():
                     if hasattr(self._spotify_data, key):
+                        existing = self._state["spotify_data"].get(key)
+                        value = _keep_existing_if_blank_secret(
+                            key, value, existing, _SECRET_FIELDS["spotify_data"]
+                        )
                         self._state["spotify_data"][key] = value
                         self._changed_fields.add(f"spotify_data.{key}")
 
@@ -1408,6 +1460,14 @@ class StateManager:
                 if "client_secret" in encrypted_data:
                     encrypted_data["client_secret"] = ensure_encrypted(
                         encrypted_data["client_secret"]
+                    )
+                if encrypted_data.get("access_token"):
+                    encrypted_data["access_token"] = ensure_encrypted(
+                        encrypted_data["access_token"]
+                    )
+                if encrypted_data.get("refresh_token"):
+                    encrypted_data["refresh_token"] = ensure_encrypted(
+                        encrypted_data["refresh_token"]
                     )
 
                 # Update the local object
@@ -1502,6 +1562,13 @@ class StateManager:
                 if not hasattr(self._twitch_data, field):
                     logger.error(f"Invalid Twitch data field: {field}")
                     return False
+
+                if field in _SECRET_FIELDS["twitch_data"]:
+                    new_tok = str(value or "").strip()
+                    old_tok = str(getattr(self._twitch_data, field, "") or "").strip()
+                    if not new_tok and old_tok:
+                        return True
+                    value = new_tok
 
                 # Get current value for correct type conversion
                 current_value = getattr(self._twitch_data, field)
@@ -1651,6 +1718,13 @@ class StateManager:
                     logger.error(f"Invalid Spotify data field: {field}")
                     return False
 
+                if field in _SECRET_FIELDS["spotify_data"]:
+                    new_tok = str(value or "").strip()
+                    old_tok = str(getattr(self._spotify_data, field, "") or "").strip()
+                    if not new_tok and old_tok:
+                        return True
+                    value = new_tok
+
                 # Get current value for correct type conversion
                 current_value = getattr(self._spotify_data, field)
 
@@ -1697,6 +1771,13 @@ class StateManager:
                 if not hasattr(self._youtube_data, field):
                     logger.error(f"Invalid YouTube data field: {field}")
                     return False
+
+                if field in _SECRET_FIELDS["youtube_data"]:
+                    new_tok = str(value or "").strip()
+                    old_tok = str(getattr(self._youtube_data, field, "") or "").strip()
+                    if not new_tok and old_tok:
+                        return True
+                    value = new_tok
 
                 # Get current value for correct type conversion
                 current_value = getattr(self._youtube_data, field)
@@ -1820,6 +1901,13 @@ class StateManager:
                     logger.error(f"Invalid Chatbot data field: {field}")
                     return False
 
+                if field in _SECRET_FIELDS["chatbot_data"]:
+                    new_tok = str(value or "").strip()
+                    old_tok = str(getattr(self._chatbot_data, field, "") or "").strip()
+                    if not new_tok and old_tok:
+                        return True
+                    value = new_tok
+
                 # Get current value for correct type conversion
                 current_value = getattr(self._chatbot_data, field)
 
@@ -1942,6 +2030,14 @@ class StateManager:
                         encrypted_twitch_data["client_secret"] = ensure_encrypted(
                             encrypted_twitch_data["client_secret"]
                         )
+                    if encrypted_twitch_data.get("auth_token"):
+                        encrypted_twitch_data["auth_token"] = ensure_encrypted(
+                            encrypted_twitch_data["auth_token"]
+                        )
+                    if encrypted_twitch_data.get("refresh_token"):
+                        encrypted_twitch_data["refresh_token"] = ensure_encrypted(
+                            encrypted_twitch_data["refresh_token"]
+                        )
                     writes.append(
                         (self._paths["twitch_data"], encrypted_twitch_data)
                     )
@@ -1974,6 +2070,14 @@ class StateManager:
                     if "client_secret" in encrypted_spotify_data:
                         encrypted_spotify_data["client_secret"] = ensure_encrypted(
                             encrypted_spotify_data["client_secret"]
+                        )
+                    if encrypted_spotify_data.get("access_token"):
+                        encrypted_spotify_data["access_token"] = ensure_encrypted(
+                            encrypted_spotify_data["access_token"]
+                        )
+                    if encrypted_spotify_data.get("refresh_token"):
+                        encrypted_spotify_data["refresh_token"] = ensure_encrypted(
+                            encrypted_spotify_data["refresh_token"]
                         )
                     writes.append(
                         (self._paths["spotify_data"], encrypted_spotify_data)

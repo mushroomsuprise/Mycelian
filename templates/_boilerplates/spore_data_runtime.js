@@ -242,6 +242,7 @@
             return;
         }
         var done = false;
+        var requestId = 'spore_get_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
         function finish(data) {
             if (done) { return; }
             done = true;
@@ -249,11 +250,13 @@
             if (cb) { cb(data); }
         }
         function onResp(res) {
-            if (!res || res.error) { finish(null); return; }
+            if (!res) { return; }
+            if (res.request_id !== requestId) { return; }
+            if (res.error) { finish(null); return; }
             finish(res.data != null ? res.data : res);
         }
-        socket.once('get_data', onResp);
-        socket.emit('get_data', { path: path });
+        socket.on('get_data', onResp);
+        socket.emit('get_data', { path: path, request_id: requestId });
         setTimeout(function () { finish(null); }, 8000);
     }
 

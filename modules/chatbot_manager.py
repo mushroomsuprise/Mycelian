@@ -390,7 +390,7 @@ class ChatbotManager:
                 # Start specific time events immediately (they handle their own event loop issues)
                 for event in specific_time_events:
                     try:
-                        self._start_repeating_event(event)
+                        self._start_specific_time_event(event)
                     except Exception as e:
                         logger.error(
                             f"Error restarting specific time task for event {event.name}: {e}"
@@ -619,7 +619,7 @@ class ChatbotManager:
             # Start repeating task if event has an interval or is a specific time event
             if event.enabled:
                 if event.event_type == EventType.SPECIFIC_TIME:
-                    self._start_repeating_event(event)
+                    self._start_specific_time_event(event)
                 elif event.interval > 0:
                     # For Interval events, use staggered startup
                     if event.event_type == EventType.INTERVAL:
@@ -674,7 +674,7 @@ class ChatbotManager:
             # Start new repeating task if event has an interval or is a specific time event
             if event.enabled:
                 if event.event_type == EventType.SPECIFIC_TIME:
-                    self._start_repeating_event(event)
+                    self._start_specific_time_event(event)
                 elif event.interval > 0:
                     # For Interval events, use staggered startup
                     if event.event_type == EventType.INTERVAL:
@@ -1049,7 +1049,7 @@ class ChatbotManager:
                 event.enabled = enabled
                 if enabled:
                     if event.event_type == EventType.SPECIFIC_TIME:
-                        self._start_repeating_event(event)
+                        self._start_specific_time_event(event)
                     elif event.interval > 0:
                         # For Interval events, use staggered startup
                         if event.event_type == EventType.INTERVAL:
@@ -1395,110 +1395,130 @@ class ChatbotManager:
         self._start_repeating_event_with_thread(event, initial_delay)
 
     def _start_specific_time_event(self, event: ChatEvent):
-        """Start a specific time event task that checks every minute for the target time"""
+        """Start a specific-time event on a daemon thread (wait until HH:MM, then fire)."""
         with self._scheduler_lock:
-            # Check if task already exists
-            if event.event_id in self.repeating_tasks:
-                existing_task = self.repeating_tasks[event.event_id]
-                # If task is done or cancelled, clean it up and allow restart
-                if existing_task.done():
-                    del self.repeating_tasks[event.event_id]
-                else:
-                    return  # Task is still running, skip
+            existing = self.repeating_tasks.get(event.event_id)
+            if existing is not None:
+                is_alive = getattr(existing, "is_alive", lambda: False)()
+                is_done = getattr(existing, "done", lambda: True)()
+                if is_alive or (hasattr(existing, "done") and not is_done):
+                    return
+                del self.repeating_tasks[event.event_id]
 
-            async def specific_time_task():
+            def specific_time_thread():
+                from datetime import datetime, timedelta
+
                 try:
-                    from datetime import datetime
-
                     while event.enabled and event.event_type == EventType.SPECIFIC_TIME:
-                        # Check every minute if current time matches the target time
-                        current_time = datetime.now()
-                        current_hour = current_time.hour
-                        current_minute = current_time.minute
-
-                        # Parse the target time (HH:MM format)
-                        if event.specific_time:
-                            try:
-                                time_parts = event.specific_time.split(":")
-                                if len(time_parts) == 2:
-                                    target_hour = int(time_parts[0])
-                                    target_minute = int(time_parts[1])
-
-                                    # Check if current time matches target time
-                                    if (
-                                        current_hour == target_hour
-                                        and current_minute == target_minute
-                                    ):
-                                        # Check if we already triggered today (avoid multiple triggers in same minute)
-                                        last_triggered = (
-                                            datetime.fromtimestamp(event.last_triggered)
-                                            if event.last_triggered > 0
-                                            else None
-                                        )
-                                        if (
-                                            last_triggered is None
-                                            or last_triggered.date()
-                                            != current_time.date()
-                                            or last_triggered.hour != current_hour
-                                            or last_triggered.minute != current_minute
-                                        ):
-                                            # Create event data
-                                            event_data = {
-                                                "username": "System",
-                                                "timestamp": time.time(),
-                                                "source": "specific_time",
-                                                "time": event.specific_time,
-                                            }
-
-                                            # Trigger the event
-                                            if event.should_trigger(event_data):
-                                                response = event.trigger_event(
-                                                    event_data
-                                                )
-                                                # Send the response through the chatbot
-                                                try:
-                                                    from .chatbot import (
-                                                        dispatch_chatbot_response,
-                                                    )
-
-                                                    success = dispatch_chatbot_response(
-                                                        response,
-                                                        getattr(
-                                                            event, "reply_targets", None
-                                                        ),
-                                                        discord_channels=getattr(
-                                                            event, "discord_channels", None
-                                                        ),
-                                                    )
-                                                    if success:
-                                                        logger.info(
-                                                            f"Specific time event {event.name} triggered at {event.specific_time}, sent message: {response}"
-                                                        )
-                                                    else:
-                                                        logger.warning(
-                                                            f"Failed to send specific time event message for {event.name}"
-                                                        )
-                                                except Exception as e:
-                                                    logger.error(
-                                                        f"Error sending specific time event message for {event.name}: {e}"
-                                                    )
-                            except (ValueError, IndexError) as e:
+                        if not event.specific_time:
+                            time.sleep(1.0)
+                            continue
+                        try:
+                            time_parts = event.specific_time.split(":")
+                            if len(time_parts) != 2:
                                 logger.error(
-                                    f"Invalid time format for event {event.name}: {event.specific_time} - {e}"
+                                    "Invalid time format for event %s: %s",
+                                    event.name,
+                                    event.specific_time,
                                 )
+                                time.sleep(60)
+                                continue
+                            target_hour = int(time_parts[0])
+                            target_minute = int(time_parts[1])
+                        except (ValueError, IndexError) as e:
+                            logger.error(
+                                "Invalid time format for event %s: %s - %s",
+                                event.name,
+                                event.specific_time,
+                                e,
+                            )
+                            time.sleep(60)
+                            continue
 
-                        # Sleep for 60 seconds (check every minute)
-                        await asyncio.sleep(60)
+                        now = datetime.now()
+                        target = now.replace(
+                            hour=target_hour,
+                            minute=target_minute,
+                            second=0,
+                            microsecond=0,
+                        )
+                        if target <= now:
+                            target += timedelta(days=1)
+                        remaining = (target - datetime.now()).total_seconds()
+                        while event.enabled and remaining > 0:
+                            time.sleep(min(1.0, remaining))
+                            remaining = (target - datetime.now()).total_seconds()
+                        if not event.enabled:
+                            break
 
+                        current_time = datetime.now()
+                        last_triggered = (
+                            datetime.fromtimestamp(event.last_triggered)
+                            if event.last_triggered > 0
+                            else None
+                        )
+                        if last_triggered is not None and (
+                            last_triggered.date() == current_time.date()
+                            and last_triggered.hour == target_hour
+                            and last_triggered.minute == target_minute
+                        ):
+                            continue
+
+                        event_data = {
+                            "username": "System",
+                            "timestamp": time.time(),
+                            "source": "specific_time",
+                            "time": event.specific_time,
+                        }
+                        if not event.should_trigger(event_data):
+                            continue
+                        response = event.trigger_event(event_data)
+                        try:
+                            from .chatbot import dispatch_chatbot_response
+
+                            success = dispatch_chatbot_response(
+                                response,
+                                getattr(event, "reply_targets", None),
+                                discord_channels=getattr(
+                                    event, "discord_channels", None
+                                ),
+                            )
+                            if success:
+                                logger.info(
+                                    "Specific time event %s triggered at %s, sent message: %s",
+                                    event.name,
+                                    event.specific_time,
+                                    response,
+                                )
+                            else:
+                                logger.warning(
+                                    "Failed to send specific time event message for %s",
+                                    event.name,
+                                )
+                        except Exception as e:
+                            logger.error(
+                                "Error sending specific time event message for %s: %s",
+                                event.name,
+                                e,
+                            )
                 except Exception as e:
                     logger.error(
-                        f"Error in specific time task for event {event.name}: {e}"
+                        "Error in specific time thread for event %s: %s",
+                        event.name,
+                        e,
                     )
 
-            task = asyncio.create_task(specific_time_task())
-            self.repeating_tasks[event.event_id] = task
+            thread = threading.Thread(
+                target=specific_time_thread,
+                daemon=True,
+                name=f"SpecificTime-{event.name}",
+            )
+            thread.start()
+            self.repeating_tasks[event.event_id] = thread
             logger.info(
-                f"Started specific time task for event: {event.name} at {event.specific_time}"
+                "Started specific time thread for event: %s at %s",
+                event.name,
+                event.specific_time,
             )
 
     def _stop_repeating_event(self, event_id: str):

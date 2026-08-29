@@ -5522,6 +5522,7 @@ class Ff7GameHook:
         return base
 
     def close(self) -> None:
+        self._last_attached = None
         self._timed_jobs.clear()
         self._paused_timed_jobs.clear()
         self._core.close()

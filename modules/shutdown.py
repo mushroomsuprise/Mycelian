@@ -44,9 +44,9 @@ def mark_shutdown_in_progress() -> bool:
 
 def _start_shutdown_watchdog() -> None:
     global _watchdog_timer
-    raw = os.environ.get("MYCELIAN_SHUTDOWN_WATCHDOG_SEC", "").strip()
+    raw = os.environ.get("MYCELIAN_SHUTDOWN_WATCHDOG_SEC", "20").strip()
     if not raw:
-        return
+        raw = "20"
     try:
         seconds = float(raw)
     except ValueError:
@@ -83,7 +83,8 @@ def _cancel_shutdown_watchdog() -> None:
 def _run_step(name: str, func: Callable[[], None], timeout: float = 4.0) -> None:
     t0 = time.perf_counter()
     logger.info("Shutdown: %s", name)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         fut = pool.submit(func)
         try:
             fut.result(timeout=timeout)
@@ -93,6 +94,8 @@ def _run_step(name: str, func: Callable[[], None], timeout: float = 4.0) -> None
             logger.error("Shutdown failed: %s — %s", name, e, exc_info=True)
         else:
             logger.info("Shutdown: %s (%.2fs)", name, time.perf_counter() - t0)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _run_parallel(
@@ -110,7 +113,8 @@ def _run_parallel(
         except Exception as e:
             logger.debug("Shutdown %s: %s", name, e)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(steps)) as pool:
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(steps))
+    try:
         futs = {
             pool.submit(_safe, name, func): name for name, func in steps
         }
@@ -127,6 +131,8 @@ def _run_parallel(
                 fut.result()
             except Exception:
                 pass
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     logger.info("Shutdown (parallel) done (%.2fs)", time.perf_counter() - t0)
 

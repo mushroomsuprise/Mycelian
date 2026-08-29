@@ -8,10 +8,10 @@ import threading
 import time
 from typing import Dict, Any, Optional, List
 
-from nicegui import ui
+from nicegui import run, ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
-from ...ui_timer import layout_schedule
+from ...ui_timer import app_schedule, layout_schedule, run_on_ui_loop
 from ...ui_form_controls import form_input, form_select, form_sensitive_input
 from ...ui_settings_layout import (
     THEME_CHIP_CLASSES,
@@ -315,7 +315,13 @@ class PSNTab:
                     pass
                 self._npsso_capture_timer = None
 
-            state: dict = {"done": False, "result": None}
+            state: dict = {"done": False, "result": None, "applied": False}
+
+            def apply_result_once(result: NpssoResult) -> None:
+                if state.get("applied"):
+                    return
+                state["applied"] = True
+                on_auth_complete(result)
 
             def worker() -> None:
                 _npsso_trace("worker: subprocess thread started")
@@ -336,9 +342,42 @@ class PSNTab:
                 except Exception as e:
                     logger.exception("NPSSO capture error")
                     result = NpssoResult(success=False, error_message=str(e))
+
+                # Persist from the worker so a tray unload (layout poller death)
+                # cannot drop a successful token.
+                if result is not None and result.success and result.npsso_code:
+                    try:
+                        from ...dataobjects import state_manager as _sm
+
+                        _sm.update_psn_setting("npsso_code", result.npsso_code)
+                        _sm.save_changes()
+                        _npsso_trace(
+                            f"worker: persisted npsso_code (len={len(result.npsso_code)})"
+                        )
+                    except Exception as persist_err:
+                        logger.error(
+                            "NPSSO worker persist failed: %s", persist_err, exc_info=True
+                        )
+
                 state["result"] = result
                 state["done"] = True
                 _npsso_trace("worker: state['done']=True")
+
+                def _apply_on_ui() -> None:
+                    r = state.get("result")
+                    if r is None:
+                        apply_result_once(
+                            NpssoResult(
+                                success=False,
+                                error_message="Unknown error during NPSSO capture.",
+                            )
+                        )
+                    else:
+                        apply_result_once(r)
+
+                run_on_ui_loop(
+                    lambda: app_schedule(0.05, _apply_on_ui, once=True)
+                )
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -361,7 +400,7 @@ class PSNTab:
                     except Exception:
                         pass
                     self._npsso_capture_timer = None
-                    on_auth_complete(
+                    apply_result_once(
                         NpssoResult(
                             success=False,
                             error_message="Timed out waiting for the NPSSO sign-in window.",
@@ -382,14 +421,14 @@ class PSNTab:
                 self._npsso_capture_timer = None
                 r = state["result"]
                 if r is None:
-                    on_auth_complete(
+                    apply_result_once(
                         NpssoResult(
                             success=False,
                             error_message="Unknown error during NPSSO capture.",
                         )
                     )
                 else:
-                    on_auth_complete(r)
+                    apply_result_once(r)
 
             self._npsso_capture_timer = layout_schedule(0.2, poll_capture)
             _npsso_trace("begin_capture_after_instructions: poll timer started")
@@ -526,12 +565,26 @@ class PSNTab:
             notify("Error saving PSN settings", type="negative")
             return
         _npsso_trace("save(): save_changes OK, calling handle_psn_settings_change() …")
-        psn_service.handle_psn_settings_change()
-        _npsso_trace("save(): handle_psn_settings_change() returned")
-        if not suppress_saved_notification:
-            notify("PSN settings saved", type="positive")
-        self.dirty = False
-        self._refresh_status()
+
+        def _after_service() -> None:
+            _npsso_trace("save(): handle_psn_settings_change() returned")
+            if not suppress_saved_notification:
+                notify("PSN settings saved", type="positive")
+            self.dirty = False
+            self._refresh_status()
+
+        async def _run_service() -> None:
+            try:
+                await run.io_bound(psn_service.handle_psn_settings_change)
+            except Exception as e:
+                logger.error("PSN save service change failed: %s", e, exc_info=True)
+                notify(f"Error applying PSN settings: {e}", type="negative")
+            else:
+                _after_service()
+
+        from nicegui import background_tasks
+
+        background_tasks.create(_run_service(), name="psn_save_settings_change")
 
     def discard(self) -> None:
         self._load_from_state()

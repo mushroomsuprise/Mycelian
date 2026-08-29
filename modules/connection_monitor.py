@@ -106,9 +106,12 @@ def _update_internet_state(*, force: bool = False) -> bool:
             )
             if now - _last_external_probe_mono < cache_ttl:
                 return _internet_online
-
         _internet_status_label = "Checking"
-        round_ok = _run_external_probe_round()
+
+    round_ok = _run_external_probe_round()
+    now = time.monotonic()
+
+    with _connectivity_lock:
         _last_external_probe_mono = now
         _last_external_result_online = round_ok
 

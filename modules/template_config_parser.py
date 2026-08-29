@@ -157,8 +157,21 @@ class TemplateConfigParser:
         self._hidden_cache: Dict[str, Tuple[float, bool]] = {}
         self._cache_lock = threading.Lock()
 
+    @staticmethod
+    def _sanitize_config_name(config_name: str) -> str:
+        """Reject path separators and ``..`` so configs stay under config_dir."""
+        name = (config_name or "").strip()
+        if not name or os.path.basename(name) != name:
+            raise ValueError(f"Invalid config name: {config_name!r}")
+        if any(sep in name for sep in ("/", "\\")) or ".." in name:
+            raise ValueError(f"Invalid config name: {config_name!r}")
+        return name
+
     def _config_mtime(self, config_name: str) -> float:
-        path = self.get_config_path(config_name)
+        try:
+            path = self.get_config_path(config_name)
+        except ValueError:
+            return 0.0
         try:
             return os.path.getmtime(path) if os.path.exists(path) else 0.0
         except OSError:
@@ -174,8 +187,13 @@ class TemplateConfigParser:
                 self._file_cache.pop(config_name, None)
                 self._hidden_cache.pop(config_name, None)
 
-    def _load_raw_config_from_disk(self, config_name: str) -> Dict[str, Any]:
-        """Read JSON from disk without using the mtime cache."""
+    def _load_raw_config_from_disk(
+        self, config_name: str, create: bool = False
+    ) -> Dict[str, Any]:
+        """Read JSON from disk without using the mtime cache.
+
+        Missing files do not write a default JSON unless ``create=True``.
+        """
         config_path = self.get_config_path(config_name)
         if os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
@@ -184,19 +202,32 @@ class TemplateConfigParser:
                 return loaded
             return self._create_default_config(config_name)
         default_config = self._create_default_config(config_name)
-        self.save_config(config_name, default_config)
+        if create:
+            self.save_config(config_name, default_config)
         return default_config
 
-    def _get_cached_raw_config(self, config_name: str) -> Dict[str, Any]:
+    def _get_cached_raw_config(
+        self, config_name: str, create: bool = False
+    ) -> Dict[str, Any]:
         mtime = self._config_mtime(config_name)
         with self._cache_lock:
             cached = self._file_cache.get(config_name)
             if cached is not None and cached[0] == mtime:
                 return copy.deepcopy(cached[1])
-        raw = self._load_raw_config_from_disk(config_name)
+        raw = self._load_raw_config_from_disk(config_name, create=create)
         with self._cache_lock:
-            self._file_cache[config_name] = (self._config_mtime(config_name), copy.deepcopy(raw))
+            self._file_cache[config_name] = (
+                self._config_mtime(config_name),
+                copy.deepcopy(raw),
+            )
         return raw
+
+    def config_file_exists(self, config_name: str) -> bool:
+        try:
+            path = self.get_config_path(config_name)
+        except ValueError:
+            return False
+        return os.path.isfile(path)
 
     def _filter_config(
         self,
@@ -311,9 +342,16 @@ class TemplateConfigParser:
         Returns:
             str: Path to the configuration file
         """
-        return os.path.join(self.config_dir, f"{config_name}.json")
+        name = self._sanitize_config_name(config_name)
+        return os.path.join(self.config_dir, f"{name}.json")
     
-    def load_config(self, config_name: str, include_dynamic_controls: bool = False, include_streamdeck_options: bool = False) -> Dict[str, Any]:
+    def load_config(
+        self,
+        config_name: str,
+        include_dynamic_controls: bool = False,
+        include_streamdeck_options: bool = False,
+        create: bool = False,
+    ) -> Dict[str, Any]:
         """
         Load configuration from a file
 
@@ -321,17 +359,21 @@ class TemplateConfigParser:
             config_name (str): Name of the config (without extension)
             include_dynamic_controls (bool): Whether to include dynamic_controls section
             include_streamdeck_options (bool): Whether to include streamdeck_options section
+            create (bool): If True, persist a default JSON when the file is missing
 
         Returns:
             Dict[str, Any]: Configuration data
         """
         try:
-            raw = self._get_cached_raw_config(config_name)
+            raw = self._get_cached_raw_config(config_name, create=create)
             config = self._filter_config(
                 raw, include_dynamic_controls, include_streamdeck_options
             )
             logger.debug("Successfully loaded config for %s", config_name)
             return config
+        except ValueError:
+            logger.warning("Invalid config name %r", config_name)
+            return {}
         except Exception as e:
             logger.error(
                 "Error loading config for %s: %s", config_name, e, exc_info=True
@@ -349,11 +391,20 @@ class TemplateConfigParser:
         Returns:
             bool: True if successful, False otherwise
         """
-        config_path = self.get_config_path(config_name)
-        
         try:
-            with open(config_path, "w", encoding="utf-8") as f:
+            config_path = self.get_config_path(config_name)
+        except ValueError:
+            logger.error("Refusing to save config with invalid name %r", config_name)
+            return False
+
+        tmp_path = config_path + ".tmp"
+        try:
+            parent = os.path.dirname(config_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=4)
+            os.replace(tmp_path, config_path)
             self.invalidate_cache(config_name)
             logger.debug("Successfully saved config for %s", config_name)
             self._notify_config_saved(config_name)
@@ -362,6 +413,11 @@ class TemplateConfigParser:
             logger.error(
                 "Error saving config for %s: %s", config_name, e, exc_info=True
             )
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
             return False
 
     @staticmethod
@@ -438,24 +494,21 @@ class TemplateConfigParser:
         Returns:
             bool: True if successful, False otherwise
         """
-        config_path = self.get_config_path(config_name)
-        
+        try:
+            config_path = self.get_config_path(config_name)
+        except ValueError:
+            logger.error("Refusing to create config with invalid name %r", config_name)
+            return False
+
         try:
             if os.path.exists(config_path):
                 logger.warning(f"Config file for {config_name} already exists.")
                 return False
-            
-            # Use provided default config or create a new one
+
             if default_config is None:
                 default_config = self._create_default_config(config_name)
-            
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(default_config, f, indent=4)
 
-            self.invalidate_cache(config_name)
-            logger.debug("Successfully created config for %s", config_name)
-            self._notify_config_saved(config_name)
-            return True
+            return self.save_config(config_name, default_config)
         except Exception as e:
             logger.error(f"Error creating config for {config_name}: {str(e)}", exc_info=True)
             return False
@@ -470,7 +523,11 @@ class TemplateConfigParser:
         Returns:
             bool: True if successful, False otherwise
         """
-        config_path = self.get_config_path(config_name)
+        try:
+            config_path = self.get_config_path(config_name)
+        except ValueError:
+            logger.error("Refusing to delete config with invalid name %r", config_name)
+            return False
 
         try:
             if os.path.exists(config_path):

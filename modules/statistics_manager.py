@@ -40,6 +40,18 @@ from .path_utils import get_data_path
 logger = logging.getLogger(__name__)
 
 
+def _stats_data_locked(fn):
+    """Serialize in-memory ``self.data`` mutations across Twitch/connector/save threads."""
+
+    def wrapped(self, *args, **kwargs):
+        with self._data_lock:
+            return fn(self, *args, **kwargs)
+
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
 @dataclass
 class IndividualAlertTypeStatistics:
     """Statistics for individual alert types"""
@@ -325,6 +337,7 @@ class StatisticsManager:
         self.is_running = False
         self._needs_periodic_start = False  # Flag for deferred periodic saving
         self._periodic_thread = None  # Thread for periodic saving
+        self._data_lock = threading.RLock()
 
         # Separate statistics database attributes
         self._stats_db_path: Optional[str] = None
@@ -961,7 +974,7 @@ class StatisticsManager:
         self, cursor: sqlite3.Cursor, start_time: float, end_time: float
     ) -> Dict[str, Any]:
         """Aggregate highlight metrics from ``user_events`` for ``[start_time, end_time]``."""
-        print("[highlights] _compute_highlights_from_user_events start")
+        logger.debug("[highlights] _compute_highlights_from_user_events start")
         highlights: Dict[str, Any] = {}
         ts_params = (start_time, end_time)
         not_system = "lower(username) != ?"
@@ -1219,8 +1232,7 @@ class StatisticsManager:
         )
         highlights["total_events"] = int(cursor.fetchone()[0] or 0)
 
-        print(
-            "[highlights] _compute_highlights_from_user_events done total_events=",
+        logger.debug("[highlights] _compute_highlights_from_user_events done total_events= %s",
             highlights["total_events"],
         )
         return highlights
@@ -1504,7 +1516,7 @@ class StatisticsManager:
                     return 0
                 return int(row[0] or 0)
             except Exception as ex:
-                print(f"[highlights] fallback query failed: {query[:60]}... err={ex!r}")
+                logger.debug(f"[highlights] fallback query failed: {query[:60]}... err={ex!r}")
                 return None
 
         te = _one_int(
@@ -1512,7 +1524,7 @@ class StatisticsManager:
             ts,
         )
         if te is None:
-            print("[highlights] fallback could not read total_events; returning empty template")
+            logger.debug("[highlights] fallback could not read total_events; returning empty template")
             return out
         out["total_events"] = te
         if te == 0:
@@ -1590,8 +1602,7 @@ class StatisticsManager:
             if v is not None:
                 out[key] = v
         out["total_subs"] = int(out["total_new_subs"] or 0) + int(out["total_resubs"] or 0)
-        print(
-            "[highlights] fallback totals: events=",
+        logger.debug("[highlights] fallback totals: events= %s %s %s %s %s %s %s",
             out["total_events"],
             "bits=",
             out["total_bits"],
@@ -1606,23 +1617,25 @@ class StatisticsManager:
         self, cursor: sqlite3.Cursor, start_time: float, end_time: float
     ) -> None:
         """Console diagnostics for SQLite layout vs export range (best-effort, non-fatal)."""
-        print("[highlights debug] ---- user_events DB layout ----")
-        print("[highlights debug] active_db=", self._stats_db_path)
+        logger.debug("[highlights debug] ---- user_events DB layout ----")
+        logger.debug("[highlights debug] active_db= %s", self._stats_db_path)
         legacy_path = get_data_path("statistics.db")
-        print("[highlights debug] legacy_root_db=", legacy_path)
+        logger.debug("[highlights debug] legacy_root_db= %s", legacy_path)
         for label, path in (
             ("active", self._stats_db_path),
             ("legacy_root", legacy_path),
         ):
             if not path:
-                print(f"[highlights debug] {label}: (no path)")
+                logger.debug(f"[highlights debug] {label}: (no path)")
                 continue
             try:
                 exists = os.path.isfile(path)
                 sz = os.path.getsize(path) if exists else None
-                print(f"[highlights debug] {label} exists={exists} size_bytes={sz}")
+                logger.debug(f"[highlights debug] {label} exists={exists} size_bytes={sz}")
             except OSError as e:
-                print(f"[highlights debug] {label} path stat error:", repr(e))
+                logger.debug(
+                    f"[highlights debug] {label} path stat error: {e!r}"
+                )
 
         def _safe_ts_label(name: str, ts: Any) -> str:
             if ts is None:
@@ -1638,29 +1651,29 @@ class StatisticsManager:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='user_events'"
             )
             if not cursor.fetchone():
-                print("[highlights debug] no table user_events in this database file")
-                print("[highlights debug] ---- end layout ----")
+                logger.debug("[highlights debug] no table user_events in this database file")
+                logger.debug("[highlights debug] ---- end layout ----")
                 return
         except sqlite3.Error as e:
-            print("[highlights debug] sqlite_master check failed:", repr(e))
-            print("[highlights debug] ---- end layout ----")
+            logger.debug("[highlights debug] sqlite_master check failed: %s", repr(e))
+            logger.debug("[highlights debug] ---- end layout ----")
             return
 
         try:
             cursor.execute("PRAGMA table_info(user_events)")
             cols = cursor.fetchall()
-            print("[highlights debug] PRAGMA table_info(user_events):", cols)
+            logger.debug("[highlights debug] PRAGMA table_info(user_events): %s", cols)
         except sqlite3.Error as e:
-            print("[highlights debug] PRAGMA table_info failed:", repr(e))
+            logger.debug("[highlights debug] PRAGMA table_info failed: %s", repr(e))
 
         try:
             cursor.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='user_events'"
             )
             row = cursor.fetchone()
-            print("[highlights debug] CREATE sql:", row[0] if row else None)
+            logger.debug("[highlights debug] CREATE sql: %s", row[0] if row else None)
         except sqlite3.Error as e:
-            print("[highlights debug] sqlite_master sql fetch failed:", repr(e))
+            logger.debug("[highlights debug] sqlite_master sql fetch failed: %s", repr(e))
 
         total_rows = 0
         mn_ts: Any = None
@@ -1671,8 +1684,7 @@ class StatisticsManager:
             if r:
                 total_rows = int(r[0] or 0)
                 mn_ts, mx_ts = r[1], r[2]
-            print(
-                "[highlights debug] total_rows=",
+            logger.debug("[highlights debug] total_rows= %s %s %s",
                 total_rows,
                 _safe_ts_label("min_timestamp", mn_ts),
                 _safe_ts_label("max_timestamp", mx_ts),
@@ -1680,17 +1692,15 @@ class StatisticsManager:
             if mx_ts is not None:
                 try:
                     if float(mx_ts) > 1e12:
-                        print(
-                            "[highlights debug] hint: max_timestamp > 1e12 — "
+                        logger.debug("[highlights debug] hint: max_timestamp > 1e12 — "
                             "values may be milliseconds; export range uses Unix seconds."
                         )
                 except (TypeError, ValueError):
                     pass
         except sqlite3.Error as e:
-            print("[highlights debug] COUNT/MIN/MAX timestamp failed:", repr(e))
+            logger.debug("[highlights debug] COUNT/MIN/MAX timestamp failed: %s", repr(e))
 
-        print(
-            "[highlights debug] export_range ",
+        logger.debug("[highlights debug] export_range  %s %s",
             _safe_ts_label("start_time", start_time),
             _safe_ts_label("end_time", end_time),
         )
@@ -1701,9 +1711,9 @@ class StatisticsManager:
                 (start_time, end_time),
             )
             in_range = int(cursor.fetchone()[0] or 0)
-            print("[highlights debug] rows_in_export_range=", in_range)
+            logger.debug("[highlights debug] rows_in_export_range= %s", in_range)
         except sqlite3.Error as e:
-            print("[highlights debug] rows_in_range query failed:", repr(e))
+            logger.debug("[highlights debug] rows_in_range query failed: %s", repr(e))
 
         try:
             cursor.execute(
@@ -1711,9 +1721,9 @@ class StatisticsManager:
                 "GROUP BY event_type ORDER BY c DESC LIMIT 40"
             )
             et = cursor.fetchall()
-            print("[highlights debug] event_type counts (top 40):", et)
+            logger.debug("[highlights debug] event_type counts (top 40): %s", et)
         except sqlite3.Error as e:
-            print("[highlights debug] event_type breakdown failed:", repr(e))
+            logger.debug("[highlights debug] event_type breakdown failed: %s", repr(e))
 
         try:
             cursor.execute(
@@ -1725,14 +1735,13 @@ class StatisticsManager:
                     "SELECT * FROM user_events ORDER BY timestamp ASC LIMIT 5"
                 )
                 samples = cursor.fetchall()
-            print(
-                "[highlights debug] sample rows (up to 5):",
+            logger.debug("[highlights debug] sample rows (up to 5): %s",
                 [tuple(r) for r in samples],
             )
         except sqlite3.Error as e:
-            print("[highlights debug] sample rows failed:", repr(e))
+            logger.debug("[highlights debug] sample rows failed: %s", repr(e))
 
-        print("[highlights debug] ---- end layout ----")
+        logger.debug("[highlights debug] ---- end layout ----")
 
     def get_date_range_highlights(
         self, start_time: float, end_time: float
@@ -1746,8 +1755,7 @@ class StatisticsManager:
         Returns:
             Dictionary of highlight metrics (top donors, totals, etc.).
         """
-        print(
-            "[highlights] get_date_range_highlights range:",
+        logger.debug("[highlights] get_date_range_highlights range: %s %s %s %s %s %s",
             start_time,
             end_time,
             "db_path=",
@@ -1756,13 +1764,13 @@ class StatisticsManager:
             self._stats_db_initialized,
         )
         if not self._stats_db_initialized:
-            print("[highlights] stats DB not initialized — returning {}")
+            logger.debug("[highlights] stats DB not initialized — returning {}")
             return {}
         conn = None
         try:
             conn = self._get_stats_db_connection()
             if conn is None:
-                print("[highlights] no DB connection — returning {}")
+                logger.debug("[highlights] no DB connection — returning {}")
                 return {}
             cursor = conn.cursor()
             self._debug_print_user_events_db_layout(cursor, start_time, end_time)
@@ -1770,21 +1778,19 @@ class StatisticsManager:
                 data = self._compute_highlights_from_user_events(
                     cursor, start_time, end_time
                 )
-                print(
-                    "[highlights] full compute OK total_events=",
+                logger.debug("[highlights] full compute OK total_events= %s",
                     data.get("total_events"),
                 )
                 return data
             except Exception as e:
-                print("[highlights] full compute FAILED:", repr(e))
+                logger.debug("[highlights] full compute FAILED: %s", repr(e))
                 logger.error(
                     "Full highlights compute failed, using fallback: %s",
                     e,
                     exc_info=True,
                 )
                 fb = self._compute_highlights_fallback(cursor, start_time, end_time)
-                print(
-                    "[highlights] fallback result total_events=",
+                logger.debug("[highlights] fallback result total_events= %s %s %s",
                     fb.get("total_events"),
                     "partial=",
                     fb.get("_fallback_partial"),
@@ -1794,7 +1800,7 @@ class StatisticsManager:
             logger.error(
                 "Error getting date range highlights: %s", e, exc_info=True
             )
-            print("[highlights] get_date_range_highlights outer error:", repr(e))
+            logger.debug("[highlights] get_date_range_highlights outer error: %s", repr(e))
             return {}
         finally:
             self._return_stats_db_connection(conn)
@@ -1812,8 +1818,7 @@ class StatisticsManager:
         te = int(sql.get("total_events", 0) or 0)
         if te:
             src = "event_log_fallback" if sql.get("_fallback_partial") else "event_log"
-            print(
-                "[highlights] get_highlights_for_export: source=",
+            logger.debug("[highlights] get_highlights_for_export: source= %s %s %s %s %s",
                 src,
                 "total_events=",
                 te,
@@ -1824,8 +1829,7 @@ class StatisticsManager:
         life = self._compute_highlights_from_lifetime()
         lte = int(life.get("total_events", 0) or 0)
         if lte:
-            print(
-                "[highlights] get_highlights_for_export: source=lifetime total_events=",
+            logger.debug("[highlights] get_highlights_for_export: source=lifetime total_events= %s %s %s %s %s",
                 lte,
                 "lifetime_partial=",
                 life.get("_fallback_partial"),
@@ -1833,7 +1837,7 @@ class StatisticsManager:
                 list(life.keys())[:10],
             )
             return life, "lifetime"
-        print("[highlights] get_highlights_for_export: empty (no event log or lifetime data)")
+        logger.debug("[highlights] get_highlights_for_export: empty (no event log or lifetime data)")
         return {}, "empty"
 
     def get_event_log_summary(self) -> Dict[str, Any]:
@@ -2260,14 +2264,15 @@ class StatisticsManager:
         try:
             logger.debug("Starting statistics save to database")
 
-            # Update session duration
-            self.data.session.session_duration = (
-                time.time() - self.data.session.start_time
-            )
-            self.data.session.last_save_time = time.time()
+            with self._data_lock:
+                # Update session duration
+                self.data.session.session_duration = (
+                    time.time() - self.data.session.start_time
+                )
+                self.data.session.last_save_time = time.time()
 
-            # Convert to dictionary for storage
-            data_dict = {
+                # Convert to dictionary for storage
+                data_dict = {
                 "data": {
                     "alerts": {
                         "bit_alerts_played": self.data.alerts.bit_alerts_played,
@@ -2473,6 +2478,7 @@ class StatisticsManager:
         except Exception as e:
             logger.error(f"Error saving statistics to database: {e}")
 
+    @_stats_data_locked
     def _track_user_alert(self, username: str, alert_type: str):
         """Helper method to track per-user alert statistics"""
         if username not in self.data.alerts.user_stats:
@@ -2493,6 +2499,7 @@ class StatisticsManager:
         if user_stats.total_alerts == 1:
             user_stats.first_seen = current_time
 
+    @_stats_data_locked
     def _track_alert_type(self, alert_type: str, alert_name: str = ""):
         """Helper method to track individual alert type statistics"""
         if alert_type not in self.data.alerts.alert_type_stats:
@@ -2518,6 +2525,7 @@ class StatisticsManager:
             alert_stats.alert_name = alert_name
 
     # Alert Statistics Methods
+    @_stats_data_locked
     def increment_bit_alerts(
         self, bit_amount: int = 0, username: Optional[str] = None, alert_name: str = ""
     ):
@@ -2537,6 +2545,7 @@ class StatisticsManager:
             f"Bit alerts incremented to: {self.data.alerts.bit_alerts_played}, total bits: {self.data.alerts.total_bits}"
         )
 
+    @_stats_data_locked
     def increment_resubs(self, username: Optional[str] = None, alert_name: str = ""):
         """Increment resubs played count"""
         self.data.alerts.resubs_played += 1
@@ -2551,6 +2560,7 @@ class StatisticsManager:
 
         logger.debug(f"Resubs incremented to: {self.data.alerts.resubs_played}")
 
+    @_stats_data_locked
     def increment_new_subs(self, username: Optional[str] = None, alert_name: str = ""):
         """Increment new subs played count"""
         self.data.alerts.new_subs_played += 1
@@ -2565,6 +2575,7 @@ class StatisticsManager:
 
         logger.debug(f"New subs incremented to: {self.data.alerts.new_subs_played}")
 
+    @_stats_data_locked
     def increment_gift_subs(
         self,
         gift_quantity: int = 1,
@@ -2587,6 +2598,7 @@ class StatisticsManager:
             f"Gift subs incremented to: {self.data.alerts.gift_subs_played}, total gift subs: {self.data.alerts.total_gift_subs}"
         )
 
+    @_stats_data_locked
     def increment_follow_alerts(
         self, username: Optional[str] = None, alert_name: str = ""
     ):
@@ -2605,6 +2617,7 @@ class StatisticsManager:
             f"Follow alerts incremented to: {self.data.alerts.follow_alerts_played}"
         )
 
+    @_stats_data_locked
     def increment_watch_streak_alerts(
         self,
         streak_count: int,
@@ -2640,6 +2653,7 @@ class StatisticsManager:
             self.data.alerts.highest_watch_streak_seen,
         )
 
+    @_stats_data_locked
     def increment_raids(self, username: Optional[str] = None, alert_name: str = ""):
         """Increment raids count"""
         self.data.alerts.raids += 1
@@ -2654,6 +2668,7 @@ class StatisticsManager:
 
         logger.info(f"Raids incremented to: {self.data.alerts.raids}")
 
+    @_stats_data_locked
     def increment_point_alerts(
         self,
         username: Optional[str] = None,
@@ -2679,6 +2694,7 @@ class StatisticsManager:
             f"Point alerts incremented to: {self.data.alerts.point_alerts_redeemed}"
         )
 
+    @_stats_data_locked
     def increment_channel_points_redeemed(
         self, points_amount: int, username: Optional[str] = None
     ):
@@ -2714,6 +2730,7 @@ class StatisticsManager:
             f"Channel points redeemed incremented by {points_amount} to: {self.data.alerts.total_channel_points_redeemed}"
         )
 
+    @_stats_data_locked
     def increment_donations(self, username: Optional[str] = None, alert_name: str = ""):
         """Increment donations count"""
         self.data.alerts.donations += 1
@@ -2729,6 +2746,7 @@ class StatisticsManager:
         logger.info(f"Donations incremented to: {self.data.alerts.donations}")
 
     # Hype Train Statistics Methods
+    @_stats_data_locked
     def increment_hype_train_completion(self, level: int):
         """Increment hype train completion for specific level (supports unlimited levels)"""
         # Ensure level is an integer
@@ -2760,6 +2778,7 @@ class StatisticsManager:
 
     # Connector Statistics Methods
 
+    @_stats_data_locked
     def increment_connectors_triggered(
         self, username: Optional[str] = None, connector_name: str = ""
     ):
@@ -2783,6 +2802,7 @@ class StatisticsManager:
             f"Connectors triggered incremented to: {self.data.connectors.connectors_triggered}"
         )
 
+    @_stats_data_locked
     def increment_connector_triggers(
         self, count: int = 1, username: Optional[str] = None, connector_name: str = ""
     ):
@@ -2809,6 +2829,7 @@ class StatisticsManager:
             f"Total connector triggers incremented to: {self.data.connectors.total_triggers}"
         )
 
+    @_stats_data_locked
     def _track_user_chatbot(self, username: str, stat_type: str):
         """Helper method to track per-user chatbot statistics"""
         if username not in self.data.chatbot.user_stats:
@@ -2829,6 +2850,7 @@ class StatisticsManager:
         if user_stats.total_interactions == 1:
             user_stats.first_seen = current_time
 
+    @_stats_data_locked
     def _track_command(self, command_name: str):
         """Helper method to track individual command statistics"""
         if command_name not in self.data.chatbot.command_stats:
@@ -2847,6 +2869,7 @@ class StatisticsManager:
         if command_stats.usage_count == 1:
             command_stats.first_used = current_time
 
+    @_stats_data_locked
     def _track_event(self, event_name: str):
         """Helper method to track individual event statistics"""
         if event_name not in self.data.chatbot.event_stats:
@@ -2865,6 +2888,7 @@ class StatisticsManager:
         if event_stats.trigger_count == 1:
             event_stats.first_triggered = current_time
 
+    @_stats_data_locked
     def _track_user_command(self, username: str, command_name: str):
         """Helper method to track per-user command usage"""
         if username not in self.data.chatbot.user_command_stats:
@@ -2885,6 +2909,7 @@ class StatisticsManager:
         ):
             user_stats.first_seen = current_time
 
+    @_stats_data_locked
     def _track_user_event(self, username: str, event_name: str):
         """Helper method to track per-user event usage"""
         if username not in self.data.chatbot.user_event_stats:
@@ -2905,6 +2930,7 @@ class StatisticsManager:
         ):
             user_stats.first_seen = current_time
 
+    @_stats_data_locked
     def _track_user_connector(self, username: str, connector_name: str):
         """Helper method to track per-user connector usage"""
         if username not in self.data.connectors.user_connector_stats:
@@ -2927,6 +2953,7 @@ class StatisticsManager:
         if user_stats.total_triggers == 1:
             user_stats.first_seen = current_time
 
+    @_stats_data_locked
     def _track_individual_connector(self, connector_name: str):
         """Helper method to track individual connector usage (global, not per-user)"""
         if connector_name not in self.data.connectors.connector_stats:
@@ -2949,6 +2976,7 @@ class StatisticsManager:
 
     # Chatbot Statistics Methods
 
+    @_stats_data_locked
     def increment_commands_triggered(
         self, username: Optional[str] = None, command_name: str = ""
     ):
@@ -2976,6 +3004,7 @@ class StatisticsManager:
             f"Commands triggered incremented to: {self.data.chatbot.commands_triggered}"
         )
 
+    @_stats_data_locked
     def increment_events_triggered(
         self, username: Optional[str] = None, event_name: str = ""
     ):
@@ -3001,6 +3030,7 @@ class StatisticsManager:
             f"Events triggered incremented to: {self.data.chatbot.events_triggered}"
         )
 
+    @_stats_data_locked
     def _track_user_quote(self, username: str, quote_id: str):
         """Helper method to track per-user quote statistics"""
         if username not in self.data.quotes.user_stats:
@@ -3024,6 +3054,7 @@ class StatisticsManager:
 
     # Quote Statistics Methods
 
+    @_stats_data_locked
     def increment_quote_redeemed(self, quote_id: str, username: Optional[str] = None):
         """Increment quote redeemed count for specific quote"""
         if quote_id not in self.data.quotes.individual_quote_usage:
@@ -3042,6 +3073,7 @@ class StatisticsManager:
 
     # Giveaway statistics
 
+    @_stats_data_locked
     def record_giveaway_entry(self, username: Optional[str] = None):
         """Count a successful giveaway pool entry (chat keyword match)."""
         self.data.giveaways.total_entry_events += 1
@@ -3052,6 +3084,7 @@ class StatisticsManager:
             self.data.giveaways.total_entry_events,
         )
 
+    @_stats_data_locked
     def record_giveaway_winner(self, username: str):
         """Increment lifetime wins for a display name."""
         if not username:
@@ -3061,6 +3094,7 @@ class StatisticsManager:
         self._record_event(username, "giveaway_win", 1.0, "")
         logger.debug("Giveaway win recorded for %s", username)
 
+    @_stats_data_locked
     def record_giveaway_round_complete(self):
         """Count one completed draw (Draw winners click)."""
         self.data.giveaways.giveaways_completed += 1
@@ -3075,6 +3109,7 @@ class StatisticsManager:
             self.data.giveaways.giveaways_completed,
         )
 
+    @_stats_data_locked
     def _track_user_chat(self, username: str):
         """Helper method to track per-user chat statistics"""
         if username not in self.data.chat.user_stats:
@@ -3093,6 +3128,7 @@ class StatisticsManager:
             user_stats.first_seen = current_time
 
     # Chat Statistics Methods
+    @_stats_data_locked
     def increment_twitch_messages(self, username: Optional[str] = None):
         """Increment Twitch messages received count"""
         self.data.chat.twitch_messages_received += 1
@@ -3108,6 +3144,7 @@ class StatisticsManager:
         )
 
     # Template Statistics Methods
+    @_stats_data_locked
     def submit_template_stat(
         self,
         template_name: str,
@@ -3218,6 +3255,7 @@ class StatisticsManager:
             template_name, counter_name, increment, increment=True
         )
 
+    @_stats_data_locked
     def reset_template_stats(
         self, template_name: Optional[str] = None, stat_name: Optional[str] = None
     ):
@@ -3422,6 +3460,7 @@ class StatisticsManager:
             / 3600,
         }
 
+    @_stats_data_locked
     def reset_statistics(self, category: Optional[str] = None):
         """Reset statistics - optionally for specific category only"""
         if category is None:

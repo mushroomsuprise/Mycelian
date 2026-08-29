@@ -4685,7 +4685,7 @@ Settings are stored in:
 > **Tip:** If you're just getting started, follow the [Welcome to Mycelian](help:getting_started_intro) guide which walks through essential settings step by step.
         """,
         keywords=["settings", "configuration", "preferences", "setup"],
-        related_topics=["integrations_twitch", "settings_backup", "game_hooks"],
+        related_topics=["integrations_twitch", "getting_started_intro", "game_hooks"],
     ),
     "game_hooks": HelpTopic(
         id="game_hooks",
@@ -5855,7 +5855,7 @@ Placeholders: `{platform}`, `{title}`, `{url}`
             "server",
             "guild",
         ],
-        related_topics=["integrations_twitch", "integrations_youtube", "connectors_actions"],
+        related_topics=["integrations_twitch", "integrations_youtube", "connector_actions"],
         ui_context="settings.discord",
     ),
 }

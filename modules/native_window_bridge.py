@@ -217,6 +217,23 @@ def _attach_tray_hooks(window) -> None:
         logger.error("native_window_bridge: could not attach tray hooks: %s", e)
         return
 
+    def _on_shown_or_restored() -> None:
+        # Dock / taskbar / Alt-Tab can order a hidden start-minimized window on
+        # screen while it still shows about:blank. Tell the main process to restore.
+        _send_native_event("mycelian_window_shown")
+
+    for _event_name in ("shown", "restored"):
+        ev = getattr(getattr(window, "events", None), _event_name, None)
+        if ev is not None:
+            try:
+                ev += _on_shown_or_restored
+            except Exception as e:
+                logger.debug(
+                    "native_window_bridge: could not attach %s handler: %s",
+                    _event_name,
+                    e,
+                )
+
     _send_native_event("mycelian_window_ready", url=_app_url)
 
 

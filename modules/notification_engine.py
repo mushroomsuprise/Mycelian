@@ -197,6 +197,7 @@ _last_emit_monotonic: Dict[str, float] = {}
 _history: List[Dict[str, Any]] = []
 _history_refresh_callbacks: List[Callable[[], None]] = []
 _pending_toasts: List[tuple[str, Dict[str, Any]]] = []
+_history_lock = threading.RLock()
 _MAX_PENDING_TOASTS = 20
 
 
@@ -235,26 +236,31 @@ def load_history() -> None:
     global _history
     p = _history_path()
     if not p.exists():
-        _history = []
+        with _history_lock:
+            _history = []
         return
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, list):
-            _history = [x for x in data if isinstance(x, dict)]
-        else:
-            _history = []
+        with _history_lock:
+            if isinstance(data, list):
+                _history = [x for x in data if isinstance(x, dict)]
+            else:
+                _history = []
     except Exception as e:
         logger.warning("Could not load notification history: %s", e)
-        _history = []
+        with _history_lock:
+            _history = []
 
 
 def save_history() -> None:
     p = _history_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
+        with _history_lock:
+            payload = list(_history[-MAX_HISTORY_ITEMS:])
         with open(p, "w", encoding="utf-8") as f:
-            json.dump(_history[-MAX_HISTORY_ITEMS:], f, indent=2)
+            json.dump(payload, f, indent=2)
     except Exception as e:
         logger.warning("Could not save notification history: %s", e)
 
@@ -273,20 +279,23 @@ def _trigger_history_refresh() -> None:
 
 
 def get_history() -> List[Dict[str, Any]]:
-    return list(_history)
+    with _history_lock:
+        return list(_history)
 
 
 def clear_history() -> None:
     global _history
-    _history = []
-    save_history()
+    with _history_lock:
+        _history = []
+        save_history()
     _trigger_history_refresh()
 
 
 def remove_history_item(item_id: str) -> None:
     global _history
-    _history = [h for h in _history if h.get("id") != item_id]
-    save_history()
+    with _history_lock:
+        _history = [h for h in _history if h.get("id") != item_id]
+        save_history()
     _trigger_history_refresh()
 
 
@@ -478,13 +487,18 @@ def _deliver_toast(message: str, opts: Dict[str, Any]) -> bool:
 
 def flush_pending_toasts() -> None:
     """Retry toasts queued before the NiceGUI client was available."""
-    if not _pending_toasts:
-        return
+    with _history_lock:
+        if not _pending_toasts:
+            return
+        pending = list(_pending_toasts)
+        _pending_toasts.clear()
     still_pending: List[tuple[str, Dict[str, Any]]] = []
-    for message, opts in _pending_toasts:
+    for message, opts in pending:
         if not _deliver_toast(message, opts):
             still_pending.append((message, opts))
-    _pending_toasts[:] = still_pending
+    if still_pending:
+        with _history_lock:
+            _pending_toasts[:] = still_pending + list(_pending_toasts)
 
 
 def notify(
@@ -524,10 +538,11 @@ def notify(
         "dedupe_key": dedupe_key,
         "actions": actions or [],
     }
-    _history.append(entry)
-    if len(_history) > MAX_HISTORY_ITEMS:
-        del _history[: len(_history) - MAX_HISTORY_ITEMS]
-    save_history()
+    with _history_lock:
+        _history.append(entry)
+        if len(_history) > MAX_HISTORY_ITEMS:
+            del _history[: len(_history) - MAX_HISTORY_ITEMS]
+        save_history()
     _trigger_history_refresh()
 
     if not skip_toast:
@@ -539,9 +554,10 @@ def notify(
             **kwargs,
         )
         if not _deliver_toast(message, opts):
-            _pending_toasts.append((message, dict(opts)))
-            if len(_pending_toasts) > _MAX_PENDING_TOASTS:
-                del _pending_toasts[: len(_pending_toasts) - _MAX_PENDING_TOASTS]
+            with _history_lock:
+                _pending_toasts.append((message, dict(opts)))
+                if len(_pending_toasts) > _MAX_PENDING_TOASTS:
+                    del _pending_toasts[: len(_pending_toasts) - _MAX_PENDING_TOASTS]
 
     return entry_id
 
@@ -1229,7 +1245,8 @@ def _compute_tray_badge_count() -> int:
     if _notification_panel_is_open():
         return 0
     cut = _history_last_read_ts
-    return sum(1 for e in _history if float(e.get("ts") or 0.0) > cut)
+    with _history_lock:
+        return sum(1 for e in _history if float(e.get("ts") or 0.0) > cut)
 
 
 def _tray_badge_display_text(count: int) -> str:

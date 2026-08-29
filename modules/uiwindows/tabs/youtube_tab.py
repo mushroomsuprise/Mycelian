@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, Any, List, Optional
 
-from nicegui import ui
+from nicegui import run, ui
 
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_sensitive_input
@@ -161,7 +161,7 @@ class YouTubeTab:
                     replace="font-semibold text-theme-error"
                 )
 
-    def _test_connection(self) -> None:
+    async def _test_connection(self) -> None:
         """Handle the Test Connection button click for YouTube"""
         try:
             import logging
@@ -188,80 +188,35 @@ class YouTubeTab:
             # Show a notification that the process is starting
             notify("Testing YouTube connection...", type="info")
 
-            # Test the connection in a separate thread
-            import threading
-
-            # Create shared result holder for thread communication
-            test_result = {
-                "status": "testing",
-                "success": None,
-                "error": None,
-            }
-
             def test_thread():
-                try:
-                    from ... import youtube
+                from ... import youtube
 
-                    # Test the connection
-                    success = youtube.test_connection()
-                    test_result["status"] = "complete"
-                    test_result["success"] = success
+                return youtube.test_connection()
 
-                except Exception as e:
-                    logger.error(
-                        f"Error in YouTube test thread: {str(e)}", exc_info=True
+            try:
+                success = await run.io_bound(test_thread)
+                if success:
+                    notify(
+                        "YouTube connection successful!",
+                        type="positive",
+                        timeout=3000,
                     )
-                    test_result["status"] = "error"
-                    test_result["error"] = str(e)
-
-            # Start the thread
-            test_worker = threading.Thread(target=test_thread)
-            test_worker.daemon = True
-            test_worker.start()
-
-            # Use a single-shot approach with delayed execution
-            def handle_test_completion():
-                try:
-                    # Wait for thread to complete (up to 5 seconds)
-                    test_worker.join(timeout=5.0)
-
-                    if test_result["status"] == "complete":
-                        if test_result["success"]:
-                            notify(
-                                "YouTube connection successful!",
-                                type="positive",
-                                timeout=3000,
-                            )
-                            logger.info(
-                                "YouTube connection test completed successfully"
-                            )
-                        else:
-                            notify(
-                                "YouTube connection failed. Please check your API key and channel URLs.",
-                                type="negative",
-                                timeout=5000,
-                            )
-                            logger.warning("YouTube connection test failed")
-
-                    elif test_result["status"] == "error":
-                        notify(
-                            f"Error testing YouTube connection: {test_result['error']}",
-                            type="negative",
-                        )
-                        logger.error(
-                            f"YouTube connection test error: {test_result['error']}"
-                        )
-
-                    # Refresh the status display
-                    self._refresh_status()
-
-                except Exception as e:
-                    logger.error(f"Error handling YouTube test completion: {str(e)}")
-                finally:
-                    self._cleanup_test()
-
-            # Execute completion handler after a delay
-            layout_schedule(1.0, handle_test_completion, once=True)
+                    logger.info("YouTube connection test completed successfully")
+                else:
+                    notify(
+                        "YouTube connection failed. Please check your API key and channel URLs.",
+                        type="negative",
+                        timeout=5000,
+                    )
+                    logger.warning("YouTube connection test failed")
+                self._refresh_status()
+            except Exception as e:
+                logger.error(
+                    f"Error in YouTube test: {str(e)}", exc_info=True
+                )
+                notify(f"Error testing YouTube connection: {e}", type="negative")
+            finally:
+                self._cleanup_test()
 
         except Exception as e:
             import logging

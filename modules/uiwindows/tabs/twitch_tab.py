@@ -22,6 +22,20 @@ from ... import dataobjects
 from ...dataobjects import state_manager
 
 
+def _stop_ui_timer(timer) -> None:
+    """NiceGUI 3 ignores ``return False`` from timer callbacks; deactivate explicitly."""
+    if timer is None:
+        return
+    try:
+        timer.active = False
+    except Exception:
+        pass
+    try:
+        timer.cancel()
+    except Exception:
+        pass
+
+
 class TwitchTab:
     name = "Twitch"
 
@@ -512,9 +526,11 @@ class TwitchTab:
             oauth_worker.start()
 
             # Create a timer to check the result from main thread
+            oauth_timer_holder: Dict[str, Any] = {"timer": None}
+
             def check_oauth_result():
                 if oauth_result["status"] == "connecting":
-                    return True  # Continue checking
+                    return
                 elif (
                     oauth_result["status"] == "complete"
                     and not oauth_result["notification_shown"]
@@ -547,7 +563,8 @@ class TwitchTab:
                         logger.error(
                             f"Error updating UI after main Twitch OAuth: {str(e)}"
                         )
-                    return False  # Stop checking
+                    _stop_ui_timer(oauth_timer_holder.get("timer"))
+                    return
                 elif (
                     oauth_result["status"] == "error"
                     and not oauth_result["notification_shown"]
@@ -566,11 +583,12 @@ class TwitchTab:
                             self.ui_elements["main_connect_button"].enable()
                     except Exception as ui_error:
                         logger.error(f"Error handling UI error update: {str(ui_error)}")
-                    return False  # Stop checking
+                    _stop_ui_timer(oauth_timer_holder.get("timer"))
+                    return
                 elif oauth_result["notification_shown"]:
-                    # Notification already shown, stop checking
-                    return False
-                return False  # Default stop
+                    _stop_ui_timer(oauth_timer_holder.get("timer"))
+                    return
+                _stop_ui_timer(oauth_timer_holder.get("timer"))
 
             # Start timer to check results with timeout protection
             check_count = {"count": 0}  # Use dict to maintain reference in closure
@@ -596,12 +614,14 @@ class TwitchTab:
                             "Connect Main Account"
                         )
                         self.ui_elements["main_connect_button"].enable()
-                    return False  # Stop timer
+                    _stop_ui_timer(oauth_timer_holder.get("timer"))
+                    return
 
                 # Call the original check function
-                return check_oauth_result()
+                check_oauth_result()
 
             oauth_timer = layout_schedule(0.2, check_oauth_result_with_timeout)
+            oauth_timer_holder["timer"] = oauth_timer
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(oauth_timer)
@@ -647,8 +667,8 @@ class TwitchTab:
             # Show a notification that the process is starting
             notify("Starting chatbot Twitch OAuth connection...", type="info")
 
-            # Save settings to ensure chatbot credentials are persisted
-            self.save()
+            # Persist chatbot credentials without flushing the rest of the Twitch tab.
+            self._save_settings_only()
 
             # Start the OAuth reconnection in a separate thread
             import threading
@@ -682,9 +702,11 @@ class TwitchTab:
             oauth_worker.start()
 
             # Create a timer to check the result from main thread
+            oauth_timer_holder: Dict[str, Any] = {"timer": None}
+
             def check_oauth_result():
                 if oauth_result["status"] == "connecting":
-                    return True  # Continue checking
+                    return
                 elif (
                     oauth_result["status"] == "complete"
                     and not oauth_result["notification_shown"]
@@ -717,7 +739,8 @@ class TwitchTab:
                         logger.error(
                             f"Error updating UI after chatbot Twitch OAuth: {str(e)}"
                         )
-                    return False  # Stop checking
+                    _stop_ui_timer(oauth_timer_holder.get("timer"))
+                    return
                 elif (
                     oauth_result["status"] == "error"
                     and not oauth_result["notification_shown"]
@@ -736,11 +759,12 @@ class TwitchTab:
                             self.ui_elements["chatbot_connect_button"].enable()
                     except Exception as ui_error:
                         logger.error(f"Error handling UI error update: {str(ui_error)}")
-                    return False  # Stop checking
+                    _stop_ui_timer(oauth_timer_holder.get("timer"))
+                    return
                 elif oauth_result["notification_shown"]:
-                    # Notification already shown, stop checking
-                    return False
-                return False  # Default stop
+                    _stop_ui_timer(oauth_timer_holder.get("timer"))
+                    return
+                _stop_ui_timer(oauth_timer_holder.get("timer"))
 
             # Start timer to check results with timeout protection
             check_count = {"count": 0}  # Use dict to maintain reference in closure
@@ -766,12 +790,14 @@ class TwitchTab:
                             "Connect Chatbot"
                         )
                         self.ui_elements["chatbot_connect_button"].enable()
-                    return False  # Stop timer
+                    _stop_ui_timer(oauth_timer_holder.get("timer"))
+                    return
 
                 # Call the original check function
-                return check_oauth_result()
+                check_oauth_result()
 
             oauth_timer = layout_schedule(0.2, check_oauth_result_with_timeout)
+            oauth_timer_holder["timer"] = oauth_timer
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(oauth_timer)
@@ -793,15 +819,21 @@ class TwitchTab:
                 self.ui_elements["chatbot_connect_button"].enable()
 
     def _save_settings_only(self) -> None:
-        """Save only Twitch credentials without triggering full save"""
+        """Save only Twitch / chatbot credentials without triggering a full tab save."""
         try:
-            # Persist credentials only
             from ... import api_credentials_manager
 
             api_credentials_manager.update_twitch_credentials(
                 client_id=self._creds.get("client_id", ""),
                 client_secret=self._creds.get("client_secret", ""),
             )
+            chatbot_id = (self._creds.get("chatbot_client_id") or "").strip() or None
+            chatbot_secret = (self._creds.get("chatbot_client_secret") or "").strip() or None
+            if chatbot_id or chatbot_secret:
+                api_credentials_manager.update_chatbot_credentials(
+                    client_id=chatbot_id,
+                    client_secret=chatbot_secret,
+                )
         except Exception as e:
             import logging
 

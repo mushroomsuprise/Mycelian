@@ -707,6 +707,15 @@ def _clear_game_data_if_needed():
         )
 
 
+def _public_psn_payload(psn_data) -> dict:
+    """Socket.IO payload for overlays — never include NPSSO / auth secrets."""
+    import dataclasses
+
+    payload = dataclasses.asdict(psn_data)
+    payload.pop("npsso_code", None)
+    return payload
+
+
 def _update_and_broadcast():
     """Helper to update state manager and broadcast to WebSocket clients."""
     global psn_client_instance, _mismatch_notification_times
@@ -728,10 +737,7 @@ def _update_and_broadcast():
             hasattr(web_engine, "web_engine_instance")
             and web_engine.web_engine_instance
         ):
-            # Convert PSN data to dict for JSON serialization
-            import dataclasses
-
-            psn_data_dict = dataclasses.asdict(psn_client_instance.psn_data)
+            psn_data_dict = _public_psn_payload(psn_client_instance.psn_data)
 
             # Emit the updated data to all connected clients
             web_engine.web_engine_instance.safe_emit("psn_data_update", psn_data_dict)
@@ -799,18 +805,19 @@ def start_psn_data_updater_thread():
         logger.debug("Not starting PSN update thread: No NPSSO code in PSNClient data.")
         return
 
-    if psn_update_thread is None or not psn_update_thread.is_alive():
-        logger.info("Starting PSN data updater thread (PSN Service)...")
-        stop_psn_thread_event.clear()
-        psn_update_thread = threading.Thread(
-            target=psn_data_update_loop, daemon=True, name="PSNUpdateThread"
-        )
-        psn_update_thread.start()
-        logger.info(
-            f"PSN update thread started successfully. Thread alive: {psn_update_thread.is_alive()}"
-        )
-    else:
+    if psn_update_thread is not None and psn_update_thread.is_alive():
         logger.info("PSN data updater thread (PSN Service) already running.")
+        return
+
+    logger.info("Starting PSN data updater thread (PSN Service)...")
+    stop_psn_thread_event.clear()
+    psn_update_thread = threading.Thread(
+        target=psn_data_update_loop, daemon=True, name="PSNUpdateThread"
+    )
+    psn_update_thread.start()
+    logger.info(
+        f"PSN update thread started successfully. Thread alive: {psn_update_thread.is_alive()}"
+    )
 
 
 def stop_psn_data_updater_thread(*, join_timeout: float = 5.0) -> None:
@@ -827,8 +834,8 @@ def stop_psn_data_updater_thread(*, join_timeout: float = 5.0) -> None:
                 "PSN data updater thread (PSN Service) did not stop within %.1fs.",
                 join_timeout,
             )
-        else:
-            logger.info("PSN data updater thread (PSN Service) stopped successfully.")
+            return
+        logger.info("PSN data updater thread (PSN Service) stopped successfully.")
         psn_update_thread = None
     else:
         logger.info(
@@ -933,10 +940,7 @@ def handle_psn_settings_change():
                     hasattr(web_engine, "web_engine_instance")
                     and web_engine.web_engine_instance
                 ):
-                    # Convert PSN data to dict for JSON serialization
-                    import dataclasses
-
-                    psn_data_dict = dataclasses.asdict(psn_client_instance.psn_data)
+                    psn_data_dict = _public_psn_payload(psn_client_instance.psn_data)
 
                     # Emit the updated data to all connected clients
                     web_engine.web_engine_instance.safe_emit(
@@ -974,10 +978,7 @@ def handle_psn_settings_change():
                         hasattr(web_engine, "web_engine_instance")
                         and web_engine.web_engine_instance
                     ):
-                        # Convert PSN data to dict for JSON serialization
-                        import dataclasses
-
-                        psn_data_dict = dataclasses.asdict(psn_client_instance.psn_data)
+                        psn_data_dict = _public_psn_payload(psn_client_instance.psn_data)
 
                         # Emit the empty data to all connected clients
                         web_engine.web_engine_instance.safe_emit(
@@ -1007,10 +1008,7 @@ def handle_psn_settings_change():
                         hasattr(web_engine, "web_engine_instance")
                         and web_engine.web_engine_instance
                     ):
-                        # Convert empty PSN data to dict for JSON serialization
-                        import dataclasses
-
-                        psn_data_dict = dataclasses.asdict(empty_psn_data)
+                        psn_data_dict = _public_psn_payload(empty_psn_data)
 
                         # Emit the empty data to all connected clients
                         web_engine.web_engine_instance.safe_emit(

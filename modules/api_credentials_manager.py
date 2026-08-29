@@ -35,6 +35,7 @@ The credentials are stored encrypted in a separate JSON configuration file.
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
@@ -82,6 +83,7 @@ class APICredentialsManager:
         self.config_path = Path(config_path)
         self._credentials: Optional[APICredentials] = None
         self._initialized = False
+        self._save_lock = threading.Lock()
 
     def initialize(self) -> bool:
         """Initialize the API credentials manager"""
@@ -184,15 +186,26 @@ class APICredentialsManager:
             # Update timestamp
             from datetime import datetime
 
-            self._credentials.last_updated = datetime.now().isoformat()
+            with self._save_lock:
+                self._credentials.last_updated = datetime.now().isoformat()
 
-            # Create directory if it doesn't exist
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+                # Create directory if it doesn't exist
+                self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Save to file with pretty formatting
-            credentials_dict = asdict(self._credentials)
-            with open(self.config_path, "w") as f:
-                json.dump(credentials_dict, f, indent=2, sort_keys=True)
+                credentials_dict = asdict(self._credentials)
+                tmp_path = self.config_path.with_name(self.config_path.name + ".tmp")
+                try:
+                    with open(tmp_path, "w") as f:
+                        json.dump(credentials_dict, f, indent=2, sort_keys=True)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp_path, self.config_path)
+                except Exception:
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    raise
 
             logger.debug(f"Saved credentials to {self.config_path}")
             return True

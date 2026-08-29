@@ -195,7 +195,6 @@ class ConnectorIntegration:
     async def _handle_twitch_bits(self, data):
         """Handle Twitch bits event for connector system"""
         try:
-            print(f"[DEBUG] ConnectorIntegration._handle_twitch_bits: received bits event - bits: {data.event.bits}, user: {data.event.user_name}")
             event_data = EventData.from_twitch_bits(
                 bits_amount=data.event.bits,
                 username=data.event.user_name,
@@ -203,11 +202,8 @@ class ConnectorIntegration:
                 user_id=data.event.user_id,
                 is_anonymous=getattr(data.event, "is_anonymous", False),
             )
-            print(f"[DEBUG] ConnectorIntegration._handle_twitch_bits: created event_data: {event_data}")
             await self.manager.add_event(event_data)
-            print(f"[DEBUG] ConnectorIntegration._handle_twitch_bits: event sent to manager")
         except Exception as e:
-            print(f"[DEBUG] ConnectorIntegration._handle_twitch_bits: ERROR - {e}")
             logger.error(
                 f"Error handling Twitch bits for connector: {e}", exc_info=True
             )

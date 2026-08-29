@@ -37,12 +37,30 @@ class TemplateLogRateLimiter:
         self.max_events = max_events
         self.window_sec = window_sec
         self._buckets: Dict[str, Deque[float]] = {}
+        self._last_evict = 0.0
+
+    def _evict_idle_buckets(self, now: float, force: bool = False) -> None:
+        if not force and (now - self._last_evict) < self.window_sec:
+            return
+        self._last_evict = now
+        stale: list[str] = []
+        for bucket_key, bucket in self._buckets.items():
+            while bucket and now - bucket[0] > self.window_sec:
+                bucket.popleft()
+            if not bucket:
+                stale.append(bucket_key)
+        for bucket_key in stale:
+            self._buckets.pop(bucket_key, None)
 
     def allow(self, key: str) -> bool:
         now = time.time()
+        self._evict_idle_buckets(now)
         bucket = self._buckets.setdefault(key, deque())
         while bucket and now - bucket[0] > self.window_sec:
             bucket.popleft()
+        if not bucket:
+            self._buckets.pop(key, None)
+            bucket = self._buckets.setdefault(key, deque())
         if len(bucket) >= self.max_events:
             return False
         bucket.append(now)
@@ -50,6 +68,7 @@ class TemplateLogRateLimiter:
 
     def reset(self) -> None:
         self._buckets.clear()
+        self._last_evict = 0.0
 
 
 def _truncate(value: Any, max_len: int) -> str:

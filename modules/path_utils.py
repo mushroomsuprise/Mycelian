@@ -193,7 +193,8 @@ def reveal_in_file_manager(path: Path) -> None:
     if sys.platform == "darwin":
         subprocess.run(["open", open_path], check=True)
     elif sys.platform == "win32":
-        subprocess.run(["explorer", open_path], check=True)
+        # explorer.exe returns 1 on success; check=True would raise CalledProcessError.
+        subprocess.run(["explorer", open_path], check=False)
     elif sys.platform.startswith("linux"):
         subprocess.run(["xdg-open", open_path], check=True)
     else:

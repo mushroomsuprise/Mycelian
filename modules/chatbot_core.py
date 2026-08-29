@@ -866,13 +866,22 @@ class ChatCommand:
                     logger.error("Error making API call to %s: %s", endpoint, e)
                     raise
 
-            # Execute the async API call
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # Execute the async API call off this thread (never new_event_loop
+            # on EventSub / a thread that already has a running loop).
+            from . import twitch as twitch_mod
+
             try:
-                api_response = loop.run_until_complete(make_api_call())
-            finally:
-                loop.close()
+                asyncio.get_running_loop()
+                on_running_loop = True
+            except RuntimeError:
+                on_running_loop = False
+
+            if on_running_loop:
+                api_response = twitch_mod._run_twitch_coro_sync(
+                    make_api_call(), timeout=30
+                )
+            else:
+                api_response = asyncio.run(make_api_call())
 
             # Extract variables from API response
             extracted_vars = self._extract_api_variables(api_response)

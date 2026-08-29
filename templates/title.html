@@ -213,7 +213,7 @@
             currentTitle: "Stream Title",
             showCategory: {{ ShowCategory | default(true) | tojson }},
             categoryPrefix: {{ CategoryPrefix | tojson }},
-            categorySuffix: "{{CategorySuffix}}"
+            categorySuffix: {{ CategorySuffix | tojson }}
         };
 
         var settings = {
@@ -249,6 +249,11 @@
         // Socket event listeners
         socket.on('connect', function () {
             scheduleStreamerInfoRequest();
+        });
+
+        socket.on('template_config_updated', function (data) {
+            var name = (data && (data.template_name || data.templateName || data.template)) || '';
+            if (name === 'title') location.reload();
         });
 
         socket.on('disconnect', function () {

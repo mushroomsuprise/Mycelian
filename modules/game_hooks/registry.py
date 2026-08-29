@@ -18,7 +18,7 @@ _HOOK_TYPES: Dict[str, Type[Any]] = {}
 
 _enabled_cache: Dict[str, bool] = {}
 _enabled_cache_loaded = False
-_enabled_cache_lock = threading.Lock()
+_enabled_cache_lock = threading.RLock()
 
 
 def _register_hook(cls: Type[Any]) -> Type[Any]:

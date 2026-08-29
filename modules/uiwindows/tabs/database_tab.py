@@ -8,7 +8,7 @@ import threading
 from dataclasses import replace
 from typing import Dict, Any, Optional, List
 
-from nicegui import ui
+from nicegui import run, ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_input, form_number, form_select, form_sensitive_input
@@ -46,10 +46,9 @@ class DatabaseViewer:
         self._save_btn: Optional[ui.button] = None
         self._status_label: Optional[ui.label] = None
 
-    def show(self) -> None:
+    async def show(self) -> None:
         """Show the database viewer dialog"""
-        # Take snapshot of database
-        self._load_snapshot()
+        await self._load_snapshot()
 
         with ui.dialog().props("maximized persistent") as self.dialog:
             with (
@@ -79,11 +78,17 @@ class DatabaseViewer:
 
         self.dialog.open()
 
-    def _load_snapshot(self) -> None:
-        """Load a complete snapshot of the database"""
+    def _fetch_snapshot(self) -> tuple:
+        snapshot = database_manager.get_snapshot()
+        paths = database_manager.get_paths_from_snapshot(snapshot)
+        return snapshot, paths
+
+    async def _load_snapshot(self) -> None:
+        """Load a complete snapshot of the database off the NiceGUI thread."""
         try:
-            self.snapshot = database_manager.get_snapshot()
-            self.all_paths = database_manager.get_paths_from_snapshot(self.snapshot)
+            snapshot, paths = await run.io_bound(self._fetch_snapshot)
+            self.snapshot = snapshot
+            self.all_paths = paths
             logger.info(f"Database snapshot loaded: {len(self.all_paths)} paths found")
         except Exception as e:
             logger.error(f"Error loading database snapshot: {e}", exc_info=True)
@@ -497,7 +502,7 @@ class DatabaseViewer:
 
         notify("Editor reset", type="info")
 
-    def _save_current_path(self) -> None:
+    async def _save_current_path(self) -> None:
         """Save the current path data to database"""
         if self._json_editor is None or not self.current_path:
             return
@@ -513,7 +518,7 @@ class DatabaseViewer:
             notify(f"Saved: {self.current_path}", type="positive")
             db_type = database_manager.get_config().database_type
             if db_type in ("sql", "mongodb"):
-                self._load_snapshot()
+                await self._load_snapshot()
                 self._build_tree()
             else:
                 self._set_data_in_snapshot(self.current_path, data)
@@ -563,12 +568,12 @@ class DatabaseViewer:
 
         confirm_dialog.open()
 
-    def _execute_delete(self, path: str, dialog: ui.dialog) -> None:
+    async def _execute_delete(self, path: str, dialog: ui.dialog) -> None:
         """Execute path deletion"""
         if database_manager.delete_data(path):
             notify(f"Deleted: {path}", type="positive")
             # Refresh snapshot
-            self._load_snapshot()
+            await self._load_snapshot()
             self._build_tree()
             self.current_path = ""
             self._update_breadcrumb()
@@ -620,7 +625,7 @@ class DatabaseViewer:
 
         create_dialog.open()
 
-    def _execute_create(self, path: str, json_data: str, dialog: ui.dialog) -> None:
+    async def _execute_create(self, path: str, json_data: str, dialog: ui.dialog) -> None:
         """Execute path creation"""
         if not path or not path.strip():
             notify("Path cannot be empty", type="warning")
@@ -639,16 +644,16 @@ class DatabaseViewer:
         if database_manager.set_data(path, data):
             notify(f"Created: {path}", type="positive")
             # Refresh snapshot
-            self._load_snapshot()
+            await self._load_snapshot()
             self._build_tree()
             self._select_path(path)
             dialog.close()
         else:
             notify("Failed to create path", type="negative")
 
-    def _refresh_snapshot(self) -> None:
+    async def _refresh_snapshot(self) -> None:
         """Refresh the database snapshot"""
-        self._load_snapshot()
+        await self._load_snapshot()
         self._build_tree()
         self._update_breadcrumb()
 
@@ -788,12 +793,13 @@ class DatabaseTab:
                     replace="font-semibold text-theme-error"
                 )
 
-    def _test_connection(self) -> None:
+    async def _test_connection(self) -> None:
         """Test database connection"""
         try:
             notify("Testing database connection...", type="info")
 
-            if database_manager.test_connection():
+            ok = await run.io_bound(database_manager.test_connection)
+            if ok:
                 notify("Database connection successful!", type="positive", timeout=3000)
             else:
                 notify(

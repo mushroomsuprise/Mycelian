@@ -489,6 +489,7 @@
 
         socket.on('connect', function() {
             console.log('Giveaway template connected');
+            socket.emit('giveaway_request_state');
         });
 
         socket.on('template_config_updated', function(data) {

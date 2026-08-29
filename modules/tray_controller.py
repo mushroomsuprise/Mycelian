@@ -419,10 +419,18 @@ def register_native_event_handlers() -> None:
         if minimize_to_tray_enabled() and not is_minimized():
             minimize_to_tray(reason="window_minimize")
 
+    def _on_window_shown(_event) -> None:
+        # Dock / taskbar activation of a start-minimized blank window must restore.
+        if is_minimized():
+            restore_from_tray(reason="window_shown")
+
     event_manager.on("mycelian_window_ready", _on_window_ready)
     event_manager.on("mycelian_close_requested", _on_close_requested)
     event_manager.on("mycelian_quit_requested", _on_quit_requested)
     event_manager.on("minimized", _on_minimized)
+    event_manager.on("mycelian_window_shown", _on_window_shown)
+    event_manager.on("shown", _on_window_shown)
+    event_manager.on("restored", _on_window_shown)
     _native_handlers_registered = True
     logger.debug("Tray: native event handlers registered")
 
@@ -664,11 +672,23 @@ def apply_settings() -> None:
 
 def initialize() -> None:
     """Start the tray during deferred service init, if the settings ask for it."""
+    global _minimized
     register_native_event_handlers()
+    tray_ok = False
     if tray_wanted():
-        start_tray()
+        tray_ok = start_tray()
     if start_minimized_enabled():
-        _mark_started_minimized()
+        if tray_ok or is_tray_running():
+            _mark_started_minimized()
+        else:
+            # start_ui created a hidden about:blank window. Without a tray the
+            # app would be unreachable — show it like the tray-crash fallback.
+            logger.error(
+                "Tray: start_minimized requested but the tray icon failed to start"
+            )
+            with _state_lock:
+                _minimized = True
+            restore_from_tray(reason="start_minimized_no_tray")
     if tray_wanted():
         warn_background_database_usage()
 
@@ -685,6 +705,7 @@ def _mark_started_minimized() -> None:
     global _minimized
     with _state_lock:
         _minimized = True
+    set_dock_visible(False)
     _suspend_ui_health_monitor(True)
     _send_to_tray({"cmd": "set_state", "minimized": True})
     logger.info("Tray: started minimized to tray")

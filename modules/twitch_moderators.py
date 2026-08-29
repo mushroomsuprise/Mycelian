@@ -27,8 +27,7 @@ class ModeratorCache:
         self._last_fetch_success: bool = False
         self._ttl = _MODERATOR_CACHE_TTL_SECONDS
         self._failure_ttl = _MODERATOR_CACHE_FAILURE_TTL_SECONDS
-        self._refresh_lock = asyncio.Lock()
-        self._refresh_inflight: Optional[asyncio.Task[bool]] = None
+        self._refresh_lock = threading.Lock()
 
     def _effective_ttl(self) -> float:
         if self._last_fetch_success:
@@ -45,21 +44,17 @@ class ModeratorCache:
         if not force and not self._is_stale():
             return True
 
-        async with self._refresh_lock:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._refresh_lock.acquire)
+        try:
             if not force and not self._is_stale():
                 return True
-
-            if self._refresh_inflight is not None:
-                try:
-                    return await asyncio.shield(self._refresh_inflight)
-                except Exception:
-                    return False
-
-            self._refresh_inflight = asyncio.create_task(self._fetch_moderators())
+            return await self._fetch_moderators()
+        finally:
             try:
-                return await self._refresh_inflight
-            finally:
-                self._refresh_inflight = None
+                self._refresh_lock.release()
+            except RuntimeError:
+                pass
 
     async def refresh(self, force: bool = False) -> bool:
         """Fetch moderators from Helix GET /moderation/moderators."""
@@ -137,19 +132,16 @@ class ModeratorCache:
         """Best-effort refresh from sync context (e.g. chat handler)."""
         if not self._is_stale():
             return
-        if self._refresh_inflight is not None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            threading.Thread(
+                target=lambda: asyncio.run(self.ensure_fresh()),
+                daemon=True,
+                name="ModeratorCacheRefresh",
+            ).start()
             return
         try:
-            from . import twitch
-
-            api = twitch.twitch_api
-            if not api:
-                return
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                asyncio.run(self.ensure_fresh())
-                return
             loop.create_task(self.ensure_fresh())
         except Exception as e:
             logger.debug("Moderator cache background refresh skipped: %s", e)

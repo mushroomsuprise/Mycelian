@@ -48,6 +48,7 @@ class ConnectorManager:
         self.connectors: Dict[str, Connector] = {}
         self.event_queue: Optional[asyncio.Queue] = None
         self.processing_task = None
+        self._scheduler_task = None
         self.connector_thread = None
         self.connector_loop: Optional[asyncio.AbstractEventLoop] = None
         self.is_running = False
@@ -85,8 +86,12 @@ class ConnectorManager:
         old_task = self.processing_task
         if old_task is not None and not old_task.done():
             old_task.cancel()
+        old_sched = self._scheduler_task
+        if old_sched is not None and not old_sched.done():
+            old_sched.cancel()
         self.event_queue = asyncio.Queue()
         self.processing_task = loop.create_task(self._process_events())
+        self._scheduler_task = loop.create_task(self._connector_scheduler_loop())
         self._loop_mismatch_errors = 0
 
     def start_connector_thread(self):
@@ -131,6 +136,9 @@ class ConnectorManager:
                     if self.processing_task is not None and not self.processing_task.done():
                         self.processing_task.cancel()
                     self.processing_task = None
+                    if self._scheduler_task is not None and not self._scheduler_task.done():
+                        self._scheduler_task.cancel()
+                    self._scheduler_task = None
                     self.event_queue = None
                     self.connector_loop = None
                     try:
@@ -236,6 +244,13 @@ class ConnectorManager:
             except asyncio.CancelledError:
                 pass
         self.processing_task = None
+        if self._scheduler_task:
+            self._scheduler_task.cancel()
+            try:
+                await self._scheduler_task
+            except asyncio.CancelledError:
+                pass
+        self._scheduler_task = None
         self.event_queue = None
 
         # Cancel any active audio restoration tasks and clean up registry
@@ -335,8 +350,12 @@ class ConnectorManager:
         triggered_connectors = 0
         triggered_connector_names = []
 
+        # Snapshot under lock: UI add/remove mutates this dict from NiceGUI.
+        with self._lock:
+            connectors = list(self.connectors.items())
+
         # Process through all enabled connectors
-        for connector_id, connector in self.connectors.items():
+        for connector_id, connector in connectors:
             # Check if connector is enabled
             if not connector.enabled:
                 continue
@@ -919,15 +938,17 @@ class ConnectorManager:
     async def test_connector(
         self, connector_id: str, test_event_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Test a connector with provided event data"""
+        """Test a connector with provided event data.
+
+        Actions (sleep, aiohttp, subprocess, audio restore) must run on
+        ``connector_loop``, not the NiceGUI loop that ``background_tasks.create`` uses.
+        """
         connector = self.get_connector(connector_id)
         if not connector:
             return {"success": False, "error": "Connector not found"}
 
-        try:
-            # Process test event
+        async def _run_test() -> Dict[str, Any]:
             result = await connector.process_event(test_event_data)
-
             return {
                 "success": True,
                 "triggered": result,
@@ -938,9 +959,84 @@ class ConnectorManager:
                 "action_count": len(connector.actions),
             }
 
+        try:
+            loop = self.connector_loop
+            try:
+                current = asyncio.get_running_loop()
+            except RuntimeError:
+                current = None
+
+            if loop is None or not loop.is_running():
+                return {"success": False, "error": "Connector loop not running"}
+
+            if current is not loop:
+                fut = asyncio.run_coroutine_threadsafe(_run_test(), loop)
+                return await asyncio.wrap_future(fut)
+            return await _run_test()
+
         except Exception as e:
             logger.error(f"Error testing connector: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
+
+    async def _connector_scheduler_loop(self):
+        """Fire timer/schedule events for enabled connectors (1s tick on connector_loop)."""
+        from datetime import datetime
+
+        from .connector_integration import get_integration
+        from .connector_triggers import parse_schedule_hhmm
+
+        last_schedule_fire: Dict[str, str] = {}
+        while True:
+            await asyncio.sleep(1.0)
+            if not self.is_running:
+                continue
+            try:
+                with self._lock:
+                    connectors = list(self.connectors.items())
+
+                has_timer = False
+                due_schedules: List[Any] = []
+                now = datetime.now()
+                now_key = now.strftime("%Y-%m-%dT%H:%M")
+
+                for connector_id, connector in connectors:
+                    if not connector.enabled or not connector.trigger:
+                        continue
+                    trigger = connector.trigger
+                    ttype = getattr(trigger, "trigger_type", None)
+                    if ttype == TriggerType.TIMER:
+                        has_timer = True
+                    elif ttype == TriggerType.SCHEDULE:
+                        hhmm = parse_schedule_hhmm(trigger)
+                        if hhmm is None:
+                            continue
+                        hour, minute = hhmm
+                        if now.hour == hour and now.minute == minute:
+                            if last_schedule_fire.get(connector_id) != now_key:
+                                due_schedules.append(trigger)
+                                last_schedule_fire[connector_id] = now_key
+
+                integration = get_integration()
+                if has_timer:
+                    await integration.send_timer_event("connector_timer", 1)
+                for trigger in due_schedules:
+                    await self.add_event(
+                        {
+                            "event_type": "schedule",
+                            "trigger_id": getattr(trigger, "trigger_id", ""),
+                            "schedule_pattern": getattr(
+                                trigger, "schedule_pattern", ""
+                            ),
+                            "specific_time": getattr(trigger, "specific_time", "")
+                            or "",
+                            "timestamp": time.time(),
+                            "source": "schedule",
+                        }
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("connector scheduler tick failed", exc_info=True)
 
 
 # Global connector manager instance

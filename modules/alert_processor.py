@@ -30,10 +30,49 @@ import time
 from . import web_engine
 from .alertutils import AlertObj, initialize_alert_state
 from .notification_engine import nav_actions_settings, notify_critical
+from .shutdown import is_shutdown_in_progress
 
 ALERT_QUEUE: list[AlertObj] = []
-web_engine_instance = None  # Initialize to None
+_ALERT_QUEUE_LOCK = threading.Lock()
+web_engine_instance = None  # Initialize to None; prefer web_engine.web_engine_instance
 logger = logging.getLogger(__name__)
+
+# Global thread references
+web_thread = None
+alert_thread = None
+
+# Global flag to track Alert Queue status
+alert_queue_active = False
+
+# Global flag to track initialization status
+_initialized = False
+
+
+def enqueue_alert(obj: AlertObj) -> None:
+    """Append an alert under the queue lock (safe from any thread)."""
+    with _ALERT_QUEUE_LOCK:
+        ALERT_QUEUE.append(obj)
+
+
+def snapshot_alert_queue() -> list[AlertObj]:
+    """Return a copy of the current queue."""
+    with _ALERT_QUEUE_LOCK:
+        return list(ALERT_QUEUE)
+
+
+def remove_queued_alert(obj: AlertObj) -> bool:
+    """Remove one queued alert. Returns False if it was already gone."""
+    with _ALERT_QUEUE_LOCK:
+        try:
+            ALERT_QUEUE.remove(obj)
+            return True
+        except ValueError:
+            return False
+
+
+def _overlay_engine():
+    """Prefer the canonical web_engine singleton."""
+    return web_engine.web_engine_instance or web_engine_instance
 
 # Global thread references
 web_thread = None
@@ -130,11 +169,18 @@ def process_alert(alert: AlertObj):
         start_time = time.time()
 
         # Emit the alert data over the websocket
-        web_engine_instance.next_alert(alert_data)
+        engine = _overlay_engine()
+        if engine is None:
+            logger.error("No web engine instance; cannot process alert")
+            return
+        engine.next_alert(alert_data)
         web_engine.ALERT_PLAYING = True
 
         # Wait for alert completion with timeout protection
         while web_engine.ALERT_PLAYING:
+            if is_shutdown_in_progress():
+                web_engine.ALERT_PLAYING = False
+                break
             time.sleep(0.1)
             elapsed_time = time.time() - start_time
 
@@ -168,6 +214,10 @@ def alert_queue():
 
     while True:
         try:
+            if is_shutdown_in_progress():
+                logger.debug("Alert queue stopping due to shutdown")
+                alert_queue_active = False
+                break
             if web_engine.ALERTS_PAUSED:
                 if not paused_state_logged:
                     logger.debug("Alert queue is paused - waiting for resume")
@@ -181,20 +231,24 @@ def alert_queue():
                     logger.debug("Alert queue resumed from pause")
                     paused_state_logged = False
                 # Ensure queue is marked as active when not paused and we have alerts
-                if len(ALERT_QUEUE) > 0:
+                with _ALERT_QUEUE_LOCK:
+                    has_queued = len(ALERT_QUEUE) > 0
+                if has_queued:
                     alert_queue_active = True
 
             # Check for stackable alerts
             processed_stackable = False
-            for alert in ALERT_QUEUE[:]:  # Create a copy of the list to iterate through
+            queued = snapshot_alert_queue()
+            for alert in queued:
                 if alert.skip_alert:
                     logger.debug(f"Skipping alert: {alert.alert_type}")
-                    ALERT_QUEUE.remove(alert)
+                    remove_queued_alert(alert)
                     processed_stackable = True
                     continue
                 if alert.stackable:
                     logger.debug(f"Processing stackable alert: {alert.alert_type}")
-                    ALERT_QUEUE.remove(alert)
+                    if not remove_queued_alert(alert):
+                        continue
                     process_alert(alert)
                     processed_stackable = True
 
@@ -202,15 +256,21 @@ def alert_queue():
                 time.sleep(0.2)  # Longer sleep when alert is playing
                 continue
 
-            alert = next(iter(ALERT_QUEUE), None)
+            with _ALERT_QUEUE_LOCK:
+                alert = next(iter(ALERT_QUEUE), None)
+                if alert is not None:
+                    try:
+                        ALERT_QUEUE.remove(alert)
+                    except ValueError:
+                        alert = None
             if alert is not None:
                 logger.debug(f"Processing alert from queue: {alert.alert_type}")
-                ALERT_QUEUE.remove(alert)
                 process_alert(alert)
                 alert_queue_active = True
             else:
                 # No alerts to process, sleep longer to avoid CPU spinning
-                alert_queue_active = len(ALERT_QUEUE) > 0
+                with _ALERT_QUEUE_LOCK:
+                    alert_queue_active = len(ALERT_QUEUE) > 0
                 time.sleep(0.1 if processed_stackable else 0.5)
 
         except Exception as e:
@@ -350,8 +410,9 @@ def cleanup():
             logger.debug("Game hooks service stop: %s", e)
 
         # Stop web engine (aggressive teardown so port 5000 is released on exit)
-        if web_engine_instance:
-            web_engine_instance.force_stop()
+        engine = _overlay_engine()
+        if engine:
+            engine.force_stop()
             logger.debug("Web engine force-stopped")
 
         # Brief join; threads are daemon and exit once the queue/web server stop.
@@ -359,10 +420,10 @@ def cleanup():
             web_thread.join(timeout=15.0)
             logger.debug("Web thread joined")
 
-        if web_engine_instance and web_engine_instance._port_is_open():
+        if engine and engine._port_is_open():
             logger.error(
                 "WebEngine port %s still open after shutdown cleanup",
-                web_engine_instance.port,
+                engine.port,
             )
 
         if alert_thread and alert_thread.is_alive():

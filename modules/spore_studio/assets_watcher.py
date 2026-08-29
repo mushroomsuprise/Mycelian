@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time
 from typing import Any, Dict, List
@@ -34,6 +35,8 @@ from typing import Any, Dict, List
 from ..path_utils import get_assets_path, ensure_directory_exists
 
 logger = logging.getLogger(__name__)
+
+_TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 _POLL_INTERVAL_SECONDS = 1.5
@@ -63,9 +66,22 @@ def _classify(path: str) -> str:
     return "other"
 
 
+def _validated_template_assets_dir(template_name: str) -> str:
+    """Return the realpath of ``assets/<name>`` if the name is safe, else raise."""
+    if not isinstance(template_name, str) or not _TEMPLATE_NAME_RE.fullmatch(
+        template_name
+    ):
+        raise ValueError("Invalid template name")
+    root = os.path.realpath(get_assets_path())
+    candidate = os.path.realpath(os.path.join(root, template_name))
+    if candidate != root and not candidate.startswith(root + os.sep):
+        raise ValueError("Invalid template path")
+    return candidate
+
+
 def _scan_template(template_name: str) -> Dict[str, Any]:
     """Walk the assets folder for one template and return a flat file list."""
-    template_assets = os.path.join(get_assets_path(), template_name)
+    template_assets = _validated_template_assets_dir(template_name)
     files: List[Dict[str, Any]] = []
     if os.path.isdir(template_assets):
         for root, _, file_names in os.walk(template_assets):
@@ -103,7 +119,7 @@ def request_snapshot(template_name: str) -> Dict[str, Any]:
     that calls this is the user's explicit "refresh" path.
     """
     if template_name:
-        ensure_directory_exists(os.path.join(get_assets_path(), template_name))
+        ensure_directory_exists(_validated_template_assets_dir(template_name))
     return _scan_template(template_name)
 
 
@@ -145,7 +161,10 @@ def _watched_templates() -> List[str]:
 
 def _poll_once() -> None:
     for template_name in _watched_templates():
-        snapshot = _scan_template(template_name)
+        try:
+            snapshot = _scan_template(template_name)
+        except ValueError:
+            continue
         signature: Dict[str, float] = {
             f["rel_path"]: f["mtime"] for f in snapshot["files"]
         }
@@ -161,7 +180,10 @@ def _poll_once() -> None:
 def _seed_baseline() -> None:
     with _lock:
         for template_name in _watched_templates():
-            snapshot = _scan_template(template_name)
+            try:
+                snapshot = _scan_template(template_name)
+            except ValueError:
+                continue
             _known[template_name] = {
                 f["rel_path"]: f["mtime"] for f in snapshot["files"]
             }

@@ -106,14 +106,17 @@ def set_monitor_suspended(suspended: bool) -> None:
     the black-screen failure this watchdog exists to catch. Without this the monitor
     would count failures against a window nobody is looking at.
     """
-    global _SUSPENDED, _consecutive_ping_failures, _armed_mono
+    global _SUSPENDED, _consecutive_ping_failures, _armed_mono, _reload_count
     if _SUSPENDED == suspended:
         return
     _SUSPENDED = suspended
     _consecutive_ping_failures = 0
     if not suspended:
-        # Restoring rebuilds the UI from scratch; give it the same grace as a cold start.
+        # Restoring rebuilds the UI from scratch; give it the same grace as a cold start
+        # and a fresh reload budget so a long 24/7 session cannot permanently disable
+        # the watchdog after five black-screen recoveries.
         _armed_mono = time.monotonic()
+        _reload_count = 0
     logger.debug("ui_health: monitor %s", "suspended" if suspended else "resumed")
 
 
@@ -244,10 +247,11 @@ def _run_health_check() -> None:
 
 def arm_ui_health_monitor(client: Any) -> None:
     """Bind the monitor to the native-window client and start periodic checks."""
-    global _MONITOR_STARTED, _health_client, _armed_mono
+    global _MONITOR_STARTED, _health_client, _armed_mono, _reload_count
 
     _health_client = client
     _armed_mono = time.monotonic()
+    _reload_count = 0
 
     if _MONITOR_STARTED:
         return

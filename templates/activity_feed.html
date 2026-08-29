@@ -1149,9 +1149,7 @@
                 condense_historical_hours: 12
             };
 
-            // Try to get configuration from window.templateConfig (set by the parent application)
-            var config = window.templateConfig || defaultConfig;
-
+            function applyLoadedConfig(config) {
             // Apply CSS custom properties
             var root = document.documentElement;
             root.style.setProperty('--control-button-spacing', config.control_button_spacing + 'px');
@@ -1195,6 +1193,26 @@
             window.condenseHistoricalHours = config.condense_historical_hours;
 
             console.log('Template configuration loaded:', config);
+            }
+
+            var config = Object.assign({}, defaultConfig, window.templateConfig || {});
+            applyLoadedConfig(config);
+
+            fetch('/api/template-config/activity_feed', { credentials: 'same-origin' })
+                .then(function (response) { return response.ok ? response.json() : null; })
+                .then(function (data) {
+                    if (!data || !data.elements) { return; }
+                    data.elements.forEach(function (el) {
+                        if (el && el.id && el.type !== 'separator' && el.type !== 'section' && el.value !== undefined) {
+                            config[el.id] = el.value;
+                        }
+                    });
+                    window.templateConfig = config;
+                    applyLoadedConfig(config);
+                })
+                .catch(function (err) {
+                    console.warn('Failed to fetch activity_feed template config', err);
+                });
         }
 
         // Load configuration on script load
@@ -1497,10 +1515,14 @@
             }
 
             var displayMessage = generateAlertMessage(alertData);
+            message.textContent = displayMessage || '';
             if (alertData.user_message) {
-                displayMessage += ' - <span class="user-message">' + alertData.user_message + '</span>';
+                message.appendChild(document.createTextNode(' - '));
+                var userMsg = document.createElement('span');
+                userMsg.className = 'user-message';
+                userMsg.textContent = alertData.user_message;
+                message.appendChild(userMsg);
             }
-            message.innerHTML = displayMessage;
 
             leftContent.appendChild(badge);
             leftContent.appendChild(message);
@@ -1558,6 +1580,13 @@
 
             // Always add to live alerts only
             activityFeedState.liveAlerts.unshift(enhancedAlertData);
+            var LIVE_ALERTS_CAP = 100;
+            while (activityFeedState.liveAlerts.length > LIVE_ALERTS_CAP) {
+                var dropped = activityFeedState.liveAlerts.pop();
+                if (dropped && dropped.element && dropped.element.parentNode) {
+                    dropped.element.parentNode.removeChild(dropped.element);
+                }
+            }
 
             // Only visually display the alert if we're on the current alerts tab
             if (activityFeedState.currentTab === "current") {
@@ -1584,6 +1613,10 @@
                         } else {
                             currentAlertsFeed.appendChild(alertElement);
                         }
+                    }
+
+                    while (currentAlertsFeed.children.length > LIVE_ALERTS_CAP) {
+                        currentAlertsFeed.removeChild(currentAlertsFeed.lastChild);
                     }
 
                     // Re-observe new animated elements for performance optimization
@@ -2659,6 +2692,13 @@
         socket.on('connect', function () {
             console.log('Connected to WebSocket');
             syncActivityFeedState();
+        });
+
+        socket.on('template_config_updated', function (data) {
+            var name = (data && (data.template_name || data.templateName || data.template)) || '';
+            if (!name || name === 'activity_feed') {
+                loadTemplateConfig();
+            }
         });
 
         // Theme update handler - applies theme CSS variables in real-time

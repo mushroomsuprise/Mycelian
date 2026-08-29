@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from typing import Any, Dict, Optional, Tuple
 
 from .path_utils import get_data_path
@@ -21,6 +22,7 @@ from .path_utils import get_data_path
 logger = logging.getLogger(__name__)
 
 _FILENAME = "template_preview_settings.json"
+_SAVE_LOCK = threading.Lock()
 
 _DEFAULTS: Dict[str, Any] = {
     "enable_preview_sounds": True,
@@ -92,36 +94,46 @@ def load_template_preview_settings() -> Dict[str, Any]:
 
 
 def save_template_preview_settings(updates: Dict[str, Any]) -> bool:
-    current = load_template_preview_settings()
-    if "resolutions" in updates and isinstance(updates.get("resolutions"), dict):
-        # Shallow merge would wipe other templates; merge per-key instead.
-        merged = dict(current.get("resolutions") or {})
-        for key, entry in updates["resolutions"].items():
-            if not isinstance(key, str) or not key.strip():
-                continue
-            if entry is None:
-                merged.pop(key.strip(), None)
-                continue
-            if not isinstance(entry, dict):
-                continue
-            clamped = clamp_preview_resolution(entry.get("width"), entry.get("height"))
-            if clamped is None:
-                continue
-            merged[key.strip()] = {"width": clamped[0], "height": clamped[1]}
-        current["resolutions"] = merged
-        updates = {k: v for k, v in updates.items() if k != "resolutions"}
-    current.update(updates)
-    path = settings_path()
-    try:
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(current, f, indent=2, sort_keys=True)
-        return True
-    except Exception as e:
-        logger.error("Could not save template preview settings: %s", e)
-        return False
+    with _SAVE_LOCK:
+        current = load_template_preview_settings()
+        if "resolutions" in updates and isinstance(updates.get("resolutions"), dict):
+            # Shallow merge would wipe other templates; merge per-key instead.
+            merged = dict(current.get("resolutions") or {})
+            for key, entry in updates["resolutions"].items():
+                if not isinstance(key, str) or not key.strip():
+                    continue
+                if entry is None:
+                    merged.pop(key.strip(), None)
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                clamped = clamp_preview_resolution(
+                    entry.get("width"), entry.get("height")
+                )
+                if clamped is None:
+                    continue
+                merged[key.strip()] = {"width": clamped[0], "height": clamped[1]}
+            current["resolutions"] = merged
+            updates = {k: v for k, v in updates.items() if k != "resolutions"}
+        current.update(updates)
+        path = settings_path()
+        tmp_path = path + ".tmp"
+        try:
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(current, f, indent=2, sort_keys=True)
+            os.replace(tmp_path, path)
+            return True
+        except Exception as e:
+            logger.error("Could not save template preview settings: %s", e)
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            return False
 
 
 def get_template_preview_resolution(key: str) -> Optional[Tuple[int, int]]:

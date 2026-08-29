@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import aiohttp
 
 from .notification_engine import notify
-from .ui_timer import app_schedule, layout_schedule
+from .ui_timer import app_schedule
 from packaging.version import \
     parse as parse_version  # For robust version comparison
 
@@ -170,10 +170,6 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                     assets = data.get("assets", [])
                     if assets:
                         download_url = _select_os_appropriate_asset(assets)
-                        
-                        # If no OS-specific asset found, use first asset as fallback
-                        if not download_url and assets:
-                            download_url = assets[0].get("browser_download_url", "")
                     
                     # If no assets, use the release page URL
                     if not download_url:
@@ -216,7 +212,10 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
             logger.error(f"Unexpected error fetching update info from GitHub: {e}", exc_info=True)
     finally:
         with _github_release_cache_lock:
-            _github_release_cache = (time.monotonic(), result)
+            if result is not None:
+                _github_release_cache = (time.monotonic(), result)
+            elif cached_fallback is None:
+                _github_release_cache = (time.monotonic(), None)
 
     if result is None:
         return None
@@ -658,10 +657,6 @@ def is_valid_installer_url(url: str) -> bool:
         if any(url_lower.endswith(ext) for ext in valid_extensions):
             return True
 
-        # GitHub asset direct downloads
-        if "github.com" in url and "/releases/download/" in url:
-            return True
-
         return False
     except Exception as e:
         logger.error(f"Error validating installer URL: {e}")
@@ -693,13 +688,14 @@ def validate_installer_file(installer_path: str) -> bool:
         if not installer_path or not os.path.exists(installer_path):
             return False
         installer_lower = installer_path.lower()
-        is_executable = (
-            installer_lower.endswith(".exe")
-            or installer_lower.endswith(".dmg")
-            or installer_lower.endswith(".pkg")
-            or installer_lower.endswith(".msi")
-        )
-        if not is_executable:
+        current_os = sys.platform.lower()
+        if current_os == "win32":
+            valid_extensions = (".exe", ".msi")
+        elif current_os == "darwin":
+            valid_extensions = (".dmg", ".pkg")
+        else:
+            valid_extensions = (".appimage", ".deb")
+        if not installer_lower.endswith(valid_extensions):
             try:
                 with open(installer_path, "r", encoding="utf-8") as f:
                     content = f.read(100)
@@ -828,6 +824,15 @@ class UpdateManager:
         self._automatic_startup_check_done = False
         self._pending_prompt: Optional[Dict[str, Any]] = None
 
+    def _dialog_is_open(self) -> bool:
+        """Treat a missing/tray-unloaded client as the dialog no longer being open."""
+        if not self._dialog_open:
+            return False
+        if _connected_client() is None:
+            self._dialog_open = False
+            return False
+        return True
+
     # ---------------- Scheduling ----------------
     def on_ui_ready(self) -> None:
         """Schedule initial and periodic checks once the server is up.
@@ -920,7 +925,7 @@ class UpdateManager:
         if self._check_running:
             logger.info("UpdateManager: check already running; skipping")
             return
-        if self._dialog_open:
+        if self._dialog_is_open():
             logger.info("UpdateManager: update dialog already open; skipping")
             return
         try:
@@ -1184,6 +1189,7 @@ class UpdateManager:
 
             update_dialog.open()
         except Exception as e:
+            self._dialog_open = False
             logger.error(f"UpdateManager._show_update_modal error: {e}", exc_info=True)
 
     def _start_download_flow(
@@ -1241,34 +1247,57 @@ class UpdateManager:
                 finally:
                     download_state["done"] = True
 
+            poll_holder: Dict[str, Any] = {"timer": None}
+
+            def _stop_poll() -> None:
+                timer = poll_holder.get("timer")
+                if timer is None:
+                    return
+                try:
+                    timer.active = False
+                except Exception:
+                    pass
+                try:
+                    timer.deactivate()
+                except Exception:
+                    pass
+                poll_holder["timer"] = None
+
             def poll_update():
                 try:
                     if download_state["status"] == "downloading":
-                        # Ensure progress is between 0 and 1 for the progress bar
+                        if _connected_client() is None:
+                            return
                         progress_value = max(0.0, min(1.0, download_state["progress"]))
                         progress_bar.set_value(progress_value)
-                        
-                        # Display percentage with proper formatting
                         percent = progress_value * 100.0
                         progress_label.set_text(f"Downloading... {percent:.1f}%")
-                        
-                        # Format and display download speed
                         speed_bps = download_state.get("speed_bps", 0.0)
                         if speed_bps > 0:
-                            speed_text = _format_speed(speed_bps)
-                            speed_label.set_text(f"Speed: {speed_text}")
+                            speed_label.set_text(f"Speed: {_format_speed(speed_bps)}")
                         else:
                             speed_label.set_text("Calculating speed...")
-                        return True
+                        return
                     if download_state["status"] == "failed":
                         cleanup_temp_files(temp_files)
-                        title_label.set_text("❌ Update Failed")
-                        progress_label.set_text(download_state.get("error") or "Unknown error")
+                        try:
+                            title_label.set_text("❌ Update Failed")
+                            progress_label.set_text(
+                                download_state.get("error") or "Unknown error"
+                            )
+                        except Exception:
+                            pass
                         self._dialog_open = False
-                        return False
+                        _stop_poll()
+                        return
                     if download_state["status"] == "valid":
-                        title_label.set_text("🚀 Launching Installer")
-                        progress_label.set_text("Starting installer and closing Mycelian...")
+                        try:
+                            title_label.set_text("🚀 Launching Installer")
+                            progress_label.set_text(
+                                "Starting installer and closing Mycelian..."
+                            )
+                        except Exception:
+                            pass
 
                         def launch():
                             try:
@@ -1279,16 +1308,18 @@ class UpdateManager:
                                 cleanup_temp_files(temp_files)
                                 self._dialog_open = False
 
-                        layout_schedule(2.0, launch, once=True)
-                        return False
-                    return not bool(download_state.get("done", False))
+                        app_schedule(2.0, launch, once=True)
+                        _stop_poll()
+                        return
+                    if download_state.get("done"):
+                        _stop_poll()
                 except Exception as e:
                     logger.error(f"UpdateManager.poll_update error: {e}")
-                    return False
+                    _stop_poll()
 
             t = threading.Thread(target=worker, daemon=True)
             t.start()
-            layout_schedule(0.2, poll_update)
+            poll_holder["timer"] = app_schedule(0.2, poll_update)
         except Exception as e:
             logger.error(f"UpdateManager._start_download_flow error: {e}", exc_info=True)
 

@@ -655,6 +655,10 @@
                     broadcastSocket.emit('get_current_theme');
                 });
 
+                broadcastSocket.on('template_config_updated', function () {
+                    loadTemplateConfigs();
+                });
+
                 // Theme update handler - applies theme CSS variables in real-time
                 broadcastSocket.on('theme_update', function(data) {
                     if (data && data.css) {
@@ -1030,6 +1034,7 @@
 
                 if (currentColumnCount !== newColumnCount) {
                     container.innerHTML = buildMasonryHtml(lastSortedTemplates, newColumnCount);
+                    addEventListeners();
                 }
             });
             layoutResizeObserver.observe(observeTarget);
@@ -1042,7 +1047,7 @@
             let html = `
                 <div class="template-section fade-in">
                     <div class="template-header">
-                        <h2 class="template-title">${templateName.charAt(0).toUpperCase() + templateName.slice(1)} Controls</h2>
+                        <h2 class="template-title">${escapeHtml(templateName.charAt(0).toUpperCase() + templateName.slice(1))} Controls</h2>
                         <span class="control-count">${elements.length} controls</span>
                     </div>
             `;
@@ -1251,7 +1256,10 @@
             
             return `
                 <button class="${buttonClass}"${tipAttr}
-                        onclick="sendWebSocketEvent('${templateName}', '${action}', ${JSON.stringify(element.data || {})})">
+                        data-sc-kind="ws-click"
+                        data-sc-template="${escapeHtml(templateName)}"
+                        data-sc-action="${escapeHtml(action)}"
+                        data-sc-payload="${escapeHtml(JSON.stringify(element.data || {}))}">
                     ${buttonText}
                 </button>
             `;
@@ -1269,7 +1277,9 @@
                 <div class="slider-container"${tipAttr}>
                     <input type="range" class="slider" 
                            min="${min}" max="${max}" value="${value}" step="${step}"
-                           oninput="sendWebSocketEvent('${templateName}', '${action}', {value: this.value})">
+                           data-sc-kind="ws-input-value"
+                           data-sc-template="${escapeHtml(templateName)}"
+                           data-sc-action="${escapeHtml(action)}">
                 </div>
             `;
         }
@@ -1283,7 +1293,9 @@
             return `
                 <label class="toggle-switch"${tipAttr}>
                     <input type="checkbox" ${checked}
-                           onchange="sendWebSocketEvent('${templateName}', '${action}', {enabled: this.checked})">
+                           data-sc-kind="ws-toggle"
+                           data-sc-template="${escapeHtml(templateName)}"
+                           data-sc-action="${escapeHtml(action)}">
                     <span class="toggle-slider"></span>
                 </label>
             `;
@@ -1323,18 +1335,35 @@
                 const step = getCounterStepValue(element);
                 const action = element.action || 'counter_adjust';
                 const targetCounterId = element.target_counter_id;
-                const inputId = `sc-counter-step-${templateName}-${element.id || 'counter'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-                const esc = (s) => String(s).replace(/'/g, "\\'");
+                const inputId = `sc-counter-step-${escapeHtml(templateName)}-${element.id || 'counter'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
                 return `
                     <div class="counter-controls"${tipAttr}>
                         <input type="number" id="${inputId}" class="counter-step-input"
                                min="1" value="${step}" data-tooltip="Increment/decrement amount">
                         <button class="counter-btn decrement"
-                                onclick="sendSporeCounterEvent('${esc(templateName)}', '${esc(action)}', '${esc(targetCounterId)}', 'decrement', '${inputId}', ${step})">-</button>
+                                data-sc-kind="spore-counter"
+                                data-sc-template="${escapeHtml(templateName)}"
+                                data-sc-action="${escapeHtml(action)}"
+                                data-sc-counter-id="${escapeHtml(targetCounterId)}"
+                                data-sc-operation="decrement"
+                                data-sc-input-id="${escapeHtml(inputId)}"
+                                data-sc-step="${step}">-</button>
                         <button class="counter-btn increment"
-                                onclick="sendSporeCounterEvent('${esc(templateName)}', '${esc(action)}', '${esc(targetCounterId)}', 'increment', '${inputId}', ${step})">+</button>
+                                data-sc-kind="spore-counter"
+                                data-sc-template="${escapeHtml(templateName)}"
+                                data-sc-action="${escapeHtml(action)}"
+                                data-sc-counter-id="${escapeHtml(targetCounterId)}"
+                                data-sc-operation="increment"
+                                data-sc-input-id="${escapeHtml(inputId)}"
+                                data-sc-step="${step}">+</button>
                         <button class="counter-btn reset"
-                                onclick="sendSporeCounterEvent('${esc(templateName)}', '${esc(action)}', '${esc(targetCounterId)}', 'reset', '${inputId}', ${step})">Reset</button>
+                                data-sc-kind="spore-counter"
+                                data-sc-template="${escapeHtml(templateName)}"
+                                data-sc-action="${escapeHtml(action)}"
+                                data-sc-counter-id="${escapeHtml(targetCounterId)}"
+                                data-sc-operation="reset"
+                                data-sc-input-id="${escapeHtml(inputId)}"
+                                data-sc-step="${step}">Reset</button>
                     </div>
                 `;
             }
@@ -1346,11 +1375,20 @@
             return `
                 <div class="counter-controls"${tipAttr}>
                     <button class="counter-btn decrement" 
-                            onclick="sendWebSocketEvent('${templateName}', '${actionDecrement}', {})">-</button>
+                            data-sc-kind="ws-click"
+                            data-sc-template="${escapeHtml(templateName)}"
+                            data-sc-action="${escapeHtml(actionDecrement)}"
+                            data-sc-payload="{}">-</button>
                     <button class="counter-btn increment" 
-                            onclick="sendWebSocketEvent('${templateName}', '${actionIncrement}', {})">+</button>
+                            data-sc-kind="ws-click"
+                            data-sc-template="${escapeHtml(templateName)}"
+                            data-sc-action="${escapeHtml(actionIncrement)}"
+                            data-sc-payload="{}">+</button>
                     <button class="counter-btn reset" 
-                            onclick="sendWebSocketEvent('${templateName}', '${actionReset}', {})">Reset</button>
+                            data-sc-kind="ws-click"
+                            data-sc-template="${escapeHtml(templateName)}"
+                            data-sc-action="${escapeHtml(actionReset)}"
+                            data-sc-payload="{}">Reset</button>
                 </div>
             `;
         }
@@ -1361,14 +1399,17 @@
             
             return `
                 <button class="control-button spin-button"${tipAttr}
-                        onclick="sendWebSocketEvent('${templateName}', '${action}', {})">
+                        data-sc-kind="ws-click"
+                        data-sc-template="${escapeHtml(templateName)}"
+                        data-sc-action="${escapeHtml(action)}"
+                        data-sc-payload="{}">
                     Spin
                 </button>
             `;
         }
 
         function createTextInputControl(templateName, element) {
-            const placeholder = element.placeholder || '';
+            const placeholder = escapeHtml(element.placeholder || '');
             const action = element.action || '';
             const inputId = `sc-text-${templateName}-${element.id || action}`.replace(/[^a-zA-Z0-9_-]/g, '_');
             const tipAttr = tooltipAttr(element.description || element.label || placeholder);
@@ -1376,7 +1417,10 @@
             return `
                 <input type="text" id="${inputId}" class="control-input" placeholder="${placeholder}"
                        autocomplete="off" spellcheck="false"${tipAttr}
-                       oninput="sendTextInputEvent('${templateName}', '${action}', '${inputId}')">
+                       data-sc-kind="ws-text"
+                       data-sc-template="${escapeHtml(templateName)}"
+                       data-sc-action="${escapeHtml(action)}"
+                       data-sc-input-id="${escapeHtml(inputId)}">
             `;
         }
 
@@ -1390,13 +1434,50 @@
             return `
                 <input type="number" class="control-input"${tipAttr}
                        min="${min}" max="${max}" value="${value}"
-                       oninput="sendWebSocketEvent('${templateName}', '${action}', {value: parseInt(this.value)})">
+                       data-sc-kind="ws-input-int"
+                       data-sc-template="${escapeHtml(templateName)}"
+                       data-sc-action="${escapeHtml(action)}">
             `;
         }
 
         function addEventListeners() {
-            // Event listeners are added inline in the HTML for simplicity
-            // This function can be used for additional setup if needed
+            var container = document.getElementById('controlsContainer');
+            if (!container) { return; }
+            var nodes = container.querySelectorAll('[data-sc-kind]');
+            nodes.forEach(function (el) {
+                if (el.__scBound) { return; }
+                el.__scBound = true;
+                var kind = el.getAttribute('data-sc-kind');
+                var eventName = (kind === 'ws-input-value' || kind === 'ws-input-int' || kind === 'ws-text')
+                    ? 'input'
+                    : (kind === 'ws-toggle' ? 'change' : 'click');
+                el.addEventListener(eventName, function () {
+                    var templateName = el.getAttribute('data-sc-template') || '';
+                    var action = el.getAttribute('data-sc-action') || '';
+                    if (kind === 'ws-click') {
+                        var payload = {};
+                        try { payload = JSON.parse(el.getAttribute('data-sc-payload') || '{}'); } catch (e) { payload = {}; }
+                        sendWebSocketEvent(templateName, action, payload);
+                    } else if (kind === 'ws-input-value') {
+                        sendWebSocketEvent(templateName, action, { value: el.value });
+                    } else if (kind === 'ws-input-int') {
+                        sendWebSocketEvent(templateName, action, { value: parseInt(el.value, 10) });
+                    } else if (kind === 'ws-toggle') {
+                        sendWebSocketEvent(templateName, action, { enabled: el.checked });
+                    } else if (kind === 'ws-text') {
+                        sendTextInputEvent(templateName, action, el.getAttribute('data-sc-input-id') || el.id);
+                    } else if (kind === 'spore-counter') {
+                        sendSporeCounterEvent(
+                            templateName,
+                            action,
+                            el.getAttribute('data-sc-counter-id'),
+                            el.getAttribute('data-sc-operation'),
+                            el.getAttribute('data-sc-input-id'),
+                            parseInt(el.getAttribute('data-sc-step'), 10)
+                        );
+                    }
+                });
+            });
         }
 
         // High-frequency actions (per-keystroke) must not show success toasts — they block the UI and drop input.

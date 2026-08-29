@@ -174,7 +174,8 @@ class ObsServiceImpl:
         self._connector_loop = loop
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
+        th = self._thread
+        if th is not None and th.is_alive():
             return
         self._stop.clear()
         self._thread = threading.Thread(target=self._thread_main, name="ObsWebSocket", daemon=True)
@@ -190,7 +191,8 @@ class ObsServiceImpl:
         th = self._thread
         if th is not None:
             th.join(timeout=8.0)
-        self._thread = None
+            if not th.is_alive():
+                self._thread = None
         pool = self._connect_executor
         if pool is not None:
             pool.shutdown(wait=False, cancel_futures=True)
@@ -281,6 +283,12 @@ class ObsServiceImpl:
 
     def _should_abort_connect(self) -> bool:
         return self._stop.is_set() or self._reconnect_wakeup.is_set()
+
+    def _replace_connect_executor(self) -> None:
+        pool = self._connect_executor
+        self._connect_executor = None
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     def _get_connect_executor(self) -> concurrent.futures.ThreadPoolExecutor:
         pool = self._connect_executor
@@ -397,6 +405,15 @@ class ObsServiceImpl:
                             )
                             self._disconnect_clients()
                             return
+                ev = self._ev_client
+                if ev is not None:
+                    worker = getattr(ev, "worker", None)
+                    if worker is not None and not worker.is_alive():
+                        logger.info(
+                            "OBS EventClient worker died — reconnecting"
+                        )
+                        self._disconnect_clients()
+                        return
                 continue
             fut, op, kw = item
             if op == "__shutdown__":
@@ -502,6 +519,7 @@ class ObsServiceImpl:
             return fut.result(timeout=_CONNECT_TIMEOUT_SEC + 0.5)
         except concurrent.futures.TimeoutError:
             logger.debug("OBS ReqClient connect timed out")
+            self._replace_connect_executor()
             return None
         except Exception as e:
             if _is_transient_connect_error(e):
@@ -532,6 +550,7 @@ class ObsServiceImpl:
             self._register_callbacks()
         except concurrent.futures.TimeoutError:
             logger.warning("OBS EventClient connect timed out (triggers disabled)")
+            self._replace_connect_executor()
         except Exception as e:
             logger.warning("OBS EventClient unavailable (triggers disabled): %s", e)
 

@@ -133,7 +133,7 @@ def _is_permission_denied(exc: BaseException) -> bool:
 def _chmod_writable(path: str) -> None:
     try:
         mode = os.stat(path).st_mode
-        os.chmod(path, mode | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+        os.chmod(path, mode | stat.S_IWUSR)
     except OSError:
         pass
 

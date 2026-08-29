@@ -959,15 +959,13 @@ class FirebaseDatabase(DatabaseInterface):
             if self._root_ref is None:
                 return []
 
-            # Get all data at root level
-            all_data = self._root_ref.get()
-            if not all_data:
+            # Shallow list of top-level keys only (avoid full-tree download in 24/7).
+            top = self._root_ref.get(shallow=True)
+            if not top:
                 return []
-
-            # Extract all paths from the nested structure
-            paths = []
-            self._extract_paths(all_data, "", paths)
-            return sorted(paths)
+            if isinstance(top, dict):
+                return sorted(str(k) for k in top.keys())
+            return []
 
         except Exception as e:
             logger.error(
@@ -1348,6 +1346,9 @@ class DatabaseManager:
         self._database: Optional[DatabaseInterface] = None
         self._lock = threading.RLock()
         self._initialized = False
+        self._write_gen_lock = threading.Lock()
+        self._write_generation: Dict[str, int] = {}
+        self._path_write_locks: Dict[str, threading.Lock] = {}
 
     def initialize(self, config: Optional[DatabaseConfig] = None) -> bool:
         """Initialize the database manager with the specified configuration"""
@@ -1425,13 +1426,19 @@ class DatabaseManager:
         if not self._initialized:
             self.initialize()
 
-        if self._database:
-            return self._database.get_data(path, request_etag)
-        else:
+        if not self._database:
             logger.error("Database not initialized")
             if request_etag:
                 return {"data": {}, "etag": None}
             return {}
+
+        default = {"data": {}, "etag": None} if request_etag else {}
+        return self._run_db_op_with_timeout(
+            "Get",
+            lambda: self._database.get_data(path, request_etag),
+            default,
+            path=path,
+        )
 
     def set_data(self, path: str, data: Dict[str, Any]) -> bool:
         """Set data in the database with a hard timeout.
@@ -1449,59 +1456,126 @@ class DatabaseManager:
             logger.error("Database not initialized")
             return False
 
-        return self._set_data_with_timeout(path, data)
+        return bool(
+            self._run_db_op_with_timeout(
+                "Write",
+                lambda: self._database.set_data(path, data),
+                False,
+                path=path,
+                invalidate_on_timeout=True,
+            )
+        )
 
-    def _set_data_with_timeout(self, path: str, data: Dict[str, Any]) -> bool:
+    def _path_write_lock(self, path: str) -> threading.Lock:
+        with self._write_gen_lock:
+            lock = self._path_write_locks.get(path)
+            if lock is None:
+                lock = threading.Lock()
+                self._path_write_locks[path] = lock
+            return lock
+
+    def _run_db_op_with_timeout(
+        self,
+        op_name: str,
+        fn,
+        default,
+        *,
+        path: str = "",
+        invalidate_on_timeout: bool = False,
+    ):
         timeout = max(5, int(getattr(self._config, "connection_timeout", 30) or 30))
-        result: Dict[str, Any] = {"value": False}
+        result: Dict[str, Any] = {"value": default}
+        my_gen = 0
+        path_lock = None
+
+        if invalidate_on_timeout:
+            with self._write_gen_lock:
+                self._write_generation[path] = self._write_generation.get(path, 0) + 1
+                my_gen = self._write_generation[path]
+            path_lock = self._path_write_lock(path)
 
         def _worker() -> None:
             try:
-                result["value"] = self._database.set_data(path, data)
+                if path_lock is not None:
+                    with path_lock:
+                        with self._write_gen_lock:
+                            if self._write_generation.get(path) != my_gen:
+                                return
+                        value = fn()
+                        with self._write_gen_lock:
+                            if self._write_generation.get(path) != my_gen:
+                                return
+                        result["value"] = value
+                else:
+                    result["value"] = fn()
             except Exception as e:
                 logger.error(
-                    "Database write worker failed for %s: %s", path, e, exc_info=True
+                    "Database %s worker failed for %s: %s",
+                    op_name.lower(),
+                    path,
+                    e,
+                    exc_info=True,
                 )
-                result["value"] = False
+                result["value"] = default
 
         worker = threading.Thread(
-            target=_worker, name="MycelianDBWrite", daemon=True
+            target=_worker, name=f"MycelianDB{op_name}", daemon=True
         )
         worker.start()
         worker.join(timeout)
 
         if worker.is_alive():
+            if invalidate_on_timeout:
+                with self._write_gen_lock:
+                    if self._write_generation.get(path) == my_gen:
+                        self._write_generation[path] = my_gen + 1
             logger.error(
-                "Database write to %s timed out after %ss; continuing without "
-                "blocking (the write may complete later)",
-                path,
+                "Database %s to %s timed out after %ss; continuing without blocking",
+                op_name.lower(),
+                path or "(root)",
                 timeout,
             )
-            return False
+            return default
 
-        return bool(result["value"])
+        return result["value"]
 
     def update_data(self, path: str, data: Dict[str, Any]) -> bool:
         """Update data in the database"""
         if not self._initialized:
             self.initialize()
 
-        if self._database:
-            return self._database.update_data(path, data)
-        else:
+        if not self._database:
             logger.error("Database not initialized")
             return False
+
+        return bool(
+            self._run_db_op_with_timeout(
+                "Update",
+                lambda: self._database.update_data(path, data),
+                False,
+                path=path,
+                invalidate_on_timeout=True,
+            )
+        )
 
     def delete_data(self, path: str) -> bool:
         """Delete data from the database"""
         if not self._initialized:
             self.initialize()
 
-        if self._database:
-            return self._database.delete_data(path)
-        else:
+        if not self._database:
             logger.error("Database not initialized")
             return False
+
+        return bool(
+            self._run_db_op_with_timeout(
+                "Delete",
+                lambda: self._database.delete_data(path),
+                False,
+                path=path,
+                invalidate_on_timeout=True,
+            )
+        )
 
     def get_connection_status(self) -> Dict[str, Any]:
         """Get the current database connection status"""
@@ -1552,22 +1626,33 @@ class DatabaseManager:
         if not self._initialized:
             self.initialize()
 
-        if self._database:
-            return self._database.get_all_paths()
-        else:
+        if not self._database:
             logger.error("Database not initialized")
             return []
+        return list(
+            self._run_db_op_with_timeout(
+                "ListPaths",
+                self._database.get_all_paths,
+                [],
+                path="*",
+            )
+            or []
+        )
 
     def get_snapshot(self) -> Dict[str, Any]:
         """Get a complete snapshot of all database data as a nested dictionary"""
         if not self._initialized:
             self.initialize()
 
-        if self._database:
-            return self._database.get_snapshot()
-        else:
+        if not self._database:
             logger.error("Database not initialized")
             return {}
+        return self._run_db_op_with_timeout(
+            "Snapshot",
+            self._database.get_snapshot,
+            {},
+            path="*",
+        ) or {}
 
     def get_paths_from_snapshot(self, snapshot: Dict[str, Any]) -> List[str]:
         """Derive path list from an in-memory snapshot (avoids a second full-tree read)."""

@@ -355,15 +355,51 @@ class DiscordTab:
         layout_schedule(0.5, poll, once=True)
 
     def _handle_disconnect(self) -> None:
-        try:
-            discord_service.disconnect()
-            notify("Discord bot disconnected", type="info")
-            self._load_from_state()
-            self._reload_guilds()
+        if getattr(self, "_disconnect_in_progress", False):
+            return
+        self._disconnect_in_progress = True
+        if "disconnect_button" in self.ui_elements:
+            try:
+                self.ui_elements["disconnect_button"].disable()
+            except Exception:
+                pass
+
+        result: Dict[str, Any] = {"done": False, "ok": False}
+
+        def worker():
+            try:
+                discord_service.disconnect()
+                result["ok"] = True
+            except Exception as e:
+                logger.error("Discord disconnect failed: %s", e, exc_info=True)
+                result["error"] = str(e)
+            finally:
+                result["done"] = True
+
+        threading.Thread(
+            target=worker, daemon=True, name="DiscordDisconnect"
+        ).start()
+
+        def poll():
+            if not result["done"]:
+                layout_schedule(0.5, poll, once=True)
+                return
+            self._disconnect_in_progress = False
+            if "disconnect_button" in self.ui_elements:
+                try:
+                    self.ui_elements["disconnect_button"].enable()
+                except Exception:
+                    pass
+            if result.get("ok"):
+                notify("Discord bot disconnected", type="info")
+                self._load_from_state()
+                self._reload_guilds()
+            else:
+                err = result.get("error") or "Disconnect failed"
+                notify(f"Disconnect error: {err}", type="negative")
             self._refresh_status()
-        except Exception as e:
-            logger.error("Discord disconnect error: %s", e, exc_info=True)
-            notify(f"Disconnect error: {e}", type="negative")
+
+        layout_schedule(0.5, poll, once=True)
 
     def _copy_invite_url(self) -> None:
         url = ""

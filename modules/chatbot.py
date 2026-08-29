@@ -27,6 +27,7 @@ import asyncio
 import logging
 import multiprocessing
 import os
+import queue
 import sys
 import threading
 import time
@@ -58,6 +59,23 @@ from .twitch_token_auth import (
 
 logger = logging.getLogger(__name__)
 
+
+def _aiohttp_session_usable_on_running_loop(session) -> bool:
+    """True when ``session`` can be used on the current running asyncio loop."""
+    if session is None or getattr(session, "closed", True):
+        return False
+    try:
+        current = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    session_loop = getattr(session, "_loop", None)
+    if session_loop is None:
+        connector = getattr(session, "connector", None)
+        session_loop = getattr(connector, "_loop", None) if connector else None
+    if session_loop is None or session_loop.is_closed():
+        return False
+    return session_loop is current
+
 # Global flag to track initialization status
 _initialized = False
 _init_lock = threading.Lock()
@@ -67,6 +85,10 @@ _chatbot_token_validation_warned = False
 
 # Global flag to track Chatbot connection status
 chatbot_connected = False
+
+_chatbot_send_queue: "queue.Queue" = queue.Queue()
+_chatbot_send_worker_lock = threading.Lock()
+_chatbot_send_worker_started = False
 
 
 class Chatbot_API:
@@ -939,17 +961,17 @@ class Chatbot_API:
 
             # Use the main Twitch API's generic_api_call method
             url = f"https://api.twitch.tv/helix/chat/messages"
-            print(f"[CHATBOT] Sending message (fallback mode): {message}")
+            logger.debug("Sending chatbot message (fallback mode): %s", message)
             response = await twitch.twitch_api.generic_api_call(
                 url, "POST", json_data=message_data
             )
 
             if response:
-                print(f"[CHATBOT] Message sent successfully (fallback): {message}")
+                logger.debug("Message sent successfully (fallback): %s", message)
                 logger.debug(f"Chatbot sent message via main Twitch API: {message}")
                 return True
             else:
-                print(f"[CHATBOT] Failed to send message (fallback): {message}")
+                logger.error("Failed to send message (fallback): %s", message)
                 logger.error("Failed to send chatbot message via main Twitch API")
                 return False
 
@@ -1012,25 +1034,29 @@ class Chatbot_API:
                 "color": color,
             }
 
-            print(
-                f"[CHATBOT] Sending announcement to channel {main_channel_id} (main account) as moderator {self.user_id} (bot account)"
+            logger.debug(
+                "Sending announcement to channel %s (main account) as moderator %s (bot account)",
+                main_channel_id,
+                self.user_id,
             )
 
             # Send the announcement using Twitch API
             url = f"https://api.twitch.tv/helix/chat/announcements"
-            print(
-                f"[CHATBOT] Sending announcement (dedicated mode): {message} (color: {color})"
+            logger.debug(
+                "Sending announcement (dedicated mode): %s (color: %s)",
+                message,
+                color,
             )
             response = await self.generic_api_call(
                 url, "POST", json_data=announcement_data
             )
 
             if response:
-                print(f"[CHATBOT] Announcement sent successfully: {message}")
+                logger.debug("Announcement sent successfully: %s", message)
                 logger.debug(f"Chatbot sent announcement: {message}")
                 return True
             else:
-                print(f"[CHATBOT] Failed to send announcement: {message}")
+                logger.error("Failed to send announcement: %s", message)
                 logger.error("Failed to send chatbot announcement")
                 return False
 
@@ -1064,21 +1090,25 @@ class Chatbot_API:
 
             # Use the main Twitch API's generic_api_call method
             url = f"https://api.twitch.tv/helix/chat/announcements"
-            print(
-                f"[CHATBOT] Sending announcement (fallback mode): {message} (color: {color})"
+            logger.debug(
+                "Sending announcement (fallback mode): %s (color: %s)",
+                message,
+                color,
             )
             response = await twitch.twitch_api.generic_api_call(
                 url, "POST", json_data=announcement_data
             )
 
             if response:
-                print(f"[CHATBOT] Announcement sent successfully (fallback): {message}")
+                logger.debug(
+                    "Announcement sent successfully (fallback): %s", message
+                )
                 logger.debug(
                     f"Chatbot sent announcement via main Twitch API: {message}"
                 )
                 return True
             else:
-                print(f"[CHATBOT] Failed to send announcement (fallback): {message}")
+                logger.error("Failed to send announcement (fallback): %s", message)
                 logger.error("Failed to send chatbot announcement via main Twitch API")
                 return False
 
@@ -1259,20 +1289,21 @@ class Chatbot_API:
                         )
 
         try:
+            session = None
             if (
                 self.twitch
                 and hasattr(self.twitch, "_Twitch__session")
                 and getattr(self.twitch, "_Twitch__session", None)
             ):
+                session = getattr(self.twitch, "_Twitch__session")
+            if _aiohttp_session_usable_on_running_loop(session):
                 logger.debug(
                     "Using existing authenticated chatbot Twitch session for API call"
                 )
-                return await _perform_request(
-                    getattr(self.twitch, "_Twitch__session")
-                )
+                return await _perform_request(session)
             if self.auth_token and self.client_id:
                 logger.debug(
-                    "Chatbot Twitch HTTP session not open yet; using ephemeral session for Helix call"
+                    "Chatbot Twitch HTTP session not usable on this loop; using ephemeral session for Helix call"
                 )
                 from .twitch import _ephemeral_client_session
 
@@ -1578,13 +1609,76 @@ def get_chatbot_token_status():
 
 
 # External callable functions for sending messages as the bot
+def _running_asyncio_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
+def _ensure_chatbot_send_worker() -> None:
+    global _chatbot_send_worker_started
+    with _chatbot_send_worker_lock:
+        if _chatbot_send_worker_started:
+            return
+        worker = threading.Thread(
+            target=_chatbot_send_worker_loop,
+            daemon=True,
+            name="ChatbotSendWorker",
+        )
+        worker.start()
+        _chatbot_send_worker_started = True
+
+
+def _chatbot_send_worker_loop() -> None:
+    while True:
+        try:
+            kind, message, reply_to, targets, discord_channels = (
+                _chatbot_send_queue.get()
+            )
+        except Exception:
+            continue
+        try:
+            if kind == "send":
+                _send_chatbot_message_blocking(message, reply_to)
+            else:
+                _dispatch_chatbot_response_blocking(
+                    message,
+                    targets,
+                    reply_to_message_id=reply_to,
+                    discord_channels=discord_channels,
+                )
+        except Exception as e:
+            logger.error("Chatbot send worker error: %s", e, exc_info=True)
+
+
+def enqueue_chatbot_send(
+    message: str, reply_to_message_id: Optional[str] = None
+) -> None:
+    """Queue a Twitch chatbot send for a worker thread (never blocks EventSub)."""
+    _ensure_chatbot_send_worker()
+    _chatbot_send_queue.put(("send", message, reply_to_message_id, None, None))
+
+
+def enqueue_chatbot_dispatch(
+    message: str,
+    reply_targets=None,
+    reply_to_message_id: Optional[str] = None,
+    discord_channels=None,
+) -> None:
+    """Queue a multi-target chatbot dispatch for a worker thread."""
+    _ensure_chatbot_send_worker()
+    _chatbot_send_queue.put(
+        ("dispatch", message, reply_to_message_id, reply_targets, discord_channels)
+    )
+
+
 def send_chatbot_message(
     message: str, reply_to_message_id: Optional[str] = None
 ) -> bool:
     """Send a chat message as the chatbot to Twitch (sync wrapper)"""
     try:
-        import concurrent.futures
-
         logger.info(f"send_chatbot_message() called with: {message}")
 
         # Check if chatbot is available (either dedicated or fallback mode)
@@ -1613,34 +1707,78 @@ def send_chatbot_message(
             logger.error("Chatbot API not connected")
             return False
 
-        # Use a thread pool to run the async function
-        def run_async():
-            try:
-                logger.debug(f"Starting async thread for chatbot message: {message[:50]}...")
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    result = loop.run_until_complete(
-                        chatbot_api.send_chat_message(message, reply_to_message_id)
-                    )
-                    logger.debug(f"Async message send result: {result}")
-                    return result
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error in async chatbot message thread: {str(e)}", exc_info=True)
-                return False
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            return future.result(timeout=10)  # 10 second timeout
+        if _running_asyncio_loop():
+            enqueue_chatbot_send(message, reply_to_message_id)
+            return True
+        return _send_chatbot_message_blocking(message, reply_to_message_id)
 
     except Exception as e:
         logger.error(f"Error sending chatbot message: {str(e)}", exc_info=True)
         return False
 
 
+def _send_chatbot_message_blocking(
+    message: str, reply_to_message_id: Optional[str] = None
+) -> bool:
+    """Blocking send. Must not run on the EventSub socket thread."""
+    import concurrent.futures
+
+    if not chatbot_api:
+        return False
+
+    def run_async():
+        try:
+            logger.debug(f"Starting async thread for chatbot message: {message[:50]}...")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(
+                    chatbot_api.send_chat_message(message, reply_to_message_id)
+                )
+                logger.debug(f"Async message send result: {result}")
+                return result
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Error in async chatbot message thread: {str(e)}", exc_info=True)
+            return False
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(run_async)
+        return future.result(timeout=10)
+
+
 def dispatch_chatbot_response(
+    message: str,
+    reply_targets=None,
+    reply_to_message_id: Optional[str] = None,
+    discord_channels=None,
+) -> bool:
+    """
+    Send a chatbot response to Twitch and/or YouTube based on reply_targets,
+    and optionally to Discord channels listed in discord_channels.
+
+    reply_targets: list containing 'twitch' and/or 'youtube'. Missing/empty → twitch.
+    discord_channels: list of {guild_id, channel_id, ...} dicts (optional).
+    Returns True if any selected target succeeds.
+    """
+    if _running_asyncio_loop():
+        enqueue_chatbot_dispatch(
+            message,
+            reply_targets=reply_targets,
+            reply_to_message_id=reply_to_message_id,
+            discord_channels=discord_channels,
+        )
+        return True
+    return _dispatch_chatbot_response_blocking(
+        message,
+        reply_targets,
+        reply_to_message_id=reply_to_message_id,
+        discord_channels=discord_channels,
+    )
+
+
+def _dispatch_chatbot_response_blocking(
     message: str,
     reply_targets=None,
     reply_to_message_id: Optional[str] = None,
@@ -1660,7 +1798,7 @@ def dispatch_chatbot_response(
     any_ok = False
     if "twitch" in targets:
         try:
-            if send_chatbot_message(message, reply_to_message_id):
+            if _send_chatbot_message_blocking(message, reply_to_message_id):
                 any_ok = True
             else:
                 logger.warning("Chatbot Twitch send failed")
@@ -1753,7 +1891,6 @@ def send_chatbot_announcement(message: str, color: str = "primary") -> bool:
 
         # Check if chatbot is available (either dedicated or fallback mode)
         if not chatbot_api:
-            print("[CHATBOT] ERROR: Chatbot API not initialized (announcement)")
             logger.error("Chatbot API not initialized")
             return False
 
@@ -1770,17 +1907,13 @@ def send_chatbot_announcement(message: str, color: str = "primary") -> bool:
             logger.debug("Connection check passed, proceeding with dedicated API (announcement)")
         # If we're using fallback mode, check if main Twitch API is available
         elif chatbot_api.using_fallback:
-            print("[CHATBOT] Using fallback mode (announcement)")
+            logger.debug("Using fallback mode (announcement)")
             from . import twitch
 
             if not twitch.twitch_api or not twitch.twitch_api.is_connected:
-                print(
-                    "[CHATBOT] ERROR: Main Twitch API not available for chatbot fallback (announcement)"
-                )
                 logger.error("Main Twitch API not available for chatbot fallback")
                 return False
         else:
-            print("[CHATBOT] ERROR: Chatbot API not connected (announcement)")
             logger.error("Chatbot API not connected")
             return False
 

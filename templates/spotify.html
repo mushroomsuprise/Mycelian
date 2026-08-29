@@ -330,7 +330,11 @@
     <script src="/assets/default_assets/template_logger.js"></script>
     <script>MycelianLog.init({ templateName: 'spotify' });</script>
     <script>
-        const socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port);
+        const socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port, {
+            onRecovery: function () {
+                socket.emit('get_spotify_data');
+            }
+        });
         
         // DOM elements
         const container = document.getElementById('spotify-container');
@@ -774,17 +778,17 @@
             const playing = data.is_playing || false;
 
             // Update track info
-            trackName.innerHTML = String(trackTitle);
-            artistName.innerHTML = String(artist);
+            trackName.textContent = String(trackTitle);
+            artistName.textContent = String(artist);
 
             // Handle long titles using config
             const longTitleThreshold = window.spotifyConfig?.LongTitleThreshold || 30;
-            if (trackName.innerHTML.length <= longTitleThreshold) {
+            if (trackName.textContent.length <= longTitleThreshold) {
                 trackName.classList.remove('long-title');
             } else {
                 trackName.classList.add('long-title');
-                if (trackName.innerHTML.length > longTitleThreshold + 10) {
-                    trackName.innerHTML = trackName.innerHTML.slice(0, longTitleThreshold + 7) + '...';
+                if (trackName.textContent.length > longTitleThreshold + 10) {
+                    trackName.textContent = trackName.textContent.slice(0, longTitleThreshold + 7) + '...';
                 }
             }
 
@@ -810,7 +814,7 @@
             }
 
             // Handle llama visibility
-            if (trackName.innerHTML === "Nothing playing") {
+            if (trackName.textContent === "Nothing playing") {
                 llama.style.display = "none";
             } else {
                 llama.style.display = "block";
@@ -969,7 +973,13 @@
 
         // Handle connection events
         socket.on('connect', function() {
-            console.log('Connected to Spotify websocket - waiting for backend data push');
+            console.log('Connected to Spotify websocket');
+            socket.emit('get_spotify_data');
+        });
+
+        socket.on('template_config_updated', function (data) {
+            var name = (data && (data.template_name || data.templateName || data.template)) || '';
+            if (name === 'spotify') location.reload();
         });
 
         socket.on('disconnect', function() {

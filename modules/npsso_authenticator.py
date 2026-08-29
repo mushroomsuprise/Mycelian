@@ -85,11 +85,10 @@ def _run_npsso_capture_subprocess() -> tuple[bool, str, str]:
     """
     Run the isolated pywebview helper. Returns (ok, token_or_empty, error_message).
     """
-    print(
+    logger.debug(
         f"[NPSSO_TRACE] t={time.monotonic():.3f} "
         f"thread={threading.current_thread().name!r} "
-        "npsso_authenticator: subprocess.run starting webview module",
-        flush=True,
+        "npsso_authenticator: subprocess.run starting webview module"
     )
     cmd, env, root = _npsso_capture_command_and_env()
 
@@ -115,12 +114,11 @@ def _run_npsso_capture_subprocess() -> tuple[bool, str, str]:
 
     out = (proc.stdout or "").strip()
     err = (proc.stderr or "").strip()
-    print(
+    logger.debug(
         f"[NPSSO_TRACE] t={time.monotonic():.3f} "
         f"thread={threading.current_thread().name!r} "
         f"npsso_authenticator: subprocess exited code={proc.returncode} "
-        f"stdout_len={len(out)} stderr_len={len(err)}",
-        flush=True,
+        f"stdout_len={len(out)} stderr_len={len(err)}"
     )
 
     if proc.returncode == 0 and out:
@@ -177,19 +175,17 @@ def show_npsso_instruction_dialog(
             on_cancel()
 
     def on_continue() -> None:
-        print(
+        logger.debug(
             f"[NPSSO_TRACE] t={time.monotonic():.3f} "
             f"thread={threading.current_thread().name!r} "
-            "npsso_instruction_dialog: Continue clicked, closing dialog",
-            flush=True,
+            "npsso_instruction_dialog: Continue clicked, closing dialog"
         )
         dialog.close()
         on_after_continue()
-        print(
+        logger.debug(
             f"[NPSSO_TRACE] t={time.monotonic():.3f} "
             f"thread={threading.current_thread().name!r} "
-            "npsso_instruction_dialog: on_after_continue() returned",
-            flush=True,
+            "npsso_instruction_dialog: on_after_continue() returned"
         )
 
     def enable_continue() -> None:

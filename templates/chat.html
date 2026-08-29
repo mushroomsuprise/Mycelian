@@ -925,19 +925,20 @@
 
             // Check if we've already assigned a color for this user
             if (usernameColorCache[cacheKey]) {
-                return usernameColorCache[cacheKey];
+                return sanitizeUsernameColor(usernameColorCache[cacheKey]) || '#ffffff';
             }
 
             var finalColor;
 
-            // If user has a Twitch-assigned color, use it
-            if (twitchColor && twitchColor.trim() !== '') {
-                finalColor = twitchColor;
+            // If user has a Twitch-assigned color, use it (hex only)
+            var safeTwitch = sanitizeUsernameColor(twitchColor);
+            if (safeTwitch) {
+                finalColor = safeTwitch;
                 chatLog('Using Twitch color', finalColor, 'for username', username);
             } else {
                 // Assign a random color from our list
                 var randomIndex = Math.floor(Math.random() * randomUsernameColors.length);
-                finalColor = randomUsernameColors[randomIndex];
+                finalColor = sanitizeUsernameColor(randomUsernameColors[randomIndex]) || '#ffffff';
                 chatLog('Assigned random color', finalColor, 'to username', username);
             }
 
@@ -945,6 +946,15 @@
             usernameColorCache[cacheKey] = finalColor;
 
             return finalColor;
+        }
+
+        function sanitizeUsernameColor(color) {
+            if (!color) { return ''; }
+            var c = String(color).trim();
+            if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c)) {
+                return c;
+            }
+            return '';
         }
 
         function loadRandomFont(fontName) {
@@ -1060,15 +1070,19 @@
         socket.on('chat_add_message', function (data) {
             chatLog('Connector action: add message', data);
             var messageData = data || {};
+            var body = messageData.message_text || messageData.message || messageData.text;
 
             // Create a test message if no message data provided
-            if (!messageData.text && !messageData.message) {
+            if (!body) {
                 messageData = {
                     username: messageData.username || 'Connector',
-                    text: messageData.text || messageData.message || 'Test message from connector',
+                    text: 'Test message from connector',
                     color: messageData.color || '#007acc',
                     timestamp: Date.now()
                 };
+            } else {
+                messageData.message = body;
+                messageData.text = body;
             }
 
             // Add the message to chat
@@ -1077,7 +1091,9 @@
 
         socket.on('chat_temporary_random_font', function (data) {
             chatLog('Connector action: temporary random font', data);
-            var duration = (data && data.duration) ? parseInt(data.duration) : 10000; // Default 10 seconds
+            var durationSec = (data && data.duration != null && data.duration !== '') ? parseFloat(data.duration) : 10;
+            if (isNaN(durationSec) || durationSec < 0) { durationSec = 10; }
+            var duration = durationSec * 1000;
 
             // Get available font families from CSS or use a set of common fonts
             var fonts = [
@@ -1834,7 +1850,7 @@
 
             // Check if this is an ACTION message and process it
             var isActionMessage = false;
-            var processedMessage = (messageData.message || messageData.text || '').trim();
+            var processedMessage = (messageData.message || messageData.text || messageData.message_text || '').trim();
 
             if (filterUnknownSlashCommands && !isAllowedSlashMessage(processedMessage)) {
                 chatLog('Filtering Twitch slash command:', processedMessage);
@@ -1907,7 +1923,7 @@
             }
 
             // Add username with color
-            var usernameColor = getUsernameColor(messageData.username, messageData.color);
+            var usernameColor = sanitizeUsernameColor(getUsernameColor(messageData.username, messageData.color)) || '#ffffff';
             var usernameSpan = '<span class="message-username" style="color: ' + usernameColor + '">' +
                 escapeHtml(messageData.username) + ':</span>';
             headerHTML += usernameSpan;

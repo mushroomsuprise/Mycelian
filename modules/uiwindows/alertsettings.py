@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import logging
+import threading
 import time
 from contextlib import contextmanager
 
@@ -31,7 +32,7 @@ from nicegui import ui
 from ..notification_engine import notify
 from ..ui_buttons import outline_button
 from ..ui_form_controls import form_input, form_number, form_select
-from ..ui_timer import layout_schedule
+from ..ui_timer import layout_schedule, run_on_ui_loop
 
 from ..help_system.contextual_help import set_alerts_ui_references
 
@@ -2510,9 +2511,10 @@ def test_alert(alert_type: str):
         alert_data = _collect_test_alert_data(alert_type, elements)
         runtime_type = alert_data["alert_type"]
 
-        alert = alertutils.AlertObj(**alert_data)
+        filtered = alertutils.alert_state_manager._filter_alert_obj_fields(alert_data)
+        alert = alertutils.AlertObj(**filtered)
         alert.is_test = True
-        alert_processor.ALERT_QUEUE.append(alert)
+        alert_processor.enqueue_alert(alert)
 
         if runtime_type == "follow":
             try:
@@ -3845,7 +3847,10 @@ def _schedule_point_reward_select_refresh(select_element):
 
 
 def load_twitch_point_rewards():
-    """Load Twitch point rewards from the API and update the dropdown"""
+    """Load Twitch point rewards from the API and update the dropdown.
+
+    Helix fetch is done on a worker; dropdown updates hop back to the NiceGUI loop.
+    """
     alert_type = "points"
     with suppress_alert_selection_handler():
         try:
@@ -3864,100 +3869,118 @@ def load_twitch_point_rewards():
             if hasattr(select_element, "update"):
                 select_element.update()
 
-            result = twitch.fetch_channel_point_rewards()
-            status = result["status"]
-            rewards = result.get("rewards")
+            def _apply_result(result) -> None:
+                with suppress_alert_selection_handler():
+                    status = result.get("status")
+                    rewards = result.get("rewards")
 
-            def set_save(enabled: bool):
-                if save_btn is not None:
-                    save_btn.enabled = enabled
+                    def set_save(enabled: bool):
+                        if save_btn is not None:
+                            save_btn.enabled = enabled
 
-            def set_banner(visible: bool):
-                if banner is not None:
-                    banner.visible = visible
+                    def set_banner(visible: bool):
+                        if banner is not None:
+                            banner.visible = visible
 
-            if status == "not_unlocked":
-                set_banner(True)
-                set_save(False)
-                select_element.options = {
-                    "no_channel_points": (
-                        "Channel points not available — Affiliate or Partner required"
-                    )
-                }
-                if hasattr(select_element, "update"):
-                    select_element.update()
-                notify(
-                    "This Twitch account does not have Channel Points (custom rewards) unlocked.",
-                    type="warning",
-                )
-                _schedule_point_reward_select_refresh(select_element)
-                return
-
-            set_banner(False)
-
-            if status == "not_connected":
-                set_save(False)
-                select_element.options = {
-                    "not_connected": "Twitch not connected - Please connect in Settings"
-                }
-                if hasattr(select_element, "update"):
-                    select_element.update()
-                notify(
-                    "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
-                    type="warning",
-                    actions=[
-                        {
-                            "kind": "navigate",
-                            "main_tab": "Settings",
-                            "settings_subtab": "Twitch",
+                    if status == "not_unlocked":
+                        set_banner(True)
+                        set_save(False)
+                        select_element.options = {
+                            "no_channel_points": (
+                                "Channel points not available — Affiliate or Partner required"
+                            )
                         }
-                    ],
-                )
-                _schedule_point_reward_select_refresh(select_element)
-                return
+                        if hasattr(select_element, "update"):
+                            select_element.update()
+                        notify(
+                            "This Twitch account does not have Channel Points (custom rewards) unlocked.",
+                            type="warning",
+                        )
+                        _schedule_point_reward_select_refresh(select_element)
+                        return
 
-            if status == "error":
-                set_save(False)
-                select_element.options = {
-                    "error": "Error loading rewards - Check connection or authentication"
-                }
-                if hasattr(select_element, "update"):
-                    select_element.update()
-                notify(
-                    "Error loading Twitch point rewards. Please check your Twitch connection and authentication in Settings.",
-                    type="negative",
-                )
-                _schedule_point_reward_select_refresh(select_element)
-                return
+                    set_banner(False)
 
-            set_save(True)
-            reward_options = {"new": "+ Create New Reward"}
-            if rewards:
-                sorted_rewards = sorted(
-                    rewards, key=lambda r: r.get("title", "Unnamed Reward").lower()
-                )
-                for reward in sorted_rewards:
-                    reward_id = reward.get("id")
-                    reward_title = reward.get("title", "Unnamed Reward")
-                    reward_cost = reward.get("cost", 0)
-                    display_name = f"{reward_title} ({reward_cost} points)"
-                    reward_options[reward_id] = display_name
-                notify(
-                    f"Loaded {len(rewards)} point rewards from Twitch", type="positive"
-                )
-            else:
-                reward_options["no_rewards"] = (
-                    "No rewards yet — choose + Create New Reward and click Save Alert"
-                )
-                notify(
-                    "No point rewards on Twitch yet. Use + Create New Reward, set Twitch Options, then Save Alert.",
-                    type="info",
-                )
+                    if status == "not_connected":
+                        set_save(False)
+                        select_element.options = {
+                            "not_connected": "Twitch not connected - Please connect in Settings"
+                        }
+                        if hasattr(select_element, "update"):
+                            select_element.update()
+                        notify(
+                            "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
+                            type="warning",
+                            actions=[
+                                {
+                                    "kind": "navigate",
+                                    "main_tab": "Settings",
+                                    "settings_subtab": "Twitch",
+                                }
+                            ],
+                        )
+                        _schedule_point_reward_select_refresh(select_element)
+                        return
 
-            select_element.options = reward_options
-            if hasattr(select_element, "update"):
-                select_element.update()
-            _schedule_point_reward_select_refresh(select_element)
+                    if status == "error":
+                        set_save(False)
+                        select_element.options = {
+                            "error": "Error loading rewards - Check connection or authentication"
+                        }
+                        if hasattr(select_element, "update"):
+                            select_element.update()
+                        notify(
+                            "Error loading Twitch point rewards. Please check your Twitch connection and authentication in Settings.",
+                            type="negative",
+                        )
+                        _schedule_point_reward_select_refresh(select_element)
+                        return
+
+                    set_save(True)
+                    reward_options = {"new": "+ Create New Reward"}
+                    if rewards:
+                        sorted_rewards = sorted(
+                            rewards, key=lambda r: r.get("title", "Unnamed Reward").lower()
+                        )
+                        for reward in sorted_rewards:
+                            reward_id = reward.get("id")
+                            reward_title = reward.get("title", "Unnamed Reward")
+                            reward_cost = reward.get("cost", 0)
+                            display_name = f"{reward_title} ({reward_cost} points)"
+                            reward_options[reward_id] = display_name
+                        notify(
+                            f"Loaded {len(rewards)} point rewards from Twitch",
+                            type="positive",
+                        )
+                    else:
+                        reward_options["no_rewards"] = (
+                            "No rewards yet — choose + Create New Reward and click Save Alert"
+                        )
+                        notify(
+                            "No point rewards on Twitch yet. Use + Create New Reward, set Twitch Options, then Save Alert.",
+                            type="info",
+                        )
+
+                    select_element.options = reward_options
+                    if hasattr(select_element, "update"):
+                        select_element.update()
+                    _schedule_point_reward_select_refresh(select_element)
+
+            def _worker() -> None:
+                try:
+                    result = twitch.fetch_channel_point_rewards()
+                except Exception as fetch_err:
+                    logger.error(
+                        "Error fetching Twitch point rewards: %s",
+                        fetch_err,
+                        exc_info=True,
+                    )
+                    result = {"status": "error", "rewards": None}
+                run_on_ui_loop(lambda: _apply_result(result))
+
+            threading.Thread(
+                target=_worker, daemon=True, name="LoadPointRewards"
+            ).start()
 
         except Exception as e:
             logger.error(
@@ -4431,28 +4454,14 @@ def save_point_alert():
             )
             return
 
-        fetch = twitch.fetch_channel_point_rewards()
-        if fetch["status"] == "not_unlocked":
-            notify(
-                "Channel Points are not unlocked for this Twitch account.",
-                type="warning",
-            )
-            return
-
-        if fetch["status"] not in ("ok",):
-            notify(
-                "Cannot reach Twitch Channel Points right now. Try Refresh Rewards.",
-                type="warning",
-            )
-            return
-
         if selected in POINTS_REWARD_SELECT_PLACEHOLDERS and selected != "new":
             notify("Please select a valid point reward", type="warning")
             return
 
-        selected_reward_id = selected
-
-        if selected == "new":
+        create_new = selected == "new"
+        update_twitch = False
+        reward_payload = None
+        if create_new:
             title = (elements["twitch_title_input"].value or "").strip()
             if not title:
                 notify(
@@ -4464,25 +4473,11 @@ def save_point_alert():
             if cost_val is None or int(cost_val) < 1:
                 notify("Point cost must be at least 1.", type="warning")
                 return
+            reward_payload = build_twitch_reward_payload_from_ui(alert_type)
             notify("Creating reward on Twitch...", type="info")
-            new_reward = twitch.create_point_reward(
-                build_twitch_reward_payload_from_ui(alert_type)
-            )
-            if not new_reward or not new_reward.get("id"):
-                notify("Failed to create reward on Twitch.", type="negative")
-                return
-            selected_reward_id = new_reward["id"]
-        else:
-            if twitch_reward_fields_changed(alert_type):
-                if not twitch.update_point_reward(
-                    selected_reward_id,
-                    build_twitch_reward_payload_from_ui(alert_type),
-                ):
-                    notify(
-                        "Error updating Twitch point reward. Local alert was not saved.",
-                        type="negative",
-                    )
-                    return
+        elif twitch_reward_fields_changed(alert_type):
+            update_twitch = True
+            reward_payload = build_twitch_reward_payload_from_ui(alert_type)
 
         duration = elements["duration_input"].value
         stackable = elements["stackable_switch"].value
@@ -4511,71 +4506,117 @@ def save_point_alert():
 
         enable_alert = elements["enable_alert_switch"].value
         reward_title = (elements["twitch_title_input"].value or "").strip()
+        point_cost = elements["twitch_cost_input"].value
+        captured_reward_id = selected
 
-        alert_data = {
-            "alert_type": alert_type,
-            "enable_alert": enable_alert,
-            "duration": duration,
-            "stackable": stackable,
-            "fade_in": fade_in,
-            "fade_out": fade_out,
-            "volume": volume,
-            "tts_enabled": tts_enabled,
-            "tts_source": tts_source,
-            "tts_custom_message": tts_custom_message,
-            "audio_only": audio_only,
-            "single_audio_dir": primary_dir,
-            "single_audio_name": primary_file,
-            "randomized": randomized,
-            "randomized_dir": random_dir,
-            "randomized_chance": random_chance,
-            "randomized_extra": randomized_extra,
-            "randomized_extra_dir": extra_dir,
-            "randomized_extra_chance": extra_chance,
-            "gif_dir": gif_dir,
-            "gif_name": gif_file,
-            "twitch_reward_id": selected_reward_id,
-            "point_cost": elements["twitch_cost_input"].value,
-            "title": reward_title,
-            "alert_name": alertutils.alert_state_manager.get_display_name(
-                alert_type,
-                selected_reward_id,
-                {"title": reward_title},
-            ),
-            "timestamp": time.time(),
-        }
+        def _persist_local(selected_reward_id) -> None:
+            alert_data = {
+                "alert_type": alert_type,
+                "enable_alert": enable_alert,
+                "duration": duration,
+                "stackable": stackable,
+                "fade_in": fade_in,
+                "fade_out": fade_out,
+                "volume": volume,
+                "tts_enabled": tts_enabled,
+                "tts_source": tts_source,
+                "tts_custom_message": tts_custom_message,
+                "audio_only": audio_only,
+                "single_audio_dir": primary_dir,
+                "single_audio_name": primary_file,
+                "randomized": randomized,
+                "randomized_dir": random_dir,
+                "randomized_chance": random_chance,
+                "randomized_extra": randomized_extra,
+                "randomized_extra_dir": extra_dir,
+                "randomized_extra_chance": extra_chance,
+                "gif_dir": gif_dir,
+                "gif_name": gif_file,
+                "twitch_reward_id": selected_reward_id,
+                "point_cost": point_cost,
+                "title": reward_title,
+                "alert_name": alertutils.alert_state_manager.get_display_name(
+                    alert_type,
+                    selected_reward_id,
+                    {"title": reward_title},
+                ),
+                "timestamp": time.time(),
+            }
 
-        success = alertutils.alert_state_manager.save_alert(
-            alert_type, selected_reward_id, alert_data
-        )
+            success = alertutils.alert_state_manager.save_alert(
+                alert_type, selected_reward_id, alert_data
+            )
 
-        if success:
-            notify(f'Saved point alert: {alert_data["title"]}', type="positive")
-            load_twitch_point_rewards()
-            rid = selected_reward_id
+            if success:
+                notify(f'Saved point alert: {alert_data["title"]}', type="positive")
+                load_twitch_point_rewards()
+                rid = selected_reward_id
 
-            def after_list_refresh():
-                try:
-                    with suppress_alert_selection_handler():
-                        sel = alert_settings_state.get_elements(alert_type).get(
-                            "alert_select"
+                def after_list_refresh():
+                    try:
+                        with suppress_alert_selection_handler():
+                            sel = alert_settings_state.get_elements(alert_type).get(
+                                "alert_select"
+                            )
+                            if sel:
+                                sel.value = rid
+                                if hasattr(sel, "update"):
+                                    sel.update()
+                        load_point_reward_settings(alert_type, rid)
+                    except Exception as refresh_err:
+                        logger.error(
+                            f"Error re-selecting point reward after save: {refresh_err}",
+                            exc_info=True,
                         )
-                        if sel:
-                            sel.value = rid
-                            if hasattr(sel, "update"):
-                                sel.update()
-                    load_point_reward_settings(alert_type, rid)
-                except Exception as refresh_err:
-                    logger.error(
-                        f"Error re-selecting point reward after save: {refresh_err}",
-                        exc_info=True,
-                    )
-                    store_original_values(alert_type)
-                    clear_changed_styling(alert_type)
+                        store_original_values(alert_type)
+                        clear_changed_styling(alert_type)
 
-            layout_schedule(0.85, after_list_refresh, once=True)
-        else:
-            notify("Error saving point alert settings", type="negative")
+                layout_schedule(0.85, after_list_refresh, once=True)
+            else:
+                notify("Error saving point alert settings", type="negative")
+
+        def _worker() -> None:
+            fetch = twitch.fetch_channel_point_rewards()
+            if fetch["status"] == "not_unlocked":
+                run_on_ui_loop(
+                    lambda: notify(
+                        "Channel Points are not unlocked for this Twitch account.",
+                        type="warning",
+                    )
+                )
+                return
+            if fetch["status"] not in ("ok",):
+                run_on_ui_loop(
+                    lambda: notify(
+                        "Cannot reach Twitch Channel Points right now. Try Refresh Rewards.",
+                        type="warning",
+                    )
+                )
+                return
+
+            selected_reward_id = captured_reward_id
+            if create_new:
+                new_reward = twitch.create_point_reward(reward_payload)
+                if not new_reward or not new_reward.get("id"):
+                    run_on_ui_loop(
+                        lambda: notify(
+                            "Failed to create reward on Twitch.", type="negative"
+                        )
+                    )
+                    return
+                selected_reward_id = new_reward["id"]
+            elif update_twitch:
+                if not twitch.update_point_reward(selected_reward_id, reward_payload):
+                    run_on_ui_loop(
+                        lambda: notify(
+                            "Error updating Twitch point reward. Local alert was not saved.",
+                            type="negative",
+                        )
+                    )
+                    return
+            run_on_ui_loop(lambda rid=selected_reward_id: _persist_local(rid))
+
+        threading.Thread(target=_worker, daemon=True, name="SavePointAlert").start()
 
     except Exception as e:
         logger.error(f"Error saving point alert: {str(e)}", exc_info=True)

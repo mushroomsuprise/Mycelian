@@ -203,11 +203,25 @@
             message: {{DefaultMessage|tojson}}
         };
         
+        function normalizeExcludedUsers(raw) {
+            var parts = [];
+            if (Array.isArray(raw)) {
+                raw.forEach(function (item) {
+                    String(item == null ? '' : item).split(',').forEach(function (p) { parts.push(p); });
+                });
+            } else if (raw != null && raw !== '') {
+                String(raw).split(',').forEach(function (p) { parts.push(p); });
+            }
+            return parts.map(function (u) {
+                return String(u).trim().replace(/^['"]+|['"]+$/g, '').toLowerCase();
+            }).filter(function (u) { return u.length > 0; });
+        }
+
         var settings = {
             nearGoalThreshold: {{NearGoalThreshold|tojson}},
             autoReset: {{AutoReset|tojson}},
             resetDelay: {{ResetDelay|tojson}},
-            excludedUsers: [{{ExcludedUsers|tojson}}],
+            excludedUsers: normalizeExcludedUsers({{ ExcludedUsers | tojson }}),
             trackSubs: {{TrackSubs|tojson}},
             trackGiftsubs: {{TrackGiftsubs|tojson}},
             trackResubs: {{TrackResubs|tojson}},
@@ -727,6 +741,9 @@
             }
             if (config.NearGoalThreshold !== undefined) {
                 settings.nearGoalThreshold = config.NearGoalThreshold;
+            }
+            if (config.ExcludedUsers !== undefined) {
+                settings.excludedUsers = normalizeExcludedUsers(config.ExcludedUsers);
             }
 
             // Update display with new settings

@@ -419,6 +419,23 @@
         // Alert state tracking
         var alertsCurrentlyPlaying = false;
         var alertsCurrentlyPaused = false;
+        var alertsPlayingClearTimer = null;
+
+        function scheduleAlertsPlayingClear(alertData) {
+            if (alertsPlayingClearTimer) {
+                clearTimeout(alertsPlayingClearTimer);
+                alertsPlayingClearTimer = null;
+            }
+            var dur = 5;
+            if (alertData && alertData.duration != null && alertData.duration !== '') {
+                var parsed = parseFloat(alertData.duration);
+                if (!isNaN(parsed) && parsed > 0) { dur = parsed; }
+            }
+            alertsPlayingClearTimer = setTimeout(function () {
+                alertsCurrentlyPlaying = false;
+                alertsPlayingClearTimer = null;
+            }, dur * 1000);
+        }
 
         // Socket event listeners
         socket.on('connect', function () {
@@ -438,8 +455,9 @@
                 return;
             }
 
-            // Track that alerts are now playing
+            // Track that alerts are now playing (server does not rebroadcast alert_complete)
             alertsCurrentlyPlaying = true;
+            scheduleAlertsPlayingClear(alertData);
             console.log('Alert started - alerts are now playing');
 
             if (alertData && shouldProcessAlert(alertData)) {
@@ -449,15 +467,14 @@
         });
 
         // Alert state tracking listeners
-        socket.on('alert_complete', function () {
-            alertsCurrentlyPlaying = false;
-            console.log('Alert completed - alerts no longer playing');
-        });
-
         socket.on('pause_status_update', function (data) {
             if (data && typeof data.paused === 'boolean') {
                 alertsCurrentlyPaused = data.paused;
                 if (data.paused) {
+                    if (alertsPlayingClearTimer) {
+                        clearTimeout(alertsPlayingClearTimer);
+                        alertsPlayingClearTimer = null;
+                    }
                     alertsCurrentlyPlaying = false;
                     console.log('Alerts paused - no longer playing');
                 } else {
@@ -510,7 +527,7 @@
         // Connector action event listeners
         socket.on('bitboss_heal_boss', function (data) {
             console.log('Connector action: heal boss', data);
-            var healAmount = (data && data.amount) ? parseInt(data.amount) : 100; // Default 100 HP
+            var healAmount = (data && (data.heal_amount != null ? data.heal_amount : data.amount)) ? parseInt(data.heal_amount != null ? data.heal_amount : data.amount, 10) : 100;
             if (healAmount > 0 && gameSettings.healingEnabled) {
                 var newHP = currentBoss.currentHP;
                 var newMaxHP = currentBoss.maxHP;
@@ -543,7 +560,7 @@
 
         socket.on('bitboss_damage_boss', function (data) {
             console.log('Connector action: damage boss', data);
-            var damageAmount = (data && data.amount) ? parseInt(data.amount) : 100; // Default 100 damage
+            var damageAmount = (data && (data.damage_amount != null ? data.damage_amount : data.amount)) ? parseInt(data.damage_amount != null ? data.damage_amount : data.amount, 10) : 100;
             if (damageAmount > 0) {
                 var newHP = Math.max(0, currentBoss.currentHP - damageAmount);
                 var bossChanged = false;

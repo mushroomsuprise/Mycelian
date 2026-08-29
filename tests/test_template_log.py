@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -81,6 +82,15 @@ class TemplateLogRateLimiterTests(unittest.TestCase):
         self.assertTrue(limiter.allow("client-a"))
         self.assertFalse(limiter.allow("client-a"))
         self.assertTrue(limiter.allow("client-b"))
+
+    def test_evicts_idle_buckets(self) -> None:
+        limiter = TemplateLogRateLimiter(max_events=5, window_sec=0.05)
+        self.assertTrue(limiter.allow("idle-client"))
+        self.assertIn("idle-client", limiter._buckets)
+        limiter._last_evict = 0.0
+        time.sleep(0.08)
+        self.assertTrue(limiter.allow("fresh-client"))
+        self.assertNotIn("idle-client", limiter._buckets)
 
 
 class TemplateLogWriteTests(unittest.TestCase):

@@ -22,10 +22,22 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+_preview_queue_seq = 0
+_preview_queue_seq_lock = threading.Lock()
+
+
+def _assign_preview_alert_queue_seq() -> int:
+    """Preview-only sequence; never touches live EXPECTED_ALERT_COMPLETE_SEQ."""
+    global _preview_queue_seq
+    with _preview_queue_seq_lock:
+        _preview_queue_seq -= 1
+        return _preview_queue_seq
 
 # Canonical alert types for per-type preview toolbar buttons.
 _PREVIEW_ALERT_TYPES: Tuple[Tuple[str, str], ...] = (
@@ -235,12 +247,7 @@ def build_typed_alert_payload(
     }
     payload.update(_typed_alert_fields(at))
     if str(alert_system or "queue").strip().lower() == "queue":
-        try:
-            from .. import web_engine as _we
-
-            payload["queue_seq"] = _we.assign_next_alert_queue_seq()
-        except Exception:
-            payload.setdefault("queue_seq", 1)
+        payload["queue_seq"] = _assign_preview_alert_queue_seq()
     return payload
 
 
@@ -250,12 +257,7 @@ def _next_alert_queue_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
         preset = _alert_payload(pools)
         if preset.get("alert_type") != "follow":
             break
-    try:
-        from .. import web_engine as _we
-
-        preset["queue_seq"] = _we.assign_next_alert_queue_seq()
-    except Exception:
-        preset.setdefault("queue_seq", 1)
+    preset["queue_seq"] = _assign_preview_alert_queue_seq()
     return preset
 
 

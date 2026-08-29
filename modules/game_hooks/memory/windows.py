@@ -33,9 +33,29 @@ _WaitForSingleObject = None
 if sys.platform == "win32":
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _OpenProcess = _kernel32.OpenProcess
+    _OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    _OpenProcess.restype = wintypes.HANDLE
     _ReadProcessMemory = _kernel32.ReadProcessMemory
+    _ReadProcessMemory.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPCVOID,
+        wintypes.LPVOID,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    _ReadProcessMemory.restype = wintypes.BOOL
     _WriteProcessMemory = _kernel32.WriteProcessMemory
+    _WriteProcessMemory.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        wintypes.LPCVOID,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    _WriteProcessMemory.restype = wintypes.BOOL
     _CloseHandle = _kernel32.CloseHandle
+    _CloseHandle.argtypes = [wintypes.HANDLE]
+    _CloseHandle.restype = wintypes.BOOL
     _PROCESS_ACCESS = (
         0x0010  # PROCESS_VM_READ
         | 0x0020  # PROCESS_VM_WRITE

@@ -3062,7 +3062,10 @@
         var socketUrl = window.location.protocol + '//' + window.location.host;
         socket = typeof MycelianOverlay !== 'undefined'
             ? MycelianOverlay.connect(socketUrl, {
-                socketOptions: { path: '/socket.io', transports: ['polling', 'websocket'] }
+                socketOptions: { path: '/socket.io', transports: ['polling', 'websocket'] },
+                onRecovery: function () {
+                    socket.emit('game_hook_command', { hook: 'ff7', action: 'resync' });
+                }
             })
             : (typeof io !== 'undefined'
                 ? io(socketUrl, { path: '/socket.io', transports: ['polling', 'websocket'] })
@@ -3071,6 +3074,7 @@
         if (socket) {
             socket.on('connect', function () {
                 if (FF7_DEBUG) console.log('[ff7] socket connected', socket.id);
+                socket.emit('game_hook_command', { hook: 'ff7', action: 'resync' });
             });
             socket.on('disconnect', function (reason) {
                 if (FF7_DEBUG) console.warn('[ff7] socket disconnect', reason);

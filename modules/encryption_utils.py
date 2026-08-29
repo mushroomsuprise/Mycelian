@@ -26,36 +26,105 @@ SOFTWARE.
 import base64
 import logging
 import os
+import threading
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 logger = logging.getLogger(__name__)
 
-# Application-specific salt for key derivation
-# This should be kept secret and consistent across the application
+# Application-specific salt for key derivation (legacy installs only)
 APP_SALT = b'MycelianStreamApp2024_Salt_Key'
 
-def _get_encryption_key() -> bytes:
-    """
-    Generate a consistent encryption key based on application salt.
-    
-    Returns:
-        bytes: The encryption key for Fernet
-    """
-    # Use a combination of the app salt and a machine-specific identifier
-    # This ensures the key is consistent for the same installation
+_KEY_FILENAME = ".encryption_key"
+_key_lock = threading.Lock()
+_cached_key = None
+
+
+class EncryptionError(Exception):
+    """Raised when a value cannot be encrypted (fail closed; do not persist plaintext)."""
+
+
+def _key_file_path() -> str:
+    from .path_utils import get_data_path
+
+    return get_data_path(_KEY_FILENAME)
+
+
+def _derive_legacy_key() -> bytes:
+    """Key derived from machine id + app salt (pre-per-install-key installs)."""
     machine_id = os.environ.get('MYCELIAN_MACHINE_ID', 'default_machine')
-    
-    # Derive key using PBKDF2
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=APP_SALT,
         iterations=100000,
     )
-    key = base64.urlsafe_b64encode(kdf.derive(machine_id.encode()))
-    return key
+    return base64.urlsafe_b64encode(kdf.derive(machine_id.encode()))
+
+
+def _persist_key(key: bytes, path: str) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(key)
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def _load_key_from_file(path: str) -> bytes:
+    with open(path, "rb") as f:
+        raw = f.read().strip()
+    if not raw:
+        raise EncryptionError("Encryption key file is empty")
+    return raw
+
+
+def _get_encryption_key(*, decrypting: bool = False) -> bytes:
+    """
+    Per-install Fernet key stored in the data dir.
+
+    If the key file is missing:
+    - decrypt path (existing ciphertext): persist the legacy derived key
+    - encrypt path with no prior ciphertext: random key
+    - MYCELIAN_MACHINE_ID set: persist derived key (legacy env-based installs)
+    """
+    global _cached_key
+    with _key_lock:
+        if _cached_key is not None:
+            return _cached_key
+        path = _key_file_path()
+        if os.path.isfile(path):
+            _cached_key = _load_key_from_file(path)
+            return _cached_key
+
+        derived = _derive_legacy_key()
+        use_legacy = decrypting or bool(os.environ.get("MYCELIAN_MACHINE_ID"))
+        key = derived if use_legacy else Fernet.generate_key()
+        try:
+            _persist_key(key, path)
+        except FileExistsError:
+            _cached_key = _load_key_from_file(path)
+            return _cached_key
+        _cached_key = key
+        logger.info(
+            "Persisted %s encryption key to data dir",
+            "legacy" if use_legacy else "new",
+        )
+        return _cached_key
 
 def encrypt_value(value: str) -> str:
     """
@@ -66,12 +135,15 @@ def encrypt_value(value: str) -> str:
         
     Returns:
         str: The encrypted value as a base64 string
+
+    Raises:
+        EncryptionError: if encryption fails (never returns plaintext to persist)
     """
     try:
         if not value:
             return ""
         
-        key = _get_encryption_key()
+        key = _get_encryption_key(decrypting=False)
         fernet = Fernet(key)
         
         # Encrypt the value
@@ -80,19 +152,21 @@ def encrypt_value(value: str) -> str:
         # Return as base64 string for storage
         return base64.urlsafe_b64encode(encrypted_bytes).decode()
         
+    except EncryptionError:
+        raise
     except Exception as e:
         logger.error(f"Error encrypting value: {str(e)}")
         try:
             from .notification_engine import notify_critical
 
             notify_critical(
-                "Credential encryption failed. Secrets may be stored in plain form; check logs.",
+                "Credential encryption failed. Secrets were not saved.",
                 dedupe_key="crypto:encrypt_failed",
                 dedupe_cooldown_sec=300.0,
             )
         except Exception:
             pass
-        return value  # Return original value if encryption fails
+        raise EncryptionError(str(e)) from e
 
 def decrypt_value(encrypted_value: str) -> str:
     """
@@ -108,7 +182,7 @@ def decrypt_value(encrypted_value: str) -> str:
         if not encrypted_value:
             return ""
         
-        key = _get_encryption_key()
+        key = _get_encryption_key(decrypting=True)
         fernet = Fernet(key)
         
         # Decode from base64

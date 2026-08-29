@@ -35,6 +35,8 @@ The configuration is stored in a JSON file separate from any database.
 import json
 import logging
 import os
+import tempfile
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
@@ -77,6 +79,7 @@ class ConfigManager:
             self.config_path = Path(config_path)
         self._config: Optional[AppConfig] = None
         self._initialized = False
+        self._lock = threading.RLock()
     
     def initialize(self) -> bool:
         """Initialize the configuration manager"""
@@ -148,13 +151,27 @@ class ConfigManager:
             from datetime import datetime
             self._config.last_updated = datetime.now().isoformat()
             
-            # Create directory if it doesn't exist
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Save to file with pretty formatting
+            # Save to file with pretty formatting (atomic replace)
             config_dict = asdict(self._config)
-            with open(self.config_path, 'w') as f:
-                json.dump(config_dict, f, indent=2, sort_keys=True)
+            with self._lock:
+                self.config_path.parent.mkdir(parents=True, exist_ok=True)
+                fd, tmp_name = tempfile.mkstemp(
+                    prefix=".config.",
+                    suffix=".tmp",
+                    dir=str(self.config_path.parent),
+                )
+                try:
+                    with os.fdopen(fd, "w") as f:
+                        json.dump(config_dict, f, indent=2, sort_keys=True)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp_name, self.config_path)
+                except Exception:
+                    try:
+                        os.unlink(tmp_name)
+                    except OSError:
+                        pass
+                    raise
             
             logger.debug(f"Saved config to {self.config_path}")
             return True

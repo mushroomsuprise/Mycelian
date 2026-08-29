@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Any, Optional
 
-from nicegui import ui
+from nicegui import run, ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_input, form_select, form_sensitive_input
@@ -338,21 +338,26 @@ class SpotifyTab:
 
             # Create a timer to check the result from main thread
             check_count = {"count": 0}
-            max_checks = 150  # 30 seconds at 0.2 second intervals
+            max_checks = 1500  # 5 minutes at 0.2s — browser authorize is not 30s
+            notification_shown = {"done": False}
 
             def check_oauth_result():
+                if notification_shown["done"]:
+                    self._cleanup_oauth()
+                    return
+
                 check_count["count"] += 1
 
-                # Safety timeout for OAuth (30 seconds)
-                if check_count["count"] >= max_checks:
-                    logger.warning("Spotify OAuth check timed out")
-                    self._cleanup_oauth()
-                    notify("Spotify OAuth timed out", type="negative")
-                    return False
-
                 if oauth_result["status"] == "connecting":
-                    return True  # Continue checking
-                elif oauth_result["status"] == "complete":
+                    if check_count["count"] >= max_checks:
+                        logger.warning("Spotify OAuth check timed out")
+                        notification_shown["done"] = True
+                        self._cleanup_oauth()
+                        notify("Spotify OAuth timed out", type="negative")
+                    return
+
+                notification_shown["done"] = True
+                if oauth_result["status"] == "complete":
                     try:
                         if oauth_result["success"]:
                             notify(
@@ -380,7 +385,7 @@ class SpotifyTab:
                         logger.error(f"Error updating UI after Spotify OAuth: {str(e)}")
 
                     self._cleanup_oauth()
-                    return False  # Stop checking
+                    return
                 elif oauth_result["status"] == "error":
                     try:
                         notify(
@@ -390,10 +395,11 @@ class SpotifyTab:
                     except Exception as ui_error:
                         logger.error(f"Error showing OAuth error: {str(ui_error)}")
                     self._cleanup_oauth()
-                    return False  # Stop checking
-                return False  # Default stop
+                    return
+                self._cleanup_oauth()
 
             oauth_timer = layout_schedule(0.2, check_oauth_result)
+            self._oauth_timer = oauth_timer
             # Store timer reference for potential cleanup
             self._active_timers = getattr(self, "_active_timers", [])
             self._active_timers.append(oauth_timer)
@@ -411,6 +417,24 @@ class SpotifyTab:
     def _cleanup_oauth(self) -> None:
         """Clean up after Spotify OAuth"""
         try:
+            oauth_timer = getattr(self, "_oauth_timer", None)
+            if oauth_timer is not None:
+                try:
+                    oauth_timer.active = False
+                except Exception:
+                    pass
+                try:
+                    oauth_timer.cancel()
+                except Exception:
+                    pass
+                self._oauth_timer = None
+            for t in getattr(self, "_active_timers", []):
+                try:
+                    t.active = False
+                except Exception:
+                    pass
+            self._active_timers = []
+
             # Mark OAuth as no longer in progress
             self._oauth_in_progress = False
 
@@ -424,7 +448,7 @@ class SpotifyTab:
             logger = logging.getLogger(__name__)
             logger.error(f"Error cleaning up Spotify OAuth: {str(e)}")
 
-    def _test_connection(self) -> None:
+    async def _test_connection(self) -> None:
         """Handle the Test Connection button click for Spotify"""
         try:
             import logging
@@ -454,80 +478,33 @@ class SpotifyTab:
             # Save only Spotify settings to avoid triggering database and other notifications
             self._save_settings_only()
 
-            # Test the connection in a separate thread
-            import threading
-
-            # Create shared result holder for thread communication
-            test_result = {
-                "status": "testing",
-                "success": None,
-                "error": None,
-            }
-
             def test_thread():
-                try:
-                    from ... import spotify
+                from ... import spotify
 
-                    # Test and reconnect if possible
-                    success = spotify.test_and_reconnect()
-                    test_result["status"] = "complete"
-                    test_result["success"] = success
+                return spotify.test_and_reconnect()
 
-                except Exception as e:
-                    logger.error(
-                        f"Error in Spotify test thread: {str(e)}", exc_info=True
+            try:
+                success = await run.io_bound(test_thread)
+                if success:
+                    notify(
+                        "Spotify connection successful!",
+                        type="positive",
+                        timeout=3000,
                     )
-                    test_result["status"] = "error"
-                    test_result["error"] = str(e)
-
-            # Start the thread
-            test_worker = threading.Thread(target=test_thread)
-            test_worker.daemon = True
-            test_worker.start()
-
-            # Use a single-shot approach with delayed execution
-            def handle_test_completion():
-                try:
-                    # Wait for thread to complete (up to 5 seconds)
-                    test_worker.join(timeout=5.0)
-
-                    if test_result["status"] == "complete":
-                        if test_result["success"]:
-                            notify(
-                                "Spotify connection successful!",
-                                type="positive",
-                                timeout=3000,
-                            )
-                            logger.info(
-                                "Spotify connection test completed successfully"
-                            )
-                        else:
-                            notify(
-                                "Spotify connection failed. Please check your credentials and try again.",
-                                type="negative",
-                                timeout=5000,
-                            )
-                            logger.warning("Spotify connection test failed")
-
-                    elif test_result["status"] == "error":
-                        notify(
-                            f"Error testing Spotify connection: {test_result['error']}",
-                            type="negative",
-                        )
-                        logger.error(
-                            f"Spotify connection test error: {test_result['error']}"
-                        )
-
-                    # Refresh the status display
-                    self._refresh_status()
-
-                except Exception as e:
-                    logger.error(f"Error handling Spotify test completion: {str(e)}")
-                finally:
-                    self._cleanup_test()
-
-            # Execute completion handler after a delay
-            layout_schedule(1.0, handle_test_completion, once=True)
+                    logger.info("Spotify connection test completed successfully")
+                else:
+                    notify(
+                        "Spotify connection failed. Please check your credentials and try again.",
+                        type="negative",
+                        timeout=5000,
+                    )
+                    logger.warning("Spotify connection test failed")
+                self._refresh_status()
+            except Exception as e:
+                logger.error(f"Error testing Spotify connection: {str(e)}", exc_info=True)
+                notify(f"Error testing Spotify connection: {e}", type="negative")
+            finally:
+                self._cleanup_test()
 
         except Exception as e:
             import logging

@@ -32,7 +32,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, ClassVar
 
 from . import database_manager
 
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AlertSettings:
     global_delay: int = 3
-    alert_types = [
+    alert_types: ClassVar[Tuple[str, ...]] = (
         "sub",
         "bit",
         "follow",
@@ -54,7 +54,7 @@ class AlertSettings:
         "hype_train_start",
         "hype_train_progress",
         "hype_train_end",
-    ]
+    )
     default_bit_alert: str = "bit1"
     default_sub_alert: str = "sub1"
     default_follow_alert: str = "follow1"
@@ -99,9 +99,6 @@ PointAlerts = {}
 FollowAlerts = {}
 StreakAlerts = {}
 StreakRangeAlerts = {}
-
-# Global alert queue
-ALERT_QUEUE = []
 
 
 # Alert state manager class to handle alert state synchronization
@@ -1859,73 +1856,11 @@ class AlertObj:
     randomized_extra_dir: str = None
 
 
-def load_alerts():
-    db_bit_alerts = database_manager.get_data("Alerts/BitAlerts") or {}
-    db_bit_range_alerts = database_manager.get_data("Alerts/BitRangeAlerts") or {}
-    db_sub_alerts = database_manager.get_data("Alerts/SubAlerts") or {}
-    db_sub_range_alerts = database_manager.get_data("Alerts/SubRangeAlerts") or {}
-    db_giftsub_alerts = database_manager.get_data("Alerts/GiftsubAlerts") or {}
-    db_giftsub_range_alerts = (
-        database_manager.get_data("Alerts/GiftsubRangeAlerts") or {}
-    )
-    db_donation_alerts = database_manager.get_data("Alerts/DonationAlerts") or {}
-    db_donation_range_alerts = (
-        database_manager.get_data("Alerts/DonationRangeAlerts") or {}
-    )
-    db_raid_alerts = database_manager.get_data("Alerts/RaidAlerts") or {}
-    db_raid_range_alerts = database_manager.get_data("Alerts/RaidRangeAlerts") or {}
-    db_point_alerts = database_manager.get_data("Alerts/PointAlerts") or {}
-    db_follow_alerts = database_manager.get_data("Alerts/FollowAlerts") or {}
-    db_streak_alerts = database_manager.get_data("Alerts/StreakAlerts") or {}
-    db_streak_range_alerts = database_manager.get_data("Alerts/StreakRangeAlerts") or {}
-
-    # Clear existing global collections first
-    BitAlerts.clear()
-    BitRangeAlerts.clear()
-    SubAlerts.clear()
-    SubRangeAlerts.clear()
-    GiftsubAlerts.clear()
-    GiftsubRangeAlerts.clear()
-    DonationAlerts.clear()
-    DonationRangeAlerts.clear()
-    RaidAlerts.clear()
-    RaidRangeAlerts.clear()
-    PointAlerts.clear()
-    FollowAlerts.clear()
-    StreakAlerts.clear()
-    StreakRangeAlerts.clear()
-
-    for key, value in db_bit_alerts.items():
-        BitAlerts[key] = AlertObj(**value)
-    for key, value in db_bit_range_alerts.items():
-        BitRangeAlerts[key] = AlertObj(**value)
-    for key, value in db_sub_alerts.items():
-        SubAlerts[key] = AlertObj(**value)
-    for key, value in db_sub_range_alerts.items():
-        SubRangeAlerts[key] = AlertObj(**value)
-    for key, value in db_giftsub_alerts.items():
-        GiftsubAlerts[key] = AlertObj(**value)
-    for key, value in db_giftsub_range_alerts.items():
-        GiftsubRangeAlerts[key] = AlertObj(**value)
-    for key, value in db_donation_alerts.items():
-        DonationAlerts[key] = AlertObj(**value)
-    for key, value in db_donation_range_alerts.items():
-        DonationRangeAlerts[key] = AlertObj(**value)
-    for key, value in db_raid_alerts.items():
-        RaidAlerts[key] = AlertObj(**value)
-    for key, value in db_raid_range_alerts.items():
-        RaidRangeAlerts[key] = AlertObj(**value)
-    for key, value in db_point_alerts.items():
-        PointAlerts[key] = AlertObj(**value)
-    for key, value in db_follow_alerts.items():
-        FollowAlerts[key] = AlertObj(**value)
-    for key, value in db_streak_alerts.items():
-        StreakAlerts[key] = AlertObj(**value)
-    for key, value in db_streak_range_alerts.items():
-        StreakRangeAlerts[key] = AlertObj(**value)
-
-    # Do not update alert state manager from here anymore
-    # That would create an infinite loop
+def _alert_obj_from_db(alert_data: dict) -> AlertObj:
+    """Build AlertObj from a DB/UI dict, dropping unknown fields."""
+    if not isinstance(alert_data, dict):
+        alert_data = {}
+    return AlertObj(**alert_state_manager._filter_alert_obj_fields(alert_data))
 
 
 def fetch_bits_alert(quantity: int) -> Optional[AlertObj]:
@@ -1949,7 +1884,7 @@ def fetch_bits_alert(quantity: int) -> Optional[AlertObj]:
     # Check for exact quantity match first
     exact_key = "bits" + str(quantity)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
 
     # Check for range matches
     for alert_id, alert_data in alerts.items():
@@ -1962,17 +1897,17 @@ def fetch_bits_alert(quantity: int) -> Optional[AlertObj]:
 
                 min_val, max_val = map(int, range_part.split("-"))
                 if min_val <= quantity <= max_val:
-                    return AlertObj(**alert_data)
+                    return _alert_obj_from_db(alert_data)
             except ValueError:
                 continue
 
     # Return default alert if no match found
     default_alert_id = AlertSettings.default_bit_alert
     if default_alert_id in alerts:
-        return AlertObj(**alerts[default_alert_id])
+        return _alert_obj_from_db(alerts[default_alert_id])
     elif alerts:
         # Fall back to first available alert if default not found
-        return AlertObj(**next(iter(alerts.values())))
+        return _alert_obj_from_db(next(iter(alerts.values())))
     return None
 
 
@@ -2002,7 +1937,7 @@ def fetch_giftsub_alert(quantity: int) -> Optional[AlertObj]:
     # Check for exact quantity match first
     exact_key = "giftsubs" + str(quantity)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
 
     # Check for range matches
     for alert_id, alert_data in alerts.items():
@@ -2015,17 +1950,17 @@ def fetch_giftsub_alert(quantity: int) -> Optional[AlertObj]:
 
                 min_val, max_val = map(int, range_part.split("-"))
                 if min_val <= quantity <= max_val:
-                    return AlertObj(**alert_data)
+                    return _alert_obj_from_db(alert_data)
             except ValueError:
                 continue
 
     # Return default alert if no match found
     default_alert_id = AlertSettings.default_giftsub_alert
     if default_alert_id in alerts:
-        return AlertObj(**alerts[default_alert_id])
+        return _alert_obj_from_db(alerts[default_alert_id])
     elif alerts:
         # Fall back to first available alert if default not found
-        return AlertObj(**next(iter(alerts.values())))
+        return _alert_obj_from_db(next(iter(alerts.values())))
 
     logger.warning(
         "No giftsub alert configured for quantity %s, using default", quantity
@@ -2057,7 +1992,7 @@ def fetch_donation_alert(quantity: int) -> Optional[AlertObj]:
     # Check for exact quantity match first
     exact_key = "donations" + str(quantity)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
 
     # Check for range matches
     for alert_id, alert_data in alerts.items():
@@ -2070,17 +2005,17 @@ def fetch_donation_alert(quantity: int) -> Optional[AlertObj]:
 
                 min_val, max_val = map(int, range_part.split("-"))
                 if min_val <= quantity <= max_val:
-                    return AlertObj(**alert_data)
+                    return _alert_obj_from_db(alert_data)
             except ValueError:
                 continue
 
     # Return default alert if no match found
     default_alert_id = AlertSettings.default_donation_alert
     if default_alert_id in alerts:
-        return AlertObj(**alerts[default_alert_id])
+        return _alert_obj_from_db(alerts[default_alert_id])
     elif alerts:
         # Fall back to first available alert if default not found
-        return AlertObj(**next(iter(alerts.values())))
+        return _alert_obj_from_db(next(iter(alerts.values())))
     return None
 
 
@@ -2105,7 +2040,7 @@ def fetch_raid_alert(raider_count: int) -> Optional[AlertObj]:
     # Check for exact count match first
     exact_key = "raids" + str(raider_count)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
 
     # Check for range matches
     for alert_id, alert_data in alerts.items():
@@ -2118,17 +2053,17 @@ def fetch_raid_alert(raider_count: int) -> Optional[AlertObj]:
 
                 min_val, max_val = map(int, range_part.split("-"))
                 if min_val <= raider_count <= max_val:
-                    return AlertObj(**alert_data)
+                    return _alert_obj_from_db(alert_data)
             except ValueError:
                 continue
 
     # Return default alert if no match found
     default_alert_id = AlertSettings.default_raids_alert
     if default_alert_id in alerts:
-        return AlertObj(**alerts[default_alert_id])
+        return _alert_obj_from_db(alerts[default_alert_id])
     elif alerts:
         # Fall back to first available alert if default not found
-        return AlertObj(**next(iter(alerts.values())))
+        return _alert_obj_from_db(next(iter(alerts.values())))
     return None
 
 
@@ -2149,7 +2084,7 @@ def fetch_streak_alert(streak_count: int) -> Optional[AlertObj]:
 
     exact_key = "streaks" + str(streak_count)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
 
     for alert_id, alert_data in alerts.items():
         if "-" in alert_id:
@@ -2160,15 +2095,15 @@ def fetch_streak_alert(streak_count: int) -> Optional[AlertObj]:
 
                 min_val, max_val = map(int, range_part.split("-"))
                 if min_val <= streak_count <= max_val:
-                    return AlertObj(**alert_data)
+                    return _alert_obj_from_db(alert_data)
             except ValueError:
                 continue
 
     default_alert_id = AlertSettings.default_streak_alert
     if default_alert_id in alerts:
-        return AlertObj(**alerts[default_alert_id])
+        return _alert_obj_from_db(alerts[default_alert_id])
     elif alerts:
-        return AlertObj(**next(iter(alerts.values())))
+        return _alert_obj_from_db(next(iter(alerts.values())))
     return None
 
 
@@ -2192,15 +2127,15 @@ def fetch_sub_alert(months: int) -> Optional[AlertObj]:
     # Check for exact month match first
     exact_key = "subs" + str(months)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
 
     # Return default alert if no match found
     default_alert_id = AlertSettings.default_sub_alert
     if default_alert_id in alerts:
-        return AlertObj(**alerts[default_alert_id])
+        return _alert_obj_from_db(alerts[default_alert_id])
     elif alerts:
         # Fall back to first available alert if default not found
-        return AlertObj(**next(iter(alerts.values())))
+        return _alert_obj_from_db(next(iter(alerts.values())))
     return None
 
 
@@ -2221,10 +2156,10 @@ def fetch_follow_alert() -> Optional[AlertObj]:
     # Return default alert if available
     default_alert_id = AlertSettings.default_follow_alert
     if default_alert_id in alerts:
-        return AlertObj(**alerts[default_alert_id])
+        return _alert_obj_from_db(alerts[default_alert_id])
     elif alerts:
         # Return the first available follow alert
-        return AlertObj(**next(iter(alerts.values())))
+        return _alert_obj_from_db(next(iter(alerts.values())))
     return None
 
 
@@ -2247,7 +2182,7 @@ def fetch_point_alert(twitch_reward_id: str) -> Optional[AlertObj]:
 
     # Check for exact reward ID match
     if twitch_reward_id in alerts:
-        return AlertObj(**alerts[twitch_reward_id])
+        return _alert_obj_from_db(alerts[twitch_reward_id])
 
     # Return None if no exact match found
     return None
@@ -2275,19 +2210,19 @@ def fetch_resub_alert(months: int) -> Optional[AlertObj]:
     # 1. Check for exact month match
     exact_key = "subs" + str(months)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
 
     # 2. If no exact match, check if the fallback alert is enabled
     fallback_id = AlertSettings.FALLBACK_ALERT_ID
     if alert_state_manager.get_resub_fallback_enabled() and fallback_id in alerts:
-        return AlertObj(**alerts[fallback_id])
+        return _alert_obj_from_db(alerts[fallback_id])
 
     # 3. Fall back to default sub alert (existing behaviour)
     default_alert_id = AlertSettings.default_sub_alert
     if default_alert_id in alerts:
-        return AlertObj(**alerts[default_alert_id])
+        return _alert_obj_from_db(alerts[default_alert_id])
     elif alerts:
-        return AlertObj(**next(iter(alerts.values())))
+        return _alert_obj_from_db(next(iter(alerts.values())))
     return None
 
 
@@ -2401,7 +2336,7 @@ def _find_range_amount_alert(
             )
             min_val, max_val = map(int, range_part.split("-"))
             if min_val <= amount <= max_val:
-                return AlertObj(**alert_data)
+                return _alert_obj_from_db(alert_data)
         except (ValueError, TypeError):
             continue
     return None
@@ -2413,7 +2348,7 @@ def _fetch_sub_alert_exact(months: int) -> Optional[AlertObj]:
     alerts = alert_state_manager.get_alerts_by_type("subs", include_ranges=False)
     exact_key = "subs" + str(months)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
     return None
 
 
@@ -2423,7 +2358,7 @@ def _fetch_bits_alert_exact(quantity: int) -> Optional[AlertObj]:
     alerts = alert_state_manager.get_alerts_by_type("bits", include_ranges=True)
     exact_key = "bits" + str(quantity)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
     return _find_range_amount_alert(
         alerts, quantity, prefix="bits", prefix_strip_len=4
     )
@@ -2440,7 +2375,7 @@ def _fetch_giftsub_alert_exact(quantity: int) -> Optional[AlertObj]:
         alerts = alert_state_manager.get_alerts_by_type("giftsubs", include_ranges=True)
     exact_key = "giftsubs" + str(quantity)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
     return _find_range_amount_alert(
         alerts, quantity, prefix="giftsubs", prefix_strip_len=8
     )
@@ -2452,7 +2387,7 @@ def _fetch_donation_alert_exact(amount: float) -> Optional[AlertObj]:
     alerts = alert_state_manager.get_alerts_by_type("donations", include_ranges=True)
     exact_key = "donations" + str(int(amount) if amount == int(amount) else amount)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
     return _find_range_amount_alert(
         alerts, amount, prefix="donations", prefix_strip_len=9
     )
@@ -2464,7 +2399,7 @@ def _fetch_raid_alert_exact(raider_count: int) -> Optional[AlertObj]:
     alerts = alert_state_manager.get_alerts_by_type("raids", include_ranges=True)
     exact_key = "raids" + str(raider_count)
     if exact_key in alerts:
-        return AlertObj(**alerts[exact_key])
+        return _alert_obj_from_db(alerts[exact_key])
     return _find_range_amount_alert(
         alerts, raider_count, prefix="raids", prefix_strip_len=5
     )

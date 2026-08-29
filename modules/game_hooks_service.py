@@ -10,6 +10,7 @@ Event: ``game_hook_payload`` — envelope::
 Commands from templates (see web_engine ``game_hook_command``)::
 
     { "hook": "ff7", "action": "clear_bosses" }
+    { "hook": "ff7", "action": "resync" }
 
 Per-game logic lives under ``modules/game_hooks/``; this module coordinates workers,
 process discovery, and Socket.IO broadcast only.
@@ -35,6 +36,7 @@ from .game_hooks.registry import (
 logger = logging.getLogger(__name__)
 
 _INTERVAL = 0.25
+_WRITE_QUEUE_MAXSIZE = 256
 
 
 class _HookWorker:
@@ -48,12 +50,12 @@ class _HookWorker:
         self._snapshot_lock = threading.Lock()
         self._last_snapshot: Optional[Dict[str, Any]] = None
         self._write_queue: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, Dict[str, Any]]]" = (
-            queue.Queue()
+            queue.Queue(maxsize=_WRITE_QUEUE_MAXSIZE)
         )
 
         def _enqueue(op: str, kwargs: Dict[str, Any]) -> None:
-            self._write_queue.put(
-                (concurrent.futures.Future(), op, dict(kwargs))
+            self._enqueue_or_drop(
+                concurrent.futures.Future(), op, dict(kwargs)
             )
 
         hook.set_write_enqueue(_enqueue)
@@ -69,15 +71,22 @@ class _HookWorker:
         )
         self._thread.start()
 
-    def stop(self, timeout: float = 2.0) -> None:
+    def stop(self, timeout: float = 2.0) -> bool:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=timeout)
+            if self._thread.is_alive():
+                logger.warning(
+                    "Game hook worker %s still alive; not closing handle",
+                    self.hook_id,
+                )
+                return False
             self._thread = None
         try:
             self.hook.close()
         except Exception:
             pass
+        return True
 
     def is_alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -86,11 +95,26 @@ class _HookWorker:
         with self._snapshot_lock:
             return dict(self._last_snapshot) if self._last_snapshot else None
 
+    def _enqueue_or_drop(
+        self,
+        fut: concurrent.futures.Future,
+        op: str,
+        kwargs: Dict[str, Any],
+    ) -> None:
+        try:
+            self._write_queue.put_nowait((fut, op, kwargs))
+        except queue.Full:
+            logger.warning(
+                "Game hook %s write queue full; dropping %s", self.hook_id, op
+            )
+            if not fut.done():
+                fut.set_result((False, "write queue full", None))
+
     def enqueue(
         self, operation: str, arguments: Dict[str, Any]
     ) -> concurrent.futures.Future:
         fut: concurrent.futures.Future = concurrent.futures.Future()
-        self._write_queue.put((fut, operation, dict(arguments)))
+        self._enqueue_or_drop(fut, operation, dict(arguments))
         return fut
 
     def _drain_writes(self) -> None:
@@ -100,6 +124,13 @@ class _HookWorker:
             except queue.Empty:
                 break
             try:
+                if op == "__command__":
+                    self.hook.handle_command(
+                        str(kwargs.get("action") or ""),
+                        kwargs.get("data") or {},
+                    )
+                    fut.set_result((True, None, None))
+                    continue
                 ok, err, out = self.hook.execute_operation(op, kwargs)
                 fut.set_result((ok, err, out))
             except Exception as e:
@@ -116,8 +147,8 @@ class _HookWorker:
             t0 = time.time()
             self._drain_writes()
             self.hook.drain_timed_jobs(
-                lambda op, kw: self._write_queue.put(
-                    (concurrent.futures.Future(), op, dict(kw))
+                lambda op, kw: self._enqueue_or_drop(
+                    concurrent.futures.Future(), op, dict(kw)
                 )
             )
             try:
@@ -179,23 +210,30 @@ class GameHooksServiceImpl:
         self.reload_hook_config("ff7")
 
     def clear_ff7_bosses(self) -> None:
+        worker = self._workers.get("ff7")
+        if worker is not None and worker.is_alive():
+            worker.enqueue("__command__", {"action": "clear_bosses", "data": {}})
+            return
         hook = self._get_hook("ff7")
         if hook is not None:
             hook.handle_command("clear_bosses", {})
 
     def _stop_worker(self, hook_id: str) -> None:
-        worker = self._workers.pop(hook_id, None)
-        if worker is not None:
-            worker.stop()
+        worker = self._workers.get(hook_id)
+        if worker is None:
+            return
+        if worker.stop():
+            self._workers.pop(hook_id, None)
 
     def _ensure_worker(self, hook: GameHook) -> _HookWorker:
         worker = self._workers.get(hook.hook_id)
-        if worker is None or not worker.is_alive():
-            if worker is not None:
-                worker.stop()
-            worker = _HookWorker(hook)
-            self._workers[hook.hook_id] = worker
-            worker.start()
+        if worker is not None and worker.is_alive():
+            return worker
+        if worker is not None:
+            worker.stop()
+        worker = _HookWorker(hook)
+        self._workers[hook.hook_id] = worker
+        worker.start()
         return worker
 
     def _emit(self, payload: Dict[str, Any]) -> None:
@@ -208,6 +246,21 @@ class GameHooksServiceImpl:
                 inst.safe_emit("game_hook_payload", payload)
         except Exception as e:
             logger.warning("game_hook_payload emit failed: %s", e, exc_info=True)
+
+    def emit_last_payload(self) -> None:
+        """Re-broadcast the last per-hook snapshots (overlay reconnect / resync)."""
+        hooks: Dict[str, Any] = {}
+        with self._ui_state_lock:
+            for hid, snap in self._ui_snapshots.items():
+                if isinstance(snap, dict):
+                    hooks[str(hid)] = dict(snap)
+        if not hooks:
+            return
+        self._emit({
+            "v": 1,
+            "ts": int(time.time() * 1000),
+            "hooks": hooks,
+        })
 
     def _coordinator_loop(self) -> None:
         while not self._stop.is_set():
@@ -333,6 +386,13 @@ def handle_game_hook_command(data: Any) -> None:
     hook_id = str(data.get("hook") or "").strip().lower()
     action = str(data.get("action") or "").strip()
     if not hook_id or not action:
+        return
+    if action == "resync":
+        game_hooks_service.emit_last_payload()
+        return
+    worker = game_hooks_service._workers.get(hook_id)
+    if worker is not None and worker.is_alive():
+        worker.enqueue("__command__", {"action": action, "data": data})
         return
     hook = game_hooks_service._get_hook(hook_id)
     if hook is not None:
