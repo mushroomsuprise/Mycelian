@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 _MONITOR_STARTED = False
 _PING_SCRIPT_INJECTED = False
+_SUSPENDED = False
 _health_client: Any = None
 _armed_mono: float = 0.0
 
@@ -98,6 +99,24 @@ def _in_startup_grace() -> bool:
     return (time.monotonic() - _armed_mono) < _STARTUP_GRACE_SEC
 
 
+def set_monitor_suspended(suspended: bool) -> None:
+    """Pause health checks while the app is minimised to the tray.
+
+    Minimising parks the webview on a blank page on purpose, which looks identical to
+    the black-screen failure this watchdog exists to catch. Without this the monitor
+    would count failures against a window nobody is looking at.
+    """
+    global _SUSPENDED, _consecutive_ping_failures, _armed_mono
+    if _SUSPENDED == suspended:
+        return
+    _SUSPENDED = suspended
+    _consecutive_ping_failures = 0
+    if not suspended:
+        # Restoring rebuilds the UI from scratch; give it the same grace as a cold start.
+        _armed_mono = time.monotonic()
+    logger.debug("ui_health: monitor %s", "suspended" if suspended else "resumed")
+
+
 def _is_not_ready_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     return (
@@ -111,7 +130,7 @@ def _is_not_ready_error(exc: BaseException) -> bool:
 def _trigger_reload(reason: str) -> None:
     global _last_reload_mono, _reload_count
 
-    if is_shutdown_in_progress():
+    if is_shutdown_in_progress() or _SUSPENDED:
         return
 
     now = time.monotonic()
@@ -202,6 +221,9 @@ async def _run_health_check_async(client: Any) -> None:
 
 
 def _run_health_check() -> None:
+    if _SUSPENDED:
+        logger.debug("ui_health: skip (minimized to tray)")
+        return
     if is_shutdown_in_progress() or _in_startup_grace():
         logger.debug("ui_health: skip (startup grace)")
         return
@@ -252,8 +274,10 @@ def start_ui_health_monitor() -> None:
 def stop_ui_health_monitor() -> None:
     """Reset monitor state on shutdown (timers stop with the app)."""
     global _MONITOR_STARTED, _consecutive_ping_failures, _health_client, _armed_mono
+    global _SUSPENDED
     _MONITOR_STARTED = False
     _consecutive_ping_failures = 0
     _health_client = None
     _armed_mono = 0.0
+    _SUSPENDED = False
     logger.debug("ui_health: monitor stopped")

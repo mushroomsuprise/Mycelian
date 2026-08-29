@@ -261,8 +261,18 @@ class SubscriberRegistry:
         uid = self._normalize_id(user_id)
         if not uid:
             return
+        now = time.time()
         with self._lock:
-            self._recent_new_sub_alerts[uid] = time.time()
+            self._recent_new_sub_alerts[uid] = now
+            # was_new_sub_alerted_recently only evicts the id it is asked about, so a
+            # one-off new sub would otherwise sit here for the life of the process.
+            expired = [
+                key
+                for key, ts in self._recent_new_sub_alerts.items()
+                if (now - ts) > _NEW_SUB_ALERT_DEDUP_SECONDS
+            ]
+            for key in expired:
+                self._recent_new_sub_alerts.pop(key, None)
 
     def was_new_sub_alerted_recently(self, user_id: Optional[str]) -> bool:
         uid = self._normalize_id(user_id)

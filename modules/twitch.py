@@ -3820,6 +3820,23 @@ class Twitch_API:
                                 logger.warning(
                                     "Token refresh failed during health check - authentication may be required"
                                 )
+                                # Twitch revokes EventSub subscriptions once the token
+                                # actually expires, but the websocket stays open, so
+                                # nothing else notices the events have stopped. Flag
+                                # the service as down (only once the token is truly
+                                # past expiry, not merely inside the proactive
+                                # buffer) so connection_monitor retries instead of
+                                # waiting out the staleness timeout.
+                                if is_access_token_expired(
+                                    self.auth_token,
+                                    self.token_expiry,
+                                    buffer=timedelta(0),
+                                ):
+                                    logger.warning(
+                                        "Twitch token is past expiry; marking "
+                                        "disconnected so reconnect can be attempted"
+                                    )
+                                    self.is_connected = False
                         finally:
                             loop.close()
                     except Exception as e:

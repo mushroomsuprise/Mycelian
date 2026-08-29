@@ -5109,7 +5109,10 @@ class WebEngine:
                 request.sid,
                 connected,
             )
-            self._preview_demo_stop[request.sid] = True
+            # Nothing reads this flag any more (the auto-demo loop is gone), so
+            # marking the sid only accumulated a key per disconnect. OBS browser
+            # sources reconnect constantly, so drop the entry instead.
+            self._preview_demo_stop.pop(request.sid, None)
             stale_token = self._preview_iframe_tokens.pop(request.sid, None)
             if stale_token is not None:
                 sids = self._preview_iframe_sids.get(stale_token)
@@ -7836,12 +7839,38 @@ class WebEngine:
             return True
         except queue.Full:
             self._record_event_timestamp(self._socket_emit_error_times)
+            self._log_emit_queue_full(event)
+            return False
+
+    # High-frequency producers (game hooks emit several times a second) mean a queue
+    # that cannot drain — an unbound overlay port, say — would otherwise log this
+    # thousands of times an hour and churn straight through the log size cap.
+    _EMIT_QUEUE_FULL_LOG_INTERVAL_SEC = 30.0
+
+    def _log_emit_queue_full(self, event: str) -> None:
+        now = time.monotonic()
+        last = getattr(self, "_emit_queue_full_last_log", 0.0)
+        suppressed = getattr(self, "_emit_queue_full_suppressed", 0)
+        if last and (now - last) < self._EMIT_QUEUE_FULL_LOG_INTERVAL_SEC:
+            self._emit_queue_full_suppressed = suppressed + 1
+            return
+
+        self._emit_queue_full_last_log = now
+        self._emit_queue_full_suppressed = 0
+        if suppressed:
+            logger.warning(
+                "safe_emit queue full (%s); dropping %s (%d more dropped in the last %.0fs)",
+                self._safe_emit_queue.qsize(),
+                event,
+                suppressed,
+                self._EMIT_QUEUE_FULL_LOG_INTERVAL_SEC,
+            )
+        else:
             logger.warning(
                 "safe_emit queue full (%s); dropping %s",
                 self._safe_emit_queue.qsize(),
                 event,
             )
-            return False
 
     def _drain_safe_emit_queue(self) -> int:
         """Emit everything foreign threads queued via safe_emit (gevent worker)."""

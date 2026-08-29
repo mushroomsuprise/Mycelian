@@ -122,6 +122,36 @@ def _null_live_alert_element_refs() -> None:
         alert_data["timestamp_label"] = None
 
 
+# The live feed is a session view, not history: older alerts stay available on the
+# Previous tab, which is paged from the database.
+MAX_LIVE_ALERTS = 500
+
+
+def _trim_live_alerts() -> None:
+    """Drop the oldest live alerts once the session feed exceeds its cap.
+
+    ``live_alerts`` used to be insert-only, which was survivable when a session lasted
+    an evening. With minimize-to-tray a session can run for weeks, and every entry
+    pins a NiceGUI element, so the list and its DOM nodes have to be bounded.
+    """
+    overflow = len(activity_feed_state.live_alerts) - MAX_LIVE_ALERTS
+    if overflow <= 0:
+        return
+
+    for alert_data in activity_feed_state.live_alerts[-overflow:]:
+        for key in ("element", "new_badge", "timestamp_label"):
+            element = alert_data.get(key)
+            if _element_alive(element):
+                try:
+                    element.delete()
+                except Exception as exc:
+                    logger.debug("activity_feed: could not delete trimmed element: %s", exc)
+            alert_data[key] = None
+
+    del activity_feed_state.live_alerts[-overflow:]
+    logger.debug("activity_feed: trimmed %d live alert(s) over the cap", overflow)
+
+
 def _containers_alive() -> bool:
     if (
         activity_feed_state.condense_list
@@ -674,6 +704,7 @@ def register_client_lifecycle_hooks() -> None:
     if client.id in _hooks_registered_client_ids:
         return
     _hooks_registered_client_ids.add(client.id)
+    client_id = client.id
 
     def _on_disconnect(_client=None) -> None:
         # Transient socket blips are common under load. Do not flip
@@ -687,6 +718,9 @@ def register_client_lifecycle_hooks() -> None:
         app_schedule(0.5, recover_after_client_reconnect, once=True)
 
     def _on_delete(_client=None) -> None:
+        # Every minimize/restore cycle retires a client id, so the guard set has to
+        # give the id back or it grows for the life of the process.
+        _hooks_registered_client_ids.discard(client_id)
         logger.warning("activity_feed: client_deleted — scheduling recovery")
         _handle_stale_client("client_deleted")
 
@@ -771,6 +805,7 @@ class AlertEventHandler:
         with self._ui_update_lock:
             # Always keep alert state so recovery can repaint after desync.
             activity_feed_state.live_alerts.insert(0, new_alert_data)
+            _trim_live_alerts()
 
             ui_ready = (
                 activity_feed_state.is_initialized and _containers_alive()

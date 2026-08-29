@@ -157,6 +157,9 @@ class AppSettings:
     activity_feed_max_pages: int = 5
     start_maximized: bool = True
     ui_font_family: str = ""
+    minimize_to_tray: bool = False
+    start_minimized: bool = False
+    run_at_startup: bool = False
 
     def __post_init__(self):
         """Log when a new AppSettings instance is created"""

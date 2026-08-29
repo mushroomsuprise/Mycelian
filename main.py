@@ -413,6 +413,19 @@ if __name__ == "__main__":
                 "connection_monitor", start_connection_monitor, priority=8
             )
 
+            # Connector processing and the update manager used to be started from
+            # build_root_ui, which never runs when the app boots straight into the
+            # tray. They are UI-independent, so they belong with the other services.
+            service_manager.register(
+                "background_ui_services",
+                mainuiwindow.initialize_background_ui_services,
+                priority=8,
+            )
+
+            from modules import tray_controller
+
+            service_manager.register("tray", tray_controller.initialize, priority=9)
+
             # Start deferred init after UI is responsive
             service_manager.start_deferred_init(delay_seconds=1.0)
 

@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import aiohttp
 
 from .notification_engine import notify
-from .ui_timer import layout_schedule
+from .ui_timer import app_schedule, layout_schedule
 from packaging.version import \
     parse as parse_version  # For robust version comparison
 
@@ -793,6 +793,25 @@ PRE_CHECK_DELAY_SECONDS = 3.0
 PERIODIC_SCHEDULE_DELAY_SECONDS = 3.0
 
 
+def _connected_client():
+    """Return a NiceGUI client that can actually show a dialog, or None.
+
+    While Mycelian is minimised to the tray the webview sits on a blank page, so there
+    is no client and anything that builds UI elements has to be deferred.
+    """
+    try:
+        from nicegui import Client
+
+        for client in list(Client.instances.values()):
+            if getattr(client, "is_deleted", False):
+                continue
+            if getattr(client, "has_socket_connection", False):
+                return client
+    except Exception as e:
+        logger.debug("UpdateManager: could not resolve a connected client: %s", e)
+    return None
+
+
 class UpdateManager:
     """
     Centralized manager for update checks, UI prompts, and installation flow.
@@ -807,28 +826,32 @@ class UpdateManager:
         self._session_suppressed = False  # set when user declines an automatic update (session only)
         self._ui_ready_scheduled = False
         self._automatic_startup_check_done = False
+        self._pending_prompt: Optional[Dict[str, Any]] = None
 
     # ---------------- Scheduling ----------------
     def on_ui_ready(self) -> None:
-        """Schedule initial and periodic checks once the UI is up."""
+        """Schedule initial and periodic checks once the server is up.
+
+        Every timer here uses ``app_schedule``. Client-bound timers die with the
+        NiceGUI websocket, which is exactly what happens when the app is minimised to
+        the tray, and update checks have to keep running there.
+        """
         if self._ui_ready_scheduled:
             logger.debug("UpdateManager.on_ui_ready already scheduled; skipping")
             return
         self._ui_ready_scheduled = True
 
         try:
-            from nicegui import ui
-
             def _after_settle_schedule_pre_check() -> None:
-                layout_schedule(PRE_CHECK_DELAY_SECONDS, self._run_initial_check, once=True)
+                app_schedule(PRE_CHECK_DELAY_SECONDS, self._run_initial_check, once=True)
 
-            self._initial_timer = layout_schedule(
+            self._initial_timer = app_schedule(
                 STARTUP_SETTLE_SECONDS,
                 _after_settle_schedule_pre_check,
                 once=True,
             )
             if self._periodic_schedule_timer is None:
-                self._periodic_schedule_timer = layout_schedule(
+                self._periodic_schedule_timer = app_schedule(
                     PERIODIC_SCHEDULE_DELAY_SECONDS,
                     self.reschedule_periodic_timer,
                     once=True,
@@ -845,7 +868,7 @@ class UpdateManager:
 
     def reschedule_periodic_timer(self) -> None:
         try:
-            from nicegui import app, ui
+            from nicegui import app
 
             from . import dataobjects
 
@@ -870,7 +893,7 @@ class UpdateManager:
                     pass
                 self._periodic_timer = None
 
-            self._periodic_timer = layout_schedule(interval_seconds, self._periodic_check)
+            self._periodic_timer = app_schedule(interval_seconds, self._periodic_check)
             setattr(app, "update_check_timer", self._periodic_timer)
             logger.info(f"UpdateManager: scheduled periodic checks every {interval_minutes} minutes")
         except Exception as e:
@@ -984,7 +1007,7 @@ class UpdateManager:
                     return False
 
             # Create a timer that will keep checking until poll_result returns False
-            update_timer = layout_schedule(0.2, poll_result)
+            update_timer = app_schedule(0.2, poll_result)
             
             # Add a safety mechanism to ensure the timer stops after completion
             def ensure_timer_stops():
@@ -998,13 +1021,87 @@ class UpdateManager:
                 return not result_holder["completed"]
             
             # Safety timer that runs for longer intervals to ensure cleanup
-            layout_schedule(1.0, ensure_timer_stops)
+            app_schedule(1.0, ensure_timer_stops)
         except Exception as e:
             logger.error(f"UpdateManager.trigger_check_and_prompt error: {e}", exc_info=True)
             self._check_running = False
 
     # ---------------- Modal and download flow ----------------
     def _show_update_modal(self, update_info: Dict[str, Any], *, manual: bool = False) -> None:
+        """Prompt for an update, or fall back to a desktop notification.
+
+        Checks now run on client-independent timers, so there may be no UI on screen
+        when one finds a release. In that case the user gets an OS notification and the
+        prompt is held until the window comes back.
+        """
+        client = _connected_client()
+        if client is None:
+            self._defer_update_prompt(update_info)
+            return
+
+        try:
+            # app_schedule timers carry no client context, so enter one explicitly
+            # before building elements.
+            with client:
+                self._build_update_modal(update_info, manual=manual)
+        except Exception as e:
+            logger.error(f"UpdateManager._show_update_modal error: {e}", exc_info=True)
+
+    def _defer_update_prompt(self, update_info: Dict[str, Any]) -> None:
+        """Hold an update prompt until a window is available, and notify the desktop."""
+        if self._pending_prompt is not None:
+            return
+        self._pending_prompt = update_info
+
+        version = update_info.get("latest_version", "?")
+        logger.info("UpdateManager: no UI on screen; deferring prompt for v%s", version)
+
+        from .system_notify import notify_async
+
+        notify_async(
+            f"Mycelian {version} is available. Open Mycelian to install it.",
+            title="Update available",
+        )
+
+    def flush_pending_prompt(self) -> None:
+        """Show a deferred update prompt now that the UI is back."""
+        update_info = self._pending_prompt
+        if update_info is None:
+            return
+
+        # The window has only just been told to reload, so poll for its socket rather
+        # than assuming a client is already there.
+        state: Dict[str, Any] = {"timer": None, "attempts": 0}
+        max_attempts = 30
+
+        def _stop() -> None:
+            timer = state.get("timer")
+            if timer is not None:
+                try:
+                    timer.deactivate()
+                except Exception:
+                    pass
+                state["timer"] = None
+
+        def _show() -> None:
+            state["attempts"] += 1
+            client = _connected_client()
+            if client is None:
+                if state["attempts"] >= max_attempts:
+                    logger.info("UpdateManager: gave up waiting for a UI to prompt on")
+                    _stop()
+                return
+            _stop()
+            self._pending_prompt = None
+            try:
+                with client:
+                    self._build_update_modal(update_info, manual=False)
+            except Exception as e:
+                logger.error(f"UpdateManager.flush_pending_prompt error: {e}", exc_info=True)
+
+        state["timer"] = app_schedule(1.0, _show)
+
+    def _build_update_modal(self, update_info: Dict[str, Any], *, manual: bool = False) -> None:
         try:
             from nicegui import ui
 

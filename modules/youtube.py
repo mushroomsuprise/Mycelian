@@ -1391,6 +1391,19 @@ class YouTubeClient:
                 return True
             return self._refresh_access_token()
 
+    def _refresh_access_token_locked(self, stale_token: str) -> bool:
+        """Refresh under the shared lock, skipping the call if someone else beat us.
+
+        Google may rotate or revoke a refresh token when parallel refreshes arrive,
+        which breaks OAuth until the user re-authorises by hand. Every refresh has to
+        go through this lock, including the one triggered by a 401.
+        """
+        with self._refresh_lock:
+            current = (self.youtube_data.access_token or "").strip()
+            if current and current != stale_token:
+                return True  # another thread already refreshed while we waited
+            return self._refresh_access_token()
+
     def _refresh_access_token(self) -> bool:
         try:
             refresh_token = (self.youtube_data.refresh_token or "").strip()
@@ -1441,11 +1454,12 @@ class YouTubeClient:
             return None
         try:
             url = f"{YOUTUBE_API_BASE}/{path.lstrip('/')}"
+            attempted_token = (self.youtube_data.access_token or "").strip()
             response = requests.get(
                 url, headers=self._oauth_headers(), params=params, timeout=15
             )
             if response.status_code == 401:
-                if self._refresh_access_token():
+                if self._refresh_access_token_locked(attempted_token):
                     response = requests.get(
                         url,
                         headers=self._oauth_headers(),

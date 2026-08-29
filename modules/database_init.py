@@ -66,6 +66,9 @@ def _create_default_data():
                 "auto_update": True,
                 "activity_feed_limit": 25,
                 "activity_feed_max_pages": 10,
+                "minimize_to_tray": False,
+                "start_minimized": False,
+                "run_at_startup": False,
             }
             database_manager.set_data("AppSettings", default_app_settings)
             logger.debug("Created default AppSettings")

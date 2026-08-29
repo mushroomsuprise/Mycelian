@@ -20,9 +20,35 @@ layout slot and returns the ``Timer`` so callers can ``cancel()`` it.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from nicegui import app, context, ui
+
+logger = logging.getLogger(__name__)
+
+
+def run_on_ui_loop(fn: Callable[[], Any]) -> None:
+    """Marshal a callback onto NiceGUI's asyncio loop.
+
+    Timers are backed by asyncio tasks, and task creation is not thread-safe, so any
+    worker thread that wants to schedule one must hop onto the loop first. Falls back
+    to calling inline when the loop is not up yet, which is safe because scheduling
+    then defers to app startup.
+    """
+    try:
+        from nicegui import core
+
+        loop = getattr(core, "loop", None)
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(fn)
+            return
+    except Exception:
+        pass
+    try:
+        fn()
+    except Exception as exc:
+        logger.error("ui_timer: loop callback failed: %s", exc, exc_info=True)
 
 
 def app_schedule(
@@ -31,13 +57,14 @@ def app_schedule(
     *,
     once: bool = False,
     active: bool = True,
-) -> None:
+) -> Any:
     """Schedule a timer that is not bound to any UI slot.
 
-    Survives tab clears and dialog closes. Use for callbacks that do not create
-    new UI elements inline (the default choice).
+    Survives tab clears, dialog closes, and having no connected client at all, so this
+    is also the only safe choice for work that must continue while the app sits in the
+    system tray. Returns the ``Timer`` so callers can ``deactivate()`` it.
     """
-    app.timer(interval, callback, once=once, active=active)
+    return app.timer(interval, callback, once=once, active=active)
 
 
 def layout_schedule(

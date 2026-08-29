@@ -132,11 +132,17 @@ def is_access_token_expired(
     *,
     buffer: timedelta = TOKEN_PROACTIVE_REFRESH_BUFFER,
 ) -> bool:
-    """Return True when the access token should be refreshed proactively."""
+    """Return True when the access token should be refreshed proactively.
+
+    An unknown expiry counts as expired. Treating it as valid used to switch proactive
+    refresh off entirely, so a single failed expiry persist could leave the token to
+    die mid-session and take EventSub down with it until the staleness timeout fired.
+    A redundant refresh is cheap; a silent outage is not.
+    """
     if not (auth_token or "").strip():
         return True
     if token_expiry is None:
-        return False
+        return True
     return datetime.now() + buffer >= token_expiry
 
 

@@ -757,8 +757,12 @@ def _update_and_broadcast():
                         f"Broadcasted mismatch notification for game: {mismatch.presence_name}"
                     )
 
-                    # Update tracking
+                    # Update tracking. Keys are game names, so without this sweep the
+                    # map would keep one entry per title ever seen.
                     _mismatch_notification_times[mismatch.presence_name] = current_time
+                    for name, ts in list(_mismatch_notification_times.items()):
+                        if current_time - ts > MISMATCH_NOTIFICATION_COOLDOWN:
+                            _mismatch_notification_times.pop(name, None)
                     mismatch.notified = True
                 else:
                     logger.debug(

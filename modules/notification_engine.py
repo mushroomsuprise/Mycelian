@@ -367,8 +367,19 @@ def _should_skip_dedupe(dedupe_key: Optional[str], cooldown: float) -> bool:
     return False
 
 
+# Dedupe cooldowns are seconds to minutes, so anything untouched for an hour can never
+# suppress a future notification and is only holding memory.
+_DEDUPE_ENTRY_TTL_SEC = 3600.0
+_DEDUPE_PRUNE_THRESHOLD = 256
+
+
 def _mark_dedupe(dedupe_key: str) -> None:
-    _last_emit_monotonic[dedupe_key] = time.monotonic()
+    now = time.monotonic()
+    _last_emit_monotonic[dedupe_key] = now
+    if len(_last_emit_monotonic) > _DEDUPE_PRUNE_THRESHOLD:
+        for key, stamp in list(_last_emit_monotonic.items()):
+            if now - stamp > _DEDUPE_ENTRY_TTL_SEC:
+                _last_emit_monotonic.pop(key, None)
 
 
 def _normalize_timeout_ms(timeout: Optional[float]) -> int:

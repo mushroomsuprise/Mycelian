@@ -256,6 +256,51 @@ def _save_statistics() -> None:
     statistics_manager.shutdown_statistics()
 
 
+# How long to let the webview child close its own window before we terminate it.
+_NATIVE_WINDOW_EXIT_GRACE_SEC = 2.0
+
+
+def _close_native_window() -> None:
+    """Destroy the native window and reap the process that owns it.
+
+    Under NiceGUI native mode the pywebview window lives in a spawn child, so
+    ``webview.windows`` is empty here and the only way to reach the window is the proxy
+    that marshals calls over NiceGUI's method queue. This never had to be explicit
+    before: closing the window was what *started* shutdown. Quitting from the tray
+    reverses that, and without this the child outlives the app as an orphan still
+    showing the window.
+    """
+    import multiprocessing
+
+    _cleanup_pywebview_windows()
+
+    try:
+        from nicegui import app as ng_app
+
+        main_window = getattr(getattr(ng_app, "native", None), "main_window", None)
+        if main_window is not None:
+            main_window.destroy()
+    except Exception as e:
+        logger.debug("Native window destroy: %s", e)
+
+    # Let the child act on the queued destroy, then make sure it is really gone.
+    # The exit path ends in os._exit(), which skips the multiprocessing atexit hook
+    # that would otherwise terminate daemon children for us.
+    deadline = time.monotonic() + _NATIVE_WINDOW_EXIT_GRACE_SEC
+    while time.monotonic() < deadline:
+        if not multiprocessing.active_children():
+            return
+        time.sleep(0.05)
+
+    for child in multiprocessing.active_children():
+        logger.warning("Terminating surviving child process %s", child.name)
+        try:
+            child.terminate()
+            child.join(timeout=1.0)
+        except Exception as e:
+            logger.debug("Could not terminate child %s: %s", child.name, e)
+
+
 def _cleanup_pywebview_windows() -> None:
     import platform
 
@@ -345,6 +390,17 @@ def _stop_ui_health_monitor() -> None:
         logger.debug("UI health monitor stop: %s", e)
 
 
+def _stop_tray() -> None:
+    try:
+        from .tray_controller import allow_window_close, shutdown as shutdown_tray
+
+        # Drop the close veto first, or the window will refuse to be destroyed below.
+        allow_window_close()
+        shutdown_tray()
+    except Exception as e:
+        logger.debug("Tray stop: %s", e)
+
+
 def shutdown_application(*, reason: str, force: bool = False) -> None:
     """
     Idempotent full-application teardown.
@@ -362,6 +418,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
 
     try:
         _run_step("ui_health_monitor", _stop_ui_health_monitor, timeout=1.0)
+        _run_step("tray", _stop_tray, timeout=3.0)
         _run_step("pause_alerts", _pause_alerts_and_activity_feed, timeout=2.0)
         _run_step("connection_monitor", _stop_connection_monitor, timeout=3.0)
         # Stops web engine, game hooks, alert threads (no separate web_engine step).
@@ -380,7 +437,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
             timeout=_SHUTDOWN_INTEGRATION_PARALLEL_TIMEOUT,
         )
         _run_step("deferred_services", _stop_deferred_services, timeout=2.0)
-        _run_step("pywebview", _cleanup_pywebview_windows, timeout=2.0)
+        _run_step("pywebview", _close_native_window, timeout=5.0)
         _run_step("statistics", _save_statistics, timeout=8.0)
     finally:
         _cancel_shutdown_watchdog()

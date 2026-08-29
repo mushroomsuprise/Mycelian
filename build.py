@@ -727,6 +727,29 @@ def get_hidden_imports(current_os):
         # macOS-specific imports (none currently)
         pass
 
+    # System tray. pystray picks its backend at import time by probing the desktop,
+    # so PyInstaller cannot see which submodule is used and every candidate for this
+    # platform has to be named explicitly.
+    hidden_imports.extend(
+        ["pystray", "pystray._base", "pystray._info", "pystray._util", "pystray._dummy"]
+    )
+    if current_os == "windows":
+        hidden_imports.extend(["pystray._win32", "pystray._util.win32"])
+    elif current_os == "macos":
+        hidden_imports.append("pystray._darwin")
+    elif current_os == "linux":
+        hidden_imports.extend(
+            [
+                "pystray._appindicator",
+                "pystray._gtk",
+                "pystray._xorg",
+                "pystray._util.gtk",
+                "pystray._util.notify_dbus",
+                "gi",
+                "gi.repository",
+            ]
+        )
+
     # ============================================================================
     # MYCELIAN MODULE IMPORTS (all platforms)
     # ============================================================================
@@ -756,6 +779,11 @@ def get_hidden_imports(current_os):
             "modules.uiwindows.settings",
             "modules.uiwindows.sourcecontrols",
             "modules.alerts_parser",
+            "modules.autostart",
+            "modules.system_notify",
+            "modules.tray_controller",
+            # Spawn target for the tray child; nothing imports it at module scope.
+            "modules.tray_process",
         ]
     )
 
@@ -828,6 +856,15 @@ def get_data_files():
     # if project_assets.exists():
     #     data_files.append((str(project_assets), 'assets'))
     #     print(f"Including project assets: {project_assets}")
+
+    # Assets normally ship beside the executable, but the tray icon has to resolve even
+    # if that folder is missing or the app was moved on its own; without an image there
+    # is no tray icon and no way back from a minimized window. get_assets_path falls
+    # back to _MEIPASS, so bundling just the icons covers it.
+    project_icons = get_project_root() / "assets" / "default_assets" / "icons"
+    if project_icons.is_dir():
+        data_files.append((str(project_icons), "assets/default_assets/icons"))
+        print(f"Including application icons: {project_icons}")
 
     return data_files
 

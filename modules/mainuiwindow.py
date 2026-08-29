@@ -83,11 +83,11 @@ from modules.uiwindows.activity_feed import (
 )
 from modules.uiwindows.customsources import create_custom_sources_tab
 
-from . import alertutils, database_manager, dataobjects, web_engine
+from . import alertutils, database_manager, dataobjects, tray_controller, web_engine
 from .theme_manager import get_theme_manager, generate_css_variables
 from .ui_font import apply_app_font, get_app_font_css_block
 from .ui_styles import get_full_theme_css, SUB_TAB_SEAM_SCRIPT
-from .ui_timer import app_schedule, layout_schedule
+from .ui_timer import app_schedule, layout_schedule, run_on_ui_loop
 
 logger = logging.getLogger(__name__)
 
@@ -1004,6 +1004,7 @@ ANIMATION_OBSERVER_SCRIPT = """
 _animation_observer_injected = False
 _update_manager_ui_scheduled = False
 _streamdeck_plugin_check_scheduled = False
+_connector_processing_started = False
 
 
 def _inject_animation_observer() -> None:
@@ -1039,7 +1040,11 @@ def _schedule_streamdeck_plugin_version_check() -> None:
 
 
 def _schedule_update_manager_init() -> None:
-    """Schedule UpdateManager checks after the NiceGUI UI exists (same process as ui.run)."""
+    """Schedule UpdateManager checks once the NiceGUI server is up.
+
+    Uses ``app_schedule`` rather than ``layout_schedule`` so update checks keep running
+    while the app sits in the tray with no connected client.
+    """
     global _update_manager_ui_scheduled
     if _update_manager_ui_scheduled:
         return
@@ -1055,9 +1060,43 @@ def _schedule_update_manager_init() -> None:
                 exc_info=True,
             )
 
-    # Short delay until client/UI is ready; first automatic update check is then
+    # Short delay until the server is ready; first automatic update check is then
     # STARTUP_SETTLE_SECONDS + PRE_CHECK_DELAY_SECONDS after on_ui_ready (see updater.py).
-    layout_schedule(2.0, init_update_manager, once=True)
+    app_schedule(2.0, init_update_manager, once=True)
+
+
+def start_connector_processing() -> None:
+    """Start the connector worker thread.
+
+    Independent of the UI so connectors run even when Mycelian starts straight into
+    the tray with no window.
+    """
+    global _connector_processing_started
+    if _connector_processing_started:
+        return
+    _connector_processing_started = True
+
+    def _run() -> None:
+        try:
+            from . import connector_manager
+
+            manager = connector_manager.get_manager()
+            manager.start_connector_thread()
+        except Exception as e:
+            logger.error(
+                f"Error starting connector processing thread: {str(e)}",
+                exc_info=True,
+            )
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def initialize_background_ui_services() -> None:
+    """Start the UI-independent services that used to be wired inside ``build_root_ui``."""
+    start_connector_processing()
+    # Called from the deferred-service thread, so the timer has to be created on the
+    # NiceGUI loop rather than here.
+    run_on_ui_loop(_schedule_update_manager_init)
 
 
 def _configure_webview2():
@@ -1143,28 +1182,9 @@ def build_root_ui() -> None:
         with StartupTimer("mainuiwindow.create_ui_elements"):
             create_ui_elements()
 
-            # Start connector processing in a separate thread (not dependent on NiceGUI's event loop)
-            import threading
-
-            def start_connector_processing_thread():
-                try:
-                    from . import connector_manager
-
-                    manager = connector_manager.get_manager()
-                    manager.start_connector_thread()
-                except Exception as e:
-                    logger.error(
-                        f"Error starting connector processing thread: {str(e)}",
-                        exc_info=True,
-                    )
-
-            # Start connector processing in background thread
-            connector_thread = threading.Thread(
-                target=start_connector_processing_thread, daemon=True
-            )
-            connector_thread.start()
-
-            _schedule_update_manager_init()
+            # Connector processing and the update manager start with the deferred
+            # services in main.py, so they are already running by this point even if
+            # the app booted straight into the tray.
             _schedule_streamdeck_plugin_version_check()
 
     from .uiwindows.activity_feed import register_client_lifecycle_hooks
@@ -1188,22 +1208,37 @@ def start_ui():
         try:
             from .dataobjects import state_manager
 
-            maximized = bool(state_manager.get_app_settings().start_maximized)
+            settings = state_manager.get_app_settings()
+            maximized = bool(settings.start_maximized)
+            start_minimized = bool(getattr(settings, "start_minimized", False))
+            minimize_to_tray = bool(getattr(settings, "minimize_to_tray", False))
         except Exception as e:
             logger.warning(
-                "Could not read start_maximized from app settings; using default maximized window: %s",
+                "Could not read window settings from app settings; using defaults: %s",
                 e,
             )
             maximized = True
+            start_minimized = False
+            minimize_to_tray = False
 
         app.native.window_args["maximized"] = maximized
-        # Spawned native webview process reads this (see modules/native_window_bridge.py).
-        os.environ["MYCELIAN_NATIVE_WINDOW_ARGS"] = json.dumps(
-            {
-                "maximized": maximized,
-                "min_size": [1400, 850],
-            }
-        )
+        window_args = {
+            "maximized": maximized,
+            "min_size": [1400, 850],
+        }
+        if start_minimized:
+            # Create the window hidden and pointed at a blank page so the UI is never
+            # built. ``window_kwargs`` spreads window_args after ``url``, so this
+            # override wins. tray_controller loads the real URL back in on restore.
+            window_args["hidden"] = True
+            window_args["url"] = tray_controller.BLANK_URL
+            app.native.window_args["hidden"] = True
+            logger.info("Starting minimized to tray (no window shown)")
+
+        # Spawned native webview process reads these (see modules/native_window_bridge.py).
+        os.environ["MYCELIAN_NATIVE_WINDOW_ARGS"] = json.dumps(window_args)
+        # Seeds the close veto before the main process can push the setting across.
+        os.environ["MYCELIAN_TRAY_MODE"] = "1" if minimize_to_tray else "0"
 
         # File-browser dialog CSS uses shared head HTML, which is safe before ui.run.
         if not _file_browser_qdialog_css_injected:
@@ -1219,6 +1254,9 @@ def start_ui():
         from .shutdown import register_native_window_close_handler
 
         register_native_window_close_handler()
+        # Must be registered before ui.run so the webview child's startup events are
+        # not dispatched before anyone is listening.
+        tray_controller.register_native_event_handlers()
 
         # Accidental pre-run access to ``context.client`` (e.g. overlay toasts)
         # flips NiceGUI into script mode and replaces ``root=build_root_ui`` with

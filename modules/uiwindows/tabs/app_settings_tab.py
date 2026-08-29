@@ -193,6 +193,44 @@ class AppSettingsTab:
                         ui.label("Applies on next launch").classes(
                             "secondary-text text-sm self-center"
                         )
+                        with ui.row().classes("items-center gap-2"):
+                            self.ui_elements["minimize_to_tray"] = (
+                                ui.switch(value=self.buffer.minimize_to_tray)
+                                .classes("q-switch")
+                                .on_value_change(
+                                    lambda e: self._set_tray_option(
+                                        "minimize_to_tray", bool(e.value)
+                                    )
+                                )
+                            )
+                            ui.label("Minimize to tray").classes("text-sm")
+                        with ui.row().classes("items-center gap-2"):
+                            self.ui_elements["start_minimized"] = (
+                                ui.switch(value=self.buffer.start_minimized)
+                                .classes("q-switch")
+                                .on_value_change(
+                                    lambda e: self._set_tray_option(
+                                        "start_minimized", bool(e.value)
+                                    )
+                                )
+                            )
+                            ui.label("Start minimized to tray").classes("text-sm")
+                        with ui.row().classes("items-center gap-2"):
+                            startup_switch = ui.switch(
+                                value=self.buffer.run_at_startup
+                            ).classes("q-switch")
+                            startup_switch.on_value_change(
+                                lambda e: self._set_tray_option(
+                                    "run_at_startup", bool(e.value)
+                                )
+                            )
+                            self.ui_elements["run_at_startup"] = startup_switch
+                            ui.label("Run at login").classes("text-sm")
+                            if not self._autostart_supported():
+                                startup_switch.disable()
+                                ui.tooltip(
+                                    "Only available in an installed build of Mycelian"
+                                )
                         with ui.row().classes("items-center gap-2 col-span-2"):
                             ui.label("Update check").classes("text-sm shrink-0")
                             self.ui_elements["update_check_interval_minutes"] = (
@@ -306,6 +344,27 @@ class AppSettingsTab:
             setattr(self.buffer, field, value)
             self.dirty = True
 
+    @staticmethod
+    def _autostart_supported() -> bool:
+        try:
+            from ...autostart import is_supported
+
+            return is_supported()
+        except Exception:
+            return False
+
+    def _set_tray_option(self, field: str, value: bool) -> None:
+        """Set a background-operation toggle and warn about metered database usage."""
+        self._set(field, value)
+        if not value:
+            return
+        try:
+            from ...tray_controller import warn_background_database_usage
+
+            warn_background_database_usage()
+        except Exception:
+            pass
+
     # ----- actions -----
     def save(self) -> None:
         if not self.buffer:
@@ -319,10 +378,29 @@ class AppSettingsTab:
             state_manager.update_app_setting(field, getattr(self.buffer, field))
         if state_manager.save_changes():
             apply_app_font(self.buffer.ui_font_family)
+            self._apply_background_settings()
             notify("Settings saved", type="positive")
             self.dirty = False
         else:
             notify("Error saving settings", type="negative")
+
+    def _apply_background_settings(self) -> None:
+        """Push the saved tray / autostart toggles to the OS and the tray process."""
+        try:
+            from ...autostart import set_enabled as set_autostart_enabled
+
+            set_autostart_enabled(bool(self.buffer.run_at_startup))
+        except Exception as e:
+            notify(f"Could not update the login item: {e}", type="warning")
+
+        try:
+            from ...tray_controller import apply_settings
+
+            apply_settings()
+        except Exception:
+            # Tray availability is reported by tray_controller itself; a failure here
+            # must not block the rest of the save.
+            pass
 
     def discard(self) -> None:
         # reload from state and update UI controls
