@@ -321,86 +321,58 @@ def _migrate_old_database_settings_if_needed(config_data: dict) -> bool:
 
         try:
             raw = database_manager.get_data("DatabaseSettings") or {}
-            if raw:
-                valid_keys = [
-                    f.name for f in DatabaseSettings.__dataclass_fields__.values()
-                ]
-                filtered = {k: v for k, v in raw.items() if k in valid_keys}
-                db_settings = DatabaseSettings(**filtered)
-            else:
-                db_settings = DatabaseSettings()
+            if not raw:
+                logger.debug("DatabaseSettings empty; skipping old-settings migration")
+                return True
 
-            # Check if we have meaningful database settings in the database
-            # that are different from defaults and should be migrated
-            should_migrate = False
+            from .config_manager import config_manager
+
+            if config_data.get("database_settings_migrated"):
+                logger.debug("Database settings already migrated to config.json")
+                return True
+
+            valid_keys = [
+                f.name for f in DatabaseSettings.__dataclass_fields__.values()
+            ]
+            filtered = {k: v for k, v in raw.items() if k in valid_keys}
+
+            _PLACEHOLDER = {
+                "mongodb_connection_string": "mongodb://localhost:27017/",
+                "mongodb_database_name": "mycelian",
+                "sql_database_path": "mycelian.db",
+                "firebase_service_account_path": "ServiceAccountKey.json",
+                "firebase_database_url": (
+                    "https://your-project-default-rtdb.firebaseio.com/"
+                ),
+            }
+            field_names = (
+                "firebase_service_account_path",
+                "firebase_database_url",
+                "mongodb_connection_string",
+                "mongodb_database_name",
+                "sql_database_path",
+            )
             changes_to_migrate = {}
+            for field_name in field_names:
+                db_val = filtered.get(field_name)
+                if not db_val or db_val == _PLACEHOLDER.get(field_name):
+                    continue
+                cfg_val = config_data.get(field_name)
+                if cfg_val and cfg_val != _PLACEHOLDER.get(field_name):
+                    continue
+                changes_to_migrate[field_name] = db_val
 
-            # Compare each field and see if it differs from current config
-            if (
-                db_settings.firebase_service_account_path
-                and db_settings.firebase_service_account_path
-                != config_data.get("firebase_service_account_path")
-            ):
-                changes_to_migrate["firebase_service_account_path"] = (
-                    db_settings.firebase_service_account_path
-                )
-                should_migrate = True
-
-            if (
-                db_settings.firebase_database_url
-                and db_settings.firebase_database_url
-                != config_data.get("firebase_database_url")
-            ):
-                changes_to_migrate["firebase_database_url"] = (
-                    db_settings.firebase_database_url
-                )
-                should_migrate = True
-
-            if (
-                db_settings.mongodb_connection_string
-                and db_settings.mongodb_connection_string
-                != config_data.get("mongodb_connection_string")
-            ):
-                changes_to_migrate["mongodb_connection_string"] = (
-                    db_settings.mongodb_connection_string
-                )
-                should_migrate = True
-
-            if (
-                db_settings.mongodb_database_name
-                and db_settings.mongodb_database_name
-                != config_data.get("mongodb_database_name")
-            ):
-                changes_to_migrate["mongodb_database_name"] = (
-                    db_settings.mongodb_database_name
-                )
-                should_migrate = True
-
-            if (
-                db_settings.sql_database_path
-                and db_settings.sql_database_path
-                != config_data.get("sql_database_path")
-            ):
-                changes_to_migrate["sql_database_path"] = db_settings.sql_database_path
-                should_migrate = True
-
-            if should_migrate:
+            if changes_to_migrate:
                 logger.info(
                     f"Migrating {len(changes_to_migrate)} database settings to external config"
                 )
-                from .config_manager import config_manager
-
                 success = config_manager.update_database_config(**changes_to_migrate)
-                if success:
-                    logger.info(
-                        "Successfully migrated old database settings to external config"
-                    )
-                else:
+                if not success:
                     logger.warning("Failed to migrate old database settings")
-                return success
-            else:
-                logger.debug("No database settings migration needed")
-                return True
+                    return False
+
+            config_manager.update_database_config(database_settings_migrated=True)
+            return True
 
         except Exception as e:
             logger.debug(f"No old database settings found to migrate: {e}")

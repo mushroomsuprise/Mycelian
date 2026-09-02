@@ -1795,21 +1795,11 @@ class YouTubeClient:
     def _process_chatbot_event(self, event_type, event_data: Dict[str, Any]) -> None:
         try:
             from .chatbot_manager import get_manager as get_chatbot_manager
-            from .chatbot import dispatch_chatbot_response
+            from .chatbot import dispatch_process_event_result
 
             chatbot_manager = get_chatbot_manager()
             result = chatbot_manager.process_event(event_type, event_data)
-            if not result:
-                return
-            if isinstance(result, tuple):
-                response = result[0]
-                targets = result[1] if len(result) > 1 else ["youtube"]
-                discord_channels = result[2] if len(result) > 2 else None
-            else:
-                response, targets, discord_channels = result, ["youtube"], None
-            dispatch_chatbot_response(
-                response, targets, discord_channels=discord_channels
-            )
+            dispatch_process_event_result(result, default_targets=["youtube"])
         except Exception as e:
             logger.error(
                 "Error processing YouTube chatbot event: %s", e, exc_info=True
@@ -2236,6 +2226,19 @@ class YouTubeClient:
                 "currency": currency,
                 "formatted_amount": display_amount,
                 "display_amount": display_amount,
+                "message": message,
+                "donation_message": message,
+                "timestamp": current_timestamp,
+                "source": "youtube",
+            },
+        )
+        self._process_chatbot_event(
+            EventType.DONATION,
+            {
+                "username": username,
+                "amount": amount,
+                "currency": currency,
+                "formatted_amount": display_amount,
                 "message": message,
                 "donation_message": message,
                 "timestamp": current_timestamp,

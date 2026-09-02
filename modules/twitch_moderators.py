@@ -45,16 +45,41 @@ class ModeratorCache:
             return True
 
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._refresh_lock.acquire)
+        held = threading.Event()
+        acquired = False
+
+        def _acquire() -> None:
+            self._refresh_lock.acquire()
+            held.set()
+
+        try:
+            await loop.run_in_executor(None, _acquire)
+            acquired = True
+        except asyncio.CancelledError:
+            def _release_if_held() -> None:
+                held.wait()
+                try:
+                    self._refresh_lock.release()
+                except RuntimeError:
+                    pass
+
+            threading.Thread(
+                target=_release_if_held,
+                daemon=True,
+                name="ModCacheLockRelease",
+            ).start()
+            raise
+
         try:
             if not force and not self._is_stale():
                 return True
             return await self._fetch_moderators()
         finally:
-            try:
-                self._refresh_lock.release()
-            except RuntimeError:
-                pass
+            if acquired:
+                try:
+                    self._refresh_lock.release()
+                except RuntimeError:
+                    pass
 
     async def refresh(self, force: bool = False) -> bool:
         """Fetch moderators from Helix GET /moderation/moderators."""

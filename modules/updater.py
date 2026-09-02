@@ -713,6 +713,7 @@ def validate_installer_file(installer_path: str) -> bool:
 async def download_update_with_metrics(
     download_url: str,
     progress_callback: Optional[Callable[[float, float], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> Optional[str]:
     """
     Download the update and report progress fraction (0..1) and instantaneous speed (bytes/sec).
@@ -731,8 +732,9 @@ async def download_update_with_metrics(
             else:
                 filename = "mycelian_update.deb"
         file_path = os.path.join(temp_dir, filename)
+        timeout = aiohttp.ClientTimeout(connect=30, sock_read=60)
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(download_url) as response:
                 if response.status != 200:
                     logger.error(f"Download failed with status {response.status}")
@@ -746,6 +748,9 @@ async def download_update_with_metrics(
 
                 with open(file_path, "wb") as file:
                     async for chunk in response.content.iter_chunked(8192):
+                        if cancel_event is not None and cancel_event.is_set():
+                            logger.info("Update download cancelled")
+                            return None
                         file.write(chunk)
                         chunk_len = len(chunk)
                         downloaded_size += chunk_len
@@ -1147,6 +1152,7 @@ class UpdateManager:
                         speed_label = ui.label("").classes("text-xs").style("color: #94a3b8;")
 
                     button_row = ui.row().classes("w-full justify-end gap-2 mt-4")
+                    cancel_event = threading.Event()
 
                     def on_decline():
                         try:
@@ -1166,11 +1172,12 @@ class UpdateManager:
                             # Switch UI to progress mode
                             content_area.style("display: none;")
                             progress_area.style("display: block;")
-                            for btn in list(button_row.default_slot.children):
-                                try:
-                                    btn.style("display: none;")
-                                except Exception:
-                                    pass
+                            try:
+                                decline_btn.style("display: none;")
+                                update_btn.style("display: none;")
+                                cancel_btn.style("display: inline-flex;")
+                            except Exception:
+                                pass
 
                             self._start_download_flow(
                                 download_url,
@@ -1179,13 +1186,23 @@ class UpdateManager:
                                 progress_bar,
                                 speed_label,
                                 update_dialog,
+                                cancel_event=cancel_event,
                             )
                         except Exception as e:
                             logger.error(f"Error starting download flow: {e}", exc_info=True)
 
                     with button_row:
-                        ui.button("Decline", on_click=on_decline).props("flat").classes("secondary-text").style("border: 1px solid rgba(255,255,255,0.2);")
-                        ui.button("Update", on_click=on_accept).props("unelevated").classes("font-semibold").style("background: linear-gradient(135deg, #7c3aed 0%, #b980ff 100%); color: white; border: none;")
+                        decline_btn = ui.button("Decline", on_click=on_decline).props("flat").classes("secondary-text").style("border: 1px solid rgba(255,255,255,0.2);")
+                        update_btn = ui.button("Update", on_click=on_accept).props("unelevated").classes("font-semibold").style("background: linear-gradient(135deg, #7c3aed 0%, #b980ff 100%); color: white; border: none;")
+                        cancel_btn = ui.button(
+                            "Cancel",
+                            on_click=lambda: (
+                                cancel_event.set(),
+                                progress_label.set_text("Cancelling download..."),
+                            ),
+                        ).props("flat").classes("secondary-text").style(
+                            "border: 1px solid rgba(255,255,255,0.2); display: none;"
+                        )
 
             update_dialog.open()
         except Exception as e:
@@ -1200,6 +1217,7 @@ class UpdateManager:
         progress_bar,
         speed_label,
         dialog,
+        cancel_event: Optional[threading.Event] = None,
     ) -> None:
         try:
             import threading
@@ -1221,7 +1239,9 @@ class UpdateManager:
                     download_state["progress"] = max(0.0, min(1.0, float(fraction)))
                     download_state["speed_bps"] = float(speed_bps or 0.0)
 
-                return await download_update_with_metrics(download_url, progress_cb)
+                return await download_update_with_metrics(
+                    download_url, progress_cb, cancel_event=cancel_event
+                )
 
             def worker():
                 try:
@@ -1237,6 +1257,9 @@ class UpdateManager:
                         else:
                             download_state["status"] = "failed"
                             download_state["error"] = f"Downloaded file '{os.path.basename(path)}' is not a valid installer"
+                    elif cancel_event is not None and cancel_event.is_set():
+                        download_state["status"] = "cancelled"
+                        download_state["error"] = "Download cancelled"
                     else:
                         download_state["status"] = "failed"
                         download_state["error"] = "Download failed"
@@ -1263,10 +1286,18 @@ class UpdateManager:
                     pass
                 poll_holder["timer"] = None
 
+            def _widget_gone(el) -> bool:
+                return el is None or getattr(el, "is_deleted", False)
+
             def poll_update():
                 try:
+                    widgets_dead = (
+                        _widget_gone(progress_bar)
+                        or _widget_gone(progress_label)
+                        or _widget_gone(title_label)
+                    )
                     if download_state["status"] == "downloading":
-                        if _connected_client() is None:
+                        if _connected_client() is None or widgets_dead:
                             return
                         progress_value = max(0.0, min(1.0, download_state["progress"]))
                         progress_bar.set_value(progress_value)
@@ -1278,26 +1309,32 @@ class UpdateManager:
                         else:
                             speed_label.set_text("Calculating speed...")
                         return
-                    if download_state["status"] == "failed":
+                    if download_state["status"] in ("failed", "cancelled"):
                         cleanup_temp_files(temp_files)
-                        try:
-                            title_label.set_text("❌ Update Failed")
-                            progress_label.set_text(
-                                download_state.get("error") or "Unknown error"
-                            )
-                        except Exception:
-                            pass
+                        if not widgets_dead:
+                            try:
+                                title_label.set_text(
+                                    "Download cancelled"
+                                    if download_state["status"] == "cancelled"
+                                    else "❌ Update Failed"
+                                )
+                                progress_label.set_text(
+                                    download_state.get("error") or "Unknown error"
+                                )
+                            except Exception:
+                                pass
                         self._dialog_open = False
                         _stop_poll()
                         return
                     if download_state["status"] == "valid":
-                        try:
-                            title_label.set_text("🚀 Launching Installer")
-                            progress_label.set_text(
-                                "Starting installer and closing Mycelian..."
-                            )
-                        except Exception:
-                            pass
+                        if not widgets_dead:
+                            try:
+                                title_label.set_text("🚀 Launching Installer")
+                                progress_label.set_text(
+                                    "Starting installer and closing Mycelian..."
+                                )
+                            except Exception:
+                                pass
 
                         def launch():
                             try:
@@ -1315,6 +1352,8 @@ class UpdateManager:
                         _stop_poll()
                 except Exception as e:
                     logger.error(f"UpdateManager.poll_update error: {e}")
+                    if download_state["status"] == "downloading":
+                        return
                     _stop_poll()
 
             t = threading.Thread(target=worker, daemon=True)

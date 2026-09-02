@@ -2831,7 +2831,9 @@ class FF7Hook:
                     lo, hi = hi, lo
             return random.randint(lo, hi), None
         if s.lower() == "random":
-            lo, hi = 1, min(9999, default_max) if clamp_1_9999 else (1, default_max)
+            lo, hi = (
+                (1, min(9999, default_max)) if clamp_1_9999 else (1, default_max)
+            )
             return random.randint(lo, hi), None
         try:
             v = int(s)
@@ -4292,12 +4294,10 @@ class FF7Hook:
         token = str(materia_name or "").strip().lower()
         unequip_only = token in ("", "none", "empty", "unequip", "-", "null")
 
-        # Return previously-equipped materia (if any) to inventory first.
-        if cur_id != 0xFF:
-            if not self._inv_add_materia(int(cur_id), int(cur_ap)):
-                return False, "inventory full (materia)"
-
         if unequip_only:
+            if cur_id != 0xFF:
+                if not self._inv_add_materia(int(cur_id), int(cur_ap)):
+                    return False, "inventory full (materia)"
             if not self._write(
                 slot_addr, bytes([0xFF, 0xFF, 0xFF, 0xFF])
             ):
@@ -4313,6 +4313,10 @@ class FF7Hook:
             return False, f"materia not in inventory: {materia_name}"
         rec = self._inv_read_materia_slot(inv_slot) or (0, 0)
         new_ap = int(rec[1])
+
+        if cur_id != 0xFF:
+            if not self._inv_add_materia(int(cur_id), int(cur_ap)):
+                return False, "inventory full (materia)"
         if not self._inv_write_materia_slot(inv_slot, None, 0):
             return False, "remove from inventory failed"
         payload = bytes(
@@ -4790,15 +4794,20 @@ class FF7Hook:
                 "yes",
                 "on",
             )
-            ds = int(kwargs.get("duration_sec", 0) or 0)
             raw_dur = kwargs.get("duration_sec")
             if raw_dur is not None and str(raw_dur).strip().lower() in (
                 "none",
                 "null",
                 "inf",
                 "infinite",
+                "",
             ):
                 ds = 0
+            else:
+                try:
+                    ds = int(raw_dur or 0)
+                except (TypeError, ValueError):
+                    ds = 0
             return self._op_set_infinite_items(en, ds)
         if op == "set_menu_row_access":
             acc = str(kwargs.get("access", "allow")).strip().lower()

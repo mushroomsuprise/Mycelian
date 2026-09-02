@@ -87,9 +87,9 @@ class TemplateControlAction(BaseAction):
                 }
             )
 
-            # Replace placeholders in control data with event data
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
             control_data = substitute_connector_placeholders_mapping(
-                control_data, event_data
+                control_data, ctx
             )
 
             # Emit WebSocket event (thread-safe: connectors run off the gevent hub)
@@ -151,9 +151,9 @@ class WebSocketEmitAction(BaseAction):
                 }
             )
 
-            # Replace placeholders
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
             websocket_data = substitute_connector_placeholders_mapping(
-                websocket_data, event_data
+                websocket_data, ctx
             )
 
             # Emit event (thread-safe: connectors run off the gevent hub)
@@ -208,8 +208,9 @@ class TriggerAlertAction(BaseAction):
 
             # Fill alert data from event and action parameters
             alert_data = self.alert_data.copy()
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
             alert_data = substitute_connector_placeholders_mapping(
-                alert_data, event_data
+                alert_data, ctx
             )
 
             # Set alert properties from data
@@ -422,12 +423,10 @@ class ApiCallAction(BaseAction):
         try:
             import aiohttp
 
-            # Replace placeholders in URL, headers, and body
-            url = substitute_connector_placeholders(self.url, event_data)
-            headers = substitute_connector_placeholders_mapping(
-                self.headers, event_data
-            )
-            body = substitute_connector_placeholders_mapping(self.body, event_data)
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            url = substitute_connector_placeholders(self.url, ctx)
+            headers = substitute_connector_placeholders_mapping(self.headers, ctx)
+            body = substitute_connector_placeholders_mapping(self.body, ctx)
 
             async with aiohttp.ClientSession() as session:
                 async with session.request(
@@ -478,11 +477,9 @@ class WriteFileAction(BaseAction):
     ) -> bool:
         """Execute write file action"""
         try:
-            # Replace placeholders
-            file_path = substitute_connector_placeholders(
-                self.file_path, event_data
-            )
-            content = substitute_connector_placeholders(self.content, event_data)
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            file_path = substitute_connector_placeholders(self.file_path, ctx)
+            content = substitute_connector_placeholders(self.content, ctx)
 
             # Ensure directory exists
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -523,12 +520,10 @@ class ExecuteCommandAction(BaseAction):
     ) -> bool:
         """Execute command action"""
         try:
-            # Replace placeholders
-            command = substitute_connector_placeholders(self.command, event_data)
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            command = substitute_connector_placeholders(self.command, ctx)
             working_dir = (
-                substitute_connector_placeholders(
-                    self.working_directory, event_data
-                )
+                substitute_connector_placeholders(self.working_directory, ctx)
                 if self.working_directory
                 else None
             )
@@ -604,15 +599,16 @@ class KeyPressAction(BaseAction):
             keyboard_controller = keyboard.Controller()
             mouse_controller = mouse.Controller()
 
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
             if self.input_type == "macro":
                 return await self._execute_macro(
-                    keyboard_controller, mouse_controller, event_data
+                    keyboard_controller, mouse_controller, ctx
                 )
             elif self.input_type == "mouse":
                 return await self._execute_mouse_action(mouse_controller)
             else:  # keyboard
                 return await self._execute_keyboard_action(
-                    keyboard_controller, event_data
+                    keyboard_controller, ctx
                 )
 
         except Exception as e:
@@ -1001,10 +997,10 @@ class AudioControlAction(BaseAction):
                 f"Executing audio control action: {self.control_type} - {self.action_mode}"
             )
 
-            # Replace placeholders in target application and device
-            target_app = self._replace_placeholders(self.target_application, event_data)
-            target_device = self._replace_placeholders(self.target_device, event_data)
-            device_name = self._replace_placeholders(self.device_name, event_data)
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            target_app = self._replace_placeholders(self.target_application, ctx)
+            target_device = self._replace_placeholders(self.target_device, ctx)
+            device_name = self._replace_placeholders(self.device_name, ctx)
 
             # Generate source key for registry
             source_key = self.get_audio_source_key(
@@ -2510,11 +2506,11 @@ class AddGreetingAction(BaseAction):
         try:
             from . import chatbot_manager
 
-            # Replace placeholders in parameters
-            user_id = substitute_connector_placeholders(self.user_id, event_data)
-            username = substitute_connector_placeholders(self.username, event_data)
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            user_id = substitute_connector_placeholders(self.user_id, ctx)
+            username = substitute_connector_placeholders(self.username, ctx)
             greeting_text = substitute_connector_placeholders(
-                self.greeting_text, event_data
+                self.greeting_text, ctx
             )
 
             # Get chatbot manager
@@ -2571,12 +2567,10 @@ class UpdateGreetingAction(BaseAction):
         try:
             from . import chatbot_manager
 
-            # Replace placeholders in parameters
-            greeting_id = substitute_connector_placeholders(
-                self.greeting_id, event_data
-            )
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            greeting_id = substitute_connector_placeholders(self.greeting_id, ctx)
             greeting_text = (
-                substitute_connector_placeholders(self.greeting_text, event_data)
+                substitute_connector_placeholders(self.greeting_text, ctx)
                 if self.greeting_text
                 else None
             )
@@ -2634,9 +2628,9 @@ class SendGreetingAction(BaseAction):
         try:
             from . import chatbot_manager
 
-            # Replace placeholders in parameters
-            user_id = substitute_connector_placeholders(self.user_id, event_data)
-            username = substitute_connector_placeholders(self.username, event_data)
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            user_id = substitute_connector_placeholders(self.user_id, ctx)
+            username = substitute_connector_placeholders(self.username, ctx)
 
             # Get chatbot manager
             manager = chatbot_manager.get_manager()

@@ -1344,8 +1344,12 @@ def skip_alert(alert_data):
                 and not hasattr(value, "_classes")
             }
 
-            # Skip the current alert (safe_emit: NiceGUI thread, not the gevent hub)
-            web_engine.web_engine_instance.safe_emit("skip_alert", clean_alert_data)
+            # Overlay listens for alerts_skip_alert (connector skip uses the same event)
+            web_engine.web_engine_instance.safe_emit(
+                "alerts_skip_alert", clean_alert_data
+            )
+            web_engine.ALERT_PLAYING = False
+            web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
             logger.debug(
                 f"Sent skip request via websocket for alert: {clean_alert_data.get('type', 'Unknown')}"
             )
@@ -2790,9 +2794,11 @@ def create_activity_feed_tab():
                         f"Error initializing mute button state: {str(e)}",
                         exc_info=True,
                     )
-                skip_btn = ui.button(icon="skip_next", text="SKIP ALERT").classes(
-                    "control-button"
-                )
+                skip_btn = ui.button(
+                    icon="skip_next",
+                    text="SKIP ALERT",
+                    on_click=lambda: skip_alert({"type": "current"}),
+                ).classes("control-button")
                 skip_btn.props(_DOCK_BTN_PROPS)
 
             ui.element("div").classes("grow")

@@ -23,7 +23,7 @@ from nicegui import ui
 
 from .connection_status_tracker import service_configured as _service_configured
 from .path_utils import get_data_path
-from .ui_timer import app_schedule
+from .ui_timer import app_schedule, run_on_ui_loop
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +199,7 @@ _history_refresh_callbacks: List[Callable[[], None]] = []
 _pending_toasts: List[tuple[str, Dict[str, Any]]] = []
 _history_lock = threading.RLock()
 _MAX_PENDING_TOASTS = 20
+_service_watcher_started = False
 
 
 def _history_path() -> Path:
@@ -266,16 +267,20 @@ def save_history() -> None:
 
 
 def register_history_refresh(callback: Callable[[], None]) -> None:
-    if callback not in _history_refresh_callbacks:
-        _history_refresh_callbacks.append(callback)
+    """Replace the tray refresh callback (rebuilds create a new closure)."""
+    _history_refresh_callbacks.clear()
+    _history_refresh_callbacks.append(callback)
 
 
 def _trigger_history_refresh() -> None:
-    for cb in list(_history_refresh_callbacks):
-        try:
-            cb()
-        except Exception as e:
-            logger.debug("history refresh callback error: %s", e)
+    def _run() -> None:
+        for cb in list(_history_refresh_callbacks):
+            try:
+                cb()
+            except Exception as e:
+                logger.debug("history refresh callback error: %s", e)
+
+    run_on_ui_loop(_run)
 
 
 def get_history() -> List[Dict[str, Any]]:
@@ -1142,10 +1147,6 @@ def poll_service_status_changes() -> None:
         _footer_probe_refresh_pending = False
         refresh_service_status_footer()
 
-    from .connection_status_tracker import probe_configured_services
-
-    probe_configured_services()
-
     if _notifications_enabled():
         for key in _SERVICE_KEYS:
             if key != "internet" and key != "twitch" and not _service_configured(key):
@@ -1213,6 +1214,10 @@ def poll_service_connection_changes() -> None:
 
 def start_service_watcher_timer() -> None:
     """Start periodic polling for integration status changes (after UI exists)."""
+    global _service_watcher_started
+    if _service_watcher_started:
+        return
+    _service_watcher_started = True
     app_schedule(2.0, poll_service_status_changes, active=True)
     app_schedule(1.0, flush_pending_toasts, active=True)
     flush_pending_toasts()

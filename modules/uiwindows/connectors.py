@@ -1542,6 +1542,7 @@ def create_connector_form(connector_id: str = None):
         "trigger_config": {
             "key_combination": "",
             "is_global": True,
+            "interval_seconds": 60,
         },
         "actions": [],
     }
@@ -1578,6 +1579,17 @@ def create_connector_form(connector_id: str = None):
                 existing_connector.trigger, "key_combination", ""
             ),
             "is_global": getattr(existing_connector.trigger, "is_global", True),
+        }
+
+    if (
+        existing_connector
+        and existing_connector.trigger
+        and existing_connector.trigger.trigger_type.value == "timer"
+    ):
+        form_data["trigger_config"] = {
+            "interval_seconds": int(
+                getattr(existing_connector.trigger, "interval_seconds", 60) or 60
+            ),
         }
 
     if (
@@ -1861,6 +1873,25 @@ def handle_trigger_type_change(
                 "Assign this connector on a Stream Deck button using the "
                 "Connector action in the Mycelian Stream Deck plugin."
             ).classes("text-xs muted-text mb-3")
+
+    elif trigger_type == "timer":
+        with trigger_config_container:
+            ui.label("Timer Configuration").classes(
+                "text-sm font-medium secondary-text mb-2"
+            )
+            interval_value = form_data.get("trigger_config", {}).get(
+                "interval_seconds", 60
+            )
+            form_number(
+                tooltip="Seconds between timer fires",
+                label="Interval (seconds)",
+                value=interval_value,
+                min=1,
+                step=1,
+                on_change=lambda e: form_data.setdefault("trigger_config", {}).update(
+                    {"interval_seconds": int(e.value or 60)}
+                ),
+            ).classes("w-full mb-3")
 
     with conditions_container:
         ui.label("Conditions (optional)").classes(
@@ -5552,6 +5583,13 @@ def save_new_connector(form_data: dict):
             )
         elif trigger_type == TriggerType.STREAMDECK:
             trigger_params["connector_id"] = connector_id
+        elif trigger_type == TriggerType.TIMER:
+            trigger_config = form_data.get("trigger_config", {})
+            try:
+                interval = int(trigger_config.get("interval_seconds", 60) or 60)
+            except (TypeError, ValueError):
+                interval = 60
+            trigger_params["interval_seconds"] = max(1, interval)
 
         trigger = connector_triggers.create_trigger(**trigger_params)
         logger.info(f"Successfully created trigger: {trigger}")
@@ -5676,6 +5714,13 @@ def save_updated_connector(form_data: dict):
             )
         elif trigger_type == TriggerType.STREAMDECK:
             trigger_params["connector_id"] = connector_id
+        elif trigger_type == TriggerType.TIMER:
+            trigger_config = form_data.get("trigger_config", {})
+            try:
+                interval = int(trigger_config.get("interval_seconds", 60) or 60)
+            except (TypeError, ValueError):
+                interval = 60
+            trigger_params["interval_seconds"] = max(1, interval)
 
         trigger = connector_triggers.create_trigger(**trigger_params)
 

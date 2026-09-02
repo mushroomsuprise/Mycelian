@@ -365,7 +365,7 @@ if __name__ == "__main__":
 
         logger.info("Phase 3: Setting up deferred services...")
         try:
-            from modules.service_manager import DeferredServiceManager
+            from modules.service_manager import get_service_manager
             from modules.mainuiwindow import update_splash_progress, close_splash_screen
             from modules import connector_integration, connector_manager
 
@@ -373,7 +373,7 @@ if __name__ == "__main__":
             def progress_callback(progress, message):
                 update_splash_progress(progress, message)
 
-            service_manager = DeferredServiceManager(progress_callback=progress_callback)
+            service_manager = get_service_manager(progress_callback=progress_callback)
 
             # Register services by priority (lower = higher priority)
             service_manager.register(

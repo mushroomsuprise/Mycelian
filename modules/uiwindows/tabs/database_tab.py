@@ -1044,12 +1044,11 @@ class DatabaseTab:
             logger.error(f"Error starting migration: {e}", exc_info=True)
             notify(f"Error starting migration: {e}", type="negative")
 
-    def _show_data_viewer_dialog(self) -> None:
+    async def _show_data_viewer_dialog(self) -> None:
         """Show database data viewer and editor dialog"""
         try:
-            # Create the viewer instance
             viewer = DatabaseViewer()
-            viewer.show()
+            await viewer.show()
 
         except Exception as e:
             logger.error(f"Error showing data viewer dialog: {str(e)}", exc_info=True)
@@ -1158,8 +1157,7 @@ class DatabaseTab:
                         "change",
                         lambda e: self._set(
                             "sql_database_path",
-                            getattr(e, "args", [getattr(e, "value", "")])[0]
-                            or "mycelian.db",
+                            self._event_select_value(e) or "mycelian.db",
                         ),
                     )
                     self.ui_elements["firebase_service_account_path"] = form_sensitive_input(
@@ -1172,7 +1170,7 @@ class DatabaseTab:
                         "change",
                         lambda e: self._set(
                             "firebase_service_account_path",
-                            getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                            self._event_select_value(e) or "",
                         ),
                     )
                     self.ui_elements["firebase_database_url"] = form_sensitive_input(
@@ -1185,7 +1183,7 @@ class DatabaseTab:
                         "change",
                         lambda e: self._set(
                             "firebase_database_url",
-                            getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                            self._event_select_value(e) or "",
                         ),
                     )
                     self.ui_elements["mongodb_connection_string"] = form_sensitive_input(
@@ -1198,7 +1196,7 @@ class DatabaseTab:
                         "change",
                         lambda e: self._set(
                             "mongodb_connection_string",
-                            getattr(e, "args", [getattr(e, "value", "")])[0] or "",
+                            self._event_select_value(e) or "",
                         ),
                     )
                     self.ui_elements["mongodb_database_name"] = form_sensitive_input(
@@ -1211,8 +1209,7 @@ class DatabaseTab:
                         "change",
                         lambda e: self._set(
                             "mongodb_database_name",
-                            getattr(e, "args", [getattr(e, "value", "")])[0]
-                            or "mycelian",
+                            self._event_select_value(e) or "mycelian",
                         ),
                     )
                     self.ui_elements["connection_timeout"] = form_number(
@@ -1228,9 +1225,7 @@ class DatabaseTab:
                         "change",
                         lambda e: self._set(
                             "connection_timeout",
-                            int(
-                                getattr(e, "args", [getattr(e, "value", 30)])[0] or 30
-                            ),
+                            int(self._event_select_value(e) or 30),
                         ),
                     )
                     self.ui_elements["retry_attempts"] = form_number(
@@ -1246,7 +1241,7 @@ class DatabaseTab:
                         "change",
                         lambda e: self._set(
                             "retry_attempts",
-                            int(getattr(e, "args", [getattr(e, "value", 3)])[0] or 3),
+                            int(self._event_select_value(e) or 3),
                         ),
                     )
 

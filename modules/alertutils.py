@@ -2121,13 +2121,25 @@ def fetch_sub_alert(months: int) -> Optional[AlertObj]:
     # Use the AlertStateManager instead of global collections
     alert_state_manager.initialize()
 
-    # Get all sub alerts
-    alerts = alert_state_manager.get_alerts_by_type("subs", include_ranges=False)
+    # Get all sub alerts (including ranges)
+    alerts = alert_state_manager.get_alerts_by_type("subs", include_ranges=True)
 
     # Check for exact month match first
     exact_key = "subs" + str(months)
     if exact_key in alerts:
         return _alert_obj_from_db(alerts[exact_key])
+
+    for alert_id, alert_data in alerts.items():
+        if "-" in alert_id:
+            try:
+                range_part = alert_id
+                if alert_id.startswith("subs"):
+                    range_part = alert_id[4:]
+                min_val, max_val = map(int, range_part.split("-"))
+                if min_val <= months <= max_val:
+                    return _alert_obj_from_db(alert_data)
+            except ValueError:
+                continue
 
     # Return default alert if no match found
     default_alert_id = AlertSettings.default_sub_alert
@@ -2204,13 +2216,25 @@ def fetch_resub_alert(months: int) -> Optional[AlertObj]:
     """
     alert_state_manager.initialize()
 
-    # Get all sub alerts (exact only, no ranges)
-    alerts = alert_state_manager.get_alerts_by_type("subs", include_ranges=False)
+    # Get all sub alerts (including ranges)
+    alerts = alert_state_manager.get_alerts_by_type("subs", include_ranges=True)
 
     # 1. Check for exact month match
     exact_key = "subs" + str(months)
     if exact_key in alerts:
         return _alert_obj_from_db(alerts[exact_key])
+
+    for alert_id, alert_data in alerts.items():
+        if "-" in alert_id:
+            try:
+                range_part = alert_id
+                if alert_id.startswith("subs"):
+                    range_part = alert_id[4:]
+                min_val, max_val = map(int, range_part.split("-"))
+                if min_val <= months <= max_val:
+                    return _alert_obj_from_db(alert_data)
+            except ValueError:
+                continue
 
     # 2. If no exact match, check if the fallback alert is enabled
     fallback_id = AlertSettings.FALLBACK_ALERT_ID

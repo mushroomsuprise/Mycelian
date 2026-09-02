@@ -184,6 +184,7 @@ CHAT_PAYLOAD_KEYS: Dict[str, str] = {
     "chat.badges": "badges",
     "chat.color": "color",
     "chat.message_text": "message_text",
+    "chat.message_length": "message",
 }
 
 

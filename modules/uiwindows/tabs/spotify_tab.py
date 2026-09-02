@@ -70,13 +70,6 @@ class SpotifyTab:
                 spotify_data.connection_status if spotify_data else "Unknown"
             )
 
-            # Update market country field if it exists in UI
-            if "market_country" in self.ui_elements:
-                current_market = (
-                    getattr(spotify_data, "market_country", "") if spotify_data else ""
-                )
-                self.ui_elements["market_country"].value = current_market
-
             # Update status label and color
             if "status_label" in self.ui_elements:
                 # Use the most current status from either source

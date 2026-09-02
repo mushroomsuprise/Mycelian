@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import logging
 import os
 import time
 from contextlib import contextmanager
@@ -16,6 +17,8 @@ from ...ui_timer import layout_schedule
 from ... import dataobjects
 from ...dataobjects import state_manager
 from ...statistics_manager import get_statistics_manager
+
+logger = logging.getLogger(__name__)
 
 
 class StatisticsTab:
@@ -181,7 +184,7 @@ class StatisticsTab:
             self._start_live_updates()
 
         except Exception as e:
-            print(f"Error building statistics dashboard: {str(e)}", exc_info=True)
+            logger.error(f"Error building statistics dashboard: {str(e)}", exc_info=True)
             with ui.card().classes(
                 "content-section statistics-section w-full"
             ):
@@ -388,7 +391,7 @@ class StatisticsTab:
                 notify("✅ Statistics dashboard rebuilt!", type="positive")
 
         except Exception as e:
-            print(f"Error refreshing statistics: {str(e)}", exc_info=True)
+            logger.error(f"Error refreshing statistics: {str(e)}", exc_info=True)
             notify("❌ Error refreshing statistics", type="negative")
 
     def _force_save_statistics(self):
@@ -401,7 +404,7 @@ class StatisticsTab:
             notify("Statistics saved successfully!", type="positive")
 
         except Exception as e:
-            print(f"Error force saving statistics: {str(e)}", exc_info=True)
+            logger.error(f"Error force saving statistics: {str(e)}", exc_info=True)
             notify("Error saving statistics", type="negative")
 
     def _debug_counts(self):
@@ -426,7 +429,7 @@ class StatisticsTab:
             self._refresh_statistics()
 
         except Exception as e:
-            print(f"Error debugging counts: {str(e)}", exc_info=True)
+            logger.error(f"Error debugging counts: {str(e)}", exc_info=True)
             notify("Error checking counts", type="negative")
 
     def _start_live_updates(self):
@@ -588,7 +591,7 @@ class StatisticsTab:
                 print(f"Could not update statistic labels: {e}")
 
         except Exception as e:
-            print(f"Error updating statistics display: {str(e)}", exc_info=True)
+            logger.error(f"Error updating statistics display: {str(e)}", exc_info=True)
 
     def _update_statistic_labels(self, stats_data):
         """Update individual statistic value labels"""
@@ -864,7 +867,7 @@ class StatisticsTab:
                 print(f"Could not update template stats: {e}")
 
         except Exception as e:
-            print(f"Error updating statistic labels: {str(e)}", exc_info=True)
+            logger.error(f"Error updating statistic labels: {str(e)}", exc_info=True)
 
     def _rebuild_statistics_content(self):
         """Rebuild the statistics dashboard content without recreating the container"""
@@ -1219,7 +1222,7 @@ class StatisticsTab:
             self._build_export_section()
 
         except Exception as e:
-            print(f"Error rebuilding statistics content: {str(e)}", exc_info=True)
+            logger.error(f"Error rebuilding statistics content: {str(e)}", exc_info=True)
             with ui.card().classes(
                 "content-section statistics-section w-full"
             ):

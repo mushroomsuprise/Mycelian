@@ -509,7 +509,11 @@ class ConnectorManager:
                 if not self._validate_connector(connector):
                     return False
 
+                old_connector = self.connectors[connector_id]
+                self._unregister_connector_hotkey(old_connector)
                 self.connectors[connector_id] = connector
+                if connector.enabled:
+                    self._register_connector_hotkey(connector)
                 logger.info(f"Updated connector: {connector.name}")
 
                 # Save to database

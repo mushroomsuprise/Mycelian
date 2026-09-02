@@ -172,8 +172,14 @@ def process_alert(alert: AlertObj):
         engine = _overlay_engine()
         if engine is None:
             logger.error("No web engine instance; cannot process alert")
+            web_engine.ALERT_PLAYING = False
+            web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
             return
-        engine.next_alert(alert_data)
+        if not engine.next_alert(alert_data):
+            logger.error("Failed to emit next_alert; not marking ALERT_PLAYING")
+            web_engine.ALERT_PLAYING = False
+            web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
+            return
         web_engine.ALERT_PLAYING = True
 
         # Wait for alert completion with timeout protection
@@ -198,6 +204,8 @@ def process_alert(alert: AlertObj):
         logger.debug(f"Processed alert: {alert_data}")
     except Exception as e:
         logger.error(f"Error processing alert: {str(e)}", exc_info=True)
+        web_engine.ALERT_PLAYING = False
+        web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
         notify_critical(
             "An alert failed to process. Check logs if this keeps happening.",
             dedupe_key="alert:process_failed",

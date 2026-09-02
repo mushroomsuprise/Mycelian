@@ -437,13 +437,18 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
         spec = {
             "elementId": eid,
             "source": src,
-            "format": str(cfg.get("format") or "{value}"),
             "default_text": str(cfg.get("default_text") if cfg.get("default_text") is not None else "—"),
         }
         va_disp = _value_animation_meta(el)
         if va_disp:
             spec["value_animation"] = va_disp
-        lines.append(f"window.__sporeDataDisplays.push({_js_value(spec)});")
+        fmt_default = str(cfg.get("format") or "{value}")
+        fmt_var = counter_format_config_id(_slugify_id(eid))
+        lines.append(
+            f"window.__sporeDataDisplays.push(Object.assign("
+            f"{_js_value(spec)}, "
+            f'{{"format": {_jinja_tojson_default(fmt_var, fmt_default)}}}));'
+        )
         for ev in cfg.get("refresh_on") or []:
             if ev:
                 display_events.add(str(ev))

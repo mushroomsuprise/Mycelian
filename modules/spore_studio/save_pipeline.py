@@ -290,6 +290,34 @@ def create_template(
         model = copy.deepcopy(source_model)
         model["template_name"] = template_name
         model.pop("legacy", None)
+
+        src_assets = os.path.join(get_assets_path(), copy_from)
+        dst_assets = os.path.join(get_assets_path(), template_name)
+        if os.path.isdir(src_assets):
+            if os.path.isdir(dst_assets) and os.path.abspath(src_assets) != os.path.abspath(
+                dst_assets
+            ):
+                shutil.rmtree(dst_assets)
+            if not os.path.isdir(dst_assets):
+                shutil.copytree(src_assets, dst_assets)
+        old_asset = f"/assets/{copy_from}/"
+        new_asset = f"/assets/{template_name}/"
+        old_counters = f"{copy_from}/counters"
+        new_counters = f"{template_name}/counters"
+
+        def _rewrite_clone_strings(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                return {k: _rewrite_clone_strings(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_rewrite_clone_strings(v) for v in obj]
+            if isinstance(obj, str):
+                return obj.replace(old_asset, new_asset).replace(
+                    old_counters, new_counters
+                )
+            return obj
+
+        model = _rewrite_clone_strings(model)
+        model["template_name"] = template_name
     else:
         model = {
             "template_name": template_name,

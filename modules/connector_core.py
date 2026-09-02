@@ -233,7 +233,10 @@ class TriggerCondition:
                     return bool(_truthy_plain(fv) == _truthy_plain(ev))
                 except Exception:
                     pass
-            return fv == ev
+            try:
+                return float(fv) == float(ev)
+            except (TypeError, ValueError):
+                return fv == ev
         elif operator == ComparisonOperator.NOT_EQUAL:
             fv, ev = field_value, expected_value
             if isinstance(fv, bool) or isinstance(ev, bool) or (
@@ -243,7 +246,10 @@ class TriggerCondition:
                     return bool(_truthy_plain(fv) != _truthy_plain(ev))
                 except Exception:
                     pass
-            return fv != ev
+            try:
+                return float(fv) != float(ev)
+            except (TypeError, ValueError):
+                return fv != ev
         elif operator == ComparisonOperator.GREATER_THAN:
             return field_value > expected_value
         elif operator == ComparisonOperator.GREATER_THAN_OR_EQUAL:

@@ -67,6 +67,7 @@ class AppConfig:
     # Application metadata
     config_version: str = "1.0"
     last_updated: str = ""
+    database_settings_migrated: bool = False
 
 class ConfigManager:
     """Manages application configuration stored in external files"""

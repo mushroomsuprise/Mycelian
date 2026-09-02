@@ -309,8 +309,9 @@ class TimerTrigger(BaseTrigger):
 
         current_time = time.time()
         if self.last_triggered == 0:
-            # First time triggering
-            return True
+            # Arm the clock on first tick; do not fire until interval elapses.
+            self.last_triggered = current_time
+            return False
 
         time_since_last = current_time - self.last_triggered
         if time_since_last >= self.interval_seconds:

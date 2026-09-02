@@ -90,7 +90,6 @@ from .twitch_token_auth import (
     is_access_token_expired,
     is_credential_config_error,
     is_definitive_refresh_failure,
-    is_token_currently_valid,
     legacy_expiry_needs_migration,
     refresh_user_token,
     twitch_has_user_auth,
@@ -221,20 +220,26 @@ def _chat_notification_message_text(ev: Any) -> Optional[str]:
 
 
 def _dispatch_chatbot_event_response(result) -> None:
-    """Handle process_event result (str or (str, targets[, discord_channels]))."""
-    if not result:
-        return
-    from .chatbot import dispatch_chatbot_response
+    """Handle process_event result (one or many (response, targets[, discord_channels]))."""
+    from .chatbot import dispatch_process_event_result
 
-    if isinstance(result, tuple):
-        response = result[0]
-        targets = result[1] if len(result) > 1 else ["twitch"]
-        discord_channels = result[2] if len(result) > 2 else None
-    else:
-        response, targets, discord_channels = result, ["twitch"], None
-    dispatch_chatbot_response(
-        response, targets, discord_channels=discord_channels
-    )
+    dispatch_process_event_result(result)
+
+
+def _notify_chatbot_event(event_type, event_data) -> None:
+    """Dispatch a chatbot event; swallow errors so EventSub handlers stay alive."""
+    try:
+        chatbot_manager = get_chatbot_manager()
+        _dispatch_chatbot_event_response(
+            chatbot_manager.process_event(event_type, event_data)
+        )
+    except Exception as e:
+        logger.error(
+            "Error processing %s through chatbot: %s",
+            getattr(event_type, "value", event_type),
+            e,
+            exc_info=True,
+        )
 
 
 def _overlay_alert_or_placeholder(alert, *, username, alert_type, timestamp):
@@ -1094,6 +1099,9 @@ class Twitch_API:
         # don't spawn overlapping init threads.
         self._reconnect_lock = threading.Lock()
         self._reconnect_in_progress = False
+        self._eventsub_subscriptions_ready = False
+        self._sub_registry_retry_stop = threading.Event()
+        self._sub_registry_retry_thread = None
         # A live websocket session that stops delivering events for this long is
         # treated as a "silent death" zombie and rebuilt (subscriptions revoked
         # without a revocation message reaching us). Long enough that an ordinary
@@ -1339,10 +1347,10 @@ class Twitch_API:
         try:
             # Acquire off the event-loop thread so waiters never block the socket loop.
             acquired = await loop.run_in_executor(None, self._refresh_lock.acquire)
-            if await is_token_currently_valid(
-                self.auth_token, self.client_id or None
-            ):
-                logger.info("Token was already refreshed by another process")
+            if not self.is_token_expired():
+                logger.info(
+                    "Token refresh skipped: still outside the proactive expiry buffer"
+                )
                 return True
 
             logger.info("Refreshing authentication token")
@@ -3604,6 +3612,18 @@ class Twitch_API:
             alert_id=alert.alert_id,
             point_cost=int(alert.point_cost or 0),
         )
+        _notify_chatbot_event(
+            EventType.CHANNEL_POINT_REDEMPTION,
+            {
+                "username": alert.username,
+                "reward_title": alert.alert_name,
+                "reward_name": alert.alert_name,
+                "amount": int(alert.point_cost or 0),
+                "message": alert.message or "",
+                "timestamp": alert.timestamp,
+                "source": "twitch",
+            },
+        )
 
     async def on_hype_train_start(
         self, data: HypeTrainEvent
@@ -3662,7 +3682,15 @@ class Twitch_API:
                 True, hype_train_data
             )
 
-    async def on_hype_train_progress(self, data: HypeTrainEvent):
+        _notify_chatbot_event(
+            EventType.HYPE_TRAIN_START,
+            {
+                "username": conductor_name,
+                "level": level,
+                "timestamp": current_ts,
+                "source": "twitch",
+            },
+        )
         self._note_event_received()
         logger.debug(
             f"Hype train progress: Level {data.event.level}, Progress: {data.event.progress}/{data.event.goal}"
@@ -3706,6 +3734,17 @@ class Twitch_API:
             web_engine.web_engine_instance.hype_train_status_update(
                 True, hype_train_data
             )
+
+        _notify_chatbot_event(
+            EventType.HYPE_TRAIN_PROGRESS,
+            {
+                "level": data.event.level,
+                "progress": data.event.progress,
+                "goal": data.event.goal,
+                "timestamp": time.time(),
+                "source": "twitch",
+            },
+        )
 
     async def on_hype_train_end(
         self, data: HypeTrainEndEvent
@@ -3804,6 +3843,16 @@ class Twitch_API:
                 False, hype_train_data
             )
 
+        _notify_chatbot_event(
+            EventType.HYPE_TRAIN_END,
+            {
+                "level": level,
+                "amount": total_contributions,
+                "timestamp": current_ts,
+                "source": "twitch",
+            },
+        )
+
     async def on_stream_online(self, data: StreamOnlineEvent):
         """Twitch EventSub stream.online — Discord go-live + connector hook."""
         self._note_event_received()
@@ -3874,6 +3923,58 @@ class Twitch_API:
             self.health_check_thread.start()
             logger.debug("Started Twitch connection health check thread")
 
+    def _stop_subscriber_registry_retry(self) -> None:
+        self._sub_registry_retry_stop.set()
+
+    def _start_subscriber_registry_retry(self) -> None:
+        """Retry Helix subscriber snapshot with backoff until success or 403."""
+        self._sub_registry_retry_stop.set()
+        if (
+            self._sub_registry_retry_thread is not None
+            and self._sub_registry_retry_thread.is_alive()
+        ):
+            self._sub_registry_retry_thread.join(timeout=0.2)
+        self._sub_registry_retry_stop = threading.Event()
+        self._sub_registry_retry_thread = threading.Thread(
+            target=self._subscriber_registry_retry_loop,
+            daemon=True,
+            name="TwitchSubRegistryRetry",
+        )
+        self._sub_registry_retry_thread.start()
+
+    def _subscriber_registry_retry_loop(self) -> None:
+        from .shutdown import is_shutdown_in_progress
+        from .twitch_subscriber_registry import get_subscriber_registry
+
+        delays = (5, 15, 30, 60, 120, 300)
+        attempt = 0
+        while not self._sub_registry_retry_stop.wait(delays[min(attempt, len(delays) - 1)]):
+            if is_shutdown_in_progress():
+                return
+            registry = get_subscriber_registry()
+            if registry.is_session_ready() or registry.is_helix_forbidden():
+                return
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    ok = loop.run_until_complete(registry.sync_from_helix())
+                finally:
+                    loop.close()
+                if ok:
+                    logger.info(
+                        "Subscriber registry Helix snapshot ready after retry"
+                    )
+                    return
+                if registry.is_helix_forbidden():
+                    logger.warning(
+                        "Subscriber registry Helix snapshot forbidden; stopping retries"
+                    )
+                    return
+            except Exception as e:
+                logger.debug("Subscriber registry Helix retry failed: %s", e)
+            attempt += 1
+
     def is_eventsub_live(self) -> bool:
         """True when EventSub reports an active websocket session."""
         return (
@@ -3881,6 +3982,7 @@ class Twitch_API:
             and hasattr(self.eventsub, "active_session")
             and self.eventsub.active_session is not None
             and self.is_connected
+            and self._eventsub_subscriptions_ready
         )
 
     def stop_health_check(self):
@@ -3913,6 +4015,7 @@ class Twitch_API:
                     self.eventsub
                     and hasattr(self.eventsub, "active_session")
                     and self.eventsub.active_session is not None
+                    and self._eventsub_subscriptions_ready
                 ):
                     self.last_health_check = datetime.now()
                     self.is_connected = True
@@ -3965,6 +4068,7 @@ class Twitch_API:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         try:
+                            token_before = self.auth_token
                             refresh_success = loop.run_until_complete(
                                 self.refresh_auth_token()
                             )
@@ -3976,16 +4080,23 @@ class Twitch_API:
                                 # IMPORTANT: Sync refreshed tokens back to state manager
                                 self._sync_tokens_to_state_manager()
 
-                                # Rebuild the EventSub connection with the new
-                                # token. Subscriptions were created with the old
-                                # token and Twitch revokes them once it expires,
-                                # so set_user_authentication alone is not enough —
-                                # we must re-subscribe to keep receiving events.
-                                if not is_shutdown_in_progress():
+                                # Rebuild EventSub only when the access token actually
+                                # changed. A no-op skip (still inside the buffer wait)
+                                # must not tear down subscriptions every minute.
+                                if (
+                                    self.auth_token
+                                    and self.auth_token != token_before
+                                    and not is_shutdown_in_progress()
+                                ):
                                     logger.info(
                                         "Reconnecting EventSub to re-subscribe with refreshed token"
                                     )
                                     self.reconnect()
+                                else:
+                                    logger.debug(
+                                        "Access token unchanged after refresh check; "
+                                        "skipping EventSub reconnect"
+                                    )
                             else:
                                 logger.warning(
                                     "Token refresh failed during health check - authentication may be required"
@@ -4254,6 +4365,7 @@ class Twitch_API:
             logger.debug("Attempting to reconnect to Twitch")
 
             # Stop the current connection if it exists
+            self._eventsub_subscriptions_ready = False
             if self.eventsub:
                 self._stop_eventsub_safely()
 
@@ -4337,11 +4449,7 @@ class Twitch_API:
             # Start the websocket connection first. The first listen_* must
             # happen within 10s or Twitch closes the unused session (4003).
             eventsub.start()
-
-            # Update connection state
-            self.is_connected = True
-            twitch_connected = True
-            self.last_health_check = datetime.now()
+            self._eventsub_subscriptions_ready = False
 
             # Fail-closed for channel.subscribe until Helix snapshot finishes
             # after EventSub topics are registered (must not delay listen_*).
@@ -4360,6 +4468,11 @@ class Twitch_API:
                 or self._connection_epoch != epoch
                 or self.eventsub is not eventsub
             ):
+                if self.eventsub is eventsub:
+                    self._eventsub_subscriptions_ready = False
+                    self._stop_eventsub_safely()
+                    self.is_connected = False
+                    twitch_connected = False
                 return False
 
             # Register event handlers immediately (Twitch unused-connection window)
@@ -4505,13 +4618,27 @@ class Twitch_API:
                 )
             except Exception as e:
                 logger.error(f"Error subscribing to events: {str(e)}", exc_info=True)
+                self._eventsub_subscriptions_ready = False
                 self.is_connected = False
                 twitch_connected = False
+                if self.eventsub is eventsub:
+                    self._stop_eventsub_safely()
+                    self._connection_epoch += 1
                 notify_twitch_connect_failed()
                 return False  # Return False instead of raising exception
 
             if is_shutdown_in_progress() or self._connection_epoch != epoch:
+                if self.eventsub is eventsub:
+                    self._eventsub_subscriptions_ready = False
+                    self._stop_eventsub_safely()
+                    self.is_connected = False
+                    twitch_connected = False
                 return False
+
+            self._eventsub_subscriptions_ready = True
+            self.is_connected = True
+            twitch_connected = True
+            self.last_health_check = datetime.now()
 
             # Start the health check thread
             self.start_health_check()
@@ -4551,34 +4678,34 @@ class Twitch_API:
                     sub_registry.seed_from_statistics()
                 except Exception as seed_err:
                     logger.debug("Subscriber registry stats seed failed: %s", seed_err)
-                for _ in range(20):
-                    if is_twitch_api_ready():
-                        ok = await sub_registry.sync_from_helix()
-                        if ok:
-                            logger.info(
-                                "Subscriber registry Helix snapshot ready for new-sub filtering"
-                            )
-                        else:
-                            logger.warning(
-                                "Subscriber registry Helix snapshot failed; "
-                                "channel.subscribe alerts will stay suppressed"
-                            )
-                        break
-                    await asyncio.sleep(0.25)
-                else:
-                    logger.debug(
-                        "Subscriber registry Helix sync deferred: Twitch HTTP session not ready"
+                ok = await sub_registry.sync_from_helix()
+                if ok:
+                    logger.info(
+                        "Subscriber registry Helix snapshot ready for new-sub filtering"
                     )
+                elif sub_registry.is_helix_forbidden():
+                    logger.warning(
+                        "Subscriber registry Helix snapshot unavailable "
+                        "(channel is not Affiliate/Partner); new-sub alerts stay suppressed"
+                    )
+                else:
+                    logger.warning(
+                        "Subscriber registry Helix snapshot failed; retrying in background"
+                    )
+                    self._start_subscriber_registry_retry()
             except Exception as sub_reg_err:
                 logger.debug(
                     "Subscriber registry sync on connect failed: %s", sub_reg_err
                 )
+                self._start_subscriber_registry_retry()
 
             return True
         except Exception as e:
             logger.error(f"Failed to initialize Twitch API: {str(e)}", exc_info=True)
+            self._eventsub_subscriptions_ready = False
             self.is_connected = False
             twitch_connected = False
+            self._stop_eventsub_safely()
             notify_twitch_connect_failed()
             return False  # Return False instead of raising exception
 

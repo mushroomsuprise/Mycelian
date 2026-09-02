@@ -88,6 +88,10 @@ def is_valid_firebase_rtdb_url(url: str) -> bool:
     return False
 
 
+class DatabaseReadError(Exception):
+    """Raised when a database read fails (distinct from a missing path)."""
+
+
 @dataclass
 class DatabaseConfig:
     """Configuration settings for database connections"""
@@ -311,9 +315,7 @@ class SQLDatabase(DatabaseInterface):
             logger.error(
                 f"Error getting data from SQLite at {path}: {str(e)}", exc_info=True
             )
-            if request_etag:
-                return {"data": {}, "etag": None}
-            return {}
+            raise DatabaseReadError(str(e)) from e
         finally:
             if conn:
                 self._return_connection(conn)
@@ -363,19 +365,21 @@ class SQLDatabase(DatabaseInterface):
             self.initialize()
 
         try:
-            # Get existing data
             existing_data = self.get_data(path)
 
-            # Merge with new data
             if existing_data:
                 existing_data.update(data)
                 updated_data = existing_data
             else:
                 updated_data = data
 
-            # Set the merged data
             return self.set_data(path, updated_data)
 
+        except DatabaseReadError as e:
+            logger.error(
+                f"Skipping SQLite update at {path}; read failed: {e}", exc_info=True
+            )
+            return False
         except Exception as e:
             logger.error(
                 f"Error updating data in SQLite at {path}: {str(e)}", exc_info=True
@@ -973,6 +977,46 @@ class FirebaseDatabase(DatabaseInterface):
             )
             return []
 
+    def get_migration_paths(self) -> List[str]:
+        """Return app-level paths for migration (one extra level, not per-alert keys)."""
+        if not self._initialized:
+            self.initialize()
+
+        try:
+            if self._root_ref is None:
+                return []
+            top = self._root_ref.get(shallow=True)
+            if not isinstance(top, dict) or not top:
+                return []
+            paths: List[str] = []
+            for key in top.keys():
+                key_s = str(key)
+                try:
+                    node = self._root_ref.child(key_s).get()
+                except Exception as child_err:
+                    logger.error(
+                        "Error reading Firebase node %s for migration: %s",
+                        key_s,
+                        child_err,
+                    )
+                    paths.append(key_s)
+                    continue
+                if not isinstance(node, dict) or not node:
+                    paths.append(key_s)
+                    continue
+                if all(isinstance(v, dict) for v in node.values()):
+                    for child_key in node.keys():
+                        paths.append(f"{key_s}/{child_key}")
+                else:
+                    paths.append(key_s)
+            return sorted(paths)
+        except Exception as e:
+            logger.error(
+                f"Error getting migration paths from Firebase: {str(e)}",
+                exc_info=True,
+            )
+            return self.get_all_paths()
+
     def _extract_paths(self, data: Any, current_path: str, paths: List[str]) -> None:
         """Recursively extract all paths from nested data"""
         if isinstance(data, dict):
@@ -1118,9 +1162,7 @@ class MongoDatabase(DatabaseInterface):
             logger.error(
                 f"Error getting data from MongoDB at {path}: {str(e)}", exc_info=True
             )
-            if request_etag:
-                return {"data": {}, "etag": None}
-            return {}
+            raise DatabaseReadError(str(e)) from e
 
     def set_data(self, path: str, data: Dict[str, Any]) -> bool:
         """Set data in MongoDB database"""
@@ -1162,19 +1204,21 @@ class MongoDatabase(DatabaseInterface):
             self.initialize()
 
         try:
-            # Get existing data
             existing_data = self.get_data(path)
 
-            # Merge with new data
             if existing_data:
                 existing_data.update(data)
                 updated_data = existing_data
             else:
                 updated_data = data
 
-            # Set the merged data
             return self.set_data(path, updated_data)
 
+        except DatabaseReadError as e:
+            logger.error(
+                f"Skipping MongoDB update at {path}; read failed: {e}", exc_info=True
+            )
+            return False
         except Exception as e:
             logger.error(
                 f"Error updating data in MongoDB at {path}: {str(e)}", exc_info=True
@@ -1401,6 +1445,7 @@ class DatabaseManager:
             logger.info(f"Updating database manager config with: {kwargs}")
 
             # Update configuration
+            old_type = self._config.database_type
             for key, value in kwargs.items():
                 if hasattr(self._config, key):
                     if key == "firebase_database_url" and isinstance(value, str):
@@ -1411,8 +1456,8 @@ class DatabaseManager:
                 else:
                     logger.warning(f"Unknown config key: {key}")
 
-            # Reinitialize if database type changed
-            if "database_type" in kwargs:
+            # Reinitialize only when the live backend type actually changes
+            if "database_type" in kwargs and kwargs["database_type"] != old_type:
                 logger.info(
                     f"Database type changed to {kwargs['database_type']}, reinitializing..."
                 )
@@ -1731,7 +1776,10 @@ class DatabaseManager:
                 )
                 return False
 
-            paths_to_migrate = source_db.get_all_paths()
+            if hasattr(source_db, "get_migration_paths"):
+                paths_to_migrate = source_db.get_migration_paths()
+            else:
+                paths_to_migrate = source_db.get_all_paths()
             logger.info(
                 f"Migrating {len(paths_to_migrate)} paths from "
                 f"{source_config.database_type} to {target_config.database_type}"
@@ -1757,6 +1805,18 @@ class DatabaseManager:
                 f"{failed_count} failures ({source_config.database_type} -> "
                 f"{target_config.database_type})"
             )
+            if failed_count == 0:
+                try:
+                    settings = target_db.get_data("DatabaseSettings") or {}
+                    if isinstance(settings, dict):
+                        settings = dict(settings)
+                        settings["database_type"] = target_config.database_type
+                        target_db.set_data("DatabaseSettings", settings)
+                except Exception as persist_err:
+                    logger.warning(
+                        "Could not persist target database_type after migration: %s",
+                        persist_err,
+                    )
             return failed_count == 0
 
         except Exception as e:

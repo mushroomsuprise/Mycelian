@@ -32,6 +32,7 @@ class SubscriberRegistry:
         self._user_ids: Set[str] = set()
         self._user_logins: Set[str] = set()
         self._session_helix_ready = False
+        self._helix_snapshot_forbidden = False
         self._recent_new_sub_alerts: dict[str, float] = {}
         self._pending_tasks: dict[str, asyncio.Task] = {}
         self._sync_lock = threading.Lock()
@@ -125,13 +126,19 @@ class SubscriberRegistry:
         with self._lock:
             return self._session_helix_ready
 
+    def is_helix_forbidden(self) -> bool:
+        with self._lock:
+            return self._helix_snapshot_forbidden
+
     def set_session_ready(self, ready: bool) -> None:
         with self._lock:
             self._session_helix_ready = bool(ready)
 
     def reset_session_ready(self) -> None:
         """Call on Twitch reconnect so alerts stay gated until Helix sync finishes."""
-        self.set_session_ready(False)
+        with self._lock:
+            self._session_helix_ready = False
+            self._helix_snapshot_forbidden = False
 
     @staticmethod
     def _normalize_login(user_login: Optional[str]) -> Optional[str]:
@@ -447,6 +454,8 @@ class SubscriberRegistry:
             logger.debug("Subscriber Helix sync deferred: %s", e)
             return False
         except TwitchPermissionError as e:
+            with self._lock:
+                self._helix_snapshot_forbidden = True
             logger.warning(
                 "Helix subscriber snapshot unavailable: the channel must have "
                 "Affiliate or Partner status."
@@ -461,6 +470,8 @@ class SubscriberRegistry:
             if "partner or affiliate" in err or (
                 "403" in err and "forbidden" in err
             ):
+                with self._lock:
+                    self._helix_snapshot_forbidden = True
                 logger.warning(
                     "Helix subscriber snapshot unavailable: the channel must have "
                     "Affiliate or Partner status."

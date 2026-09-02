@@ -546,12 +546,20 @@ ALERTS_MUTED = False
 
 def _sync_mute_button_state() -> None:
     """Sync NiceGUI activity feed mute button with ALERTS_MUTED."""
-    try:
-        from modules.uiwindows.activity_feed import sync_mute_button_state
+    def _run() -> None:
+        try:
+            from modules.uiwindows.activity_feed import sync_mute_button_state
 
-        sync_mute_button_state()
-    except Exception as e:
-        logger.debug(f"Could not sync mute button state: {e}")
+            sync_mute_button_state()
+        except Exception as e:
+            logger.debug(f"Could not sync mute button state: {e}")
+
+    try:
+        from .ui_timer import run_on_ui_loop
+
+        run_on_ui_loop(_run)
+    except Exception:
+        _run()
 
 
 # Monotonic id for the current queued alert; only matching client alert_complete advances the queue.
@@ -6533,6 +6541,18 @@ class WebEngine:
                     exc_info=True,
                 )
                 return {"success": False, "error": str(e)}
+
+        @self.socketio.on("skip_alert")
+        def handle_skip_alert(data=None):
+            """Forward legacy skip_alert emits to the overlay skip event."""
+            try:
+                payload = data if isinstance(data, dict) else {}
+                self.safe_emit("alerts_skip_alert", payload)
+                global ALERT_PLAYING, EXPECTED_ALERT_COMPLETE_SEQ
+                ALERT_PLAYING = False
+                EXPECTED_ALERT_COMPLETE_SEQ = None
+            except Exception as e:
+                logger.error("Error handling skip_alert: %s", e, exc_info=True)
 
         @self.socketio.on("activity_feed_skip_alert")
         def handle_activity_feed_skip_alert(data):

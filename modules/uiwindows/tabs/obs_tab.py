@@ -28,6 +28,7 @@ class ObsTab:
         self.buffer: Optional[dataobjects.OBSData] = None
         self.ui_elements: Dict[str, Any] = {}
         self._status_timer: Optional[Any] = None
+        self._test_in_progress: bool = False
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
@@ -97,28 +98,35 @@ class ObsTab:
             self.dirty = True
 
     async def _test_connection(self) -> None:
+        if getattr(self, "_test_in_progress", False):
+            notify("OBS test already in progress...", type="info")
+            return
         if not self.buffer:
             return
-        state_manager.set_obs_data(
-            {
-                f.name: getattr(self.buffer, f.name)
-                for f in OBSData.__dataclass_fields__.values()
-            }
-        )
-        if not state_manager.save_changes():
-            notify("Could not save OBS settings before test", type="negative")
-            return
-        obs_service.apply_settings()
-        # Must not block NiceGUI thread (Future.result would freeze UI for the timeout window).
-        ok, msg = await run.io_bound(
-            obs_service.refresh_snapshot_blocking,
-            25.0,
-        )
-        if ok:
-            notify("OBS responded successfully", type="positive")
-        else:
-            notify(f"OBS test failed: {msg}", type="negative")
-        self._refresh_status()
+        self._test_in_progress = True
+        try:
+            state_manager.set_obs_data(
+                {
+                    f.name: getattr(self.buffer, f.name)
+                    for f in OBSData.__dataclass_fields__.values()
+                }
+            )
+            if not state_manager.save_changes():
+                notify("Could not save OBS settings before test", type="negative")
+                return
+            obs_service.apply_settings()
+            # Must not block NiceGUI thread (Future.result would freeze UI for the timeout window).
+            ok, msg = await run.io_bound(
+                obs_service.refresh_snapshot_blocking,
+                25.0,
+            )
+            if ok:
+                notify("OBS responded successfully", type="positive")
+            else:
+                notify(f"OBS test failed: {msg}", type="negative")
+            self._refresh_status()
+        finally:
+            self._test_in_progress = False
 
     def build(self, parent_container) -> None:
         self._load_from_state()

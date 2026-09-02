@@ -45,6 +45,32 @@ from .notification_engine import nav_actions_main_tab, notify_critical
 logger = logging.getLogger(__name__)
 
 
+def _command_matches_name(command: ChatCommand, command_name: str) -> bool:
+    """True if chat text matches the primary name or any alias (case-insensitive)."""
+    needle = (command_name or "").lower()
+    if (command.command_name or "").lower() == needle:
+        return True
+    for alias in getattr(command, "aliases", None) or []:
+        if str(alias).lower().lstrip("!") == needle:
+            return True
+    return False
+
+
+def _find_reset_target(
+    commands: Dict[str, ChatCommand], reset_command: str, skip_id: str
+) -> Optional[ChatCommand]:
+    """Resolve the counter command named by a RESET command's reset_command field."""
+    target_name = (reset_command or "").strip().lstrip("!").lower()
+    if not target_name:
+        return None
+    for command in commands.values():
+        if command.command_id == skip_id:
+            continue
+        if _command_matches_name(command, target_name):
+            return command
+    return None
+
+
 class GreetingFlagManager:
     """Manages greeting flags in a local file for simple boolean-based greeting system"""
 
@@ -705,9 +731,8 @@ class ChatbotManager:
 
             event = self.events[event_id]
 
-            # Stop repeating task if it exists
-            if event.interval > 0:
-                self._stop_repeating_event(event_id)
+            # Always unregister the worker; Specific Time events use interval 0
+            self._stop_repeating_event(event_id)
 
             del self.events[event_id]
             self._save_data()
@@ -776,54 +801,75 @@ class ChatbotManager:
                 elif command_name == "add_quote":
                     return self._handle_add_quote_command(arguments, message_data)
 
-            # Find matching custom command
+            # Find matching custom command (primary name or alias)
             with self._lock:
                 for command in self.commands.values():
-                    if (
-                        command.enabled
-                        and command.command_name.lower() == command_name
-                        and command.command_type != CommandType.RESET
-                    ):  # Reset commands are handled separately
-                        # Check if command should trigger based on conditions
-                        if not command.should_trigger(message_data):
-                            continue
+                    if not command.enabled or not _command_matches_name(
+                        command, command_name
+                    ):
+                        continue
 
-                        # Check if command can be used
-                        can_use, reason = command.can_use(message_data)
-                        if not can_use:
+                    # Check if command should trigger based on conditions
+                    if not command.should_trigger(message_data):
+                        continue
+
+                    # Check if command can be used
+                    can_use, reason = command.can_use(message_data)
+                    if not can_use:
+                        logger.debug(
+                            "[CHATBOT] Command '%s' blocked: %s",
+                            command_name,
+                            reason,
+                        )
+                        return reason, command_name
+
+                    if command.command_type == CommandType.RESET:
+                        target = _find_reset_target(
+                            self.commands, command.reset_command, command.command_id
+                        )
+                        if target is None:
                             logger.debug(
-                                "[CHATBOT] Command '%s' blocked: %s",
+                                "[CHATBOT] Reset command '%s' has unknown target '%s'",
                                 command_name,
-                                reason,
+                                command.reset_command,
                             )
-                            return reason, command_name
+                            return (
+                                f"Unknown command to reset: {command.reset_command}",
+                                command_name,
+                            )
+                        message_data = dict(message_data)
+                        message_data["target_command"] = target.command_name
+                        message_data["target_count"] = getattr(
+                            target, "counter_value", 0
+                        )
+                        target.reset_counter()
 
-                        # Use the command and get response
-                        logger.debug(
-                            "[CHATBOT] Executing command '%s' for %s",
-                            command_name,
-                            username,
-                        )
-                        response = command.use_command(message_data)
-                        logger.debug(
-                            "[CHATBOT] Command '%s' returned response: %s",
-                            command_name,
-                            response,
-                        )
+                    # Use the command and get response
+                    logger.debug(
+                        "[CHATBOT] Executing command '%s' for %s",
+                        command_name,
+                        username,
+                    )
+                    response = command.use_command(message_data)
+                    logger.debug(
+                        "[CHATBOT] Command '%s' returned response: %s",
+                        command_name,
+                        response,
+                    )
 
-                        # Save data after command use
-                        self._save_data()
+                    # Save data after command use
+                    self._save_data()
 
-                        logger.info(
-                            f"Command triggered: {command_name} by {message_data.get('username', 'Unknown')}"
-                        )
-                        targets = list(
-                            getattr(command, "reply_targets", None) or ["twitch"]
-                        )
-                        discord_channels = list(
-                            getattr(command, "discord_channels", None) or []
-                        )
-                        return response, command_name, targets, discord_channels
+                    logger.info(
+                        f"Command triggered: {command_name} by {message_data.get('username', 'Unknown')}"
+                    )
+                    targets = list(
+                        getattr(command, "reply_targets", None) or ["twitch"]
+                    )
+                    discord_channels = list(
+                        getattr(command, "discord_channels", None) or []
+                    )
+                    return response, command_name, targets, discord_channels
 
             return None
 
@@ -999,6 +1045,7 @@ class ChatbotManager:
             (response, reply_targets) if event triggered, None otherwise
         """
         try:
+            matches = []
             with self._lock:
                 for event in self.events.values():
                     # Skip Interval events - they only trigger via their scheduled loop
@@ -1009,12 +1056,7 @@ class ChatbotManager:
                         and event.event_type == event_type
                         and event.should_trigger(event_data)
                     ):
-                        # Trigger the event and get response
                         response = event.trigger_event(event_data)
-
-                        # Save data after event trigger
-                        self._save_data()
-
                         logger.info(
                             f"Event triggered: {event.name} for {event_type.value}"
                         )
@@ -1024,9 +1066,16 @@ class ChatbotManager:
                         discord_channels = list(
                             getattr(event, "discord_channels", None) or []
                         )
-                        return response, targets, discord_channels
+                        matches.append((response, targets, discord_channels))
 
-            return None
+                if matches:
+                    self._save_data()
+
+            if not matches:
+                return None
+            if len(matches) == 1:
+                return matches[0]
+            return matches
 
         except Exception as e:
             logger.error(f"Error processing event {event_type}: {e}", exc_info=True)
@@ -1192,9 +1241,11 @@ class ChatbotManager:
     def _stop_repeating_command(self, command_id: str):
         """Stop a repeating command task"""
         with self._scheduler_lock:
+            command = self.commands.get(command_id)
+            if command is not None:
+                command.enabled = False
+                command.repeating_enabled = False
             if command_id in self.repeating_tasks:
-                # For threading, we can't really stop a thread cleanly, but we can remove the reference
-                # The thread will exit naturally when the command is disabled
                 del self.repeating_tasks[command_id]
                 logger.info(
                     f"Removed repeating task reference for command ID: {command_id}"
@@ -1524,9 +1575,10 @@ class ChatbotManager:
     def _stop_repeating_event(self, event_id: str):
         """Stop a repeating event task"""
         with self._scheduler_lock:
+            event = self.events.get(event_id)
+            if event is not None:
+                event.enabled = False
             if event_id in self.repeating_tasks:
-                # For threading, we can't really stop a thread cleanly, but we can remove the reference
-                # The thread will exit naturally when the event is disabled
                 del self.repeating_tasks[event_id]
                 logger.info(
                     f"Removed repeating task reference for event ID: {event_id}"

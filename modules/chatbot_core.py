@@ -610,6 +610,13 @@ class ChatCommand:
         if self.command_type == CommandType.COUNTER:
             processed = processed.replace("{count}", str(self.counter_value))
 
+        processed = processed.replace(
+            "{target_command}", str(data.get("target_command", ""))
+        )
+        processed = processed.replace(
+            "{target_count}", str(data.get("target_count", ""))
+        )
+
         if self.cooldown > 0:
             processed = processed.replace("{cooldown}", str(self.cooldown))
 
@@ -1446,7 +1453,10 @@ class ChatEvent:
         elif self.event_type == EventType.GIFT_SUBSCRIPTION:
             # Check gift sub quantity and tier if specified
             if self.gift_sub_quantity > 0:
-                quantity = data.get("total_gifts", data.get("quantity", 0))
+                quantity = data.get(
+                    "total_gifts",
+                    data.get("quantity", data.get("amount", data.get("gift_qty", 0))),
+                )
                 try:
                     quantity = int(quantity) if isinstance(quantity, str) else quantity
                     if quantity < self.gift_sub_quantity:

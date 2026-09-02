@@ -371,12 +371,18 @@ def create_alert_settings_tab():
             set_alerts_ui_references(alert_tabs)
 
             # Add an on_change handler to the tabs to initialize values when tab changes
-            alert_tabs.on(
-                "change",
-                lambda e: initialize_tab_values(e.args["value"])
-                if e.args and "value" in e.args
-                else None,
-            )
+            def _on_alert_tab_change(e):
+                tab_name = getattr(e, "value", None)
+                if not tab_name:
+                    args = getattr(e, "args", None)
+                    if isinstance(args, str):
+                        tab_name = args
+                    elif isinstance(args, dict):
+                        tab_name = args.get("value")
+                if tab_name:
+                    initialize_tab_values(tab_name)
+
+            alert_tabs.on("change", _on_alert_tab_change)
 
             # Add a simple handler for Channel Points tab to load rewards immediately
             def simple_tab_handler(e):
@@ -1491,15 +1497,15 @@ def load_alert_settings(alert_type: str, alert_id: str):
         notify("Error loading alert settings", type="negative")
 
 
-def handle_browse(folder_type: str):
+def handle_browse(folder_type: str, alert_type: str = None):
     """Handle browsing for files/folders using a custom file browser dialog
 
     Args:
         folder_type (str): Type of folder being browsed (primary, random, extra, gif)
+        alert_type (str): Alert type tab to write into (falls back to current_tab)
     """
     try:
-        # Get the current alert type from the global state
-        current_alert_type = alert_settings_state.current_tab
+        current_alert_type = alert_type or alert_settings_state.current_tab
         if not current_alert_type:
             notify("No alert type selected", type="warning")
             return
@@ -2868,7 +2874,7 @@ def track_field_change(field_name, element, new_value, tab_type=None):
     """
     try:
         # Get the current tab (use parameter as fallback)
-        current_tab = alert_settings_state.current_tab or tab_type
+        current_tab = tab_type or alert_settings_state.current_tab
         if not current_tab:
             logger.error(
                 "No current tab set for field change tracking and no fallback provided"
@@ -3326,7 +3332,7 @@ def create_audio_settings_section(alert_type: str):
                     primary_browse_btn = ui.button(
                         "Browse",
                         icon="folder",
-                        on_click=lambda: handle_browse("primary"),
+                        on_click=lambda at=alert_type: handle_browse("primary", at),
                     ).classes(
                         "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
                     )
@@ -3402,7 +3408,7 @@ def create_randomizer_settings_section(alert_type: str):
                     random_browse_btn = ui.button(
                         "Browse",
                         icon="folder",
-                        on_click=lambda: handle_browse("random"),
+                        on_click=lambda at=alert_type: handle_browse("random", at),
                     ).classes(
                         "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
                     )
@@ -3473,7 +3479,7 @@ def create_randomizer_settings_section(alert_type: str):
 
                 with ui.row().classes("w-full items-center"):
                     extra_browse_btn = ui.button(
-                        "Browse", icon="folder", on_click=lambda: handle_browse("extra")
+                        "Browse", icon="folder", on_click=lambda at=alert_type: handle_browse("extra", at)
                     ).classes(
                         "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
                     )
@@ -3521,7 +3527,7 @@ def create_visual_settings_section(alert_type: str):
             with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
                 ui.label("File Selection").classes("font-medium mb-2 text-sm")
                 gif_browse_btn = ui.button(
-                    "Browse", icon="folder", on_click=lambda: handle_browse("gif")
+                    "Browse", icon="folder", on_click=lambda at=alert_type: handle_browse("gif", at)
                 ).classes(
                     "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
                 )

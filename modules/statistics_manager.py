@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import asyncio
+import copy
 import json
 import logging
 import os
@@ -78,6 +79,8 @@ class UserAlertStatistics:
     donations: int = 0
     watch_streak_alerts_played: int = 0
     highest_watch_streak: int = 0  # Max streak milestone seen for this user (lifetime)
+    total_bits: int = 0
+    total_gift_subs: int = 0
     total_alerts: int = 0
     first_seen: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
@@ -1318,11 +1321,11 @@ class StatisticsManager:
         for un, st in (alerts.user_stats or {}).items():
             if str(un).strip().lower() == sys_lower:
                 continue
-            ab_pairs.append((un, int(getattr(st, "bit_alerts_played", 0) or 0)))
+            ab_pairs.append((un, int(getattr(st, "total_bits", 0) or 0)))
             cp_pairs.append((un, int(getattr(st, "channel_points_redeemed", 0) or 0)))
             ns_pairs.append((un, int(getattr(st, "new_subs_played", 0) or 0)))
             rs_pairs.append((un, int(getattr(st, "resubs_played", 0) or 0)))
-            gs_pairs.append((un, int(getattr(st, "gift_subs_played", 0) or 0)))
+            gs_pairs.append((un, int(getattr(st, "total_gift_subs", 0) or 0)))
             dn_pairs.append((un, int(getattr(st, "donations", 0) or 0)))
             fl_pairs.append((un, int(getattr(st, "follow_alerts_played", 0) or 0)))
             rd_pairs.append((un, int(getattr(st, "raids", 0) or 0)))
@@ -2301,6 +2304,8 @@ class StatisticsManager:
                                 "donations": stats.donations,
                                 "watch_streak_alerts_played": stats.watch_streak_alerts_played,
                                 "highest_watch_streak": stats.highest_watch_streak,
+                                "total_bits": getattr(stats, "total_bits", 0),
+                                "total_gift_subs": getattr(stats, "total_gift_subs", 0),
                                 "total_alerts": stats.total_alerts,
                                 "first_seen": stats.first_seen,
                                 "last_seen": stats.last_seen,
@@ -2459,6 +2464,7 @@ class StatisticsManager:
                 "last_updated": time.time(),
                 "version": "1.0",
             }
+                data_dict = copy.deepcopy(data_dict)
 
             logger.debug(
                 f"Saving hype_trains data: {data_dict.get('data', {}).get('hype_trains', 'NOT FOUND')}"
@@ -2536,6 +2542,7 @@ class StatisticsManager:
         # Track per-user statistics if username provided
         if username:
             self._track_user_alert(username, "bit_alerts_played")
+            self.data.alerts.user_stats[username].total_bits += int(bit_amount or 0)
             self._record_event(username, "bit", bit_amount, alert_name)
 
         # Track individual alert type
@@ -2589,6 +2596,9 @@ class StatisticsManager:
         # Track per-user statistics if username provided
         if username:
             self._track_user_alert(username, "gift_subs_played")
+            self.data.alerts.user_stats[username].total_gift_subs += int(
+                gift_quantity or 0
+            )
             self._record_event(username, "giftsub", gift_quantity, alert_name)
 
         # Track individual alert type
@@ -2787,7 +2797,9 @@ class StatisticsManager:
 
         # Track per-user statistics if username provided
         if username:
-            self._track_user_connector(username, 1)
+            self._track_user_connector_aggregate(username, 1)
+            if connector_name:
+                self._track_user_connector(username, connector_name)
 
         # Track individual connector if name provided
         if connector_name:
@@ -2811,8 +2823,7 @@ class StatisticsManager:
 
         # Track per-user statistics if username provided
         if username:
-            self._track_user_connector(username, count)
-            # Track per-user individual connector usage if both username and connector_name provided
+            self._track_user_connector_aggregate(username, count)
             if connector_name:
                 for _ in range(count):
                     self._track_user_connector(username, connector_name)
@@ -2928,6 +2939,19 @@ class StatisticsManager:
         if len(user_stats.event_usage) == 1 and all(
             count == 1 for count in user_stats.event_usage.values()
         ):
+            user_stats.first_seen = current_time
+
+    @_stats_data_locked
+    def _track_user_connector_aggregate(self, username: str, count: int = 1) -> None:
+        """Increment connectors.user_stats (used by top-user connector_triggers)."""
+        if username not in self.data.connectors.user_stats:
+            self.data.connectors.user_stats[username] = UserConnectorStatistics()
+        user_stats = self.data.connectors.user_stats[username]
+        current_time = time.time()
+        user_stats.connectors_triggered += 1
+        user_stats.total_triggers += int(count or 0)
+        user_stats.last_seen = current_time
+        if user_stats.connectors_triggered == 1:
             user_stats.first_seen = current_time
 
     @_stats_data_locked
@@ -3721,7 +3745,7 @@ class StatisticsManager:
                 users.append(
                     {
                         "username": username,
-                        "value": stats.bit_alerts_played,
+                        "value": getattr(stats, "total_bits", 0) or stats.bit_alerts_played,
                         "first_seen": stats.first_seen,
                         "last_seen": stats.last_seen,
                     }
@@ -3732,7 +3756,7 @@ class StatisticsManager:
                 users.append(
                     {
                         "username": username,
-                        "value": stats.gift_subs_played,
+                        "value": getattr(stats, "total_gift_subs", 0) or stats.gift_subs_played,
                         "first_seen": stats.first_seen,
                         "last_seen": stats.last_seen,
                     }

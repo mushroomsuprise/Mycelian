@@ -22,6 +22,7 @@ class DeferredServiceManager:
         self.services: Dict[str, Dict] = {}
         self.initialized: Dict[str, bool] = {}
         self._thread = None
+        self._retry_thread = None
         self._shutdown = False
         self._progress_callback = progress_callback
 
@@ -187,9 +188,10 @@ class DeferredServiceManager:
                 pending = still_pending
                 delay = min(delay * 2, 60.0)
 
-        threading.Thread(
+        self._retry_thread = threading.Thread(
             target=_worker, daemon=True, name="DeferredInitRetry"
-        ).start()
+        )
+        self._retry_thread.start()
 
     def is_initialized(self, name: str) -> bool:
         """Check if a service has been initialized"""
@@ -205,6 +207,10 @@ class DeferredServiceManager:
             self._thread.join(timeout=1.0)
             if self._thread.is_alive():
                 logger.warning("Deferred init thread did not finish gracefully")
+        if self._retry_thread and self._retry_thread.is_alive():
+            self._retry_thread.join(timeout=1.0)
+            if self._retry_thread.is_alive():
+                logger.warning("Deferred init retry thread did not finish gracefully")
 
     def get_status(self) -> Dict[str, Dict]:
         """Get status of all registered services"""
@@ -222,6 +228,8 @@ class DeferredServiceManager:
 _service_manager = DeferredServiceManager()
 
 
-def get_service_manager() -> DeferredServiceManager:
-    """Get the global deferred service manager instance"""
+def get_service_manager(progress_callback=None) -> DeferredServiceManager:
+    """Get the global deferred service manager instance."""
+    if progress_callback is not None:
+        _service_manager._progress_callback = progress_callback
     return _service_manager

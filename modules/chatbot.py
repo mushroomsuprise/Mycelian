@@ -1748,6 +1748,26 @@ def _send_chatbot_message_blocking(
         return future.result(timeout=10)
 
 
+def dispatch_process_event_result(result, default_targets=None) -> None:
+    """Send one or more process_event results through dispatch_chatbot_response."""
+    if not result:
+        return
+    if isinstance(result, list):
+        for item in result:
+            dispatch_process_event_result(item, default_targets=default_targets)
+        return
+    fallback = list(default_targets) if default_targets else ["twitch"]
+    if isinstance(result, tuple):
+        response = result[0]
+        targets = result[1] if len(result) > 1 else fallback
+        discord_channels = result[2] if len(result) > 2 else None
+    else:
+        response, targets, discord_channels = result, fallback, None
+    dispatch_chatbot_response(
+        response, targets, discord_channels=discord_channels
+    )
+
+
 def dispatch_chatbot_response(
     message: str,
     reply_targets=None,

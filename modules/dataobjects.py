@@ -260,6 +260,25 @@ class DatabaseSettings:
         pass
 
 
+def _apply_database_connection_settings(temp_db_settings: "DatabaseSettings") -> None:
+    """Apply connection fields from DatabaseSettings without changing live database_type.
+
+    ``config.json`` remains the source of truth for which backend is active.
+    """
+    from . import database_manager
+
+    database_manager.update_config(
+        sql_database_path=temp_db_settings.sql_database_path,
+        firebase_service_account_path=temp_db_settings.firebase_service_account_path,
+        firebase_database_url=temp_db_settings.firebase_database_url,
+        mongodb_connection_string=temp_db_settings.mongodb_connection_string,
+        mongodb_database_name=temp_db_settings.mongodb_database_name,
+        streamer_name="mycelian",
+        connection_timeout=temp_db_settings.connection_timeout,
+        retry_attempts=temp_db_settings.retry_attempts,
+    )
+
+
 @dataclass
 class PSNData:
     current_game_name: str = ""
@@ -479,30 +498,9 @@ class StateManager:
                         }
                     )
 
-                    # Get streamer name from app settings or use default
-                    streamer_name = (
-                        "mycelian"  # Always use mycelian for database consistency
-                    )
-
-                    # Update database manager configuration
-                    from . import database_manager
-
-                    config = database_manager.DatabaseConfig(
-                        database_type=temp_db_settings.database_type,
-                        sql_database_path=temp_db_settings.sql_database_path,
-                        firebase_service_account_path=temp_db_settings.firebase_service_account_path,
-                        firebase_database_url=temp_db_settings.firebase_database_url,
-                        mongodb_connection_string=temp_db_settings.mongodb_connection_string,
-                        mongodb_database_name=temp_db_settings.mongodb_database_name,
-                        streamer_name=streamer_name,
-                        connection_timeout=temp_db_settings.connection_timeout,
-                        retry_attempts=temp_db_settings.retry_attempts,
-                    )
-
-                    # Update the database manager with the new configuration
-                    database_manager.update_config(**config.__dict__)
+                    _apply_database_connection_settings(temp_db_settings)
                     logger.debug(
-                        f"Updated database manager configuration: {temp_db_settings.database_type}"
+                        "Updated database manager connection settings (type left to config.json)"
                     )
 
             except Exception as e:
@@ -541,7 +539,6 @@ class StateManager:
 
                 # If we have database settings, update the database manager configuration
                 if database_settings_data:
-                    # Create a temporary DatabaseSettings object to get the configuration
                     temp_db_settings = DatabaseSettings(
                         **{
                             k: v
@@ -550,29 +547,9 @@ class StateManager:
                         }
                     )
 
-                    # Get streamer name from app settings or use default
-                    streamer_name = (
-                        "mycelian"  # Always use mycelian for database consistency
-                    )
-                    # Removed dynamic streamer_name lookup to prevent database fragmentation
-
-                    # Update database manager configuration
-                    config = database_manager.DatabaseConfig(
-                        database_type=temp_db_settings.database_type,
-                        sql_database_path=temp_db_settings.sql_database_path,
-                        firebase_service_account_path=temp_db_settings.firebase_service_account_path,
-                        firebase_database_url=temp_db_settings.firebase_database_url,
-                        mongodb_connection_string=temp_db_settings.mongodb_connection_string,
-                        mongodb_database_name=temp_db_settings.mongodb_database_name,
-                        streamer_name=streamer_name,
-                        connection_timeout=temp_db_settings.connection_timeout,
-                        retry_attempts=temp_db_settings.retry_attempts,
-                    )
-
-                    # Update the database manager with the new configuration
-                    database_manager.update_config(**config.__dict__)
+                    _apply_database_connection_settings(temp_db_settings)
                     logger.debug(
-                        f"Updated database manager configuration: {temp_db_settings.database_type}"
+                        "Updated database manager connection settings (type left to config.json)"
                     )
 
             except Exception as e:
@@ -660,29 +637,9 @@ class StateManager:
                         }
                     )
 
-                    # Get streamer name from app settings or use default
-                    streamer_name = (
-                        "mycelian"  # Always use mycelian for database consistency
-                    )
-                    # Removed dynamic streamer_name lookup to prevent database fragmentation
-
-                    # Update database manager configuration
-                    config = database_manager.DatabaseConfig(
-                        database_type=temp_db_settings.database_type,
-                        sql_database_path=temp_db_settings.sql_database_path,
-                        firebase_service_account_path=temp_db_settings.firebase_service_account_path,
-                        firebase_database_url=temp_db_settings.firebase_database_url,
-                        mongodb_connection_string=temp_db_settings.mongodb_connection_string,
-                        mongodb_database_name=temp_db_settings.mongodb_database_name,
-                        streamer_name=streamer_name,
-                        connection_timeout=temp_db_settings.connection_timeout,
-                        retry_attempts=temp_db_settings.retry_attempts,
-                    )
-
-                    # Update the database manager with the new configuration
-                    database_manager.update_config(**config.__dict__)
+                    _apply_database_connection_settings(temp_db_settings)
                     logger.debug(
-                        f"Updated database manager configuration: {temp_db_settings.database_type}"
+                        "Updated database manager connection settings (type left to config.json)"
                     )
 
                 except Exception as e:

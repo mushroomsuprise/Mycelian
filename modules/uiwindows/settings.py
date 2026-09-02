@@ -5210,7 +5210,6 @@ class SettingsUI:
                                     and current_tab not in self._settings_loaded_tabs
                                 ):
                                     load_tab_content(current_tab)
-                                self._active_tab_name = current_tab
                                 previous_settings_tab = current_tab
 
                         # Check for tab changes every 200ms
@@ -5259,7 +5258,7 @@ class SettingsUI:
                     if current_subtab != previous_subtab:
                         mock_event = type("MockEvent", (), {"value": current_subtab})()
                         on_tab_change(mock_event)
-                        previous_subtab = current_subtab
+                        previous_subtab = _tab_label(tabs.value)
 
                 layout_schedule(0.5, check_subtab_changes, active=True)  # Check every 500ms
 
