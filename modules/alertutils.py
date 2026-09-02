@@ -2240,7 +2240,16 @@ def fetch_cheer_alert(quantity: int) -> AlertObj:
 
 
 _CHAT_ACTIVITY_ONLY_ALERT_TYPES = frozenset(
-    {"point", "points", "streak", "hype_train", "hypetrain"}
+    {
+        "point",
+        "points",
+        "streak",
+        "streaks",
+        "watch_streak",
+        "watchstreak",
+        "hype_train",
+        "hypetrain",
+    }
 )
 _CHAT_MEDIA_RICH_ALERT_TYPES = frozenset(
     {"follow", "sub", "resub", "giftsub", "bit", "bits", "donation", "raid"}

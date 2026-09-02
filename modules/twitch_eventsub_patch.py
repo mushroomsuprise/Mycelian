@@ -53,21 +53,23 @@ class SharedTrainParticipants(TwitchObject):
 
 
 def ensure_channel_chat_notification_watch_streak_patch() -> None:
-    """Add ``watch_streak`` typing to twitchAPI once; no-op if already present upstream."""
-    if getattr(ChannelChatNotificationData, _WATCH_STREAK_PATCH_ATTR, False):
-        return
+    """Force ``watch_streak`` onto twitchAPI as ``WatchStreakNoticeData``.
 
+    Always overwrites a dict/Any/missing annotation so TwitchObject builds a
+    real nested object instead of dropping the field or leaving a raw dict.
+    """
     existing = getattr(ChannelChatNotificationData, "__annotations__", None) or {}
-    if isinstance(existing, dict) and "watch_streak" in existing:
-        setattr(ChannelChatNotificationData, _WATCH_STREAK_PATCH_ATTR, True)
-        logger.debug(
-            "ChannelChatNotificationData.watch_streak already modeled upstream; "
-            "skipping Mycelian EventSub patch"
-        )
+    if not isinstance(existing, dict):
+        existing = {}
+    desired = Optional[WatchStreakNoticeData]
+    if (
+        getattr(ChannelChatNotificationData, _WATCH_STREAK_PATCH_ATTR, False)
+        and existing.get("watch_streak") is desired
+    ):
         return
 
     merged = dict(existing)
-    merged["watch_streak"] = Optional[WatchStreakNoticeData]
+    merged["watch_streak"] = desired
     ChannelChatNotificationData.__annotations__ = merged
     setattr(ChannelChatNotificationData, _WATCH_STREAK_PATCH_ATTR, True)
     logger.debug(

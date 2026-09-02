@@ -27,6 +27,7 @@ import asyncio
 import logging
 import multiprocessing
 import os
+import re
 import sys
 import threading
 import time
@@ -147,6 +148,76 @@ def _add_twitch_alert_to_feed(*args, **kwargs) -> None:
     if not _twitch_alerts_enabled():
         return
     add_alert_to_feed(*args, **kwargs)
+
+
+_WATCH_STREAK_COUNT_RE = re.compile(
+    r"(\d+)\s*consecutive\s+streams", re.IGNORECASE
+)
+
+
+def _normalize_chat_notice_type(notice_raw: Any) -> str:
+    """Lowercase EventSub notice_type from str or enum-like values."""
+    if notice_raw is None:
+        return ""
+    if isinstance(notice_raw, str):
+        return notice_raw.strip().lower()
+    value = getattr(notice_raw, "value", None)
+    if value is not None and not callable(value):
+        return str(value).strip().lower()
+    return str(notice_raw).strip().lower()
+
+
+def _is_watch_streak_notice(notice_type_str: str) -> bool:
+    t = (notice_type_str or "").strip().lower()
+    return t == "watch_streak" or t.endswith("watch_streak")
+
+
+def _int_from_watch_field(watch: Any, key: str) -> int:
+    """Read an int from a TwitchObject, mapping, or to_dict() payload."""
+    if watch is None:
+        return 0
+    raw = None
+    if isinstance(watch, dict):
+        raw = watch.get(key)
+    else:
+        raw = getattr(watch, key, None)
+        if raw is None:
+            to_dict = getattr(watch, "to_dict", None)
+            if callable(to_dict):
+                try:
+                    raw = (to_dict() or {}).get(key)
+                except Exception:
+                    raw = None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _streak_count_from_system_message(*texts: Any) -> int:
+    """Parse watch-streak count from Twitch system / chat text."""
+    for text in texts:
+        if not text:
+            continue
+        match = _WATCH_STREAK_COUNT_RE.search(str(text))
+        if not match:
+            continue
+        try:
+            return int(match.group(1))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _chat_notification_message_text(ev: Any) -> Optional[str]:
+    msg_obj = getattr(ev, "message", None)
+    if msg_obj is None:
+        return None
+    if isinstance(msg_obj, dict):
+        text = msg_obj.get("text")
+        return str(text) if text else None
+    text = getattr(msg_obj, "text", None)
+    return str(text) if text else None
 
 
 def _dispatch_chatbot_event_response(result) -> None:
@@ -1942,10 +2013,7 @@ class Twitch_API:
         ev = data.event
 
         notice_raw = getattr(ev, "notice_type", None)
-        notice_type = (
-            notice_raw.value if hasattr(notice_raw, "value") else str(notice_raw or "")
-        )
-        notice_type_str = str(notice_type)
+        notice_type_str = _normalize_chat_notice_type(notice_raw)
 
         # Harvest subscription-related notices into ever-subscribed registry (no alerts).
         if notice_type_str in {
@@ -2019,33 +2087,32 @@ class Twitch_API:
                     "Chat notification subscriber harvest failed: %s", harvest_err
                 )
 
-        if notice_type_str != "watch_streak":
+        if not _is_watch_streak_notice(notice_type_str):
             return
 
         watch = getattr(ev, "watch_streak", None)
-        if watch is None:
-            logger.debug(
-                "EventSub chat notification notice_type is watch_streak but "
-                "watch_streak data is missing; check twitch_eventsub_patch and twitchapi"
-            )
-            return
-
-        streak_count = int(getattr(watch, "streak_count", None) or 0)
-        if streak_count < 1:
-            logger.debug("Watch streak event with invalid streak_count, skipping")
-            return
-
-        channel_points_awarded = int(
-            getattr(watch, "channel_points_awarded", None) or 0
+        streak_count = _int_from_watch_field(watch, "streak_count")
+        channel_points_awarded = _int_from_watch_field(
+            watch, "channel_points_awarded"
         )
         username = getattr(ev, "chatter_user_name", None) or "Someone"
-
-        msg_obj = getattr(ev, "message", None)
-        user_msg = None
-        if msg_obj is not None:
-            user_msg = getattr(msg_obj, "text", None)
+        user_msg = _chat_notification_message_text(ev)
+        system_message = getattr(ev, "system_message", None) or ""
+        if streak_count < 1:
+            streak_count = _streak_count_from_system_message(
+                system_message, user_msg
+            )
+        if streak_count < 1:
+            logger.warning(
+                "Watch streak notice skipped: notice_type=%r watch_present=%s "
+                "watch_type=%s",
+                notice_type_str,
+                watch is not None,
+                type(watch).__name__ if watch is not None else None,
+            )
+            return
         if not user_msg:
-            user_msg = getattr(ev, "system_message", None) or ""
+            user_msg = system_message
 
         logger.debug(
             f"Watch streak from {username}: count={streak_count}, "

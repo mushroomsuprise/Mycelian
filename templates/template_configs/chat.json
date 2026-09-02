@@ -1794,6 +1794,12 @@
             "label": "Alert: Points (activity only)",
             "alert_type": "point",
             "tooltip": "Points always use the activity summary line, never the media block"
+        },
+        {
+            "event": "activity_feed_alert",
+            "label": "Alert: Streak (activity only)",
+            "alert_type": "streak",
+            "tooltip": "Watch streaks always use the activity summary line, never the media block"
         }
     ]
 }

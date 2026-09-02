@@ -1291,6 +1291,11 @@
             });
         }
 
+        function isWatchStreakAlertTypeName(raw) {
+            var t = String(raw || '').trim().toLowerCase().replace(/\s+/g, '');
+            return t === 'streak' || t === 'streaks' || t === 'watch_streak' || t === 'watchstreak';
+        }
+
         function formatWatchStreakMessage(username, streakCount, includeUsername) {
             var name = username || 'Someone';
             var count = parseInt(streakCount, 10);
@@ -1430,7 +1435,7 @@
             var eventText = '';
             var alertType = (alertData.type || alertData.alert_type || '').toLowerCase();
 
-            if (alertType === 'streak') {
+            if (isWatchStreakAlertTypeName(alertType) || isWatchStreakAlertTypeName(alertData.badge_type)) {
                 var streakUsername = alertData.username ||
                     (alertData.stored_alert_data && alertData.stored_alert_data.username) ||
                     extractUsernameFromMessage(alertData) ||
@@ -1547,7 +1552,7 @@
                 return formatBitsMessage(alertData);
             }
 
-            if (alertType === 'streak') {
+            if (isWatchStreakAlertTypeName(alertType) || isWatchStreakAlertTypeName(alertData.badge_type)) {
                 return formatWatchStreakMessage(username, resolveWatchStreakCount(alertData), true);
             }
 
@@ -1569,7 +1574,7 @@
 
         function isChatActivityOnlyAlertType(alertData) {
             var t = normalizeChatAlertType(alertData);
-            return t === 'point' || t === 'points' || t === 'streak' ||
+            return t === 'point' || t === 'points' || isWatchStreakAlertTypeName(t) ||
                 t === 'hypetrain' || t === 'hype_train';
         }
 
