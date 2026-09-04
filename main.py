@@ -43,7 +43,7 @@ if __name__ == "__main__" and _NPSSO_HELPER_FLAG in sys.argv:
 from modules.log_trim import trim_log_file as _trim_log_file
 
 # Set True to print [startup] timing lines and summaries to the console.
-ENABLE_STARTUP_PROFILING = True
+ENABLE_STARTUP_PROFILING = False
 
 # Claim profiling for this OS process before other modules import startup_profiler
 if os.environ.get("MYCELIAN_STARTUP_PROFILE_OWNER_PID") is None:
