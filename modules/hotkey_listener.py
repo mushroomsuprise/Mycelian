@@ -41,6 +41,7 @@ class HotkeyListener:
         self.hotkey_mappings = {}  # key_combination -> list of connector_ids
         self._lock = threading.RLock()
         self._hotkeys_dirty = True
+        self._wake = threading.Event()
         self._pynput_hotkeys = []
 
     def start(self):
@@ -50,6 +51,7 @@ class HotkeyListener:
             return
 
         self.is_running = True
+        self._wake.clear()
         logger.info("Starting hotkey listener")
 
         # Start listener in background thread
@@ -62,6 +64,7 @@ class HotkeyListener:
             return
 
         self.is_running = False
+        self._wake.set()
         logger.info("Stopping hotkey listener")
 
         if self.listener_thread:
@@ -82,6 +85,7 @@ class HotkeyListener:
                         f"Registered hotkey '{key_combination}' for connector {connector_id}"
                     )
                 self._hotkeys_dirty = True
+                self._wake.set()
 
         except Exception as e:
             logger.error(f"Error registering hotkey: {e}", exc_info=True)
@@ -119,6 +123,7 @@ class HotkeyListener:
                     for key_combo in keys_to_remove:
                         del self.hotkey_mappings[key_combo]
                 self._hotkeys_dirty = True
+                self._wake.set()
 
         except Exception as e:
             logger.error(f"Error unregistering hotkey: {e}", exc_info=True)
@@ -208,7 +213,8 @@ class HotkeyListener:
                 while self.is_running:
                     if self._hotkeys_dirty:
                         _rebuild_hotkeys()
-                    time.sleep(0.1)
+                    self._wake.wait(timeout=0.1)
+                    self._wake.clear()
             finally:
                 listener.stop()
 
@@ -247,7 +253,8 @@ class HotkeyListener:
                                 f"Failed to register hotkey '{key_combination}': {e}"
                             )
                     last_combos = list(combos)
-                time.sleep(0.1)
+                self._wake.wait(timeout=0.1)
+                self._wake.clear()
 
             for key_combination in registered_hotkeys:
                 try:

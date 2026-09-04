@@ -349,6 +349,10 @@ class StatisticsManager:
         self._stats_db_pool_size = 3
         self._stats_db_pool_lock = threading.Lock()
         self._stats_db_initialized = False
+        self._event_batch: List[Tuple[Any, ...]] = []
+        self._event_batch_lock = threading.Lock()
+        self._event_batch_stop = threading.Event()
+        self._event_flush_thread: Optional[threading.Thread] = None
 
         # Initialize the separate statistics database
         self._init_statistics_db()
@@ -383,6 +387,12 @@ class StatisticsManager:
 
             self._stats_db_initialized = True
             logger.info(f"Statistics database initialized at {db_path}")
+            self._event_flush_thread = threading.Thread(
+                target=self._event_flush_loop,
+                daemon=True,
+                name="StatsEventFlush",
+            )
+            self._event_flush_thread.start()
         except Exception as e:
             logger.error(f"Failed to initialize statistics database: {e}", exc_info=True)
             self._stats_db_initialized = False
@@ -536,8 +546,10 @@ class StatisticsManager:
         except Exception as e:
             logger.debug("Could not apply statistics DB pragmas: %s", e)
 
-    def _get_stats_db_connection(self) -> Optional[sqlite3.Connection]:
+    def _get_stats_db_connection(self, *, flush_events: bool = True) -> Optional[sqlite3.Connection]:
         """Get a connection from the statistics DB pool or create a new one."""
+        if flush_events:
+            self._flush_pending_events()
         if not self._stats_db_initialized or not self._stats_db_path:
             return None
         with self._stats_db_pool_lock:
@@ -560,6 +572,8 @@ class StatisticsManager:
 
     def _close_statistics_db(self):
         """Close all connections in the statistics database pool."""
+        self._event_batch_stop.set()
+        self._flush_pending_events()
         with self._stats_db_pool_lock:
             for conn in self._stats_db_pool:
                 try:
@@ -588,20 +602,49 @@ class StatisticsManager:
         """
         if not self._stats_db_initialized or not username:
             return
+        row = (username, event_type, amount, alert_name, time.time())
+        pending: Optional[List[Tuple[Any, ...]]] = None
+        with self._event_batch_lock:
+            self._event_batch.append(row)
+            if len(self._event_batch) >= 50:
+                pending = self._event_batch
+                self._event_batch = []
+        if pending:
+            self._flush_event_rows(pending)
+
+    def _flush_pending_events(self) -> None:
+        with self._event_batch_lock:
+            pending = self._event_batch
+            self._event_batch = []
+        if pending:
+            self._flush_event_rows(pending)
+
+    def _event_flush_loop(self) -> None:
+        while not self._event_batch_stop.wait(1.0):
+            self._flush_pending_events()
+        self._flush_pending_events()
+
+    def _flush_event_rows(self, rows: List[Tuple[Any, ...]]) -> None:
+        if not rows or not self._stats_db_initialized:
+            return
         conn = None
         try:
-            conn = self._get_stats_db_connection()
+            conn = self._get_stats_db_connection(flush_events=False)
             if conn is None:
+                with self._event_batch_lock:
+                    self._event_batch = list(rows) + self._event_batch
                 return
             cursor = conn.cursor()
-            cursor.execute(
+            cursor.executemany(
                 "INSERT INTO user_events (username, event_type, amount, alert_name, timestamp) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (username, event_type, amount, alert_name, time.time()),
+                rows,
             )
             conn.commit()
         except Exception as e:
             logger.error(f"Error recording event: {e}")
+            with self._event_batch_lock:
+                self._event_batch = list(rows) + self._event_batch
         finally:
             self._return_stats_db_connection(conn)
 
@@ -3163,7 +3206,7 @@ class StatisticsManager:
             self._track_user_chat(username)
             self._record_event(username, "chat_message", 1.0, "")
 
-        logger.info(
+        logger.debug(
             f"Twitch messages incremented to: {self.data.chat.twitch_messages_received} (total: {self.data.chat.total_messages})"
         )
 

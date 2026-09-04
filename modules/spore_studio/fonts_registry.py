@@ -11,13 +11,22 @@ from typing import Any, Dict, List, Optional
 from ..path_utils import get_assets_path
 
 FONT_EXTS = frozenset({".ttf", ".otf", ".woff", ".woff2"})
+_fonts_listing_cache: Optional[tuple] = None
 
 
 def list_default_font_files() -> List[str]:
     """Return sorted font filenames in assets/default_assets/fonts."""
+    global _fonts_listing_cache
     fonts_dir = os.path.join(get_assets_path(), "default_assets", "fonts")
     if not os.path.isdir(fonts_dir):
         return []
+    try:
+        mtime = os.path.getmtime(fonts_dir)
+    except OSError:
+        return []
+    cached = _fonts_listing_cache
+    if cached is not None and cached[0] == mtime:
+        return list(cached[1])
     names: List[str] = []
     try:
         for entry in os.listdir(fonts_dir):
@@ -27,6 +36,7 @@ def list_default_font_files() -> List[str]:
     except OSError:
         return []
     names.sort(key=str.lower)
+    _fonts_listing_cache = (mtime, list(names))
     return names
 
 

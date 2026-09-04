@@ -25,6 +25,7 @@ SOFTWARE.
 
 import asyncio
 import logging
+import re
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -32,6 +33,24 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
+
+_REGEX_CACHE_MAX = 256
+_regex_match_cache: Dict[str, Any] = {}
+_REGEX_INVALID = object()
+
+
+def _compiled_regex_match(pattern: str):
+    cached = _regex_match_cache.get(pattern, _REGEX_INVALID)
+    if cached is not _REGEX_INVALID:
+        return cached
+    try:
+        compiled = re.compile(pattern)
+    except re.error:
+        compiled = None
+    if len(_regex_match_cache) >= _REGEX_CACHE_MAX:
+        _regex_match_cache.clear()
+    _regex_match_cache[pattern] = compiled
+    return compiled
 
 
 class ComparisonOperator(Enum):
@@ -271,13 +290,11 @@ class TriggerCondition:
         elif operator == ComparisonOperator.ENDS_WITH:
             return field_value.endswith(expected_value)
         elif operator == ComparisonOperator.REGEX_MATCH:
-            import re
-
-            try:
-                return bool(re.search(expected_value, field_value))
-            except re.error:
+            compiled = _compiled_regex_match(expected_value)
+            if compiled is None:
                 logger.error(f"Invalid regex pattern: {expected_value}")
                 return False
+            return bool(compiled.search(field_value))
 
         return False
 

@@ -32,7 +32,7 @@ from nicegui import ui
 from ..notification_engine import notify
 from ..ui_buttons import outline_button
 from ..ui_form_controls import form_input, form_number, form_select
-from ..ui_timer import layout_schedule, run_on_ui_loop
+from ..ui_timer import app_schedule, layout_schedule, run_on_ui_loop
 
 from ..help_system.contextual_help import set_alerts_ui_references
 
@@ -3847,9 +3847,9 @@ def _schedule_point_reward_select_refresh(select_element):
         except Exception as refresh_err:
             logger.error(f"Error in force refresh: {str(refresh_err)}")
 
-    layout_schedule(0.1, force_refresh, once=True)
-    layout_schedule(0.3, force_refresh, once=True)
-    layout_schedule(0.5, force_refresh, once=True)
+    app_schedule(0.1, force_refresh, once=True)
+    app_schedule(0.3, force_refresh, once=True)
+    app_schedule(0.5, force_refresh, once=True)
 
 
 def load_twitch_point_rewards():

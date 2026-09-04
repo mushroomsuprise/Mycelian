@@ -543,6 +543,42 @@ ALERT_PLAYING = False
 ALERTS_PAUSED = False
 ALERTS_MUTED = False
 
+_SAFE_EMIT_PRIORITY_EVENTS = frozenset(
+    {
+        "next_alert",
+        "instant_alert",
+        "activity_feed_alert",
+        "alerts_skip_alert",
+    }
+)
+
+
+def _notify_alert_processor(*, playing: Optional[bool] = None) -> None:
+    """Wake the alert-queue thread (enqueue / pause / alert_complete)."""
+    try:
+        from .alert_processor import notify_alert_playing, wake_alert_queue
+
+        if playing is None:
+            wake_alert_queue()
+        else:
+            notify_alert_playing(playing)
+    except Exception:
+        pass
+
+
+def set_alert_playing(value: bool) -> None:
+    """Set ALERT_PLAYING and wake the alert processor."""
+    global ALERT_PLAYING
+    ALERT_PLAYING = bool(value)
+    _notify_alert_processor(playing=ALERT_PLAYING)
+
+
+def set_alerts_paused(value: bool) -> None:
+    """Set ALERTS_PAUSED and wake the alert processor."""
+    global ALERTS_PAUSED
+    ALERTS_PAUSED = bool(value)
+    _notify_alert_processor()
+
 
 def _sync_mute_button_state() -> None:
     """Sync NiceGUI activity feed mute button with ALERTS_MUTED."""
@@ -663,7 +699,7 @@ class WebEngine:
     _SLOW_REQUEST_SEC = 0.5
     _ALL_TEMPLATE_CONFIGS_RATE_LIMIT = 4  # requests per IP per 3s window
     _ALL_TEMPLATE_CONFIGS_RATE_WINDOW_SEC = 3.0
-    _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 3.0
+    _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 120.0
     _TEMPLATE_QUEUE_METADATA_CACHE_TTL = 30.0
     _RESTART_THREAD_JOIN_SEC = 15.0 if sys.platform == "win32" else 10.0
     _HTTP_LATENCY_WINDOW_SEC = 60.0
@@ -742,8 +778,12 @@ class WebEngine:
             os.environ.get("MYCELIAN_DEV") or not getattr(sys, "frozen", False)
         )
         self.app.config["TEMPLATES_AUTO_RELOAD"] = _jinja_auto_reload
+        # Dev: never cache overlay assets. Frozen builds: allow browser/OBS reuse.
+        self._overlay_http_cache = bool(getattr(sys, "frozen", False)) and not bool(
+            os.environ.get("MYCELIAN_DEV")
+        )
         self.app.config["SEND_FILE_MAX_AGE_DEFAULT"] = (
-            0  # Disable caching for development
+            86400 if self._overlay_http_cache else 0
         )
         self.app.jinja_env.auto_reload = _jinja_auto_reload
 
@@ -763,7 +803,9 @@ class WebEngine:
         # the hub), so foreign threads enqueue here and the gevent drain worker
         # performs the actual emit. Ordered, never coalesced (alerts must not
         # be dropped/merged).
-        self._safe_emit_queue: queue.Queue = queue.Queue(maxsize=256)
+        # Unbounded: bursts wait instead of dropping overlay events (WE-03).
+        self._safe_emit_priority_queue: queue.Queue = queue.Queue()
+        self._safe_emit_queue: queue.Queue = queue.Queue()
         # OS thread id of the thread running socketio.run (the gevent hub).
         self._server_thread_ident: Optional[int] = None
 
@@ -848,6 +890,11 @@ class WebEngine:
             response.headers["Access-Control-Allow-Headers"] = (
                 "Content-Type, Authorization"
             )
+            if self._overlay_http_cache:
+                path = request.path or ""
+                if path.startswith("/assets/") or path.startswith("/static/"):
+                    response.cache_control.public = True
+                    response.cache_control.max_age = 86400
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug("CORS headers added to response")
             return response
@@ -1764,9 +1811,8 @@ class WebEngine:
                 logger.debug("Stream Deck: Toggle alerts requested")
 
                 # Toggle the pause status
-                global ALERTS_PAUSED
                 old_status = ALERTS_PAUSED
-                ALERTS_PAUSED = not ALERTS_PAUSED
+                set_alerts_paused(not ALERTS_PAUSED)
 
                 logger.info(
                     f"Stream Deck: Alerts paused status changed from {old_status} to {ALERTS_PAUSED}"
@@ -1818,7 +1864,7 @@ class WebEngine:
                 if action == "toggle_alerts":
                     # Toggle the pause status
                     old_status = ALERTS_PAUSED
-                    ALERTS_PAUSED = not ALERTS_PAUSED
+                    set_alerts_paused(not ALERTS_PAUSED)
 
                     logger.info(
                         f"Stream Deck: Alerts paused status changed from {old_status} to {ALERTS_PAUSED}"
@@ -2933,6 +2979,8 @@ class WebEngine:
             _bottleneck_print(f"tw_drop depth={self._twitch_api_queue.qsize()}")
 
     def _twitch_api_worker_loop(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
             while True:
                 coro = self._twitch_api_queue.get()
@@ -2942,13 +2990,44 @@ class WebEngine:
                 if coro is None:
                     break
                 try:
-                    # Fresh loop per job so aiohttp connector cleanup completes fully.
-                    asyncio.run(coro)
+                    loop.run_until_complete(coro)
                 except Exception as e:
                     logger.error("Twitch API worker job failed: %s", e, exc_info=True)
         finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            try:
+                loop.close()
+            except Exception:
+                pass
             with self._twitch_api_worker_lock:
                 self._twitch_api_worker_started = False
+
+    def _log_socket_lifecycle(self, action: str, sid: Any, connected: int) -> None:
+        """Rate-limit OBS reconnect INFO logs; always keep debug."""
+        now = time.monotonic()
+        last = getattr(self, "_socket_lifecycle_log_last", 0.0)
+        suppressed = getattr(self, "_socket_lifecycle_log_suppressed", 0)
+        logger.debug(
+            "Socket.IO client %s sid=%s (connected=%s)", action, sid, connected
+        )
+        if last and (now - last) < 5.0:
+            self._socket_lifecycle_log_suppressed = suppressed + 1
+            return
+        extra = ""
+        if suppressed:
+            extra = f" ({suppressed} more in the last {now - last:.0f}s)"
+        logger.info(
+            "Socket.IO client %s sid=%s (connected=%s)%s",
+            action,
+            sid,
+            connected,
+            extra,
+        )
+        self._socket_lifecycle_log_last = now
+        self._socket_lifecycle_log_suppressed = 0
 
     def _socket_client_connected(self) -> int:
         with self._socket_connected_lock:
@@ -5045,11 +5124,7 @@ class WebEngine:
         @self.socketio.on("connect")
         def handle_connect():
             connected = self._socket_client_connected()
-            logger.info(
-                "Socket.IO client connected sid=%s (connected=%s)",
-                request.sid,
-                connected,
-            )
+            self._log_socket_lifecycle("connected", request.sid, connected)
 
             try:
                 self.ensure_web_engine_heartbeat()
@@ -5219,11 +5294,7 @@ class WebEngine:
         @self.socketio.on("disconnect")
         def handle_disconnect():
             connected = self._socket_client_disconnected()
-            logger.info(
-                "Socket.IO client disconnected sid=%s (connected=%s)",
-                request.sid,
-                connected,
-            )
+            self._log_socket_lifecycle("disconnected", request.sid, connected)
             # Nothing reads this flag any more (the auto-demo loop is gone), so
             # marking the sid only accumulated a key per disconnect. OBS browser
             # sources reconnect constantly, so drop the entry instead.
@@ -5270,7 +5341,7 @@ class WebEngine:
                     EXPECTED_ALERT_COMPLETE_SEQ,
                 )
                 return
-            ALERT_PLAYING = False
+            set_alert_playing(False)
             logger.debug(
                 "Alert completed for queue_seq=%s, ALERT_PLAYING set to False",
                 seq,
@@ -5922,7 +5993,7 @@ class WebEngine:
 
                 new_status = bool(data["paused"])
                 old_status = ALERTS_PAUSED
-                ALERTS_PAUSED = new_status
+                set_alerts_paused(new_status)
                 logger.debug("ALERTS_PAUSED set to %s", ALERTS_PAUSED)
 
                 logger.debug(
@@ -6548,8 +6619,8 @@ class WebEngine:
             try:
                 payload = data if isinstance(data, dict) else {}
                 self.safe_emit("alerts_skip_alert", payload)
-                global ALERT_PLAYING, EXPECTED_ALERT_COMPLETE_SEQ
-                ALERT_PLAYING = False
+                global EXPECTED_ALERT_COMPLETE_SEQ
+                set_alert_playing(False)
                 EXPECTED_ALERT_COMPLETE_SEQ = None
             except Exception as e:
                 logger.error("Error handling skip_alert: %s", e, exc_info=True)
@@ -7599,9 +7670,8 @@ class WebEngine:
             )
 
     def toggle_alerts(self):
-        global ALERTS_PAUSED
         old_status = ALERTS_PAUSED
-        ALERTS_PAUSED = not ALERTS_PAUSED  # Toggle the status
+        set_alerts_paused(not ALERTS_PAUSED)
 
         logger.info(f"Toggling ALERTS_PAUSED from {old_status} to {ALERTS_PAUSED}")
 
@@ -7980,13 +8050,12 @@ class WebEngine:
                 self._record_event_timestamp(self._socket_emit_error_times)
                 logger.error("safe_emit failed for %s: %s", event, e, exc_info=True)
                 return False
-        try:
-            self._safe_emit_queue.put_nowait((time.monotonic(), event, data, to))
-            return True
-        except queue.Full:
-            self._record_event_timestamp(self._socket_emit_error_times)
-            self._log_emit_queue_full(event)
-            return False
+        item = (time.monotonic(), event, data, to)
+        if event in _SAFE_EMIT_PRIORITY_EVENTS:
+            self._safe_emit_priority_queue.put(item)
+        else:
+            self._safe_emit_queue.put(item)
+        return True
 
     # High-frequency producers (game hooks emit several times a second) mean a queue
     # that cannot drain — an unbound overlay port, say — would otherwise log this
@@ -8019,15 +8088,23 @@ class WebEngine:
             )
 
     def _drain_safe_emit_queue(self) -> int:
-        """Emit everything foreign threads queued via safe_emit (gevent worker)."""
+        """Emit everything foreign threads queued via safe_emit (gevent worker).
+
+        Alert events drain before hooks/chat so a burst cannot stall next_alert.
+        """
         emitted = 0
         while True:
             try:
                 enqueued_at, event_name, event_data, to = (
-                    self._safe_emit_queue.get_nowait()
+                    self._safe_emit_priority_queue.get_nowait()
                 )
             except queue.Empty:
-                return emitted
+                try:
+                    enqueued_at, event_name, event_data, to = (
+                        self._safe_emit_queue.get_nowait()
+                    )
+                except queue.Empty:
+                    return emitted
             try:
                 with self.app.app_context():
                     if event_data is None:
@@ -8729,9 +8806,8 @@ class WebEngine:
         def handle_streamdeck_toggle_alerts(data=None):
             """Handle SocketIO event to toggle alert pause/resume status"""
             try:
-                global ALERTS_PAUSED
                 old_status = ALERTS_PAUSED
-                ALERTS_PAUSED = not ALERTS_PAUSED
+                set_alerts_paused(not ALERTS_PAUSED)
 
                 logger.info(
                     f"Stream Deck: Alerts paused status changed from {old_status} to {ALERTS_PAUSED}"

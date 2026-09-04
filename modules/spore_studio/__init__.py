@@ -36,28 +36,34 @@ from . import (
     template_parser_back,
 )
 
-# One-time migration: relocate any ``.spore.json`` sidecars still living
-# inside ``templates/template_configs/`` (the original layout) to the new
-# hidden ``templates/_spore/`` folder so they stop polluting the Source
-# Settings dropdown. Safe to run on every import — idempotent and a no-op
-# once the on-disk tree is already migrated.
-try:
-    _migrated = template_parser_back.migrate_all_sidecars()
-    if _migrated:
-        _logging.getLogger(__name__).info(
-            "Spore Studio: migrated %d sidecar(s) into templates/_spore/",
-            _migrated,
+_sidecars_migrated = False
+
+
+def ensure_sidecar_migration() -> None:
+    """Move leftover ``.spore.json`` files out of template_configs (once)."""
+    global _sidecars_migrated
+    if _sidecars_migrated:
+        return
+    _sidecars_migrated = True
+    try:
+        _migrated = template_parser_back.migrate_all_sidecars()
+        if _migrated:
+            _logging.getLogger(__name__).info(
+                "Spore Studio: migrated %d sidecar(s) into templates/_spore/",
+                _migrated,
+            )
+    except Exception:
+        _logging.getLogger(__name__).exception(
+            "Spore Studio sidecar migration failed (non-fatal)"
         )
-except Exception:  # pragma: no cover - best-effort startup migration
-    _logging.getLogger(__name__).exception(
-        "Spore Studio sidecar migration failed (non-fatal)"
-    )
+
 
 __all__ = [
     "assets_watcher",
     "behavior_blocks",
     "control_action_registry",
     "data_source_registry",
+    "ensure_sidecar_migration",
     "event_registry",
     "save_pipeline",
     "spore_data_codegen",

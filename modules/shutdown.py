@@ -142,7 +142,7 @@ def _pause_alerts_and_activity_feed() -> None:
     from .uiwindows.activity_feed import stop_alert_processor
 
     try:
-        web_engine.ALERTS_PAUSED = True
+        web_engine.set_alerts_paused(True)
     except Exception:
         pass
     stop_alert_processor()

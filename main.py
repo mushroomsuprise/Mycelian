@@ -43,7 +43,7 @@ if __name__ == "__main__" and _NPSSO_HELPER_FLAG in sys.argv:
 from modules.log_trim import trim_log_file as _trim_log_file
 
 # Set True to print [startup] timing lines and summaries to the console.
-ENABLE_STARTUP_PROFILING = False
+ENABLE_STARTUP_PROFILING = True
 
 # Claim profiling for this OS process before other modules import startup_profiler
 if os.environ.get("MYCELIAN_STARTUP_PROFILE_OWNER_PID") is None:
@@ -197,6 +197,7 @@ with StartupTimer("setup_logging"):
     setup_logging()
 logger = logging.getLogger(__name__)
 
+
 # Signal handlers for graceful shutdown
 def signal_handler(sig, frame):
     """Handle termination signals"""
@@ -265,9 +266,7 @@ if __name__ == "__main__":
     # including Phase 4 — otherwise start_ui()/ui.run returns immediately and
     # we call sys.exit(0), tearing down the live app.
     if critical_startup_done():
-        logger.debug(
-            "NiceGUI script re-entry — skipping startup phases and UI start"
-        )
+        logger.debug("NiceGUI script re-entry — skipping startup phases and UI start")
     else:
         startup_start = time.perf_counter()
 
@@ -316,7 +315,12 @@ if __name__ == "__main__":
 
         # Initialize core modules with pre-loaded data
         try:
-            from modules import dataobjects, alertutils, statistics_manager, alert_processor
+            from modules import (
+                dataobjects,
+                alertutils,
+                statistics_manager,
+                alert_processor,
+            )
 
             with StartupTimer("dataobjects.initialize_with_data"):
                 dataobjects.initialize_with_data(all_data)
@@ -377,7 +381,9 @@ if __name__ == "__main__":
 
             # Register services by priority (lower = higher priority)
             service_manager.register(
-                "statistics_saving", statistics_manager.start_statistics_saving, priority=1
+                "statistics_saving",
+                statistics_manager.start_statistics_saving,
+                priority=1,
             )
             service_manager.register("twitch", twitch.initialize, priority=2)
             service_manager.register("chatbot", chatbot.initialize, priority=3)
@@ -393,14 +399,23 @@ if __name__ == "__main__":
             # 3rd party services
             from modules import spotify, psn_service, youtube
 
-            service_manager.register("spotify", spotify.start_spotify_service, priority=5)
-            service_manager.register("psn", psn_service.initialize_psn_module, priority=6)
-            service_manager.register("youtube", youtube.start_youtube_service, priority=7)
+            service_manager.register(
+                "spotify", spotify.start_spotify_service, priority=5
+            )
+            service_manager.register(
+                "psn", psn_service.initialize_psn_module, priority=6
+            )
+            service_manager.register(
+                "youtube", youtube.start_youtube_service, priority=7
+            )
 
             from modules import discord_service as discord_svc
 
             service_manager.register(
-                "discord", discord_svc.start_discord_service, priority=7
+                "discord",
+                discord_svc.start_discord_service,
+                priority=7,
+                background=True,
             )
 
             from modules.obs_service import start_obs_service as _start_obs_ws

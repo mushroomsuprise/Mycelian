@@ -26,17 +26,27 @@ class DeferredServiceManager:
         self._shutdown = False
         self._progress_callback = progress_callback
 
-    def register(self, name: str, init_func: Callable, priority: int = 5):
+    def register(
+        self,
+        name: str,
+        init_func: Callable,
+        priority: int = 5,
+        *,
+        background: bool = False,
+    ):
         """Register a service for deferred initialization
 
         Args:
             name: Unique name for the service
             init_func: Function to call for initialization
             priority: Priority (lower = higher priority, default 5)
+            background: If True, start on a side thread and do not block later
+                services or splash Ready (e.g. Discord connect).
         """
         self.services[name] = {
             "init": init_func,
             "priority": priority,
+            "background": background,
         }
         self.initialized[name] = False
         logger.debug(f"Registered deferred service: {name} (priority {priority})")
@@ -80,6 +90,17 @@ class DeferredServiceManager:
                 if not self.initialized[name]:
                     try:
                         logger.info(f"Deferred init: {name}")
+                        if service.get("background"):
+                            self._start_background_service(name, service)
+                            completed_services += 1
+                            if self._progress_callback:
+                                progress = (
+                                    0.1 + (completed_services / total_services) * 0.8
+                                )
+                                self._progress_callback(
+                                    progress, f"Loading {name}..."
+                                )
+                            continue
                         with StartupTimer(f"deferred:{name}"):
                             service["init"]()
                         self.initialized[name] = True
@@ -115,6 +136,24 @@ class DeferredServiceManager:
             target=init_worker, daemon=True, name="DeferredInit"
         )
         self._thread.start()
+
+    def _start_background_service(self, name: str, service: Dict) -> None:
+        """Run a slow independent service without blocking later deferred work."""
+
+        def _run() -> None:
+            try:
+                with StartupTimer(f"deferred:{name}"):
+                    service["init"]()
+                self.initialized[name] = True
+                logger.info("Deferred init completed (background): %s", name)
+            except Exception as e:
+                logger.error("Deferred init failed for %s: %s", name, e)
+                self._retry_failed_services([name])
+
+        threading.Thread(
+            target=_run, daemon=True, name=f"DeferredInit-{name}"
+        ).start()
+        logger.info("Deferred init started in background: %s", name)
 
     def _retry_failed_services(self, failed: list) -> None:
         """Retry services that failed to initialize, with backoff.

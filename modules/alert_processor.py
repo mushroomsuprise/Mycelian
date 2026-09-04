@@ -26,14 +26,17 @@ SOFTWARE.
 import logging
 import threading
 import time
+from collections import deque
 
 from . import web_engine
 from .alertutils import AlertObj, initialize_alert_state
 from .notification_engine import nav_actions_settings, notify_critical
 from .shutdown import is_shutdown_in_progress
 
-ALERT_QUEUE: list[AlertObj] = []
+ALERT_QUEUE: deque[AlertObj] = deque()
 _ALERT_QUEUE_LOCK = threading.Lock()
+_ALERT_WAKE = threading.Event()
+_ALERT_COMPLETE = threading.Event()
 web_engine_instance = None  # Initialize to None; prefer web_engine.web_engine_instance
 logger = logging.getLogger(__name__)
 
@@ -48,10 +51,25 @@ alert_queue_active = False
 _initialized = False
 
 
+def wake_alert_queue() -> None:
+    """Wake the alert-queue thread (enqueue, pause/resume, shutdown)."""
+    _ALERT_WAKE.set()
+
+
+def notify_alert_playing(playing: bool) -> None:
+    """Signal alert_complete / skip so process_alert can stop waiting."""
+    if playing:
+        _ALERT_COMPLETE.clear()
+    else:
+        _ALERT_COMPLETE.set()
+    _ALERT_WAKE.set()
+
+
 def enqueue_alert(obj: AlertObj) -> None:
     """Append an alert under the queue lock (safe from any thread)."""
     with _ALERT_QUEUE_LOCK:
         ALERT_QUEUE.append(obj)
+    wake_alert_queue()
 
 
 def snapshot_alert_queue() -> list[AlertObj]:
@@ -73,16 +91,6 @@ def remove_queued_alert(obj: AlertObj) -> bool:
 def _overlay_engine():
     """Prefer the canonical web_engine singleton."""
     return web_engine.web_engine_instance or web_engine_instance
-
-# Global thread references
-web_thread = None
-alert_thread = None
-
-# Global flag to track Alert Queue status
-alert_queue_active = False
-
-# Global flag to track initialization status
-_initialized = False
 
 
 def process_alert(alert: AlertObj):
@@ -172,39 +180,38 @@ def process_alert(alert: AlertObj):
         engine = _overlay_engine()
         if engine is None:
             logger.error("No web engine instance; cannot process alert")
-            web_engine.ALERT_PLAYING = False
+            web_engine.set_alert_playing(False)
             web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
             return
         if not engine.next_alert(alert_data):
             logger.error("Failed to emit next_alert; not marking ALERT_PLAYING")
-            web_engine.ALERT_PLAYING = False
+            web_engine.set_alert_playing(False)
             web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
             return
-        web_engine.ALERT_PLAYING = True
+        web_engine.set_alert_playing(True)
 
         # Wait for alert completion with timeout protection
         while web_engine.ALERT_PLAYING:
             if is_shutdown_in_progress():
-                web_engine.ALERT_PLAYING = False
+                web_engine.set_alert_playing(False)
                 break
-            time.sleep(0.1)
             elapsed_time = time.time() - start_time
-
-            # Check if we've exceeded the timeout
-            if elapsed_time >= timeout_duration:
+            remaining = timeout_duration - elapsed_time
+            if remaining <= 0:
                 logger.warning(
                     f"Alert timeout reached ({timeout_duration}s) for alert: {alert.alert_type}. "
                     f"Template may have failed to send alert_complete callback. "
                     f"Randomized: {alert_data.get('randomized', False)}, Has Audio: {has_audio}. "
                     f"Forcing completion to prevent alert queue deadlock."
                 )
-                web_engine.ALERT_PLAYING = False
+                web_engine.set_alert_playing(False)
                 break
+            _ALERT_COMPLETE.wait(timeout=remaining)
 
         logger.debug(f"Processed alert: {alert_data}")
     except Exception as e:
         logger.error(f"Error processing alert: {str(e)}", exc_info=True)
-        web_engine.ALERT_PLAYING = False
+        web_engine.set_alert_playing(False)
         web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
         notify_critical(
             "An alert failed to process. Check logs if this keeps happening.",
@@ -231,7 +238,8 @@ def alert_queue():
                     logger.debug("Alert queue is paused - waiting for resume")
                     paused_state_logged = True
                 alert_queue_active = False
-                time.sleep(0.5)  # Longer sleep when paused
+                _ALERT_WAKE.wait(timeout=0.5)
+                _ALERT_WAKE.clear()
                 continue
             else:
                 # Reset paused state logging when we're no longer paused
@@ -261,25 +269,22 @@ def alert_queue():
                     processed_stackable = True
 
             if web_engine.ALERT_PLAYING:
-                time.sleep(0.2)  # Longer sleep when alert is playing
+                _ALERT_WAKE.wait(timeout=0.2)
+                _ALERT_WAKE.clear()
                 continue
 
             with _ALERT_QUEUE_LOCK:
-                alert = next(iter(ALERT_QUEUE), None)
-                if alert is not None:
-                    try:
-                        ALERT_QUEUE.remove(alert)
-                    except ValueError:
-                        alert = None
+                alert = ALERT_QUEUE.popleft() if ALERT_QUEUE else None
             if alert is not None:
                 logger.debug(f"Processing alert from queue: {alert.alert_type}")
                 process_alert(alert)
                 alert_queue_active = True
             else:
-                # No alerts to process, sleep longer to avoid CPU spinning
+                # No alerts to process; wait until enqueue/pause/complete
                 with _ALERT_QUEUE_LOCK:
                     alert_queue_active = len(ALERT_QUEUE) > 0
-                time.sleep(0.1 if processed_stackable else 0.5)
+                _ALERT_WAKE.wait(timeout=0.1 if processed_stackable else 0.5)
+                _ALERT_WAKE.clear()
 
         except Exception as e:
             logger.error(f"Error in alert queue processor: {str(e)}", exc_info=True)
@@ -392,6 +397,20 @@ def initialize():
             actions=nav_actions_settings("Game Hooks"),
         )
 
+    def _spore_sidecar_migrate() -> None:
+        try:
+            from .spore_studio import ensure_sidecar_migration
+
+            ensure_sidecar_migration()
+        except Exception as e:
+            logger.debug("Spore Studio sidecar migration skipped: %s", e)
+
+    threading.Thread(
+        target=_spore_sidecar_migrate,
+        daemon=True,
+        name="SporeSidecarMigrate",
+    ).start()
+
     # Mark as initialized
     _initialized = True
     logger.info("Alert processor initialization completed")
@@ -405,8 +424,9 @@ def cleanup():
 
     try:
         # Pause alerts via web_engine module (where ALERTS_PAUSED is actually defined)
-        web_engine.ALERTS_PAUSED = True
+        web_engine.set_alerts_paused(True)
         alert_queue_active = False
+        wake_alert_queue()
         logger.debug("Alert queue paused")
 
         try:

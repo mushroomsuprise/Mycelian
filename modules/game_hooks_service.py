@@ -91,6 +91,11 @@ class _HookWorker:
     def is_alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def peek_snapshot(self) -> Optional[Dict[str, Any]]:
+        """Return the latest snapshot without copying (coordinator must not mutate)."""
+        with self._snapshot_lock:
+            return self._last_snapshot
+
     def get_snapshot(self) -> Optional[Dict[str, Any]]:
         with self._snapshot_lock:
             return dict(self._last_snapshot) if self._last_snapshot else None
@@ -177,6 +182,7 @@ class GameHooksServiceImpl:
         self._hooks: Dict[str, GameHook] = {}
         self._workers: Dict[str, _HookWorker] = {}
         self._emit_count = 0
+        self._last_hooks: Dict[str, Any] = {}
         self._orphan_writes: "queue.Queue[Tuple[concurrent.futures.Future[Any], str, str, Dict[str, Any]]]" = (
             queue.Queue()
         )
@@ -266,6 +272,7 @@ class GameHooksServiceImpl:
         while not self._stop.is_set():
             t0 = time.time()
             hooks: Dict[str, Any] = {}
+            changed = False
 
             for hook_id in registered_hook_ids():
                 hook = self._get_hook(hook_id)
@@ -280,13 +287,21 @@ class GameHooksServiceImpl:
                     snap = hook.idle_snapshot(disabled=False)
                 else:
                     worker = self._ensure_worker(hook)
-                    snap = worker.get_snapshot()
+                    snap = worker.peek_snapshot()
                     if snap is None:
                         snap = hook.idle_snapshot(disabled=False)
 
+                prev = self._last_hooks.get(hook_id)
+                if snap is not prev and snap != prev:
+                    changed = True
+                    with self._ui_state_lock:
+                        self._ui_snapshots[hook_id] = dict(snap) if isinstance(snap, dict) else snap
                 hooks[hook_id] = snap
-                with self._ui_state_lock:
-                    self._ui_snapshots[hook_id] = dict(snap)
+
+            if changed or not self._last_hooks:
+                self._last_hooks = hooks
+            else:
+                hooks = self._last_hooks
 
             payload = {
                 "v": 1,
@@ -297,7 +312,7 @@ class GameHooksServiceImpl:
             if self._emit_count <= 3 or self._emit_count % 20 == 0:
                 for hid, h in hooks.items():
                     if isinstance(h, dict):
-                        logger.info(
+                        logger.debug(
                             "[GameHooks] emit #%s ts=%s %s attached=%s disabled=%s "
                             "err=%s battle=%s",
                             self._emit_count,

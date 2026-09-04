@@ -39,6 +39,7 @@ APP_SALT = b'MycelianStreamApp2024_Salt_Key'
 _KEY_FILENAME = ".encryption_key"
 _key_lock = threading.Lock()
 _cached_key = None
+_cached_fernet = None
 
 
 class EncryptionError(Exception):
@@ -126,6 +127,16 @@ def _get_encryption_key(*, decrypting: bool = False) -> bytes:
         )
         return _cached_key
 
+
+def _get_fernet(*, decrypting: bool = False) -> Fernet:
+    global _cached_fernet
+    key = _get_encryption_key(decrypting=decrypting)
+    with _key_lock:
+        if _cached_fernet is None:
+            _cached_fernet = Fernet(key)
+        return _cached_fernet
+
+
 def encrypt_value(value: str) -> str:
     """
     Encrypt a string value.
@@ -143,8 +154,7 @@ def encrypt_value(value: str) -> str:
         if not value:
             return ""
         
-        key = _get_encryption_key(decrypting=False)
-        fernet = Fernet(key)
+        fernet = _get_fernet(decrypting=False)
         
         # Encrypt the value
         encrypted_bytes = fernet.encrypt(value.encode())
@@ -182,8 +192,7 @@ def decrypt_value(encrypted_value: str) -> str:
         if not encrypted_value:
             return ""
         
-        key = _get_encryption_key(decrypting=True)
-        fernet = Fernet(key)
+        fernet = _get_fernet(decrypting=True)
         
         # Decode from base64
         encrypted_bytes = base64.urlsafe_b64decode(encrypted_value.encode())

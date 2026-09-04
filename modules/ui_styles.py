@@ -13,12 +13,31 @@ BASE_CSS = """
    Mycelian Base Styles - Theme Aware
    ========================================= */
 
-/* Smooth theme transitions */
-* {
+/* Smooth theme transitions on chrome (not feed/list rows) */
+.q-btn,
+.q-card,
+.q-tab,
+.q-tabs,
+.q-toolbar,
+.q-header,
+.q-footer,
+.q-drawer,
+.q-dialog {
     transition: background-color 0.2s ease,
                 border-color 0.2s ease,
                 color 0.2s ease,
                 box-shadow 0.2s ease;
+}
+
+.q-item,
+.q-item *,
+.activity-feed-current,
+.activity-feed-current *,
+.activity-feed-previous,
+.activity-feed-previous *,
+.activity-feed-condensed,
+.activity-feed-condensed * {
+    transition: none;
 }
 
 /* Disable transitions during initial load to prevent FOUC */

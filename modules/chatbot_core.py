@@ -145,6 +145,11 @@ def get_youtube_value(youtube_var: str) -> str:
 
 TIME_VAR_PATTERN = re.compile(r"\{time(?:\.([^}]+))?\}", re.IGNORECASE)
 _TIME_LAYOUT_PATTERN = re.compile(r"^(h{1,2}):mm(?::ss)?$", re.IGNORECASE)
+COMMAND_WORD_PATTERN = re.compile(r"\{command_word_(\d+)\}")
+PROCESSED_VARS_PATTERN = re.compile(r"\{([^}]+)\}")
+YOUTUBE_VAR_PATTERN = re.compile(r"\{youtube\.([^}]+)\}")
+STATS_VAR_PATTERN = re.compile(r"\{stats\.([^}]+)\}")
+CUSTOM_VAR_PATTERN = re.compile(r"\{custom_([^}]+)\}")
 _KNOWN_TIMEZONES = {
     "UTC": 0,
     "EST": -5,
@@ -643,9 +648,7 @@ class ChatCommand:
                 processed = processed.replace("{command_last_word}", "")
 
             # Handle {command_word_N} variables
-            import re
-
-            word_pattern = re.compile(r"\{command_word_(\d+)\}")
+            word_pattern = COMMAND_WORD_PATTERN
 
             def replace_word_var(match):
                 index = int(match.group(1)) - 1  # Convert to 0-based indexing
@@ -688,9 +691,7 @@ class ChatCommand:
                         processed = processed.replace(f"{{{var_name}}}", "")
 
         # Handle processed variables with dot notation (e.g., {account_age.days})
-        import re
-
-        processed_vars_pattern = re.compile(r"\{([^}]+)\}")
+        processed_vars_pattern = PROCESSED_VARS_PATTERN
 
         def replace_processed_var(match):
             var_path = match.group(1)
@@ -714,7 +715,7 @@ class ChatCommand:
         processed = processed_vars_pattern.sub(replace_processed_var, processed)
 
         # Handle YouTube variables (prefixed with 'youtube.')
-        youtube_pattern = re.compile(r"\{youtube\.([^}]+)\}")
+        youtube_pattern = YOUTUBE_VAR_PATTERN
 
         def replace_youtube_var(match):
             youtube_var = match.group(1)
@@ -723,7 +724,7 @@ class ChatCommand:
         processed = youtube_pattern.sub(replace_youtube_var, processed)
 
         # Handle statistics variables (prefixed with 'stats.')
-        stats_pattern = re.compile(r"\{stats\.([^}]+)\}")
+        stats_pattern = STATS_VAR_PATTERN
 
         def replace_stats_var(match):
             stat_name = match.group(1)
@@ -732,7 +733,7 @@ class ChatCommand:
         processed = stats_pattern.sub(replace_stats_var, processed)
 
         # Handle custom variables (prefixed with 'custom_')
-        custom_pattern = re.compile(r"\{custom_([^}]+)\}")
+        custom_pattern = CUSTOM_VAR_PATTERN
 
         def replace_custom_var(match):
             custom_var_name = f"custom_{match.group(1)}"
@@ -1628,9 +1629,7 @@ class ChatEvent:
                 processed = processed.replace("{command_last_word}", "")
 
             # Handle {command_word_N} variables
-            import re
-
-            word_pattern = re.compile(r"\{command_word_(\d+)\}")
+            word_pattern = COMMAND_WORD_PATTERN
 
             def replace_word_var(match):
                 index = int(match.group(1)) - 1  # Convert to 0-based indexing
@@ -1657,9 +1656,7 @@ class ChatEvent:
                         processed = processed.replace(f"{{{var_name}}}", "")
 
         # Handle processed variables with dot notation (e.g., {account_age.days})
-        import re
-
-        processed_vars_pattern = re.compile(r"\{([^}]+)\}")
+        processed_vars_pattern = PROCESSED_VARS_PATTERN
 
         def replace_processed_var(match):
             var_path = match.group(1)
@@ -1683,7 +1680,7 @@ class ChatEvent:
         processed = processed_vars_pattern.sub(replace_processed_var, processed)
 
         # Handle YouTube variables (prefixed with 'youtube.')
-        youtube_pattern = re.compile(r"\{youtube\.([^}]+)\}")
+        youtube_pattern = YOUTUBE_VAR_PATTERN
 
         def replace_youtube_var(match):
             youtube_var = match.group(1)
@@ -1692,7 +1689,7 @@ class ChatEvent:
         processed = youtube_pattern.sub(replace_youtube_var, processed)
 
         # Handle statistics variables (prefixed with 'stats.')
-        stats_pattern = re.compile(r"\{stats\.([^}]+)\}")
+        stats_pattern = STATS_VAR_PATTERN
 
         def replace_stats_var(match):
             stat_name = match.group(1)
@@ -1701,7 +1698,7 @@ class ChatEvent:
         processed = stats_pattern.sub(replace_stats_var, processed)
 
         # Handle custom variables (prefixed with 'custom_')
-        custom_pattern = re.compile(r"\{custom_([^}]+)\}")
+        custom_pattern = CUSTOM_VAR_PATTERN
 
         def replace_custom_var(match):
             custom_var_name = f"custom_{match.group(1)}"

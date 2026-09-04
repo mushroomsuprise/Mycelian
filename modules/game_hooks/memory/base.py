@@ -5,7 +5,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Protocol, Tuple
+from typing import Dict, Optional, Protocol, Tuple
+import time
+
+_PID_SCAN_BACKOFF_SEC = 1.0
+_pid_scan_next_ok: Dict[Tuple[str, ...], float] = {}
 
 
 @dataclass(frozen=True)
@@ -81,18 +85,25 @@ class ProcessMemory(Protocol):
 
 def find_process_pid(process_names: Tuple[str, ...]) -> Optional[int]:
     """Return PID of the first running process matching ``process_names`` (lowercase)."""
+    key = tuple(n.lower() for n in process_names)
+    now = time.monotonic()
+    next_ok = _pid_scan_next_ok.get(key, 0.0)
+    if now < next_ok:
+        return None
     try:
         import psutil
     except Exception:
         return None
-    names = {n.lower() for n in process_names}
+    names = set(key)
     for proc in psutil.process_iter(["pid", "name"]):
         try:
             name = (proc.info.get("name") or "").lower()
             if name in names:
+                _pid_scan_next_ok.pop(key, None)
                 return int(proc.info["pid"])
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
+    _pid_scan_next_ok[key] = now + _PID_SCAN_BACKOFF_SEC
     return None
 
 

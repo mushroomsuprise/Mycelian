@@ -1718,7 +1718,7 @@ def toggle_alerts():
             logger.debug("Toggled alerts via web engine instance")
         else:
             # Fallback: toggle the global flag directly
-            web_engine.ALERTS_PAUSED = not web_engine.ALERTS_PAUSED
+            web_engine.set_alerts_paused(not web_engine.ALERTS_PAUSED)
             logger.debug(
                 f"Toggled alerts directly - ALERTS_PAUSED: {web_engine.ALERTS_PAUSED}"
             )

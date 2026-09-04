@@ -1703,31 +1703,6 @@ class Twitch_API:
         fragments = data.event.message.fragments
         message_type = getattr(data.event, "message_type", "text")
 
-        # Track chat message statistics
-        try:
-            stats_manager = statistics_manager.get_statistics_manager()
-            stats_manager.increment_twitch_messages(username=username)
-            logger.debug("Tracked incoming Twitch chat message")
-        except Exception as e:
-            logger.error(f"Error tracking chat message statistics: {e}")
-
-        # Debug: Log the actual badges format
-        logger.debug(f"Raw badges for {username}: {badges} (type: {type(badges)})")
-        if badges:
-            logger.debug(
-                f"Badges details: {[f'{badge.set_id}/{badge.id}' for badge in badges]}"
-            )
-            # EventSub channel.chat.message badges ({set_id,id,info}) continuously
-            # seed the ever-subscribed registry as chatters talk.
-            try:
-                _harvest_chat_badges_into_subscriber_registry(
-                    badges,
-                    user_id=user_id,
-                    user_login=username,
-                )
-            except Exception as badge_err:
-                logger.debug("Subscriber badge harvest failed: %s", badge_err)
-
         # Extract emotes from fragments and format as traditional emote string
         emotes_string = None
         if fragments:
@@ -1853,6 +1828,52 @@ class Twitch_API:
 
         if is_alert_user_message(user_id, message):
             msg_dict["is_alert_user_message"] = True
+
+        # Overlay chat first (TW-03); stats/chatbot/giveaway still run below.
+        try:
+            if not is_allowed_slash_message(message):
+                logger.debug(
+                    "Skipping Twitch slash command for overlay: %s",
+                    safe_console_str(message),
+                )
+            elif (
+                hasattr(web_engine, "web_engine_instance")
+                and web_engine.web_engine_instance
+            ):
+                web_engine.web_engine_instance.new_message(msg_dict)
+                logger.debug(
+                    f"Sent chat message to WebSocket clients: {username}: {message}"
+                )
+            else:
+                logger.warning(
+                    "Web engine instance not available for sending chat messages"
+                )
+        except Exception as e:
+            logger.error(
+                f"Error sending chat message to WebSocket clients: {str(e)}",
+                exc_info=True,
+            )
+
+        try:
+            stats_manager = statistics_manager.get_statistics_manager()
+            stats_manager.increment_twitch_messages(username=username)
+            logger.debug("Tracked incoming Twitch chat message")
+        except Exception as e:
+            logger.error(f"Error tracking chat message statistics: {e}")
+
+        logger.debug(f"Raw badges for {username}: {badges} (type: {type(badges)})")
+        if badges:
+            logger.debug(
+                f"Badges details: {[f'{badge.set_id}/{badge.id}' for badge in badges]}"
+            )
+            try:
+                _harvest_chat_badges_into_subscriber_registry(
+                    badges,
+                    user_id=user_id,
+                    user_login=username,
+                )
+            except Exception as badge_err:
+                logger.debug("Subscriber badge harvest failed: %s", badge_err)
 
         # Process greetings for new users
         try:
@@ -1986,32 +2007,6 @@ class Twitch_API:
         except Exception as e:
             logger.error(
                 f"Error processing chat message through chatbot: {str(e)}",
-                exc_info=True,
-            )
-
-        # Send message to WebSocket clients via web engine
-        try:
-            if not is_allowed_slash_message(message):
-                logger.debug(
-                    "Skipping Twitch slash command for overlay: %s",
-                    safe_console_str(message),
-                )
-                return
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                web_engine.web_engine_instance.new_message(msg_dict)
-                logger.debug(
-                    f"Sent chat message to WebSocket clients: {username}: {message}"
-                )
-            else:
-                logger.warning(
-                    "Web engine instance not available for sending chat messages"
-                )
-        except Exception as e:
-            logger.error(
-                f"Error sending chat message to WebSocket clients: {str(e)}",
                 exc_info=True,
             )
 
@@ -3691,6 +3686,10 @@ class Twitch_API:
                 "source": "twitch",
             },
         )
+
+    async def on_hype_train_progress(
+        self, data: HypeTrainEvent
+    ):
         self._note_event_received()
         logger.debug(
             f"Hype train progress: Level {data.event.level}, Progress: {data.event.progress}/{data.event.goal}"

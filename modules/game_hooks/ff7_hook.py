@@ -21,10 +21,11 @@ import struct
 import sys
 import time
 import unicodedata
+from collections import deque
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 
 from .base import HookUiMetadata, runtime_os_key
 from .ff7_boss_tracker import Ff7BossTracker, ff7_boss_match_sets_from_config
@@ -1952,6 +1953,9 @@ class FF7Hook:
         self._battle_log_lines: List[str] = []
         self._prev_battle_status: Dict[str, int] = {}
         self._battle_log_seen: Set[Tuple[int, int]] = set()
+        self._battle_log_seen_order: Deque[Tuple[int, int]] = deque()
+        self._prev_gear_sig: Optional[bytes] = None
+        self._prev_party_slots_sig: Optional[bytes] = None
         self._bl_name_cache: Optional[Dict[str, Any]] = None
         self._was_in_battle = False
         self._battle_ui_latched: bool = False
@@ -3614,12 +3618,31 @@ class FF7Hook:
                 * 4
             ]
         )
+        gear_lo = min(_CHAR_BLOCK)
+        gear_hi = max(_CHAR_BLOCK) + 0x84
+        gear_slice = savemap[gear_lo:gear_hi] if len(savemap) >= gear_hi else b""
+        party_slots = (
+            savemap[SAVE_OFF_PARTY_SLOTS : SAVE_OFF_PARTY_SLOTS + 3]
+            if len(savemap) >= SAVE_OFF_PARTY_SLOTS + 3
+            else b""
+        )
+        prev = self._prev_inventory_sig
+        prev_mat = self._prev_materia_inv_sig
+        if (
+            prev is not None
+            and prev_mat is not None
+            and prev == inv_slice
+            and prev_mat == mat_slice
+            and self._prev_gear_sig == gear_slice
+            and self._prev_party_slots_sig == party_slots
+        ):
+            return
+        self._prev_gear_sig = gear_slice
+        self._prev_party_slots_sig = party_slots
         cur_eq_items = _party_equipped_unified_counts(savemap)
         cur_eq_materia = _party_materia_equipped_id_counts(savemap)
         prev_eq_items = self._prev_equipped_unified_counts
         prev_eq_materia = self._prev_party_materia_equipped_counts
-        prev = self._prev_inventory_sig
-        prev_mat = self._prev_materia_inv_sig
 
         # Unified items — collect all positive multiset deltas, then drop unequips.
         item_candidates: List[Tuple[int, int, int]] = []
@@ -3776,6 +3799,7 @@ class FF7Hook:
         if battle and not self._was_in_battle:
             self._battle_log_lines.clear()
             self._battle_log_seen.clear()
+            self._battle_log_seen_order.clear()
             self._prev_battle_status.clear()
         if not battle:
             if not battle_ui:
@@ -3796,7 +3820,12 @@ class FF7Hook:
             param = int(struct.unpack_from("<H", bq, 4)[0]) & 0xFFFF
             tmask = int(struct.unpack_from("<H", bq, 6)[0]) & 0xFFFF
             if cmd_id != 0xFF and (priority, qpos) not in self._battle_log_seen:
-                self._battle_log_seen.add((priority, qpos))
+                seen_key = (priority, qpos)
+                if len(self._battle_log_seen_order) >= 256:
+                    old = self._battle_log_seen_order.popleft()
+                    self._battle_log_seen.discard(old)
+                self._battle_log_seen.add(seen_key)
+                self._battle_log_seen_order.append(seen_key)
                 dam, miss, crit = 0, False, False
                 pptr = _rebase(self._proc.module_base, ADDR_BATTLE_OBJ_PTR)
                 bop = self._read_u32(pptr) or 0
@@ -4433,12 +4462,16 @@ class FF7Hook:
                 bytes([1]),
             ):
                 return False, "write battle_module_field failed"
-            deadline = time.monotonic() + 1.0
-            while time.monotonic() < deadline:
-                if self._current_module_byte() == 2:
-                    self._write(field_obj + 1, bytes([0]))
-                    break
-                time.sleep(0.05)
+            self._post_success_timed.append(
+                (
+                    "_finish_field_battle_start",
+                    {
+                        "field_obj": int(field_obj),
+                        "deadline": time.monotonic() + 1.0,
+                    },
+                    0.05,
+                )
+            )
             return True, None
         if mod == 3:
             if not self._write(
@@ -4463,6 +4496,26 @@ class FF7Hook:
                 return False, "write world_battle_flag4 failed"
             return True, None
         return False, f"cannot start battle in module {mod}"
+
+    def _finish_field_battle_start(
+        self, kwargs: Dict[str, Any]
+    ) -> Tuple[bool, Optional[str]]:
+        field_obj = int(kwargs.get("field_obj") or 0)
+        deadline = float(kwargs.get("deadline") or 0.0)
+        if not field_obj or not self._proc:
+            return True, None
+        if self._current_module_byte() == 2:
+            self._write(field_obj + 1, bytes([0]))
+            return True, None
+        if time.monotonic() < deadline:
+            self._post_success_timed.append(
+                (
+                    "_finish_field_battle_start",
+                    {"field_obj": field_obj, "deadline": deadline},
+                    0.05,
+                )
+            )
+        return True, None
 
     def _op_start_battle(self, battle_id: int) -> Tuple[bool, Optional[str]]:
         mod = self._current_module_byte()
@@ -4923,6 +4976,8 @@ class FF7Hook:
             return self._op_restore_game_speed()
         if op in ("press_confirm", "press_cancel", "press_menu"):
             return False, "Input simulation is not implemented (addresses not wired)"
+        if op == "_finish_field_battle_start":
+            return self._finish_field_battle_start(kwargs)
 
         return False, f"Unknown operation: {op}"
 
@@ -5443,10 +5498,10 @@ class Ff7GameHook:
 
     def __init__(self) -> None:
         self._core = FF7Hook()
-        from ..template_config_parser import TemplateConfigParser
+        from ..template_config_parser import get_shared_parser
 
-        parser = TemplateConfigParser()
-        sub, excl = ff7_boss_match_sets_from_config(parser.load_config("ff7"))
+        cfg = get_shared_parser().load_config("ff7", copy_result=False)
+        sub, excl = ff7_boss_match_sets_from_config(cfg)
         self._boss_tracker = Ff7BossTracker(sub, excl)
         self._timed_jobs: List[Tuple[float, str, Dict[str, Any]]] = []
         self._paused_timed_jobs: List[Tuple[float, str, Dict[str, Any]]] = []
@@ -5463,6 +5518,16 @@ class Ff7GameHook:
         return runtime_os_key() in self.ui.supported_platforms
 
     def is_process_running(self) -> bool:
+        mem = getattr(self._core, "_mem", None)
+        if mem is not None and mem.is_attached():
+            pid = mem.pid
+            if pid:
+                try:
+                    import psutil
+
+                    return bool(psutil.pid_exists(int(pid)))
+                except Exception:
+                    return False
         return is_process_running(self.process_names)
 
     def _load_boss_log(self) -> None:
@@ -5492,9 +5557,9 @@ class Ff7GameHook:
 
     def on_config_reloaded(self) -> None:
         try:
-            from ..template_config_parser import TemplateConfigParser
+            from ..template_config_parser import get_shared_parser
 
-            cfg = TemplateConfigParser().load_config("ff7")
+            cfg = get_shared_parser().load_config("ff7", copy_result=False)
             sub, excl = ff7_boss_match_sets_from_config(cfg)
             self._boss_tracker.set_match_sets(sub, excl)
         except Exception as e:
@@ -5565,12 +5630,13 @@ class Ff7GameHook:
             logger.debug("FF7 reattached: resumed %s timed restore(s)", n)
 
     def _schedule_timed_job(
-        self, delay_sec: int, restore_op: str, restore_kwargs: Dict[str, Any]
+        self, delay_sec: float, restore_op: str, restore_kwargs: Dict[str, Any]
     ) -> None:
-        if delay_sec <= 0:
+        delay = float(delay_sec)
+        if delay <= 0:
             return
         self._timed_jobs.append(
-            (time.monotonic() + float(delay_sec), restore_op, dict(restore_kwargs))
+            (time.monotonic() + delay, restore_op, dict(restore_kwargs))
         )
 
     def drain_timed_jobs(self, enqueue_write: Any) -> None:
@@ -5678,7 +5744,7 @@ class Ff7GameHook:
             out = _query_inventory_outputs(iq)
         if ok:
             for t_op, t_kw, t_dur in self._core.consume_timed_schedules():
-                self._schedule_timed_job(int(t_dur), t_op, t_kw)
+                self._schedule_timed_job(float(t_dur), t_op, t_kw)
             self._persist_connector_override(op, kwargs)
         else:
             self._core.consume_timed_schedules()
@@ -5709,6 +5775,8 @@ class Ff7GameHook:
                     cm = int(snap.get("current_module") or 0)
                     if cm in (1, 3):
                         ok, err = self._core._start_battle_now(int(pending))
+                        for t_op, t_kw, t_dur in self._core.consume_timed_schedules():
+                            self._schedule_timed_job(float(t_dur), t_op, t_kw)
                         if not ok:
                             self._core._pending_battle_id = int(pending)
                             logger.debug("queued start_battle deferred: %s", err)

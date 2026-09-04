@@ -1063,9 +1063,6 @@ def create_service_status_footer() -> None:
                             "badge_wrap": badge_wrap,
                         }
 
-    with StartupTimer("create_service_status_footer.refresh_cached"):
-        refresh_service_status_footer()
-
     schedule_service_status_probe(force=True)
 
 

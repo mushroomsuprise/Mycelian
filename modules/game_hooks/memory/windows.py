@@ -8,7 +8,7 @@ import ctypes
 import logging
 import sys
 from ctypes import wintypes
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from .base import AttachedProcess, find_process_pid
 
@@ -139,6 +139,7 @@ class WindowsProcessMemory:
 
     def __init__(self) -> None:
         self._attached: Optional[AttachedProcess] = None
+        self._rpm_bufs: Dict[int, ctypes.Array] = {}
 
     @property
     def pid(self) -> Optional[int]:
@@ -216,7 +217,10 @@ class WindowsProcessMemory:
     def read(self, addr: int, size: int) -> Optional[bytes]:
         if not self._attached or addr <= 0 or size <= 0:
             return None
-        buf = ctypes.create_string_buffer(size)
+        buf = self._rpm_bufs.get(size)
+        if buf is None:
+            buf = ctypes.create_string_buffer(size)
+            self._rpm_bufs[size] = buf
         read = ctypes.c_size_t(0)
         ok = _ReadProcessMemory(
             self._attached.handle,

@@ -155,6 +155,7 @@ class TemplateConfigParser:
         # mtime-keyed caches (invalidated on save/delete/create)
         self._file_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
         self._hidden_cache: Dict[str, Tuple[float, bool]] = {}
+        self._listing_cache: Optional[Tuple[float, List[str]]] = None
         self._cache_lock = threading.Lock()
 
     @staticmethod
@@ -183,9 +184,11 @@ class TemplateConfigParser:
             if config_name is None:
                 self._file_cache.clear()
                 self._hidden_cache.clear()
+                self._listing_cache = None
             else:
                 self._file_cache.pop(config_name, None)
                 self._hidden_cache.pop(config_name, None)
+                self._listing_cache = None
 
     def _load_raw_config_from_disk(
         self, config_name: str, create: bool = False
@@ -207,20 +210,21 @@ class TemplateConfigParser:
         return default_config
 
     def _get_cached_raw_config(
-        self, config_name: str, create: bool = False
+        self, config_name: str, create: bool = False, *, copy_result: bool = True
     ) -> Dict[str, Any]:
         mtime = self._config_mtime(config_name)
         with self._cache_lock:
             cached = self._file_cache.get(config_name)
             if cached is not None and cached[0] == mtime:
-                return copy.deepcopy(cached[1])
+                return copy.deepcopy(cached[1]) if copy_result else cached[1]
         raw = self._load_raw_config_from_disk(config_name, create=create)
         with self._cache_lock:
+            stored = copy.deepcopy(raw)
             self._file_cache[config_name] = (
                 self._config_mtime(config_name),
-                copy.deepcopy(raw),
+                stored,
             )
-        return raw
+            return copy.deepcopy(stored) if copy_result else stored
 
     def config_file_exists(self, config_name: str) -> bool:
         try:
@@ -263,7 +267,16 @@ class TemplateConfigParser:
         if not os.path.exists(self.config_dir):
             logger.warning(f"Config directory {self.config_dir} not found.")
             return []
-        
+
+        try:
+            dir_mtime = os.path.getmtime(self.config_dir)
+        except OSError:
+            dir_mtime = 0.0
+        with self._cache_lock:
+            listing = self._listing_cache
+            if listing is not None and listing[0] == dir_mtime:
+                return list(listing[1])
+
         # Spore Studio editor sidecars use a ``.spore.json`` suffix and
         # used to live alongside the public configs here, leaking into
         # the Source Settings dropdown as e.g. ``title.spore``. They now
@@ -277,6 +290,8 @@ class TemplateConfigParser:
         ]
         config_names = [os.path.basename(f).replace('.json', '') for f in json_files]
         logger.debug(f"Found {len(config_names)} config files in {self.config_dir}")
+        with self._cache_lock:
+            self._listing_cache = (dir_mtime, list(config_names))
         return config_names
     
     def get_non_hidden_config_files(self) -> List[str]:
@@ -313,7 +328,7 @@ class TemplateConfigParser:
                 if cached is not None and cached[0] == mtime:
                     return cached[1]
             config = self.load_config(
-                config_name, include_dynamic_controls=False
+                config_name, include_dynamic_controls=False, copy_result=False
             )
             hidden = bool(
                 isinstance(config, dict) and config.get("hidden", False)
@@ -351,6 +366,7 @@ class TemplateConfigParser:
         include_dynamic_controls: bool = False,
         include_streamdeck_options: bool = False,
         create: bool = False,
+        copy_result: bool = True,
     ) -> Dict[str, Any]:
         """
         Load configuration from a file
@@ -360,12 +376,15 @@ class TemplateConfigParser:
             include_dynamic_controls (bool): Whether to include dynamic_controls section
             include_streamdeck_options (bool): Whether to include streamdeck_options section
             create (bool): If True, persist a default JSON when the file is missing
+            copy_result (bool): Deepcopy the cached tree. False for read-only callers.
 
         Returns:
             Dict[str, Any]: Configuration data
         """
         try:
-            raw = self._get_cached_raw_config(config_name, create=create)
+            raw = self._get_cached_raw_config(
+                config_name, create=create, copy_result=copy_result
+            )
             config = self._filter_config(
                 raw, include_dynamic_controls, include_streamdeck_options
             )
@@ -578,6 +597,19 @@ def normalize_template_match_key(s: Any) -> str:
     return "".join(c for c in str(s or "").strip().lower() if c.isalnum())
 
 
+_shared_parser: Optional[TemplateConfigParser] = None
+_shared_parser_lock = threading.Lock()
+
+
+def get_shared_parser() -> TemplateConfigParser:
+    """Process-wide parser so overlay helpers share the mtime cache."""
+    global _shared_parser
+    with _shared_parser_lock:
+        if _shared_parser is None:
+            _shared_parser = TemplateConfigParser()
+        return _shared_parser
+
+
 def _config_element_value(config: Optional[Dict[str, Any]], element_id: str) -> Any:
     elements = config.get("elements") if isinstance(config, dict) else None
     if not isinstance(elements, list):
@@ -597,10 +629,12 @@ def find_template_config_for_reward_title(
     want = normalize_template_match_key(reward_title)
     if not want:
         return None
-    parser = TemplateConfigParser()
+    parser = get_shared_parser()
     for stem in parser.get_config_files():
         try:
-            cfg = parser.load_config(stem, include_dynamic_controls=False)
+            cfg = parser.load_config(
+                stem, include_dynamic_controls=False, copy_result=False
+            )
         except Exception as e:
             logger.debug("Skipping template config %s: %s", stem, e)
             continue
@@ -617,7 +651,9 @@ def find_template_config_for_reward_title(
 def point_alert_silent_no_media_enabled() -> bool:
     """Whether alerts config enables silent empty point redemptions."""
     try:
-        cfg = TemplateConfigParser().load_config("alerts", include_dynamic_controls=False)
+        cfg = get_shared_parser().load_config(
+            "alerts", include_dynamic_controls=False, copy_result=False
+        )
         return bool(_config_element_value(cfg, "PointAlertSilentNoMedia"))
     except Exception as e:
         logger.debug("Could not read PointAlertSilentNoMedia: %s", e)
@@ -640,11 +676,13 @@ def point_reward_template_duration_seconds(config: Dict[str, Any]) -> float:
 
 def build_template_queue_metadata() -> Dict[str, Any]:
     """Slim per-template queue fields for alerts overlay (not full config trees)."""
-    parser = TemplateConfigParser()
+    parser = get_shared_parser()
     metadata: Dict[str, Any] = {}
     for stem in parser.get_config_files():
         try:
-            cfg = parser.load_config(stem, include_dynamic_controls=False)
+            cfg = parser.load_config(
+                stem, include_dynamic_controls=False, copy_result=False
+            )
         except Exception as e:
             logger.debug("Skipping template %s for queue metadata: %s", stem, e)
             continue

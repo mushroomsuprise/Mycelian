@@ -73,11 +73,18 @@ def layout_schedule(
     *,
     once: bool = False,
     active: bool = True,
-) -> ui.timer:
+) -> Any:
     """Schedule a timer anchored to the client layout slot.
 
     Use only when the callback creates new NiceGUI elements inline at fire time.
     Returns the ``Timer`` so callers can ``cancel()`` it.
+
+    If there is no current slot (background hop onto the UI loop), fall back to
+    :func:`app_schedule` so the callback still runs.
     """
-    with context.client.layout:
-        return ui.timer(interval, callback, once=once, active=active)
+    try:
+        with context.client.layout:
+            return ui.timer(interval, callback, once=once, active=active)
+    except RuntimeError:
+        logger.debug("layout_schedule: no UI slot; using app.timer")
+        return app_schedule(interval, callback, once=once, active=active)

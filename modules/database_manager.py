@@ -30,6 +30,7 @@ import sqlite3
 import json
 import os
 import threading
+import time
 from abc import ABC, abstractmethod
 from urllib.parse import urlparse
 from typing import Any, Dict, Optional, List
@@ -39,24 +40,66 @@ from datetime import datetime
 from .path_utils import get_data_path
 from .notification_engine import nav_actions_settings, notify_critical
 
-# Third-party imports (will be optional based on selected database)
-try:
-    import firebase_admin
-    from firebase_admin import db as firebase_db
+# Third-party imports are loaded on first use (DB-02). Hiddenimports stay in build.py.
+firebase_admin = None
+firebase_db = None
+FIREBASE_AVAILABLE = False
+_firebase_checked = False
 
-    FIREBASE_AVAILABLE = True
-except ImportError:
-    FIREBASE_AVAILABLE = False
+pymongo = None
+MongoClient = None
+MONGODB_AVAILABLE = False
+_mongo_checked = False
 
-try:
-    import pymongo
-    from pymongo import MongoClient
 
-    MONGODB_AVAILABLE = True
-except ImportError:
-    MONGODB_AVAILABLE = False
+def _ensure_firebase() -> bool:
+    global firebase_admin, firebase_db, FIREBASE_AVAILABLE, _firebase_checked
+    if _firebase_checked:
+        return FIREBASE_AVAILABLE
+    _firebase_checked = True
+    try:
+        import firebase_admin as _fa
+        from firebase_admin import db as _fdb
+
+        firebase_admin = _fa
+        firebase_db = _fdb
+        FIREBASE_AVAILABLE = True
+    except ImportError:
+        FIREBASE_AVAILABLE = False
+    return FIREBASE_AVAILABLE
+
+
+def _ensure_pymongo() -> bool:
+    global pymongo, MongoClient, MONGODB_AVAILABLE, _mongo_checked
+    if _mongo_checked:
+        return MONGODB_AVAILABLE
+    _mongo_checked = True
+    try:
+        import pymongo as _pm
+        from pymongo import MongoClient as _MC
+
+        pymongo = _pm
+        MongoClient = _MC
+        MONGODB_AVAILABLE = True
+    except ImportError:
+        MONGODB_AVAILABLE = False
+    return MONGODB_AVAILABLE
 
 logger = logging.getLogger(__name__)
+
+
+def _caller_is_overlay_hub() -> bool:
+    """True when the caller is the Flask-SocketIO gevent hub thread."""
+    try:
+        from . import web_engine
+
+        inst = getattr(web_engine, "web_engine_instance", None)
+        if inst is None:
+            return False
+        ident = getattr(inst, "_server_thread_ident", None)
+        return ident is not None and threading.get_ident() == ident
+    except Exception:
+        return False
 
 
 def normalize_firebase_database_url(url: str) -> str:
@@ -205,9 +248,10 @@ class SQLDatabase(DatabaseInterface):
 
                 # Connect to database
                 self._connection = sqlite3.connect(
-                    self.db_path, check_same_thread=False
+                    self.db_path, check_same_thread=False, timeout=30.0
                 )
                 self._connection.row_factory = sqlite3.Row
+                self._configure_app_sqlite_connection(self._connection)
 
                 # Create tables
                 self._create_tables()
@@ -258,6 +302,15 @@ class SQLDatabase(DatabaseInterface):
 
         self._connection.commit()
 
+    @staticmethod
+    def _configure_app_sqlite_connection(conn: sqlite3.Connection) -> None:
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+        except Exception:
+            pass
+
     def _get_connection(self):
         """Get connection from pool or create new one"""
         with self._pool_lock:
@@ -267,6 +320,7 @@ class SQLDatabase(DatabaseInterface):
         # Create new connection
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
         conn.row_factory = sqlite3.Row
+        self._configure_app_sqlite_connection(conn)
         return conn
 
     def _return_connection(self, conn):
@@ -578,7 +632,7 @@ class FirebaseDatabase(DatabaseInterface):
 
     def initialize(self) -> bool:
         """Initialize Firebase connection"""
-        if not FIREBASE_AVAILABLE:
+        if not _ensure_firebase():
             logger.error("Firebase SDK not available. Install firebase-admin package.")
             return False
 
@@ -867,7 +921,7 @@ class FirebaseDatabase(DatabaseInterface):
                 status_msg = "Not Initialized"
                 config_issues = []
 
-                if not FIREBASE_AVAILABLE:
+                if not _ensure_firebase():
                     config_issues.append("Firebase SDK not available")
                 if not self.service_account_path:
                     config_issues.append("Service account path not configured")
@@ -1098,7 +1152,7 @@ class MongoDatabase(DatabaseInterface):
 
     def initialize(self) -> bool:
         """Initialize MongoDB connection"""
-        if not MONGODB_AVAILABLE:
+        if not _ensure_pymongo():
             logger.error("MongoDB driver not available. Install pymongo package.")
             return False
 
@@ -1563,11 +1617,25 @@ class DatabaseManager:
                 )
                 result["value"] = default
 
+        is_sql = str(getattr(self._config, "database_type", "sql") or "sql") == "sql"
+        if is_sql:
+            _worker()
+            return result["value"]
+
         worker = threading.Thread(
             target=_worker, name=f"MycelianDB{op_name}", daemon=True
         )
         worker.start()
-        worker.join(timeout)
+        if _caller_is_overlay_hub():
+            try:
+                from gevent import sleep as _hub_sleep
+            except ImportError:
+                _hub_sleep = time.sleep
+            deadline = time.monotonic() + float(timeout)
+            while worker.is_alive() and time.monotonic() < deadline:
+                _hub_sleep(0.01)
+        else:
+            worker.join(timeout)
 
         if worker.is_alive():
             if invalidate_on_timeout:
@@ -1658,10 +1726,10 @@ class DatabaseManager:
         """Get list of available database types"""
         available = ["sql"]  # SQLite is always available
 
-        if FIREBASE_AVAILABLE:
+        if _ensure_firebase():
             available.append("firebase")
 
-        if MONGODB_AVAILABLE:
+        if _ensure_pymongo():
             available.append("mongodb")
 
         return available
