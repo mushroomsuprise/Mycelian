@@ -11,6 +11,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import sysconfig
 import time
 from datetime import datetime
 from pathlib import Path
@@ -97,8 +98,8 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.12.4"
-BUILD_DATE = "August 25th 2026"
+VERSION = "1.12.5"
+BUILD_DATE = "September 5th 2026"
 BUILD_NUMBER = "dev"
 
 # Stream Deck plugin version (manifest.json "Version"; Elgato semver, e.g. 0.2.2.0)
@@ -983,41 +984,79 @@ def create_spec_file():
     # Prepare binaries list for platform-specific requirements
     python_dll_binaries = []
     if CURRENT_OS == "windows":
-        import glob
+        major, minor = sys.version_info[:2]
+        versioned_dll_name = f"python{major}{minor}.dll"
+        stable_dll_name = f"python{major}.dll"
+        python_dll_names = (versioned_dll_name, stable_dll_name)
+        vcruntime_dll_names = (
+            "VCRUNTIME140.dll",
+            "VCRUNTIME140_1.dll",
+            "msvcp140.dll",
+        )
 
-        python_install_path = Path(sys.executable).parent
+        search_roots = []
+        seen_roots = set()
+        for raw in (
+            getattr(sys, "base_prefix", None),
+            getattr(sys, "base_exec_prefix", None),
+            sysconfig.get_config_var("installed_base"),
+            sys.prefix,
+            Path(sys.executable).parent,
+        ):
+            if not raw:
+                continue
+            root = Path(raw)
+            try:
+                key = str(root.resolve()).lower()
+            except OSError:
+                key = str(root).lower()
+            if key in seen_roots:
+                continue
+            seen_roots.add(key)
+            search_roots.append(root)
 
-        # Try multiple potential DLL locations
-        dll_locations = [
-            python_install_path / "python3*.dll",
-            python_install_path / "python313.dll",
-            python_install_path / "DLLs" / "python3*.dll",
-            python_install_path.parent
-            / "python3*.dll",  # Sometimes in parent directory
-        ]
+        candidate_dirs = []
+        seen_dirs = set()
+        for root in search_roots:
+            for directory in (root, root / "DLLs"):
+                if not directory.is_dir():
+                    continue
+                try:
+                    key = str(directory.resolve()).lower()
+                except OSError:
+                    key = str(directory).lower()
+                if key in seen_dirs:
+                    continue
+                seen_dirs.add(key)
+                candidate_dirs.append(directory)
 
-        python_dll_found = False
-        for location_pattern in dll_locations:
-            for dll_path in glob.glob(str(location_pattern)):
-                if os.path.exists(dll_path):
-                    python_dll_binaries.append((dll_path, "."))
-                    python_dll_found = True
-                    break
-            if python_dll_found:
-                break
+        collected = set()
+        versioned_dll_found = False
 
-        # Also add essential Windows DLLs that might be needed
-        vcruntime_dlls = [
-            python_install_path / "VCRUNTIME140.dll",
-            python_install_path / "VCRUNTIME140_1.dll",
-            python_install_path / "msvcp140.dll",
-        ]
+        def add_binary(dll_path: Path) -> bool:
+            try:
+                key = str(dll_path.resolve()).lower()
+            except OSError:
+                key = str(dll_path).lower()
+            if key in collected:
+                return False
+            collected.add(key)
+            python_dll_binaries.append((str(dll_path), "."))
+            return True
 
-        for vcruntime_dll in vcruntime_dlls:
-            if vcruntime_dll.exists():
-                python_dll_binaries.append((str(vcruntime_dll), "."))
+        for directory in candidate_dirs:
+            for dll_name in python_dll_names:
+                dll_path = directory / dll_name
+                if dll_path.is_file() and add_binary(dll_path):
+                    progress.update(f"Including Python DLL: {dll_path}")
+                    if dll_name.lower() == versioned_dll_name.lower():
+                        versioned_dll_found = True
+            for dll_name in vcruntime_dll_names:
+                dll_path = directory / dll_name
+                if dll_path.is_file() and add_binary(dll_path):
+                    progress.update(f"Including runtime DLL: {dll_path}")
 
-        if not python_dll_found:
+        if not versioned_dll_found:
             progress.update("Warning: Python DLL not found - may cause runtime issues")
 
     spec_content = f"""# -*- mode: python ; coding: utf-8 -*-
