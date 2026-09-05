@@ -38,11 +38,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from nicegui import ui
-
 from .encryption_utils import ensure_decrypted, ensure_encrypted, is_encrypted
 from .notification_engine import nav_actions_settings, notify_critical
-from .psnapi import PSNData
 
 # Import database_manager in functions that need it, not at the module level
 # This avoids circular import issues

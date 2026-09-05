@@ -41,7 +41,7 @@ class DeliverToastScriptModeTests(unittest.TestCase):
     def test_deliver_does_not_call_ui_notify(self) -> None:
         with (
             patch.object(ne, "inject_notification_ui_assets"),
-            patch.object(ne.ui, "notify") as ui_notify,
+            patch("nicegui.ui.notify") as ui_notify,
             patch("nicegui.core.app") as app,
         ):
             app.is_started = False

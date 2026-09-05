@@ -29,7 +29,6 @@ import re
 import threading
 import unicodedata
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -57,6 +56,7 @@ from psnawp_api.models.trophies.trophy_titles import TrophyTitleIterator
 from psnawp_api.psnawp import PSNAWP
 
 from .database_manager import database_manager
+from .psn_data import PSNData, PSNGameMismatch
 
 logger = logging.getLogger(__name__)
 
@@ -498,48 +498,6 @@ def delete_psn_game_cache_in_db(np_communication_id: str) -> bool:
     except Exception as e:
         logger.error(f"Error deleting game cache for {np_communication_id}: {e}")
         return False
-
-
-@dataclass
-class PSNGameMismatch:
-    """Data class for tracking PSN game name mismatches between presence and trophy APIs."""
-
-    presence_name: str  # Name from presence/social API
-    np_title_id: str  # ID from presence data
-    platform: str  # PS4, PS5, etc.
-    detected_at: str  # ISO timestamp when mismatch was detected
-    notified: bool = False  # Whether user has been notified about this mismatch
-
-
-@dataclass
-class PSNData:
-    """Dataclass to store PSN information."""
-
-    current_game_name: str | None = None
-    current_game_art_url: str | None = None
-    current_game_np_comm_id: str | None = (
-        None  # np_communication_id for the current game
-    )
-    trophy_counts: dict[str, int] = field(
-        default_factory=dict
-    )  # e.g., {"bronze": 0, "silver": 0, "gold": 0, "platinum": 0}
-    current_game_trophies: dict[str, int] = field(
-        default_factory=dict
-    )  # Trophies for the current game (base / selected trophy group)
-    current_game_trophies_all: dict = field(
-        default_factory=dict
-    )  # All groups combined: {"earned": {...}, "defined": {...}} (base + DLC)
-    current_game_progress: int | None = None
-    all_games_data: dict[str, dict] = field(
-        default_factory=dict
-    )  # e.g., {"game_id": {"name": "Game Name", "icon_url": "...", ...}}
-    npsso_code: str | None = None
-    online_id: str | None = None
-    account_id: str | None = None
-    is_online: bool = False
-    connection_status: str = "Disconnected"
-    presence: dict = field(default_factory=dict)
-    current_game_mismatch: PSNGameMismatch | None = None  # Active mismatch state
 
 
 class PSNClient:

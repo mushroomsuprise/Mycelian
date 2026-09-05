@@ -300,6 +300,10 @@ def _open_window_with_mycelian_env(*args, **kwargs):
 
     import nicegui.native.native_mode as nm
 
+    # Parent calls install() before ui.run. The spawned webview child re-imports
+    # this module without that call, so stash the original _open_window here too.
+    _install_patch()
+
     _merge_window_args_from_env()
     orig = getattr(nm, _ORIG_ATTR, None)
     if orig is None:
@@ -333,4 +337,6 @@ def _install_patch() -> None:
     setattr(nm, _PATCH_ATTR, True)
 
 
-_install_patch()
+def install() -> None:
+    """Patch NiceGUI native_mode before ``ui.run(native=True)`` spawns the webview."""
+    _install_patch()

@@ -493,7 +493,6 @@ def get_hidden_imports(current_os):
             "engineio.async_drivers",
             "engineio.async_drivers.threading",
             "engineio.async_drivers.gevent",
-            "engineio.async_drivers.eventlet",
             "socketio.async_handlers",
             "socketio.async_namespace",
             "socketio.server",
@@ -509,19 +508,9 @@ def get_hidden_imports(current_os):
         ]
     )
 
-    # Networking and async libraries
+    # Networking and async libraries (SocketIO async_mode is gevent)
     hidden_imports.extend(
         [
-            "eventlet",
-            "eventlet.hubs",
-            "eventlet.hubs.epolls",
-            "eventlet.hubs.kqueue",
-            "eventlet.hubs.selects",
-            "eventlet.wsgi",
-            "eventlet.green",
-            "eventlet.green.threading",
-            "eventlet.green.socket",
-            "eventlet.support.greendns",
             "gevent",
             "gevent.socket",
             "gevent.threading",
@@ -537,7 +526,7 @@ def get_hidden_imports(current_os):
     except ImportError:
         pass
 
-    # DNS resolution (eventlet greendns dynamically imports all dns submodules)
+    # DNS resolution (dnspython dynamically imports submodules)
     try:
         from PyInstaller.utils.hooks import collect_submodules
 
@@ -571,7 +560,6 @@ def get_hidden_imports(current_os):
             "aiohttp.helpers",
             "aiohttp.http",
             "requests",
-            "requests_oauthlib",
             "urllib3",
             "urllib3.exceptions",
             "urllib3.response",
@@ -612,14 +600,6 @@ def get_hidden_imports(current_os):
         [
             "psnawp",
             "psnawp_api",
-        ]
-    )
-
-    # Spotify
-    hidden_imports.extend(
-        [
-            "spotipy",
-            "spotipy.oauth2",
         ]
     )
 

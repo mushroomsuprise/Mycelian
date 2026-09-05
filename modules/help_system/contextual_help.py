@@ -9,11 +9,16 @@ Provides help buttons and inline help components for UI integration.
 from nicegui import ui
 import logging
 from typing import Any, Dict, Optional, Tuple
-from .help_manager import get_help_manager
-from .help_browser import ensure_help_system_styles, show_help_browser
 from ..ui_timer import layout_schedule
 
 logger = logging.getLogger(__name__)
+
+
+def _help_ui():
+    from .help_browser import ensure_help_system_styles, show_help_browser
+    from .help_manager import get_help_manager
+
+    return ensure_help_system_styles, show_help_browser, get_help_manager
 
 # Global references to main UI elements (set during UI initialization)
 _main_tabs = None
@@ -59,6 +64,9 @@ def set_chatbot_ui_references(tabs) -> None:
 
 def _open_help_target(target: str) -> None:
     """Open help browser for a topic ID or category name."""
+    from .help_browser import show_help_browser
+    from .help_manager import get_help_manager
+
     help_manager = get_help_manager()
     if help_manager.get_topic(target):
         show_help_browser(topic_id=target)
@@ -238,9 +246,10 @@ def help_button(context: str = None, topic_id: str = None, tooltip: str = "Help"
     Returns:
         NiceGUI button element
     """
-    ensure_help_system_styles()
-
     def on_click():
+        from .help_browser import show_help_browser
+        from .help_manager import get_help_manager
+
         try:
             if topic_id:
                 show_help_browser(topic_id)
@@ -306,6 +315,7 @@ def inline_help(text: str, topic_id: str = None, context: str = None, show_icon:
         NiceGUI row element containing the help
     """
     try:
+        ensure_help_system_styles, show_help_browser, get_help_manager = _help_ui()
         ensure_help_system_styles()
         with ui.row().classes("items-center gap-2 flex-wrap") as container:
             if show_icon:
@@ -352,6 +362,7 @@ def help_tooltip(element, help_text: str, topic_id: str = None, context: str = N
         # If topic provided, make it clickable to open help
         if topic_id or context:
             def on_click():
+                _, show_help_browser, get_help_manager = _help_ui()
                 target_topic = topic_id
                 if not target_topic and context:
                     help_manager = get_help_manager()
@@ -381,6 +392,7 @@ def help_accordion(title: str, content: str, topic_id: str = None, context: str 
         context: Optional context to find topic
     """
     try:
+        ensure_help_system_styles, show_help_browser, get_help_manager = _help_ui()
         ensure_help_system_styles()
         with ui.expansion(title).classes("w-full") as accordion:
             ui.markdown(content).classes("w-full help-accordion-markdown max-w-none")
@@ -420,6 +432,7 @@ def help_card(title: str, summary: str, topic_id: str, show_category: bool = Tru
         show_category: Whether to show category badge
     """
     try:
+        ensure_help_system_styles, show_help_browser, get_help_manager = _help_ui()
         ensure_help_system_styles()
         help_manager = get_help_manager()
         topic = help_manager.get_topic(topic_id)
@@ -462,6 +475,7 @@ def create_help_section(title: str, topics: list, columns: int = 2):
         columns: Number of columns for grid layout
     """
     try:
+        ensure_help_system_styles, _, _ = _help_ui()
         ensure_help_system_styles()
         ui.label(title).classes("text-lg font-semibold mb-4 help-text-primary")
 

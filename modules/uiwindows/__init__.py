@@ -23,8 +23,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-from . import alertsettings
-from . import customsources
-from . import activity_feed
+# Submodules are loaded on first access so importing this package does not pull
+# Flask, Twitch, or unused settings tabs.
 
-__all__ = ['alertsettings', 'customsources', 'activity_feed'] 
+__all__ = ["alertsettings", "customsources", "activity_feed"]
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        from importlib import import_module
+
+        return import_module(f".{name}", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

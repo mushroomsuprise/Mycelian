@@ -28,7 +28,6 @@ import threading
 import time
 from collections import deque
 
-from . import web_engine
 from .alertutils import AlertObj, initialize_alert_state
 from .notification_engine import nav_actions_settings, notify_critical
 from .shutdown import is_shutdown_in_progress
@@ -39,6 +38,31 @@ _ALERT_WAKE = threading.Event()
 _ALERT_COMPLETE = threading.Event()
 web_engine_instance = None  # Initialize to None; prefer web_engine.web_engine_instance
 logger = logging.getLogger(__name__)
+
+
+class _LazyWebEngine:
+    """Load Flask/SocketIO overlay module on first attribute access."""
+
+    def __init__(self):
+        object.__setattr__(self, "_mod", None)
+
+    def _load(self):
+        mod = object.__getattribute__(self, "_mod")
+        if mod is None:
+            from . import web_engine as web_engine_module
+
+            object.__setattr__(self, "_mod", web_engine_module)
+            mod = web_engine_module
+        return mod
+
+    def __getattr__(self, name):
+        return getattr(self._load(), name)
+
+    def __setattr__(self, name, value):
+        setattr(self._load(), name, value)
+
+
+web_engine = _LazyWebEngine()
 
 # Global thread references
 web_thread = None
@@ -314,7 +338,7 @@ def initialize():
 
     logger.info("Initializing alert processor and web engine")
 
-    # Check if alert state manager is already initialized to avoid duplicate loading
+    from .startup_profiler import StartupTimer
     from .alertutils import alert_state_manager
 
     if alert_state_manager is None:
@@ -327,8 +351,6 @@ def initialize():
         logger.info(
             "Alert state manager already initialized, reloading alerts from Firebase to ensure latest data"
         )
-        from .startup_profiler import StartupTimer
-
         with StartupTimer("alert_processor.reload_from_firebase"):
             alert_state_manager.reload_from_firebase()
 
@@ -336,25 +358,26 @@ def initialize():
     from .path_utils import get_template_path
 
     template_dir = get_template_path()
-    web_engine_instance = web_engine.WebEngine(template_dir=template_dir)
+    with StartupTimer("alert_processor.web_engine_start"):
+        web_engine_instance = web_engine.WebEngine(template_dir=template_dir)
 
-    # Set the global instance in the web_engine module
-    web_engine.web_engine_instance = web_engine_instance
+        # Set the global instance in the web_engine module
+        web_engine.web_engine_instance = web_engine_instance
 
-    try:
-        web_engine_instance.prepare_port_for_startup()
-    except Exception as e:
-        logger.warning("WebEngine startup port preparation failed: %s", e)
+        try:
+            web_engine_instance.prepare_port_for_startup()
+        except Exception as e:
+            logger.warning("WebEngine startup port preparation failed: %s", e)
 
-    # Start web engine in a separate thread
-    web_thread = threading.Thread(
-        target=web_engine_instance.run, daemon=True, name="WebEngine"
-    )
-    web_thread.start()
-    # Track the thread on the instance so the supervisor can detect a crash
-    # and restart it.
-    web_engine_instance.server_thread = web_thread
-    logger.info("Web engine thread started")
+        # Start web engine in a separate thread
+        web_thread = threading.Thread(
+            target=web_engine_instance.run, daemon=True, name="WebEngine"
+        )
+        web_thread.start()
+        # Track the thread on the instance so the supervisor can detect a crash
+        # and restart it.
+        web_engine_instance.server_thread = web_thread
+        logger.info("Web engine thread started")
 
     # Verify web thread is running
     if web_thread.is_alive():

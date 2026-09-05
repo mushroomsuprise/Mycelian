@@ -66,7 +66,7 @@ from flask import (
 )
 from flask_socketio import SocketIO, emit
 
-from . import alertutils, database_manager, statistics_manager, twitch
+from . import alertutils, database_manager, statistics_manager
 from .dataobjects import state_manager  # To access live PSN data
 from .path_utils import (
     get_assets_path,
@@ -74,7 +74,7 @@ from .path_utils import (
     get_static_path,
     get_template_path,
 )
-from .psnapi import PSNData  # For type hinting if needed, and default object
+from .psn_data import PSNData  # For type hinting if needed, and default object
 from .streamdeck_plugin_utils import enqueue_streamdeck_connector_event
 from .streamdeck_template_dispatch import (
     coerce_streamdeck_action_data as _coerce_streamdeck_action_data,
@@ -100,6 +100,31 @@ from .template_log import (
 from .theme_manager import generate_css_variables, get_theme_manager
 
 logger = logging.getLogger(__name__)
+
+
+class _LazyTwitch:
+    """Load twitchAPI EventSub stack on first overlay proxy call."""
+
+    def __init__(self):
+        object.__setattr__(self, "_mod", None)
+
+    def _load(self):
+        mod = object.__getattribute__(self, "_mod")
+        if mod is None:
+            from . import twitch as twitch_module
+
+            object.__setattr__(self, "_mod", twitch_module)
+            mod = twitch_module
+        return mod
+
+    def __getattr__(self, name):
+        return getattr(self._load(), name)
+
+    def __setattr__(self, name, value):
+        setattr(self._load(), name, value)
+
+
+twitch = _LazyTwitch()
 
 # Windows WSAEADDRINUSE (not always exposed as errno.EADDRINUSE on all builds).
 _WIN_EADDRINUSE = 10048

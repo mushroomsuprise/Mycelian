@@ -19,11 +19,8 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, cast
 
-from nicegui import ui
-
 from .connection_status_tracker import service_configured as _service_configured
 from .path_utils import get_data_path
-from .ui_timer import app_schedule, run_on_ui_loop
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +269,18 @@ def register_history_refresh(callback: Callable[[], None]) -> None:
     _history_refresh_callbacks.append(callback)
 
 
+def _run_on_ui_loop(fn: Callable[[], Any]) -> None:
+    from .ui_timer import run_on_ui_loop
+
+    run_on_ui_loop(fn)
+
+
+def _app_schedule(*args: Any, **kwargs: Any) -> Any:
+    from .ui_timer import app_schedule
+
+    return app_schedule(*args, **kwargs)
+
+
 def _trigger_history_refresh() -> None:
     def _run() -> None:
         for cb in list(_history_refresh_callbacks):
@@ -280,7 +289,7 @@ def _trigger_history_refresh() -> None:
             except Exception as e:
                 logger.debug("history refresh callback error: %s", e)
 
-    run_on_ui_loop(_run)
+    _run_on_ui_loop(_run)
 
 
 def get_history() -> List[Dict[str, Any]]:
@@ -986,7 +995,7 @@ def _refresh_footer_after_background_probe() -> None:
         refresh_service_status_footer()
         return
     if _footer_probe_running:
-        app_schedule(0.15, _refresh_footer_after_background_probe, once=True)
+        _app_schedule(0.15, _refresh_footer_after_background_probe, once=True)
 
 
 def schedule_service_status_probe(*, force: bool = True, delay_seconds: float = 0.1) -> None:
@@ -1006,15 +1015,16 @@ def schedule_service_status_probe(*, force: bool = True, delay_seconds: float = 
             daemon=True,
             name="ServiceStatusProbe",
         ).start()
-        app_schedule(0.15, _refresh_footer_after_background_probe, once=True)
+        _app_schedule(0.15, _refresh_footer_after_background_probe, once=True)
 
-    app_schedule(delay_seconds, _start_probe, once=True)
+    _app_schedule(delay_seconds, _start_probe, once=True)
 
 
 def create_service_status_footer() -> None:
     """Mount the global connection status footer below main tab content."""
     global _footer_container, _footer_item_refs
 
+    from nicegui import ui
     from .startup_profiler import StartupTimer
     from .uiwindows.service_brand_icons import SERVICE_BRAND_SVG
 
@@ -1215,8 +1225,8 @@ def start_service_watcher_timer() -> None:
     if _service_watcher_started:
         return
     _service_watcher_started = True
-    app_schedule(2.0, poll_service_status_changes, active=True)
-    app_schedule(1.0, flush_pending_toasts, active=True)
+    _app_schedule(2.0, poll_service_status_changes, active=True)
+    _app_schedule(1.0, flush_pending_toasts, active=True)
     flush_pending_toasts()
 
 
@@ -1310,6 +1320,8 @@ def _scroll_history_to_top() -> None:
 
 
 def _render_history_cards() -> None:
+    from nicegui import ui
+
     col = _history_column
     if col is None:
         return
@@ -1398,6 +1410,8 @@ def inject_notification_ui_assets() -> None:
     global _notification_leave_script_injected
     if _notification_leave_script_injected:
         return
+    from nicegui import ui
+
     ui.add_head_html(NOTIFICATION_LEAVE_PIN_SCRIPT, shared=True)
     _notification_leave_script_injected = True
 
@@ -1420,6 +1434,8 @@ def _ensure_toast_nav_handler() -> None:
     global _toast_nav_handler_registered
     if _toast_nav_handler_registered:
         return
+    from nicegui import ui
+
     ui.on("mycelian-toast-navigate", _on_toast_navigate_event)
     _toast_nav_handler_registered = True
 
@@ -1427,6 +1443,8 @@ def _ensure_toast_nav_handler() -> None:
 def create_notification_tray_button() -> None:
     """Place inside the main header row (next to tabs). Opens notification center."""
     global _history_column, _history_scroll_area, _notification_dialog, _tray_badge_ref
+
+    from nicegui import ui
 
     inject_notification_ui_assets()
     _ensure_toast_nav_handler()

@@ -70,7 +70,6 @@ from . import (
     database_manager,
     dataobjects,
     statistics_manager,
-    web_engine,
 )
 from .chatbot_core import EventType
 from .chatbot_manager import get_manager as get_chatbot_manager
@@ -105,6 +104,31 @@ ensure_channel_chat_notification_watch_streak_patch()
 ensure_hype_train_v2_patch()
 
 logger = logging.getLogger(__name__)
+
+
+class _LazyWebEngine:
+    """Load overlay Flask stack on first Twitch→browser-source emit."""
+
+    def __init__(self):
+        object.__setattr__(self, "_mod", None)
+
+    def _load(self):
+        mod = object.__getattribute__(self, "_mod")
+        if mod is None:
+            from . import web_engine as web_engine_module
+
+            object.__setattr__(self, "_mod", web_engine_module)
+            mod = web_engine_module
+        return mod
+
+    def __getattr__(self, name):
+        return getattr(self._load(), name)
+
+    def __setattr__(self, name, value):
+        setattr(self._load(), name, value)
+
+
+web_engine = _LazyWebEngine()
 
 
 def _twitch_alerts_enabled() -> bool:

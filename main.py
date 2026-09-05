@@ -65,22 +65,6 @@ configure_startup_profiling(ENABLE_STARTUP_PROFILING)
 mark_process_start()
 print_import_timing("process start")
 
-from modules import native_window_bridge  # noqa: F401 — native webview subprocess window_args
-
-print_import_timing("after import native_window_bridge")
-
-from modules import chatbot
-
-print_import_timing("after import chatbot")
-
-from modules import mainuiwindow
-
-print_import_timing("after import mainuiwindow")
-
-from modules import twitch
-
-print_import_timing("after import twitch")
-
 
 def get_resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
@@ -331,9 +315,24 @@ if __name__ == "__main__":
             with StartupTimer("statistics_manager.initialize_statistics_with_data"):
                 statistics_manager.initialize_statistics_with_data(all_data)
 
-            # Alert processor needs to be ready
-            with StartupTimer("alert_processor.initialize"):
-                alert_processor.initialize()
+            # Overlay Flask/SocketIO import is heavy; start it in parallel with NiceGUI.
+            def _start_overlay_engine():
+                try:
+                    with StartupTimer("alert_processor.initialize"):
+                        alert_processor.initialize()
+                except Exception as overlay_err:
+                    logger.error(
+                        "Error initializing overlay engine: %s",
+                        overlay_err,
+                        exc_info=True,
+                    )
+
+            overlay_thread = threading.Thread(
+                target=_start_overlay_engine,
+                daemon=True,
+                name="OverlayInit",
+            )
+            overlay_thread.start()
 
             logger.info("Core modules initialized successfully")
         except Exception as e:
@@ -346,6 +345,12 @@ if __name__ == "__main__":
 
         logger.info("Phase 2: Initializing UI shell...")
         try:
+            with StartupTimer("import:nicegui"):
+                import nicegui  # noqa: F401 — first NiceGUI import (not native_window_bridge)
+
+            with StartupTimer("import:mainuiwindow"):
+                from modules import mainuiwindow
+
             with StartupTimer("mainuiwindow.initialize_ui_shell"):
                 mainuiwindow.initialize_ui_shell()
 
@@ -371,7 +376,6 @@ if __name__ == "__main__":
         try:
             from modules.service_manager import get_service_manager
             from modules.mainuiwindow import update_splash_progress, close_splash_screen
-            from modules import connector_integration, connector_manager
 
             # Create service manager with progress callback
             def progress_callback(progress, message):
@@ -385,42 +389,66 @@ if __name__ == "__main__":
                 statistics_manager.start_statistics_saving,
                 priority=1,
             )
-            service_manager.register("twitch", twitch.initialize, priority=2)
-            service_manager.register("chatbot", chatbot.initialize, priority=3)
-            service_manager.register(
-                "connectors",
-                lambda: (
-                    connector_manager.initialize(),
-                    connector_integration.initialize_integration(),
-                ),
-                priority=4,
-            )
 
-            # 3rd party services
-            from modules import spotify, psn_service, youtube
+            def _start_twitch():
+                from modules import twitch
 
-            service_manager.register(
-                "spotify", spotify.start_spotify_service, priority=5
-            )
-            service_manager.register(
-                "psn", psn_service.initialize_psn_module, priority=6
-            )
-            service_manager.register(
-                "youtube", youtube.start_youtube_service, priority=7
-            )
+                twitch.initialize()
 
-            from modules import discord_service as discord_svc
+            def _start_chatbot():
+                from modules import chatbot
+
+                chatbot.initialize()
+
+            service_manager.register("twitch", _start_twitch, priority=2)
+            service_manager.register("chatbot", _start_chatbot, priority=3)
+
+            def _start_connectors():
+                from modules import connector_integration, connector_manager
+
+                connector_manager.initialize()
+                connector_integration.initialize_integration()
+
+            service_manager.register("connectors", _start_connectors, priority=4)
+
+            # 3rd party services (import inside starters so ui.run is not delayed)
+            def _start_spotify():
+                from modules import spotify
+
+                spotify.start_spotify_service()
+
+            def _start_psn():
+                from modules import psn_service
+
+                psn_service.initialize_psn_module()
+
+            def _start_youtube():
+                from modules import youtube
+
+                youtube.start_youtube_service()
+
+            service_manager.register("spotify", _start_spotify, priority=5)
+            service_manager.register("psn", _start_psn, priority=6)
+            service_manager.register("youtube", _start_youtube, priority=7)
+
+            def _start_discord():
+                from modules import discord_service as discord_svc
+
+                discord_svc.start_discord_service()
 
             service_manager.register(
                 "discord",
-                discord_svc.start_discord_service,
+                _start_discord,
                 priority=7,
                 background=True,
             )
 
-            from modules.obs_service import start_obs_service as _start_obs_ws
+            def _start_obs():
+                from modules.obs_service import start_obs_service
 
-            service_manager.register("obs", _start_obs_ws, priority=5)
+                start_obs_service()
+
+            service_manager.register("obs", _start_obs, priority=5)
 
             from modules.connection_monitor import start as start_connection_monitor
 
@@ -448,8 +476,6 @@ if __name__ == "__main__":
             def close_splash():
                 time.sleep(2.0)  # Show "Ready!" for 2 seconds
                 close_splash_screen()
-
-            import threading
 
             splash_thread = threading.Thread(target=close_splash, daemon=True)
             splash_thread.start()

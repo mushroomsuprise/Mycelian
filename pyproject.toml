@@ -7,7 +7,6 @@ license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.11.11",
-    "configparser>=7.1.0",
     "cryptography>=43.0.0",
     "firebase-admin>=6.6.0",
     "flask>=3.1.0",
@@ -22,26 +21,25 @@ dependencies = [
     "QtPy>=2.4.1; sys_platform == 'linux'",
     "PyQt6>=6.7.0; sys_platform == 'linux'",
     "PyQt6-WebEngine>=6.7.0; sys_platform == 'linux'",
-    "requests-oauthlib>=2.0.0",
     "requests>=2.32.3",
-    "spotipy>=2.26.0",
     "twitchapi>=4.5.0",
     "websocket-client>=1.8.0",
-    "pyinstaller>=6.14.1",
-    "eventlet>=0.40.0",
     "gevent>=25.5.1",
     "pynput>=1.7.7",
     "pystray>=0.19.5",
     "pycaw>=20240210; sys_platform == 'win32'",
     "pulsectl>=24.12.0; sys_platform == 'linux'",
-    "pyobjc>=11.1; sys_platform == 'darwin'",
-    "pycaw>=20240210",
-    "pulsectl>=24.12.0",
+    "pyobjc-framework-Cocoa>=11.1; sys_platform == 'darwin'",
     "psnawp==3.0.1",
     "pytz>=2025.2",
     "pillow>=10.0.0",
     "obsws-python>=1.8.0",
     "discord-py>=2.7.1",
+]
+
+[dependency-groups]
+build = [
+    "pyinstaller>=6.14.1",
 ]
 
 [build-system]

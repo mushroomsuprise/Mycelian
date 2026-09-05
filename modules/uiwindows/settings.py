@@ -52,19 +52,6 @@ from ..path_utils import get_working_directory, reveal_in_file_manager
 from ..startup_profiler import StartupTimer, log_startup_summary
 from ..ui_settings_layout import settings_header, settings_section, settings_surface
 from .service_brand_icons import service_tab_icon
-from .tabs import (
-    AppSettingsTab,
-    DatabaseTab,
-    DiscordTab,
-    GameHooksTab,
-    ObsTab,
-    PSNTab,
-    SpotifyTab,
-    StatisticsTab,
-    ThemeTab,
-    TwitchTab,
-    YouTubeTab,
-)
 
 # from ..psnapi import PSNClient # No longer needed here for status display
 
@@ -4963,6 +4950,18 @@ class SettingsUI:
 
         # Prepare tab components
         with StartupTimer("settings_tab_objects"):
+            from .tabs.app_settings_tab import AppSettingsTab
+            from .tabs.database_tab import DatabaseTab
+            from .tabs.discord_tab import DiscordTab
+            from .tabs.game_hooks_tab import GameHooksTab
+            from .tabs.obs_tab import ObsTab
+            from .tabs.psn_tab import PSNTab
+            from .tabs.spotify_tab import SpotifyTab
+            from .tabs.statistics_tab import StatisticsTab
+            from .tabs.theme_tab import ThemeTab
+            from .tabs.twitch_tab import TwitchTab
+            from .tabs.youtube_tab import YouTubeTab
+
             # Time each tab object creation individually
             with StartupTimer("settings_tab_objects_app_settings"):
                 app_settings_tab = AppSettingsTab()

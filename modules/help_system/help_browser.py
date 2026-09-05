@@ -16,7 +16,8 @@ import webbrowser
 from typing import Optional, List, Dict
 
 from ..theme_manager import HELP_SYSTEM_CSS
-from .help_manager import get_help_manager, HelpTopic, HelpCategory
+from .help_manager import get_help_manager
+from .help_content import HelpCategory, HelpTopic
 
 logger = logging.getLogger(__name__)
 

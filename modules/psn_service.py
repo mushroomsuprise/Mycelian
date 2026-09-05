@@ -33,10 +33,9 @@ from .dataobjects import PSNSettingsData  # PSNSettingsData for type hint
 from .dataobjects import state_manager
 
 # Assuming these modules are in paths accessible by your main script
-from .psnapi import (  # PSNData for default object
+from .psn_data import PSNData, PSNGameMismatch
+from .psnapi import (  # PSN client + matching helpers (psnawp)
     PSNClient,
-    PSNData,
-    PSNGameMismatch,
     find_best_fuzzy_game_name_match,
     normalize_game_name_key,
 )

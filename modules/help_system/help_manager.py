@@ -6,9 +6,13 @@ Help Manager
 Central manager for the help system providing search, indexing, and topic management.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Dict, List, Optional
-from .help_content import HelpTopic, HelpCategory, HELP_TOPICS
+from typing import TYPE_CHECKING, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from .help_content import HelpCategory, HelpTopic
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +23,8 @@ class HelpManager:
     _instance = None
 
     def __init__(self):
+        from .help_content import HELP_TOPICS
+
         self.topics: Dict[str, HelpTopic] = HELP_TOPICS
         self._search_index: Dict[str, List[str]] = {}
         self._build_search_index()

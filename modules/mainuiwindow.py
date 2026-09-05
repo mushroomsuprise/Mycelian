@@ -35,7 +35,7 @@ from datetime import datetime
 from multiprocessing import current_process
 from typing import Any, Dict, List, Optional
 
-from nicegui import app, events, ui
+from nicegui import app, ui
 
 from modules import updater
 from modules.nicegui_outbox_patch import ensure_outbox_snapshot_patch
@@ -81,15 +81,20 @@ from modules.uiwindows.activity_feed import (
     add_alert_to_feed,
     create_activity_feed_tab,
 )
-from modules.uiwindows.customsources import create_custom_sources_tab
 
-from . import alertutils, database_manager, dataobjects, tray_controller, web_engine
+from . import alertutils, database_manager, dataobjects, tray_controller
 from .theme_manager import get_theme_manager, generate_css_variables
 from .ui_font import apply_app_font, get_app_font_css_block
 from .ui_styles import get_full_theme_css, SUB_TAB_SEAM_SCRIPT
 from .ui_timer import app_schedule, layout_schedule, run_on_ui_loop
 
 logger = logging.getLogger(__name__)
+
+
+def _web_engine():
+    from . import web_engine as web_engine_module
+
+    return web_engine_module
 
 # Properly initialize firebase and state managers
 # Legacy function removed - replaced by init_app_state_background for non-blocking initialization
@@ -276,9 +281,14 @@ def apply_theme(theme_name: str):
     _sync_quasar_brand_colors_js(theme)
 
     # Broadcast theme update to external HTML templates (OBS docks, etc.)
+    # Do not import web_engine here — that would pull Flask onto the UI thread
+    # during initialize_ui_shell while OverlayInit is still loading it.
+    import sys
+
+    web_engine = sys.modules.get("modules.web_engine")
     if (
-        hasattr(web_engine, "web_engine_instance")
-        and web_engine.web_engine_instance is not None
+        web_engine is not None
+        and getattr(web_engine, "web_engine_instance", None) is not None
     ):
         web_engine.web_engine_instance.broadcast_theme_update(
             theme_css=theme_css,
@@ -1201,6 +1211,11 @@ def start_ui():
     from .startup_profiler import StartupTimer
 
     try:
+        from modules.native_window_bridge import install as install_native_window_bridge
+
+        with StartupTimer("native_window_bridge.install"):
+            install_native_window_bridge()
+
         # Configure WebView2 data directory for long-running native sessions
         _configure_webview2()
 
@@ -1542,11 +1557,16 @@ def create_ui_elements():
 
                         create_spore_studio_tab()
 
+                    def build_source_settings_tab():
+                        from .uiwindows.customsources import create_custom_sources_tab
+
+                        create_custom_sources_tab()
+
                     tab_definitions = [
                         ("Alerts", build_alerts_tab, alerts_tab),
                         (
                             "Source Settings",
-                            create_custom_sources_tab,
+                            build_source_settings_tab,
                             source_settings_tab,
                         ),
                         (
@@ -1711,6 +1731,7 @@ def reschedule_periodic_update_timer():
 def toggle_alerts():
     """Toggle the alert system pause state"""
     try:
+        web_engine = _web_engine()
         # Check if web engine instance is available
         if web_engine.web_engine_instance:
             # Use the web engine instance method
@@ -1771,6 +1792,7 @@ def toggle_alerts():
 def toggle_mute():
     """Toggle alert audio mute state."""
     try:
+        web_engine = _web_engine()
         if web_engine.web_engine_instance:
             web_engine.web_engine_instance.toggle_mute()
             logger.debug("Toggled mute via web engine instance")

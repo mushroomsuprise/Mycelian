@@ -13,12 +13,13 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urlencode
 
-import discord
-
 from .dataobjects import DiscordData, state_manager
+
+if TYPE_CHECKING:
+    import discord
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +258,7 @@ class DiscordService:
         self._lock = threading.RLock()
         self._thread: Optional[threading.Thread] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._client: Optional[discord.Client] = None
+        self._client: Optional["discord.Client"] = None
         self._ready = threading.Event()
         self._stop_requested = False
         self._token: str = ""
@@ -338,7 +339,7 @@ class DiscordService:
         )
         return bool(result)
 
-    def connect_with_token(self, token: str) -> bool:
+    def connect_with_token(self, token: str, *, wait_for_ready: bool = True) -> bool:
         token = (token or "").strip()
         if not token:
             self._set_status("Disconnected")
@@ -358,6 +359,9 @@ class DiscordService:
             daemon=True,
         )
         self._thread.start()
+
+        if not wait_for_ready:
+            return True
 
         if not self._ready.wait(timeout=_READY_TIMEOUT_SEC):
             logger.error("Discord bot failed to become ready within timeout")
@@ -449,7 +453,7 @@ class DiscordService:
                 logger.warning("Discord: no bot token configured, skipping connect")
                 return
             logger.info("Discord: connecting with stored bot token (len=%s)", len(token))
-            ok = self.connect_with_token(token)
+            ok = self.connect_with_token(token, wait_for_ready=False)
             if ok:
                 # Seed YouTube live flag from current status for session accuracy
                 try:
@@ -504,6 +508,8 @@ class DiscordService:
             logger.warning("Failed to persist Discord status fields", exc_info=True)
 
     def _thread_main(self) -> None:
+        import discord
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         with self._lock:
@@ -523,6 +529,7 @@ class DiscordService:
                 self._client = client
                 self._set_status("Connected")
             self._ready.set()
+            self._persist_status_fields()
 
         @client.event
         async def on_disconnect():
@@ -544,10 +551,12 @@ class DiscordService:
             logger.error("Discord login failed: invalid bot token")
             self._set_status("Auth Failed")
             self._ready.set()  # unblock waiters
+            self._persist_status_fields()
         except Exception as e:
             logger.error("Discord client crashed: %s", e, exc_info=True)
             self._set_status("Error")
             self._ready.set()
+            self._persist_status_fields()
         finally:
             try:
                 if not client.is_closed():
@@ -680,8 +689,8 @@ def get_discord_status() -> Dict[str, Any]:
     return discord_service.get_status()
 
 
-def connect_with_token(token: str) -> bool:
-    return discord_service.connect_with_token(token)
+def connect_with_token(token: str, *, wait_for_ready: bool = True) -> bool:
+    return discord_service.connect_with_token(token, wait_for_ready=wait_for_ready)
 
 
 def disconnect() -> None:
