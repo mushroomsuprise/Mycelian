@@ -281,8 +281,8 @@ def apply_theme(theme_name: str):
     _sync_quasar_brand_colors_js(theme)
 
     # Broadcast theme update to external HTML templates (OBS docks, etc.)
-    # Do not import web_engine here — that would pull Flask onto the UI thread
-    # during initialize_ui_shell while OverlayInit is still loading it.
+    # Do not import web_engine here — Flask/gevent stay off the UI thread
+    # until OverlayInit constructs WebEngine from start_ui().
     import sys
 
     web_engine = sys.modules.get("modules.web_engine")
@@ -1205,12 +1205,39 @@ def build_root_ui() -> None:
     arm_ui_health_monitor(context.client)
 
 
+def _start_overlay_engine_background() -> None:
+    """Load Flask/gevent and start the overlay server during ui.run, not NiceGUI import."""
+
+    def _run():
+        try:
+            from . import alert_processor
+            from .startup_profiler import StartupTimer
+
+            with StartupTimer("alert_processor.initialize"):
+                alert_processor.initialize()
+        except Exception as overlay_err:
+            logger.error(
+                "Error initializing overlay engine: %s",
+                overlay_err,
+                exc_info=True,
+            )
+
+    threading.Thread(
+        target=_run,
+        daemon=True,
+        name="OverlayInit",
+    ).start()
+
+
 def start_ui():
     """Start the NiceGUI server (blocking call)"""
     global _file_browser_qdialog_css_injected
     from .startup_profiler import StartupTimer
 
     try:
+        # Overlay Flask/gevent import overlaps native ui.run, not import:nicegui.
+        _start_overlay_engine_background()
+
         from modules.native_window_bridge import install as install_native_window_bridge
 
         with StartupTimer("native_window_bridge.install"):

@@ -47,25 +47,6 @@ from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-# Async mode is gevent (see SocketIO(..., async_mode="gevent") below). The
-# explicit driver import keeps PyInstaller bundling the gevent async driver.
-from engineio.async_drivers import gevent  # noqa: F401
-from engineio.payload import Payload
-
-# Default is 16; OBS browser-source reconnect bursts can exceed that in one polling POST.
-Payload.max_decode_packets = 128
-
-from flask import (
-    Flask,
-    g,
-    make_response,
-    render_template,
-    render_template_string,
-    request,
-    send_from_directory,
-)
-from flask_socketio import SocketIO, emit
-
 from . import alertutils, database_manager, statistics_manager
 from .dataobjects import state_manager  # To access live PSN data
 from .path_utils import (
@@ -100,6 +81,61 @@ from .template_log import (
 from .theme_manager import generate_css_variables, get_theme_manager
 
 logger = logging.getLogger(__name__)
+
+# Flask / SocketIO / gevent are loaded in _ensure_server_deps() when WebEngine
+# is constructed. Importing them here would contend with NiceGUI on the GIL.
+Flask = None
+g = None
+make_response = None
+render_template = None
+render_template_string = None
+request = None
+send_from_directory = None
+SocketIO = None
+emit = None
+
+_server_deps_lock = threading.Lock()
+
+
+def _ensure_server_deps() -> None:
+    """Import Flask, Flask-SocketIO, and the gevent Engine.IO driver once.
+
+    The explicit gevent driver import keeps PyInstaller bundling it
+    (see hiddenimports in build.py). It must not run at module import.
+    """
+    global Flask, g, make_response, render_template, render_template_string
+    global request, send_from_directory, SocketIO, emit
+    if SocketIO is not None:
+        return
+    with _server_deps_lock:
+        if SocketIO is not None:
+            return
+        from engineio.async_drivers import gevent  # noqa: F401
+        from engineio.payload import Payload
+        from flask import (
+            Flask as flask_Flask,
+            g as flask_g,
+            make_response as flask_make_response,
+            render_template as flask_render_template,
+            render_template_string as flask_render_template_string,
+            request as flask_request,
+            send_from_directory as flask_send_from_directory,
+        )
+        from flask_socketio import SocketIO as flask_SocketIO
+        from flask_socketio import emit as flask_emit
+
+        # Default is 16; OBS browser-source reconnect bursts can exceed that
+        # in one polling POST.
+        Payload.max_decode_packets = 128
+        Flask = flask_Flask
+        g = flask_g
+        make_response = flask_make_response
+        render_template = flask_render_template
+        render_template_string = flask_render_template_string
+        request = flask_request
+        send_from_directory = flask_send_from_directory
+        emit = flask_emit
+        SocketIO = flask_SocketIO
 
 
 class _LazyTwitch:
@@ -753,6 +789,7 @@ class WebEngine:
             port (int): Port number to run the server on
         """
         logger.debug(f"Initializing WebEngine with host={host}, port={port}")
+        _ensure_server_deps()
         # Use path utils to get correct template directory for exe
         self.template_dir = (
             get_template_path() if template_dir == "templates" else template_dir

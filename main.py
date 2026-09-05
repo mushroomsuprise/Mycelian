@@ -265,6 +265,24 @@ if __name__ == "__main__":
         # Phase 1: Critical Path (Blocking)
         # =========================================
 
+        # Import NiceGUI during Phase 1 DB work so it does not share the GIL
+        # with Flask/gevent (overlay starts later, from start_ui).
+        _nicegui_import_error: list[BaseException] = []
+
+        def _preload_nicegui():
+            try:
+                with StartupTimer("import:nicegui"):
+                    import nicegui  # noqa: F401 — first NiceGUI import
+            except Exception as exc:
+                _nicegui_import_error.append(exc)
+
+        nicegui_preload = threading.Thread(
+            target=_preload_nicegui,
+            daemon=True,
+            name="NiceGUIImport",
+        )
+        nicegui_preload.start()
+
         # Database must be ready first
         logger.info("Phase 1: Initializing critical components...")
         try:
@@ -303,7 +321,6 @@ if __name__ == "__main__":
                 dataobjects,
                 alertutils,
                 statistics_manager,
-                alert_processor,
             )
 
             with StartupTimer("dataobjects.initialize_with_data"):
@@ -314,25 +331,6 @@ if __name__ == "__main__":
 
             with StartupTimer("statistics_manager.initialize_statistics_with_data"):
                 statistics_manager.initialize_statistics_with_data(all_data)
-
-            # Overlay Flask/SocketIO import is heavy; start it in parallel with NiceGUI.
-            def _start_overlay_engine():
-                try:
-                    with StartupTimer("alert_processor.initialize"):
-                        alert_processor.initialize()
-                except Exception as overlay_err:
-                    logger.error(
-                        "Error initializing overlay engine: %s",
-                        overlay_err,
-                        exc_info=True,
-                    )
-
-            overlay_thread = threading.Thread(
-                target=_start_overlay_engine,
-                daemon=True,
-                name="OverlayInit",
-            )
-            overlay_thread.start()
 
             logger.info("Core modules initialized successfully")
         except Exception as e:
@@ -345,8 +343,9 @@ if __name__ == "__main__":
 
         logger.info("Phase 2: Initializing UI shell...")
         try:
-            with StartupTimer("import:nicegui"):
-                import nicegui  # noqa: F401 — first NiceGUI import (not native_window_bridge)
+            nicegui_preload.join()
+            if _nicegui_import_error:
+                raise _nicegui_import_error[0]
 
             with StartupTimer("import:mainuiwindow"):
                 from modules import mainuiwindow
