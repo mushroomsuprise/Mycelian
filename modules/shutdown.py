@@ -9,12 +9,13 @@ All exit paths (NiceGUI on_shutdown, signals, post-ui.run) should call
 
 from __future__ import annotations
 
-import concurrent.futures
 import logging
 import os
+import subprocess
+import sys
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,8 @@ _SHUTDOWN_INTEGRATION_PARALLEL_TIMEOUT = 2.5
 
 _shutdown_in_progress = False
 _shutdown_lock = threading.Lock()
-_watchdog_timer: Optional[threading.Timer] = None
 _native_close_registered = False
+_native_close_exit_started = False
 
 
 def is_shutdown_in_progress() -> bool:
@@ -43,7 +44,6 @@ def mark_shutdown_in_progress() -> bool:
 
 
 def _start_shutdown_watchdog() -> None:
-    global _watchdog_timer
     raw = os.environ.get("MYCELIAN_SHUTDOWN_WATCHDOG_SEC", "20").strip()
     if not raw:
         raw = "20"
@@ -65,37 +65,43 @@ def _start_shutdown_watchdog() -> None:
             )
         except Exception:
             logger.error("Shutdown watchdog fired after %.1fs", seconds)
+        try:
+            reap_child_process_trees()
+        except Exception:
+            pass
         os._exit(0)
 
-    _watchdog_timer = threading.Timer(seconds, _fire)
-    _watchdog_timer.daemon = True
-    _watchdog_timer.start()
+    timer = threading.Timer(seconds, _fire)
+    timer.daemon = True
+    timer.start()
     logger.warning("Shutdown watchdog armed for %.1fs", seconds)
-
-
-def _cancel_shutdown_watchdog() -> None:
-    global _watchdog_timer
-    if _watchdog_timer is not None:
-        _watchdog_timer.cancel()
-        _watchdog_timer = None
 
 
 def _run_step(name: str, func: Callable[[], None], timeout: float = 4.0) -> None:
     t0 = time.perf_counter()
     logger.info("Shutdown: %s", name)
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    try:
-        fut = pool.submit(func)
+    error: list[BaseException] = []
+    done = threading.Event()
+
+    def _worker() -> None:
         try:
-            fut.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            logger.warning("Shutdown timed out: %s (%.1fs)", name, timeout)
+            func()
         except Exception as e:
-            logger.error("Shutdown failed: %s — %s", name, e, exc_info=True)
-        else:
-            logger.info("Shutdown: %s (%.2fs)", name, time.perf_counter() - t0)
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+            error.append(e)
+        finally:
+            done.set()
+
+    thread = threading.Thread(
+        target=_worker, name=f"shutdown-{name}", daemon=True
+    )
+    thread.start()
+    if not done.wait(timeout):
+        logger.warning("Shutdown timed out: %s (%.1fs)", name, timeout)
+        return
+    if error:
+        logger.error("Shutdown failed: %s — %s", name, error[0], exc_info=error[0])
+        return
+    logger.info("Shutdown: %s (%.2fs)", name, time.perf_counter() - t0)
 
 
 def _run_parallel(
@@ -107,32 +113,31 @@ def _run_parallel(
     names = ", ".join(n for n, _ in steps)
     logger.info("Shutdown (parallel): %s", names)
 
-    def _safe(name: str, func: Callable[[], None]) -> None:
+    def _safe(step_name: str, func: Callable[[], None]) -> None:
         try:
             func()
         except Exception as e:
-            logger.debug("Shutdown %s: %s", name, e)
+            logger.debug("Shutdown %s: %s", step_name, e)
 
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(steps))
-    try:
-        futs = {
-            pool.submit(_safe, name, func): name for name, func in steps
-        }
-        done, not_done = concurrent.futures.wait(
-            futs, timeout=timeout, return_when=concurrent.futures.ALL_COMPLETED
+    threads = [
+        threading.Thread(
+            target=_safe,
+            args=(name, func),
+            name=f"shutdown-{name}",
+            daemon=True,
         )
-        for fut in not_done:
-            fut.cancel()
+        for name, func in steps
+    ]
+    for thread in threads:
+        thread.start()
+    deadline = time.monotonic() + timeout
+    for (name, _), thread in zip(steps, threads):
+        remaining = max(0.0, deadline - time.monotonic())
+        thread.join(timeout=remaining)
+        if thread.is_alive():
             logger.warning(
-                "Shutdown timed out: %s (batch %.1fs)", futs[fut], timeout
+                "Shutdown timed out: %s (batch %.1fs)", name, timeout
             )
-        for fut in done:
-            try:
-                fut.result()
-            except Exception:
-                pass
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
 
     logger.info("Shutdown (parallel) done (%.2fs)", time.perf_counter() - t0)
 
@@ -266,6 +271,122 @@ def _save_statistics() -> None:
 _NATIVE_WINDOW_EXIT_GRACE_SEC = 2.0
 
 
+def _iter_child_pids() -> list[int]:
+    """PIDs of spawn children and (via psutil) any other descendants such as WebView2."""
+    pids: list[int] = []
+    try:
+        import multiprocessing
+
+        for child in multiprocessing.active_children():
+            pid = getattr(child, "pid", None)
+            if isinstance(pid, int) and pid > 0:
+                pids.append(pid)
+    except Exception:
+        pass
+    try:
+        import psutil
+
+        for child in psutil.Process(os.getpid()).children(recursive=True):
+            try:
+                if child.is_running():
+                    pids.append(int(child.pid))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    seen: set[int] = set()
+    unique: list[int] = []
+    me = os.getpid()
+    for pid in pids:
+        if pid == me or pid in seen:
+            continue
+        seen.add(pid)
+        unique.append(pid)
+    return unique
+
+
+def _taskkill_process_tree(pid: int) -> None:
+    if sys.platform != "win32" or pid <= 0 or pid == os.getpid():
+        return
+    try:
+        result = subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            check=False,
+        )
+        if result.returncode == 0:
+            logger.warning("Killed process tree PID %s", pid)
+        else:
+            logger.debug(
+                "taskkill PID %s rc=%s: %s",
+                pid,
+                result.returncode,
+                (result.stderr or result.stdout or "").strip(),
+            )
+    except Exception as e:
+        logger.debug("taskkill PID %s: %s", pid, e)
+
+
+def reap_child_process_trees() -> None:
+    """Terminate spawn children and, on Windows, their WebView2 process trees.
+
+    ``os._exit`` skips multiprocessing's atexit reaper, so callers must run this
+    before a hard exit. On Windows, ``taskkill /T`` must run while the child is
+    still alive; ``terminate()`` first would orphan WebView2 helpers.
+    """
+    import multiprocessing
+
+    children = list(multiprocessing.active_children())
+    if sys.platform == "win32":
+        seen: set[int] = set()
+        for child in children:
+            pid = getattr(child, "pid", None)
+            if isinstance(pid, int) and pid > 0:
+                seen.add(pid)
+                logger.warning(
+                    "Terminating surviving child process %s (pid=%s)",
+                    getattr(child, "name", "?"),
+                    pid,
+                )
+                _taskkill_process_tree(pid)
+        for pid in _iter_child_pids():
+            if pid not in seen:
+                _taskkill_process_tree(pid)
+        return
+
+    for child in children:
+        name = getattr(child, "name", "?")
+        pid = getattr(child, "pid", None)
+        logger.warning("Terminating surviving child process %s (pid=%s)", name, pid)
+        try:
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=1.0)
+            if child.is_alive():
+                child.kill()
+                child.join(timeout=0.5)
+        except Exception as e:
+            logger.debug("Could not terminate child %s: %s", name, e)
+
+    remaining = _iter_child_pids()
+    if not remaining:
+        return
+    try:
+        import psutil
+
+        for pid in remaining:
+            try:
+                proc = psutil.Process(pid)
+                if proc.is_running():
+                    proc.kill()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def _close_native_window() -> None:
     """Destroy the native window and reap the process that owns it.
 
@@ -295,16 +416,10 @@ def _close_native_window() -> None:
     deadline = time.monotonic() + _NATIVE_WINDOW_EXIT_GRACE_SEC
     while time.monotonic() < deadline:
         if not multiprocessing.active_children():
-            return
+            break
         time.sleep(0.05)
 
-    for child in multiprocessing.active_children():
-        logger.warning("Terminating surviving child process %s", child.name)
-        try:
-            child.terminate()
-            child.join(timeout=1.0)
-        except Exception as e:
-            logger.debug("Could not terminate child %s: %s", child.name, e)
+    reap_child_process_trees()
 
 
 def _cleanup_pywebview_windows() -> None:
@@ -348,15 +463,12 @@ def cleanup_shared_memory() -> None:
         logger.debug("Shared memory cleanup: %s", e)
 
 
-def _signal_nicegui_server_exit() -> None:
-    try:
-        from nicegui.server import Server
+def _signal_native_shutdown() -> None:
+    """Tell the webview child to unwind dialogs. Do not set uvicorn should_exit.
 
-        if Server.instance is not None:
-            Server.instance.should_exit = True
-    except Exception as e:
-        logger.debug("NiceGUI server should_exit: %s", e)
-
+    Setting ``Server.should_exit`` starts uvicorn's connection drain, which can hang
+    forever on a ghost Windows connection (NiceGUI #5443). Hard-exit instead.
+    """
     try:
         from nicegui import app as ng_app
 
@@ -367,8 +479,37 @@ def _signal_nicegui_server_exit() -> None:
         logger.debug("Native signal_server_shutdown: %s", e)
 
 
+def _hard_exit_after_native_close() -> None:
+    """Worker thread: same path as NiceGUI's check_shutdown (must not run on the loop)."""
+    try:
+        from nicegui import core
+
+        core.stop_and_exit()
+    except Exception as e:
+        logger.error("Native close hard-exit failed: %s", e)
+        try:
+            from .updater import _force_application_exit
+
+            _force_application_exit()
+        except Exception:
+            os._exit(1)
+
+
+def _start_native_close_hard_exit() -> None:
+    global _native_close_exit_started
+    with _shutdown_lock:
+        if _native_close_exit_started:
+            return
+        _native_close_exit_started = True
+    threading.Thread(
+        target=_hard_exit_after_native_close,
+        name="mycelian-window-closed-exit",
+        daemon=True,
+    ).start()
+
+
 def register_native_window_close_handler() -> None:
-    """Ensure parent process stops the NiceGUI server when the native window closes."""
+    """Ensure parent process stops when the native window closes."""
     global _native_close_registered
     if _native_close_registered:
         return
@@ -380,7 +521,8 @@ def register_native_window_close_handler() -> None:
 
     def _on_native_closed(_event) -> None:
         logger.info("Native window closed event received")
-        _signal_nicegui_server_exit()
+        _signal_native_shutdown()
+        _start_native_close_hard_exit()
 
     event_manager.on("closed", _on_native_closed)
     _native_close_registered = True
@@ -424,7 +566,10 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
 
     try:
         _run_step("ui_health_monitor", _stop_ui_health_monitor, timeout=1.0)
+        # Drop the close veto and stop the tray, then reap the webview child
+        # before long service stops. os._exit skips multiprocessing atexit.
         _run_step("tray", _stop_tray, timeout=3.0)
+        _run_step("pywebview", _close_native_window, timeout=5.0)
         _run_step("pause_alerts", _pause_alerts_and_activity_feed, timeout=2.0)
         _run_step("connection_monitor", _stop_connection_monitor, timeout=3.0)
         # Stops web engine, game hooks, alert threads (no separate web_engine step).
@@ -443,10 +588,10 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
             timeout=_SHUTDOWN_INTEGRATION_PARALLEL_TIMEOUT,
         )
         _run_step("deferred_services", _stop_deferred_services, timeout=2.0)
-        _run_step("pywebview", _close_native_window, timeout=5.0)
         _run_step("statistics", _save_statistics, timeout=8.0)
     finally:
-        _cancel_shutdown_watchdog()
+        # Leave the watchdog armed until os._exit. Cancelling it here used to
+        # let sys.exit hang forever on leftover non-daemon threads.
         logger.info("Application shutdown finished (reason=%s)", reason)
 
     if force:
@@ -457,4 +602,5 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
 
 def request_native_window_shutdown() -> None:
     """Called when the native webview window closes without a full server shutdown."""
-    _signal_nicegui_server_exit()
+    _signal_native_shutdown()
+    _start_native_close_hard_exit()

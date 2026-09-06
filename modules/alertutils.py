@@ -39,6 +39,18 @@ from . import database_manager
 logger = logging.getLogger(__name__)
 
 
+def safe_alert_timestamp(value: Any, default: float = 0.0) -> float:
+    """Coerce an alert timestamp to unix seconds. Never raises."""
+    if value is None or value == "":
+        return default
+    if value == "now":
+        return time.time()
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class AlertSettings:
     global_delay: int = 3
@@ -1268,7 +1280,10 @@ class AlertStateManager:
                     alerts_list.append(alert_copy)
 
                 # Sort by timestamp (newest first)
-                alerts_list.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+                alerts_list.sort(
+                    key=lambda x: safe_alert_timestamp(x.get("timestamp", 0)),
+                    reverse=True,
+                )
 
                 total_count = len(alerts_list)
                 total_pages = (
@@ -1371,7 +1386,7 @@ class AlertStateManager:
 
         alerts_list = []
         for alert_id, alert_data in all_stored_alerts.items():
-            timestamp = alert_data.get("timestamp", 0)
+            timestamp = safe_alert_timestamp(alert_data.get("timestamp", 0))
             alerts_list.append((alert_id, alert_data, timestamp))
 
         alerts_list.sort(key=lambda x: x[2], reverse=True)
@@ -1458,7 +1473,10 @@ class AlertStateManager:
                 alert_copy["alert_id"] = alert_id
                 alerts_list.append(alert_copy)
 
-            alerts_list.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+            alerts_list.sort(
+                key=lambda x: safe_alert_timestamp(x.get("timestamp", 0)),
+                reverse=True,
+            )
 
             total_count = len(alerts_list)
             total_pages = (

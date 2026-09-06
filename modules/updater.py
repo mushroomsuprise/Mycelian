@@ -556,6 +556,13 @@ def _force_application_exit():
     Force immediate application exit with proper cleanup for NiceGUI/pywebview apps.
     """
     try:
+        try:
+            from .shutdown import reap_child_process_trees
+
+            reap_child_process_trees()
+        except Exception as e:
+            logger.debug(f"Could not reap child processes: {e}")
+
         # Special handling for NiceGUI with pywebview
         try:
             # Try to get NiceGUI app instance and close it properly
@@ -600,13 +607,26 @@ def _force_application_exit():
                 logger.info("Executed NiceGUI app shutdown")
         except Exception as e:
             logger.debug(f"Could not shutdown NiceGUI app: {e}")
-        
+
+        try:
+            from .shutdown import reap_child_process_trees
+
+            reap_child_process_trees()
+        except Exception as e:
+            logger.debug(f"Could not reap child processes: {e}")
+
         # Force immediate exit
         logger.info("Forcing application exit")
         os._exit(0)
         
     except Exception as e:
         logger.error(f"Error during application exit: {e}")
+        try:
+            from .shutdown import reap_child_process_trees
+
+            reap_child_process_trees()
+        except Exception:
+            pass
         # Fallback to hard exit
         os._exit(1) 
 

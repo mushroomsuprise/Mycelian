@@ -1253,15 +1253,21 @@
 
         // Connect to WebSocket
         function syncActivityFeedState() {
+            var wasCondensed = activityFeedState.condenseList;
             clearFeed();
             activityFeedState.currentPage = 1;
             activityFeedState.totalPages = 1;
             activityFeedState.restoredAlertsLoaded = false;
+            currentAlertsFeed.classList.remove('hidden');
+            condensedViewContainer.classList.add('hidden');
             setTimeout(function () {
                 socket.emit('get_pause_status');
                 socket.emit('get_mute_status');
                 socket.emit('get_current_theme');
                 console.log('Requested initial pause/mute status and theme from activity feed');
+                if (wasCondensed && activityFeedState.currentTab === "current") {
+                    updateCondensedView();
+                }
             }, 150);
         }
 
@@ -1418,13 +1424,21 @@
         var condensedViewContainer = document.getElementById('condensedViewContainer');
 
         // Utility functions
+        function coerceTimestamp(value) {
+            if (value === "now" || value == null || value === "") {
+                return Date.now() / 1000;
+            }
+            var n = Number(value);
+            return isNaN(n) ? 0 : n;
+        }
+
         function formatTimestamp(timestamp) {
             if (timestamp === "now") {
                 return "just now";
             }
 
             var currentTime = Date.now() / 1000;
-            var diffSeconds = currentTime - timestamp;
+            var diffSeconds = currentTime - coerceTimestamp(timestamp);
 
             if (diffSeconds < 60) {
                 return "just now";
@@ -1442,7 +1456,7 @@
 
         function isRecentAlert(timestamp) {
             var currentTime = Date.now() / 1000;
-            return (currentTime - timestamp) < 300; // 5 minutes
+            return (currentTime - coerceTimestamp(timestamp)) < 300; // 5 minutes
         }
 
         function getFilterKeyForAlertType(alertType) {
@@ -1675,7 +1689,7 @@
             // Clear all feed containers
             currentAlertsFeed.innerHTML = '<div class="no-alerts">No alerts yet</div>';
             previousAlertsFeed.innerHTML = '<div class="loading">Loading activity feed...</div>';
-            condensedViewContainer.innerHTML = '';
+            condensedViewContainer.innerHTML = '<div class="no-alerts">Loading condensed view...</div>';
 
             // Clear state arrays
             activityFeedState.liveAlerts = [];
@@ -2009,10 +2023,10 @@
                 // Show condense toggle
                 condenseToggleContainer.style.display = 'flex';
 
-                // Show/hide appropriate containers based on condense toggle state
+                // Keep regular feed visible until condensed content is ready
                 if (activityFeedState.condenseList) {
-                    currentAlertsFeed.classList.add('hidden');
-                    condensedViewContainer.classList.remove('hidden');
+                    currentAlertsFeed.classList.remove('hidden');
+                    condensedViewContainer.classList.add('hidden');
                     updateCondensedView();
                 } else {
                     currentAlertsFeed.classList.remove('hidden');
@@ -2025,10 +2039,8 @@
 
                 clearRestoredAlerts();
 
-                // Rebuild current alerts feed if not in condensed mode
-                if (!activityFeedState.condenseList) {
-                    rebuildCurrentAlertsFeed();
-                }
+                // Keep regular cards populated as fallback while condensed loads
+                rebuildCurrentAlertsFeed();
 
                 // Apply filters to current alerts
                 updateAlertVisibility();
@@ -2119,317 +2131,108 @@
         }
 
         // Condense view functions
+        function parseCondensedHours(value) {
+            var hours = Number(value);
+            if (!isFinite(hours) || hours < 1) {
+                return 12;
+            }
+            return Math.floor(hours);
+        }
+
+        function showRegularFeedHideCondensed() {
+            currentAlertsFeed.classList.remove('hidden');
+            condensedViewContainer.classList.add('hidden');
+        }
+
+        function showCondensedFeedHideRegular() {
+            currentAlertsFeed.classList.add('hidden');
+            condensedViewContainer.classList.remove('hidden');
+        }
+
+        function renderCondensedEmptyState(hours) {
+            condensedViewContainer.innerHTML = '';
+            var empty = document.createElement('div');
+            empty.className = 'no-alerts';
+            empty.textContent = 'No alerts to condense in the last ' + hours + ' hours';
+            condensedViewContainer.appendChild(empty);
+        }
+
         function updateCondensedView() {
             if (!activityFeedState.condenseList || activityFeedState.currentTab !== "current") {
                 return;
             }
 
-            // Get template configuration for condensed view settings
             var config = window.templateConfig || {};
-            var condenseHistoricalHours = config.condense_historical_hours || 12;
+            var condenseHistoricalHours = parseCondensedHours(config.condense_historical_hours);
 
-            // Load ALL alerts within the time window by requesting them from Python backend
             console.log('Loading alerts for condensed view from past', condenseHistoricalHours, 'hours...');
 
-            // Request all alerts within the time window from the backend
-            socket.emit('get_condensed_view_alerts', { hours: condenseHistoricalHours });
+            socket.emit('get_condensed_view_alerts', {
+                hours: condenseHistoricalHours,
+                filters: activityFeedState.filterState
+            });
         }
 
-        function updateCondensedViewWithAlerts(alertsToProcess, condenseHistoricalHours) {
-
-            // Load historical alerts for condensed view
-            var currentTime = Date.now() / 1000;
-            var cutoffTime = currentTime - (condenseHistoricalHours * 3600); // Convert hours to seconds
-
-            // Add historical alerts that are within the time window
-            var historicalCount = 0;
-
-            // Use existing historical alerts (will be empty if user hasn't visited Previous Alerts tab)
-            activityFeedState.historicalAlerts.forEach(function (alertData) {
-                if (alertData.is_restored) {
-                    var alertTimestamp = alertData.timestamp || alertData.created_at || 0;
-                    if (alertTimestamp >= cutoffTime) {
-                        alertsToProcess.push(alertData);
-                        historicalCount++;
-                    }
-                }
-            });
-
-            // If no cached historical alerts, try loading them directly (only once)
-            if (historicalCount === 0 && activityFeedState.historicalAlerts.length === 0) {
-                console.log('No cached historical alerts available for condensed view. Loading from storage...');
-
-                // Set flag to indicate we're loading for condensed view
-                activityFeedState.loadingForCondensedView = true;
-
-                // Try to load historical alerts using the same mechanism as Previous Alerts tab
-                socket.emit('get_stored_alerts_paginated', { page: 1, limit: 25 });
-
-                // Exit early since we're loading asynchronously
-                return;
-            } else {
-                console.log('Condensed view showing', historicalCount, 'historical alerts from past', condenseHistoricalHours, 'hours');
-            }
-
-            // Continue with synchronous processing
-            createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours);
-        }
-
-        function createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours) {
-
-            // Group alerts by user and type, excluding hype train; channel points grouped by reward
-            var userAlerts = {};
-            var excludedCount = 0;
-            var unknownUsernameCount = 0;
-
-            alertsToProcess.forEach(function (alertData) {
-                var alertType = (alertData.type || '').toLowerCase();
-                var badgeType = (alertData.badge_type || '').toLowerCase();
-
-                // Exclude hype train only (channel points are included and grouped by reward)
-                if (alertType === 'hype train' || badgeType === 'hype_train') {
-                    excludedCount++;
-                    console.log('Excluding', alertType + '/' + badgeType, 'alert from condensed view');
-                    return;
+        function createCondensedViewWithData(payload) {
+            try {
+                if (!activityFeedState.condenseList || activityFeedState.currentTab !== "current") {
+                    return false;
                 }
 
-                // Apply the same filter rules as the regular card view
-                if (!shouldShowAlert(alertData.type)) {
-                    excludedCount++;
-                    return;
+                if (!payload || payload.success === false) {
+                    console.error('Condensed view load failed:', payload && payload.error);
+                    renderCondensedEmptyState(parseCondensedHours(payload && payload.hours));
+                    showRegularFeedHideCondensed();
+                    return false;
                 }
 
-                // Get username from alert data, with fallback to message extraction
-                var username = alertData.username;
-                if (!username) {
-                    username = extractUsernameFromMessage(alertData.message || '');
-                }
+                var groups = payload.groups || [];
+                var hours = parseCondensedHours(payload.hours);
+                var historicalCount = payload.historical_count || 0;
+                var liveInWindow = payload.live_in_window || 0;
+                var alertCount = payload.alert_count != null ? payload.alert_count : groups.length;
 
-                if (!username || username === 'Unknown') {
-                    unknownUsernameCount++;
-                    console.log('Skipping alert with unknown username:', alertData.message, '(alert_id:', alertData.alert_id || 'N/A', ')');
-                    return;
-                }
-
-                if (!userAlerts[username]) {
-                    userAlerts[username] = {};
-                }
-
-                // Create specific grouping key based on alert type, tier, and duration
-                var groupingKey = alertType;
-                var rewardName = null;
-
-                // For subs, resubs, and gift subs, include tier and duration information
-                if (alertType === 'sub' || alertType === 'resub' || alertType === 'giftsub') {
-                    var tier = alertData.tier || 1;
-                    groupingKey = alertType + '_tier' + tier;
-
-                    // For resubs and gift subs, also separate by duration
-                    if (alertType === 'resub' || alertType === 'giftsub') {
-                        // Get duration information
-                        var durationMonths = 1;
-                        var storedData = alertData.stored_alert_data || {};
-
-                        if (storedData) {
-                            // Try stored data first
-                            durationMonths = (storedData.resub_month || storedData.months || storedData.total_months || 1);
-                        } else {
-                            // Fall back to message parsing
-                            var message = alertData.message || '';
-                            var monthMatch = message.match(/(\d+)\s*months?/i);
-                            if (monthMatch) {
-                                durationMonths = parseInt(monthMatch[1]);
-                            }
-                        }
-
-                        // Create duration-specific key
-                        if (durationMonths > 1) {
-                            groupingKey = alertType + '_tier' + tier + '_multi_month';
-                        } else {
-                            groupingKey = alertType + '_tier' + tier + '_1month';
-                        }
-                    }
-                } else if (alertType === 'point' || alertType === 'points' ||
-                    badgeType === 'point' || badgeType === 'points') {
-                    var pointsStored = alertData.stored_alert_data || {};
-                    rewardName = pointsStored.alert_name || null;
-                    if (!rewardName) {
-                        var rewardMatch = (alertData.message || '').match(/redeemed\s+'(.+?)'!/i);
-                        if (rewardMatch) {
-                            rewardName = rewardMatch[1];
-                        }
-                    }
-                    if (!rewardName) {
-                        rewardName = 'Unknown Reward';
-                    }
-                    groupingKey = 'points:' + rewardName;
-                }
-
-                // Group by the specific key and accumulate data
-                if (!userAlerts[username][groupingKey]) {
-                    userAlerts[username][groupingKey] = {
-                        count: 0,
-                        totalAmount: 0,
-                        tier: alertData.tier || 1,
-                        months: 0,  // For resubs, track months
-                        originalType: alertType  // Keep track of original alert type
-                    };
-                    if (rewardName !== null) {
-                        userAlerts[username][groupingKey].rewardName = rewardName;
-                    }
-                }
-
-                userAlerts[username][groupingKey].count += 1;
-
-                // Extract amounts based on alert type - prioritize stored_alert_data values over message parsing
-                var message = alertData.message || '';
-                var storedData = alertData.stored_alert_data || {};
-
-                if (alertType === 'bit' || alertType === 'bits') {
-                    // Try to get amount from stored data first
-                    var amtCheered = storedData.amt_cheered;
-                    if (amtCheered) {
-                        userAlerts[username][groupingKey].totalAmount += parseInt(amtCheered);
-                    } else {
-                        // Fall back to message parsing
-                        var bitMatch = message.match(/(\d+)\s*bits?/i);
-                        if (bitMatch) {
-                            userAlerts[username][groupingKey].totalAmount += parseInt(bitMatch[1]);
-                        }
-                    }
-                } else if (alertType === 'donation') {
-                    // Try to get amount from stored data first
-                    var donationAmount = storedData.donation_amount;
-                    if (donationAmount) {
-                        userAlerts[username][groupingKey].totalAmount += parseFloat(donationAmount);
-                    } else {
-                        // Fall back to message parsing
-                        var donationMatch = message.match(/donated\s+\$?(\d+(?:\.\d{2})?)/i);
-                        if (donationMatch) {
-                            userAlerts[username][groupingKey].totalAmount += parseFloat(donationMatch[1]);
-                        }
-                    }
-                } else if (alertType === 'giftsub') {
-                    // Try to get amount from stored data first
-                    var giftQty = storedData.gift_qty;
-                    if (giftQty) {
-                        userAlerts[username][groupingKey].totalAmount += parseInt(giftQty);
-                    } else {
-                        // Fall back to message parsing
-                        var giftMatch = message.match(/gifted\s+(\d+)/i);
-                        if (giftMatch) {
-                            userAlerts[username][groupingKey].totalAmount += parseInt(giftMatch[1]);
-                        }
-                    }
-                } else if (alertType === 'resub') {
-                    // For resubs, get the month count
-                    var resubMonth = storedData.resub_month || storedData.months || storedData.total_months;
-                    var months;
-                    if (resubMonth) {
-                        months = parseInt(resubMonth);
-                    } else {
-                        // Fall back to message parsing
-                        var monthMatch = message.match(/(\d+)\s*months?/i);
-                        if (monthMatch) {
-                            months = parseInt(monthMatch[1]);
-                        } else {
-                            months = 1;
-                        }
-                    }
-                    // Keep the highest month count for this user
-                    if (months > userAlerts[username][groupingKey].months) {
-                        userAlerts[username][groupingKey].months = months;
-                    }
-                } else if (alertType === 'raid') {
-                    // Try to get viewers from stored data first
-                    var raiderCount = storedData.raider_count;
-                    var viewers;
-                    if (raiderCount) {
-                        viewers = parseInt(raiderCount);
-                    } else {
-                        // Fall back to message parsing
-                        var raidMatch = message.match(/(\d+)\s*viewers?/i);
-                        if (raidMatch) {
-                            viewers = parseInt(raidMatch[1]);
-                        } else {
-                            viewers = 0;
-                        }
-                    }
-                    // Keep the largest raid for this user
-                    var raidGame = alertData.game_name;
-                    if (!raidGame && storedData) {
-                        raidGame = storedData.game_name;
-                    }
-                    if (viewers > userAlerts[username][groupingKey].totalAmount) {
-                        userAlerts[username][groupingKey].totalAmount = viewers;
-                        if (raidGame) {
-                            userAlerts[username][groupingKey].gameName = raidGame;
-                        }
-                    }
-                } else if (alertType === 'streak') {
-                    var streakCountVal = alertData.streak_count;
-                    if (streakCountVal == null && storedData) {
-                        streakCountVal = storedData.streak_count;
-                    }
-                    var sc;
-                    if (streakCountVal != null) {
-                        sc = parseInt(streakCountVal, 10);
-                    } else {
-                        var streakMatch = message.match(/(\d+)\s*consecutive streams/i);
-                        sc = streakMatch ? parseInt(streakMatch[1], 10) : 0;
-                    }
-                    if (sc > userAlerts[username][groupingKey].totalAmount) {
-                        userAlerts[username][groupingKey].totalAmount = sc;
-                    }
-                }
-            });
-
-            // Debug summary
-            console.log('Condensed view processing complete:');
-            console.log('  - Processed', alertsToProcess.length, 'total alerts');
-            console.log('  - Excluded', excludedCount, 'hype train/filtered alerts');
-            console.log('  - Skipped', unknownUsernameCount, 'alerts with unknown usernames');
-            console.log('  - Final result:', Object.keys(userAlerts).length, 'users with alerts');
-
-            // Clear and rebuild condensed view
-            condensedViewContainer.innerHTML = '';
-
-            if (Object.keys(userAlerts).length === 0) {
-                // If no alerts to condense, show nothing (just clear the container)
                 condensedViewContainer.innerHTML = '';
-            } else {
-                // Add indicator showing historical alerts are being used
-                if (historicalCount > 0) {
+
+                if (!groups.length) {
+                    renderCondensedEmptyState(hours);
+                    showCondensedFeedHideRegular();
+                    return true;
+                }
+
+                if (historicalCount > 0 || liveInWindow > 0) {
                     var indicator = document.createElement('div');
                     indicator.className = 'text-xs text-muted mb-2 italic';
-                    indicator.textContent = 'Showing ' + historicalCount + ' historical alerts from past ' + condenseHistoricalHours + ' hours';
+                    indicator.textContent = 'Showing ' + alertCount + ' alerts from past ' + hours + ' hours';
                     condensedViewContainer.appendChild(indicator);
                 }
 
-                for (var username in userAlerts) {
-                    if (Object.keys(userAlerts[username]).length > 0) {
-                        var userGroup = document.createElement('div');
-                        userGroup.className = 'user-group';
+                groups.forEach(function (group) {
+                    var userGroup = document.createElement('div');
+                    userGroup.className = 'user-group';
 
-                        var usernameDiv = document.createElement('div');
-                        usernameDiv.className = 'username';
-                        usernameDiv.textContent = username + ':';
-                        userGroup.appendChild(usernameDiv);
+                    var usernameDiv = document.createElement('div');
+                    usernameDiv.className = 'username';
+                    usernameDiv.textContent = (group.username || '') + ':';
+                    userGroup.appendChild(usernameDiv);
 
-                        for (var groupingKey in userAlerts[username]) {
-                            var data = userAlerts[username][groupingKey];
-                            var aggregatedText = createAggregatedAlertText(groupingKey, data);
-                            if (aggregatedText) {
-                                var alertItem = document.createElement('div');
-                                alertItem.className = 'alert-item';
-                                alertItem.textContent = aggregatedText;
-                                userGroup.appendChild(alertItem);
-                            }
-                        }
+                    (group.lines || []).forEach(function (line) {
+                        var alertItem = document.createElement('div');
+                        alertItem.className = 'alert-item';
+                        alertItem.textContent = line;
+                        userGroup.appendChild(alertItem);
+                    });
 
-                        condensedViewContainer.appendChild(userGroup);
-                    }
-                }
+                    condensedViewContainer.appendChild(userGroup);
+                });
+
+                showCondensedFeedHideRegular();
+                return true;
+            } catch (error) {
+                console.error('Error creating condensed view:', error);
+                renderCondensedEmptyState(12);
+                showRegularFeedHideCondensed();
+                return false;
             }
         }
 
@@ -2601,12 +2404,9 @@
 
             if (activityFeedState.currentTab === "current") {
                 if (activityFeedState.condenseList) {
-                    // Hide regular alerts and show condensed view
-                    currentAlertsFeed.classList.add('hidden');
-                    condensedViewContainer.classList.remove('hidden');
+                    // Keep regular feed visible until grouped condensed HTML is ready
                     updateCondensedView();
                 } else {
-                    // Show regular alerts and hide condensed view
                     currentAlertsFeed.classList.remove('hidden');
                     condensedViewContainer.classList.add('hidden');
                 }
@@ -2810,54 +2610,17 @@
 
         // New socket listener specifically for condensed view alerts
         socket.on('condensed_view_alerts', function (data) {
-            console.log('Received condensed view alerts:', data);
-
-            var alertsToProcess = data.alerts || [];
-            var historicalCount = data.historical_count || alertsToProcess.length;
-            var condenseHistoricalHours = data.hours || 12;
-
-            console.log('Condensed view loaded', historicalCount, 'alerts from storage (past', condenseHistoricalHours, 'hours)');
-
-            // Create condensed view with loaded data
-            createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours);
+            console.log('Received condensed view groups:', data);
+            createCondensedViewWithData(data);
         });
 
         socket.on('stored_alerts_paginated', function (data) {
             console.log('Received stored alerts:', data);
 
-            // Check if this was requested for condensed view (fallback for older implementations)
             if (activityFeedState.loadingForCondensedView) {
-                console.log('Processing stored alerts for condensed view (fallback)');
+                console.log('Stored-alerts fallback redirected to grouped condensed request');
                 activityFeedState.loadingForCondensedView = false;
-
-                // Get template configuration for condensed view settings
-                var config = window.templateConfig || {};
-                var condenseHistoricalHours = config.condense_historical_hours || 12;
-
-                // Filter alerts by time window and prepare for condensed view
-                var alertsToProcess = [];
-                var historicalCount = 0;
-
-                if (data.alerts && data.alerts.length > 0) {
-                    var currentTime = Date.now() / 1000;
-                    var cutoffTime = currentTime - (condenseHistoricalHours * 3600);
-
-                    data.alerts.forEach(function (alertData) {
-                        alertData.is_restored = true;
-                        var alertTimestamp = alertData.timestamp || alertData.created_at || 0;
-                        if (alertTimestamp >= cutoffTime) {
-                            alertsToProcess.push(alertData);
-                            historicalCount++;
-                        }
-                    });
-
-                    console.log('Loaded', historicalCount, 'historical alerts from storage for condensed view (fallback)');
-                } else {
-                    console.log('No historical alerts found in storage for condensed view (fallback)');
-                }
-
-                // Create condensed view with loaded data
-                createCondensedViewWithData(alertsToProcess, historicalCount, condenseHistoricalHours);
+                updateCondensedView();
                 return;
             }
 

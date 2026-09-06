@@ -194,6 +194,9 @@ def _wait_for_native_window_exit(*, timeout: float = 2.0) -> None:
         try:
             child.terminate()
             child.join(timeout=1.0)
+            if child.is_alive():
+                child.kill()
+                child.join(timeout=0.5)
         except Exception as e:
             logger.debug("Tray: could not terminate window process %s: %s", child.name, e)
 

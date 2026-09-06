@@ -511,16 +511,18 @@ if __name__ == "__main__":
             logger.warning("ui.run returned — finalizing shutdown and exiting process")
 
             from modules.shutdown import shutdown_application
+            from modules.updater import _force_application_exit
 
             shutdown_application(reason="ui_run_returned", force=False)
-            sys.exit(0)
+            _force_application_exit()
         except Exception as e:
             from modules.shutdown import is_shutdown_in_progress, shutdown_application
             from modules.mainuiwindow import _is_benign_shutdown_websocket_error
+            from modules.updater import _force_application_exit
 
             if is_shutdown_in_progress() or _is_benign_shutdown_websocket_error(e):
                 logger.warning("UI server stopped during shutdown: %s", e)
                 shutdown_application(reason="ui_run_returned", force=False)
-                sys.exit(0)
+                _force_application_exit()
             logger.error(f"Error starting UI server: {str(e)}", exc_info=True)
             sys.exit(1)

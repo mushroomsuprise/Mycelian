@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import asyncio
+import html
 import logging
 import math
 import threading
@@ -784,14 +785,18 @@ class AlertEventHandler:
         """Process alert in a thread-safe manner (runs in thread pool)"""
         try:
             current_time = time.time()
-            created_time = alert_data.get("created_at", current_time)
-            is_recent = (current_time - float(created_time)) < 300  # 5 minutes
+            created_time = alertutils.safe_alert_timestamp(
+                alert_data.get("created_at"), default=current_time
+            )
+            is_recent = (current_time - created_time) < 300  # 5 minutes
 
             new_alert_data = {
                 "type": alert_data["type"],
                 "message": alert_data["message"],
                 "badge_type": alert_data["badge_type"],
-                "timestamp": alert_data["timestamp"],
+                "timestamp": alertutils.safe_alert_timestamp(
+                    alert_data.get("timestamp"), default=current_time
+                ),
                 "created_at": created_time,
                 "element": None,
                 "tier": alert_data.get("tier"),
@@ -974,7 +979,9 @@ class AlertEventHandler:
                 continue
 
             try:
-                created_time = float(alert_data.get("created_at", current_time))
+                created_time = alertutils.safe_alert_timestamp(
+                    alert_data.get("created_at"), default=current_time
+                )
                 time_diff = current_time - created_time
                 is_recent = time_diff < 300  # 5 minutes
 
@@ -1427,12 +1434,18 @@ def build_activity_feed_alert_payload(
 
     Shared by ``add_alert_to_feed`` and browser-source preview so payloads stay identical.
     """
+    now = time.time()
+    ts = (
+        now
+        if timestamp == "now"
+        else alertutils.safe_alert_timestamp(timestamp, default=now)
+    )
     alert_data = {
         "type": alert_type,
         "message": message,
         "badge_type": badge_type,
-        "timestamp": timestamp if timestamp != "now" else time.time(),
-        "created_at": time.time(),
+        "timestamp": ts,
+        "created_at": now,
         "tier": tier,
         "user_message": user_message,
     }
@@ -2027,9 +2040,11 @@ def create_alert_element(alert_data) -> bool:
 
         # Recalculate if the alert is recent (within last 5 minutes) based on current time
         current_time = time.time()
-        created_time = alert_data.get("created_at", current_time)
+        created_time = alertutils.safe_alert_timestamp(
+            alert_data.get("created_at"), default=current_time
+        )
         is_recent = (
-            current_time - float(created_time)
+            current_time - created_time
         ) < 300 and not is_restored  # 5 minutes, but never for restored alerts
 
         # Update the alert data with the current recent status
@@ -3285,8 +3300,12 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             "type": display_type,
             "message": message,
             "badge_type": youtube_badge or original_type,
-            "timestamp": stored_alert_data.get("timestamp", time.time()),
-            "created_at": stored_alert_data.get("timestamp", time.time()),
+            "timestamp": alertutils.safe_alert_timestamp(
+                stored_alert_data.get("timestamp"), default=time.time()
+            ),
+            "created_at": alertutils.safe_alert_timestamp(
+                stored_alert_data.get("timestamp"), default=time.time()
+            ),
             "tier": stored_alert_data.get("tier"),
             "user_message": stored_alert_data.get("message"),
             "is_restored": True,  # Mark as restored alert
@@ -3393,7 +3412,7 @@ def load_restored_alerts_for_time_window(cutoff_time: float):
 
         restored_alerts = []
         for alert_id, alert_data in limited.items():
-            if alert_data.get("timestamp", 0) < cutoff_time:
+            if _alert_timestamp_for_cutoff(alert_data) < cutoff_time:
                 continue
             row = dict(alert_data)
             row["alert_id"] = alert_id
@@ -3401,7 +3420,7 @@ def load_restored_alerts_for_time_window(cutoff_time: float):
             if feed_alert:
                 restored_alerts.append(feed_alert)
 
-        restored_alerts.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+        restored_alerts.sort(key=_alert_timestamp_for_cutoff, reverse=True)
         logger.debug(
             "Loaded %d restored alerts for condensed view (cutoff=%s)",
             len(restored_alerts),
@@ -3418,12 +3437,26 @@ def load_restored_alerts_for_time_window(cutoff_time: float):
 def _alert_timestamp_for_cutoff(alert_data: Dict[str, Any]) -> float:
     for key in ("created_at", "timestamp"):
         val = alert_data.get(key)
-        if val is not None:
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                pass
+        if val is None or val == "":
+            continue
+        if val == "now":
+            return time.time()
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            continue
     return 0.0
+
+
+def parse_condensed_historical_hours(value: Any, default: int = 12) -> int:
+    """Coerce condensed-view hours from config/socket payloads to a positive int."""
+    try:
+        hours = int(float(value))
+    except (TypeError, ValueError):
+        hours = default
+    if hours < 1:
+        return default
+    return hours
 
 
 def _normalize_condensed_alert_username(alert_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -3689,8 +3722,8 @@ def _load_condensed_historical_hours() -> int:
                     continue
                 if element.get("id") == "condense_historical_hours":
                     element_value = element.get("value")
-                    condense_historical_hours = (
-                        int(element_value) if element_value is not None else 12
+                    condense_historical_hours = parse_condensed_historical_hours(
+                        element_value
                     )
                     break
             logger.debug(
@@ -3703,14 +3736,18 @@ def _load_condensed_historical_hours() -> int:
     return condense_historical_hours
 
 
-def _group_alerts_for_condensed(alerts_to_process: List[Dict[str, Any]]):
+def _group_alerts_for_condensed(
+    alerts_to_process: List[Dict[str, Any]],
+    filter_state: Optional[Dict[str, Any]] = None,
+):
     """Group alerts by user and type for the condensed view (CPU-only)."""
     import re
 
     user_alerts: Dict[str, Dict[str, Any]] = {}
     excluded_count = 0
     unknown_username_count = 0
-    filter_state = activity_feed_state.filter_state
+    if filter_state is None:
+        filter_state = activity_feed_state.filter_state
     type_to_filter = activity_feed_state.alert_type_to_filter
 
     for alert_data in alerts_to_process:
@@ -3921,6 +3958,105 @@ def _group_alerts_for_condensed(alerts_to_process: List[Dict[str, Any]]):
     return user_alerts, excluded_count, unknown_username_count
 
 
+def serialize_condensed_groups(
+    user_alerts: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Turn grouped alert dicts into a slim [{username, lines}] payload."""
+    groups: List[Dict[str, Any]] = []
+    for username, alert_types in user_alerts.items():
+        if not alert_types:
+            continue
+        lines: List[str] = []
+        for grouping_key, data in alert_types.items():
+            text = create_aggregated_alert_text(grouping_key, data)
+            if text:
+                lines.append(text)
+        if lines:
+            groups.append({"username": str(username), "lines": lines})
+    return groups
+
+
+def _build_condensed_html(build_data: Dict[str, Any]) -> str:
+    """Build one escaped HTML block for the condensed surface."""
+    hours = build_data.get("condense_historical_hours", 12)
+    groups = build_data.get("groups")
+    if groups is None:
+        groups = serialize_condensed_groups(build_data.get("user_alerts") or {})
+    alert_count = build_data.get("alert_count")
+    if alert_count is None:
+        alert_count = len(build_data.get("alerts_to_process") or [])
+    historical_count = int(build_data.get("historical_count") or 0)
+    live_in_window = int(build_data.get("live_in_window") or 0)
+
+    if not groups:
+        msg = html.escape(f"No alerts to condense in the last {hours} hours")
+        return f'<div class="no-alerts text-sm muted-text italic">{msg}</div>'
+
+    parts: List[str] = []
+    if historical_count > 0 or live_in_window > 0:
+        indicator = html.escape(
+            f"Showing {alert_count} alerts from past {hours} hours"
+        )
+        parts.append(
+            f'<div class="text-xs muted-text mb-2 italic">{indicator}</div>'
+        )
+    for group in groups:
+        username = html.escape(str(group.get("username") or ""))
+        lines_html = []
+        for line in group.get("lines") or []:
+            lines_html.append(
+                f'<div class="alert-item secondary-text text-sm mb-1">'
+                f"{html.escape(str(line))}</div>"
+            )
+        parts.append(
+            f'<div class="user-group mb-4">'
+            f'<div class="username font-semibold mb-1">{username}:</div>'
+            f'<div class="ml-4">{"".join(lines_html)}</div>'
+            f"</div>"
+        )
+    return "".join(parts)
+
+
+def build_condensed_overlay_payload(
+    hours: Any = 12,
+    filter_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Collect, group, and serialize condensed view data for the overlay."""
+    parsed_hours = parse_condensed_historical_hours(hours)
+    cutoff_time = time.time() - (parsed_hours * 3600)
+    try:
+        (
+            alerts_to_process,
+            historical_count,
+            live_in_window,
+        ) = collect_alerts_for_condensed_view(cutoff_time)
+    except Exception as exc:
+        logger.error(
+            "Error loading alerts for condensed overlay payload: %s",
+            exc,
+            exc_info=True,
+        )
+        alerts_to_process = []
+        historical_count = 0
+        live_in_window = 0
+
+    user_alerts, excluded_count, unknown_username_count = _group_alerts_for_condensed(
+        alerts_to_process, filter_state=filter_state
+    )
+    groups = serialize_condensed_groups(user_alerts)
+    return {
+        "success": True,
+        "groups": groups,
+        "historical_count": historical_count,
+        "live_in_window": live_in_window,
+        "alert_count": len(alerts_to_process),
+        "hours": parsed_hours,
+        "user_count": len(groups),
+        "excluded_count": excluded_count,
+        "unknown_username_count": unknown_username_count,
+    }
+
+
 def _collect_condensed_build_data() -> Dict[str, Any]:
     """Collect all data needed to render the condensed view (blocking I/O)."""
     started = time.monotonic()
@@ -3962,13 +4098,15 @@ def _collect_condensed_build_data() -> Dict[str, Any]:
     user_alerts, excluded_count, unknown_username_count = _group_alerts_for_condensed(
         alerts_to_process
     )
+    groups = serialize_condensed_groups(user_alerts)
 
     return {
         "condense_historical_hours": condense_historical_hours,
-        "alerts_to_process": alerts_to_process,
+        "alert_count": len(alerts_to_process),
         "historical_count": historical_count,
         "live_in_window": live_in_window,
         "user_alerts": user_alerts,
+        "groups": groups,
         "excluded_count": excluded_count,
         "unknown_username_count": unknown_username_count,
     }
@@ -3984,18 +4122,17 @@ def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
     if not _element_alive(container):
         return False
 
-    user_alerts = build_data["user_alerts"]
-    condense_historical_hours = build_data["condense_historical_hours"]
-    alerts_to_process = build_data["alerts_to_process"]
-    historical_count = build_data["historical_count"]
-    live_in_window = build_data["live_in_window"]
+    groups = build_data.get("groups")
+    if groups is None:
+        groups = serialize_condensed_groups(build_data.get("user_alerts") or {})
+    alert_count = int(build_data.get("alert_count") or 0)
 
     previous_children = _slot_child_count(container)
     logger.warning(
         "activity_feed: condensed render start (prev_children=%d users=%d alerts=%d)",
         previous_children,
-        len(user_alerts),
-        len(alerts_to_process),
+        len(groups),
+        alert_count,
     )
 
     staging = None
@@ -4004,30 +4141,9 @@ def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
             staging = ui.element("div").classes("condensed-staging w-full")
 
         with staging:
-            if not user_alerts:
-                ui.label(
-                    f"No alerts to condense in the last {condense_historical_hours} hours"
-                ).classes("text-sm muted-text italic")
-            else:
-                if historical_count > 0 or live_in_window > 0:
-                    ui.label(
-                        f"Showing {len(alerts_to_process)} alerts from past {condense_historical_hours} hours"
-                    ).classes("text-xs muted-text mb-2 italic")
-
-                for username, alert_types in user_alerts.items():
-                    if not alert_types:
-                        continue
-                    with ui.element("div").classes("mb-4"):
-                        ui.label(f"{username}:").classes("font-semibold mb-1")
-                        with ui.element("div").classes("ml-4"):
-                            for grouping_key, data in alert_types.items():
-                                condensed_text = create_aggregated_alert_text(
-                                    grouping_key, data
-                                )
-                                if condensed_text:
-                                    ui.label(f"• {condensed_text}").classes(
-                                        "secondary-text text-sm mb-1"
-                                    )
+            ui.html(_build_condensed_html(build_data), sanitize=False).classes(
+                "w-full"
+            )
 
         # Drop previous siblings only after staging content exists.
         slot = getattr(container, "default_slot", None)

@@ -6476,15 +6476,17 @@ class WebEngine:
         def handle_get_condensed_view_alerts(data):
             """
             Handle get_condensed_view_alerts websocket event.
-            Retrieves ALL alerts within the specified time window for condensed view.
+            Returns already-grouped condensed lines for the overlay.
 
             Args:
                 data (dict): Dictionary containing:
-                    - hours (int): Number of hours to look back
+                    - hours (int|str): Number of hours to look back
+                    - filters (dict, optional): Overlay filter checkbox state
             """
             logger.debug(
                 f"Received get_condensed_view_alerts request from {request.sid}"
             )
+            hours = 12
             try:
                 if not isinstance(data, dict):
                     logger.error(
@@ -6493,42 +6495,35 @@ class WebEngine:
                     return {
                         "success": False,
                         "error": "Invalid data format: dictionary required",
+                        "groups": [],
+                        "historical_count": 0,
+                        "hours": hours,
                     }
 
-                hours = data.get("hours", 12)
-
-                # Import necessary modules
-                import time
-
                 from modules.uiwindows.activity_feed import (
-                    load_restored_alerts_for_time_window,
+                    build_condensed_overlay_payload,
+                    parse_condensed_historical_hours,
                 )
 
-                current_time = time.time()
-                cutoff_time = current_time - (hours * 3600)
+                hours = parse_condensed_historical_hours(data.get("hours", 12))
+                filters = data.get("filters")
+                if filters is not None and not isinstance(filters, dict):
+                    filters = None
 
                 logger.debug(
-                    f"Loading condensed view alerts for past {hours} hours (cutoff: {cutoff_time})"
+                    "Loading condensed view groups for past %s hours", hours
                 )
 
-                alerts_to_process, historical_count = (
-                    load_restored_alerts_for_time_window(cutoff_time)
+                response = build_condensed_overlay_payload(
+                    hours=hours, filter_state=filters
                 )
-
-                logger.debug(
-                    f"Loaded {historical_count} alerts for condensed view (past {hours} hours)"
-                )
-
-                response = {
-                    "success": True,
-                    "alerts": alerts_to_process,
-                    "historical_count": historical_count,
-                    "hours": hours,
-                }
 
                 self.socketio.emit("condensed_view_alerts", response, to=request.sid)
                 logger.debug(
-                    f"Sent {len(alerts_to_process)} condensed view alerts to {request.sid}"
+                    "Sent %s condensed groups (%s alerts) to %s",
+                    response.get("user_count", 0),
+                    response.get("alert_count", 0),
+                    request.sid,
                 )
                 return response
 
@@ -6539,7 +6534,7 @@ class WebEngine:
                 error_response = {
                     "success": False,
                     "error": str(e),
-                    "alerts": [],
+                    "groups": [],
                     "historical_count": 0,
                     "hours": hours,
                 }
