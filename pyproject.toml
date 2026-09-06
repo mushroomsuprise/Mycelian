@@ -4,7 +4,7 @@ version = "1.12.5"
 description = "Mycelian is a custom alert and browser source tool for Twitch streamers."
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dependencies = [
     "aiohttp>=3.11.11",
     "cryptography>=43.0.0",
