@@ -639,6 +639,25 @@ def set_alerts_paused(value: bool) -> None:
     global ALERTS_PAUSED
     ALERTS_PAUSED = bool(value)
     _notify_alert_processor()
+    _sync_pause_button_state()
+
+
+def _sync_pause_button_state() -> None:
+    """Sync NiceGUI activity feed pause button with ALERTS_PAUSED."""
+    def _run() -> None:
+        try:
+            from modules.uiwindows.activity_feed import sync_pause_button_state
+
+            sync_pause_button_state()
+        except Exception as e:
+            logger.debug(f"Could not sync pause button state: {e}")
+
+    try:
+        from .ui_timer import run_on_ui_loop
+
+        run_on_ui_loop(_run)
+    except Exception:
+        _run()
 
 
 def _sync_mute_button_state() -> None:

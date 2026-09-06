@@ -41,6 +41,7 @@ from ..ui_timer import app_schedule, run_on_ui_loop
 logger = logging.getLogger(__name__)
 
 _pause_breath_timer_started = False
+_DOCK_BTN_PROPS = "flat no-caps dense"
 _recovery_scheduled = False
 _integrity_check_reason: Optional[str] = None
 _integrity_check_scheduled = False
@@ -1154,7 +1155,7 @@ activity_feed_state = ActivityFeedState()
 def _animate_pause_button_border() -> None:
     """Drive the playing-state border breathe via inline inset ring (CSS animation blocked by Quasar)."""
     btn = activity_feed_state.pause_btn
-    if btn is None:
+    if not _element_alive(btn):
         return
     try:
         from modules import web_engine
@@ -1168,8 +1169,8 @@ def _animate_pause_button_border() -> None:
         phase = activity_feed_state.pause_breath_phase / 3.0
         alpha = 0.2 + 0.8 * (0.5 - 0.5 * math.cos(phase * math.pi * 2))
         btn.style(f"box-shadow: inset 0 0 0 1px rgba(34, 197, 94, {alpha:.3f})")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("activity_feed: pause button breath update failed: %s", exc)
 
 
 def replay_alert(alert_data):
@@ -2660,14 +2661,11 @@ def create_activity_feed_tab():
         shared=True,
     )
 
-    _DOCK_BTN_PROPS = "flat no-caps dense"
-
     with ui.element("div").classes("tab-surface w-full h-full relative flex flex-col p-4"):
         # Control row: keep overflow scroll only on left buttons so the filter
         # dropdown is not clipped into a scrollable top bar (CSS overflow-x:auto
         # forces overflow-y:auto and swallows absolute menus).
         with ui.row().classes("w-full items-center gap-2 mb-4 flex-nowrap"):
-            from modules import web_engine
             from modules.mainuiwindow import toggle_alerts
 
             with ui.row().classes(
@@ -2675,7 +2673,7 @@ def create_activity_feed_tab():
             ):
                 def on_pause_button_click():
                     toggle_alerts()
-                    update_pause_button_state()
+                    _apply_pause_button_state()
 
                 pause_btn = ui.button(
                     icon="pause", text="PAUSE ALERTS", on_click=on_pause_button_click
@@ -2688,95 +2686,19 @@ def create_activity_feed_tab():
                     _pause_breath_timer_started = True
                     app_schedule(0.1, _animate_pause_button_border, active=True)
 
-                def update_pause_button_state():
-                    """Update the pause button state based on current ALERTS_PAUSED status"""
-                    try:
-                        # Get the current pause state with better error handling
-                        paused = False
-                        try:
-                            if hasattr(web_engine, "ALERTS_PAUSED"):
-                                paused = bool(web_engine.ALERTS_PAUSED)
-                                logger.debug(
-                                    f"Got pause state from ALERTS_PAUSED: {paused}"
-                                )
-                            else:
-                                logger.debug(
-                                    "web_engine not available, defaulting to False"
-                                )
-                        except Exception as state_err:
-                            logger.debug(
-                                f"Error getting pause state: {str(state_err)}, defaulting to False"
-                            )
-                            paused = False
-
-                        logger.debug(f"Final pause state: paused={paused}")
-
-                        if paused:
-                            pause_btn.props(
-                                f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=play_arrow"
-                            )
-                            pause_btn.text = "RESUME ALERTS"
-                            pause_btn.classes(remove="alerts-playing")
-                            pause_btn.classes(add="paused")
-                            pause_btn.style("box-shadow: none")
-                            logger.debug("Updated button to RESUME ALERTS state")
-
-                        else:
-                            pause_btn.props(
-                                f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=pause"
-                            )
-                            pause_btn.text = "PAUSE ALERTS"
-                            pause_btn.classes(remove="paused")
-                            pause_btn.classes(add="alerts-playing")
-                            logger.debug("Updated button to PAUSE ALERTS state")
-
-                    except Exception as e:
-                        logger.error(
-                            f"Error updating pause button state: {str(e)}",
-                            exc_info=True,
-                        )
-
-                # Event-based system doesn't need to store button update function reference
-
-                # Initialize the button state with error handling
                 try:
-                    update_pause_button_state()
+                    _apply_pause_button_state()
                 except Exception as e:
                     logger.error(
                         f"Error initializing pause button state: {str(e)}",
                         exc_info=True,
                     )
 
-                def update_mute_button_state():
-                    """Update mute button based on current ALERTS_MUTED status."""
-                    try:
-                        muted = False
-                        try:
-                            if hasattr(web_engine, "ALERTS_MUTED"):
-                                muted = bool(web_engine.ALERTS_MUTED)
-                        except Exception as state_err:
-                            logger.debug(
-                                f"Error getting mute state: {state_err}, defaulting to False"
-                            )
-                        activity_feed_state.alerts_muted = muted
-                        btn = activity_feed_state.mute_btn
-                        if not _element_alive(btn):
-                            return
-                        if muted:
-                            btn.classes(add="muted")
-                        else:
-                            btn.classes(remove="muted")
-                    except Exception as e:
-                        logger.error(
-                            f"Error updating mute button state: {str(e)}",
-                            exc_info=True,
-                        )
-
                 def on_mute_button_click():
                     from modules.mainuiwindow import toggle_mute
 
                     toggle_mute()
-                    update_mute_button_state()
+                    _apply_mute_button_state()
 
                 mute_btn = ui.button(
                     icon="notifications_off",
@@ -2788,7 +2710,7 @@ def create_activity_feed_tab():
                 activity_feed_state.mute_btn = mute_btn
 
                 try:
-                    update_mute_button_state()
+                    _apply_mute_button_state()
                 except Exception as e:
                     logger.error(
                         f"Error initializing mute button state: {str(e)}",
@@ -3067,18 +2989,40 @@ def create_activity_feed_tab():
             # logger.debug("Sample alerts created")
 
 
+def _apply_pause_button_state() -> None:
+    """Apply ALERTS_PAUSED to the live NiceGUI pause button (must have a live client)."""
+    btn = activity_feed_state.pause_btn
+    if not _element_alive(btn):
+        return
+    try:
+        from modules import web_engine
+
+        paused = bool(getattr(web_engine, "ALERTS_PAUSED", False))
+        if paused:
+            btn.props(f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=play_arrow")
+            btn.text = "RESUME ALERTS"
+            btn.classes(remove="alerts-playing")
+            btn.classes(add="paused")
+            btn.style("box-shadow: none")
+        else:
+            btn.props(f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=pause")
+            btn.text = "PAUSE ALERTS"
+            btn.classes(remove="paused")
+            btn.classes(add="alerts-playing")
+    except Exception as e:
+        logger.error("Error updating pause button state: %s", e, exc_info=True)
+
+
 def sync_pause_button_state():
-    """Public function to sync the pause button state - can be called from other modules"""
-    # With event-based system, button state is managed internally
-    # This function remains for compatibility but no longer needs to do anything
-    logger.debug("Pause button state sync requested - handled by event system")
+    """Sync the pause button with ALERTS_PAUSED. Safe from any thread."""
+    _run_on_ui_loop(_apply_pause_button_state)
 
 
-def sync_mute_button_state():
-    """Sync the mute button state from web_engine.ALERTS_MUTED."""
+def _apply_mute_button_state() -> None:
+    """Apply ALERTS_MUTED to the live NiceGUI mute button (must have a live client)."""
     btn = activity_feed_state.mute_btn
-    if btn is None:
-        logger.debug("Mute button not initialized, skipping sync")
+    if not _element_alive(btn):
+        logger.debug("Mute button not initialized or stale, skipping sync")
         return
     try:
         from modules import web_engine
@@ -3089,9 +3033,13 @@ def sync_mute_button_state():
             btn.classes(add="muted")
         else:
             btn.classes(remove="muted")
-        ui.update()
     except Exception as e:
-        logger.debug(f"Error syncing mute button state: {e}")
+        logger.debug("Error syncing mute button state: %s", e)
+
+
+def sync_mute_button_state():
+    """Sync the mute button with ALERTS_MUTED. Safe from any thread."""
+    _run_on_ui_loop(_apply_mute_button_state)
 
 
 def add_alert_direct(
