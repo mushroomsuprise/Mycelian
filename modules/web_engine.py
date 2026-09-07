@@ -610,6 +610,9 @@ _SAFE_EMIT_PRIORITY_EVENTS = frozenset(
         "instant_alert",
         "activity_feed_alert",
         "alerts_skip_alert",
+        # Category/title changes are rare but overlays have no other way to learn
+        # about them, so they must not be dropped by a saturated emit queue.
+        "twitch_data_update",
     }
 )
 
@@ -7913,6 +7916,11 @@ class WebEngine:
             )
 
             try:
+                # Durable controls (those with a "persist" block) write their new
+                # value back to the template config so the setting survives an
+                # overlay refresh and stays in sync with the Source Controls UI.
+                self.persist_template_control_change(template_name, action, data)
+
                 # Handle different control types with specific logic
                 if element_type == "counter_control":
                     self._handle_counter_control(template_name, action, data)
@@ -8322,6 +8330,11 @@ class WebEngine:
             return
         event_name = f"{template_name}_{action}"
         event_data = data if isinstance(data, dict) else ({} if data is None else {})
+
+        # Same durable-value write as the Socket.IO handler path; controls with no
+        # "persist" block return immediately.
+        self.persist_template_control_change(template_name, action, event_data)
+
         enqueued_at = time.monotonic()
         try:
             with self._queue_metrics_lock:

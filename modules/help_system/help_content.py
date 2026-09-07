@@ -2121,12 +2121,149 @@ socket.on('alert', (data) => {
         ],
         related_topics=[
             "template_configuration",
+            "template_title",
             "template_custom_css",
             "template_websocket",
             "source_controls",
             "spore_studio_overview",
             "spore_studio_counters",
             "spore_studio_dynamic_controls",
+        ],
+    ),
+    "template_title": HelpTopic(
+        id="template_title",
+        title="Title Overlay (Stream Category)",
+        category=HelpCategory.TEMPLATES,
+        summary="Sizing the Title browser source and keeping the category up to date",
+        content="""
+# Title Overlay
+
+The Title overlay shows your current Twitch category (or a custom message) as
+plain text. Add it to OBS as a browser source pointing at:
+
+```
+http://localhost:5000/title
+```
+
+## Sizing the source in OBS
+
+**This is the most important step.** The Title overlay has no inner text box -
+the text uses the entire browser source. So the browser source width and height
+*are* the area your text will occupy.
+
+Set the **Width** and **Height** fields in the browser source properties to the
+region of your layout where you want the text to appear. Any size works,
+including tall, narrow, or unusual shapes.
+
+1. Add a browser source and point it at the URL above.
+2. Set Width and Height to the text area you want. For a lower-third strip,
+   something like 900 x 120 is typical.
+3. Position the source on your canvas.
+
+> **Do not scale the source with the mouse handles in the preview.** Dragging the
+> corners stretches the rendered page, which blurs the text and defeats the
+> automatic font scaling. Always change Width and Height in the source
+> properties, then move the source into place.
+
+If you resize the browser source while it is running, the text re-scales itself
+immediately - there is no need to refresh.
+
+## Text scaling
+
+**Auto Fit Text To Source** (on by default) shrinks the text until it fits inside
+the source. **Max Font Size** is the ceiling: text is drawn at that size when it
+fits, and only ever scales down from there. **Min Font Size** is the floor.
+
+**Text Wrapping** decides how it shrinks:
+
+| Setting | Behavior |
+|---------|----------|
+| `wrap` | Long text breaks onto multiple lines, then shrinks to fit the height |
+| `nowrap` | Text always stays on one line and shrinks to fit the width |
+
+Use `wrap` for a roughly square area, and `nowrap` for a thin horizontal strip
+where you never want a second line.
+
+If the text is being clipped, the source is too small for your Min Font Size.
+Make the source bigger rather than lowering Min Font Size further.
+
+Turn Auto Fit off if you want text drawn at exactly Max Font Size, accepting
+that long category names will overflow and be cut off.
+
+## Placement
+
+Because the text fills the source, positioning is just alignment inside it:
+
+- **Horizontal Alignment**: `flex-start` (left), `center`, `flex-end` (right)
+- **Vertical Alignment**: `flex-start` (top), `center` (middle), `flex-end` (bottom)
+- **Edge Padding**: a blank margin kept clear inside every edge. Auto Fit treats
+  this as unusable space, so raising it makes the text smaller.
+
+There are no position or size settings in Source Settings - the OBS source
+handles all of that.
+
+## Keeping the category up to date
+
+**Category Data Source** controls how the overlay learns your current category:
+
+| Mode | Behavior |
+|------|----------|
+| `api_and_eventsub` | **Recommended.** Reads the Twitch API on load and on a timer, *and* accepts live push updates |
+| `eventsub_only` | Live push updates only - will not fill itself in on a source refresh |
+| `api_only` | Timer polling only, ignores push updates |
+
+Live push updates (EventSub) only fire at the moment you *change* category, so
+they can never tell the overlay what your category already is. That is why
+`api_and_eventsub` is the default: the API read fills in the current value on
+load, and the timer acts as a safety net if push updates stop arriving.
+
+**API Refresh Interval** sets how often the safety-net read happens (default 60
+seconds, minimum 15). Set it to `0` to only read on source load and when you
+press **Refresh Category** in [Source Controls](help:source_controls).
+
+## Custom titles
+
+Turn **Show Category** off to display the **Custom Title** text instead. The
+Show Category switch in Source Controls changes the same setting and is saved,
+so it survives a source refresh.
+
+Use **Clear Custom Title** to empty the text and switch Show Category back on.
+
+## Troubleshooting
+
+**The overlay says "Stream Title" and never changes.**
+Twitch is not connected yet, or the category has not been read. Check the Twitch
+connection, then press **Refresh Category** in Source Controls. The overlay
+retries on its own while it waits for Twitch to authenticate.
+
+**The category is stale after I switched games.**
+Check that Category Data Source is not set to `api_only` with a long refresh
+interval. With `api_and_eventsub` the change appears immediately.
+
+**Nothing shows at all.**
+Show Category may be off with an empty Custom Title, which renders a blank
+overlay by design. Press **Clear Custom Title** to switch back to the category.
+
+**The text is tiny.**
+The browser source is probably much larger than you think, or Edge Padding is
+high. Remember the text scales to the *source* size, not the canvas.
+        """,
+        keywords=[
+            "title",
+            "category",
+            "game",
+            "stream title",
+            "font scaling",
+            "auto fit",
+            "browser source size",
+            "eventsub",
+            "obs sizing",
+        ],
+        related_topics=[
+            "templates_intro",
+            "template_configuration",
+            "source_controls",
+            "obs_setup",
         ],
     ),
     "template_configuration": HelpTopic(

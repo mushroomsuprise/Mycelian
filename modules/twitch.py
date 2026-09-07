@@ -2303,11 +2303,14 @@ class Twitch_API:
         )
         current_category = data.event.category_name
 
-        # Update the current category in the state manager
+        # Update the current category in the state manager. This has to be
+        # flushed: overlays read the cached value on load, so leaving it pending
+        # means a restart serves a stale category.
         try:
             dataobjects.state_manager.update_twitch_field(
                 "current_category", current_category
             )
+            dataobjects.state_manager.save_changes()
             logger.debug(f"Updated current category to: {current_category}")
         except Exception as e:
             logger.error(
@@ -2345,45 +2348,74 @@ class Twitch_API:
             )
 
         # Send updated Twitch data to WebSocket clients for real-time updates
+        self._broadcast_twitch_data_update(current_category)
+
+    def _broadcast_twitch_data_update(self, current_category: str = "") -> None:
+        """Push the current Twitch data to every connected overlay."""
         try:
-            if (
-                hasattr(web_engine, "web_engine_instance")
-                and web_engine.web_engine_instance
-            ):
-                # Get the updated Twitch data from state manager
-                twitch_data = dataobjects.state_manager.get_twitch_data()
-
-                if twitch_data:
-                    # Convert to dict and remove sensitive fields
-                    import dataclasses
-
-                    twitch_data_dict = dataclasses.asdict(twitch_data)
-                    sensitive_fields = ["auth_token", "refresh_token", "client_secret"]
-                    for field in sensitive_fields:
-                        if field in twitch_data_dict:
-                            twitch_data_dict[field] = ""
-
-                    # Emit the updated data to all connected clients
-                    # (safe_emit: EventSub callback thread, not the gevent hub)
-                    web_engine.web_engine_instance.safe_emit(
-                        "twitch_data_update", twitch_data_dict
-                    )
-                    logger.debug(
-                        f"Broadcasted category update to WebSocket clients: {current_category}"
-                    )
-                else:
-                    logger.warning(
-                        "No Twitch data available for broadcasting category update"
-                    )
-            else:
+            if not getattr(web_engine, "web_engine_instance", None):
                 logger.warning(
                     "Web engine instance not available for broadcasting category updates"
                 )
+                return
+
+            twitch_data = dataobjects.state_manager.get_twitch_data()
+            if not twitch_data:
+                logger.warning(
+                    "No Twitch data available for broadcasting category update"
+                )
+                return
+
+            import dataclasses
+
+            twitch_data_dict = dataclasses.asdict(twitch_data)
+            for field in ("auth_token", "refresh_token", "client_secret"):
+                if field in twitch_data_dict:
+                    twitch_data_dict[field] = ""
+
+            # safe_emit: EventSub callback thread, not the gevent hub
+            web_engine.web_engine_instance.safe_emit(
+                "twitch_data_update", twitch_data_dict
+            )
+            logger.debug(
+                f"Broadcasted category update to WebSocket clients: {current_category}"
+            )
         except Exception as e:
             logger.error(
                 f"Error broadcasting category update to WebSocket clients: {str(e)}",
                 exc_info=True,
             )
+
+    async def _seed_current_category(self) -> None:
+        """Read the current category once, right after EventSub comes up.
+
+        ``channel.update`` only fires when the broadcaster actually changes
+        something, so it never reports the category that is already set. Overlays
+        read the cached value when they connect, so without this seed a fresh
+        install (or any restart before the streamer next changes category) serves
+        an empty or stale category.
+        """
+        try:
+            if not self.user or not self.user.id:
+                return
+
+            channel_infos = await self.twitch.get_channel_information(self.user.id)
+            if not channel_infos:
+                return
+
+            category = channel_infos[0].game_name or ""
+            twitch_data = dataobjects.state_manager.get_twitch_data()
+            if twitch_data and twitch_data.current_category == category:
+                return
+
+            dataobjects.state_manager.update_twitch_field("current_category", category)
+            dataobjects.state_manager.save_changes()
+            logger.info(
+                "Seeded current category from Twitch: %s", category or "(none)"
+            )
+            self._broadcast_twitch_data_update(category)
+        except Exception as e:
+            logger.debug("Could not seed current category: %s", e)
 
     async def on_follow(self, data: ChannelFollowEvent):
         self._note_event_received()
@@ -4721,6 +4753,8 @@ class Twitch_API:
                     "Subscriber registry sync on connect failed: %s", sub_reg_err
                 )
                 self._start_subscriber_registry_retry()
+
+            await self._seed_current_category()
 
             return True
         except Exception as e:

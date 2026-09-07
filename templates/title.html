@@ -13,153 +13,92 @@
     <style>
         @font-face {
             font-family: title-font;
-            src: url("/assets/default_assets/fonts/{{FontName}}");
+            src: url("/assets/default_assets/fonts/{{ FontName | default('Renogare.ttf', true) }}");
         }
 
+        :root {
+            --title-font-size: {{ FontSize | default(60, true) }}px;
+            --title-white-space: {{ 'nowrap' if TextWrap == 'nowrap' else 'normal' }};
+            --title-text-align: {{ 'left' if TitleAlign == 'flex-start' else ('right' if TitleAlign == 'flex-end' else 'center') }};
+        }
+
+        html,
         body {
             margin: 0;
             padding: 0;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
             background: transparent;
             font-family: title-font, Arial, sans-serif;
         }
 
-        .title-container {
-            position: absolute;
-
-            top: {{TitleTop}}px;
-
-            left: {{TitleLeft}}px;
-
-            width: {{TitleWidth}}px;
-
-            height: {{TitleHeight}}px;
-            display: flex;
-            align-items: center;
-
-            justify-content: {{TitleAlign}};
-
-            background: {{ContainerBG}};
-
-            border-radius: {{ContainerRadius}}px;
-
-            border: {{ContainerBorder}}px solid {{ContainerBorderColor}};
-
-            box-shadow: {{ContainerShadow}};
-
-            padding: {{ContainerPadding}}px;
-            box-sizing: border-box;
-        }
-
-        .title-text {
-            font-size: {{FontSize}}px;
-
-            font-weight: {{FontWeight}};
-
-            color: {{FontColor}};
-
-            text-shadow: {{TextShadow}};
-
-            text-align: {{TitleAlign}};
-
-            line-height: {{LineHeight}};
-            white-space: nowrap;
-            max-width: 100%;
-            min-width: 0;
-            max-height: 100%;
-            box-sizing: border-box;
-            overflow: hidden;
-        }
-
-        /* Animation for text changes */
-        .title-text.updating {
-            opacity: 0.7;
-
-            transition: opacity {{TransitionDuration}}s ease;
-        }
-
-        .title-text.updated {
-            opacity: 1;
-
-            transition: opacity {{TransitionDuration}}s ease;
-        }
-
-        /* Wipe animation container */
-        .wipe-container {
-            position: relative;
-            overflow: hidden;
+        /* The stage fills the whole browser source. Size the OBS source to the
+           area you want the text to occupy - there is no inner text box. */
+        #titleStage {
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
+            box-sizing: border-box;
+            background: {{ ContainerBG | default('transparent', true) }};
+            border: {{ ContainerBorder | default(0) }}px solid {{ ContainerBorderColor | default('transparent', true) }};
+            border-radius: {{ ContainerRadius | default(0) }}px;
+            padding: {{ ContainerPadding | default(0) }}px;
+            overflow: hidden;
         }
 
-        .wipe-old-text,
-        .wipe-new-text {
+        /* Fills the stage content box (inside border + padding). Absolutely
+           positioned children resolve against this, so padding is respected. */
+        #titleViewport {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* One full-size flex box per text layer; handles both alignments. */
+        .title-layer {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            min-width: 0;
-            box-sizing: border-box;
             display: flex;
-            align-items: center;
-
-            justify-content: {{TitleAlign}};
+            justify-content: {{ TitleAlign | default('center', true) }};
+            align-items: {{ TitleVAlign | default('center', true) }};
             overflow: hidden;
         }
 
-        .wipe-new-text {
-            transform: translateX(100%);
-
-            transition: transform {{TransitionDuration}}s cubic-bezier({{WipeEasing}}, 0.46, 0.45, 0.94);
+        #wipeLayer {
+            display: none;
         }
 
-        .wipe-new-text.wipe-active {
-            transform: translateX(0%);
+        .title-text {
+            font-size: var(--title-font-size);
+            font-weight: {{ FontWeight | default('bold', true) }};
+            color: {{ FontColor | default('#ffffff', true) }};
+            text-shadow: {{ TextShadow | default('none', true) }};
+            line-height: {{ LineHeight | default(1.2, true) }};
+            text-align: var(--title-text-align);
+            white-space: var(--title-white-space);
+            overflow-wrap: break-word;
+            word-break: break-word;
+            max-width: 100%;
         }
 
-        .wipe-old-text {
-            transition: transform {{TransitionDuration}}s cubic-bezier({{WipeEasing}}, 0.46, 0.45, 0.94);
+        /* Fade transition (used when the wipe animation is off) */
+        .title-text.updating {
+            opacity: {{ PulseOpacity | default(0.7, true) }};
+            transition: opacity {{ TransitionDuration | default(0.3, true) }}s ease;
         }
 
-        .wipe-old-text.wipe-active {
-            transform: translateX(-100%);
+        .title-text.updated {
+            opacity: 1;
+            transition: opacity {{ TransitionDuration | default(0.3, true) }}s ease;
         }
 
-        /* Alternative wipe directions */
-        .wipe-right-to-left .wipe-new-text {
-            transform: translateX(-100%);
-        }
-
-        .wipe-right-to-left .wipe-old-text.wipe-active {
-            transform: translateX(100%);
-        }
-
-        .wipe-top-to-bottom .wipe-new-text {
-            transform: translateY(-100%);
-        }
-
-        .wipe-top-to-bottom .wipe-new-text.wipe-active {
-            transform: translateY(0%);
-        }
-
-        .wipe-top-to-bottom .wipe-old-text.wipe-active {
-            transform: translateY(100%);
-        }
-
-        .wipe-bottom-to-top .wipe-new-text {
-            transform: translateY(100%);
-        }
-
-        .wipe-bottom-to-top .wipe-new-text.wipe-active {
-            transform: translateY(0%);
-        }
-
-        .wipe-bottom-to-top .wipe-old-text.wipe-active {
-            transform: translateY(-100%);
-        }
-
-        /* Pulse animation for live updates */
         @keyframes pulse {
 
             0%,
@@ -168,269 +107,895 @@
             }
 
             50% {
-                opacity: {{PulseOpacity}};
+                opacity: {{ PulseOpacity | default(0.7, true) }};
             }
         }
 
         .title-text.pulse {
-            animation: pulse {{PulseSpeed}}s infinite;
+            animation: pulse {{ PulseSpeed | default(2, true) }}s infinite;
         }
 
-        /* Glow effect */
         .title-text.glow {
-            text-shadow: {{TextShadow|tojson}},
-            0 0 10px {{GlowColor}},
-            0 0 20px {{GlowColor}};
+            text-shadow: {{ TextShadow | default('none', true) }},
+            0 0 10px {{ GlowColor | default('#ffffff', true) }},
+            0 0 20px {{ GlowColor | default('#ffffff', true) }};
         }
 
-
-
-        /* Responsive design */
-        @media (max-width: 768px) {
-            .title-container {
-                width: calc({{TitleWidth}}px * 0.9);
-                height: calc({{TitleHeight}}px * 0.9);
-                padding: calc({{ContainerPadding}}px * 0.8);
-            }
+        /* Off-screen measuring element for auto font scaling */
+        #titleProbe {
+            position: absolute !important;
+            left: -99999px !important;
+            top: 0 !important;
+            visibility: hidden !important;
+            max-width: none !important;
+            max-height: none !important;
+            pointer-events: none !important;
         }
     </style>
 </head>
 
 <body>
-    <div class="title-container" id="titleContainer">
-        <div class="title-text" id="titleText">Stream Title</div>
+    <div id="titleStage">
+        <div id="titleViewport">
+            <div class="title-layer" id="titleTextLayer">
+                <div class="title-text" id="titleText">Stream Title</div>
+            </div>
+            <div class="title-layer" id="wipeLayer" aria-hidden="true">
+                <div class="title-text" id="wipeText"></div>
+            </div>
+        </div>
     </div>
 
-
-
     <script>
-        // Global variables
         var mycelianPreviewMode = {{ mycelian_preview_mode | default(false) | tojson }};
+
         var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port, {
-            onRecovery: scheduleStreamerInfoRequest
+            onRecovery: refreshStreamData
         });
+
         var titleData = {
-            currentTitle: "Stream Title",
+            placeholder: "Stream Title",
             showCategory: {{ ShowCategory | default(true) | tojson }},
-            categoryPrefix: {{ CategoryPrefix | tojson }},
-            categorySuffix: {{ CategorySuffix | tojson }}
+            categoryPrefix: {{ CategoryPrefix | default('') | tojson }},
+            categorySuffix: {{ CategorySuffix | default('') | tojson }}
         };
 
         var settings = {
-            enableAnimations: {{ EnableAnimations| tojson}},
-        enablePulse: {{ EnablePulse | tojson }},
-        enableGlow: {{ EnableGlow | tojson }},
-        enableWipe: {{ EnableWipe | tojson }},
-        wipeDirection: {{ WipeDirection | tojson }},
-        wipeEasing: {{ WipeEasing | tojson }}
+            enableAnimations: {{ EnableAnimations | default(true) | tojson }},
+            enablePulse: {{ EnablePulse | default(false) | tojson }},
+            enableGlow: {{ EnableGlow | default(false) | tojson }},
+            enableWipe: {{ EnableWipe | default(true) | tojson }},
+            wipeDirection: {{ WipeDirection | default('left-to-right', true) | tojson }},
+            wipeEasing: {{ WipeEasing | default(0.25, true) | tojson }},
+            transitionDuration: {{ TransitionDuration | default(0.3, true) | tojson }},
+            autoFitText: {{ AutoFitText | default(true) | tojson }},
+            textWrap: {{ TextWrap | default('wrap', true) | tojson }},
+            fontSize: {{ FontSize | default(60, true) | tojson }},
+            minFontSize: {{ MinFontSize | default(12, true) | tojson }},
+            dataSource: {{ DataSource | default('api_and_eventsub', true) | tojson }},
+            apiPollInterval: {{ ApiPollInterval | default(60) | tojson }}
         };
+
+        // ── Data source mode ──────────────────────────────────────────────
+        // api_and_eventsub: poll Helix on a timer AND accept live EventSub pushes
+        // eventsub_only:    only accept live EventSub pushes
+        // api_only:         only poll Helix (ignore EventSub pushes)
+        function useApi() {
+            return settings.dataSource === 'api_only' || settings.dataSource === 'api_and_eventsub';
+        }
+
+        function useEventSub() {
+            return settings.dataSource === 'eventsub_only' || settings.dataSource === 'api_and_eventsub';
+        }
+
+        var MIN_POLL_SECONDS = 15;
+
+        function pollIntervalMs() {
+            var seconds = Number(settings.apiPollInterval);
+            if (!isFinite(seconds) || seconds <= 0) {
+                return 0;
+            }
+            return Math.max(MIN_POLL_SECONDS, seconds) * 1000;
+        }
 
         var currentCategory = "";
-        var manualTitle = "";
-        var retryTimeout = null;
-        var isRetryingCategory = false;
+        var manualTitle = {{ ManualTitle | default('') | tojson }};
         var currentStreamerName = "";
-        var connectorRevertTimeout = null;
-        var titleAnimationGeneration = 0;
-        var titleAnimationTimeouts = [];
-        var manualTitleSaveTimeout = null;
-        var streamerInfoInFlight = false;
-        var twitchApiInFlight = false;
-        var categoryRetryBackoffMs = 5000;
-        var categoryRetryMaxBackoffMs = 60000;
+        var broadcasterId = "";
 
-        // Local storage keys
+        var displayedText = "";
+        var pendingText = null;
+        var isAnimating = false;
+        var animationTimers = [];
+
+        var streamerInfoInFlight = false;
+        var streamerInfoRetryTimer = null;
+        var streamerInfoRetryMs = 1000;
+        var STREAMER_INFO_RETRY_MAX_MS = 30000;
+
+        var pendingApiRequestId = null;
+        var apiWatchdogTimer = null;
+        var API_WATCHDOG_MS = 10000;
+        var apiRetryTimer = null;
+        var apiRetryMs = 5000;
+        var API_RETRY_BASE_MS = 5000;
+        var API_RETRY_MAX_MS = 60000;
+        var apiPollTimer = null;
+
+        var manualTitleSaveTimeout = null;
+        var connectorRevertTimeout = null;
+
         var STORAGE_KEYS = {
-            SHOW_CATEGORY: 'mycelian_title_show_category',
             MANUAL_TITLE: 'mycelian_title_manual_title',
-            MANUAL_MODE_LEGACY: 'mycelian_title_manual_mode'
+            OVERRIDE: 'mycelian_title_override'
         };
 
-        // Socket event listeners
-        socket.on('connect', function () {
-            scheduleStreamerInfoRequest();
-        });
+        var LEGACY_STORAGE_KEYS = [
+            'mycelian_title_show_category',
+            'mycelian_title_manual_mode'
+        ];
 
-        socket.on('template_config_updated', function (data) {
-            var name = (data && (data.template_name || data.templateName || data.template)) || '';
-            if (name === 'title') location.reload();
+        // ── Auto font scaling ─────────────────────────────────────────────
+
+        function getViewport() {
+            return document.getElementById('titleViewport');
+        }
+
+        function getProbe() {
+            var probe = document.getElementById('titleProbe');
+            if (!probe) {
+                probe = document.createElement('div');
+                probe.id = 'titleProbe';
+                probe.className = 'title-text';
+                document.body.appendChild(probe);
+            }
+            return probe;
+        }
+
+        function probeFits(probe, size, availWidth, availHeight, wrap) {
+            probe.style.fontSize = size + 'px';
+            if (wrap) {
+                // Fixed width so the text wraps; only height can overflow, but a
+                // single unbreakable word can still blow out the width.
+                if (probe.scrollWidth > availWidth + 1) {
+                    return false;
+                }
+                return probe.scrollHeight <= availHeight + 1;
+            }
+            return probe.scrollWidth <= availWidth + 1 && probe.scrollHeight <= availHeight + 1;
+        }
+
+        // Largest integer font size (between MinFontSize and FontSize) at which
+        // `text` fits the source without overflowing.
+        function computeFittedFontSize(text) {
+            var maxSize = Number(settings.fontSize) || 60;
+            if (!settings.autoFitText) {
+                return maxSize;
+            }
+
+            var viewport = getViewport();
+            if (!viewport || !text) {
+                return maxSize;
+            }
+
+            var availWidth = viewport.clientWidth;
+            var availHeight = viewport.clientHeight;
+            if (availWidth <= 0 || availHeight <= 0) {
+                return maxSize;
+            }
+
+            var minSize = Number(settings.minFontSize) || 1;
+            if (minSize > maxSize) {
+                minSize = maxSize;
+            }
+
+            var wrap = settings.textWrap !== 'nowrap';
+            var probe = getProbe();
+            probe.textContent = text;
+            probe.style.whiteSpace = wrap ? 'normal' : 'nowrap';
+            probe.style.width = wrap ? availWidth + 'px' : 'auto';
+
+            if (probeFits(probe, maxSize, availWidth, availHeight, wrap)) {
+                return maxSize;
+            }
+
+            var low = minSize;
+            var high = maxSize;
+            var best = minSize;
+            while (low <= high) {
+                var mid = Math.floor((low + high) / 2);
+                if (probeFits(probe, mid, availWidth, availHeight, wrap)) {
+                    best = mid;
+                    low = mid + 1;
+                } else {
+                    high = mid - 1;
+                }
+            }
+            return best;
+        }
+
+        function applyFittedFontSize() {
+            // Fit against the longest text currently on screen so a mid-wipe
+            // outgoing string is never clipped.
+            var text = displayedText;
+            var wipeText = document.getElementById('wipeText');
+            if (isAnimating && wipeText && wipeText.textContent.length > text.length) {
+                text = wipeText.textContent;
+            }
+            var size = computeFittedFontSize(text);
+            document.documentElement.style.setProperty('--title-font-size', size + 'px');
+        }
+
+        var fitScheduled = false;
+
+        function scheduleFit() {
+            if (fitScheduled) {
+                return;
+            }
+            fitScheduled = true;
+            requestAnimationFrame(function () {
+                fitScheduled = false;
+                applyFittedFontSize();
+            });
+        }
+
+        function applyTextWrapMode() {
+            document.documentElement.style.setProperty(
+                '--title-white-space',
+                settings.textWrap === 'nowrap' ? 'nowrap' : 'normal'
+            );
+        }
+
+        // OBS sources are resized to arbitrary sizes at runtime; refit whenever
+        // the window changes so the text always stays inside the source.
+        if (typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(scheduleFit).observe(document.documentElement);
+        }
+        window.addEventListener('resize', scheduleFit);
+
+        // The @font-face loads asynchronously - a first-paint measurement would
+        // otherwise be taken against the fallback font and come out wrong.
+        if (document.fonts) {
+            document.fonts.ready.then(scheduleFit);
+            try {
+                document.fonts.load('1em title-font').then(scheduleFit, function () { });
+            } catch (e) {
+                /* older browsers: fonts.ready is enough */
+            }
+        }
+
+        // ── Text rendering ────────────────────────────────────────────────
+
+        function clearAnimationTimers() {
+            animationTimers.forEach(function (id) {
+                clearTimeout(id);
+            });
+            animationTimers = [];
+        }
+
+        function addAnimationTimer(callback, delayMs) {
+            var id = setTimeout(function () {
+                animationTimers = animationTimers.filter(function (other) {
+                    return other !== id;
+                });
+                callback();
+            }, delayMs);
+            animationTimers.push(id);
+            return id;
+        }
+
+        function applyEffects() {
+            ['titleText', 'wipeText'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (!el) {
+                    return;
+                }
+                el.classList.remove('pulse', 'glow');
+                if (settings.enablePulse) {
+                    el.classList.add('pulse');
+                }
+                if (settings.enableGlow) {
+                    el.classList.add('glow');
+                }
+            });
+        }
+
+        function resetLayers() {
+            var textLayer = document.getElementById('titleTextLayer');
+            var wipeLayer = document.getElementById('wipeLayer');
+            var wipeText = document.getElementById('wipeText');
+            if (textLayer) {
+                textLayer.style.transition = 'none';
+                textLayer.style.transform = 'none';
+            }
+            if (wipeLayer) {
+                wipeLayer.style.transition = 'none';
+                wipeLayer.style.transform = 'none';
+                wipeLayer.style.display = 'none';
+            }
+            if (wipeText) {
+                wipeText.textContent = '';
+            }
+        }
+
+        function commitText(text) {
+            var titleText = document.getElementById('titleText');
+            if (titleText) {
+                titleText.textContent = text;
+                titleText.classList.remove('updating', 'updated');
+            }
+            displayedText = text;
+            resetLayers();
+            applyEffects();
+            scheduleFit();
+        }
+
+        // Requests are coalesced into a single pending slot: a change that
+        // arrives mid-animation is applied when the animation drains instead of
+        // destroying the running transition.
+        function renderText(text) {
+            pendingText = text;
+            if (isAnimating) {
+                return;
+            }
+            drainPendingText();
+        }
+
+        function drainPendingText() {
+            if (pendingText === null) {
+                return;
+            }
+            var target = pendingText;
+            pendingText = null;
+
+            if (target === displayedText) {
+                return;
+            }
+
+            if (!shouldAnimateTitleChange()) {
+                commitText(target);
+                return;
+            }
+
+            if (settings.enableWipe) {
+                startWipe(target);
+            } else {
+                startFade(target);
+            }
+        }
+
+        function setTextImmediate(text) {
+            clearAnimationTimers();
+            isAnimating = false;
+            pendingText = null;
+            commitText(text);
+        }
+
+        function shouldAnimateTitleChange() {
+            // Custom titles are typed character by character; animating them
+            // would drop keystrokes.
+            return titleData.showCategory && settings.enableAnimations;
+        }
+
+        function wipeOffsets() {
+            var direction = settings.wipeDirection;
+            if (direction === 'right-to-left') {
+                return { axis: 'X', enter: '-100%', exit: '100%' };
+            }
+            if (direction === 'top-to-bottom') {
+                return { axis: 'Y', enter: '-100%', exit: '100%' };
+            }
+            if (direction === 'bottom-to-top') {
+                return { axis: 'Y', enter: '100%', exit: '-100%' };
+            }
+            return { axis: 'X', enter: '100%', exit: '-100%' };
+        }
+
+        function startWipe(newText) {
+            var textLayer = document.getElementById('titleTextLayer');
+            var wipeLayer = document.getElementById('wipeLayer');
+            var wipeText = document.getElementById('wipeText');
+            if (!textLayer || !wipeLayer || !wipeText) {
+                commitText(newText);
+                return;
+            }
+
+            isAnimating = true;
+            clearAnimationTimers();
+
+            var offsets = wipeOffsets();
+            var duration = Number(settings.transitionDuration) || 0.3;
+            var easing = 'cubic-bezier(' + settings.wipeEasing + ', 0.46, 0.45, 0.94)';
+
+            wipeText.textContent = newText;
+            applyEffects();
+            applyFittedFontSize();
+
+            textLayer.style.transition = 'none';
+            textLayer.style.transform = 'translate' + offsets.axis + '(0%)';
+            wipeLayer.style.display = 'flex';
+            wipeLayer.style.transition = 'none';
+            wipeLayer.style.transform = 'translate' + offsets.axis + '(' + offsets.enter + ')';
+
+            // Force a reflow so the browser records the start positions before
+            // the transition is attached.
+            void wipeLayer.offsetHeight;
+
+            textLayer.style.transition = 'transform ' + duration + 's ' + easing;
+            wipeLayer.style.transition = 'transform ' + duration + 's ' + easing;
+            textLayer.style.transform = 'translate' + offsets.axis + '(' + offsets.exit + ')';
+            wipeLayer.style.transform = 'translate' + offsets.axis + '(0%)';
+
+            addAnimationTimer(function () {
+                isAnimating = false;
+                commitText(newText);
+                drainPendingText();
+            }, duration * 1000 + 40);
+        }
+
+        function startFade(newText) {
+            var titleText = document.getElementById('titleText');
+            if (!titleText) {
+                commitText(newText);
+                return;
+            }
+
+            isAnimating = true;
+            clearAnimationTimers();
+
+            var duration = Number(settings.transitionDuration) || 0.3;
+            titleText.classList.remove('updated');
+            titleText.classList.add('updating');
+
+            addAnimationTimer(function () {
+                var live = document.getElementById('titleText');
+                if (!live) {
+                    isAnimating = false;
+                    return;
+                }
+                live.textContent = newText;
+                displayedText = newText;
+                live.classList.remove('updating');
+                live.classList.add('updated');
+                applyEffects();
+                scheduleFit();
+
+                addAnimationTimer(function () {
+                    var el = document.getElementById('titleText');
+                    if (el) {
+                        el.classList.remove('updated');
+                    }
+                    isAnimating = false;
+                    drainPendingText();
+                }, duration * 1000);
+            }, duration * 500);
+        }
+
+        function computeDesiredText() {
+            if (!titleData.showCategory) {
+                return manualTitle.trim().length === 0 ? '' : manualTitle;
+            }
+            if (currentCategory) {
+                return titleData.categoryPrefix + currentCategory + titleData.categorySuffix;
+            }
+            return titleData.placeholder;
+        }
+
+        function updateTitle(immediate) {
+            var desired = computeDesiredText();
+            if (immediate) {
+                setTextImmediate(desired);
+            } else {
+                renderText(desired);
+            }
+        }
+
+        // Always record the category, whatever the Show Category toggle says.
+        // Only rendering consults the toggle, so switching it back on paints the
+        // live value instantly instead of a stale one.
+        function setCategory(category) {
+            var next = category || "";
+            if (next === currentCategory) {
+                return;
+            }
+            currentCategory = next;
+            updateTitle();
+        }
+
+        // ── Persistence ───────────────────────────────────────────────────
+
+        function saveManualTitleSettings() {
+            try {
+                localStorage.setItem(STORAGE_KEYS.MANUAL_TITLE, manualTitle);
+            } catch (e) {
+                console.warn('Failed to save title settings:', e);
+            }
+        }
+
+        function scheduleManualTitleSave() {
+            if (manualTitleSaveTimeout) {
+                clearTimeout(manualTitleSaveTimeout);
+            }
+            manualTitleSaveTimeout = setTimeout(function () {
+                manualTitleSaveTimeout = null;
+                saveManualTitleSettings();
+            }, 250);
+        }
+
+        // Show Category deliberately does NOT come from localStorage. It used to,
+        // which meant a single stuck 'false' silently discarded every EventSub
+        // category update for good. The template config (persisted server-side by
+        // the toggle) is now the only source of truth. localStorage caches just
+        // the typed custom title, which has no server-side persistence.
+        function loadManualTitleSettings() {
+            try {
+                LEGACY_STORAGE_KEYS.forEach(function (key) {
+                    localStorage.removeItem(key);
+                });
+                var savedTitle = localStorage.getItem(STORAGE_KEYS.MANUAL_TITLE);
+                if (savedTitle !== null && !manualTitle) {
+                    manualTitle = savedTitle;
+                }
+            } catch (e) {
+                console.warn('Failed to load title settings:', e);
+            }
+        }
+
+        function saveOverride(override) {
+            try {
+                if (override) {
+                    localStorage.setItem(STORAGE_KEYS.OVERRIDE, JSON.stringify(override));
+                } else {
+                    localStorage.removeItem(STORAGE_KEYS.OVERRIDE);
+                }
+            } catch (e) {
+                console.warn('Failed to save title override:', e);
+            }
+        }
+
+        function readOverride() {
+            try {
+                var raw = localStorage.getItem(STORAGE_KEYS.OVERRIDE);
+                if (!raw) {
+                    return null;
+                }
+                var parsed = JSON.parse(raw);
+                return (parsed && typeof parsed === 'object') ? parsed : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function applyOverrideRevert(override) {
+            if (override && override.revert) {
+                titleData.showCategory = override.revert.showCategory !== false;
+                manualTitle = typeof override.revert.manualTitle === 'string'
+                    ? override.revert.manualTitle
+                    : '';
+            }
+            saveOverride(null);
+            saveManualTitleSettings();
+        }
+
+        function scheduleOverrideRevert(override) {
+            if (connectorRevertTimeout) {
+                clearTimeout(connectorRevertTimeout);
+                connectorRevertTimeout = null;
+            }
+            var remaining = Number(override.expiresAt) - Date.now();
+            if (!isFinite(remaining)) {
+                return;
+            }
+            if (remaining <= 0) {
+                applyOverrideRevert(override);
+                updateTitle();
+                refreshStreamData();
+                return;
+            }
+            connectorRevertTimeout = setTimeout(function () {
+                connectorRevertTimeout = null;
+                applyOverrideRevert(override);
+                updateTitle();
+                refreshStreamData();
+            }, remaining);
+        }
+
+        // A timed connector title used to be reverted by an in-memory timer, so a
+        // source refresh during the window stranded Show Category off forever.
+        // The expiry is now absolute and re-checked on every load.
+        function restorePendingOverride() {
+            var override = readOverride();
+            if (!override || !override.expiresAt) {
+                return;
+            }
+            if (Number(override.expiresAt) <= Date.now()) {
+                applyOverrideRevert(override);
+                return;
+            }
+            if (typeof override.text === 'string') {
+                manualTitle = override.text;
+                titleData.showCategory = false;
+            }
+            scheduleOverrideRevert(override);
+        }
+
+        // ── Stream data ───────────────────────────────────────────────────
+
+        function requestStreamerInfo() {
+            if (streamerInfoInFlight) {
+                return;
+            }
+            streamerInfoInFlight = true;
+            socket.emit('get-streamer-info');
+        }
+
+        function stopStreamerInfoRetry() {
+            if (streamerInfoRetryTimer) {
+                clearTimeout(streamerInfoRetryTimer);
+                streamerInfoRetryTimer = null;
+            }
+        }
+
+        // The web engine is up about a second before Twitch auth completes, so an
+        // OBS source that loads first gets a response with no user_id. Keep asking
+        // instead of giving up.
+        function scheduleStreamerInfoRetry() {
+            stopStreamerInfoRetry();
+            streamerInfoRetryTimer = setTimeout(function () {
+                streamerInfoRetryTimer = null;
+                streamerInfoRetryMs = Math.min(STREAMER_INFO_RETRY_MAX_MS, streamerInfoRetryMs * 2);
+                requestStreamerInfo();
+            }, streamerInfoRetryMs);
+        }
+
+        function clearApiWatchdog() {
+            if (apiWatchdogTimer) {
+                clearTimeout(apiWatchdogTimer);
+                apiWatchdogTimer = null;
+            }
+        }
+
+        function stopApiRetry() {
+            if (apiRetryTimer) {
+                clearTimeout(apiRetryTimer);
+                apiRetryTimer = null;
+            }
+        }
+
+        function scheduleApiRetry() {
+            stopApiRetry();
+            apiRetryTimer = setTimeout(function () {
+                apiRetryTimer = null;
+                apiRetryMs = Math.min(API_RETRY_MAX_MS, apiRetryMs * 2);
+                fetchChannelInfo();
+            }, apiRetryMs);
+        }
+
+        function stopApiPoll() {
+            if (apiPollTimer) {
+                clearInterval(apiPollTimer);
+                apiPollTimer = null;
+            }
+        }
+
+        // The poll is a standing safety net. It is deliberately NOT cancelled when
+        // EventSub delivers, because EventSub can die silently and the server-side
+        // health check can take up to 45 minutes to rebuild subscriptions.
+        function startApiPoll() {
+            stopApiPoll();
+            var interval = pollIntervalMs();
+            if (!useApi() || interval <= 0) {
+                return;
+            }
+            apiPollTimer = setInterval(fetchChannelInfo, interval);
+        }
+
+        // /helix/channels works whether or not the stream is live and is keyed by
+        // broadcaster_id, unlike /helix/streams?user_login= which returns an empty
+        // array while offline and needs a login rather than a display name.
+        function fetchChannelInfo() {
+            if (!useApi() || !broadcasterId || pendingApiRequestId) {
+                return;
+            }
+
+            pendingApiRequestId = 'title_channel_' + Date.now() + '_' +
+                Math.random().toString(36).slice(2, 8);
+
+            clearApiWatchdog();
+            apiWatchdogTimer = setTimeout(function () {
+                // The server's bounded Twitch worker queue drops requests without
+                // replying; without this the overlay would block fetches forever.
+                apiWatchdogTimer = null;
+                pendingApiRequestId = null;
+                console.warn('Twitch API request timed out; will retry');
+                scheduleApiRetry();
+            }, API_WATCHDOG_MS);
+
+            socket.emit('twitch-api-request', {
+                endpoint: 'https://api.twitch.tv/helix/channels?broadcaster_id=' +
+                    encodeURIComponent(broadcasterId),
+                requestId: pendingApiRequestId
+            });
+        }
+
+        function refreshStreamData() {
+            streamerInfoRetryMs = 1000;
+            apiRetryMs = API_RETRY_BASE_MS;
+            stopApiRetry();
+            requestStreamerInfo();
+            if (useApi() && broadcasterId) {
+                fetchChannelInfo();
+            }
+        }
+
+        // ── Socket events ─────────────────────────────────────────────────
+
+        socket.on('connect', function () {
+            // A request that was in flight when the socket dropped will never be
+            // answered, so clear the single-flight guards rather than letting
+            // them block every later fetch.
+            streamerInfoInFlight = false;
+            pendingApiRequestId = null;
+            clearApiWatchdog();
+            refreshStreamData();
         });
 
         socket.on('disconnect', function () {
             console.log('Title socket disconnected');
+            streamerInfoInFlight = false;
+            pendingApiRequestId = null;
+            clearApiWatchdog();
         });
 
         socket.on('connect_error', function (error) {
             console.error('Title socket connection error:', error);
         });
 
-        // Get streamer info from server
+        socket.on('template_config_updated', function (data) {
+            var name = (data && (data.template_name || data.templateName || data.template)) || '';
+            if (name === 'title') {
+                // Hot-apply rather than reload so the overlay never flashes.
+                loadTemplateConfig();
+            }
+        });
+
         socket.on('streamer-info', function (data) {
             streamerInfoInFlight = false;
-            if (data && data.streamer_name) {
-                console.log('Received streamer info:', data.streamer_name);
+
+            if (!data) {
+                scheduleStreamerInfoRetry();
+                return;
+            }
+
+            if (data.streamer_name) {
                 currentStreamerName = data.streamer_name;
-                categoryRetryBackoffMs = 5000;
-                makeInitialTwitchApiCall(data.streamer_name);
+            }
+
+            // Paint the server's cached category straight away so a source
+            // refresh shows the right text without waiting for an API round-trip.
+            if (typeof data.current_category === 'string' &&
+                data.current_category &&
+                data.current_category !== 'No Category') {
+                setCategory(data.current_category);
+            }
+
+            if (data.user_id) {
+                broadcasterId = String(data.user_id);
+                stopStreamerInfoRetry();
+                streamerInfoRetryMs = 1000;
+                if (useApi()) {
+                    fetchChannelInfo();
+                    startApiPoll();
+                }
             } else {
-                console.log(data)
-                console.error('No streamer info received');
+                // Twitch is not authenticated yet.
+                scheduleStreamerInfoRetry();
             }
         });
 
-        // Handle Twitch API response for initial call
+        socket.on('streamer-info-error', function (error) {
+            streamerInfoInFlight = false;
+            console.error('Streamer info error:', error);
+            scheduleStreamerInfoRetry();
+        });
+
         socket.on('twitch-api-response', function (data) {
-            if (data && data.requestId && data.requestId.startsWith('initial_stream_info_')) {
-                releaseTwitchApiInFlight();
+            // Exact match: a stale or unrelated response must not be mistaken for
+            // the one this overlay is waiting on.
+            if (!data || !data.requestId || data.requestId !== pendingApiRequestId) {
+                return;
             }
-            console.log('[DEBUG] twitch-api-response event received:', JSON.stringify(data));
-            
-            // Check if this is our request by looking at the requestId
-            if (data && data.requestId && data.requestId.startsWith('initial_stream_info_')) {
-                console.log('[INFO] Processing initial stream info response for request:', data.requestId);
-                
-                if (data.success && data.data && data.data.data && data.data.data.length > 0) {
-                    var streamInfo = data.data.data[0];
-                    console.log('[DEBUG] Stream info received:', JSON.stringify(streamInfo));
-                    
-                    if (streamInfo.game_name) {
-                        console.log('[SUCCESS] Initial category from API:', streamInfo.game_name);
-                        console.log('[DEBUG] Updating currentCategory from "' + currentCategory + '" to "' + streamInfo.game_name + '"');
-                        currentCategory = streamInfo.game_name;
-                        categoryRetryBackoffMs = 5000;
-                        stopCategoryRetry(); // Stop retrying since we got a successful response
-                        updateTitle();
-                        console.log('[SUCCESS] Initial API call processed successfully');
-                    } else {
-                        console.log('[WARNING] No game_name in API response, keeping current category');
-                        // Don't overwrite existing category data - keep current value
-                        updateTitle();
-                    }
-                } else {
-                    console.log('[INFO] No stream data in API response, stream may be offline - scheduling retry');
-                    console.log('[DEBUG] API response structure:', {
-                        success: data.success,
-                        hasData: !!data.data,
-                        hasDataArray: !!(data.data && data.data.data),
-                        dataArrayLength: data.data && data.data.data ? data.data.data.length : 0
-                    });
-                    
-                    // Don't overwrite existing category data when stream is offline
-                    // This preserves any valid category from previous EventSub updates
-                    updateTitle();
-                    
-                    // Schedule retry if we have a streamer name
-                    if (currentStreamerName) {
-                        console.log('[INFO] Scheduling retry for streamer:', currentStreamerName);
-                        scheduleCategoryRetry(currentStreamerName);
-                    } else {
-                        console.log('[ERROR] Cannot schedule retry - no streamer name available');
-                    }
+
+            pendingApiRequestId = null;
+            clearApiWatchdog();
+
+            var channels = data.success && data.data && data.data.data;
+            if (Array.isArray(channels) && channels.length > 0) {
+                var channel = channels[0];
+                if (channel.game_name !== undefined) {
+                    setCategory(channel.game_name || '');
                 }
-            } else {
-                console.log('[DEBUG] Ignoring API response - not our request');
+                apiRetryMs = API_RETRY_BASE_MS;
+                stopApiRetry();
+                return;
             }
+
+            console.warn('No channel data in Twitch API response; scheduling retry');
+            scheduleApiRetry();
         });
 
-        // Listen for category updates from websocket
         socket.on('twitch_data_update', function (data) {
-            console.log('[DEBUG] twitch_data_update event received:', JSON.stringify(data));
-            console.log('[DEBUG] Current state:', {
-                showCategory: titleData.showCategory,
-                currentCategory: currentCategory,
-                manualTitle: manualTitle
-            });
-
-            if (data && data.current_category !== undefined) {
-                console.log('[INFO] Category update received:', data.current_category, 'showCategory:', titleData.showCategory);
-                if (titleData.showCategory) {
-                    console.log('[INFO] Processing category update - setting currentCategory to:', data.current_category);
-                    currentCategory = data.current_category || "";
-                    stopCategoryRetry(); // Stop retrying since EventSub is now providing updates
-                    updateTitle();
-                    console.log('[SUCCESS] Category update processed successfully');
-                } else {
-                    console.log('[IGNORED] Category update ignored - Show Category is off');
-                }
-            } else {
-                console.log('[WARNING] Invalid or empty twitch_data_update received:', data);
+            if (!useEventSub()) {
+                return;
             }
+            if (!data || data.current_category === undefined) {
+                return;
+            }
+            setCategory(data.current_category || '');
         });
 
-        // Dynamic control event handlers
-        socket.on('title_toggle_show_category', function (data) {
-            if (data && typeof data.enabled === 'boolean') {
-                titleData.showCategory = data.enabled;
-                saveManualTitleSettings();
+        // ── Dynamic controls ──────────────────────────────────────────────
 
-                if (titleData.showCategory) {
-                    if (currentStreamerName) {
-                        makeInitialTwitchApiCall(currentStreamerName);
-                    } else {
-                        requestStreamerInfo();
-                    }
-                } else {
-                    updateTitle();
-                }
-            } else {
-                console.log('[ERROR] Invalid toggle data received:', data);
+        socket.on('title_toggle_show_category', function (data) {
+            if (!data || typeof data.enabled !== 'boolean') {
+                return;
+            }
+            titleData.showCategory = data.enabled;
+            saveManualTitleSettings();
+            updateTitle();
+            if (titleData.showCategory) {
+                refreshStreamData();
             }
         });
 
         socket.on('title_set_manual_title', function (data) {
-            if (data && data.text !== undefined && data.text !== null) {
-                manualTitle = String(data.text);
-                if (manualTitle.trim().length > 0) {
-                    titleData.showCategory = false;
-                }
-                scheduleManualTitleSave();
-                updateTitle();
+            if (!data || data.text === undefined || data.text === null) {
+                return;
+            }
+            manualTitle = String(data.text);
+            scheduleManualTitleSave();
+            // Typing no longer flips Show Category off; that used to strand the
+            // overlay so EventSub category updates were silently ignored.
+            if (!titleData.showCategory) {
+                updateTitle(true);
             }
         });
 
         socket.on('title_clear_manual_title', function (data) {
-            console.log('Clear custom title triggered');
             manualTitle = "";
             titleData.showCategory = true;
-            saveManualTitleSettings();
-            if (currentStreamerName) {
-                makeInitialTwitchApiCall(currentStreamerName);
-            } else {
-                requestStreamerInfo();
+            saveOverride(null);
+            if (connectorRevertTimeout) {
+                clearTimeout(connectorRevertTimeout);
+                connectorRevertTimeout = null;
             }
+            saveManualTitleSettings();
             updateTitle();
-            console.log('Cleared custom title, Show Category restored');
+            refreshStreamData();
         });
 
         socket.on('title_set_wipe_direction', function (data) {
-            console.log('Wipe direction button pressed:', data);
             if (data && data.direction) {
-                var direction = data.direction;
-                if (['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'].includes(direction)) {
-                    settings.wipeDirection = direction;
-                    console.log('Wipe direction set via dynamic control:', direction);
+                var allowed = ['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'];
+                if (allowed.indexOf(data.direction) !== -1) {
+                    settings.wipeDirection = data.direction;
                 }
             }
         });
 
         socket.on('title_toggle_wipe_animation', function (data) {
-            console.log('Wipe animation toggle received:', data);
             if (data && typeof data.enabled === 'boolean') {
                 settings.enableWipe = data.enabled;
-                console.log('Wipe animation', data.enabled ? 'enabled' : 'disabled', 'via dynamic control');
             }
         });
 
-        socket.on('title_refresh_title', function (data) {
-            console.log('Category refresh triggered');
-            if (titleData.showCategory) {
-                requestStreamerInfo();
-            }
+        socket.on('title_refresh_title', function () {
+            refreshStreamData();
         });
 
-        // Connector action event listeners
+        // ── Connector actions ─────────────────────────────────────────────
+
         socket.on('title_change_title', function (data) {
-            console.log('Connector action: change title', data);
             if (!data) {
                 return;
             }
@@ -453,11 +1018,17 @@
             }
 
             var setCustom = data.set_custom === true || data.set_custom === 'true';
-            var revertSnapshot = null;
+
+            var override = null;
             if (duration > 0) {
-                revertSnapshot = {
-                    showCategory: titleData.showCategory,
-                    manualTitle: manualTitle
+                // Store an absolute expiry so a refresh mid-window still reverts.
+                override = {
+                    text: text,
+                    expiresAt: Date.now() + duration * 1000,
+                    revert: {
+                        showCategory: titleData.showCategory,
+                        manualTitle: manualTitle
+                    }
                 };
             }
 
@@ -466,429 +1037,76 @@
                 titleData.showCategory = false;
             }
 
+            if (override) {
+                saveOverride(override);
+            } else {
+                saveOverride(null);
+            }
             saveManualTitleSettings();
             updateTitle();
 
-            if (duration > 0 && revertSnapshot) {
-                connectorRevertTimeout = setTimeout(function () {
-                    titleData.showCategory = revertSnapshot.showCategory;
-                    manualTitle = revertSnapshot.manualTitle;
-                    saveManualTitleSettings();
-                    updateTitle();
-                    if (titleData.showCategory && currentStreamerName) {
-                        makeInitialTwitchApiCall(currentStreamerName);
-                    }
-                    connectorRevertTimeout = null;
-                }, duration * 1000);
+            if (override) {
+                scheduleOverrideRevert(override);
             }
-
-            console.log('Title changed via connector to:', text);
         });
 
-        // Request streamer info from server (single-flight per page load burst)
-        function scheduleStreamerInfoRequest() {
-            if (streamerInfoInFlight) {
-                return;
-            }
-            streamerInfoInFlight = true;
-            socket.emit('get-streamer-info');
-        }
+        // ── Config (Source Settings + Spore Studio preview) ───────────────
 
-        function requestStreamerInfo() {
-            scheduleStreamerInfoRequest();
-        }
-
-        // Make initial Twitch API call to get current stream info.
-        // twitch-api-request supports optional `params` (query object) and
-        // `json_data` / `json` (body object) for POST/PATCH; endpoint must be
-        // https://api.twitch.tv/...
-        function makeInitialTwitchApiCall(streamerName) {
-            if (!streamerName || twitchApiInFlight) {
-                return;
-            }
-            twitchApiInFlight = true;
-            var apiRequest = {
-                endpoint: `https://api.twitch.tv/helix/streams?user_login=${streamerName}`,
-                requestId: 'initial_stream_info_' + Date.now()
-            };
-
-            console.log('Making initial Twitch API call for streamer:', streamerName);
-            socket.emit('twitch-api-request', apiRequest);
-        }
-
-        function releaseTwitchApiInFlight() {
-            twitchApiInFlight = false;
-        }
-
-        // Schedule retry for category API call (exponential backoff)
-        function scheduleCategoryRetry(streamerName) {
-            stopCategoryRetry();
-
-            isRetryingCategory = true;
-            console.log('Scheduling category retry in', categoryRetryBackoffMs / 1000, 'seconds');
-
-            retryTimeout = setTimeout(function() {
-                console.log('Retrying category API call');
-                makeInitialTwitchApiCall(streamerName);
-                isRetryingCategory = false;
-                categoryRetryBackoffMs = Math.min(
-                    categoryRetryMaxBackoffMs,
-                    categoryRetryBackoffMs * 2
-                );
-            }, categoryRetryBackoffMs);
-        }
-
-        // Stop category retrying
-        function stopCategoryRetry() {
-            if (retryTimeout) {
-                clearTimeout(retryTimeout);
-                retryTimeout = null;
-                isRetryingCategory = false;
-                console.log('Stopped category retry');
-            }
-        }
-
-        function scheduleManualTitleSave() {
-            if (manualTitleSaveTimeout) {
-                clearTimeout(manualTitleSaveTimeout);
-            }
-            manualTitleSaveTimeout = setTimeout(function () {
-                manualTitleSaveTimeout = null;
-                saveManualTitleSettings();
-            }, 250);
-        }
-
-        function cancelPendingTitleAnimation() {
-            titleAnimationGeneration += 1;
-            titleAnimationTimeouts.forEach(function (id) {
-                clearTimeout(id);
-            });
-            titleAnimationTimeouts = [];
-        }
-
-        function scheduleTitleAnimation(callback, delayMs) {
-            var generation = titleAnimationGeneration;
-            var timeoutId = setTimeout(function () {
-                titleAnimationTimeouts = titleAnimationTimeouts.filter(function (id) {
-                    return id !== timeoutId;
-                });
-                if (generation === titleAnimationGeneration) {
-                    callback();
-                }
-            }, delayMs);
-            titleAnimationTimeouts.push(timeoutId);
-        }
-
-        function getTitleContainer() {
-            return document.getElementById('titleContainer');
-        }
-
-        function ensureTitleElement(text) {
-            var container = getTitleContainer();
-            if (!container) {
-                return null;
-            }
-
-            var existing = document.getElementById('titleText');
-            if (existing) {
-                if (text !== undefined) {
-                    existing.textContent = text;
-                }
-                return existing;
-            }
-
-            var wipeContainer = container.querySelector('.wipe-container');
-            if (wipeContainer) {
-                container.removeChild(wipeContainer);
-            }
-
-            var element = document.createElement('div');
-            element.className = 'title-text';
-            element.id = 'titleText';
-            if (text !== undefined) {
-                element.textContent = text;
-            }
-            container.appendChild(element);
-            return element;
-        }
-
-        function getDisplayedTitleText() {
-            var titleElement = document.getElementById('titleText');
-            if (titleElement) {
-                return titleElement.textContent;
-            }
-
-            var wipeNew = document.querySelector('#titleContainer .wipe-new-text');
-            if (wipeNew) {
-                return wipeNew.textContent;
-            }
-
-            var wipeOld = document.querySelector('#titleContainer .wipe-old-text');
-            return wipeOld ? wipeOld.textContent : '';
-        }
-
-        function setTitleTextImmediate(newText) {
-            cancelPendingTitleAnimation();
-            var titleElement = ensureTitleElement(newText);
-            if (!titleElement) {
-                return;
-            }
-            titleElement.textContent = newText;
-            applyEffects(titleElement);
-        }
-
-        function shouldAnimateTitleChange() {
-            return titleData.showCategory && settings.enableAnimations;
-        }
-
-        // Local storage functions for custom title persistence
-        function saveManualTitleSettings() {
-            try {
-                localStorage.setItem(STORAGE_KEYS.SHOW_CATEGORY, titleData.showCategory.toString());
-                localStorage.setItem(STORAGE_KEYS.MANUAL_TITLE, manualTitle);
-                localStorage.removeItem(STORAGE_KEYS.MANUAL_MODE_LEGACY);
-                console.log('Saved title settings to localStorage');
-            } catch (e) {
-                console.warn('Failed to save title settings:', e);
-            }
-        }
-
-        function loadManualTitleSettings() {
-            try {
-                var savedShowCategory = localStorage.getItem(STORAGE_KEYS.SHOW_CATEGORY);
-                var savedTitle = localStorage.getItem(STORAGE_KEYS.MANUAL_TITLE);
-                var legacyMode = localStorage.getItem(STORAGE_KEYS.MANUAL_MODE_LEGACY);
-
-                if (savedShowCategory !== null) {
-                    titleData.showCategory = savedShowCategory === 'true';
-                    console.log('Loaded show category from localStorage:', titleData.showCategory);
-                } else if (legacyMode === 'true') {
-                    titleData.showCategory = false;
-                    console.log('Migrated legacy manual mode to showCategory=false');
-                }
-
-                if (savedTitle !== null) {
-                    manualTitle = savedTitle;
-                    console.log('Loaded custom title from localStorage:', manualTitle);
-                }
-            } catch (e) {
-                console.warn('Failed to load title settings:', e);
-            }
-        }
-
-        function clearManualTitleSettings() {
-            try {
-                localStorage.removeItem(STORAGE_KEYS.SHOW_CATEGORY);
-                localStorage.removeItem(STORAGE_KEYS.MANUAL_TITLE);
-                localStorage.removeItem(STORAGE_KEYS.MANUAL_MODE_LEGACY);
-                console.log('Cleared title settings from localStorage');
-            } catch (e) {
-                console.warn('Failed to clear title settings:', e);
-            }
-        }
-
-        // Update the displayed title based on current settings
-        function updateTitle() {
-            var newTitle = "";
-            var displayedTitle = getDisplayedTitleText();
-
-            if (!titleData.showCategory) {
-                newTitle = manualTitle.trim().length === 0 ? '' : manualTitle;
-            } else if (currentCategory) {
-                newTitle = titleData.categoryPrefix + currentCategory + titleData.categorySuffix;
-            } else {
-                newTitle = titleData.currentTitle;
-            }
-
-            if (newTitle === displayedTitle) {
-                return;
-            }
-
-            // Custom titles update instantly (no wipe/opacity) so fast typing never misses characters
-            if (!titleData.showCategory) {
-                setTitleTextImmediate(newTitle);
-                return;
-            }
-
-            var titleElement = ensureTitleElement();
-            if (!titleElement) {
-                return;
-            }
-
-            if (shouldAnimateTitleChange()) {
-                animateTextChange(titleElement, newTitle);
-            } else {
-                titleElement.textContent = newTitle;
-                applyEffects(titleElement);
-            }
-        }
-
-        // Animate text changes (category mode only; custom titles use setTitleTextImmediate)
-        function animateTextChange(element, newText) {
-            cancelPendingTitleAnimation();
-            var generation = titleAnimationGeneration;
-
-            if (settings.enableWipe) {
-                animateWipeTransition(element, newText, generation);
-            } else {
-                element.classList.add('updating');
-
-                scheduleTitleAnimation(function () {
-                    var liveElement = ensureTitleElement();
-                    if (!liveElement) {
-                        return;
-                    }
-                    liveElement.textContent = newText;
-                    liveElement.classList.remove('updating');
-                    liveElement.classList.add('updated');
-                    applyEffects(liveElement);
-
-                    scheduleTitleAnimation(function () {
-                        liveElement.classList.remove('updated');
-                    }, {{ TransitionDuration| tojson }} * 1000);
-                }, {{ TransitionDuration }} * 500);
-            }
-        }
-
-        // Wipe animation transition
-        function animateWipeTransition(element, newText, generation) {
-            generation = generation || titleAnimationGeneration;
-            var container = element.parentElement;
-            var oldText = element.textContent;
-
-            // Create wipe container
-            var wipeContainer = document.createElement('div');
-            wipeContainer.className = 'wipe-container';
-
-            // Add direction class
-            if (settings.wipeDirection === 'right-to-left') {
-                wipeContainer.classList.add('wipe-right-to-left');
-            } else if (settings.wipeDirection === 'top-to-bottom') {
-                wipeContainer.classList.add('wipe-top-to-bottom');
-            } else if (settings.wipeDirection === 'bottom-to-top') {
-                wipeContainer.classList.add('wipe-bottom-to-top');
-            }
-
-            // Create old text element
-            var oldTextElement = document.createElement('div');
-            oldTextElement.className = 'wipe-old-text title-text';
-            oldTextElement.textContent = oldText;
-
-            // Create new text element
-            var newTextElement = document.createElement('div');
-            newTextElement.className = 'wipe-new-text title-text';
-            newTextElement.textContent = newText;
-
-            // Assemble wipe container
-            wipeContainer.appendChild(oldTextElement);
-            wipeContainer.appendChild(newTextElement);
-
-            // Replace original element with wipe container
-            container.replaceChild(wipeContainer, element);
-            applyEffects(newTextElement);
-
-            // Force reflow to ensure initial positions are set
-            wipeContainer.offsetHeight;
-
-            // Start wipe animation
-            scheduleTitleAnimation(function () {
-                if (generation !== titleAnimationGeneration) {
-                    return;
-                }
-                oldTextElement.classList.add('wipe-active');
-                newTextElement.classList.add('wipe-active');
-
-                scheduleTitleAnimation(function () {
-                    if (generation !== titleAnimationGeneration) {
-                        return;
-                    }
-                    var finalElement = document.createElement('div');
-                    finalElement.className = 'title-text';
-                    finalElement.id = 'titleText';
-                    finalElement.textContent = newText;
-
-                    container.replaceChild(finalElement, wipeContainer);
-                    applyEffects(finalElement);
-                }, {{ TransitionDuration| tojson }} * 1000);
-            }, 50);
-        }
-
-        // Apply visual effects
-        function applyEffects(element) {
-            // Remove existing effects
-            element.classList.remove('pulse', 'glow');
-
-            // Apply pulse effect if enabled
-            if (settings.enablePulse) {
-                element.classList.add('pulse');
-            }
-
-            // Apply glow effect if enabled
-            if (settings.enableGlow) {
-                element.classList.add('glow');
-            }
-        }
-
-        // ── Custom Sources preview: hot config (no iframe reload) ──
         function _titleCfg(config, key, fallback) {
             var v = config[key];
             return (v !== undefined && v !== null && v !== '') ? v : fallback;
         }
 
-        function buildTitlePreviewCss(config) {
+        function buildTitleCss(config) {
             var fontName = _titleCfg(config, 'FontName', 'Renogare.ttf');
-            var titleTop = _titleCfg(config, 'TitleTop', 0);
-            var titleLeft = _titleCfg(config, 'TitleLeft', 0);
-            var titleWidth = _titleCfg(config, 'TitleWidth', 800);
-            var titleHeight = _titleCfg(config, 'TitleHeight', 80);
             var titleAlign = _titleCfg(config, 'TitleAlign', 'center');
+            var titleVAlign = _titleCfg(config, 'TitleVAlign', 'center');
             var containerBG = _titleCfg(config, 'ContainerBG', 'transparent');
             var containerRadius = _titleCfg(config, 'ContainerRadius', 0);
             var containerBorder = _titleCfg(config, 'ContainerBorder', 0);
             var containerBorderColor = _titleCfg(config, 'ContainerBorderColor', 'transparent');
-            var containerShadow = _titleCfg(config, 'ContainerShadow', 'none');
-            var containerPadding = _titleCfg(config, 'ContainerPadding', 10);
-            var fontSize = _titleCfg(config, 'FontSize', 32);
+            var containerPadding = _titleCfg(config, 'ContainerPadding', 0);
             var fontWeight = _titleCfg(config, 'FontWeight', 'bold');
             var fontColor = _titleCfg(config, 'FontColor', '#ffffff');
             var textShadow = _titleCfg(config, 'TextShadow', 'none');
             var lineHeight = _titleCfg(config, 'LineHeight', 1.2);
-            var transitionDuration = _titleCfg(config, 'TransitionDuration', 0.5);
-            var wipeEasing = _titleCfg(config, 'WipeEasing', '0.25');
+            var transitionDuration = _titleCfg(config, 'TransitionDuration', 0.3);
             var pulseOpacity = _titleCfg(config, 'PulseOpacity', 0.7);
             var pulseSpeed = _titleCfg(config, 'PulseSpeed', 2);
             var glowColor = _titleCfg(config, 'GlowColor', '#ffffff');
 
+            var textAlign = titleAlign === 'flex-start'
+                ? 'left'
+                : (titleAlign === 'flex-end' ? 'right' : 'center');
+
             return (
                 '@font-face { font-family: title-font; src: url("/assets/default_assets/fonts/' + fontName + '"); }' +
+                ':root { --title-text-align: ' + textAlign + '; }' +
                 'body { font-family: title-font, Arial, sans-serif; }' +
-                '.title-container { top: ' + titleTop + 'px; left: ' + titleLeft + 'px; width: ' + titleWidth + 'px; height: ' + titleHeight + 'px; ' +
-                'justify-content: ' + titleAlign + '; background: ' + containerBG + '; border-radius: ' + containerRadius + 'px; ' +
-                'border: ' + containerBorder + 'px solid ' + containerBorderColor + '; box-shadow: ' + containerShadow + '; padding: ' + containerPadding + 'px; }' +
-                '.title-text { font-size: ' + fontSize + 'px; font-weight: ' + fontWeight + '; color: ' + fontColor + '; text-shadow: ' + textShadow + '; ' +
-                'text-align: ' + titleAlign + '; line-height: ' + lineHeight + '; max-width: 100%; overflow: hidden; white-space: nowrap; }' +
-                '.title-text.updating, .title-text.updated { transition: opacity ' + transitionDuration + 's ease; }' +
-                '.wipe-old-text, .wipe-new-text { justify-content: ' + titleAlign + '; }' +
-                '.wipe-new-text { transition: transform ' + transitionDuration + 's cubic-bezier(' + wipeEasing + ', 0.46, 0.45, 0.94); }' +
-                '.wipe-old-text { transition: transform ' + transitionDuration + 's cubic-bezier(' + wipeEasing + ', 0.46, 0.45, 0.94); }' +
+                '#titleStage { background: ' + containerBG + '; ' +
+                'border: ' + containerBorder + 'px solid ' + containerBorderColor + '; ' +
+                'border-radius: ' + containerRadius + 'px; padding: ' + containerPadding + 'px; }' +
+                '.title-layer { justify-content: ' + titleAlign + '; align-items: ' + titleVAlign + '; }' +
+                '.title-text { font-weight: ' + fontWeight + '; color: ' + fontColor + '; ' +
+                'text-shadow: ' + textShadow + '; line-height: ' + lineHeight + '; }' +
+                '.title-text.updating { opacity: ' + pulseOpacity + '; transition: opacity ' + transitionDuration + 's ease; }' +
+                '.title-text.updated { opacity: 1; transition: opacity ' + transitionDuration + 's ease; }' +
                 '@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: ' + pulseOpacity + '; } }' +
                 '.title-text.pulse { animation: pulse ' + pulseSpeed + 's infinite; }' +
-                '.title-text.glow { text-shadow: ' + textShadow + ', 0 0 10px ' + glowColor + ', 0 0 20px ' + glowColor + '; }' +
-                '@media (max-width: 768px) { .title-container { width: calc(' + titleWidth + 'px * 0.9); height: calc(' + titleHeight + 'px * 0.9); ' +
-                'padding: calc(' + containerPadding + 'px * 0.8); } }'
+                '.title-text.glow { text-shadow: ' + textShadow + ', 0 0 10px ' + glowColor + ', 0 0 20px ' + glowColor + '; }'
             );
         }
 
         function applyTemplateConfig(config) {
-            var styleEl = document.getElementById('mycelian-title-preview-dynamic');
+            var styleEl = document.getElementById('mycelian-title-dynamic');
             if (!styleEl) {
                 styleEl = document.createElement('style');
-                styleEl.id = 'mycelian-title-preview-dynamic';
+                styleEl.id = 'mycelian-title-dynamic';
                 document.head.appendChild(styleEl);
             }
-            styleEl.textContent = buildTitlePreviewCss(config);
+            styleEl.textContent = buildTitleCss(config);
 
-            if (config.CategoryPrefix !== undefined) { titleData.categoryPrefix = config.CategoryPrefix; }
+            if (config.CategoryPrefix !== undefined) { titleData.categoryPrefix = String(config.CategoryPrefix); }
             if (config.CategorySuffix !== undefined) { titleData.categorySuffix = String(config.CategorySuffix); }
             if (config.EnableAnimations !== undefined) { settings.enableAnimations = !!config.EnableAnimations; }
             if (config.EnablePulse !== undefined) { settings.enablePulse = !!config.EnablePulse; }
@@ -896,13 +1114,31 @@
             if (config.EnableWipe !== undefined) { settings.enableWipe = !!config.EnableWipe; }
             if (config.WipeDirection !== undefined) { settings.wipeDirection = config.WipeDirection; }
             if (config.WipeEasing !== undefined) { settings.wipeEasing = config.WipeEasing; }
+            if (config.TransitionDuration !== undefined) { settings.transitionDuration = config.TransitionDuration; }
+            if (config.AutoFitText !== undefined) { settings.autoFitText = !!config.AutoFitText; }
+            if (config.TextWrap !== undefined) { settings.textWrap = config.TextWrap; }
+            if (config.FontSize !== undefined) { settings.fontSize = config.FontSize; }
+            if (config.MinFontSize !== undefined) { settings.minFontSize = config.MinFontSize; }
+            if (config.ShowCategory !== undefined) { titleData.showCategory = !!config.ShowCategory; }
+            if (config.ManualTitle !== undefined) { manualTitle = String(config.ManualTitle); }
 
-            var titleEl = document.getElementById('titleText');
-            if (titleEl) {
-                titleEl.style.fontSize = '';
-                titleEl.classList.remove('pulse', 'glow');
-                if (settings.enablePulse) { titleEl.classList.add('pulse'); }
-                if (settings.enableGlow) { titleEl.classList.add('glow'); }
+            var dataSourceChanged = config.DataSource !== undefined &&
+                config.DataSource !== settings.dataSource;
+            var pollChanged = config.ApiPollInterval !== undefined &&
+                config.ApiPollInterval !== settings.apiPollInterval;
+            if (config.DataSource !== undefined) { settings.dataSource = config.DataSource; }
+            if (config.ApiPollInterval !== undefined) { settings.apiPollInterval = config.ApiPollInterval; }
+
+            applyTextWrapMode();
+            applyEffects();
+            updateTitle();
+            scheduleFit();
+
+            if (dataSourceChanged || pollChanged) {
+                startApiPoll();
+                if (useApi()) {
+                    fetchChannelInfo();
+                }
             }
         }
 
@@ -911,12 +1147,12 @@
                 var response = await fetch('/api/template-config/title', { credentials: 'same-origin' });
                 if (!response.ok) {
                     console.error('Failed to load title template config:', response.status);
-                    return;
+                    return null;
                 }
                 var titleConfigData = await response.json();
                 if (!titleConfigData || !titleConfigData.elements) {
                     console.warn('No title config elements in response');
-                    return;
+                    return null;
                 }
                 var config = {};
                 titleConfigData.elements.forEach(function (element) {
@@ -925,21 +1161,38 @@
                     }
                 });
                 applyTemplateConfig(config);
-                loadManualTitleSettings();
-                updateTitle();
+                return config;
             } catch (error) {
                 console.error('Error loading template config:', error);
-                loadManualTitleSettings();
-                updateTitle();
+                return null;
             }
         }
 
-        if (mycelianPreviewMode) {
-            loadTemplateConfig();
-        } else {
+        // ── Boot ──────────────────────────────────────────────────────────
+
+        async function init() {
+            if (mycelianPreviewMode) {
+                await loadTemplateConfig();
+            }
+            applyTextWrapMode();
             loadManualTitleSettings();
-            updateTitle();
+            restorePendingOverride();
+            updateTitle(true);
+            startApiPoll();
+            // Kick off a fetch here as well as on 'connect'. Socket.IO buffers
+            // emits until the connection is up, and requestStreamerInfo() is
+            // single-flight, so this is only a safety net for the case where the
+            // connect event is missed and the source would otherwise sit empty.
+            refreshStreamData();
         }
+
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) {
+                refreshStreamData();
+            }
+        });
+
+        init();
     </script>
 </body>
 

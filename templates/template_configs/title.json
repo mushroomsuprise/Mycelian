@@ -3,23 +3,54 @@
     "elements": [
         {
             "type": "separator",
-            "label": "Font Settings"
+            "label": "Text Size"
         },
         {
             "type": "text",
             "id": "FontName",
             "label": "Font File",
             "value": "Renogare.ttf",
-            "description": "Font file name (must be in /assets/default_assets/fonts/ directory)"
+            "description": "Font file name, including the extension. The file must exist in assets/default_assets/fonts/."
+        },
+        {
+            "type": "checkbox",
+            "id": "AutoFitText",
+            "label": "Auto Fit Text To Source",
+            "value": true,
+            "description": "Shrink the text automatically so it always fits inside the browser source, however odd the source size is. Turn this off to always draw at exactly Max Font Size and let long text overflow."
         },
         {
             "type": "number",
             "id": "FontSize",
-            "label": "Font Size",
+            "label": "Max Font Size",
             "value": 60.0,
-            "min": 12,
-            "max": 120,
-            "description": "Font size for the title text in pixels"
+            "min": 8,
+            "max": 400,
+            "description": "Largest size the text is allowed to be, in pixels. With Auto Fit on this is the starting point and the text only ever scales down from here; with Auto Fit off it is the exact size used."
+        },
+        {
+            "type": "number",
+            "id": "MinFontSize",
+            "label": "Min Font Size",
+            "value": 12,
+            "min": 4,
+            "max": 200,
+            "description": "Smallest size Auto Fit is allowed to shrink to. If the text still does not fit at this size it will be clipped, so make the OBS source bigger instead of lowering this too far."
+        },
+        {
+            "type": "select",
+            "id": "TextWrap",
+            "label": "Text Wrapping",
+            "value": "wrap",
+            "options": [
+                "wrap",
+                "nowrap"
+            ],
+            "description": "wrap = long text breaks onto multiple lines and then shrinks to fit the source height. nowrap = text always stays on one line and shrinks to fit the source width."
+        },
+        {
+            "type": "separator",
+            "label": "Text Appearance"
         },
         {
             "type": "select",
@@ -41,14 +72,14 @@
                 "800",
                 "900"
             ],
-            "description": "Font weight for title text"
+            "description": "Thickness of the text. Some font files only contain one weight, in which case this has no visible effect."
         },
         {
             "type": "color",
             "id": "FontColor",
             "label": "Font Color",
             "value": "#ffffff",
-            "description": "Color of the title text",
+            "description": "Color of the text.",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -104,7 +135,7 @@
             "id": "TextShadow",
             "label": "Text Shadow",
             "value": "2px 2px 4px rgba(0,0,0,0.8)",
-            "description": "CSS text shadow for title text"
+            "description": "CSS text-shadow value, e.g. '2px 2px 4px rgba(0,0,0,0.8)'. Use 'none' for no shadow. A shadow keeps text readable over busy gameplay."
         },
         {
             "type": "number",
@@ -114,66 +145,55 @@
             "min": 0.8,
             "max": 2.0,
             "step": 0.1,
-            "description": "Line height multiplier for text"
+            "description": "Spacing between lines, as a multiple of the font size. Only visible when Text Wrapping is set to wrap and the text is long enough to use more than one line."
         },
         {
             "type": "separator",
-            "label": "Container Settings"
-        },
-        {
-            "type": "number",
-            "id": "TitleTop",
-            "label": "Container Top Position",
-            "value": 50,
-            "min": 0,
-            "max": 2000,
-            "description": "Top position of the title container in pixels"
-        },
-        {
-            "type": "number",
-            "id": "TitleLeft",
-            "label": "Container Left Position",
-            "value": 50,
-            "min": 0,
-            "max": 2000,
-            "description": "Left position of the title container in pixels"
-        },
-        {
-            "type": "number",
-            "id": "TitleWidth",
-            "label": "Container Width",
-            "value": 800,
-            "min": 200,
-            "max": 1920,
-            "description": "Width of the title container in pixels"
-        },
-        {
-            "type": "number",
-            "id": "TitleHeight",
-            "label": "Container Height",
-            "value": 100,
-            "min": 50,
-            "max": 500,
-            "description": "Height of the title container in pixels"
+            "label": "Text Placement"
         },
         {
             "type": "select",
             "id": "TitleAlign",
-            "label": "Text Alignment",
-            "value": "flex-start",
+            "label": "Horizontal Alignment",
+            "value": "center",
             "options": [
                 "flex-start",
                 "center",
                 "flex-end"
             ],
-            "description": "Horizontal alignment of title text (flex-start=left, center=center, flex-end=right)"
+            "description": "Where the text sits across the width of the source. flex-start = left, center = center, flex-end = right."
+        },
+        {
+            "type": "select",
+            "id": "TitleVAlign",
+            "label": "Vertical Alignment",
+            "value": "center",
+            "options": [
+                "flex-start",
+                "center",
+                "flex-end"
+            ],
+            "description": "Where the text sits down the height of the source. flex-start = top, center = middle, flex-end = bottom."
+        },
+        {
+            "type": "number",
+            "id": "ContainerPadding",
+            "label": "Edge Padding",
+            "value": 0,
+            "min": 0,
+            "max": 200,
+            "description": "Blank margin in pixels kept clear inside every edge of the source. Auto Fit treats this as unusable space, so raising it makes the text smaller."
+        },
+        {
+            "type": "separator",
+            "label": "Background & Border"
         },
         {
             "type": "color",
             "id": "ContainerBG",
-            "label": "Container Background",
+            "label": "Background Color",
             "value": "transparent",
-            "description": "Background color of the container",
+            "description": "Fills the whole browser source behind the text. Leave transparent for a text-only overlay.",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -226,28 +246,19 @@
         },
         {
             "type": "number",
-            "id": "ContainerRadius",
-            "label": "Container Border Radius",
-            "value": 0,
-            "min": 0,
-            "max": 50,
-            "description": "Border radius for container corners in pixels"
-        },
-        {
-            "type": "number",
             "id": "ContainerBorder",
-            "label": "Container Border Width",
+            "label": "Border Width",
             "value": 0,
             "min": 0,
-            "max": 10,
-            "description": "Border width around container in pixels"
+            "max": 20,
+            "description": "Border drawn around the outside edge of the browser source, in pixels. Set to 0 for no border."
         },
         {
             "type": "color",
             "id": "ContainerBorderColor",
-            "label": "Container Border Color",
+            "label": "Border Color",
             "value": "#9333ea",
-            "description": "Color of the container border",
+            "description": "Color of the border. Only visible when Border Width is above 0.",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -299,42 +310,66 @@
             "transparent": false
         },
         {
-            "type": "text",
-            "id": "ContainerShadow",
-            "label": "Container Shadow",
-            "value": "none",
-            "description": "CSS box shadow for container"
-        },
-        {
             "type": "number",
-            "id": "ContainerPadding",
-            "label": "Container Padding",
-            "value": 10,
+            "id": "ContainerRadius",
+            "label": "Corner Radius",
+            "value": 0,
             "min": 0,
-            "max": 50,
-            "description": "Internal padding of the container in pixels"
+            "max": 100,
+            "description": "Rounds the corners of the background and border, in pixels. Has no effect while the background is transparent and the border width is 0."
         },
         {
             "type": "separator",
-            "label": "Display Settings"
+            "label": "Stream Data"
+        },
+        {
+            "type": "select",
+            "id": "DataSource",
+            "label": "Category Data Source",
+            "value": "api_and_eventsub",
+            "options": [
+                "api_and_eventsub",
+                "eventsub_only",
+                "api_only"
+            ],
+            "description": "How the current category is kept up to date. api_and_eventsub (recommended) reads the Twitch API on load and on a timer AND accepts live push updates. eventsub_only relies entirely on live push updates, so it will not fill in on a source refresh. api_only ignores push updates and relies on the timer."
+        },
+        {
+            "type": "number",
+            "id": "ApiPollInterval",
+            "label": "API Refresh Interval (seconds)",
+            "value": 60,
+            "min": 0,
+            "max": 900,
+            "description": "How often to re-read the category from the Twitch API. This is a safety net that catches changes if live push updates stop arriving. Set to 0 to only read on source load and on Refresh Category. Values below 15 are treated as 15. Ignored when Data Source is eventsub_only."
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowCategory",
+            "label": "Show Category",
+            "value": true,
+            "description": "On: display your live Twitch category. Off: display the Custom Title text instead. The Show Category switch in Source Controls changes this same setting while you stream."
+        },
+        {
+            "type": "text",
+            "id": "ManualTitle",
+            "label": "Custom Title",
+            "value": "",
+            "description": "Text shown while Show Category is off. Leave empty for a blank overlay. Can also be typed live from Source Controls."
         },
         {
             "type": "text",
             "id": "CategoryPrefix",
             "label": "Category Prefix",
             "value": "",
-            "description": "Text placed before the category name when Show Category is on"
+            "description": "Text placed before the category name, e.g. 'Now playing: '. Only used while Show Category is on."
         },
         {
             "type": "text",
             "id": "CategorySuffix",
             "label": "Category Suffix",
             "value": "",
-            "description": "Text placed after the category name when Show Category is on"
-        },
-        {
-            "type": "separator",
-            "label": "Behavior Settings"
+            "description": "Text placed after the category name. Only used while Show Category is on."
         },
         {
             "type": "separator",
@@ -345,7 +380,7 @@
             "id": "EnableAnimations",
             "label": "Enable Animations",
             "value": true,
-            "description": "Enable smooth transitions when text changes"
+            "description": "Animate the change when the category updates. Custom titles always change instantly so typing is never dropped."
         },
         {
             "type": "number",
@@ -355,14 +390,14 @@
             "min": 0.1,
             "max": 2.0,
             "step": 0.1,
-            "description": "Duration of text change animations in seconds"
+            "description": "How long a text change animation takes, in seconds."
         },
         {
             "type": "checkbox",
             "id": "EnablePulse",
             "label": "Enable Pulse Effect",
             "value": false,
-            "description": "Enable pulsing animation for the title"
+            "description": "Continuously fade the text in and out."
         },
         {
             "type": "number",
@@ -372,7 +407,7 @@
             "min": 0.5,
             "max": 5.0,
             "step": 0.1,
-            "description": "Speed of pulse animation in seconds"
+            "description": "Length of one full pulse cycle, in seconds. Only used when Enable Pulse Effect is on."
         },
         {
             "type": "number",
@@ -382,21 +417,21 @@
             "min": 0.1,
             "max": 0.9,
             "step": 0.1,
-            "description": "Minimum opacity during pulse animation"
+            "description": "How faint the text gets at the dimmest point of the pulse, and the opacity used mid fade when the wipe animation is off."
         },
         {
             "type": "checkbox",
             "id": "EnableGlow",
             "label": "Enable Glow Effect",
             "value": false,
-            "description": "Enable glow effect around the title text"
+            "description": "Add a colored glow around the text, on top of the Text Shadow."
         },
         {
             "type": "color",
             "id": "GlowColor",
             "label": "Glow Color",
             "value": "#9333ea",
-            "description": "Color of the glow effect",
+            "description": "Color of the glow. Only used when Enable Glow Effect is on.",
             "options": [
                 "#e11d48",
                 "#dc2626",
@@ -456,7 +491,7 @@
             "id": "EnableWipe",
             "label": "Enable Wipe Animation",
             "value": true,
-            "description": "Enable wipe transition when title changes"
+            "description": "Slide the old text out and the new text in when the category changes, instead of a simple fade. Requires Enable Animations."
         },
         {
             "type": "select",
@@ -469,7 +504,7 @@
                 "top-to-bottom",
                 "bottom-to-top"
             ],
-            "description": "Direction of the wipe animation"
+            "description": "Direction the text slides during the wipe animation."
         },
         {
             "type": "number",
@@ -479,7 +514,7 @@
             "min": 0.1,
             "max": 1.0,
             "step": 0.05,
-            "description": "Easing curve strength for wipe animation (0.1=linear, 1.0=dramatic)"
+            "description": "Shape of the wipe acceleration curve. 0.1 is nearly linear, 1.0 is dramatic."
         }
     ],
     "dynamic_controls": {
@@ -488,15 +523,21 @@
                 "type": "toggle",
                 "id": "show_category_toggle",
                 "label": "Show Category",
-                "description": "Display your live Twitch category on stream. Turn off to show a custom title instead.",
+                "description": "Display your live Twitch category on stream. Turn off to show the custom title instead. This choice is saved, so it survives a source refresh.",
                 "action": "toggle_show_category",
-                "value": true
+                "value": true,
+                "persist": {
+                    "target_element_id": "ShowCategory",
+                    "value_key": "enabled",
+                    "value_type": "bool",
+                    "sync_dynamic_value": true
+                }
             },
             {
                 "type": "text_input",
                 "id": "manual_title_input",
                 "label": "Custom Title",
-                "description": "Text shown while Show Category is off. Leave empty for a blank overlay.",
+                "description": "Text shown while Show Category is off. Turn Show Category off to display it.",
                 "placeholder": "Enter custom title...",
                 "action": "set_manual_title",
                 "max_length": 100
@@ -514,7 +555,7 @@
                 "type": "button",
                 "id": "refresh_title",
                 "label": "Refresh Category",
-                "description": "Fetch the current category from Twitch now (only when Show Category is on).",
+                "description": "Re-read the current category from Twitch right now.",
                 "button_text": "Refresh",
                 "action": "refresh_title",
                 "data": {}
