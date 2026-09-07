@@ -1093,7 +1093,7 @@ wheels = [
 
 [[package]]
 name = "mycelian"
-version = "1.12.5"
+version = "1.12.6"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -1129,7 +1129,7 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
-build = [
+dev = [
     { name = "pyinstaller" },
 ]
 
@@ -1168,7 +1168,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-build = [{ name = "pyinstaller", specifier = ">=6.14.1" }]
+dev = [{ name = "pyinstaller", specifier = ">=6.14.1" }]
 
 [[package]]
 name = "nicegui"

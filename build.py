@@ -98,8 +98,8 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.12.5"
-BUILD_DATE = "September 5th 2026"
+VERSION = "1.12.6"
+BUILD_DATE = "September 7th 2026"
 BUILD_NUMBER = "dev"
 
 # Stream Deck plugin version (manifest.json "Version"; Elgato semver, e.g. 0.2.2.0)
@@ -126,17 +126,30 @@ ICON_PATH = get_os_specific_icon_path(CURRENT_OS)
 
 
 def ensure_dependencies():
-    """Ensure all required packages are installed"""
+    """Ensure PyInstaller is available via the uv dev group (not pip)."""
     try:
         import PyInstaller
 
         progress.update(f"PyInstaller v{PyInstaller.__version__} ready")
+        return
     except ImportError:
-        progress.update("Installing PyInstaller...")
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "pyinstaller"], check=True
+        pass
+
+    progress.update("Installing PyInstaller via uv (dev group)...")
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError(
+            "PyInstaller is not installed and 'uv' was not found. "
+            "Install dependencies with: uv sync"
         )
-        progress.update("PyInstaller installed")
+
+    subprocess.run([uv, "sync", "--group", "dev"], check=True)
+    import importlib
+
+    importlib.invalidate_caches()
+    import PyInstaller
+
+    progress.update(f"PyInstaller v{PyInstaller.__version__} ready")
 
 
 def deploy_streamdeck_plugin_to_sd_plugin(project_root: Path) -> Path:
