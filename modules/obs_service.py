@@ -35,6 +35,9 @@ _RPC_TIMEOUT_SEC = 5.0
 _HEALTH_TIMEOUT_SEC = 2.0
 _EVENT_DISCONNECT_JOIN_TIMEOUT_SEC = 2.0
 _SNAPSHOT_YIELD_EVERY_N_SCENES = 3
+# Space PressInputPropertiesButton calls so a one-shot Mycelian overlay refresh
+# does not stampede CEF / the overlay config cache.
+_BROWSER_REFRESH_STAGGER_SEC = 0.3
 
 _CONNECTOR_OPS = frozenset(
     {
@@ -376,6 +379,10 @@ class ObsServiceImpl:
                 if fut is not None:
                     fut.set_result((False, "OBS is not connected", None))
                 continue
+            if op == "__refresh_mycelian_browser_sources__":
+                if fut is not None:
+                    fut.set_result((False, "OBS is not connected", None))
+                continue
             if fut is not None:
                 fut.set_result((False, "OBS is not connected", None))
 
@@ -439,6 +446,22 @@ class ObsServiceImpl:
                             payload = self._lookup_browser_source_size_locked(
                                 str(kw.get("route") or ""),
                                 kw.get("port"),
+                            )
+                            if fut:
+                                fut.set_result((True, None, payload))
+                        except Exception as e:
+                            if fut:
+                                fut.set_result((False, str(e), None))
+                    continue
+                if op == "__refresh_mycelian_browser_sources__":
+                    if self._req_client is None:
+                        if fut:
+                            fut.set_result((False, "Not connected", None))
+                    else:
+                        try:
+                            payload = self._refresh_mycelian_browser_sources_locked(
+                                kw.get("port"),
+                                kw.get("template_routes") or [],
                             )
                             if fut:
                                 fut.set_result((True, None, payload))
@@ -644,6 +667,12 @@ class ObsServiceImpl:
             except Exception as e:
                 logger.debug("OBS ReqClient disconnect: %s", e)
         self._set_phase("disconnected")
+        try:
+            from .obs_browser_docks import schedule_dock_boot_migrate_if_obs_exits
+
+            schedule_dock_boot_migrate_if_obs_exits()
+        except Exception:
+            pass
 
     def _apply_ws_timeout(self, cl: Any, timeout: float) -> None:
         base = getattr(cl, "base_client", None)
@@ -883,6 +912,181 @@ class ObsServiceImpl:
             return None
         payload = raw[2] if len(raw) > 2 else None
         return payload if isinstance(payload, dict) else None
+
+    def enqueue_refresh_mycelian_browser_sources(
+        self,
+        overlay_port: Any,
+        template_routes: Any,
+    ) -> concurrent.futures.Future[Any]:
+        """One-shot refresh of OBS browser sources whose URL is a Mycelian template.
+
+        Does not refresh StreamElements, YouTube, or other localhost pages.
+        No-op (failed future) when OBS is disconnected or *template_routes* is empty.
+        """
+        routes = [
+            str(route).strip()
+            for route in (template_routes or [])
+            if str(route).strip()
+        ]
+        fut: concurrent.futures.Future[Any] = concurrent.futures.Future()
+        if not routes:
+            fut.set_result((False, "No template routes", {"refreshed": [], "skipped": []}))
+            return fut
+        if not self.is_connected():
+            fut.set_result((False, "OBS is not connected", None))
+            return fut
+        return self.enqueue_obs_request(
+            "__refresh_mycelian_browser_sources__",
+            {"port": overlay_port, "template_routes": routes},
+        )
+
+    @staticmethod
+    def _press_browser_refresh_nocache(cl: Any, input_name: str) -> None:
+        """OBS WebSocket PressInputPropertiesButton(refreshnocache)."""
+        name = str(input_name)
+        press = getattr(cl, "press_input_properties_button", None)
+        if callable(press):
+            try:
+                press(name, "refreshnocache")
+                return
+            except TypeError:
+                try:
+                    press(input_name=name, prop_name="refreshnocache")
+                    return
+                except TypeError:
+                    pass
+        send = getattr(cl, "send", None)
+        if callable(send):
+            send(
+                "PressInputPropertiesButton",
+                {"inputName": name, "propertyName": "refreshnocache"},
+            )
+            return
+        raise RuntimeError("OBS client cannot PressInputPropertiesButton")
+
+    def _list_browser_source_input_rows_locked(self) -> List[Any]:
+        """Worker-thread: raw browser_source input rows from ReqClient."""
+        from .obs_browser_source_match import is_browser_input_kind
+
+        cl = self._req_client
+        if cl is None:
+            return []
+        inputs_list: List[Any] = []
+        try:
+            inp = cl.get_input_list(kind="browser_source")
+            inputs_list = list(_attr(inp, "inputs", None) or [])
+        except Exception as e:
+            logger.debug("OBS get_input_list(browser_source) failed: %s", e)
+        if not inputs_list:
+            try:
+                inp = cl.get_input_list()
+                raw_list = _attr(inp, "inputs", None) or []
+                if isinstance(raw_list, list):
+                    for row in raw_list:
+                        kind = _attr(
+                            row,
+                            "input_kind",
+                            "inputKind",
+                            "unversioned_input_kind",
+                            "unversionedInputKind",
+                        )
+                        if is_browser_input_kind(kind):
+                            inputs_list.append(row)
+            except Exception as e:
+                logger.debug("OBS get_input_list() fallback failed: %s", e)
+        return inputs_list if isinstance(inputs_list, list) else []
+
+    def _refresh_mycelian_browser_sources_locked(
+        self, port: Any, template_routes: Any
+    ) -> Dict[str, Any]:
+        """Worker-thread: refreshnocache only for registered Mycelian overlay URLs."""
+        from .obs_browser_source_match import is_mycelian_overlay_url
+
+        cl = self._req_client
+        routes = [
+            str(route).strip()
+            for route in (template_routes or [])
+            if str(route).strip()
+        ]
+        result: Dict[str, Any] = {"refreshed": [], "skipped": []}
+        if cl is None or not routes:
+            logger.info(
+                "OBS Mycelian browser refresh skipped (connected=%s routes=%s)",
+                cl is not None,
+                len(routes),
+            )
+            return result
+
+        overlay_port: Optional[int] = None
+        if port is not None and port != "":
+            try:
+                overlay_port = int(port)
+            except (TypeError, ValueError):
+                overlay_port = None
+        if overlay_port is None:
+            logger.info("OBS Mycelian browser refresh skipped (invalid overlay port)")
+            return result
+
+        inputs_list = self._list_browser_source_input_rows_locked()
+        if not inputs_list:
+            logger.info("OBS Mycelian browser refresh: no browser_source inputs")
+            return result
+
+        to_refresh: List[str] = []
+        for row in inputs_list:
+            name = _attr(row, "input_name", "inputName")
+            if not name:
+                continue
+            source_name = str(name)
+            try:
+                settings_resp = cl.get_input_settings(source_name)
+            except Exception as e:
+                result["skipped"].append({"source_name": source_name, "reason": "settings"})
+                logger.debug(
+                    "OBS Mycelian browser refresh skip %s (settings): %s",
+                    source_name,
+                    e,
+                )
+                continue
+            settings = _attr(settings_resp, "input_settings", "inputSettings")
+            if not isinstance(settings, dict):
+                settings = {}
+            url = settings.get("url")
+            if not is_mycelian_overlay_url(url, overlay_port, routes):
+                result["skipped"].append(
+                    {"source_name": source_name, "reason": "not_mycelian"}
+                )
+                logger.debug(
+                    "OBS Mycelian browser refresh skip %s url=%s",
+                    source_name,
+                    url,
+                )
+                continue
+            to_refresh.append(source_name)
+
+        for index, source_name in enumerate(to_refresh):
+            if index > 0 and _BROWSER_REFRESH_STAGGER_SEC > 0:
+                time.sleep(_BROWSER_REFRESH_STAGGER_SEC)
+            try:
+                self._press_browser_refresh_nocache(cl, source_name)
+                result["refreshed"].append(source_name)
+                logger.info("OBS refreshed Mycelian browser source %s", source_name)
+            except Exception as e:
+                result["skipped"].append(
+                    {"source_name": source_name, "reason": "refresh_failed"}
+                )
+                logger.warning(
+                    "OBS Mycelian browser refresh failed for %s: %s",
+                    source_name,
+                    e,
+                )
+
+        logger.info(
+            "OBS Mycelian browser refresh done refreshed=%s skipped=%s",
+            result["refreshed"],
+            len(result["skipped"]),
+        )
+        return result
 
     def _lookup_browser_source_size_locked(
         self, route: str, port: Any

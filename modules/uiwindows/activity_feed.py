@@ -55,7 +55,13 @@ _dom_desync_failures = 0
 _feed_watchdog_started = False
 _FEED_WATCHDOG_INTERVAL_SEC = 30.0
 _DOM_DESYNC_RELOAD_THRESHOLD = 3
+_DOM_DESYNC_WARN_COOLDOWN_SEC = 30.0
+_last_dom_desync_warn_at = 0.0
 _stale_ui_skip_logged = False
+
+# Probe reasons that mean the feed exists but is not on screen (inactive Quasar
+# tab, tray about:blank, parent display:none). These are not content desyncs.
+_OFFSCREEN_PROBE_REASONS = frozenset({"offscreen", "no_visible_surface"})
 
 _FEED_DOM_PROBE_JS = """
 (function () {
@@ -68,9 +74,13 @@ _FEED_DOM_PROBE_JS = """
   var cur = document.querySelector('.activity-feed-current');
   var con = document.querySelector('.activity-feed-condensed');
   var prev = document.querySelector('.activity-feed-previous');
+  var exists = !!(cur || con || prev);
   var targets = [cur, con, prev].filter(visible);
+  if (!exists) {
+    return {ok: false, reason: 'elements_missing', children: 0};
+  }
   if (!targets.length) {
-    return {ok: false, reason: 'no_visible_surface', children: 0};
+    return {ok: false, reason: 'offscreen', children: 0};
   }
   var children = 0;
   for (var i = 0; i < targets.length; i++) {
@@ -200,6 +210,37 @@ def _feed_expects_visible_content() -> bool:
     return bool(activity_feed_state.live_alerts)
 
 
+def _feed_ui_is_on_screen() -> bool:
+    """False when the feed cannot be visible (tray, other main tab, no socket)."""
+    try:
+        from ..tray_controller import is_minimized
+
+        if is_minimized():
+            return False
+    except Exception:
+        pass
+
+    try:
+        from ..help_system.contextual_help import get_current_tab_context
+
+        main_tab, _ = get_current_tab_context()
+        if main_tab and main_tab not in ("Activity Feed", "unknown"):
+            return False
+    except Exception:
+        pass
+
+    if _get_feed_client() is None and _get_connected_client() is None:
+        return False
+    return True
+
+
+def _python_feed_has_children() -> bool:
+    """True when Python-side feed containers already have rendered cards."""
+    if activity_feed_state.condense_list and _condensed_view_has_content():
+        return True
+    return _count_rendered_live_alerts() > 0
+
+
 def _fix_visibility_desync(reason: str) -> bool:
     """Ensure a Current-tab surface is visible; return True if a fix was applied.
 
@@ -231,7 +272,7 @@ def _fix_visibility_desync(reason: str) -> bool:
     if not (both_hidden or regular_hidden_when_needed or condensed_ready_but_hidden):
         return False
 
-    logger.warning(
+    logger.debug(
         "activity_feed: visibility desync (%s) — "
         "want_condensed=%s current_hidden=%s condensed_hidden=%s "
         "both_hidden=%s ready_but_hidden=%s",
@@ -315,6 +356,8 @@ def _ensure_feed_integrity(reason: str) -> None:
     global _condensed_integrity_failures
 
     if activity_feed_state.current_tab != "current":
+        return
+    if not _feed_ui_is_on_screen():
         return
     if not _containers_alive():
         return
@@ -429,6 +472,8 @@ def schedule_feed_dom_probe(reason: str) -> None:
 
     if not _feed_expects_visible_content():
         return
+    if not _feed_ui_is_on_screen():
+        return
     _dom_probe_reason = reason
     if _dom_probe_scheduled:
         return
@@ -458,11 +503,118 @@ def _get_connected_client() -> Any:
     return None
 
 
+def _get_feed_client() -> Any:
+    """Return the NiceGUI client that owns the activity-feed containers."""
+    for el in (
+        activity_feed_state.current_alerts_container,
+        activity_feed_state.condensed_container,
+        activity_feed_state.previous_alerts_container,
+    ):
+        if not _element_alive(el):
+            continue
+        try:
+            client = el.client
+        except Exception:
+            continue
+        if client is not None and getattr(client, "has_socket_connection", False):
+            return client
+    return _get_connected_client()
+
+
+def _apply_dom_probe_result(reason: str, result: Dict[str, Any]) -> str:
+    """Handle a DOM probe payload. Returns the action taken (for tests)."""
+    global _dom_desync_failures, _last_dom_desync_warn_at
+
+    if not isinstance(result, dict):
+        return "ignored"
+
+    ok = bool(result.get("ok"))
+    probe_reason = str(result.get("reason") or "unknown")
+    children = int(result.get("children") or 0)
+    expected = len(activity_feed_state.live_alerts)
+
+    if ok and children > 0:
+        _dom_desync_failures = 0
+        return "ok"
+
+    # Hidden tab / tray / parent display:none is not a content desync.
+    if probe_reason == "offscreen":
+        _dom_desync_failures = 0
+        logger.debug(
+            "activity_feed: dom probe offscreen (%s) — skipping recover", reason
+        )
+        return "skip_offscreen"
+
+    if probe_reason in _OFFSCREEN_PROBE_REASONS and _python_feed_has_children():
+        _dom_desync_failures = 0
+        logger.debug(
+            "activity_feed: dom probe %s (%s) with python children — skipping recover",
+            probe_reason,
+            reason,
+        )
+        return "skip_offscreen"
+
+    if probe_reason == "elements_missing" and _python_feed_has_children():
+        # JS ran on a document that does not host the feed.
+        _dom_desync_failures = 0
+        logger.debug(
+            "activity_feed: dom probe elements_missing (%s) with python children "
+            "— skipping recover",
+            reason,
+        )
+        return "skip_offscreen"
+
+    _dom_desync_failures += 1
+    logger.debug(
+        "activity_feed: dom_desync (%s) — probe=%s children=%d expected=%d "
+        "(failure %d)",
+        reason,
+        probe_reason,
+        children,
+        expected,
+        _dom_desync_failures,
+    )
+
+    if _dom_desync_failures >= _DOM_DESYNC_RELOAD_THRESHOLD:
+        now = time.monotonic()
+        if now - _last_dom_desync_warn_at >= _DOM_DESYNC_WARN_COOLDOWN_SEC:
+            _last_dom_desync_warn_at = now
+            logger.warning(
+                "activity_feed: dom_desync (%s) — probe=%s children=%d expected=%d "
+                "(failure %d); escalating reload",
+                reason,
+                probe_reason,
+                children,
+                expected,
+                _dom_desync_failures,
+            )
+        _dom_desync_failures = 0
+        _escalate_page_reload("feed_dom_desync")
+        return "reload"
+
+    if probe_reason in ("no_visible_surface", "offscreen"):
+        if _fix_visibility_desync(f"dom:{reason}"):
+            schedule_feed_dom_probe(f"after_visibility:{reason}")
+            return "visibility_fix"
+
+    if activity_feed_state.condense_list:
+        _ensure_regular_feed_populated(f"dom_desync:{reason}")
+        _apply_condensed_visibility(False)
+        _schedule_condensed_rebuild(f"dom_desync:{reason}")
+        schedule_feed_integrity_check(f"dom_desync:{reason}")
+        return "recover"
+
+    if not recover_activity_feed_panel():
+        _escalate_page_reload("feed_dom_desync_recover_failed")
+        return "reload"
+    return "recover"
+
+
 async def _probe_feed_dom_async(reason: str) -> None:
     """Ask the browser whether a visible feed surface has children."""
     global _dom_desync_failures
 
-    if not _feed_expects_visible_content():
+    if not _feed_expects_visible_content() or not _feed_ui_is_on_screen():
         _dom_desync_failures = 0
         return
     if _condensed_rebuild_running or _condensed_update_scheduled:
@@ -474,7 +626,7 @@ async def _probe_feed_dom_async(reason: str) -> None:
         )
         return
 
-    client = _get_connected_client()
+    client = _get_feed_client()
     if client is None:
         return
 
@@ -488,50 +640,7 @@ async def _probe_feed_dom_async(reason: str) -> None:
         logger.debug("activity_feed: dom probe failed (%s): %s", reason, exc)
         return
 
-    if not isinstance(result, dict):
-        return
-
-    ok = bool(result.get("ok"))
-    probe_reason = str(result.get("reason") or "unknown")
-    children = int(result.get("children") or 0)
-    expected = len(activity_feed_state.live_alerts)
-
-    if ok and children > 0:
-        _dom_desync_failures = 0
-        return
-
-    _dom_desync_failures += 1
-    logger.warning(
-        "activity_feed: dom_desync (%s) — probe=%s children=%d expected=%d "
-        "(failure %d)",
-        reason,
-        probe_reason,
-        children,
-        expected,
-        _dom_desync_failures,
-    )
-
-    if _dom_desync_failures >= _DOM_DESYNC_RELOAD_THRESHOLD:
-        _dom_desync_failures = 0
-        _escalate_page_reload("feed_dom_desync")
-        return
-
-    # Prefer visibility fix, then panel recover / condensed fallback.
-    if probe_reason == "no_visible_surface":
-        if _fix_visibility_desync(f"dom:{reason}"):
-            schedule_feed_dom_probe(f"after_visibility:{reason}")
-            return
-
-    if activity_feed_state.condense_list:
-        # Show regular immediately so the panel is not blank, then rebuild
-        # condensed (it will hide regular again when ready).
-        _ensure_regular_feed_populated(f"dom_desync:{reason}")
-        _apply_condensed_visibility(False)
-        _schedule_condensed_rebuild(f"dom_desync:{reason}")
-        schedule_feed_integrity_check(f"dom_desync:{reason}")
-    else:
-        if not recover_activity_feed_panel():
-            _escalate_page_reload("feed_dom_desync_recover_failed")
+    _apply_dom_probe_result(reason, result)
 
 
 def _run_feed_watchdog() -> None:
@@ -550,6 +659,8 @@ def _run_feed_watchdog() -> None:
         return
     if not _feed_expects_visible_content():
         return
+    if not _feed_ui_is_on_screen():
+        return
 
     schedule_feed_integrity_check("periodic_watchdog")
 
@@ -561,7 +672,7 @@ def _start_feed_watchdog() -> None:
         return
     _feed_watchdog_started = True
     app_schedule(_FEED_WATCHDOG_INTERVAL_SEC, _run_feed_watchdog, active=True)
-    logger.warning(
+    logger.debug(
         "activity_feed: feed watchdog started (interval=%ss)",
         int(_FEED_WATCHDOG_INTERVAL_SEC),
     )
@@ -678,11 +789,12 @@ def recover_activity_feed_panel() -> bool:
         activity_feed_state.is_initialized = True
         _stale_ui_skip_logged = False
         _dom_desync_failures = 0
-        logger.warning(
+        logger.debug(
             "activity_feed: recovered (%d live alerts)",
             len(activity_feed_state.live_alerts),
         )
-        schedule_feed_dom_probe("after_recover")
+        if _feed_ui_is_on_screen():
+            schedule_feed_dom_probe("after_recover")
         return True
     except Exception as exc:
         logger.error("activity_feed: recover_activity_feed_panel failed: %s", exc, exc_info=True)
@@ -727,26 +839,26 @@ def register_client_lifecycle_hooks() -> None:
     def _on_disconnect(_client=None) -> None:
         # Transient socket blips are common under load. Do not flip
         # is_initialized — that used to drop alerts until reconnect recovery.
-        logger.warning("activity_feed: client_disconnected")
+        logger.debug("activity_feed: client_disconnected")
 
     def _on_connect(_client=None) -> None:
         if not _connect_recovery_enabled:
             return
-        logger.warning("activity_feed: client_connected — scheduling recovery")
+        logger.debug("activity_feed: client_connected — scheduling recovery")
         app_schedule(0.5, recover_after_client_reconnect, once=True)
 
     def _on_delete(_client=None) -> None:
         # Every minimize/restore cycle retires a client id, so the guard set has to
         # give the id back or it grows for the life of the process.
         _hooks_registered_client_ids.discard(client_id)
-        logger.warning("activity_feed: client_deleted — scheduling recovery")
+        logger.debug("activity_feed: client_deleted — scheduling recovery")
         _handle_stale_client("client_deleted")
 
     client.on_disconnect(_on_disconnect)
     client.on_connect(_on_connect)
     client.on_delete(_on_delete)
     app_schedule(3.0, _enable_connect_recovery, once=True)
-    logger.warning("activity_feed: client lifecycle hooks registered")
+    logger.debug("activity_feed: client lifecycle hooks registered")
 
 
 def _enable_connect_recovery() -> None:

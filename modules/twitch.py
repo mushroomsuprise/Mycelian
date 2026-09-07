@@ -4030,8 +4030,17 @@ class Twitch_API:
                 logger.debug("Subscriber registry Helix retry failed: %s", e)
             attempt += 1
 
+    def _eventsub_is_reconnecting(self) -> bool:
+        """True while twitchAPI is already recovering the EventSub websocket."""
+        eventsub = self.eventsub
+        if eventsub is None:
+            return False
+        return bool(getattr(eventsub, "_is_reconnecting", False))
+
     def is_eventsub_live(self) -> bool:
         """True when EventSub reports an active websocket session."""
+        if self._eventsub_is_reconnecting():
+            return True
         return (
             self.eventsub is not None
             and hasattr(self.eventsub, "active_session")
@@ -4103,6 +4112,10 @@ class Twitch_API:
                         logger.debug(
                             "Twitch connection health check passed (no events yet)"
                         )
+                elif self._eventsub_is_reconnecting():
+                    logger.debug(
+                        "Twitch EventSub is reconnecting; leaving connection state as-is"
+                    )
                 else:
                     logger.warning(
                         "Twitch EventSub session missing or inactive; "
@@ -5855,6 +5868,11 @@ def attempt_auto_reconnect() -> bool:
         return False
     api = twitch_api
     if api is None:
+        return False
+    if api._eventsub_is_reconnecting():
+        logger.debug(
+            "Skipping Twitch auto-reconnect; EventSub library is already reconnecting"
+        )
         return False
     try:
         from .connection_monitor import (

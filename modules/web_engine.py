@@ -702,6 +702,55 @@ web_engine_running = False
 # Global instance for access by other modules
 web_engine_instance = None
 
+# One OBS browser-source refresh per Mycelian process (not per overlay-server restart).
+_obs_browser_refresh_done_this_process = False
+_obs_browser_refresh_lock = threading.Lock()
+# One custom-browser-dock wake per Mycelian process (docks are not OBS inputs).
+_obs_dock_reload_done_this_process = False
+_obs_dock_reload_lock = threading.Lock()
+
+
+def _obs_browser_refresh_already_done() -> bool:
+    with _obs_browser_refresh_lock:
+        return _obs_browser_refresh_done_this_process
+
+
+def _claim_obs_browser_refresh_this_process() -> bool:
+    """Return True if this caller won the one-shot OBS refresh gate."""
+    global _obs_browser_refresh_done_this_process
+    with _obs_browser_refresh_lock:
+        if _obs_browser_refresh_done_this_process:
+            return False
+        _obs_browser_refresh_done_this_process = True
+        return True
+
+
+def _reset_obs_browser_refresh_gate_for_tests() -> None:
+    global _obs_browser_refresh_done_this_process
+    with _obs_browser_refresh_lock:
+        _obs_browser_refresh_done_this_process = False
+
+
+def _obs_dock_reload_already_done() -> bool:
+    with _obs_dock_reload_lock:
+        return _obs_dock_reload_done_this_process
+
+
+def _claim_obs_dock_reload_this_process() -> bool:
+    """Return True if this caller won the one-shot OBS dock-wake gate."""
+    global _obs_dock_reload_done_this_process
+    with _obs_dock_reload_lock:
+        if _obs_dock_reload_done_this_process:
+            return False
+        _obs_dock_reload_done_this_process = True
+        return True
+
+
+def _reset_obs_dock_reload_gate_for_tests() -> None:
+    global _obs_dock_reload_done_this_process
+    with _obs_dock_reload_lock:
+        _obs_dock_reload_done_this_process = False
+
 # Health state labels (worst-wins priority when computing get_health()["state"])
 WEBENGINE_STATE_CRASHED = "Crashed"
 WEBENGINE_STATE_STALLED = "Stalled"
@@ -770,6 +819,93 @@ def get_webengine_health() -> Dict[str, Any]:
     return inst.get_health()
 
 
+def evaluate_bottleneck(
+    metrics: Dict[str, Any],
+    *,
+    is_running: bool = False,
+    template_control_emit_worker_started: bool = False,
+    hub_tick_drift_ms: float = 3000.0,
+    http_p95_ms: float = 750.0,
+    tc_oldest_age_ms: float = 500.0,
+    tc_queue_depth_hard: int = 40,
+    tw_oldest_age_ms: float = 15000.0,
+    tw_queue_depth_hard: int = 8,
+    slow_request_count: int = 5,
+    http_p95_soft_ms: float = 400.0,
+    tc_queue_depth_soft: int = 15,
+    net_connects_30s: int = 10,
+) -> Dict[str, Any]:
+    """Evaluate overlay-hub bottleneck flags from collected metrics.
+
+    Twitch Helix proxy wait time only trips when both age and queue depth are
+    high — a short burst on the serial API worker is not overlay overload.
+    """
+    m = metrics or {}
+    hard_reasons: List[str] = []
+    soft_hits: List[str] = []
+
+    heartbeat_stale = float(m.get("heartbeat_stale_sec") or 0.0)
+    hub_drift = float(m.get("hub_tick_drift_ms") or 0.0)
+    http_p95 = float(m.get("http_p95_ms") or 0.0)
+    slow_recent = int(m.get("slow_requests_recent") or 0)
+    tc_age = float(m.get("template_control_oldest_age_ms") or 0.0)
+    tc_depth = int(m.get("template_control_queue_depth") or 0)
+    tw_age = float(m.get("twitch_api_oldest_age_ms") or 0.0)
+    tw_depth = int(m.get("twitch_api_queue_depth") or 0)
+    tc_drops = int(m.get("template_control_drops_60s") or 0)
+    tw_drops = int(m.get("twitch_api_drops_60s") or 0)
+    net_connects = int(m.get("net_connects_30s") or 0)
+    emit_errors = int(m.get("socket_emit_errors_60s") or 0)
+    worker_alive = bool(m.get("template_control_worker_alive"))
+
+    if heartbeat_stale > 45.0:
+        hard_reasons.append(f"heartbeat_stale_sec={heartbeat_stale:.0f}")
+    if hub_drift > hub_tick_drift_ms:
+        hard_reasons.append(f"hub_tick_drift_ms={hub_drift:.0f}")
+    if http_p95 > http_p95_ms:
+        hard_reasons.append(f"http_p95_ms={http_p95:.0f}")
+    if slow_recent >= slow_request_count:
+        hard_reasons.append(f"slow_requests={slow_recent}/{slow_request_count}")
+    if tc_age > tc_oldest_age_ms:
+        hard_reasons.append(f"template_control_oldest_age_ms={tc_age:.0f}")
+    if tc_depth >= tc_queue_depth_hard:
+        hard_reasons.append(
+            f"template_control_queue_depth={tc_depth}/{tc_queue_depth_hard}"
+        )
+    if tw_age > tw_oldest_age_ms and tw_depth >= tw_queue_depth_hard:
+        hard_reasons.append(
+            f"twitch_api_oldest_age_ms={tw_age:.0f}/"
+            f"depth={tw_depth}/{tw_queue_depth_hard}"
+        )
+    if tc_drops > 0:
+        hard_reasons.append(f"template_control_drops_60s={tc_drops}")
+    if tw_drops > 0:
+        hard_reasons.append(f"twitch_api_drops_60s={tw_drops}")
+    if is_running and not worker_alive and template_control_emit_worker_started:
+        hard_reasons.append("template_control_worker_alive=false")
+
+    if http_p95 > http_p95_soft_ms:
+        soft_hits.append(f"http_p95_ms={http_p95:.0f}")
+    if tc_depth >= tc_queue_depth_soft:
+        soft_hits.append(f"template_control_queue_depth={tc_depth}")
+    if net_connects > net_connects_30s:
+        soft_hits.append(f"net_connects_30s={net_connects}")
+    if emit_errors > 0:
+        soft_hits.append(f"socket_emit_errors_60s={emit_errors}")
+
+    reasons = list(hard_reasons)
+    if len(soft_hits) >= 2:
+        reasons.extend(soft_hits)
+
+    bottlenecked = bool(hard_reasons) or len(soft_hits) >= 2
+    return {
+        "bottlenecked": bottlenecked,
+        "reasons": reasons,
+        "hard_reasons": hard_reasons,
+        "soft_hits": soft_hits,
+    }
+
+
 class WebEngine:
     # --- Health / bottleneck thresholds --------------------------------------
     _FREEZE_HEALTH_SEC = 60.0
@@ -793,13 +929,21 @@ class WebEngine:
     _BN_HTTP_P95_MS = 750.0
     _BN_TC_OLDEST_AGE_MS = 500.0
     _BN_TC_QUEUE_DEPTH_HARD = 40
-    _BN_TW_OLDEST_AGE_MS = 2000.0
+    # Helix proxy is a serial worker, not the overlay hub. Age alone at 2–4s
+    # with a handful of queued requests is a normal burst, not overload.
+    _BN_TW_OLDEST_AGE_MS = 15000.0
+    _BN_TW_QUEUE_DEPTH_HARD = 8
     # Soft bottleneck trips (two at once -> Overloaded)
     _BN_HTTP_P95_SOFT_MS = 400.0
     _BN_TC_QUEUE_DEPTH_SOFT = 15
     _BN_NET_CONNECTS_30S = 10
     _BN_COUNTER_WINDOW_SEC = 60.0
+    _BN_OVERLOAD_HOLD_SEC = 15.0
+    _BN_OVERLOAD_CLEAR_SEC = 10.0
     _HEARTBEAT_EXPECTED_INTERVAL_SEC = 10.0
+    _STARTUP_CLIENT_SYNC_SETTLE_SEC = 4.0
+    _STARTUP_CLIENT_SYNC_OBS_WAIT_SEC = 45.0
+    _STARTUP_CLIENT_SYNC_POLL_SEC = 1.0
 
     def __init__(self, template_dir="templates", host="0.0.0.0", port=5000):
         """
@@ -898,6 +1042,11 @@ class WebEngine:
         self._socket_connected_lock = threading.Lock()
         self._heartbeat_task_started = False
         self._heartbeat_lock = threading.Lock()
+        self._startup_client_sync_started = False
+        self._startup_client_sync_lock = threading.Lock()
+        self._startup_overlay_recovery_sent = False
+        self._overlay_hello_routes: Dict[str, str] = {}
+        self._dock_wake_grace_done = False
 
         # Watchdog: the gevent heartbeat updates this timestamp; a native thread
         # watches it and dumps all thread stacks if the gevent hub stops ticking
@@ -1115,6 +1264,18 @@ class WebEngine:
                 else 503
             )
             return health, code, {"Content-Type": "application/json"}
+
+        @self.app.route("/api/dock-boot.js")
+        def dock_boot_ping():
+            """Tiny JS ping used by the OBS dock waiter page (file:// boot)."""
+            return (
+                "/* mycelian-dock-boot */\n",
+                200,
+                {
+                    "Content-Type": "application/javascript; charset=utf-8",
+                    "Cache-Control": "no-store",
+                },
+            )
 
         @self.app.route("/api/all-template-configs")
         def serve_all_template_configs():
@@ -2765,6 +2926,9 @@ class WebEngine:
         self._all_template_configs_rate_log_at = 0.0
         self._last_reported_health_state: Optional[str] = None
         self._last_overload_health_log_at = 0.0
+        self._bottleneck_since_mono: Optional[float] = None
+        self._clear_since_mono: Optional[float] = None
+        self._held_overloaded = False
         self._http_latency_samples: Deque[Tuple[float, float]] = deque(
             maxlen=self._HTTP_LATENCY_MAX_SAMPLES
         )
@@ -3137,6 +3301,51 @@ class WebEngine:
         with self._socket_connected_lock:
             return self._socket_connected_count
 
+    def _preview_iframe_sid_count(self) -> int:
+        with self._preview_sessions_lock:
+            return len(self._preview_iframe_tokens)
+
+    def _overlay_socket_connected_count(self) -> int:
+        """Socket.IO clients that are OBS/overlay sources, not Spore Studio previews."""
+        return max(0, self._get_socket_connected_count() - self._preview_iframe_sid_count())
+
+    def _overlay_connected_routes(self) -> Set[str]:
+        """Template routes that have sent overlay_hello from a non-preview client."""
+        with self._socket_connected_lock:
+            routes = getattr(self, "_overlay_hello_routes", None) or {}
+            return {route for route in routes.values() if route}
+
+    def _register_overlay_hello(self, sid: str, path: Any) -> None:
+        if not sid:
+            return
+        try:
+            if self._preview_iframe_has_sid(sid):
+                return
+        except Exception:
+            pass
+        try:
+            from .obs_browser_source_match import overlay_template_route_from_path
+        except Exception:
+            return
+        route = overlay_template_route_from_path(str(path or ""))
+        if not route:
+            return
+        with self._socket_connected_lock:
+            routes = getattr(self, "_overlay_hello_routes", None)
+            if routes is None:
+                self._overlay_hello_routes = {}
+                routes = self._overlay_hello_routes
+            routes[str(sid)] = route
+
+    def _unregister_overlay_hello(self, sid: str) -> None:
+        if not sid:
+            return
+        with self._socket_connected_lock:
+            routes = getattr(self, "_overlay_hello_routes", None)
+            if routes is None:
+                return
+            routes.pop(str(sid), None)
+
     def _record_http_latency(self, elapsed_ms: float, path: str) -> None:
         now = time.time()
         with self._http_latency_lock:
@@ -3300,6 +3509,11 @@ class WebEngine:
                 m.get("twitch_api_oldest_age_ms", 0),
                 self._BN_TW_OLDEST_AGE_MS,
             ),
+            (
+                "twitch_api_queue_depth",
+                m.get("twitch_api_queue_depth", 0),
+                float(self._BN_TW_QUEUE_DEPTH_HARD),
+            ),
         ]
         for name, value, threshold in watches:
             if threshold > 0 and value >= threshold * 0.5:
@@ -3310,72 +3524,64 @@ class WebEngine:
                     threshold,
                 )
 
+    def _apply_overload_hysteresis(
+        self, raw_bottlenecked: bool, now_mono: Optional[float] = None
+    ) -> bool:
+        """Latch Overloaded only after a sustained bottleneck, and hold it briefly."""
+        now = time.monotonic() if now_mono is None else now_mono
+        if raw_bottlenecked:
+            self._clear_since_mono = None
+            if self._held_overloaded:
+                held = True
+            else:
+                if self._bottleneck_since_mono is None:
+                    self._bottleneck_since_mono = now
+                held = (now - self._bottleneck_since_mono) >= self._BN_OVERLOAD_HOLD_SEC
+        else:
+            self._bottleneck_since_mono = None
+            if self._held_overloaded:
+                if self._clear_since_mono is None:
+                    self._clear_since_mono = now
+                held = (now - self._clear_since_mono) < self._BN_OVERLOAD_CLEAR_SEC
+            else:
+                self._clear_since_mono = None
+                held = False
+        self._held_overloaded = held
+        return held
+
     def _get_bottleneck_diagnostics(self) -> Dict[str, Any]:
         """Real-time gevent-thread bottleneck evaluation."""
         m = self._collect_bottleneck_metrics()
-        hard_reasons: List[str] = []
-        soft_hits: List[str] = []
-
-        if m["heartbeat_stale_sec"] > 45.0:
-            hard_reasons.append(f"heartbeat_stale_sec={m['heartbeat_stale_sec']:.0f}")
-        if m["hub_tick_drift_ms"] > self._BN_HUB_TICK_DRIFT_MS:
-            hard_reasons.append(f"hub_tick_drift_ms={m['hub_tick_drift_ms']:.0f}")
-        if m["http_p95_ms"] > self._BN_HTTP_P95_MS:
-            hard_reasons.append(f"http_p95_ms={m['http_p95_ms']:.0f}")
-        if m["slow_requests_recent"] >= self._OVERLOAD_SLOW_REQUEST_COUNT:
-            hard_reasons.append(
-                f"slow_requests={m['slow_requests_recent']}/"
-                f"{self._OVERLOAD_SLOW_REQUEST_COUNT}"
-            )
-        if m["template_control_oldest_age_ms"] > self._BN_TC_OLDEST_AGE_MS:
-            hard_reasons.append(
-                f"template_control_oldest_age_ms="
-                f"{m['template_control_oldest_age_ms']:.0f}"
-            )
-        if m["template_control_queue_depth"] >= self._BN_TC_QUEUE_DEPTH_HARD:
-            hard_reasons.append(
-                f"template_control_queue_depth={m['template_control_queue_depth']}/"
-                f"{self._BN_TC_QUEUE_DEPTH_HARD}"
-            )
-        if m["twitch_api_oldest_age_ms"] > self._BN_TW_OLDEST_AGE_MS:
-            hard_reasons.append(
-                f"twitch_api_oldest_age_ms={m['twitch_api_oldest_age_ms']:.0f}"
-            )
-        if m["template_control_drops_60s"] > 0:
-            hard_reasons.append(
-                f"template_control_drops_60s={m['template_control_drops_60s']}"
-            )
-        if m["twitch_api_drops_60s"] > 0:
-            hard_reasons.append(f"twitch_api_drops_60s={m['twitch_api_drops_60s']}")
-        if self.is_running and not m["template_control_worker_alive"]:
-            if self._template_control_emit_worker_started:
-                hard_reasons.append("template_control_worker_alive=false")
-
-        if m["http_p95_ms"] > self._BN_HTTP_P95_SOFT_MS:
-            soft_hits.append(f"http_p95_ms={m['http_p95_ms']:.0f}")
-        if m["template_control_queue_depth"] >= self._BN_TC_QUEUE_DEPTH_SOFT:
-            soft_hits.append(
-                f"template_control_queue_depth={m['template_control_queue_depth']}"
-            )
-        if m["net_connects_30s"] > self._BN_NET_CONNECTS_30S:
-            soft_hits.append(f"net_connects_30s={m['net_connects_30s']}")
-        if m["socket_emit_errors_60s"] > 0:
-            soft_hits.append(f"socket_emit_errors_60s={m['socket_emit_errors_60s']}")
-
-        reasons = list(hard_reasons)
-        if len(soft_hits) >= 2:
-            reasons.extend(soft_hits)
-
-        bottlenecked = bool(hard_reasons) or len(soft_hits) >= 2
+        evaluated = evaluate_bottleneck(
+            m,
+            is_running=self.is_running,
+            template_control_emit_worker_started=(
+                self._template_control_emit_worker_started
+            ),
+            hub_tick_drift_ms=self._BN_HUB_TICK_DRIFT_MS,
+            http_p95_ms=self._BN_HTTP_P95_MS,
+            tc_oldest_age_ms=self._BN_TC_OLDEST_AGE_MS,
+            tc_queue_depth_hard=self._BN_TC_QUEUE_DEPTH_HARD,
+            tw_oldest_age_ms=self._BN_TW_OLDEST_AGE_MS,
+            tw_queue_depth_hard=self._BN_TW_QUEUE_DEPTH_HARD,
+            slow_request_count=self._OVERLOAD_SLOW_REQUEST_COUNT,
+            http_p95_soft_ms=self._BN_HTTP_P95_SOFT_MS,
+            tc_queue_depth_soft=self._BN_TC_QUEUE_DEPTH_SOFT,
+            net_connects_30s=self._BN_NET_CONNECTS_30S,
+        )
+        raw = bool(evaluated["bottlenecked"])
+        held = self._apply_overload_hysteresis(raw)
         _bottleneck_print(
-            f"eval bottlenecked={bottlenecked} hard={hard_reasons} soft={soft_hits}"
+            f"eval bottlenecked={held} raw={raw} hard={evaluated['hard_reasons']} "
+            f"soft={evaluated['soft_hits']}"
         )
         return {
-            "bottlenecked": bottlenecked,
-            "reasons": reasons,
+            "bottlenecked": held,
+            "raw_bottlenecked": raw,
+            "reasons": evaluated["reasons"],
             "metrics": m,
-            "hard_reasons": hard_reasons,
-            "soft_hits": soft_hits,
+            "hard_reasons": evaluated["hard_reasons"],
+            "soft_hits": evaluated["soft_hits"],
         }
 
     def _get_overload_diagnostics(self) -> Dict[str, Any]:
@@ -3393,30 +3599,25 @@ class WebEngine:
     def _maybe_log_health_state_transition(
         self, state: str, bottleneck_diag: Dict[str, Any]
     ) -> None:
-        """Log when health enters or leaves Overloaded (cooldown while overloaded)."""
+        """Log once when health enters or leaves Overloaded."""
         prev = self._last_reported_health_state
-        now = time.time()
+        if state == prev:
+            return
 
         if state == WEBENGINE_STATE_OVERLOADED:
-            if (
-                prev != WEBENGINE_STATE_OVERLOADED
-                or now >= self._last_overload_health_log_at
-            ):
-                reasons = bottleneck_diag.get("reasons") or []
-                metrics = bottleneck_diag.get("metrics") or {}
-                reason_str = "; ".join(reasons) if reasons else "unknown"
-                logger.warning(
-                    "WebEngine health: Overloaded — %s; clients: %s; "
-                    "template_control_queue: %s; twitch_api_queue: %s",
-                    reason_str,
-                    metrics.get("connected_clients", "?"),
-                    metrics.get("template_control_queue_depth", "?"),
-                    metrics.get("twitch_api_queue_depth", "?"),
-                )
-                _bottleneck_print(f"state OVERLOADED reasons={reason_str}")
-                self._last_overload_health_log_at = (
-                    now + self._HEALTH_OVERLOAD_LOG_COOLDOWN_SEC
-                )
+            reasons = bottleneck_diag.get("reasons") or []
+            metrics = bottleneck_diag.get("metrics") or {}
+            reason_str = "; ".join(reasons) if reasons else "unknown"
+            logger.warning(
+                "WebEngine health: Overloaded — %s; clients: %s; "
+                "template_control_queue: %s; twitch_api_queue: %s",
+                reason_str,
+                metrics.get("connected_clients", "?"),
+                metrics.get("template_control_queue_depth", "?"),
+                metrics.get("twitch_api_queue_depth", "?"),
+            )
+            _bottleneck_print(f"state OVERLOADED reasons={reason_str}")
+            self._last_overload_health_log_at = time.time()
         elif prev == WEBENGINE_STATE_OVERLOADED:
             logger.warning(
                 "WebEngine health: recovered from Overloaded (now %s)", state
@@ -3637,6 +3838,204 @@ class WebEngine:
             )
             self._watchdog_thread.start()
 
+    def ensure_startup_client_sync(self) -> None:
+        """Arm the one-shot overlay startup sync (soft recovery / optional OBS refresh)."""
+        with self._startup_client_sync_lock:
+            if self._startup_client_sync_started:
+                return
+            self._startup_client_sync_started = True
+        try:
+            self.socketio.start_background_task(self._startup_client_sync_loop)
+        except Exception as exc:
+            with self._startup_client_sync_lock:
+                self._startup_client_sync_started = False
+            logger.warning(
+                "Could not start WebEngine startup client sync: %s",
+                exc,
+                exc_info=True,
+            )
+
+    def _emit_startup_overlay_recovery_once(self) -> None:
+        if self._startup_overlay_recovery_sent:
+            return
+        self._startup_overlay_recovery_sent = True
+        try:
+            self.broadcast_overlay_recovery("web_engine", "startup")
+        except Exception as e:
+            logger.debug("WebEngine startup overlay-recovery failed: %s", e)
+
+    def _maybe_enqueue_startup_obs_refresh(self) -> bool:
+        """Enqueue at most one Mycelian browser-source refresh this process.
+
+        Returns True when a refresh was queued or the process gate is already spent.
+        Returns False when this attempt should be retried (OBS down, no routes).
+        """
+        if _obs_browser_refresh_already_done():
+            return True
+        routes = sorted(self._registered_template_routes)
+        if not routes:
+            logger.info(
+                "WebEngine startup sync: skip OBS refresh (no template routes)"
+            )
+            return False
+        try:
+            from .obs_service import obs_service
+        except Exception as e:
+            logger.debug("WebEngine startup sync: OBS service import failed: %s", e)
+            return False
+        if not obs_service.is_connected():
+            return False
+        if not _claim_obs_browser_refresh_this_process():
+            return True
+        try:
+            obs_service.enqueue_refresh_mycelian_browser_sources(self.port, routes)
+            logger.info(
+                "WebEngine startup sync: queued one-shot OBS refresh of "
+                "Mycelian browser sources (%s routes)",
+                len(routes),
+            )
+        except Exception as e:
+            logger.warning(
+                "WebEngine startup sync: OBS refresh enqueue failed: %s", e
+            )
+        return True
+
+    def _maybe_enqueue_startup_dock_wake(self) -> bool:
+        """Wake Mycelian OBS custom browser docks that have not connected.
+
+        Returns True when there is nothing left to wait for (no such docks,
+        already connected, already attempted, or a wake was queued).
+        Returns False when OBS is not up yet or we are waiting one poll for
+        overlay_hello from docks that may still be loading.
+        """
+        if _obs_dock_reload_already_done():
+            return True
+        routes = sorted(self._registered_template_routes)
+        if not routes:
+            return False
+        try:
+            from .obs_browser_docks import (
+                ensure_dock_boot_html,
+                is_dock_boot_file_url,
+                list_mycelian_extra_browser_docks,
+                migrate_extra_browser_docks_to_boot,
+                obs_appears_running,
+                pending_docks_missing_routes,
+                set_dock_boot_context,
+                wake_mycelian_browser_docks,
+            )
+        except Exception as e:
+            logger.warning("WebEngine startup sync: dock helpers unavailable: %s", e)
+            return True
+        try:
+            ensure_dock_boot_html()
+            set_dock_boot_context(self.port, routes)
+        except Exception as e:
+            logger.debug("WebEngine startup sync: dock boot file skipped: %s", e)
+        try:
+            docks = list_mycelian_extra_browser_docks(self.port, routes)
+        except Exception as e:
+            logger.warning("WebEngine startup sync: ExtraBrowserDocks read failed: %s", e)
+            return True
+        if not docks:
+            logger.warning(
+                "WebEngine startup sync: no Mycelian OBS browser docks found in OBS config"
+            )
+            return True
+        if not obs_appears_running():
+            try:
+                migrate_extra_browser_docks_to_boot(self.port, routes)
+            except Exception as e:
+                logger.debug("WebEngine startup sync: dock retarget skipped: %s", e)
+            return False
+        pending = pending_docks_missing_routes(
+            docks, self._overlay_connected_routes()
+        )
+        if not pending:
+            logger.warning(
+                "WebEngine startup sync: Mycelian OBS docks already connected"
+            )
+            return True
+        http_pending = [
+            row for row in pending if not is_dock_boot_file_url(row.get("url"))
+        ]
+        if not http_pending:
+            logger.warning(
+                "WebEngine startup sync: Mycelian OBS docks are on the local "
+                "boot page and will load when the overlay answers"
+            )
+            return True
+        if not getattr(self, "_dock_wake_grace_done", False):
+            self._dock_wake_grace_done = True
+            return False
+        if not _claim_obs_dock_reload_this_process():
+            return True
+        titles = [str(row.get("title") or row.get("route") or "") for row in http_pending]
+        try:
+            threading.Thread(
+                target=wake_mycelian_browser_docks,
+                args=(http_pending,),
+                name="MycelianOBSDockWake",
+                daemon=True,
+            ).start()
+            logger.warning(
+                "WebEngine startup sync: Mycelian OBS docks need an OBS restart %s",
+                titles,
+            )
+        except Exception as e:
+            logger.warning(
+                "WebEngine startup sync: OBS dock wake failed to start: %s", e
+            )
+        return True
+
+    def _startup_client_sync_loop(self) -> None:
+        """After settle: overlay-recovery, optional OBS source refresh, dock wake."""
+        try:
+            self.socketio.sleep(self._STARTUP_CLIENT_SYNC_SETTLE_SEC)
+        except Exception:
+            return
+        if not self.is_running:
+            return
+
+        deadline = time.monotonic() + self._STARTUP_CLIENT_SYNC_OBS_WAIT_SEC
+        obs_attempted = False
+        dock_attempted = False
+        while self.is_running:
+            overlay_clients = self._overlay_socket_connected_count()
+            if overlay_clients > 0:
+                self._emit_startup_overlay_recovery_once()
+                obs_attempted = True
+
+            if overlay_clients == 0 and not obs_attempted:
+                obs_attempted = self._maybe_enqueue_startup_obs_refresh()
+
+            if not dock_attempted:
+                dock_attempted = self._maybe_enqueue_startup_dock_wake()
+
+            if overlay_clients > 0 and obs_attempted and dock_attempted:
+                logger.info(
+                    "WebEngine startup sync: %s overlay client(s); "
+                    "OBS source refresh attempted=%s dock wake attempted=%s",
+                    overlay_clients,
+                    _obs_browser_refresh_already_done(),
+                    _obs_dock_reload_already_done(),
+                )
+                return
+
+            if time.monotonic() >= deadline:
+                logger.info(
+                    "WebEngine startup sync: finished wait overlay_clients=%s "
+                    "OBS refresh attempted=%s dock wake attempted=%s",
+                    overlay_clients,
+                    obs_attempted,
+                    dock_attempted,
+                )
+                return
+            try:
+                self.socketio.sleep(self._STARTUP_CLIENT_SYNC_POLL_SEC)
+            except Exception:
+                return
+
     def _web_engine_heartbeat_loop(self) -> None:
         while self.is_running:
             try:
@@ -3672,12 +4071,11 @@ class WebEngine:
                 f"clients={m.get('connected_clients', 0)} -> {status}"
             )
             if bottleneck_diag.get("bottlenecked"):
-                reasons = bottleneck_diag.get("reasons") or []
-                logger.warning(
+                logger.debug(
                     "WebEngine heartbeat: overloaded — %s; clients=%s "
                     "template_control_queue=%s template_control_oldest_age_ms=%s "
                     "http_p95_ms=%s",
-                    "; ".join(reasons),
+                    "; ".join(bottleneck_diag.get("reasons") or []),
                     m.get("connected_clients"),
                     m.get("template_control_queue_depth"),
                     m.get("template_control_oldest_age_ms"),
@@ -3685,7 +4083,7 @@ class WebEngine:
                 )
             else:
                 self._maybe_log_bottleneck_calibration_watch(m)
-                logger.info(
+                logger.debug(
                     "WebEngine heartbeat: connected_clients=%s is_running=%s",
                     self._get_socket_connected_count(),
                     self.is_running,
@@ -4227,6 +4625,9 @@ class WebEngine:
             # client (e.g. an OBS browser source) reconnects.
             with self._heartbeat_lock:
                 self._heartbeat_task_started = False
+            with self._startup_client_sync_lock:
+                self._startup_client_sync_started = False
+            self._startup_overlay_recovery_sent = False
             with self._template_control_emit_worker_lock:
                 self._template_control_emit_worker_started = False
             self._last_gevent_heartbeat = None
@@ -5384,8 +5785,17 @@ class WebEngine:
             # sources reconnect constantly, so drop the entry instead.
             self._preview_demo_stop.pop(request.sid, None)
             self._unregister_preview_iframe_sid(request.sid)
+            self._unregister_overlay_hello(request.sid)
 
-        @self.socketio.on("game_hook_command")
+        @self.socketio.on("overlay_hello")
+        def handle_overlay_hello(data=None):
+            path = ""
+            if isinstance(data, dict):
+                path = data.get("path") or data.get("route") or ""
+            try:
+                self._register_overlay_hello(request.sid, path)
+            except Exception as e:
+                logger.debug("overlay_hello failed for %s: %s", request.sid, e)
         def handle_game_hook_command(data):
             """Template → server commands for game hooks (e.g. clear boss list)."""
             try:
@@ -9309,6 +9719,7 @@ class WebEngine:
             # running as soon as socketio.run enters the event loop.
             try:
                 self.ensure_web_engine_heartbeat()
+                self.ensure_startup_client_sync()
                 self.ensure_template_control_emit_worker()
             except Exception as exc:
                 logger.debug("WebEngine startup worker arm failed: %s", exc)

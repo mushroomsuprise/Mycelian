@@ -134,6 +134,8 @@ uv run python main.py
 | `http://localhost:5000/activity_feed` | Real-time alert feed |
 | `http://localhost:5000/source_controls` | Live overlay controls |
 
+Add those as **Custom Browser Docks** (View → Docks), not scene sources. If OBS starts before Mycelian, Cmd/Ctrl+R will not recover a failed dock (it reloads the error page). Keep Mycelian running and restart OBS. After OBS quits with Mycelian still running, those docks are pointed at a local boot page so the next OBS-first start waits for Mycelian.
+
 For WebSocket API details, open the in-app **Help** browser and see the *WebSocket Events* topic.
 
 ---

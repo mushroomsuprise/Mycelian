@@ -331,6 +331,18 @@ Mycelian serves templates at `http://localhost:5000/`:
 - Verify the URL is correct
 - Try refreshing the browser source
 
+If OBS is already open when Mycelian starts, enable **OBS WebSocket** in Settings → OBS. Mycelian then refreshes **its own** browser sources once on first launch if none have connected yet. Other browser sources (StreamElements, YouTube, etc.) are left alone.
+
+## Custom Browser Docks
+
+Activity Feed and Source Controls are usually added as **View → Docks → Custom Browser Docks**, not as scene sources. OBS has no WebSocket refresh for docks, so the scene-source refresh above cannot reload them.
+
+If OBS opened before Mycelian, those docks often show a white page or “This site can’t be reached.” **Cmd/Ctrl+R does not recover them** — it reloads Chrome’s error page, not the Mycelian URL.
+
+Keep Mycelian running and **restart OBS**. Scene browser sources recover over WebSocket; docks reload their configured URL when OBS launches with Mycelian already listening.
+
+When you quit OBS with Mycelian still running, Mycelian retargets **only its own** docks to a local boot page. The next OBS-first start waits for Mycelian instead of failing. Twitch/StreamElements docks are left alone.
+
 > **Tip:** See [Troubleshooting Alerts](help:troubleshooting_alerts) for more detailed solutions.
 
 **Poor performance**
@@ -344,7 +356,7 @@ Mycelian serves templates at `http://localhost:5000/`:
 - Audio plays through OBS media sources or separately
 - See [Audio Troubleshooting](help:troubleshooting_audio) for solutions
         """,
-        keywords=["obs", "browser source", "overlay", "stream", "setup"],
+        keywords=["obs", "browser source", "overlay", "stream", "setup", "dock", "activity feed"],
         related_topics=["getting_started_intro", "templates_intro"],
         ui_context="templates",
     ),

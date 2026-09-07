@@ -33,6 +33,12 @@ import threading
 import time
 from pathlib import Path
 
+# python.org 3.14 on macOS has no default CA file unless the user ran
+# Install Certificates.command. Do this before any aiohttp import.
+from modules.ssl_certs import ensure_ssl_certificates
+
+ensure_ssl_certificates()
+
 _NPSSO_HELPER_FLAG = "--mycelian-npsso-capture"
 
 if __name__ == "__main__" and _NPSSO_HELPER_FLAG in sys.argv:
@@ -174,6 +180,10 @@ def setup_logging():
     logging.getLogger("socketio.server").setLevel(logging.WARNING)
     logging.getLogger("pyrate_limiter").setLevel(logging.CRITICAL)
     logging.getLogger("modules.template_log").setLevel(logging.INFO)
+
+    from modules.log_filters import install_keepalive_missed_filter
+
+    install_keepalive_missed_filter()
 
 
 # Set up logging first (timed for startup diagnosis)

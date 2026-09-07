@@ -855,7 +855,7 @@
         });
 
         socket.on('connect_error', function (error) {
-            console.error('Socket connection error:', error);
+            console.warn('Socket connection error:', error);
         });
 
         // Alert type toggles from config

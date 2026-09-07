@@ -1097,6 +1097,7 @@ version = "1.12.5"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
+    { name = "certifi" },
     { name = "cryptography" },
     { name = "discord-py" },
     { name = "firebase-admin" },
@@ -1135,6 +1136,7 @@ build = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.11" },
+    { name = "certifi", specifier = ">=2024.8.30" },
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "discord-py", specifier = ">=2.7.1" },
     { name = "firebase-admin", specifier = ">=6.6.0" },

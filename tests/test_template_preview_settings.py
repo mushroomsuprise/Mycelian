@@ -143,6 +143,79 @@ class ObsBrowserSourceMatchTests(unittest.TestCase):
         ]
         self.assertIsNone(obs_match.pick_browser_source_size(matches))
 
+    def test_is_mycelian_overlay_url_matches_registered_route(self):
+        routes = ["alerts", "chat", "title"]
+        self.assertTrue(
+            obs_match.is_mycelian_overlay_url(
+                "http://127.0.0.1:5000/alerts", 5000, routes
+            )
+        )
+        self.assertTrue(
+            obs_match.is_mycelian_overlay_url(
+                "http://localhost:5000/chat?__preview_token=x", 5000, routes
+            )
+        )
+        self.assertTrue(
+            obs_match.is_mycelian_overlay_url(
+                "http://127.0.0.1:5000/title.html", 5000, routes
+            )
+        )
+
+    def test_is_mycelian_overlay_url_rejects_non_mycelian(self):
+        routes = ["alerts", "chat"]
+        self.assertFalse(
+            obs_match.is_mycelian_overlay_url(
+                "https://streamelements.com/overlay/abc", 5000, routes
+            )
+        )
+        self.assertFalse(
+            obs_match.is_mycelian_overlay_url(
+                "https://www.youtube.com/embed/xyz", 5000, routes
+            )
+        )
+        self.assertFalse(
+            obs_match.is_mycelian_overlay_url(
+                "http://127.0.0.1:5000/api/all-template-configs", 5000, routes
+            )
+        )
+        self.assertFalse(
+            obs_match.is_mycelian_overlay_url(
+                "http://127.0.0.1:5000/assets/foo.png", 5000, routes
+            )
+        )
+        self.assertFalse(
+            obs_match.is_mycelian_overlay_url(
+                "http://127.0.0.1:5001/alerts", 5000, routes
+            )
+        )
+        self.assertFalse(
+            obs_match.is_mycelian_overlay_url(
+                "http://127.0.0.1:5000/not_a_template", 5000, routes
+            )
+        )
+        self.assertFalse(
+            obs_match.is_mycelian_overlay_url(
+                "http://127.0.0.1:5000/alerts", 5000, []
+            )
+        )
+        self.assertFalse(
+            obs_match.is_mycelian_overlay_url(
+                "http://192.168.1.20:5000/alerts", 5000, routes
+            )
+        )
+
+    def test_overlay_template_route_from_path(self):
+        self.assertEqual(
+            obs_match.overlay_template_route_from_path("/activity_feed"),
+            "activity_feed",
+        )
+        self.assertEqual(
+            obs_match.overlay_template_route_from_path("/source_controls/"),
+            "source_controls",
+        )
+        self.assertIsNone(obs_match.overlay_template_route_from_path("/api/health"))
+        self.assertIsNone(obs_match.overlay_template_route_from_path("/"))
+
 
 if __name__ == "__main__":
     unittest.main()

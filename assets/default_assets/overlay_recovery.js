@@ -9,7 +9,8 @@
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 10000,
-        timeout: 20000
+        timeout: 20000,
+        transports: ['websocket', 'polling']
     };
 
     function matchesService(data, services) {
@@ -19,7 +20,7 @@
         if (!data || !data.service) {
             return true;
         }
-        if (data.service === 'internet') {
+        if (data.service === 'internet' || data.service === 'web_engine') {
             return true;
         }
         return services.indexOf(data.service) !== -1;
@@ -85,6 +86,22 @@
             } catch (e0) {}
             runRecovery(data, options);
         });
+
+        socket.on('connect', function () {
+            try {
+                var path = (global.location && global.location.pathname) || '';
+                socket.emit('overlay_hello', { path: path });
+            } catch (eHello) {}
+            if (typeof options.onConnect === 'function') {
+                options.onConnect();
+            }
+        });
+        if (socket.connected) {
+            try {
+                var pathReady = (global.location && global.location.pathname) || '';
+                socket.emit('overlay_hello', { path: pathReady });
+            } catch (eHelloReady) {}
+        }
 
         socket.on('disconnect', function (reason) {
             if (typeof options.onDisconnect === 'function') {

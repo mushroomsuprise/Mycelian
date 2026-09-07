@@ -17,6 +17,14 @@ _LOCAL_HOSTS = frozenset(
     }
 )
 
+# Overlay-server paths that are never a template browser source.
+_RESERVED_OVERLAY_PATH_PREFIXES = (
+    "/api",
+    "/assets",
+    "/static",
+    "/socket.io",
+)
+
 
 def normalize_overlay_path(path: str) -> str:
     """Strip trailing slash / ``.html``; ensure leading slash; empty → ``/``."""
@@ -87,6 +95,87 @@ def browser_url_matches_route(
             return False
 
     return True
+
+
+def overlay_path_is_reserved(path: str) -> bool:
+    """True for overlay-server paths that are never a template route."""
+    normalized = normalize_overlay_path(path).lower()
+    for prefix in _RESERVED_OVERLAY_PATH_PREFIXES:
+        if normalized == prefix or normalized.startswith(prefix + "/"):
+            return True
+    return False
+
+
+def is_mycelian_overlay_url(
+    url: Any,
+    overlay_port: Optional[int],
+    template_routes: Any,
+) -> bool:
+    """
+    True when *url* is a Mycelian template browser source.
+
+    Requires a local overlay host, the overlay port, and a path that matches
+    one of *template_routes*. ``/api``, ``/assets``, ``/static``, and
+    ``/socket.io`` never match, even on the overlay port.
+    """
+    routes = [
+        str(route).strip()
+        for route in (template_routes or [])
+        if str(route).strip()
+    ]
+    if not routes:
+        return False
+    raw = str(url or "").strip()
+    if not raw:
+        return False
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return False
+    scheme = (parsed.scheme or "").lower()
+    if scheme and scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").strip().lower()
+    if not is_local_overlay_host(host):
+        return False
+    if overlay_path_is_reserved(parsed.path or "/"):
+        return False
+    if overlay_port is None:
+        return False
+    for route in routes:
+        if browser_url_matches_route(
+            raw,
+            route,
+            overlay_port=overlay_port,
+            require_port=True,
+        ):
+            return True
+    return False
+
+
+def overlay_template_route_from_path(path: str) -> Optional[str]:
+    """Return the template route encoded in an overlay path, or ``None``."""
+    if overlay_path_is_reserved(path):
+        return None
+    normalized = normalize_overlay_path(path)
+    if normalized == "/":
+        return None
+    return normalized.lstrip("/")
+
+
+def overlay_template_route_from_url(
+    url: Any,
+    overlay_port: Optional[int],
+    template_routes: Any,
+) -> Optional[str]:
+    """Return the matching template route for a Mycelian overlay URL."""
+    if not is_mycelian_overlay_url(url, overlay_port, template_routes):
+        return None
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except Exception:
+        return None
+    return overlay_template_route_from_path(parsed.path or "/")
 
 
 def coerce_browser_wh(

@@ -848,7 +848,7 @@
         });
 
         socket.on('connect_error', function (error) {
-            console.error('Title socket connection error:', error);
+            console.warn('Title socket connection error:', error);
         });
 
         socket.on('template_config_updated', function (data) {

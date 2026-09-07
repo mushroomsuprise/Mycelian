@@ -35,6 +35,7 @@ dependencies = [
     "pillow>=10.0.0",
     "obsws-python>=1.8.0",
     "discord-py>=2.7.1",
+    "certifi>=2024.8.30",
 ]
 
 [dependency-groups]

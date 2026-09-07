@@ -20,6 +20,8 @@ MAX_SOURCE_LEN = 64
 VALID_LEVELS = frozenset({"error", "warn", "info"})
 RATE_LIMIT_MAX = 30
 RATE_LIMIT_WINDOW_SEC = 60.0
+_TRANSIENT_SOCKET_WARN_COOLDOWN_SEC = 60.0
+_transient_socket_warn_at: Dict[str, float] = {}
 
 TEMPLATE_LOGGER_SCRIPT = (
     '<script src="/assets/default_assets/template_logger.js"></script>'
@@ -69,6 +71,22 @@ class TemplateLogRateLimiter:
     def reset(self) -> None:
         self._buckets.clear()
         self._last_evict = 0.0
+
+
+def is_transient_socket_message(message: str, source: str = "") -> bool:
+    """True for expected Socket.IO reconnect/polling fallback noise."""
+    blob = f"{source} {message}".lower()
+    if "xhr poll error" in blob:
+        return True
+    if "websocket error" in blob:
+        return True
+    if "transport close" in blob:
+        return True
+    if "timeout" in blob and (
+        "connect_error" in blob or "socket connection error" in blob
+    ):
+        return True
+    return False
 
 
 def _truncate(value: Any, max_len: int) -> str:
@@ -135,6 +153,16 @@ def write_template_log_entry(normalized: Dict[str, str]) -> None:
     stack = normalized.get("stack")
     if level == "error" and stack:
         log_message = f"{log_message}\n{stack}"
+
+    if is_transient_socket_message(message, normalized.get("source") or ""):
+        now = time.time()
+        last = _transient_socket_warn_at.get(template_name, 0.0)
+        if now - last >= _TRANSIENT_SOCKET_WARN_COOLDOWN_SEC:
+            _transient_socket_warn_at[template_name] = now
+            logger.warning(log_message)
+        else:
+            logger.debug(log_message)
+        return
 
     if level == "error":
         logger.error(log_message)

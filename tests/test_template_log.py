@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 from modules.template_log import (  # noqa: E402
     TemplateLogRateLimiter,
     inject_template_logger,
+    is_transient_socket_message,
     normalize_template_log_payload,
     process_template_log,
     write_template_log_entry,
@@ -116,6 +117,53 @@ class TemplateLogWriteTests(unittest.TestCase):
                 }
             )
             mock_warn.assert_called_once()
+
+
+class TransientSocketLogTests(unittest.TestCase):
+    def setUp(self) -> None:
+        import modules.template_log as template_log
+
+        template_log._transient_socket_warn_at.clear()
+
+    def test_xhr_poll_error_is_transient(self) -> None:
+        self.assertTrue(
+            is_transient_socket_message(
+                "[ff7] socket connect_error xhr poll error",
+                "console.error",
+            )
+        )
+        self.assertFalse(
+            is_transient_socket_message("Config load failed", "console.error")
+        )
+
+    def test_xhr_poll_error_is_not_logger_error(self) -> None:
+        logger = logging.getLogger("modules.template_log")
+        with (
+            patch.object(logger, "error") as mock_error,
+            patch.object(logger, "warning") as mock_warn,
+            patch.object(logger, "debug") as mock_debug,
+        ):
+            write_template_log_entry(
+                {
+                    "template_name": "ff7",
+                    "level": "error",
+                    "message": "[ff7] socket connect_error xhr poll error",
+                    "source": "console.error",
+                }
+            )
+            mock_error.assert_not_called()
+            mock_warn.assert_called_once()
+            write_template_log_entry(
+                {
+                    "template_name": "ff7",
+                    "level": "error",
+                    "message": "[ff7] socket connect_error xhr poll error",
+                    "source": "console.error",
+                }
+            )
+            mock_error.assert_not_called()
+            mock_warn.assert_called_once()
+            mock_debug.assert_called_once()
 
 
 class TemplateLogProcessTests(unittest.TestCase):
