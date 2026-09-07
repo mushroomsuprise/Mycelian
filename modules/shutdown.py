@@ -305,6 +305,96 @@ def _iter_child_pids() -> list[int]:
     return unique
 
 
+def _windows_hidden_subprocess_kwargs() -> dict:
+    """Keep console-subsystem helpers (taskkill) from flashing a window."""
+    if sys.platform != "win32":
+        return {}
+    kwargs: dict = {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+    if startupinfo_cls is not None:
+        info = startupinfo_cls()
+        info.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        info.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        kwargs["startupinfo"] = info
+    return kwargs
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        import psutil
+
+        return bool(psutil.Process(pid).is_running())
+    except ImportError:
+        return True
+    except Exception:
+        return False
+
+
+def _leftover_tree_roots(pids: list[int]) -> list[int]:
+    """Forest roots among leftover PIDs (parent is not also leftover)."""
+    if not pids:
+        return []
+    remaining = set(pids)
+    try:
+        import psutil
+    except Exception:
+        return pids
+    roots: list[int] = []
+    for pid in pids:
+        try:
+            parent = psutil.Process(pid).ppid()
+        except Exception:
+            parent = None
+        if parent not in remaining:
+            roots.append(pid)
+    return roots
+
+
+def _kill_process_tree_psutil(pid: int) -> bool:
+    """Kill descendants then the root. True if the tree is gone or was already gone."""
+    if pid <= 0 or pid == os.getpid():
+        return True
+    try:
+        import psutil
+    except Exception:
+        return False
+    try:
+        proc = psutil.Process(pid)
+    except psutil.Error:
+        return True
+    try:
+        descendants = proc.children(recursive=True)
+    except psutil.Error:
+        descendants = []
+    errors = False
+    for child in reversed(descendants):
+        try:
+            child_pid = int(child.pid)
+            if child_pid in (pid, os.getpid()):
+                continue
+            child.kill()
+        except psutil.NoSuchProcess:
+            pass
+        except Exception:
+            errors = True
+    try:
+        proc.kill()
+    except psutil.NoSuchProcess:
+        pass
+    except Exception:
+        errors = True
+    if errors:
+        return False
+    try:
+        return not proc.is_running()
+    except psutil.NoSuchProcess:
+        return True
+    except Exception:
+        return False
+
+
 def _taskkill_process_tree(pid: int) -> None:
     if sys.platform != "win32" or pid <= 0 or pid == os.getpid():
         return
@@ -315,6 +405,7 @@ def _taskkill_process_tree(pid: int) -> None:
             text=True,
             timeout=5.0,
             check=False,
+            **_windows_hidden_subprocess_kwargs(),
         )
         if result.returncode == 0:
             logger.warning("Killed process tree PID %s", pid)
@@ -329,12 +420,26 @@ def _taskkill_process_tree(pid: int) -> None:
         logger.debug("taskkill PID %s: %s", pid, e)
 
 
+def _kill_process_tree(pid: int) -> None:
+    """Kill a Windows process tree without flashing a console window."""
+    if sys.platform != "win32" or pid <= 0 or pid == os.getpid():
+        return
+    was_running = _pid_is_running(pid)
+    if _kill_process_tree_psutil(pid):
+        if was_running:
+            logger.warning("Killed process tree PID %s", pid)
+        return
+    _taskkill_process_tree(pid)
+
+
 def reap_child_process_trees() -> None:
     """Terminate spawn children and, on Windows, their WebView2 process trees.
 
     ``os._exit`` skips multiprocessing's atexit reaper, so callers must run this
-    before a hard exit. On Windows, ``taskkill /T`` must run while the child is
-    still alive; ``terminate()`` first would orphan WebView2 helpers.
+    before a hard exit. On Windows the whole tree is killed in one pass while the
+    child is still alive; ``terminate()`` first would orphan WebView2 helpers.
+    Trees are killed with psutil when possible so ``taskkill.exe`` does not flash
+    a console in the windowed exe. Hidden ``taskkill /T /F`` is the fallback.
     """
     import multiprocessing
 
@@ -350,10 +455,14 @@ def reap_child_process_trees() -> None:
                     getattr(child, "name", "?"),
                     pid,
                 )
-                _taskkill_process_tree(pid)
-        for pid in _iter_child_pids():
-            if pid not in seen:
-                _taskkill_process_tree(pid)
+                _kill_process_tree(pid)
+        leftover = [
+            pid
+            for pid in _iter_child_pids()
+            if pid not in seen and _pid_is_running(pid)
+        ]
+        for pid in _leftover_tree_roots(leftover):
+            _kill_process_tree(pid)
         return
 
     for child in children:

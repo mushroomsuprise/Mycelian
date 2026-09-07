@@ -4436,12 +4436,24 @@ class WebEngine:
         )
         try:
             if sys.platform == "win32":
+                taskkill_kwargs: dict = {
+                    "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                }
+                startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+                if startupinfo_cls is not None:
+                    startupinfo = startupinfo_cls()
+                    startupinfo.dwFlags |= getattr(
+                        subprocess, "STARTF_USESHOWWINDOW", 0
+                    )
+                    startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+                    taskkill_kwargs["startupinfo"] = startupinfo
                 result = subprocess.run(
                     ["taskkill", "/PID", str(pid), "/F"],
                     capture_output=True,
                     text=True,
                     timeout=5.0,
                     check=False,
+                    **taskkill_kwargs,
                 )
                 if result.returncode == 0:
                     logger.warning(
