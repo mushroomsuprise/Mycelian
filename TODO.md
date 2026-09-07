@@ -31,7 +31,7 @@ FF7 Template:
     [x] - Make sadness/fury display shrink to "S" and "F" if the space is too small for names to appear properly (if names are ellipsed)
     [x] - Update limit bar so it appears the blueish color when someone is in sadness. you will need to look up the color for this as i dont have an example
     [x] - When portraits and row indicators are enabled, shift portraits to show the row indicator instead of the "FR" and "BR" labels. If portraits are turned off, then use the "FR" and "BR" setup. Portraits should be shifted more left if the character is in front row and shifted more right for back row.
-    [] - Fix issue with "recent item" counting Dragon Scales as Dragon Fangs (mapping issue?)
+    [x] - Fix issue with "recent item" counting Dragon Scales as Dragon Fangs (mapping issue?)
 
 YouTube Integration:
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system
