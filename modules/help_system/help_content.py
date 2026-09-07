@@ -331,7 +331,7 @@ Mycelian serves templates at `http://localhost:5000/`:
 - Verify the URL is correct
 - Try refreshing the browser source
 
-If OBS is already open when Mycelian starts, enable **OBS WebSocket** in Settings → OBS. Mycelian then refreshes **its own** browser sources once on first launch if none have connected yet. Other browser sources (StreamElements, YouTube, etc.) are left alone.
+If OBS is already open when Mycelian starts, enable **OBS WebSocket** in Settings → OBS. Mycelian then force-refreshes **its own** scene browser sources once after it connects to OBS WebSocket. Other browser sources (StreamElements, YouTube, etc.) are left alone. Custom browser docks are not WebSocket inputs; see below.
 
 ## Custom Browser Docks
 

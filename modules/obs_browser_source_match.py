@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 _LOCAL_HOSTS = frozenset(
     {
@@ -48,6 +48,29 @@ def is_local_overlay_host(host: str) -> bool:
     return h in _LOCAL_HOSTS
 
 
+def parse_browser_source_url(url: Any) -> Optional[ParseResult]:
+    """Parse an OBS browser-source URL.
+
+    OBS often stores overlay URLs without a scheme (``127.0.0.1:5000/ff7``).
+    Those are treated as ``http://``.
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return None
+    if not parsed.scheme:
+        hostport = raw.split("/", 1)[0]
+        if ":" in hostport:
+            try:
+                parsed = urlparse("http://" + raw)
+            except Exception:
+                return None
+    return parsed
+
+
 def browser_url_matches_route(
     url: Any,
     route: str,
@@ -61,15 +84,12 @@ def browser_url_matches_route(
     Query/hash ignored. ``.html`` / ``.htm`` suffixes are stripped. Path compare
     is case-insensitive. When *overlay_port* is set and *require_port* is True,
     the URL port must match (default HTTP 80 / HTTPS 443 when omitted).
+    Schemeless OBS URLs such as ``127.0.0.1:5000/ff7`` are treated as http.
     """
     if not route or not str(route).strip():
         return False
-    raw = str(url or "").strip()
-    if not raw:
-        return False
-    try:
-        parsed = urlparse(raw)
-    except Exception:
+    parsed = parse_browser_source_url(url)
+    if parsed is None:
         return False
     if parsed.scheme and parsed.scheme.lower() not in ("http", "https"):
         return False
@@ -116,7 +136,8 @@ def is_mycelian_overlay_url(
 
     Requires a local overlay host, the overlay port, and a path that matches
     one of *template_routes*. ``/api``, ``/assets``, ``/static``, and
-    ``/socket.io`` never match, even on the overlay port.
+    ``/socket.io`` never match, even on the overlay port. Schemeless OBS
+    URLs such as ``127.0.0.1:5000/ff7`` are treated as http.
     """
     routes = [
         str(route).strip()
@@ -125,12 +146,8 @@ def is_mycelian_overlay_url(
     ]
     if not routes:
         return False
-    raw = str(url or "").strip()
-    if not raw:
-        return False
-    try:
-        parsed = urlparse(raw)
-    except Exception:
+    parsed = parse_browser_source_url(url)
+    if parsed is None:
         return False
     scheme = (parsed.scheme or "").lower()
     if scheme and scheme not in ("http", "https"):
@@ -144,7 +161,7 @@ def is_mycelian_overlay_url(
         return False
     for route in routes:
         if browser_url_matches_route(
-            raw,
+            url,
             route,
             overlay_port=overlay_port,
             require_port=True,
@@ -171,9 +188,8 @@ def overlay_template_route_from_url(
     """Return the matching template route for a Mycelian overlay URL."""
     if not is_mycelian_overlay_url(url, overlay_port, template_routes):
         return None
-    try:
-        parsed = urlparse(str(url or "").strip())
-    except Exception:
+    parsed = parse_browser_source_url(url)
+    if parsed is None:
         return None
     return overlay_template_route_from_path(parsed.path or "/")
 

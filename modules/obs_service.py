@@ -262,6 +262,10 @@ class ObsServiceImpl:
     def is_connected(self) -> bool:
         return self.get_connection_phase() == "connected" and self._req_client is not None
 
+    def is_enabled(self) -> bool:
+        """True when OBS WebSocket integration is enabled in Settings."""
+        return self._load_enabled_settings()
+
     def get_status_line(self) -> str:
         phase = self.get_connection_phase()
         if phase == "connected":
@@ -1000,7 +1004,11 @@ class ObsServiceImpl:
         self, port: Any, template_routes: Any
     ) -> Dict[str, Any]:
         """Worker-thread: refreshnocache only for registered Mycelian overlay URLs."""
-        from .obs_browser_source_match import is_mycelian_overlay_url
+        from .obs_browser_source_match import (
+            is_local_overlay_host,
+            is_mycelian_overlay_url,
+            parse_browser_source_url,
+        )
 
         cl = self._req_client
         routes = [
@@ -1033,6 +1041,7 @@ class ObsServiceImpl:
             return result
 
         to_refresh: List[str] = []
+        local_unmatched: List[str] = []
         for row in inputs_list:
             name = _attr(row, "input_name", "inputName")
             if not name:
@@ -1056,6 +1065,10 @@ class ObsServiceImpl:
                 result["skipped"].append(
                     {"source_name": source_name, "reason": "not_mycelian"}
                 )
+                parsed = parse_browser_source_url(url)
+                host = (parsed.hostname or "").strip().lower() if parsed else ""
+                if parsed is not None and is_local_overlay_host(host):
+                    local_unmatched.append(f"{source_name}={url}")
                 logger.debug(
                     "OBS Mycelian browser refresh skip %s url=%s",
                     source_name,
@@ -1081,11 +1094,17 @@ class ObsServiceImpl:
                     e,
                 )
 
-        logger.info(
+        logger.warning(
             "OBS Mycelian browser refresh done refreshed=%s skipped=%s",
             result["refreshed"],
             len(result["skipped"]),
         )
+        if local_unmatched:
+            logger.warning(
+                "OBS Mycelian browser refresh skipped local overlay URLs "
+                "with no matching template route: %s",
+                local_unmatched,
+            )
         return result
 
     def _lookup_browser_source_size_locked(

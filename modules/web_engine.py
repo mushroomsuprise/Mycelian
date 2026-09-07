@@ -3867,7 +3867,8 @@ class WebEngine:
     def _maybe_enqueue_startup_obs_refresh(self) -> bool:
         """Enqueue at most one Mycelian browser-source refresh this process.
 
-        Returns True when a refresh was queued or the process gate is already spent.
+        Returns True when a refresh was queued, the process gate is already
+        spent, or OBS WebSocket is disabled (nothing to wait for).
         Returns False when this attempt should be retried (OBS down, no routes).
         """
         if _obs_browser_refresh_already_done():
@@ -3883,13 +3884,15 @@ class WebEngine:
         except Exception as e:
             logger.debug("WebEngine startup sync: OBS service import failed: %s", e)
             return False
+        if not obs_service.is_enabled():
+            return True
         if not obs_service.is_connected():
             return False
         if not _claim_obs_browser_refresh_this_process():
             return True
         try:
             obs_service.enqueue_refresh_mycelian_browser_sources(self.port, routes)
-            logger.info(
+            logger.warning(
                 "WebEngine startup sync: queued one-shot OBS refresh of "
                 "Mycelian browser sources (%s routes)",
                 len(routes),
@@ -4004,16 +4007,15 @@ class WebEngine:
             overlay_clients = self._overlay_socket_connected_count()
             if overlay_clients > 0:
                 self._emit_startup_overlay_recovery_once()
-                obs_attempted = True
 
-            if overlay_clients == 0 and not obs_attempted:
+            if not obs_attempted:
                 obs_attempted = self._maybe_enqueue_startup_obs_refresh()
 
             if not dock_attempted:
                 dock_attempted = self._maybe_enqueue_startup_dock_wake()
 
-            if overlay_clients > 0 and obs_attempted and dock_attempted:
-                logger.info(
+            if obs_attempted and dock_attempted:
+                logger.warning(
                     "WebEngine startup sync: %s overlay client(s); "
                     "OBS source refresh attempted=%s dock wake attempted=%s",
                     overlay_clients,
@@ -4023,7 +4025,7 @@ class WebEngine:
                 return
 
             if time.monotonic() >= deadline:
-                logger.info(
+                logger.warning(
                     "WebEngine startup sync: finished wait overlay_clients=%s "
                     "OBS refresh attempted=%s dock wake attempted=%s",
                     overlay_clients,
