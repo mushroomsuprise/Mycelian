@@ -4844,7 +4844,7 @@ Settings are stored in:
         content="""
 # Game Hooks
 
-Game Hooks let Mycelian attach to a supported PC game (currently **Final Fantasy VII** English PC / Steam: `ff7_en.exe` or `ff7.exe`) and read live memory. Data is pushed over Socket.IO to browser templates such as the **FF7** overlay (`/ff7`).
+Game Hooks let Mycelian attach to a supported PC game and push live data over Socket.IO to browser templates. **Final Fantasy VII** English PC / Steam (`ff7_en.exe` / `ff7.exe`) is read (and optionally written) from process memory on Windows. **Factorio** is read-only on Windows, macOS, and Linux via a companion mod that writes `script-output/mycelian/stats.json`.
 
 ## Enabling FF7
 
@@ -4854,6 +4854,29 @@ Game Hooks let Mycelian attach to a supported PC game (currently **Final Fantasy
 4. Start the game on the same machine as Mycelian (Windows only for memory access)
 
 If the hook is disabled, templates still load but receive a stub payload with `disabled: true`.
+
+## Enabling Factorio
+
+1. Open **Settings** → **Game Hooks**
+2. Turn on **Factorio** and click **Save**
+3. Click **Install mod** on the Factorio card (copies `mycelian-stats` into the Factorio mods folder and enables it)
+4. Fully quit Factorio if it is already running, then launch it and load a save
+5. Add a browser source pointing at `http://localhost:5000/factorio`
+
+The overlay is **read-only**. It does not write into the game. If the hook is enabled but the JSON file never appears, the companion mod is not loaded — use **Install mod** / **Update mod** and restart Factorio.
+
+### What is shown (Factorio)
+
+The `/factorio` template is styled after the in-game Production and Electric Network windows. Source Settings can show, hide, retitle, and place each segment on a grid, or stack them in a row or column.
+
+- **Power**: satisfaction, generation vs capacity, accumulator charge, producer/consumer lists, and a flow graph. Auto mode follows the planet you are on; optional cycle mode rotates visited planets in sync with Production, Consumption, and Fluids.
+- **Production / Consumption**: item rates (`/m`) for a configurable time window; blank item list = auto top N. Same auto/cycle planet behavior as Power.
+- **Science**: science packs per minute plus current research, progress, ETA, and queue
+- **Planets**: current surface, visited planets, space platforms (Space Age; transit as `Nauvis -> Gleba`)
+- **Fluids**: optional fluid rates with the same planet header, auto current-planet, and synced cycle toggle as Power
+- **Stats**: optional extra stats (rockets, evolution, pollution, kills)
+
+Payload fields live under `hooks.factorio` (`attached`, `paused`, `power`, `production`, `consumption`, `science`, `planets`, `misc`). Item icons are loaded from the local Factorio install (`data/*/graphics/icons`).
 
 ## What is read (FF7)
 
@@ -4897,6 +4920,7 @@ Huge shoutouts to **m4v3k** for all of their work and contributions to the FF7 c
         """,
         keywords=[
             "ff7",
+            "factorio",
             "memory",
             "overlay",
             "battle",

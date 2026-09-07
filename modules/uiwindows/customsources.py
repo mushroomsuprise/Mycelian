@@ -2817,14 +2817,15 @@ def save_config(config_parser, config_select, config_container):
         # Save the config
         if config_parser.save_config(config_name, original_config):
             notify(f"Configuration saved for {config_name}.", type="positive")
-            if config_name == "ff7":
+            if config_name in ("ff7", "factorio"):
                 try:
                     from ..game_hooks_service import game_hooks_service
 
-                    game_hooks_service.reload_hook_config("ff7")
+                    game_hooks_service.reload_hook_config(config_name)
                 except Exception as e:
                     logger.warning(
-                        "FF7 boss match sets refresh after save failed: %s",
+                        "Game hook config refresh after save failed (%s): %s",
+                        config_name,
                         e,
                         exc_info=True,
                     )

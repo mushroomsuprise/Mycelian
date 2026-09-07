@@ -87,9 +87,16 @@ def create_hook(hook_id: str) -> Optional[GameHook]:
     return cls()
 
 
+def get_hook_class(hook_id: str) -> Optional[Type[Any]]:
+    _ensure_registered()
+    return _HOOK_TYPES.get(str(hook_id or "").strip().lower())
+
+
 def _ensure_registered() -> None:
     if _HOOK_TYPES:
         return
+    from .factorio_hook import FactorioGameHook
     from .ff7_hook import Ff7GameHook
 
     _register_hook(Ff7GameHook)
+    _register_hook(FactorioGameHook)

@@ -860,6 +860,11 @@ def get_data_files():
         data_files.append((str(project_icons), "assets/default_assets/icons"))
         print(f"Including application icons: {project_icons}")
 
+    factorio_mod = get_project_root() / "factorio_mod"
+    if factorio_mod.is_dir():
+        data_files.append((str(factorio_mod), "factorio_mod"))
+        print(f"Including Factorio companion mod: {factorio_mod}")
+
     return data_files
 
 

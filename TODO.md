@@ -40,7 +40,7 @@ Donations:
     [] - Add in ability to connect major cash services (like PayPal and Venmo) so the user can generate a "donations" link that Mycelian can get data from to use for alerts
 
 Game Hooks:
-    [] - Add in a Factorio game hook. Display stats like power generation, production values (user can configure which items to show), science per second, planets visit (if using space age DLC), and other popular items. Stylize the HTML widget to match the game's menus. The HTML widget should be user configurable for all things (break different things into sections, like a production segment, power segment, etc etc). I also want the user to be able to place the different segments in a row/column configuration so they can be configured horizontally or vertically, or as a grid. 
+    [x] - Add in a Factorio game hook. Display stats like power generation, production values (user can configure which items to show), science per second, planets visit (if using space age DLC), and other popular items. Stylize the HTML widget to match the game's menus. The HTML widget should be user configurable for all things (break different things into sections, like a production segment, power segment, etc etc). I also want the user to be able to place the different segments in a row/column configuration so they can be configured horizontally or vertically, or as a grid. 
 
 Kik Integration:
     [] - Add in Kik integration service

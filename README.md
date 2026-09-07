@@ -68,7 +68,7 @@ Mycelian brings your stream's alerts, overlays, chatbot, and automation into a s
 
 - Read live game data from supported PC games and broadcast it to browser templates
 - Use live game data to trigger connectors and actions, or use it to control the game itself
-- Supported games: Final Fantasy VII (2013)
+- Supported games: Final Fantasy VII (2013), Factorio (Windows / macOS / Linux)
 
 ### Integrations
 

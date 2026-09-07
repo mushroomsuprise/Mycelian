@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from .base import GameHook, HookUiMetadata, runtime_os_key
+from .factorio_hook import FactorioGameHook
 from .ff7_boss_tracker import Ff7BossTracker
 from .ff7_hook import (
     FF7_CONNECTOR_CATALOG,
@@ -18,6 +19,7 @@ from .ff7_hook import (
 from .registry import (
     create_hook,
     enabled_db_path,
+    get_hook_class,
     is_hook_enabled,
     list_hooks_for_ui,
     registered_hook_ids,
@@ -27,6 +29,7 @@ __all__ = [
     "FF7Hook",
     "FF7Reader",
     "FF7_CONNECTOR_CATALOG",
+    "FactorioGameHook",
     "Ff7BossTracker",
     "Ff7GameHook",
     "GameHook",
@@ -35,6 +38,7 @@ __all__ = [
     "create_hook",
     "create_hook_instance",
     "enabled_db_path",
+    "get_hook_class",
     "ff7_game_speed_select_options",
     "is_hook_enabled",
     "list_hooks_for_ui",

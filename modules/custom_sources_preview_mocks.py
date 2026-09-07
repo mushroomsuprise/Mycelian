@@ -63,6 +63,7 @@ _MOCKS: Dict[str, List[Dict[str, Any]]] = {
         {"event": "roulette_refresh", "label": "Refresh wheel"},
     ],
     "ff7": [],
+    "factorio": [],
     "bitboss": [],
 }
 

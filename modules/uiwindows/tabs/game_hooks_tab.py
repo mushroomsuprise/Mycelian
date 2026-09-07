@@ -1,6 +1,6 @@
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
-"""Settings tab: enable/disable game memory hooks (FF7, etc.)."""
+"""Settings tab: enable/disable game hooks (FF7, Factorio, etc.)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from ...database_manager import database_manager
 from ...game_hooks.base import runtime_os_key
 from ...game_hooks.registry import (
     enabled_db_path,
+    get_hook_class,
     is_hook_enabled,
     list_hooks_for_ui,
     set_hook_enabled_cached,
@@ -189,6 +190,7 @@ class GameHooksTab:
     def _refresh_all_runtime_status(self) -> None:
         for meta in list_hooks_for_ui():
             self._refresh_runtime_status(meta.hook_id)
+            self._refresh_hook_actions(meta.hook_id)
 
     def build(self, parent_container) -> None:
         self._load_from_db()
@@ -240,6 +242,7 @@ class GameHooksTab:
                                 if not hook_supported:
                                     sw.disable()
                                 self.ui_elements[f"{hid}_toggle"] = sw
+                            self._render_hook_actions(hid)
 
                 self._status_timer = layout_schedule(
                     0.5, self._refresh_all_runtime_status, active=True
@@ -250,6 +253,126 @@ class GameHooksTab:
                 primary_button("Save", self.save)
 
         layout_schedule(0.05, self._refresh_all_runtime_status, once=True)
+
+    def _hook_ui_actions(self, hook_id: str) -> list:
+        cls = get_hook_class(hook_id)
+        getter = getattr(cls, "ui_actions", None) if cls is not None else None
+        if not callable(getter):
+            return []
+        try:
+            actions = getter()
+        except Exception as e:
+            logger.debug("ui_actions(%s): %s", hook_id, e)
+            return []
+        return list(actions or [])
+
+    @staticmethod
+    def _detail_classes(tone: str) -> str:
+        if tone == "warning":
+            return "text-xs font-semibold text-theme-warning"
+        if tone == "ok":
+            return "text-xs opacity-80"
+        return "text-xs opacity-60"
+
+    def _render_hook_actions(self, hook_id: str) -> None:
+        actions = self._hook_ui_actions(hook_id)
+        if not actions:
+            return
+        with ui.row().classes("w-full items-center gap-2 mt-1 flex-wrap"):
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                aid = str(action.get("id") or "")
+                label = str(action.get("label") or "Action")
+                tooltip = str(action.get("tooltip") or "")
+                enabled = bool(action.get("enabled", True))
+                run = action.get("run")
+                btn = outline_button(
+                    label,
+                    lambda _e=None, h=hook_id, a=aid: self._run_hook_action(h, a),
+                    extra_classes="text-xs",
+                )
+                if tooltip:
+                    btn.tooltip(tooltip)
+                if not enabled or not callable(run):
+                    btn.disable()
+                self.ui_elements[f"{hook_id}_action_{aid}"] = btn
+                detail = str(action.get("detail") or "").strip()
+                if detail:
+                    tone = str(action.get("detail_tone") or "")
+                    lbl = ui.label(detail).classes(self._detail_classes(tone))
+                    self.ui_elements[f"{hook_id}_action_{aid}_detail"] = lbl
+
+    def _refresh_hook_actions(self, hook_id: str) -> None:
+        for action in self._hook_ui_actions(hook_id):
+            if not isinstance(action, dict):
+                continue
+            aid = str(action.get("id") or "")
+            btn = self.ui_elements.get(f"{hook_id}_action_{aid}")
+            if btn is None:
+                continue
+            label = str(action.get("label") or "Action")
+            try:
+                btn.text = label
+            except Exception:
+                pass
+            enabled = bool(action.get("enabled", True)) and callable(action.get("run"))
+            try:
+                if enabled:
+                    btn.enable()
+                else:
+                    btn.disable()
+            except Exception:
+                pass
+            tooltip = str(action.get("tooltip") or "")
+            if tooltip:
+                try:
+                    btn.tooltip(tooltip)
+                except Exception:
+                    pass
+            detail_el = self.ui_elements.get(f"{hook_id}_action_{aid}_detail")
+            if detail_el is None:
+                continue
+            detail = str(action.get("detail") or "").strip()
+            try:
+                detail_el.text = detail
+            except Exception:
+                pass
+            tone = str(action.get("detail_tone") or "")
+            try:
+                detail_el.classes(replace=self._detail_classes(tone))
+            except Exception:
+                pass
+
+    def _run_hook_action(self, hook_id: str, action_id: str) -> None:
+        for action in self._hook_ui_actions(hook_id):
+            if not isinstance(action, dict):
+                continue
+            if str(action.get("id") or "") != action_id:
+                continue
+            run = action.get("run")
+            if not callable(run):
+                return
+            try:
+                result = run()
+            except Exception as e:
+                logger.warning(
+                    "hook action %s/%s failed: %s", hook_id, action_id, e, exc_info=True
+                )
+                notify(str(e), type="negative")
+                return
+            ok = True
+            message = ""
+            if isinstance(result, tuple) and result:
+                ok = bool(result[0])
+                if len(result) > 1:
+                    message = str(result[1] or "")
+            elif isinstance(result, str):
+                message = result
+            if message:
+                notify(message, type="positive" if ok else "negative", timeout=8000)
+            self._refresh_hook_actions(hook_id)
+            return
 
     def _on_toggle(self, hook_id: str, value: bool) -> None:
         if not self._hook_supported.get(hook_id, True):

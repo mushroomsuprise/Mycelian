@@ -14,7 +14,7 @@ canvas like normal elements; the save pipeline writes any user edits
 back into the JSON config without touching the hand-authored HTML.
 
 Templates without absolutely-positioned id'd descendants (chat,
-activity_feed, ff7, ...) return ``None`` so the caller can fall back
+activity_feed, ff7, factorio, ...) return ``None`` so the caller can fall back
 to the legacy outline-only behaviour in
 :func:`template_parser_back._synthesize_legacy_elements`.
 """

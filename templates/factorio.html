@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Factorio Overlay</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+        integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+        crossorigin="anonymous"></script>
+    <script src="/assets/default_assets/overlay_recovery.js"></script>
+    <script src="/assets/default_assets/template_logger.js"></script>
+    <script>MycelianLog.init({ templateName: 'factorio' });</script>
+    <style>
+        @font-face {
+            font-family: 'FacUi';
+            src: url("/assets/default_assets/fonts/{{ FontFile }}") format("truetype");
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        :root {
+            --fac-frame: #2c2c2c;
+            --fac-panel: #2c2c2c;
+            --fac-well: #1c1c1c;
+            --fac-row: #242424;
+            --fac-slot: #3a3a3a;
+            --fac-title: #1e1e1e;
+            --fac-title-text: #efe6d0;
+            --fac-title-stripe-a: #191919;
+            --fac-title-stripe-b: #2c2c2c;
+            --fac-border: #151515;
+            --fac-highlight: #5a5a5a;
+            --fac-accent: #e09600;
+            --fac-text: #dcdcdc;
+            --fac-dim: #9a9a9a;
+            --fac-green: #3dff3d;
+            --fac-green-dark: #2e8a2e;
+            --fac-bar-track: #1a1a1a;
+            --fac-opacity: 0.96;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: transparent;
+            font-family: 'FacUi', 'Segoe UI', 'Tahoma', sans-serif;
+            color: var(--fac-text);
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        #facRoot {
+            min-height: 100vh;
+            padding: 4px;
+            transform-origin: top left;
+        }
+
+        #facGrid {
+            display: grid;
+            width: 100%;
+            min-width: 0;
+        }
+        #facGrid > .panel { min-width: 0; width: 100%; }
+
+        .panel {
+            position: relative;
+            background: rgba(44, 44, 44, var(--fac-opacity));
+            border: 1px solid var(--fac-border);
+            box-shadow:
+                inset 1px 1px 0 var(--fac-highlight),
+                inset -1px -1px 0 #0a0a0a,
+                0 2px 8px rgba(0, 0, 0, 0.45);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .panel-title {
+            display: flex;
+            align-items: stretch;
+            background: var(--fac-title);
+            border-bottom: 1px solid #0a0a0a;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            color: var(--fac-title-text);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            padding: 0;
+            min-height: 24px;
+            overflow: hidden;
+            text-shadow: 0 1px 0 #000;
+        }
+        .panel-title.hidden { display: none; }
+        .panel-title .title-lead {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 8px;
+            flex: 0 0 auto;
+            white-space: nowrap;
+            background: var(--fac-title);
+            z-index: 1;
+        }
+        .panel-title .title-planet {
+            width: 18px;
+            height: 18px;
+            object-fit: cover;
+            object-position: top left;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .panel-title .title-stripes {
+            flex: 1 1 auto;
+            min-width: 16px;
+            background-color: var(--fac-title-stripe-a);
+            background-image: repeating-linear-gradient(
+                90deg,
+                var(--fac-title-stripe-a) 0 2px,
+                var(--fac-title-stripe-b) 2px 3px
+            );
+        }
+
+        .panel-body {
+            padding: 6px 8px 8px;
+            background: var(--fac-panel);
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .empty {
+            color: var(--fac-dim);
+            font-size: 12px;
+            padding: 6px 4px;
+        }
+
+        .boxed {
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 2px 4px;
+            margin: 0;
+            box-shadow:
+                inset 0 1px 0 #404040,
+                inset 0 -1px 0 #141414;
+        }
+
+        .stat-bar-block { margin-bottom: 0; }
+        .stat-bar-label {
+            display: flex;
+            justify-content: space-between;
+            color: var(--fac-dim);
+            font-size: 11px;
+            margin-bottom: 2px;
+        }
+        .stat-bar {
+            position: relative;
+            height: 20px;
+            background: #1a1a1a;
+            border: none;
+            box-shadow:
+                inset 1px 1px 0 #0a0a0a,
+                inset -1px -1px 0 #3a3a3a;
+            overflow: hidden;
+        }
+        .stat-bar-fill {
+            height: 100%;
+            background: var(--fac-green);
+            width: 0%;
+        }
+        .stat-bar.orange .stat-bar-fill {
+            background: var(--fac-accent);
+        }
+        .stat-bar-value {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 0 6px;
+            font-size: 12px;
+            font-weight: 700;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .stat-bar-value.over-empty {
+            color: #f2f2f2;
+        }
+        .stat-bar-value.over-fill {
+            color: #000;
+            clip-path: inset(0 calc(100% - var(--bar-fill, 0%)) 0 0);
+        }
+
+        .item-list { display: flex; flex-direction: column; gap: 0; }
+        .item-row {
+            display: grid;
+            grid-template-columns: 32px 1fr auto;
+            gap: 6px;
+            align-items: center;
+            min-height: 32px;
+            padding: 1px 2px;
+        }
+        .item-slot {
+            width: 32px;
+            height: 32px;
+            background: var(--fac-slot);
+            border: none;
+            box-shadow:
+                inset 1px 1px 0 #111,
+                inset -1px -1px 0 #555;
+            position: relative;
+            overflow: hidden;
+            background-repeat: no-repeat;
+            background-position: top left;
+            background-size: 32px auto;
+        }
+        .item-slot .fallback {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            color: var(--fac-text);
+            text-align: center;
+            padding: 1px;
+            line-height: 1.1;
+        }
+        .item-count {
+            position: absolute;
+            right: 1px;
+            bottom: 0;
+            left: auto;
+            font-size: 9px;
+            font-weight: 700;
+            color: #fff;
+            text-shadow: 0 0 2px #000, 1px 1px 0 #000;
+            pointer-events: none;
+        }
+        .item-bar-wrap {
+            height: 10px;
+            background: var(--fac-well);
+            border: none;
+            position: relative;
+            box-shadow:
+                inset 0 1px 0 #0a0a0a,
+                inset 0 -1px 0 #4a4a4a,
+                inset 1px 0 0 #0a0a0a,
+                inset -1px 0 0 #3a3a3a;
+        }
+        .item-bar {
+            height: 100%;
+            width: 0%;
+        }
+        .item-rate {
+            font-variant-numeric: tabular-nums;
+            font-size: 12px;
+            color: var(--fac-text);
+            min-width: 4.5em;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .item-name {
+            font-size: 10px;
+            color: var(--fac-dim);
+            grid-column: 2 / 4;
+            margin-top: -2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .item-row.named {
+            grid-template-rows: auto auto;
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+        }
+        .two-col > * {
+            min-width: 0;
+            padding: 0 6px;
+        }
+        .two-col > * + * {
+            border-left: 1px solid #141414;
+            box-shadow: inset 1px 0 0 #3a3a3a;
+        }
+        .col-title {
+            font-size: 11px;
+            color: var(--fac-dim);
+            margin-bottom: 4px;
+            font-weight: 700;
+        }
+
+        .research-name {
+            font-size: 13px;
+            color: var(--fac-text);
+        }
+        .kv {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 12px;
+            align-items: center;
+            min-height: 22px;
+        }
+        .kv .k { color: var(--fac-dim); }
+        .kv .v { color: var(--fac-text); font-variant-numeric: tabular-nums; }
+
+        .chip-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+        .chip {
+            background: var(--fac-well);
+            border: 1px solid #111;
+            padding: 2px 6px;
+            font-size: 11px;
+            color: var(--fac-text);
+        }
+        .chip.current { border-color: var(--fac-accent); color: var(--fac-accent); }
+
+        .graph-wrap {
+            background: #161616;
+            border: 1px solid #101010;
+            box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.7);
+            border-radius: 2px;
+            padding: 4px;
+            margin-bottom: 4px;
+            height: 92px;
+        }
+        .graph-wrap canvas {
+            width: 100%;
+            height: 84px;
+            display: block;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="facRoot">
+        <div id="facGrid">
+            <div class="panel" id="panelPower">
+                <div class="panel-title" data-title="Power"><span class="title-lead">Power</span><span class="title-stripes"></span></div>
+                <div class="panel-body" id="bodyPower"></div>
+            </div>
+            <div class="panel" id="panelProduction">
+                <div class="panel-title" data-title="Production"><span class="title-lead">Production</span><span class="title-stripes"></span></div>
+                <div class="panel-body" id="bodyProduction"></div>
+            </div>
+            <div class="panel" id="panelConsumption">
+                <div class="panel-title" data-title="Consumption"><span class="title-lead">Consumption</span><span class="title-stripes"></span></div>
+                <div class="panel-body" id="bodyConsumption"></div>
+            </div>
+            <div class="panel" id="panelScience">
+                <div class="panel-title" data-title="Science"><span class="title-lead">Science</span><span class="title-stripes"></span></div>
+                <div class="panel-body" id="bodyScience"></div>
+            </div>
+            <div class="panel" id="panelPlanets">
+                <div class="panel-title" data-title="Planets"><span class="title-lead">Planets</span><span class="title-stripes"></span></div>
+                <div class="panel-body" id="bodyPlanets"></div>
+            </div>
+            <div class="panel" id="panelFluids">
+                <div class="panel-title" data-title="Fluids"><span class="title-lead">Fluids</span><span class="title-stripes"></span></div>
+                <div class="panel-body" id="bodyFluids"></div>
+            </div>
+            <div class="panel" id="panelMisc">
+                <div class="panel-title" data-title="Stats"><span class="title-lead">Stats</span><span class="title-stripes"></span></div>
+                <div class="panel-body" id="bodyMisc"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        var cfg = {};
+        var lastHook = null;
+        var lastCycleKey = '';
+        var socket = null;
+        var LINE_COLORS = ['#4a9eff', '#4cff4c', '#e09600', '#ff4a4a', '#e14cff', '#ffe14a', '#4affff', '#ff7fcc', '#9bff4a', '#ffa64a'];
+        var SEGMENTS = [
+            { key: 'Power', panel: 'panelPower', show: 'ShowPower', title: 'PowerTitle', showDefault: true, planetHeader: true },
+            { key: 'Production', panel: 'panelProduction', show: 'ShowProduction', title: 'ProductionTitle', showDefault: true, planetHeader: true },
+            { key: 'Consumption', panel: 'panelConsumption', show: 'ShowConsumption', title: 'ConsumptionTitle', showDefault: true, planetHeader: true },
+            { key: 'Science', panel: 'panelScience', show: 'ShowScience', title: 'ScienceTitle', showDefault: true },
+            { key: 'Planets', panel: 'panelPlanets', show: 'ShowPlanets', title: 'PlanetsTitle', showDefault: true },
+            { key: 'Fluids', panel: 'panelFluids', show: 'ShowFluids', title: 'FluidsTitle', showDefault: false, planetHeader: true },
+            { key: 'Misc', panel: 'panelMisc', show: 'ShowMisc', title: 'MiscTitle', showDefault: true }
+        ];
+
+        function num(v, fallback) {
+            var n = Number(v);
+            return isFinite(n) ? n : fallback;
+        }
+        function asBool(v, dflt) {
+            if (v === undefined || v === null) return dflt;
+            if (typeof v === 'string') return v !== 'false' && v !== '0';
+            return Boolean(v);
+        }
+        function flag(key, dflt) {
+            return asBool(cfg[key], dflt !== false);
+        }
+        function prettyName(name) {
+            if (!name) return '';
+            return String(name).replace(/-/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+        }
+        function siFormat(value, unit, digits) {
+            var amount = Number(value) || 0;
+            var sign = amount < 0 ? '-' : '';
+            amount = Math.abs(amount);
+            var suffixes = [[1e18,'E'],[1e15,'P'],[1e12,'T'],[1e9,'G'],[1e6,'M'],[1e3,'k']];
+            var suffix = '';
+            var scaled = amount;
+            for (var i = 0; i < suffixes.length; i++) {
+                if (amount >= suffixes[i][0]) {
+                    scaled = amount / suffixes[i][0];
+                    suffix = suffixes[i][1];
+                    break;
+                }
+            }
+            digits = digits == null ? 1 : digits;
+            var number;
+            if (scaled >= 100 || Math.abs(scaled - Math.round(scaled)) < 1e-9) {
+                number = String(Math.round(scaled));
+            } else {
+                number = scaled.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+            }
+            return sign + number + suffix + (unit || '');
+        }
+        function formatWatts(w) { return siFormat(w, 'W'); }
+        function formatJoules(j) { return siFormat(j, 'J'); }
+        function formatRate(n) { return siFormat(n, '/m'); }
+
+        function applyGrid(el, row, col, rowSpan, colSpan) {
+            if (!el) return;
+            var r = Math.max(1, num(row, 1));
+            var c = Math.max(1, num(col, 1));
+            var rs = Math.max(1, num(rowSpan, 1));
+            var cs = Math.max(1, num(colSpan, 1));
+            el.style.gridRow = r + ' / span ' + rs;
+            el.style.gridColumn = c + ' / span ' + cs;
+        }
+
+        function visibleSegments() {
+            return SEGMENTS.filter(function (s) {
+                return asBool(cfg[s.show], s.showDefault !== false);
+            });
+        }
+
+        function applyTemplateConfig(flat) {
+            cfg = flat || cfg || {};
+            var root = document.getElementById('facRoot');
+            var grid = document.getElementById('facGrid');
+            var scale = num(cfg.Scale, 1);
+            root.style.transform = scale !== 1 ? ('scale(' + scale + ')') : '';
+            root.style.setProperty('--fac-opacity', String(num(cfg.PanelOpacity, 0.96)));
+            var showTitles = asBool(cfg.ShowTitleBars, true);
+            document.querySelectorAll('.panel-title').forEach(function (el) {
+                el.classList.toggle('hidden', !showTitles);
+            });
+            SEGMENTS.forEach(function (s) {
+                var panel = document.getElementById(s.panel);
+                if (!panel) return;
+                var show = asBool(cfg[s.show], s.showDefault !== false);
+                panel.style.display = show ? '' : 'none';
+            });
+            paintPanelTitles(lastHook);
+            var mode = String(cfg.LayoutMode || 'grid');
+            var vis = visibleSegments();
+            if (mode === 'row') {
+                grid.style.gridTemplateColumns = 'repeat(' + Math.max(1, vis.length) + ', 1fr)';
+                grid.style.gridTemplateRows = 'auto';
+                vis.forEach(function (s, i) {
+                    applyGrid(document.getElementById(s.panel), 1, i + 1, 1, 1);
+                });
+            } else if (mode === 'column') {
+                grid.style.gridTemplateColumns = '1fr';
+                grid.style.gridTemplateRows = 'repeat(' + Math.max(1, vis.length) + ', auto)';
+                vis.forEach(function (s, i) {
+                    applyGrid(document.getElementById(s.panel), i + 1, 1, 1, 1);
+                });
+            } else {
+                grid.style.gridTemplateColumns = 'repeat(' + num(cfg.GridColumns, 2) + ', 1fr)';
+                grid.style.gridTemplateRows = 'repeat(' + num(cfg.GridRows, 4) + ', auto)';
+                vis.forEach(function (s) {
+                    applyGrid(
+                        document.getElementById(s.panel),
+                        cfg[s.key + 'GridRow'],
+                        cfg[s.key + 'GridCol'],
+                        cfg[s.key + 'RowSpan'],
+                        cfg[s.key + 'ColSpan']
+                    );
+                });
+            }
+            grid.style.gap = num(cfg.GridGap, 6) + 'px';
+            if (lastHook) renderHook(lastHook);
+        }
+
+        function iconUrl(name) {
+            return '/api/factorio-icon/' + encodeURIComponent(name) + '.png';
+        }
+
+        function planetIconName(planet) {
+            var name = String(planet || '').replace(/^platform:/, '');
+            if (!name) return '';
+            return 'starmap-planet-' + name;
+        }
+
+        function currentPlanetName(hook) {
+            if (!hook) return '';
+            var cur = (hook.planets && hook.planets.current) || '';
+            if (cur && String(cur).indexOf('platform:') !== 0) return cur;
+            return hook.surface || '';
+        }
+
+        function visitedPlanetNames(hook) {
+            var visited = ((hook && hook.planets && hook.planets.visited) || []).slice();
+            var by = (hook && hook.by_surface) || {};
+            var names = [];
+            var seen = {};
+            function add(n) {
+                n = String(n || '').trim();
+                if (!n || seen[n] || n.indexOf('platform:') === 0) return;
+                if (Object.keys(by).length && !by[n]) return;
+                seen[n] = true;
+                names.push(n);
+            }
+            visited.forEach(add);
+            add(currentPlanetName(hook));
+            return names;
+        }
+
+        function displayPlanetFor(panelKey, hook) {
+            var names = visitedPlanetNames(hook);
+            var current = currentPlanetName(hook);
+            var cycle = flag(panelKey + 'CyclePlanets', false);
+            if (!cycle || names.length < 2) {
+                return current || names[0] || '';
+            }
+            var sec = Math.max(1, num(cfg.PlanetCycleSeconds, 8));
+            var idx = Math.floor(Date.now() / (sec * 1000)) % names.length;
+            return names[idx];
+        }
+
+        function surfaceSlice(hook, planet) {
+            var by = (hook && hook.by_surface) || {};
+            if (planet && by[planet]) return by[planet];
+            if (hook && hook.surface && by[hook.surface]) return by[hook.surface];
+            return {
+                power: (hook && hook.power) || {},
+                production: (hook && hook.production) || { items: [], fluids: [] },
+                consumption: (hook && hook.consumption) || { items: [] }
+            };
+        }
+
+        function paintPanelTitles(hook) {
+            SEGMENTS.forEach(function (s) {
+                var panel = document.getElementById(s.panel);
+                if (!panel) return;
+                var titleEl = panel.querySelector('.panel-title');
+                if (!titleEl) return;
+                var base = cfg[s.title] || titleEl.getAttribute('data-title') || s.key;
+                var planet = s.planetHeader ? displayPlanetFor(s.key, hook) : '';
+                var lead = document.createElement('span');
+                lead.className = 'title-lead';
+                if (planet && s.planetHeader && String(planet).indexOf('platform:') !== 0) {
+                    var img = document.createElement('img');
+                    img.className = 'title-planet';
+                    img.src = iconUrl(planetIconName(planet));
+                    img.alt = '';
+                    img.onerror = function () {
+                        img.src = iconUrl(planet);
+                        img.onerror = function () { img.remove(); };
+                    };
+                    lead.appendChild(img);
+                    var label = document.createElement('span');
+                    var suffix = String(base || '');
+                    if (suffix) suffix = suffix.charAt(0).toLowerCase() + suffix.slice(1);
+                    label.textContent = prettyName(planet) + (suffix ? ' ' + suffix : '');
+                    lead.appendChild(label);
+                } else {
+                    lead.textContent = base;
+                }
+                var stripes = document.createElement('span');
+                stripes.className = 'title-stripes';
+                titleEl.innerHTML = '';
+                titleEl.appendChild(lead);
+                titleEl.appendChild(stripes);
+            });
+        }
+
+        function maxRows(key, fallback) {
+            return Math.max(1, num(cfg[key + 'MaxRows'], fallback || 8));
+        }
+
+        function hasSeriesValues(values) {
+            return values && values.length > 1;
+        }
+
+        function lineColor(idx) {
+            return LINE_COLORS[idx % LINE_COLORS.length];
+        }
+
+        function seriesLinesFromRows(rows, offset) {
+            var lines = [];
+            offset = offset || 0;
+            (rows || []).forEach(function (row, idx) {
+                if (hasSeriesValues(row.series)) {
+                    lines.push({
+                        color: lineColor(idx + offset),
+                        values: row.series
+                    });
+                }
+            });
+            return lines;
+        }
+
+        function drawGraph(canvas, lines, opts) {
+            opts = opts || {};
+            if (!canvas || !lines || !lines.length) return;
+            var dpr = window.devicePixelRatio || 1;
+            var cssW = Math.max(120, canvas.clientWidth || 280);
+            var cssH = Math.max(60, canvas.clientHeight || 84);
+            canvas.width = Math.floor(cssW * dpr);
+            canvas.height = Math.floor(cssH * dpr);
+            var ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            var w = cssW;
+            var h = cssH;
+            ctx.fillStyle = '#161616';
+            ctx.fillRect(0, 0, w, h);
+            var padL = 40;
+            var padR = 6;
+            var padT = 8;
+            var padB = 10;
+            var plotW = Math.max(1, w - padL - padR);
+            var plotH = Math.max(1, h - padT - padB);
+            var maxY = 0;
+            lines.forEach(function (line) {
+                (line.values || []).forEach(function (v) {
+                    var n = Math.abs(Number(v) || 0);
+                    if (n > maxY) maxY = n;
+                });
+            });
+            if (maxY <= 0) maxY = 1;
+            ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+            ctx.lineWidth = 1;
+            var gy = 4;
+            for (var i = 0; i <= gy; i++) {
+                var y = padT + (plotH * i) / gy;
+                ctx.beginPath();
+                ctx.moveTo(padL, y);
+                ctx.lineTo(w - padR, y);
+                ctx.stroke();
+            }
+            var gx = 6;
+            for (var j = 0; j <= gx; j++) {
+                var x = padL + (plotW * j) / gx;
+                ctx.beginPath();
+                ctx.moveTo(x, padT);
+                ctx.lineTo(x, padT + plotH);
+                ctx.stroke();
+            }
+            ctx.fillStyle = '#8a8a8a';
+            ctx.font = '10px FacUi, Segoe UI, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            for (var k = 0; k <= gy; k++) {
+                var frac = 1 - k / gy;
+                var yv = padT + (plotH * k) / gy;
+                ctx.fillText(siFormat(maxY * frac, opts.unit || ''), padL - 4, yv);
+            }
+            lines.forEach(function (line) {
+                var vals = line.values || [];
+                if (vals.length < 2) return;
+                ctx.strokeStyle = line.color || '#4cff4c';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                vals.forEach(function (v, idx) {
+                    var x = padL + (idx / (vals.length - 1)) * plotW;
+                    var y = padT + plotH - (Math.max(0, Number(v) || 0) / maxY) * plotH;
+                    if (idx === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            });
+        }
+
+        function maybeGraph(parent, lines, opts) {
+            var usable = (lines || []).filter(function (line) {
+                return hasSeriesValues(line && line.values);
+            });
+            if (!usable.length) return;
+            var wrap = document.createElement('div');
+            wrap.className = 'graph-wrap';
+            var canvas = document.createElement('canvas');
+            wrap.appendChild(canvas);
+            parent.appendChild(wrap);
+            requestAnimationFrame(function () { drawGraph(canvas, usable, opts); });
+        }
+
+        function renderItemList(container, rows, opts) {
+            opts = opts || {};
+            container.innerHTML = '';
+            if (!rows || !rows.length) {
+                var empty = document.createElement('div');
+                empty.className = 'empty';
+                empty.textContent = opts.empty || 'No data';
+                container.appendChild(empty);
+                return;
+            }
+            var list = document.createElement('div');
+            list.className = 'item-list';
+            var peak = 0;
+            rows.forEach(function (row) {
+                peak = Math.max(peak, Math.abs(Number(row.rate) || 0));
+            });
+            if (peak <= 0) peak = 1;
+            var showIcons = asBool(cfg[opts.iconKey || 'ProductionShowIcons'], true);
+            var showTotals = asBool(cfg[opts.totalKey || 'ProductionShowTotals'], false);
+            rows.forEach(function (row, idx) {
+                var color = lineColor(idx);
+                var wrap = document.createElement('div');
+                wrap.className = 'item-row boxed' + (opts.names ? ' named' : '');
+                var slot = document.createElement('div');
+                slot.className = 'item-slot';
+                if (showIcons && row.name) {
+                    var img = document.createElement('img');
+                    img.src = iconUrl(row.name);
+                    img.alt = '';
+                    img.style.width = '32px';
+                    img.style.height = '32px';
+                    img.style.objectFit = 'cover';
+                    img.style.objectPosition = 'top left';
+                    img.onerror = function () {
+                        img.remove();
+                        if (!slot.querySelector('.fallback')) {
+                            var fb = document.createElement('span');
+                            fb.className = 'fallback';
+                            fb.textContent = prettyName(row.name).slice(0, 6);
+                            slot.appendChild(fb);
+                        }
+                    };
+                    slot.appendChild(img);
+                } else {
+                    var fb = document.createElement('span');
+                    fb.className = 'fallback';
+                    fb.textContent = prettyName(row.name).slice(0, 6);
+                    slot.appendChild(fb);
+                }
+                if (row.count) {
+                    var c = document.createElement('span');
+                    c.className = 'item-count';
+                    c.textContent = siFormat(row.count, '');
+                    slot.appendChild(c);
+                }
+                var barWrap = document.createElement('div');
+                barWrap.className = 'item-bar-wrap';
+                var bar = document.createElement('div');
+                bar.className = 'item-bar';
+                bar.style.background = color;
+                bar.style.width = Math.max(2, Math.min(100, (Math.abs(Number(row.rate) || 0) / peak) * 100)) + '%';
+                barWrap.appendChild(bar);
+                var rate = document.createElement('div');
+                rate.className = 'item-rate';
+                var label = opts.watt ? formatWatts(row.rate) : formatRate(row.rate);
+                if (showTotals && row.total != null) {
+                    label += '  (' + siFormat(row.total, '') + ')';
+                }
+                rate.textContent = label;
+                wrap.appendChild(slot);
+                wrap.appendChild(barWrap);
+                wrap.appendChild(rate);
+                if (opts.names) {
+                    var nm = document.createElement('div');
+                    nm.className = 'item-name';
+                    nm.textContent = prettyName(row.name);
+                    wrap.appendChild(nm);
+                }
+                list.appendChild(wrap);
+            });
+            container.appendChild(list);
+        }
+
+        function renderStatBar(label, current, max, text, orange) {
+            var block = document.createElement('div');
+            block.className = 'stat-bar-block boxed';
+            var lab = document.createElement('div');
+            lab.className = 'stat-bar-label';
+            lab.innerHTML = '<span></span>';
+            lab.querySelector('span').textContent = label;
+            var bar = document.createElement('div');
+            bar.className = 'stat-bar' + (orange ? ' orange' : '');
+            var fill = document.createElement('div');
+            fill.className = 'stat-bar-fill';
+            var pct = max > 0 ? Math.max(0, Math.min(100, (current / max) * 100)) : 0;
+            fill.style.width = pct + '%';
+            bar.style.setProperty('--bar-fill', pct + '%');
+            var light = document.createElement('div');
+            light.className = 'stat-bar-value over-empty';
+            light.textContent = text;
+            var dark = document.createElement('div');
+            dark.className = 'stat-bar-value over-fill';
+            dark.textContent = text;
+            bar.appendChild(fill);
+            bar.appendChild(light);
+            bar.appendChild(dark);
+            block.appendChild(lab);
+            block.appendChild(bar);
+            return block;
+        }
+
+        function kv(k, v) {
+            var row = document.createElement('div');
+            row.className = 'kv boxed';
+            row.innerHTML = '<span class="k"></span><span class="v"></span>';
+            row.querySelector('.k').textContent = k;
+            row.querySelector('.v').textContent = v;
+            return row;
+        }
+
+        function renderPower(hook) {
+            var planet = displayPlanetFor('Power', hook);
+            var slice = surfaceSlice(hook, planet);
+            var body = document.getElementById('bodyPower');
+            body.innerHTML = '';
+            var p = (slice && slice.power) || {};
+            var orange = String(cfg.PowerBarStyle || 'green') === 'orange';
+            var gen = Number(p.generation_w) || 0;
+            var cap = Number(p.capacity_w) || 0;
+            var cons = Number(p.consumption_w) || 0;
+            var sat = Number(p.satisfaction);
+            if (!isFinite(sat)) sat = cap > 0 ? 1 : 0;
+            var acc = Number(p.accumulator_j) || 0;
+            var accCap = Number(p.accumulator_capacity_j) || 0;
+            var demand = sat > 0.001 ? cons / sat : cons;
+            var supplied = cons;
+            if (flag('PowerShowSatisfaction', true)) {
+                body.appendChild(renderStatBar(
+                    'Satisfaction',
+                    supplied,
+                    Math.max(demand, supplied, 1),
+                    formatWatts(supplied) + ' / ' + formatWatts(demand),
+                    orange
+                ));
+            }
+            if (flag('PowerShowProductionBar', true)) {
+                body.appendChild(renderStatBar(
+                    'Production',
+                    gen,
+                    Math.max(cap, gen, 1),
+                    formatWatts(gen) + ' / ' + formatWatts(Math.max(cap, gen)),
+                    orange
+                ));
+            }
+            if (flag('PowerShowAccumulator', true)) {
+                body.appendChild(renderStatBar(
+                    'Accumulator charge',
+                    acc,
+                    Math.max(accCap, acc, 1),
+                    formatJoules(acc) + ' / ' + formatJoules(Math.max(accCap, acc)),
+                    orange
+                ));
+            }
+            var cols = document.createElement('div');
+            cols.className = 'two-col';
+            var showGraph = flag('PowerShowGraph', true);
+            if (flag('PowerShowConsumers', true)) {
+                var consumers = (p.consumers || []).slice(0, maxRows('Power', 8)).map(function (r) {
+                    return { name: r.name, rate: r.watts, count: r.count, series: r.series };
+                });
+                cols.appendChild(renderPowerSide('Consumption', consumers, 'No consumers', showGraph));
+            }
+            if (flag('PowerShowProducers', true)) {
+                var producers = (p.producers || []).slice(0, maxRows('Power', 8)).map(function (r) {
+                    return { name: r.name, rate: r.watts, count: r.count, series: r.series };
+                });
+                cols.appendChild(renderPowerSide('Production', producers, 'No producers', showGraph));
+            }
+            if (cols.childNodes.length) body.appendChild(cols);
+        }
+
+        function renderPowerSide(title, rows, empty, showGraph) {
+            var wrap = document.createElement('div');
+            var heading = document.createElement('div');
+            heading.className = 'col-title';
+            heading.textContent = title;
+            wrap.appendChild(heading);
+            if (showGraph) {
+                maybeGraph(wrap, seriesLinesFromRows(rows), { unit: 'W' });
+            }
+            var list = document.createElement('div');
+            renderItemList(list, rows, { watt: true, empty: empty });
+            wrap.appendChild(list);
+            return wrap;
+        }
+
+        function flowRows(items, key, limit) {
+            return (items || []).slice(0, limit).map(function (r) {
+                return {
+                    name: r.name,
+                    rate: r[key] != null ? r[key] : r.per_min,
+                    total: key === 'consumed_per_min' ? r.total_consumed : r.total,
+                    count: r.count,
+                    series: r.series
+                };
+            });
+        }
+
+        function renderFlowPanel(bodyId, rows, opts) {
+            var body = document.getElementById(bodyId);
+            body.innerHTML = '';
+            opts = opts || {};
+            if (flag(opts.graphKey, true)) {
+                maybeGraph(body, seriesLinesFromRows(rows), { unit: '' });
+            }
+            if (flag(opts.listKey, true)) {
+                var list = document.createElement('div');
+                renderItemList(list, rows, {
+                    empty: opts.empty,
+                    iconKey: opts.iconKey,
+                    totalKey: opts.totalKey
+                });
+                body.appendChild(list);
+            }
+        }
+
+        function renderProduction(hook) {
+            var planet = displayPlanetFor('Production', hook);
+            var slice = surfaceSlice(hook, planet);
+            renderFlowPanel(
+                'bodyProduction',
+                flowRows(((slice.production || {}).items) || [], 'per_min', maxRows('Production', 12)),
+                {
+                    graphKey: 'ProductionShowGraph',
+                    listKey: 'ProductionShowList',
+                    iconKey: 'ProductionShowIcons',
+                    totalKey: 'ProductionShowTotals',
+                    empty: 'No production'
+                }
+            );
+        }
+        function renderConsumption(hook) {
+            var planet = displayPlanetFor('Consumption', hook);
+            var slice = surfaceSlice(hook, planet);
+            renderFlowPanel(
+                'bodyConsumption',
+                flowRows(((slice.consumption || {}).items) || [], 'consumed_per_min', maxRows('Consumption', 12)),
+                {
+                    graphKey: 'ConsumptionShowGraph',
+                    listKey: 'ConsumptionShowList',
+                    iconKey: 'ConsumptionShowIcons',
+                    totalKey: 'ConsumptionShowTotals',
+                    empty: 'No consumption'
+                }
+            );
+        }
+        function renderFluids(hook) {
+            var planet = displayPlanetFor('Fluids', hook);
+            var slice = surfaceSlice(hook, planet);
+            renderFlowPanel(
+                'bodyFluids',
+                flowRows(((slice.production || {}).fluids) || [], 'per_min', maxRows('Fluids', 8)),
+                {
+                    graphKey: 'FluidsShowGraph',
+                    listKey: 'FluidsShowList',
+                    iconKey: 'FluidsShowIcons',
+                    totalKey: 'FluidsShowTotals',
+                    empty: 'No fluids'
+                }
+            );
+        }
+        function renderScience(hook) {
+            var body = document.getElementById('bodyScience');
+            body.innerHTML = '';
+            var sci = hook.science || {};
+            var packs = (sci.packs || []).slice(0, maxRows('Science', 12)).map(function (r) {
+                return { name: r.name, rate: r.per_min, series: r.series };
+            });
+            if (flag('ScienceShowGraph', true)) {
+                var lines = [];
+                if (hasSeriesValues(sci.series)) {
+                    lines.push({ color: '#e09600', values: sci.series });
+                }
+                lines = lines.concat(seriesLinesFromRows(packs, 1));
+                maybeGraph(body, lines, { unit: '' });
+            }
+            if (flag('ScienceShowSpm', true)) {
+                body.appendChild(kv('Science / min', siFormat(sci.spm || 0, '')));
+            }
+            if (flag('ScienceShowPacks', true)) {
+                var list = document.createElement('div');
+                renderItemList(list, packs, {
+                    empty: 'No science packs',
+                    iconKey: 'ProductionShowIcons',
+                    totalKey: 'ProductionShowTotals'
+                });
+                body.appendChild(list);
+            }
+            var res = sci.research;
+            if (!res) {
+                if (flag('ScienceShowResearchName', true)) {
+                    var empty = document.createElement('div');
+                    empty.className = 'empty boxed';
+                    empty.textContent = 'No research in progress';
+                    body.appendChild(empty);
+                }
+                return;
+            }
+            if (flag('ScienceShowResearchName', true)) {
+                var name = document.createElement('div');
+                name.className = 'research-name boxed';
+                name.textContent = prettyName(res.localised || res.name || '');
+                body.appendChild(name);
+            }
+            if (flag('ScienceShowProgress', true)) {
+                var progress = Number(res.progress) || 0;
+                body.appendChild(renderStatBar('Progress', progress, 1, Math.round(progress * 100) + '%', false));
+                if (res.level) body.appendChild(kv('Level', String(res.level)));
+            }
+            if (flag('ScienceShowEta', true) && res.eta_seconds != null && isFinite(Number(res.eta_seconds))) {
+                var eta = Number(res.eta_seconds);
+                var m = Math.floor(eta / 60);
+                var s = Math.floor(eta % 60);
+                body.appendChild(kv('ETA', m + 'm ' + s + 's'));
+            }
+            if (flag('ScienceShowQueue', true)) {
+                body.appendChild(kv('Queue', String(sci.queue_length || 0)));
+            }
+        }
+        function renderPlanets(hook) {
+            var body = document.getElementById('bodyPlanets');
+            body.innerHTML = '';
+            var p = hook.planets || {};
+            var current = p.current || hook.surface || '';
+            if (flag('PlanetsShowCurrent', true)) {
+                body.appendChild(kv('Current', prettyName(current || '—')));
+            }
+            if (flag('PlanetsShowVisited', true)) {
+                var visited = (p.visited || []).filter(function (name) {
+                    return name && name !== current;
+                });
+                if (visited.length) {
+                    body.appendChild(kv('Visited', visited.map(prettyName).join(', ')));
+                }
+            }
+            var plats = p.platforms || [];
+            if (!plats.length && !current && !hook.space_age) {
+                var empty = document.createElement('div');
+                empty.className = 'empty boxed';
+                empty.textContent = 'Space Age not detected';
+                body.appendChild(empty);
+            }
+            if (flag('PlanetsShowShips', true)) {
+                plats.slice(0, maxRows('Planets', 12)).forEach(function (plat) {
+                    body.appendChild(kv(
+                        plat.name || 'Platform',
+                        plat.display || prettyName(plat.location || '') || '—'
+                    ));
+                });
+            }
+        }
+        function renderMisc(hook) {
+            var body = document.getElementById('bodyMisc');
+            body.innerHTML = '';
+            var m = hook.misc || {};
+            if (flag('MiscShowPlayTime', true)) body.appendChild(kv('Play time', hook.playtime_text || '—'));
+            if (flag('MiscShowSurface', true)) body.appendChild(kv('Surface', prettyName(hook.surface || '—')));
+            if (flag('MiscShowRockets', true)) body.appendChild(kv('Rockets launched', siFormat(m.rockets_launched || 0, '')));
+            if (flag('MiscShowEvolution', true)) body.appendChild(kv('Evolution', ((Number(m.evolution) || 0) * 100).toFixed(1) + '%'));
+            if (flag('MiscShowPollution', true)) body.appendChild(kv('Pollution', siFormat(m.pollution || 0, '')));
+            if (flag('MiscShowKills', true)) body.appendChild(kv('Kills', siFormat(m.kills || 0, '')));
+            if (flag('MiscShowGameVersion', true) && hook.game_version) {
+                body.appendChild(kv('Game', String(hook.game_version)));
+            }
+        }
+
+        function cycleKey(hook) {
+            return ['Power', 'Production', 'Consumption', 'Fluids'].map(function (k) {
+                return displayPlanetFor(k, hook);
+            }).join('|');
+        }
+
+        function renderHook(hook) {
+            lastHook = hook;
+            lastCycleKey = cycleKey(hook);
+            paintPanelTitles(hook);
+            renderPower(hook);
+            renderProduction(hook);
+            renderConsumption(hook);
+            renderScience(hook);
+            renderPlanets(hook);
+            renderFluids(hook);
+            renderMisc(hook);
+        }
+
+        function renderPayload(payload) {
+            if (!payload || !payload.hooks) return;
+            var hook = payload.hooks.factorio;
+            if (!hook) return;
+            renderHook(hook);
+        }
+
+        async function loadTemplateConfig() {
+            try {
+                var response = await fetch('/api/template-config/factorio', { credentials: 'same-origin' });
+                if (!response.ok) return;
+                var block = await response.json();
+                var flat = {};
+                (block.elements || []).forEach(function (el) {
+                    if (el.type !== 'section' && el.type !== 'separator' && el.id !== undefined) {
+                        flat[el.id] = el.value;
+                    }
+                });
+                applyTemplateConfig(flat);
+            } catch (e) {
+                console.warn('[factorio] config load failed', e);
+            }
+        }
+
+        applyTemplateConfig({});
+
+        var socketUrl = window.location.protocol + '//' + window.location.host;
+        socket = typeof MycelianOverlay !== 'undefined'
+            ? MycelianOverlay.connect(socketUrl, {
+                socketOptions: { path: '/socket.io', transports: ['websocket', 'polling'] },
+                onRecovery: function () {
+                    socket.emit('game_hook_command', { hook: 'factorio', action: 'resync' });
+                }
+            })
+            : (typeof io !== 'undefined'
+                ? io(socketUrl, { path: '/socket.io', transports: ['websocket', 'polling'] })
+                : null);
+
+        if (socket) {
+            socket.on('connect', function () {
+                socket.emit('game_hook_command', { hook: 'factorio', action: 'resync' });
+            });
+            socket.on('game_hook_payload', renderPayload);
+            socket.on('factorio_resync', function () {
+                socket.emit('game_hook_command', { hook: 'factorio', action: 'resync' });
+            });
+            socket.on('template_config_updated', function (data) {
+                if (data && data.template && data.template !== 'factorio') return;
+                loadTemplateConfig();
+            });
+        }
+
+        loadTemplateConfig();
+        setInterval(function () {
+            if (!lastHook) return;
+            if (
+                !(
+                    flag('PowerCyclePlanets', false)
+                    || flag('ProductionCyclePlanets', false)
+                    || flag('ConsumptionCyclePlanets', false)
+                    || flag('FluidsCyclePlanets', false)
+                )
+            ) {
+                return;
+            }
+            var key = cycleKey(lastHook);
+            if (key === lastCycleKey) return;
+            renderHook(lastHook);
+        }, 400);
+    </script>
+</body>
+</html>

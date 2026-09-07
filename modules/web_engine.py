@@ -1383,6 +1383,23 @@ class WebEngine:
                     {"Content-Type": "application/json"},
                 )
 
+        @self.app.route("/api/factorio-icon/<name>.png")
+        def serve_factorio_icon(name: str):
+            """Serve a cropped Factorio item/fluid icon from the local install."""
+            try:
+                from .game_hooks.factorio_icons import cropped_png_bytes
+
+                data = cropped_png_bytes(name or "")
+                if not data:
+                    return make_response(b"", 404)
+                resp = make_response(data)
+                resp.headers["Content-Type"] = "image/png"
+                resp.headers["Cache-Control"] = "public, max-age=86400"
+                return resp
+            except Exception as e:
+                logger.debug("factorio icon %s: %s", name, e)
+                return make_response(b"", 404)
+
         @self.app.route("/api/template-queue-metadata")
         def serve_template_queue_metadata():
             """Slim per-template Duration/Queued fields for alerts queue timing."""

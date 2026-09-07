@@ -1,0 +1,915 @@
+{
+    "template_name": "factorio",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Layout"
+        },
+        {
+            "type": "select",
+            "id": "LayoutMode",
+            "label": "Layout mode",
+            "value": "grid",
+            "description": "grid uses the row/column/span values below; row places visible segments left-to-right; column stacks them.",
+            "options": [
+                "grid",
+                "row",
+                "column"
+            ]
+        },
+        {
+            "type": "number",
+            "id": "GridColumns",
+            "label": "Grid columns",
+            "value": 2,
+            "min": 1,
+            "max": 6,
+            "description": "Number of CSS grid columns"
+        },
+        {
+            "type": "number",
+            "id": "GridRows",
+            "label": "Grid rows",
+            "value": 4,
+            "min": 1,
+            "max": 8,
+            "description": "Number of CSS grid rows"
+        },
+        {
+            "type": "number",
+            "id": "GridGap",
+            "label": "Grid gap (px)",
+            "value": 6,
+            "min": 0,
+            "max": 48,
+            "description": "Gap between grid cells"
+        },
+        {
+            "type": "number",
+            "id": "Scale",
+            "label": "Scale",
+            "value": 1.0,
+            "min": 0.5,
+            "max": 2.0,
+            "description": "Overall overlay scale"
+        },
+        {
+            "type": "number",
+            "id": "PanelOpacity",
+            "label": "Panel opacity",
+            "value": 0.96,
+            "min": 0.2,
+            "max": 1.0,
+            "description": "Background opacity of each panel"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowTitleBars",
+            "label": "Show title bars",
+            "value": true,
+            "description": "Show the Factorio-style title strip on each panel"
+        },
+        {
+            "type": "number",
+            "id": "PlanetCycleSeconds",
+            "label": "Planet cycle time (sec)",
+            "value": 8,
+            "min": 2,
+            "max": 120,
+            "description": "How long each visited planet stays on screen when a panel is in cycle mode. Power, Production, Consumption, and Fluids stay in sync."
+        },
+        {
+            "type": "select",
+            "id": "FontFile",
+            "label": "Font file",
+            "value": "TitilliumWeb-Regular.ttf",
+            "options_from": "fonts",
+            "options": [],
+            "description": "Font in assets/default_assets/fonts/"
+        },
+        {
+            "type": "separator",
+            "label": "Production & consumption"
+        },
+        {
+            "type": "textarea",
+            "id": "ProductionItems",
+            "label": "Tracked items",
+            "value": "",
+            "description": "One prototype name per line (iron-plate, electronic-circuit, \u2026). Leave blank to show the top items automatically."
+        },
+        {
+            "type": "number",
+            "id": "ProductionTopN",
+            "label": "Auto top N",
+            "value": 12,
+            "min": 1,
+            "max": 40,
+            "description": "When the tracked-item list is blank, show this many items by rate"
+        },
+        {
+            "type": "select",
+            "id": "ProductionPrecision",
+            "label": "Time window",
+            "value": "one_minute",
+            "description": "Averaging window matching Factorio's production GUI",
+            "options": [
+                "five_seconds",
+                "one_minute",
+                "ten_minutes",
+                "one_hour",
+                "ten_hours",
+                "fifty_hours",
+                "two_hundred_fifty_hours",
+                "one_thousand_hours"
+            ]
+        },
+        {
+            "type": "checkbox",
+            "id": "ProductionShowIcons",
+            "label": "Show item icons",
+            "value": true,
+            "description": "Load icons from the local Factorio install"
+        },
+        {
+            "type": "checkbox",
+            "id": "ProductionShowTotals",
+            "label": "Show lifetime totals",
+            "value": false,
+            "description": "Show lifetime produced/consumed next to the rate"
+        },
+        {
+            "type": "textarea",
+            "id": "FluidItems",
+            "label": "Tracked fluids",
+            "value": "",
+            "description": "One fluid prototype per line. Blank = auto top N."
+        },
+        {
+            "type": "separator",
+            "label": "Power"
+        },
+        {
+            "type": "select",
+            "id": "PowerNetworkMode",
+            "label": "Power network",
+            "value": "auto_largest",
+            "description": "Which electric network the companion mod reports (largest on the current surface by default)",
+            "options": [
+                "auto_largest",
+                "player_surface",
+                "pinned"
+            ]
+        },
+        {
+            "type": "text",
+            "id": "PowerSurface",
+            "label": "Pinned surface",
+            "value": "",
+            "description": "Used when Power network is pinned (nauvis, vulcanus, \u2026)"
+        },
+        {
+            "type": "checkbox",
+            "id": "PowerShowProducers",
+            "label": "Show producers",
+            "value": true,
+            "description": "List generator types under the power bars"
+        },
+        {
+            "type": "checkbox",
+            "id": "PowerShowConsumers",
+            "label": "Show consumers",
+            "value": true,
+            "description": "List consumer types under the power bars"
+        },
+        {
+            "type": "select",
+            "id": "PowerBarStyle",
+            "label": "Bar style",
+            "value": "green",
+            "description": "Fill color for the satisfaction / production / charge bars",
+            "options": [
+                "green",
+                "orange"
+            ]
+        },
+        {
+            "type": "separator",
+            "label": "Hook"
+        },
+        {
+            "type": "text",
+            "id": "FactorioDataDir",
+            "label": "Factorio data folder",
+            "value": "",
+            "description": "Override if auto-detect fails. Example: ~/Library/Application Support/factorio"
+        },
+        {
+            "type": "number",
+            "id": "StalenessSeconds",
+            "label": "Stale after (sec)",
+            "value": 5,
+            "min": 1,
+            "max": 60,
+            "description": "Treat the export as paused when the JSON file is older than this (single-player pause)"
+        },
+        {
+            "type": "separator",
+            "label": "Power"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowPower",
+            "label": "Show power panel",
+            "value": true,
+            "description": "Toggle the Power segment"
+        },
+        {
+            "type": "text",
+            "id": "PowerTitle",
+            "label": "Title",
+            "value": "Power",
+            "description": "Panel header text"
+        },
+        {
+            "type": "number",
+            "id": "PowerGridRow",
+            "label": "Grid row",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "CSS grid row"
+        },
+        {
+            "type": "number",
+            "id": "PowerGridCol",
+            "label": "Grid column",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "CSS grid column"
+        },
+        {
+            "type": "number",
+            "id": "PowerRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "How many grid rows this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "PowerColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "How many grid columns this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "PowerMaxRows",
+            "label": "Max rows",
+            "value": 8,
+            "min": 1,
+            "max": 40,
+            "description": "Maximum item rows listed in this panel"
+        },
+        {
+            "type": "checkbox",
+            "id": "PowerShowSatisfaction",
+            "label": "Show satisfaction",
+            "value": true,
+            "description": "Satisfaction bar"
+        },
+        {
+            "type": "checkbox",
+            "id": "PowerShowProductionBar",
+            "label": "Show production bar",
+            "value": true,
+            "description": "Generation vs capacity bar"
+        },
+        {
+            "type": "checkbox",
+            "id": "PowerShowAccumulator",
+            "label": "Show accumulator",
+            "value": true,
+            "description": "Accumulator charge bar"
+        },
+        {
+            "type": "checkbox",
+            "id": "PowerShowGraph",
+            "label": "Show graph",
+            "value": true,
+            "description": "Production and consumption graphs above each list (needs mycelian-stats 1.0.2)"
+        },
+        {
+            "type": "checkbox",
+            "id": "PowerCyclePlanets",
+            "label": "Cycle visited planets",
+            "value": false,
+            "description": "Rotate this panel through visited planets instead of staying on the player planet. Synced with other panels that have this on."
+        },
+        {
+            "type": "separator",
+            "label": "Production"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowProduction",
+            "label": "Show production panel",
+            "value": true,
+            "description": "Toggle the Production segment"
+        },
+        {
+            "type": "text",
+            "id": "ProductionTitle",
+            "label": "Title",
+            "value": "Production",
+            "description": "Panel header text"
+        },
+        {
+            "type": "number",
+            "id": "ProductionGridRow",
+            "label": "Grid row",
+            "value": 2,
+            "min": 1,
+            "max": 8,
+            "description": "CSS grid row"
+        },
+        {
+            "type": "number",
+            "id": "ProductionGridCol",
+            "label": "Grid column",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "CSS grid column"
+        },
+        {
+            "type": "number",
+            "id": "ProductionRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "How many grid rows this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "ProductionColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "How many grid columns this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "ProductionMaxRows",
+            "label": "Max rows",
+            "value": 8,
+            "min": 1,
+            "max": 40,
+            "description": "Maximum item rows listed in this panel"
+        },
+        {
+            "type": "checkbox",
+            "id": "ProductionShowGraph",
+            "label": "Show graph",
+            "value": true,
+            "description": "Production flow graph (needs mycelian-stats 1.0.2)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ProductionShowList",
+            "label": "Show item list",
+            "value": true,
+            "description": "Item rows under the graph"
+        },
+        {
+            "type": "checkbox",
+            "id": "ProductionCyclePlanets",
+            "label": "Cycle visited planets",
+            "value": false,
+            "description": "Rotate this panel through visited planets instead of staying on the player planet. Synced with other panels that have this on."
+        },
+        {
+            "type": "separator",
+            "label": "Consumption"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowConsumption",
+            "label": "Show consumption panel",
+            "value": true,
+            "description": "Toggle the Consumption segment"
+        },
+        {
+            "type": "text",
+            "id": "ConsumptionTitle",
+            "label": "Title",
+            "value": "Consumption",
+            "description": "Panel header text"
+        },
+        {
+            "type": "number",
+            "id": "ConsumptionGridRow",
+            "label": "Grid row",
+            "value": 2,
+            "min": 1,
+            "max": 8,
+            "description": "CSS grid row"
+        },
+        {
+            "type": "number",
+            "id": "ConsumptionGridCol",
+            "label": "Grid column",
+            "value": 2,
+            "min": 1,
+            "max": 6,
+            "description": "CSS grid column"
+        },
+        {
+            "type": "number",
+            "id": "ConsumptionRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "How many grid rows this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "ConsumptionColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "How many grid columns this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "ConsumptionMaxRows",
+            "label": "Max rows",
+            "value": 8,
+            "min": 1,
+            "max": 40,
+            "description": "Maximum item rows listed in this panel"
+        },
+        {
+            "type": "checkbox",
+            "id": "ConsumptionShowGraph",
+            "label": "Show graph",
+            "value": true,
+            "description": "Consumption flow graph (needs mycelian-stats 1.0.2)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ConsumptionShowList",
+            "label": "Show item list",
+            "value": true,
+            "description": "Item rows under the graph"
+        },
+        {
+            "type": "checkbox",
+            "id": "ConsumptionCyclePlanets",
+            "label": "Cycle visited planets",
+            "value": false,
+            "description": "Rotate this panel through visited planets instead of staying on the player planet. Synced with other panels that have this on."
+        },
+        {
+            "type": "checkbox",
+            "id": "ConsumptionShowIcons",
+            "label": "Show item icons",
+            "value": true,
+            "description": "Load icons from the local Factorio install"
+        },
+        {
+            "type": "checkbox",
+            "id": "ConsumptionShowTotals",
+            "label": "Show lifetime totals",
+            "value": false,
+            "description": "Show lifetime consumed next to the rate"
+        },
+        {
+            "type": "separator",
+            "label": "Science"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowScience",
+            "label": "Show science panel",
+            "value": true,
+            "description": "Toggle the Science segment"
+        },
+        {
+            "type": "text",
+            "id": "ScienceTitle",
+            "label": "Title",
+            "value": "Science",
+            "description": "Panel header text"
+        },
+        {
+            "type": "number",
+            "id": "ScienceGridRow",
+            "label": "Grid row",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "CSS grid row"
+        },
+        {
+            "type": "number",
+            "id": "ScienceGridCol",
+            "label": "Grid column",
+            "value": 2,
+            "min": 1,
+            "max": 6,
+            "description": "CSS grid column"
+        },
+        {
+            "type": "number",
+            "id": "ScienceRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "How many grid rows this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "ScienceColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "How many grid columns this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "ScienceMaxRows",
+            "label": "Max rows",
+            "value": 8,
+            "min": 1,
+            "max": 40,
+            "description": "Maximum item rows listed in this panel"
+        },
+        {
+            "type": "checkbox",
+            "id": "ScienceShowGraph",
+            "label": "Show graph",
+            "value": true,
+            "description": "Science pack flow graph (needs mycelian-stats 1.0.2)"
+        },
+        {
+            "type": "checkbox",
+            "id": "ScienceShowSpm",
+            "label": "Show science / min",
+            "value": true,
+            "description": "Total science packs produced per minute"
+        },
+        {
+            "type": "checkbox",
+            "id": "ScienceShowPacks",
+            "label": "Show pack list",
+            "value": true,
+            "description": "Per-pack rates"
+        },
+        {
+            "type": "checkbox",
+            "id": "ScienceShowResearchName",
+            "label": "Show research name",
+            "value": true,
+            "description": "Current technology name"
+        },
+        {
+            "type": "checkbox",
+            "id": "ScienceShowProgress",
+            "label": "Show research progress",
+            "value": true,
+            "description": "Progress bar and level"
+        },
+        {
+            "type": "checkbox",
+            "id": "ScienceShowEta",
+            "label": "Show research ETA",
+            "value": true,
+            "description": "Estimated time remaining"
+        },
+        {
+            "type": "checkbox",
+            "id": "ScienceShowQueue",
+            "label": "Show research queue",
+            "value": true,
+            "description": "Queued technology count"
+        },
+        {
+            "type": "separator",
+            "label": "Planets"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowPlanets",
+            "label": "Show planets panel",
+            "value": true,
+            "description": "Toggle the Planets segment"
+        },
+        {
+            "type": "text",
+            "id": "PlanetsTitle",
+            "label": "Title",
+            "value": "Planets",
+            "description": "Panel header text"
+        },
+        {
+            "type": "number",
+            "id": "PlanetsGridRow",
+            "label": "Grid row",
+            "value": 3,
+            "min": 1,
+            "max": 8,
+            "description": "CSS grid row"
+        },
+        {
+            "type": "number",
+            "id": "PlanetsGridCol",
+            "label": "Grid column",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "CSS grid column"
+        },
+        {
+            "type": "number",
+            "id": "PlanetsRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "How many grid rows this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "PlanetsColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "How many grid columns this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "PlanetsMaxRows",
+            "label": "Max rows",
+            "value": 8,
+            "min": 1,
+            "max": 40,
+            "description": "Maximum item rows listed in this panel"
+        },
+        {
+            "type": "checkbox",
+            "id": "PlanetsShowCurrent",
+            "label": "Show current location",
+            "value": true,
+            "description": "Player surface / planet"
+        },
+        {
+            "type": "checkbox",
+            "id": "PlanetsShowVisited",
+            "label": "Show visited planets",
+            "value": true,
+            "description": "Planets visited this save"
+        },
+        {
+            "type": "checkbox",
+            "id": "PlanetsShowShips",
+            "label": "Show platforms",
+            "value": true,
+            "description": "Space platform locations"
+        },
+        {
+            "type": "separator",
+            "label": "Fluids"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowFluids",
+            "label": "Show fluids panel",
+            "value": true,
+            "description": "Toggle the Fluids segment"
+        },
+        {
+            "type": "text",
+            "id": "FluidsTitle",
+            "label": "Title",
+            "value": "Fluids",
+            "description": "Panel header text"
+        },
+        {
+            "type": "number",
+            "id": "FluidsGridRow",
+            "label": "Grid row",
+            "value": 3,
+            "min": 1,
+            "max": 8,
+            "description": "CSS grid row"
+        },
+        {
+            "type": "number",
+            "id": "FluidsGridCol",
+            "label": "Grid column",
+            "value": 2,
+            "min": 1,
+            "max": 6,
+            "description": "CSS grid column"
+        },
+        {
+            "type": "number",
+            "id": "FluidsRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "How many grid rows this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "FluidsColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "How many grid columns this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "FluidsMaxRows",
+            "label": "Max rows",
+            "value": 8,
+            "min": 1,
+            "max": 40,
+            "description": "Maximum item rows listed in this panel"
+        },
+        {
+            "type": "checkbox",
+            "id": "FluidsShowGraph",
+            "label": "Show graph",
+            "value": true,
+            "description": "Fluid flow graph (needs mycelian-stats 1.0.2)"
+        },
+        {
+            "type": "checkbox",
+            "id": "FluidsShowList",
+            "label": "Show fluid list",
+            "value": true,
+            "description": "Fluid rows under the graph"
+        },
+        {
+            "type": "checkbox",
+            "id": "FluidsCyclePlanets",
+            "label": "Cycle visited planets",
+            "value": false,
+            "description": "Rotate this panel through visited planets instead of staying on the player planet. Synced with other panels that have this on."
+        },
+        {
+            "type": "checkbox",
+            "id": "FluidsShowIcons",
+            "label": "Show fluid icons",
+            "value": true,
+            "description": "Load icons from the local Factorio install"
+        },
+        {
+            "type": "checkbox",
+            "id": "FluidsShowTotals",
+            "label": "Show lifetime totals",
+            "value": false,
+            "description": "Show lifetime produced next to the rate"
+        },
+        {
+            "type": "separator",
+            "label": "Stats"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowMisc",
+            "label": "Show stats panel",
+            "value": true,
+            "description": "Toggle the Stats segment"
+        },
+        {
+            "type": "text",
+            "id": "MiscTitle",
+            "label": "Title",
+            "value": "Stats",
+            "description": "Panel header text"
+        },
+        {
+            "type": "number",
+            "id": "MiscGridRow",
+            "label": "Grid row",
+            "value": 4,
+            "min": 1,
+            "max": 8,
+            "description": "CSS grid row"
+        },
+        {
+            "type": "number",
+            "id": "MiscGridCol",
+            "label": "Grid column",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "CSS grid column"
+        },
+        {
+            "type": "number",
+            "id": "MiscRowSpan",
+            "label": "Row span",
+            "value": 1,
+            "min": 1,
+            "max": 8,
+            "description": "How many grid rows this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "MiscColSpan",
+            "label": "Column span",
+            "value": 1,
+            "min": 1,
+            "max": 6,
+            "description": "How many grid columns this panel occupies"
+        },
+        {
+            "type": "number",
+            "id": "MiscMaxRows",
+            "label": "Max rows",
+            "value": 8,
+            "min": 1,
+            "max": 40,
+            "description": "Maximum item rows listed in this panel"
+        },
+        {
+            "type": "checkbox",
+            "id": "MiscShowPlayTime",
+            "label": "Show play time",
+            "value": true,
+            "description": "Map play time"
+        },
+        {
+            "type": "checkbox",
+            "id": "MiscShowSurface",
+            "label": "Show surface",
+            "value": true,
+            "description": "Current surface name"
+        },
+        {
+            "type": "checkbox",
+            "id": "MiscShowRockets",
+            "label": "Show rockets launched",
+            "value": true,
+            "description": "Rockets launched"
+        },
+        {
+            "type": "checkbox",
+            "id": "MiscShowEvolution",
+            "label": "Show evolution",
+            "value": true,
+            "description": "Evolution factor"
+        },
+        {
+            "type": "checkbox",
+            "id": "MiscShowPollution",
+            "label": "Show pollution",
+            "value": true,
+            "description": "Total pollution on the surface"
+        },
+        {
+            "type": "checkbox",
+            "id": "MiscShowKills",
+            "label": "Show kills",
+            "value": true,
+            "description": "Kill count"
+        },
+        {
+            "type": "checkbox",
+            "id": "MiscShowGameVersion",
+            "label": "Show game version",
+            "value": true,
+            "description": "Factorio version string"
+        }
+    ],
+    "dynamic_controls": {
+        "elements": [
+            {
+                "type": "button",
+                "id": "resync",
+                "label": "Resync overlay",
+                "description": "Re-broadcast the last Factorio snapshot to this overlay",
+                "action": "resync",
+                "button_text": "Resync"
+            }
+        ]
+    }
+}
