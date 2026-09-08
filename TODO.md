@@ -1,46 +1,20 @@
 Legacy Templates:
     [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
-Alerts Template:
-    [x] - Add toggle option to display usernames of gift sub recipients when the gift sub amount is only to a single person.
-
 Twitch:
-    [x] - Create system to filter out new subs from resubs so brand new subs appear, but alerts dont hit twice for resubs.
+    [] - Fix new sub filter logic. it appears all new subs are still not being played
 
 Chat Template:
     [] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.
 
 General:
-    [x] - Create a "minimize to tray" option. Add as a toggle to the general app settings, with its value being saved and reloaded.
-    [x] - When app is minized to the tray, it should "unload" the UI to save processing power and resources. 
-    [x] - Add a right click menu on the tray icon with the option to "restore" the app that will reload the UI window, as well as an option to close it
-    [x] - Add a "start app minimized" option as a toggle to the general app settings, with its value being saved and reloaded. this option will load the app in the "minimized" state with no UI window and just a tray icon.
-    [x] - Add a "run at startup" option as a toggle to the general app settings, with its value being saved and reloaded
-    [x] - Create OS agnostic method that will allow the app to launch when the user logs in. this should respect the toggle option and be robust.
-    [x] - Verify the auto-update checker remains active when app is minimized, and send a system notification when an update is available. This notification should respect the "enable notifications" option that is already in the app. The system notification must be OS agnostic.
-    [x] - Scan through all areas of the app (especially integration connections) to ensure full functionality for 24/7 app operation. with the app running in the background constantly, its important all items are robust and do not crash from extended use.
-    [x] - Add notification to warn users that running the app constantly when using a Firebase database setup will cause increased bandwidth usage, with the potential for the end user to run out of bandwidth
-
-FF7 Template:
-    [x] - Add row display to the Party segment. Put in the same row as the character name and justified to the right so it sits above the MP number. Font size should match the username size. We should just show a label "FR" for front row and "BR" for back row.
-    [x] - Double check materia color mapping, a couple could be wrong (cover maybe?), or it could be slots are being read wrong. someone mentioned there was an error with the first slot a couple of times.
-    [x] - Add option to display all characters in the party section (including characters not part of the main 3-slot party), make this a togglable option.
-    [x] - Add character portraits, make this a toggleable option. portraits will be placed in the assets folder and named like "cloud.png". Must be sized to stay within the current party member row height. Note: Until you pass the "Kalm Flashback", Cait Sith and Vincent's character data is actually Young Cloud and Sephiroth.
-    [x] - Recheck the recent items setup. it still appears to display the incorrect item occasionally (mapping issue?)
-    [x] - Add a setup to the party member segment to display if someone has "sadness" or "fury". See pasted image for how these should be color for font. i want this to be put to the right of the name (inbetween the name and where the row indicator is at)
-    [x] - Make sadness/fury display shrink to "S" and "F" if the space is too small for names to appear properly (if names are ellipsed)
-    [x] - Update limit bar so it appears the blueish color when someone is in sadness. you will need to look up the color for this as i dont have an example
-    [x] - When portraits and row indicators are enabled, shift portraits to show the row indicator instead of the "FR" and "BR" labels. If portraits are turned off, then use the "FR" and "BR" setup. Portraits should be shifted more left if the character is in front row and shifted more right for back row.
-    [x] - Fix issue with "recent item" counting Dragon Scales as Dragon Fangs (mapping issue?)
+    [] -
 
 YouTube Integration:
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system
 
 Donations:
     [] - Add in ability to connect major cash services (like PayPal and Venmo) so the user can generate a "donations" link that Mycelian can get data from to use for alerts
-
-Game Hooks:
-    [x] - Add in a Factorio game hook. Display stats like power generation, production values (user can configure which items to show), science per second, planets visit (if using space age DLC), and other popular items. Stylize the HTML widget to match the game's menus. The HTML widget should be user configurable for all things (break different things into sections, like a production segment, power segment, etc etc). I also want the user to be able to place the different segments in a row/column configuration so they can be configured horizontally or vertically, or as a grid. 
 
 Kik Integration:
     [] - Add in Kik integration service
