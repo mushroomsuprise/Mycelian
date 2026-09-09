@@ -7,6 +7,10 @@ Twitch:
 Chat Template:
     [] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.
 
+Alerts: 
+    [] - Make stored alerts "repoll" the alert data so they get updated alert data when being replayed
+    [] - Fix test alerts not following the animation settings for the configured alert
+
 General:
     [] -
 
