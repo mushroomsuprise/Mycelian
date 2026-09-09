@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import logging
 from typing import Dict, Any, Optional
 
 from nicegui import ui
@@ -29,6 +30,8 @@ from ...streamdeck_plugin_utils import (
 
 from ... import dataobjects
 from ...dataobjects import state_manager
+
+logger = logging.getLogger(__name__)
 
 
 class AppSettingsTab:
@@ -288,6 +291,62 @@ class AppSettingsTab:
                                 ),
                             )
                             ui.label("to load").classes("secondary-text text-sm")
+                        with ui.row().classes("items-center gap-2"):
+                            self.ui_elements["alert_storage_auto_trim"] = (
+                                ui.switch(value=self.buffer.alert_storage_auto_trim)
+                                .classes("q-switch")
+                                .on_value_change(
+                                    lambda e: self._set(
+                                        "alert_storage_auto_trim", bool(e.value)
+                                    )
+                                )
+                            )
+                            ui.label("Auto-trim stored alerts").classes("text-sm")
+                        self.ui_elements["alert_storage_trim_mode"] = form_select(
+                            tooltip="Quantity keeps the newest N alerts. Time deletes alerts older than the retention window. Both applies both rules.",
+                            label="Trim using",
+                            options={
+                                "quantity": "Max number",
+                                "time": "Age",
+                                "both": "Number and age",
+                            },
+                            value=self.buffer.alert_storage_trim_mode or "both",
+                            classes="w-full",
+                            on_change=lambda e: self._set(
+                                "alert_storage_trim_mode",
+                                str(e.value or "both"),
+                            ),
+                        )
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Keep").classes("text-sm shrink-0")
+                            self.ui_elements["alert_storage_keep_count"] = form_number(
+                                tooltip="Maximum number of past alerts to keep when quantity trim is enabled",
+                                value=self.buffer.alert_storage_keep_count,
+                                min=10,
+                                max=10000,
+                                step=10,
+                                classes="w-24",
+                                on_change=lambda e: self._set(
+                                    "alert_storage_keep_count",
+                                    int(e.value or 10),
+                                ),
+                            )
+                            ui.label("alerts").classes("secondary-text text-sm")
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Keep").classes("text-sm shrink-0")
+                            self.ui_elements["alert_storage_keep_days"] = form_number(
+                                tooltip="Delete stored alerts older than this many days when age trim is enabled",
+                                value=self.buffer.alert_storage_keep_days,
+                                min=1,
+                                max=3650,
+                                step=1,
+                                classes="w-24",
+                                on_change=lambda e: self._set(
+                                    "alert_storage_keep_days",
+                                    int(e.value or 1),
+                                ),
+                            )
+                            ui.label("days").classes("secondary-text text-sm")
 
                 with ui.element("div").classes("col-span-2 w-full"):
                     with settings_inner_panel():
@@ -379,6 +438,7 @@ class AppSettingsTab:
         if state_manager.save_changes():
             apply_app_font(self.buffer.ui_font_family)
             self._apply_background_settings()
+            self._apply_alert_storage_trim()
             notify("Settings saved", type="positive")
             self.dirty = False
         else:
@@ -400,6 +460,22 @@ class AppSettingsTab:
         except Exception:
             # Tray availability is reported by tray_controller itself; a failure here
             # must not block the rest of the save.
+            pass
+
+    def _apply_alert_storage_trim(self) -> None:
+        """Run stored-alert retention immediately after the setting is saved on."""
+        if not self.buffer or not self.buffer.alert_storage_auto_trim:
+            return
+        try:
+            from ... import alertutils
+
+            alertutils.alert_state_manager.initialize()
+            deleted = alertutils.alert_state_manager.maybe_auto_trim_stored_alerts()
+            if deleted:
+                logger.info(
+                    "Auto-trimmed %d stored alert(s) after settings save", deleted
+                )
+        except Exception:
             pass
 
     def discard(self) -> None:

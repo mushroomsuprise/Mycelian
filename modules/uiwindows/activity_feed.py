@@ -74,10 +74,16 @@ _FEED_DOM_PROBE_JS = """
   var cur = document.querySelector('.activity-feed-current');
   var con = document.querySelector('.activity-feed-condensed');
   var prev = document.querySelector('.activity-feed-previous');
+  var chrome = document.querySelector('.activity-feed-controls') ||
+               document.querySelector('.activity-feed-tab-row') ||
+               document.querySelector('.condense-toggle');
   var exists = !!(cur || con || prev);
   var targets = [cur, con, prev].filter(visible);
   if (!exists) {
     return {ok: false, reason: 'elements_missing', children: 0};
+  }
+  if (!chrome) {
+    return {ok: false, reason: 'toolbar_missing', children: 0};
   }
   if (!targets.length) {
     return {ok: false, reason: 'offscreen', children: 0};
@@ -137,6 +143,7 @@ def _null_live_alert_element_refs() -> None:
 # The live feed is a session view, not history: older alerts stay available on the
 # Previous tab, which is paged from the database.
 MAX_LIVE_ALERTS = 500
+MAX_CONDENSED_GROUPS = 200
 
 
 def _trim_live_alerts() -> None:
@@ -207,6 +214,10 @@ def _feed_expects_visible_content() -> bool:
     """True when the Current Alerts tab should show at least one card/group."""
     if activity_feed_state.current_tab != "current":
         return False
+    if activity_feed_state.condense_list:
+        # Condensed can show stored alerts with an empty live list. Keep probing
+        # so a wiped in-tab toolbar is still detected after a long session.
+        return True
     return bool(activity_feed_state.live_alerts)
 
 
@@ -351,6 +362,17 @@ def _fallback_to_regular_feed(reason: str, *, disable_condense: bool = False) ->
     _ensure_regular_feed_populated(f"fallback:{reason}")
 
 
+def _abandon_condensed_view(reason: str) -> None:
+    """Leave condensed mode so Current/Previous and Condense stay usable.
+
+    Condensed rebuilds that blow up Vue can delete in-tab chrome while leaving
+    main app tabs intact. Disable condensed, restore the regular list, and
+    reload so the user is not trapped without those buttons.
+    """
+    _fallback_to_regular_feed(reason, disable_condense=True)
+    _escalate_page_reload("condensed_abandoned")
+
+
 def _ensure_feed_integrity(reason: str) -> None:
     """Rebuild the feed when state has alerts but nothing is rendered."""
     global _condensed_integrity_failures
@@ -390,9 +412,7 @@ def _ensure_feed_integrity(reason: str) -> None:
             _condensed_integrity_failures,
         )
         if _condensed_integrity_failures >= 2:
-            _fallback_to_regular_feed(
-                f"integrity_exhausted:{reason}", disable_condense=True
-            )
+            _abandon_condensed_view(f"integrity_exhausted:{reason}")
             return
         # Schedule a rebuild; do not treat "scheduled" as a healthy surface.
         _schedule_condensed_rebuild(f"integrity:{reason}")
@@ -536,6 +556,18 @@ def _apply_dom_probe_result(reason: str, result: Dict[str, Any]) -> str:
     if ok and children > 0:
         _dom_desync_failures = 0
         return "ok"
+
+    # Condensed HTML/Vue blow-ups can delete the in-tab chrome (condense
+    # toggle, Current/Previous) while leaving main app tabs intact.
+    if probe_reason == "toolbar_missing":
+        _dom_desync_failures = 0
+        logger.warning(
+            "activity_feed: feed chrome missing from DOM (%s) — leaving condensed mode",
+            reason,
+        )
+        _fallback_to_regular_feed("dom_toolbar_missing", disable_condense=True)
+        _escalate_page_reload("feed_toolbar_missing")
+        return "reload"
 
     # Hidden tab / tray / parent display:none is not a content desync.
     if probe_reason == "offscreen":
@@ -1329,74 +1361,7 @@ def replay_alert(alert_data):
             f"Fetched stored alert data for replay: {list(stored_alert_data.keys())}"
         )
 
-        # Create AlertObj and populate all fields from stored data
-        replay_alert_obj = alertutils.AlertObj()
-
-        # Copy all available fields from stored alert data to ensure complete AlertObj
-        alert_fields = [
-            "duration",
-            "alert_name",
-            "display_name",
-            "alert_type",
-            "deleted",
-            "alert_id",
-            "played",
-            "stackable",
-            "timestamp",
-            "skip_alert",
-            "is_replay",
-            "is_test",
-            "username",
-            "anonymous",
-            "message",
-            "emotes",
-            "title",
-            "tier",
-            "gift_qty",
-            "recipient",
-            "resub_month",
-            "months_prepaid",
-            "amt_cheered",
-            "twitch_reward_id",
-            "point_cost",
-            "enable_alert",
-            "raider_count",
-            "game_name",
-            "donation_amount",
-            "currency",
-            "hype_train_level",
-            "hype_train_in_progress",
-            "fade_in",
-            "fade_out",
-            "volume",
-            "audio_only",
-            "single_audio_dir",
-            "single_audio_name",
-            "gif_dir",
-            "gif_name",
-            "randomized",
-            "randomized_dir",
-            "randomized_chance",
-            "randomized_extra",
-            "randomized_extra_chance",
-            "randomized_extra_dir",
-        ]
-
-        for field in alert_fields:
-            if field in stored_alert_data and stored_alert_data[field] is not None:
-                setattr(replay_alert_obj, field, stored_alert_data[field])
-                logger.debug(
-                    f"Set replay alert field {field}: {stored_alert_data[field]}"
-                )
-
-        # Override replay-specific fields
-        replay_alert_obj.alert_id = f"Replay{round(time.time())}"
-        replay_alert_obj.timestamp = time.time()
-        replay_alert_obj.played = False
-        replay_alert_obj.stackable = (
-            True  # Make replayed alerts stackable for immediate processing
-        )
-        replay_alert_obj.is_replay = True  # Mark as replay alert
+        replay_alert_obj = alertutils.build_replay_alert(stored_alert_data)
 
         logger.debug(
             f"Created replay AlertObj - type: {replay_alert_obj.alert_type}, "
@@ -2136,7 +2101,8 @@ def create_alert_element(alert_data) -> bool:
     """Create a single alert element in the feed.
 
     Returns:
-        True on success, False if the client is stale (recovery scheduled).
+        False if the client is stale (caller should abort the rebuild).
+        True if the card was created or skipped due to a payload/render error.
     """
     try:
         is_restored = alert_data.get("is_restored", False)
@@ -2197,13 +2163,21 @@ def create_alert_element(alert_data) -> bool:
                         ) in ["sub", "resub"]:
                             badge_classes += f" tier{alert_data['tier']}"
 
-                        ui.label(alert_data["type"]).classes(badge_classes)
+                        ui.label(str(alert_data.get("type") or "Alert")).classes(
+                            badge_classes
+                        )
 
                         # Combine main message and user message if present
-                        display_message = alert_data["message"]
-                        if alert_data.get("user_message"):
+                        display_message = html.escape(
+                            str(alert_data.get("message") or "")
+                        )
+                        user_message = alert_data.get("user_message")
+                        if user_message:
                             # Wrap user message in span with gray color and keep italics
-                            display_message += f" - <span class='secondary-text'>*{alert_data['user_message']}*</span>"
+                            display_message += (
+                                " - <span class='secondary-text'>*"
+                                f"{html.escape(str(user_message))}*</span>"
+                            )
 
                         ui.markdown(display_message).classes(
                             "text-sm"
@@ -2212,7 +2186,7 @@ def create_alert_element(alert_data) -> bool:
                 # Timestamp (positioned at far right edge)
                 with ui.row().classes("timestamp-container"):
                     timestamp_label = ui.label(
-                        format_timestamp(alert_data["timestamp"])
+                        format_timestamp(alert_data.get("timestamp", "now"))
                     ).classes("timestamp")
                     alert_data["timestamp_label"] = timestamp_label
 
@@ -2241,8 +2215,20 @@ def create_alert_element(alert_data) -> bool:
         if _is_stale_client_error(e):
             _handle_stale_client(f"create_alert_element: {e}")
             return False
-        logger.error(f"Error creating alert element: {str(e)}", exc_info=True)
-        return False
+        alert_id = None
+        alert_type = None
+        if isinstance(alert_data, dict):
+            alert_id = alert_data.get("alert_id")
+            alert_type = alert_data.get("type") or alert_data.get("alert_type")
+        logger.error(
+            "Error creating alert element (alert_id=%s type=%s): %s",
+            alert_id,
+            alert_type,
+            e,
+            exc_info=True,
+        )
+        # Skip this card so a cleared rebuild is not left blank.
+        return True
 
 
 def update_alert_visibility():
@@ -2792,7 +2778,7 @@ def create_activity_feed_tab():
         # Control row: keep overflow scroll only on left buttons so the filter
         # dropdown is not clipped into a scrollable top bar (CSS overflow-x:auto
         # forces overflow-y:auto and swallows absolute menus).
-        with ui.row().classes("w-full items-center gap-2 mb-4 flex-nowrap"):
+        with ui.row().classes("w-full items-center gap-2 mb-4 flex-nowrap activity-feed-controls"):
             from modules.mainuiwindow import toggle_alerts
 
             with ui.row().classes(
@@ -3011,7 +2997,7 @@ def create_activity_feed_tab():
                             create_checkbox("streaks", "Watch streaks")
                             create_checkbox("hype_train", "Hype Train")
 
-        with ui.row().classes("tab-row"):
+        with ui.row().classes("tab-row activity-feed-tab-row"):
 
             def on_current_tab():
                 switch_to_tab("current")
@@ -3051,10 +3037,14 @@ def create_activity_feed_tab():
                 "w-full hidden activity-feed-previous"
             )
 
-            # Create condensed view container (hidden by default)
-            activity_feed_state.condensed_container = ui.element("div").classes(
-                "w-full hidden condensed-view activity-feed-condensed"
-            )
+            # Create condensed view container (hidden by default). Enter the
+            # element so it owns an isolated slot — later rebuilds must not
+            # delete siblings of the scroll area (toolbar/tab buttons).
+            with ui.element("div").classes(
+                "w-full hidden condensed-view activity-feed-condensed overflow-y-auto"
+            ) as condensed_container:
+                pass
+            activity_feed_state.condensed_container = condensed_container
 
             # Set the main container reference (for backward compatibility)
             activity_feed_state.activity_feed_container = (
@@ -3668,7 +3658,7 @@ def add_restored_alert_to_feed(alert_data):
         create_alert_element(alert_data)
 
         # Apply visibility based on filter state
-        alert_type = alert_data["type"]
+        alert_type = alert_data.get("type")
         filter_key = None
         if alert_type == "Points":
             filter_key = "points"
@@ -3848,13 +3838,215 @@ def _load_condensed_historical_hours() -> int:
     return condense_historical_hours
 
 
+def _accumulate_condensed_alert(
+    alert_data: Dict[str, Any],
+    user_alerts: Dict[str, Dict[str, Any]],
+    filter_state: Dict[str, Any],
+    type_to_filter: Dict[str, str],
+) -> str:
+    """Fold one alert into condensed grouping. Returns ok, excluded, or unknown."""
+    import re
+
+    alert_type = alert_data.get("type", "").lower()
+    badge_type = alert_data.get("badge_type", "").lower()
+
+    # Exclude hype train only (channel points are included and grouped by reward)
+    if alert_type == "hype train" or badge_type == "hype_train":
+        return "excluded"
+
+    display_type = alert_data.get("type", "")
+    filter_key = type_to_filter.get(display_type)
+    if not (
+        filter_state.get("all", True)
+        or (filter_key and filter_state.get(filter_key, True))
+    ):
+        return "excluded"
+
+    username = alert_data.get("username")
+    if not username:
+        username = extract_username_from_message(alert_data.get("message", ""))
+
+    if not username or username == "Unknown":
+        return "unknown"
+
+    if username not in user_alerts:
+        user_alerts[username] = {}
+
+    grouping_key = alert_type
+    reward_name = None
+    stored_data = alert_data.get("stored_alert_data")
+    if not isinstance(stored_data, dict):
+        stored_data = {}
+
+    if alert_type in ["sub", "resub", "giftsub"]:
+        tier = alert_data.get("tier", 1)
+        grouping_key = f"{alert_type}_tier{tier}"
+
+        if alert_type in ["resub", "giftsub"]:
+            duration_months = 1
+            if stored_data:
+                duration_months = (
+                    stored_data.get("resub_month", 0)
+                    or stored_data.get("months", 0)
+                    or stored_data.get("total_months", 0)
+                    or 1
+                )
+            else:
+                message = alert_data.get("message", "")
+                month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
+                if month_match:
+                    duration_months = int(month_match.group(1))
+
+            if duration_months > 1:
+                grouping_key = f"{alert_type}_tier{tier}_multi_month"
+            else:
+                grouping_key = f"{alert_type}_tier{tier}_1month"
+    elif alert_type in (
+        "membership",
+        "member milestone",
+        "gift membership",
+        "super chat",
+        "super sticker",
+    ) or badge_type in (
+        "membership",
+        "member_milestone",
+        "gift_membership",
+        "superchat",
+        "supersticker",
+    ):
+        if badge_type in (
+            "membership",
+            "member_milestone",
+            "gift_membership",
+            "superchat",
+            "supersticker",
+        ):
+            grouping_key = badge_type
+        elif alert_type == "membership":
+            grouping_key = "membership"
+        elif alert_type == "member milestone":
+            grouping_key = "member_milestone"
+        elif alert_type == "gift membership":
+            grouping_key = "gift_membership"
+        elif alert_type == "super chat":
+            grouping_key = "superchat"
+        elif alert_type == "super sticker":
+            grouping_key = "supersticker"
+    elif alert_type in ("point", "points") or badge_type in ("point", "points"):
+        reward_name = stored_data.get("alert_name")
+        if not reward_name:
+            message = alert_data.get("message", "")
+            reward_match = re.search(
+                r"redeemed\s+'(.+?)'!", message, re.IGNORECASE
+            )
+            if reward_match:
+                reward_name = reward_match.group(1)
+        if not reward_name:
+            reward_name = "Unknown Reward"
+        grouping_key = f"points:{reward_name}"
+
+    if grouping_key not in user_alerts[username]:
+        user_alerts[username][grouping_key] = {
+            "count": 0,
+            "total_amount": 0,
+            "tier": alert_data.get("tier", 1),
+            "months": 0,
+            "original_type": alert_type,
+        }
+        if reward_name is not None:
+            user_alerts[username][grouping_key]["reward_name"] = reward_name
+
+    user_alerts[username][grouping_key]["count"] += 1
+
+    message = alert_data.get("message", "")
+
+    if alert_type in ("bit", "bits"):
+        amt_cheered = stored_data.get("amt_cheered") if stored_data else None
+        if amt_cheered:
+            user_alerts[username][grouping_key]["total_amount"] += int(amt_cheered)
+        else:
+            bit_match = re.search(r"(\d+)\s*bits?", message, re.IGNORECASE)
+            if bit_match:
+                user_alerts[username][grouping_key]["total_amount"] += int(
+                    bit_match.group(1)
+                )
+    elif alert_type == "donation":
+        donation_amount = (
+            stored_data.get("donation_amount") if stored_data else None
+        )
+        if donation_amount:
+            user_alerts[username][grouping_key]["total_amount"] += float(
+                donation_amount
+            )
+        else:
+            donation_match = re.search(
+                r"donated\s+\$?(\d+(?:\.\d{2})?)", message, re.IGNORECASE
+            )
+            if donation_match:
+                user_alerts[username][grouping_key]["total_amount"] += float(
+                    donation_match.group(1)
+                )
+    elif alert_type == "giftsub":
+        gift_qty = stored_data.get("gift_qty") if stored_data else None
+        if gift_qty:
+            user_alerts[username][grouping_key]["total_amount"] += int(gift_qty)
+        else:
+            gift_match = re.search(r"gifted\s+(\d+)", message, re.IGNORECASE)
+            if gift_match:
+                user_alerts[username][grouping_key]["total_amount"] += int(
+                    gift_match.group(1)
+                )
+    elif alert_type == "resub":
+        resub_month = None
+        if stored_data:
+            resub_month = (
+                stored_data.get("resub_month")
+                or stored_data.get("months")
+                or stored_data.get("total_months")
+            )
+        if resub_month:
+            months = int(resub_month)
+        else:
+            month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
+            months = int(month_match.group(1)) if month_match else 1
+        if months > user_alerts[username][grouping_key]["months"]:
+            user_alerts[username][grouping_key]["months"] = months
+    elif alert_type == "raid":
+        raider_count = stored_data.get("raider_count") if stored_data else None
+        if raider_count:
+            viewers = int(raider_count)
+        else:
+            raid_match = re.search(r"(\d+)\s*viewers?", message, re.IGNORECASE)
+            viewers = int(raid_match.group(1)) if raid_match else 0
+        raid_game = alert_data.get("game_name")
+        if not raid_game and stored_data:
+            raid_game = stored_data.get("game_name")
+        if viewers > user_alerts[username][grouping_key]["total_amount"]:
+            user_alerts[username][grouping_key]["total_amount"] = viewers
+            if raid_game:
+                user_alerts[username][grouping_key]["game_name"] = raid_game
+    elif alert_type == "streak":
+        streak_count_val = alert_data.get("streak_count")
+        if streak_count_val is None and stored_data:
+            streak_count_val = stored_data.get("streak_count")
+        if streak_count_val is not None:
+            sc = int(streak_count_val)
+        else:
+            streak_match = re.search(
+                r"(\d+)\s*consecutive streams", message, re.IGNORECASE
+            )
+            sc = int(streak_match.group(1)) if streak_match else 0
+        if sc > user_alerts[username][grouping_key]["total_amount"]:
+            user_alerts[username][grouping_key]["total_amount"] = sc
+
+    return "ok"
+
+
 def _group_alerts_for_condensed(
     alerts_to_process: List[Dict[str, Any]],
     filter_state: Optional[Dict[str, Any]] = None,
 ):
     """Group alerts by user and type for the condensed view (CPU-only)."""
-    import re
-
     user_alerts: Dict[str, Dict[str, Any]] = {}
     excluded_count = 0
     unknown_username_count = 0
@@ -3863,202 +4055,25 @@ def _group_alerts_for_condensed(
     type_to_filter = activity_feed_state.alert_type_to_filter
 
     for alert_data in alerts_to_process:
-        alert_type = alert_data.get("type", "").lower()
-        badge_type = alert_data.get("badge_type", "").lower()
-
-        # Exclude hype train only (channel points are included and grouped by reward)
-        if alert_type == "hype train" or badge_type == "hype_train":
+        if not isinstance(alert_data, dict):
             excluded_count += 1
             continue
-
-        # Apply the same filter rules as the regular card view
-        display_type = alert_data.get("type", "")
-        filter_key = type_to_filter.get(display_type)
-        if not (
-            filter_state.get("all", True)
-            or (filter_key and filter_state.get(filter_key, True))
-        ):
-            excluded_count += 1
-            continue
-
-        username = alert_data.get("username")
-        if not username:
-            username = extract_username_from_message(alert_data.get("message", ""))
-
-        if not username or username == "Unknown":
-            unknown_username_count += 1
-            continue
-
-        if username not in user_alerts:
-            user_alerts[username] = {}
-
-        grouping_key = alert_type
-        reward_name = None
-
-        if alert_type in ["sub", "resub", "giftsub"]:
-            tier = alert_data.get("tier", 1)
-            grouping_key = f"{alert_type}_tier{tier}"
-
-            if alert_type in ["resub", "giftsub"]:
-                duration_months = 1
-                stored_data = alert_data.get("stored_alert_data", {})
-
-                if stored_data:
-                    duration_months = (
-                        stored_data.get("resub_month", 0)
-                        or stored_data.get("months", 0)
-                        or stored_data.get("total_months", 0)
-                        or 1
-                    )
-                else:
-                    message = alert_data.get("message", "")
-                    month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
-                    if month_match:
-                        duration_months = int(month_match.group(1))
-
-                if duration_months > 1:
-                    grouping_key = f"{alert_type}_tier{tier}_multi_month"
-                else:
-                    grouping_key = f"{alert_type}_tier{tier}_1month"
-        elif alert_type in (
-            "membership",
-            "member milestone",
-            "gift membership",
-            "super chat",
-            "super sticker",
-        ) or badge_type in (
-            "membership",
-            "member_milestone",
-            "gift_membership",
-            "superchat",
-            "supersticker",
-        ):
-            if badge_type in (
-                "membership",
-                "member_milestone",
-                "gift_membership",
-                "superchat",
-                "supersticker",
-            ):
-                grouping_key = badge_type
-            elif alert_type == "membership":
-                grouping_key = "membership"
-            elif alert_type == "member milestone":
-                grouping_key = "member_milestone"
-            elif alert_type == "gift membership":
-                grouping_key = "gift_membership"
-            elif alert_type == "super chat":
-                grouping_key = "superchat"
-            elif alert_type == "super sticker":
-                grouping_key = "supersticker"
-        elif alert_type in ("point", "points") or badge_type in ("point", "points"):
-            stored_data = alert_data.get("stored_alert_data", {}) or {}
-            reward_name = stored_data.get("alert_name")
-            if not reward_name:
-                message = alert_data.get("message", "")
-                reward_match = re.search(
-                    r"redeemed\s+'(.+?)'!", message, re.IGNORECASE
-                )
-                if reward_match:
-                    reward_name = reward_match.group(1)
-            if not reward_name:
-                reward_name = "Unknown Reward"
-            grouping_key = f"points:{reward_name}"
-
-        if grouping_key not in user_alerts[username]:
-            user_alerts[username][grouping_key] = {
-                "count": 0,
-                "total_amount": 0,
-                "tier": alert_data.get("tier", 1),
-                "months": 0,
-                "original_type": alert_type,
-            }
-            if reward_name is not None:
-                user_alerts[username][grouping_key]["reward_name"] = reward_name
-
-        user_alerts[username][grouping_key]["count"] += 1
-
-        message = alert_data.get("message", "")
-        stored_data = alert_data.get("stored_alert_data", {})
-
-        if alert_type in ("bit", "bits"):
-            amt_cheered = stored_data.get("amt_cheered") if stored_data else None
-            if amt_cheered:
-                user_alerts[username][grouping_key]["total_amount"] += int(amt_cheered)
-            else:
-                bit_match = re.search(r"(\d+)\s*bits?", message, re.IGNORECASE)
-                if bit_match:
-                    user_alerts[username][grouping_key]["total_amount"] += int(
-                        bit_match.group(1)
-                    )
-        elif alert_type == "donation":
-            donation_amount = (
-                stored_data.get("donation_amount") if stored_data else None
+        try:
+            result = _accumulate_condensed_alert(
+                alert_data, user_alerts, filter_state, type_to_filter
             )
-            if donation_amount:
-                user_alerts[username][grouping_key]["total_amount"] += float(
-                    donation_amount
-                )
-            else:
-                donation_match = re.search(
-                    r"donated\s+\$?(\d+(?:\.\d{2})?)", message, re.IGNORECASE
-                )
-                if donation_match:
-                    user_alerts[username][grouping_key]["total_amount"] += float(
-                        donation_match.group(1)
-                    )
-        elif alert_type == "giftsub":
-            gift_qty = stored_data.get("gift_qty") if stored_data else None
-            if gift_qty:
-                user_alerts[username][grouping_key]["total_amount"] += int(gift_qty)
-            else:
-                gift_match = re.search(r"gifted\s+(\d+)", message, re.IGNORECASE)
-                if gift_match:
-                    user_alerts[username][grouping_key]["total_amount"] += int(
-                        gift_match.group(1)
-                    )
-        elif alert_type == "resub":
-            resub_month = None
-            if stored_data:
-                resub_month = (
-                    stored_data.get("resub_month")
-                    or stored_data.get("months")
-                    or stored_data.get("total_months")
-                )
-            if resub_month:
-                months = int(resub_month)
-            else:
-                month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
-                months = int(month_match.group(1)) if month_match else 1
-            if months > user_alerts[username][grouping_key]["months"]:
-                user_alerts[username][grouping_key]["months"] = months
-        elif alert_type == "raid":
-            raider_count = stored_data.get("raider_count") if stored_data else None
-            if raider_count:
-                viewers = int(raider_count)
-            else:
-                raid_match = re.search(r"(\d+)\s*viewers?", message, re.IGNORECASE)
-                viewers = int(raid_match.group(1)) if raid_match else 0
-            raid_game = alert_data.get("game_name")
-            if not raid_game and stored_data:
-                raid_game = stored_data.get("game_name")
-            if viewers > user_alerts[username][grouping_key]["total_amount"]:
-                user_alerts[username][grouping_key]["total_amount"] = viewers
-                if raid_game:
-                    user_alerts[username][grouping_key]["game_name"] = raid_game
-        elif alert_type == "streak":
-            streak_count_val = alert_data.get("streak_count")
-            if streak_count_val is None and stored_data:
-                streak_count_val = stored_data.get("streak_count")
-            if streak_count_val is not None:
-                sc = int(streak_count_val)
-            else:
-                streak_match = re.search(
-                    r"(\d+)\s*consecutive streams", message, re.IGNORECASE
-                )
-                sc = int(streak_match.group(1)) if streak_match else 0
-            if sc > user_alerts[username][grouping_key]["total_amount"]:
-                user_alerts[username][grouping_key]["total_amount"] = sc
+        except Exception as exc:
+            excluded_count += 1
+            logger.debug(
+                "Skipping condensed grouping for alert_id=%s: %s",
+                alert_data.get("alert_id"),
+                exc,
+            )
+            continue
+        if result == "excluded":
+            excluded_count += 1
+        elif result == "unknown":
+            unknown_username_count += 1
 
     logger.debug(
         "Condensed grouping: processed=%d excluded=%d unknown_user=%d users=%d",
@@ -4080,11 +4095,16 @@ def serialize_condensed_groups(
             continue
         lines: List[str] = []
         for grouping_key, data in alert_types.items():
-            text = create_aggregated_alert_text(grouping_key, data)
+            try:
+                text = create_aggregated_alert_text(grouping_key, data)
+            except Exception:
+                continue
             if text:
                 lines.append(text)
         if lines:
             groups.append({"username": str(username), "lines": lines})
+            if len(groups) >= MAX_CONDENSED_GROUPS:
+                break
     return groups
 
 
@@ -4104,6 +4124,7 @@ def _build_condensed_html(build_data: Dict[str, Any]) -> str:
         msg = html.escape(f"No alerts to condense in the last {hours} hours")
         return f'<div class="no-alerts text-sm muted-text italic">{msg}</div>'
 
+    visible_groups = groups[:MAX_CONDENSED_GROUPS]
     parts: List[str] = []
     if historical_count > 0 or live_in_window > 0:
         indicator = html.escape(
@@ -4112,7 +4133,13 @@ def _build_condensed_html(build_data: Dict[str, Any]) -> str:
         parts.append(
             f'<div class="text-xs muted-text mb-2 italic">{indicator}</div>'
         )
-    for group in groups:
+    if len(groups) > MAX_CONDENSED_GROUPS:
+        parts.append(
+            '<div class="text-xs muted-text mb-2 italic">'
+            f"{html.escape(f'Showing first {MAX_CONDENSED_GROUPS} of {len(groups)} users')}"
+            "</div>"
+        )
+    for group in visible_groups:
         username = html.escape(str(group.get("username") or ""))
         lines_html = []
         for line in group.get("lines") or []:
@@ -4224,11 +4251,45 @@ def _collect_condensed_build_data() -> Dict[str, Any]:
     }
 
 
+def _delete_replaced_condensed_children(container, keep) -> None:
+    """Remove previous condensed children without touching foreign slots."""
+    slot = getattr(container, "default_slot", None)
+    if slot is None:
+        return
+    try:
+        parent = slot.parent
+    except Exception:
+        return
+    if parent is not container:
+        logger.error(
+            "activity_feed: condensed slot parent is not the condensed container "
+            "(%s) — refusing child delete so toolbar/tab buttons stay intact",
+            type(parent).__name__,
+        )
+        return
+    for child in list(slot.children):
+        if child is keep:
+            continue
+        try:
+            child.delete()
+        except Exception:
+            pass
+
+
+def _condensed_toolbar_alive() -> bool:
+    """True when in-tab chrome (toggle / pause) still belongs to a live client."""
+    return _element_alive(activity_feed_state.condense_toggle) and _element_alive(
+        activity_feed_state.pause_btn
+    )
+
+
 def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
     """Render the condensed view from pre-fetched data (UI loop only).
 
     Builds into a staging child first, then removes previous siblings so the
-    visible condensed surface never flashes empty mid-rebuild.
+    visible condensed surface never flashes empty mid-rebuild. Uses NiceGUI
+    labels instead of a single innerHTML blob so a large/poison payload cannot
+    wipe the Activity Feed toolbar.
     """
     container = activity_feed_state.condensed_container
     if not _element_alive(container):
@@ -4238,12 +4299,16 @@ def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
     if groups is None:
         groups = serialize_condensed_groups(build_data.get("user_alerts") or {})
     alert_count = int(build_data.get("alert_count") or 0)
+    hours = build_data.get("condense_historical_hours", 12)
+    historical_count = int(build_data.get("historical_count") or 0)
+    live_in_window = int(build_data.get("live_in_window") or 0)
+    visible_groups = list(groups or [])[:MAX_CONDENSED_GROUPS]
 
     previous_children = _slot_child_count(container)
     logger.warning(
         "activity_feed: condensed render start (prev_children=%d users=%d alerts=%d)",
         previous_children,
-        len(groups),
+        len(groups or []),
         alert_count,
     )
 
@@ -4253,20 +4318,36 @@ def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
             staging = ui.element("div").classes("condensed-staging w-full")
 
         with staging:
-            ui.html(_build_condensed_html(build_data), sanitize=False).classes(
-                "w-full"
-            )
+            if not visible_groups:
+                ui.label(
+                    f"No alerts to condense in the last {hours} hours"
+                ).classes("no-alerts text-sm muted-text italic")
+            else:
+                if historical_count > 0 or live_in_window > 0:
+                    ui.label(
+                        f"Showing {alert_count} alerts from past {hours} hours"
+                    ).classes("text-xs muted-text mb-2 italic")
+                if len(groups or []) > MAX_CONDENSED_GROUPS:
+                    ui.label(
+                        f"Showing first {MAX_CONDENSED_GROUPS} of {len(groups)} users"
+                    ).classes("text-xs muted-text mb-2 italic")
+                for group in visible_groups:
+                    username = str(group.get("username") or "")
+                    with ui.element("div").classes("user-group mb-4"):
+                        ui.label(f"{username}:").classes("username font-semibold mb-1")
+                        with ui.element("div").classes("ml-4"):
+                            for line in group.get("lines") or []:
+                                ui.label(str(line)).classes(
+                                    "alert-item secondary-text text-sm mb-1"
+                                )
 
-        # Drop previous siblings only after staging content exists.
-        slot = getattr(container, "default_slot", None)
-        if slot is not None:
-            for child in list(slot.children):
-                if child is staging:
-                    continue
-                try:
-                    child.delete()
-                except Exception:
-                    pass
+        _delete_replaced_condensed_children(container, staging)
+
+        if not _condensed_toolbar_alive():
+            logger.error(
+                "activity_feed: condensed render removed in-tab chrome; aborting condensed mode"
+            )
+            return False
 
         child_count = _slot_child_count(container)
         logger.warning(
@@ -4363,7 +4444,7 @@ async def _update_condensed_view_async(reason: str) -> None:
                 _apply_condensed_visibility(True)
                 schedule_feed_integrity_check(f"condensed_show:{reason}")
             else:
-                _fallback_to_regular_feed(f"condensed_build_failed:{reason}")
+                _abandon_condensed_view(f"condensed_build_failed:{reason}")
 
             if not _condensed_rebuild_rerun:
                 break
@@ -4374,7 +4455,7 @@ async def _update_condensed_view_async(reason: str) -> None:
             exc,
             exc_info=True,
         )
-        _fallback_to_regular_feed(f"condensed_async_failed:{reason}")
+        _abandon_condensed_view(f"condensed_async_failed:{reason}")
     finally:
         _condensed_rebuild_running = False
         if _condensed_rebuild_rerun:
@@ -4433,7 +4514,7 @@ def update_condensed_view() -> bool:
 
     except Exception as e:
         logger.error(f"Error updating condensed view: {str(e)}", exc_info=True)
-        _fallback_to_regular_feed("update_condensed_view_exception")
+        _abandon_condensed_view("update_condensed_view_exception")
         return False
 
 

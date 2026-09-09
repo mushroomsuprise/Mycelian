@@ -163,6 +163,7 @@ class AlertStateManager:
         self._initialized = False
         self._changes_pending = False
         self._resub_fallback_enabled: Optional[bool] = None
+        self._startup_trim_done = False
 
     def initialize(self):
         """Initialize the alert state by loading all alerts from Firebase"""
@@ -181,6 +182,7 @@ class AlertStateManager:
 
             self._initialized = True
             logger.debug("Alert state manager initialized")
+        self._run_startup_auto_trim()
 
     async def initialize_async(self):
         """Initialize the alert state by loading all alerts from Firebase asynchronously"""
@@ -192,6 +194,7 @@ class AlertStateManager:
             await self._load_alerts_from_firebase_async()
             self._initialized = True
             logger.debug("Alert state manager initialized")
+        self._run_startup_auto_trim()
 
     def initialize_with_data(self, all_data: Dict[str, Any]):
         """Initialize the alert state with pre-loaded data
@@ -229,6 +232,7 @@ class AlertStateManager:
 
             self._initialized = True
             logger.debug("Alert state manager initialized with pre-loaded data")
+        self._run_startup_auto_trim()
 
     def get_resub_fallback_enabled(self) -> bool:
         """Check if the resub fallback alert is enabled.
@@ -1125,6 +1129,12 @@ class AlertStateManager:
                     f"Stored alert {alert_id} is missing username field!"
                 )
 
+            try:
+                self.maybe_auto_trim_stored_alerts()
+            except Exception as trim_err:
+                logger.debug(
+                    "Auto-trim after storing alert %s failed: %s", alert_id, trim_err
+                )
             return True
 
         except Exception as e:
@@ -1132,6 +1142,119 @@ class AlertStateManager:
                 f"Error storing completed alert {alert_id}: {str(e)}", exc_info=True
             )
             return False
+
+    def _read_alert_storage_trim_settings(self) -> Dict[str, Any]:
+        """Load stored-alert retention settings from AppSettings."""
+        defaults = {
+            "enabled": False,
+            "mode": "both",
+            "keep_count": 500,
+            "keep_days": 30,
+        }
+        try:
+            from .dataobjects import state_manager
+
+            settings = state_manager.get_app_settings()
+            mode = str(
+                getattr(settings, "alert_storage_trim_mode", "both") or "both"
+            ).strip().lower()
+            if mode not in ("quantity", "time", "both"):
+                mode = "both"
+            keep_count = int(getattr(settings, "alert_storage_keep_count", 500) or 500)
+            keep_days = int(getattr(settings, "alert_storage_keep_days", 30) or 30)
+            return {
+                "enabled": bool(getattr(settings, "alert_storage_auto_trim", False)),
+                "mode": mode,
+                "keep_count": max(1, keep_count),
+                "keep_days": max(1, keep_days),
+            }
+        except Exception as e:
+            logger.debug("Could not read alert storage trim settings: %s", e)
+            return defaults
+
+    def _run_startup_auto_trim(self) -> None:
+        if self._startup_trim_done:
+            return
+        self._startup_trim_done = True
+        try:
+            deleted = self.maybe_auto_trim_stored_alerts()
+            if deleted:
+                logger.info("Auto-trimmed %d stored alert(s) on startup", deleted)
+        except Exception as e:
+            logger.debug("Startup stored-alert trim failed: %s", e)
+
+    def maybe_auto_trim_stored_alerts(self) -> int:
+        """Trim stored alerts when auto-trim is enabled. Returns deleted count."""
+        settings = self._read_alert_storage_trim_settings()
+        if not settings["enabled"]:
+            return 0
+        return self.trim_stored_alerts(
+            mode=settings["mode"],
+            keep_count=settings["keep_count"],
+            keep_days=settings["keep_days"],
+        )
+
+    def trim_stored_alerts(
+        self,
+        *,
+        mode: str = "both",
+        keep_count: int = 500,
+        keep_days: int = 30,
+    ) -> int:
+        """Delete stored alerts by newest count and/or age. Returns number deleted."""
+        mode = str(mode or "both").strip().lower()
+        if mode not in ("quantity", "time", "both"):
+            mode = "both"
+        keep_count = max(1, int(keep_count or 1))
+        keep_days = max(1, int(keep_days or 1))
+
+        with self._lock:
+            self._alert_storage_loaded = False
+            self._ensure_alert_storage_loaded()
+            rows = [
+                (alert_id, safe_alert_timestamp((alert_data or {}).get("timestamp")))
+                for alert_id, alert_data in self._alert_storage.items()
+            ]
+
+        rows.sort(key=lambda item: item[1], reverse=True)
+        to_delete = set()
+        if mode in ("time", "both"):
+            cutoff = time.time() - (keep_days * 86400)
+            for alert_id, timestamp in rows:
+                if timestamp < cutoff:
+                    to_delete.add(alert_id)
+        if mode in ("quantity", "both"):
+            for alert_id, _timestamp in rows[keep_count:]:
+                to_delete.add(alert_id)
+
+        if not to_delete:
+            return 0
+
+        deleted = 0
+        for alert_id in to_delete:
+            try:
+                database_manager.delete_data(f"Alerts/AlertStorage/{alert_id}")
+                deleted += 1
+            except Exception as e:
+                logger.error(
+                    "Error deleting stored alert %s during trim: %s",
+                    alert_id,
+                    e,
+                    exc_info=True,
+                )
+
+        with self._lock:
+            for alert_id in to_delete:
+                self._alert_storage.pop(alert_id, None)
+
+        logger.info(
+            "Trimmed %d stored alert(s) (mode=%s keep_count=%s keep_days=%s)",
+            deleted,
+            mode,
+            keep_count,
+            keep_days,
+        )
+        return deleted
 
     def _normalize_alert_data_for_storage(self, alert_data: dict) -> dict:
         """Normalize alert data to ensure all AlertObj fields are present and properly formatted
@@ -2279,6 +2402,114 @@ def fetch_cheer_alert(quantity: int) -> AlertObj:
         AlertObj
     """
     return fetch_bits_alert(quantity)
+
+
+_REPLAY_EVENT_FIELDS = (
+    "username",
+    "anonymous",
+    "message",
+    "emotes",
+    "fragments",
+    "title",
+    "tier",
+    "gift_qty",
+    "recipient",
+    "resub_month",
+    "months_prepaid",
+    "amt_cheered",
+    "twitch_reward_id",
+    "point_cost",
+    "raider_count",
+    "game_name",
+    "donation_amount",
+    "currency",
+    "hype_train_level",
+    "hype_train_in_progress",
+    "streak_count",
+    "channel_points_awarded",
+    "alert_type",
+)
+
+
+def _replay_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _replay_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def fetch_alert_config_for_stored(stored: dict) -> Optional[AlertObj]:
+    """Re-resolve current alert presentation config from a stored event snapshot."""
+    if not isinstance(stored, dict):
+        return None
+    alert_type = str(stored.get("alert_type") or "").strip().lower()
+    if alert_type in ("bit", "bits"):
+        return fetch_bits_alert(_replay_int(stored.get("amt_cheered"), 0))
+    if alert_type == "sub":
+        months = _replay_int(stored.get("resub_month"), 1)
+        return fetch_sub_alert(months if months > 0 else 1)
+    if alert_type == "resub":
+        months = _replay_int(stored.get("resub_month"), 1)
+        return fetch_resub_alert(months if months > 0 else 1)
+    if alert_type in ("giftsub", "giftsubs"):
+        qty = _replay_int(stored.get("gift_qty"), 1)
+        return fetch_giftsub_alert(qty if qty > 0 else 1)
+    if alert_type in ("donation", "donations"):
+        amount = _replay_float(stored.get("donation_amount"), 0.0)
+        return fetch_donation_alert(amount)
+    if alert_type in ("raid", "raids"):
+        count = _replay_int(stored.get("raider_count"), 0)
+        return fetch_raid_alert(count if count > 0 else 1)
+    if alert_type in ("streak", "streaks", "watch_streak", "watchstreak"):
+        count = _replay_int(stored.get("streak_count"), 0)
+        return fetch_streak_alert(count if count > 0 else 1)
+    if alert_type == "follow":
+        return fetch_follow_alert()
+    if alert_type in ("point", "points"):
+        reward_id = stored.get("twitch_reward_id")
+        if reward_id:
+            return fetch_point_alert(str(reward_id))
+        return None
+    return None
+
+
+def build_replay_alert(stored: dict) -> AlertObj:
+    """Build a replay AlertObj: current config presentation + stored event identity.
+
+    If the matching alert config no longer exists, falls back to the stored snapshot.
+    """
+    if not isinstance(stored, dict):
+        stored = {}
+
+    config = fetch_alert_config_for_stored(stored)
+    if config is not None:
+        replay = copy.deepcopy(config)
+    else:
+        replay = AlertObj(**alert_state_manager._filter_alert_obj_fields(stored))
+
+    for field_name in _REPLAY_EVENT_FIELDS:
+        if field_name in stored and stored[field_name] is not None:
+            setattr(replay, field_name, stored[field_name])
+
+    if stored.get("alert_type"):
+        replay.alert_type = stored["alert_type"]
+
+    replay.alert_id = f"Replay{round(time.time())}"
+    replay.timestamp = time.time()
+    replay.played = False
+    replay.deleted = False
+    replay.skip_alert = False
+    replay.is_replay = True
+    replay.is_test = False
+    replay.stackable = True
+    return replay
 
 
 _CHAT_ACTIVITY_ONLY_ALERT_TYPES = frozenset(

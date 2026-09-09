@@ -7041,77 +7041,7 @@ class WebEngine:
                     f"Fetched stored alert data for replay: {list(stored_alert_data.keys())}"
                 )
 
-                # Create AlertObj and populate all fields from stored data
-                replay_alert_obj = alertutils.AlertObj()
-
-                # Copy all available fields from stored alert data to ensure complete AlertObj
-                alert_fields = [
-                    "duration",
-                    "alert_name",
-                    "display_name",
-                    "alert_type",
-                    "deleted",
-                    "alert_id",
-                    "played",
-                    "stackable",
-                    "timestamp",
-                    "skip_alert",
-                    "is_replay",
-                    "is_test",
-                    "username",
-                    "anonymous",
-                    "message",
-                    "emotes",
-                    "title",
-                    "tier",
-                    "gift_qty",
-                    "recipient",
-                    "resub_month",
-                    "months_prepaid",
-                    "amt_cheered",
-                    "twitch_reward_id",
-                    "point_cost",
-                    "enable_alert",
-                    "raider_count",
-                    "game_name",
-                    "donation_amount",
-                    "currency",
-                    "hype_train_level",
-                    "hype_train_in_progress",
-                    "fade_in",
-                    "fade_out",
-                    "volume",
-                    "audio_only",
-                    "single_audio_dir",
-                    "single_audio_name",
-                    "gif_dir",
-                    "gif_name",
-                    "randomized",
-                    "randomized_dir",
-                    "randomized_chance",
-                    "randomized_extra",
-                    "randomized_extra_chance",
-                    "randomized_extra_dir",
-                ]
-
-                for field in alert_fields:
-                    if (
-                        field in stored_alert_data
-                        and stored_alert_data[field] is not None
-                    ):
-                        setattr(replay_alert_obj, field, stored_alert_data[field])
-                        logger.debug(
-                            f"Set replay alert field {field}: {stored_alert_data[field]}"
-                        )
-
-                # Override replay-specific fields
-                replay_alert_obj.alert_id = f"Replay{round(time.time())}"
-                replay_alert_obj.timestamp = time.time()
-                replay_alert_obj.played = False
-                replay_alert_obj.stackable = (
-                    True  # Make replayed alerts stackable for immediate processing
-                )
-                replay_alert_obj.is_replay = True  # Mark as replay alert
+                replay_alert_obj = alertutils.build_replay_alert(stored_alert_data)
 
                 logger.debug(
                     f"Created replay AlertObj - type: {replay_alert_obj.alert_type}, "

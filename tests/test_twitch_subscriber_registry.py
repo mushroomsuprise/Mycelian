@@ -280,25 +280,29 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         )
         return SimpleNamespace(event=event)
 
-    async def test_suppress_when_helix_not_ready(self) -> None:
+    async def test_unknown_user_alerts_when_helix_not_ready(self) -> None:
         api = MagicMock()
         api._note_event_received = MagicMock()
-        data = self._make_event()
+        api._emit_verified_new_sub = AsyncMock()
+        data = self._make_event(user_id="55", login="fresh", name="Fresh")
         self.registry.set_session_ready(False)
 
         with patch(
             "modules.twitch_subscriber_registry.get_subscriber_registry",
             return_value=self.registry,
-        ), patch.object(twitch_module, "_record_known_subscriber") as record_mock:
+        ), patch.object(twitch_module, "_NEW_SUB_DEBOUNCE_SECONDS", 0.05), patch.object(
+            twitch_module, "_record_known_subscriber"
+        ) as record_mock:
             await twitch_module.Twitch_API.on_new_sub(api, data)
-
-        record_mock.assert_called()
-        self.assertFalse(bool(self.registry._pending_tasks))
+            self.assertTrue(bool(self.registry._pending_tasks))
+            await asyncio.sleep(0.2)
+            api._emit_verified_new_sub.assert_awaited()
+            record_mock.assert_not_called()
 
     async def test_suppress_known_user(self) -> None:
         api = MagicMock()
         api._note_event_received = MagicMock()
-        self.registry.set_session_ready(True)
+        self.registry.set_session_ready(False)
         self.registry.record(user_id="10", user_login="newbie", source="prior")
         data = self._make_event()
 

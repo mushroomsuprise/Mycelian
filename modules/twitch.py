@@ -2775,7 +2775,7 @@ class Twitch_API:
         )
 
     async def on_new_sub(self, data: ChannelSubscribeEvent):
-        """Handle channel.subscribe; alert only for verified first-time subs."""
+        """Handle channel.subscribe; alert only for first-time known-DB misses."""
         self._note_event_received()
         event = data.event
         user_id = str(getattr(event, "user_id", "") or "") or None
@@ -2786,19 +2786,6 @@ class Twitch_API:
         from .twitch_subscriber_registry import get_subscriber_registry
 
         registry = get_subscriber_registry()
-
-        # Fail closed: never alert until Helix snapshot for this session succeeded.
-        if not is_gift and not registry.is_session_ready():
-            logger.info(
-                "Suppressing channel.subscribe for %s: registry Helix snapshot not ready",
-                username,
-            )
-            _record_known_subscriber(
-                user_id=user_id,
-                user_login=user_login or username,
-                source="channel.subscribe.not_ready",
-            )
-            return
 
         already_known = registry.is_known(
             user_id=user_id, user_login=user_login or username
@@ -4519,8 +4506,7 @@ class Twitch_API:
             eventsub.start()
             self._eventsub_subscriptions_ready = False
 
-            # Fail-closed for channel.subscribe until Helix snapshot finishes
-            # after EventSub topics are registered (must not delay listen_*).
+            # Optional Helix seed of current subscribers; never blocks new-sub alerts.
             try:
                 from .twitch_subscriber_registry import get_subscriber_registry
 
@@ -4754,7 +4740,7 @@ class Twitch_API:
                 elif sub_registry.is_helix_forbidden():
                     logger.warning(
                         "Subscriber registry Helix snapshot unavailable "
-                        "(channel is not Affiliate/Partner); new-sub alerts stay suppressed"
+                        "(channel is not Affiliate/Partner); using chat/alert history only"
                     )
                 else:
                     logger.warning(

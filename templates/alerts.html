@@ -685,6 +685,8 @@
         var alertShowGeneration = 0; // Bumps per showAlert so stale complete/exit timers are ignored
         var audioResolvePending = false; // True while folder/static audio source is still being resolved
         var audioResolveGeneration = 0; // Bumps per startAlertPlayback so stale finally blocks cannot clear a newer resolve
+        var audioFadeInterval = null;
+        var audioFadeOutTimeout = null;
         var pointAlertSilentNoMedia = {{ PointAlertSilentNoMedia | default(false) | tojson }};
         var showUsernameText = {{ EnableUsernameText | default(true) | tojson }};
         var showHeaderLineText = {{ EnableHeaderText | default(true) | tojson }};
@@ -1196,27 +1198,32 @@
             alertMessage.style.removeProperty('opacity');
         }
 
-        function calculateAnimationTimings() {
-            // Calculate maximum animation durations from template config
-            const backgroundInDuration = {{ BackgroundAnimationInDuration | default(1.0) }};
-            const gifInDuration = {{ GifAnimationInDuration | default(1.5) }};
-            const headerInDuration = showHeaderRow() ? {{ HeaderAnimationInDuration | default(1.2) }} : 0;
-            const messageInDuration = showMessageText ? {{ MessageAnimationInDuration | default(1.0) }} : 0;
-            const containerInDuration = {{ ContainerAnimationInDuration | default(1.0) }};
+        function secToMs(seconds) {
+            var n = Number(seconds);
+            return (isFinite(n) ? n : 0) * 1000;
+        }
 
-            const backgroundOutDuration = {{ BackgroundAnimationOutDuration | default(1.0) }};
-            const gifOutDuration = {{ GifAnimationOutDuration | default(1.0) }};
-            const headerOutDuration = showHeaderRow() ? {{ HeaderAnimationOutDuration | default(1.0) }} : 0;
-            const messageOutDuration = showMessageText ? {{ MessageAnimationOutDuration | default(1.0) }} : 0;
-            const containerOutDuration = {{ ContainerAnimationOutDuration | default(1.0) }};
+        function calculateAnimationTimings() {
+            // Template config durations/delays are in seconds; JS timing uses milliseconds.
+            const backgroundInDuration = secToMs({{ BackgroundAnimationInDuration | default(1.0) }});
+            const gifInDuration = secToMs({{ GifAnimationInDuration | default(1.5) }});
+            const headerInDuration = showHeaderRow() ? secToMs({{ HeaderAnimationInDuration | default(1.2) }}) : 0;
+            const messageInDuration = showMessageText ? secToMs({{ MessageAnimationInDuration | default(1.0) }}) : 0;
+            const containerInDuration = secToMs({{ ContainerAnimationInDuration | default(1.0) }});
+
+            const backgroundOutDuration = secToMs({{ BackgroundAnimationOutDuration | default(1.0) }});
+            const gifOutDuration = secToMs({{ GifAnimationOutDuration | default(1.0) }});
+            const headerOutDuration = showHeaderRow() ? secToMs({{ HeaderAnimationOutDuration | default(1.0) }}) : 0;
+            const messageOutDuration = showMessageText ? secToMs({{ MessageAnimationOutDuration | default(1.0) }}) : 0;
+            const containerOutDuration = secToMs({{ ContainerAnimationOutDuration | default(1.0) }});
 
             // Entry animation duration is the longest entry animation plus delays
             const maxEntryDelay = Math.max(
-                {{ BackgroundAnimationDelay | default(0.0) }},
-                {{ GifAnimationDelay | default(0.0) }},
-                showHeaderRow() ? {{ HeaderAnimationDelay | default(0.0) }} : 0,
-                showMessageText ? {{ MessageAnimationDelay | default(0.0) }} : 0,
-                {{ ContainerAnimationDelay | default(0.0) }}
+                secToMs({{ BackgroundAnimationDelay | default(0.0) }}),
+                secToMs({{ GifAnimationDelay | default(0.0) }}),
+                showHeaderRow() ? secToMs({{ HeaderAnimationDelay | default(0.0) }}) : 0,
+                showMessageText ? secToMs({{ MessageAnimationDelay | default(0.0) }}) : 0,
+                secToMs({{ ContainerAnimationDelay | default(0.0) }})
             );
 
             const maxEntryDuration = Math.max(backgroundInDuration, gifInDuration, headerInDuration, messageInDuration, containerInDuration);
@@ -1224,11 +1231,11 @@
 
             // Exit animation duration is the longest exit animation plus delays
             const maxExitDelay = Math.max(
-                {{ BackgroundAnimationOutDelay | default(0.0) }},
-                {{ GifAnimationOutDelay | default(0.0) }},
-                showHeaderRow() ? {{ HeaderAnimationOutDelay | default(0.0) }} : 0,
-                showMessageText ? {{ MessageAnimationOutDelay | default(0.0) }} : 0,
-                {{ ContainerAnimationOutDelay | default(0.0) }}
+                secToMs({{ BackgroundAnimationOutDelay | default(0.0) }}),
+                secToMs({{ GifAnimationOutDelay | default(0.0) }}),
+                showHeaderRow() ? secToMs({{ HeaderAnimationOutDelay | default(0.0) }}) : 0,
+                showMessageText ? secToMs({{ MessageAnimationOutDelay | default(0.0) }}) : 0,
+                secToMs({{ ContainerAnimationOutDelay | default(0.0) }})
             );
 
             const maxExitDuration = Math.max(backgroundOutDuration, gifOutDuration, headerOutDuration, messageOutDuration, containerOutDuration);
@@ -1946,9 +1953,71 @@
             return audioSource;
         }
 
+        function parseFadeMs(value) {
+            var n = parseInt(value, 10);
+            return isFinite(n) && n > 0 ? n : 0;
+        }
+
+        function clearAudioFades() {
+            if (audioFadeInterval) {
+                clearInterval(audioFadeInterval);
+                audioFadeInterval = null;
+            }
+            if (audioFadeOutTimeout) {
+                clearTimeout(audioFadeOutTimeout);
+                audioFadeOutTimeout = null;
+            }
+        }
+
+        function fadeAudioVolume(audioElement, targetVolume, durationMs) {
+            if (!audioElement) {
+                return;
+            }
+            if (audioFadeInterval) {
+                clearInterval(audioFadeInterval);
+                audioFadeInterval = null;
+            }
+            targetVolume = Math.max(0, Math.min(1, targetVolume));
+            if (!durationMs || durationMs <= 0) {
+                audioElement.volume = targetVolume;
+                return;
+            }
+            var startVolume = audioElement.volume;
+            var startTime = Date.now();
+            audioFadeInterval = setInterval(function () {
+                var elapsed = Date.now() - startTime;
+                var t = Math.min(1, elapsed / durationMs);
+                audioElement.volume = startVolume + (targetVolume - startVolume) * t;
+                if (t >= 1) {
+                    clearInterval(audioFadeInterval);
+                    audioFadeInterval = null;
+                    audioElement.volume = targetVolume;
+                }
+            }, 30);
+        }
+
+        function applyAlertAudioFades(audioElement, alertData, targetVolume) {
+            clearAudioFades();
+            var fadeInMs = parseFadeMs(alertData && alertData.fade_in);
+            var fadeOutMs = parseFadeMs(alertData && alertData.fade_out);
+            if (fadeInMs > 0) {
+                audioElement.volume = 0;
+                fadeAudioVolume(audioElement, targetVolume, fadeInMs);
+            } else {
+                audioElement.volume = targetVolume;
+            }
+            if (fadeOutMs > 0) {
+                var startAt = Math.max(0, alertDuration - fadeOutMs);
+                audioFadeOutTimeout = setTimeout(function () {
+                    fadeAudioVolume(audioElement, 0, fadeOutMs);
+                }, startAt);
+            }
+        }
+
         async function startAlertPlayback(alertData) {
             const generation = ++audioResolveGeneration;
             audioResolvePending = true;
+            clearAudioFades();
             try {
                 const audioElement = document.getElementById('alertAudio');
                 const ttsEnabled = shouldPlayTts(alertData);
@@ -1975,7 +2044,9 @@
                         if (ttsEnabled) {
                             audioVolume = Math.max(0, Math.min(1, audioVolume * 0.25));
                         }
-                        audioElement.volume = audioVolume;
+                        applyAlertAudioFades(audioElement, alertData, audioVolume);
+                    } else {
+                        applyAlertAudioFades(audioElement, alertData, audioElement.volume);
                     }
 
                     audioElement.onerror = function () {
