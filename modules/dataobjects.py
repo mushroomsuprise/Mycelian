@@ -168,7 +168,7 @@ class AppSettings:
     auto_update: bool = True
     activity_feed_limit: int = 20
     activity_feed_max_pages: int = 5
-    alert_storage_auto_trim: bool = False
+    alert_storage_auto_trim: bool = True
     alert_storage_trim_mode: str = "both"
     alert_storage_keep_count: int = 500
     alert_storage_keep_days: int = 30

@@ -147,6 +147,12 @@ def _pause_alerts_and_activity_feed() -> None:
     from .uiwindows.activity_feed import stop_alert_processor
 
     try:
+        from .alertutils import cancel_alert_storage_trim
+
+        cancel_alert_storage_trim()
+    except Exception as e:
+        logger.debug("Alert storage trim cancel: %s", e)
+    try:
         web_engine.set_alerts_paused(True)
     except Exception:
         pass

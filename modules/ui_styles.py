@@ -2090,6 +2090,10 @@ body:not(.body--dark) .notification-tray-badge {
     display: none !important;
 }
 
+.service-status-item--trim .service-status-badge-label {
+    white-space: nowrap;
+}
+
 .service-status-item:hover {
     background: var(--color-hover-overlay);
 }

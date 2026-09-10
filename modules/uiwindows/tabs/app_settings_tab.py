@@ -463,18 +463,14 @@ class AppSettingsTab:
             pass
 
     def _apply_alert_storage_trim(self) -> None:
-        """Run stored-alert retention immediately after the setting is saved on."""
+        """Kick off stored-alert retention in the background after save."""
         if not self.buffer or not self.buffer.alert_storage_auto_trim:
             return
         try:
             from ... import alertutils
 
             alertutils.alert_state_manager.initialize()
-            deleted = alertutils.alert_state_manager.maybe_auto_trim_stored_alerts()
-            if deleted:
-                logger.info(
-                    "Auto-trimmed %d stored alert(s) after settings save", deleted
-                )
+            alertutils.schedule_auto_trim_stored_alerts()
         except Exception:
             pass
 

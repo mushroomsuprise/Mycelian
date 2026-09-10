@@ -51,6 +51,30 @@ def safe_alert_timestamp(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def format_trim_progress_badge(
+    progress: Optional[Dict[str, Any]],
+) -> Optional[Tuple[str, str]]:
+    """Return (badge_text, tier) while a trim is in progress, else None."""
+    if not progress or not progress.get("active"):
+        return None
+    phase = str(progress.get("phase") or "")
+    if phase == "calculating":
+        return ("Calculating", "info")
+    if phase == "deleting":
+        try:
+            to_delete = max(0, int(progress.get("to_delete") or 0))
+        except (TypeError, ValueError):
+            to_delete = 0
+        try:
+            deleted = max(0, int(progress.get("deleted") or 0))
+        except (TypeError, ValueError):
+            deleted = 0
+        if deleted <= 0:
+            return (f"{to_delete} to delete", "warning")
+        return (f"{deleted} of {to_delete}", "warning")
+    return None
+
+
 @dataclass
 class AlertSettings:
     global_delay: int = 3
@@ -164,6 +188,16 @@ class AlertStateManager:
         self._changes_pending = False
         self._resub_fallback_enabled: Optional[bool] = None
         self._startup_trim_done = False
+        self._trim_lock = threading.Lock()
+        self._trim_cancel = threading.Event()
+        self._trim_pending = False
+        self._trim_thread: Optional[threading.Thread] = None
+        self._trim_progress: Dict[str, Any] = {
+            "active": False,
+            "phase": "idle",
+            "to_delete": 0,
+            "deleted": 0,
+        }
 
     def initialize(self):
         """Initialize the alert state by loading all alerts from Firebase"""
@@ -324,12 +358,18 @@ class AlertStateManager:
 
     def _ensure_alert_storage_loaded(self, max_alerts: Optional[int] = None) -> None:
         """Load completed alerts once per session (or after invalidation)."""
-        if self._alert_storage_loaded:
-            return
-        self._alert_storage = self._fetch_alert_storage_from_database(
-            max_alerts=max_alerts
-        )
-        self._alert_storage_loaded = True
+        with self._lock:
+            if self._alert_storage_loaded:
+                return
+        fetched = self._fetch_alert_storage_from_database(max_alerts=max_alerts)
+        if not isinstance(fetched, dict):
+            fetched = {}
+        with self._lock:
+            if self._alert_storage_loaded:
+                return
+            fetched.update(self._alert_storage)
+            self._alert_storage = fetched
+            self._alert_storage_loaded = True
 
     def _fetch_alert_storage_from_database(
         self, max_alerts: Optional[int] = None
@@ -1130,7 +1170,7 @@ class AlertStateManager:
                 )
 
             try:
-                self.maybe_auto_trim_stored_alerts()
+                self.schedule_auto_trim_stored_alerts()
             except Exception as trim_err:
                 logger.debug(
                     "Auto-trim after storing alert %s failed: %s", alert_id, trim_err
@@ -1146,7 +1186,7 @@ class AlertStateManager:
     def _read_alert_storage_trim_settings(self) -> Dict[str, Any]:
         """Load stored-alert retention settings from AppSettings."""
         defaults = {
-            "enabled": False,
+            "enabled": True,
             "mode": "both",
             "keep_count": 500,
             "keep_days": 30,
@@ -1163,7 +1203,7 @@ class AlertStateManager:
             keep_count = int(getattr(settings, "alert_storage_keep_count", 500) or 500)
             keep_days = int(getattr(settings, "alert_storage_keep_days", 30) or 30)
             return {
-                "enabled": bool(getattr(settings, "alert_storage_auto_trim", False)),
+                "enabled": bool(getattr(settings, "alert_storage_auto_trim", True)),
                 "mode": mode,
                 "keep_count": max(1, keep_count),
                 "keep_days": max(1, keep_days),
@@ -1177,11 +1217,91 @@ class AlertStateManager:
             return
         self._startup_trim_done = True
         try:
-            deleted = self.maybe_auto_trim_stored_alerts()
-            if deleted:
-                logger.info("Auto-trimmed %d stored alert(s) on startup", deleted)
+            self.schedule_auto_trim_stored_alerts()
         except Exception as e:
             logger.debug("Startup stored-alert trim failed: %s", e)
+
+    def _set_trim_progress(self, **fields: Any) -> None:
+        with self._trim_lock:
+            self._trim_progress.update(fields)
+
+    def _reset_trim_progress(self) -> None:
+        with self._trim_lock:
+            self._trim_progress = {
+                "active": False,
+                "phase": "idle",
+                "to_delete": 0,
+                "deleted": 0,
+            }
+
+    def get_trim_progress(self) -> Dict[str, Any]:
+        """Copy of the current background-trim progress (safe for other threads)."""
+        with self._trim_lock:
+            return dict(self._trim_progress)
+
+    def cancel_alert_storage_trim(self) -> None:
+        """Ask the trim worker to stop; hide progress immediately."""
+        self._trim_cancel.set()
+        with self._trim_lock:
+            self._trim_pending = False
+        self._reset_trim_progress()
+
+    def schedule_auto_trim_stored_alerts(self) -> None:
+        """Start a background trim if auto-trim is on. Never blocks the caller."""
+        try:
+            from .shutdown import is_shutdown_in_progress
+
+            if is_shutdown_in_progress():
+                return
+        except Exception:
+            pass
+        settings = self._read_alert_storage_trim_settings()
+        if not settings["enabled"]:
+            return
+        with self._trim_lock:
+            thread = self._trim_thread
+            if thread is not None and thread.is_alive():
+                self._trim_pending = True
+                return
+            self._trim_cancel.clear()
+            self._trim_pending = False
+            thread = threading.Thread(
+                target=self._trim_worker_loop,
+                name="AlertStorageTrim",
+                daemon=True,
+            )
+            self._trim_thread = thread
+        thread.start()
+
+    def _trim_worker_loop(self) -> None:
+        try:
+            while True:
+                if self._trim_cancel.is_set():
+                    break
+                try:
+                    deleted = self.maybe_auto_trim_stored_alerts()
+                    if deleted:
+                        logger.info(
+                            "Auto-trimmed %d stored alert(s) in background", deleted
+                        )
+                except Exception as e:
+                    logger.debug("Background stored-alert trim failed: %s", e)
+                with self._trim_lock:
+                    if self._trim_cancel.is_set() or not self._trim_pending:
+                        self._trim_pending = False
+                        break
+                    self._trim_pending = False
+        finally:
+            restart = False
+            with self._trim_lock:
+                pending = self._trim_pending and not self._trim_cancel.is_set()
+                self._trim_pending = False
+                if threading.current_thread() is self._trim_thread:
+                    self._trim_thread = None
+                restart = pending
+            self._reset_trim_progress()
+            if restart:
+                self.schedule_auto_trim_stored_alerts()
 
     def maybe_auto_trim_stored_alerts(self) -> int:
         """Trim stored alerts when auto-trim is enabled. Returns deleted count."""
@@ -1208,9 +1328,17 @@ class AlertStateManager:
         keep_count = max(1, int(keep_count or 1))
         keep_days = max(1, int(keep_days or 1))
 
+        self._set_trim_progress(
+            active=True, phase="calculating", to_delete=0, deleted=0
+        )
+        if self._trim_cancel.is_set():
+            self._reset_trim_progress()
+            return 0
+
+        # Load only if the in-memory cache is empty; never hold _lock across IO.
+        self._ensure_alert_storage_loaded()
+
         with self._lock:
-            self._alert_storage_loaded = False
-            self._ensure_alert_storage_loaded()
             rows = [
                 (alert_id, safe_alert_timestamp((alert_data or {}).get("timestamp")))
                 for alert_id, alert_data in self._alert_storage.items()
@@ -1227,14 +1355,27 @@ class AlertStateManager:
             for alert_id, _timestamp in rows[keep_count:]:
                 to_delete.add(alert_id)
 
-        if not to_delete:
+        if not to_delete or self._trim_cancel.is_set():
+            self._reset_trim_progress()
             return 0
 
+        self._set_trim_progress(
+            active=True,
+            phase="deleting",
+            to_delete=len(to_delete),
+            deleted=0,
+        )
+
         deleted = 0
+        deleted_ids = []
         for alert_id in to_delete:
+            if self._trim_cancel.is_set():
+                break
             try:
                 database_manager.delete_data(f"Alerts/AlertStorage/{alert_id}")
                 deleted += 1
+                deleted_ids.append(alert_id)
+                self._set_trim_progress(deleted=deleted)
             except Exception as e:
                 logger.error(
                     "Error deleting stored alert %s during trim: %s",
@@ -1244,16 +1385,18 @@ class AlertStateManager:
                 )
 
         with self._lock:
-            for alert_id in to_delete:
+            for alert_id in deleted_ids:
                 self._alert_storage.pop(alert_id, None)
 
-        logger.info(
-            "Trimmed %d stored alert(s) (mode=%s keep_count=%s keep_days=%s)",
-            deleted,
-            mode,
-            keep_count,
-            keep_days,
-        )
+        if deleted and not self._trim_cancel.is_set():
+            logger.info(
+                "Trimmed %d stored alert(s) (mode=%s keep_count=%s keep_days=%s)",
+                deleted,
+                mode,
+                keep_count,
+                keep_days,
+            )
+        self._reset_trim_progress()
         return deleted
 
     def _normalize_alert_data_for_storage(self, alert_data: dict) -> dict:
@@ -1906,6 +2049,18 @@ class AlertStateManager:
 
 # Global instance of the alert state manager
 alert_state_manager = AlertStateManager()
+
+
+def get_alert_storage_trim_progress() -> Dict[str, Any]:
+    return alert_state_manager.get_trim_progress()
+
+
+def schedule_auto_trim_stored_alerts() -> None:
+    alert_state_manager.schedule_auto_trim_stored_alerts()
+
+
+def cancel_alert_storage_trim() -> None:
+    alert_state_manager.cancel_alert_storage_trim()
 
 
 # Alert helper functions/classes

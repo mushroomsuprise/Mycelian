@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 import sys
 import unittest
@@ -18,11 +19,11 @@ from modules.uiwindows import activity_feed as feed
 
 
 class AppSettingsTrimDefaultsTests(unittest.TestCase):
-    def test_auto_trim_defaults_off(self) -> None:
+    def test_auto_trim_defaults_on(self) -> None:
         from modules.dataobjects import AppSettings
 
         settings = AppSettings()
-        self.assertFalse(settings.alert_storage_auto_trim)
+        self.assertTrue(settings.alert_storage_auto_trim)
         self.assertEqual(settings.alert_storage_trim_mode, "both")
         self.assertEqual(settings.alert_storage_keep_count, 500)
         self.assertEqual(settings.alert_storage_keep_days, 30)
@@ -94,6 +95,22 @@ class AlertStorageTrimTests(unittest.TestCase):
         }
         self.manager._alert_storage_loaded = True
 
+    def tearDown(self) -> None:
+        self.manager.cancel_alert_storage_trim()
+        worker = self.manager._trim_thread
+        if worker is not None and worker.is_alive():
+            worker.join(timeout=2.0)
+
+    def _enabled_settings(self, **overrides):
+        settings = {
+            "enabled": True,
+            "mode": "quantity",
+            "keep_count": 2,
+            "keep_days": 30,
+        }
+        settings.update(overrides)
+        return settings
+
     def test_trim_by_quantity_keeps_newest(self) -> None:
         deleted_paths = []
 
@@ -157,6 +174,148 @@ class AlertStorageTrimTests(unittest.TestCase):
         self.assertEqual(deleted, 2)
         self.assertEqual(deleted_ids, {"mid", "old"})
         self.assertEqual(list(self.manager._alert_storage.keys()), ["new"])
+
+    def test_trim_progress_phases(self) -> None:
+        snapshots = []
+        original = self.manager._set_trim_progress
+
+        def spy(**fields):
+            original(**fields)
+            snapshots.append(self.manager.get_trim_progress())
+
+        self.manager._set_trim_progress = spy  # type: ignore[method-assign]
+
+        with (
+            patch.object(
+                self.manager, "_ensure_alert_storage_loaded", return_value=None
+            ),
+            patch("modules.alertutils.database_manager.delete_data", return_value=True),
+        ):
+            deleted = self.manager.trim_stored_alerts(
+                mode="quantity", keep_count=2, keep_days=30
+            )
+
+        self.assertEqual(deleted, 1)
+        phases = [item["phase"] for item in snapshots]
+        self.assertIn("calculating", phases)
+        self.assertIn("deleting", phases)
+        deleting = [item for item in snapshots if item["phase"] == "deleting"]
+        self.assertTrue(deleting)
+        self.assertEqual(deleting[0]["to_delete"], 1)
+        self.assertEqual(deleting[0]["deleted"], 0)
+        self.assertEqual(deleting[-1]["deleted"], 1)
+        self.assertFalse(self.manager.get_trim_progress()["active"])
+
+    def test_cancel_stops_further_deletes(self) -> None:
+        calls = []
+
+        def _delete(path: str) -> bool:
+            calls.append(path)
+            self.manager.cancel_alert_storage_trim()
+            return True
+
+        with (
+            patch.object(
+                self.manager, "_ensure_alert_storage_loaded", return_value=None
+            ),
+            patch("modules.alertutils.database_manager.delete_data", side_effect=_delete),
+        ):
+            deleted = self.manager.trim_stored_alerts(
+                mode="quantity", keep_count=1, keep_days=30
+            )
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(deleted, 1)
+        self.assertEqual(len(self.manager._alert_storage), 2)
+
+    def test_schedule_returns_immediately_and_coalesces(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+        worker = None
+
+        def _delete(path: str) -> bool:
+            started.set()
+            self.assertTrue(release.wait(timeout=2.0))
+            return True
+
+        with (
+            patch.object(
+                self.manager,
+                "_read_alert_storage_trim_settings",
+                return_value=self._enabled_settings(),
+            ),
+            patch.object(
+                self.manager, "_ensure_alert_storage_loaded", return_value=None
+            ),
+            patch(
+                "modules.alertutils.database_manager.delete_data",
+                side_effect=_delete,
+            ),
+        ):
+            try:
+                t0 = time.monotonic()
+                self.manager.schedule_auto_trim_stored_alerts()
+                self.assertLess(time.monotonic() - t0, 0.5)
+                self.assertTrue(started.wait(timeout=2.0))
+                worker = self.manager._trim_thread
+                self.assertIsNotNone(worker)
+                self.assertTrue(worker.is_alive())
+                self.manager.schedule_auto_trim_stored_alerts()
+                self.assertTrue(self.manager._trim_pending)
+                self.assertIs(self.manager._trim_thread, worker)
+            finally:
+                release.set()
+                if worker is not None:
+                    worker.join(timeout=2.0)
+
+    def test_schedule_skips_when_disabled(self) -> None:
+        with patch.object(
+            self.manager,
+            "_read_alert_storage_trim_settings",
+            return_value=self._enabled_settings(enabled=False),
+        ):
+            self.manager.schedule_auto_trim_stored_alerts()
+        self.assertIsNone(self.manager._trim_thread)
+
+
+class TrimProgressBadgeTests(unittest.TestCase):
+    def test_idle_hides_badge(self) -> None:
+        self.assertIsNone(alertutils.format_trim_progress_badge(None))
+        self.assertIsNone(
+            alertutils.format_trim_progress_badge(
+                {"active": False, "phase": "calculating"}
+            )
+        )
+
+    def test_calculating_and_delete_counts(self) -> None:
+        self.assertEqual(
+            alertutils.format_trim_progress_badge(
+                {"active": True, "phase": "calculating"}
+            ),
+            ("Calculating", "info"),
+        )
+        self.assertEqual(
+            alertutils.format_trim_progress_badge(
+                {
+                    "active": True,
+                    "phase": "deleting",
+                    "to_delete": 142,
+                    "deleted": 0,
+                }
+            ),
+            ("142 to delete", "warning"),
+        )
+        self.assertEqual(
+            alertutils.format_trim_progress_badge(
+                {
+                    "active": True,
+                    "phase": "deleting",
+                    "to_delete": 142,
+                    "deleted": 37,
+                }
+            ),
+            ("37 of 142", "warning"),
+        )
 
 
 class FeedCardSkipTests(unittest.TestCase):

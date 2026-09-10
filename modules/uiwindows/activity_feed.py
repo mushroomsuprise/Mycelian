@@ -25,6 +25,7 @@ SOFTWARE.
 
 import asyncio
 import html
+import json
 import logging
 import math
 import threading
@@ -49,6 +50,8 @@ _integrity_check_scheduled = False
 _condensed_update_scheduled = False
 _condensed_rebuild_running = False
 _condensed_rebuild_rerun = False
+_condensed_last_markup = ""
+_last_condense_abandon_at = 0.0
 _condensed_integrity_failures = 0
 _ignore_condense_toggle_event = False
 _dom_desync_failures = 0
@@ -79,11 +82,14 @@ _FEED_DOM_PROBE_JS = """
                document.querySelector('.condense-toggle');
   var exists = !!(cur || con || prev);
   var targets = [cur, con, prev].filter(visible);
-  if (!exists) {
-    return {ok: false, reason: 'elements_missing', children: 0};
+  if (!chrome && !exists) {
+    return {ok: false, reason: 'panel_missing', children: 0};
   }
   if (!chrome) {
     return {ok: false, reason: 'toolbar_missing', children: 0};
+  }
+  if (!exists) {
+    return {ok: false, reason: 'elements_missing', children: 0};
   }
   if (!targets.length) {
     return {ok: false, reason: 'offscreen', children: 0};
@@ -181,10 +187,7 @@ def _containers_alive() -> bool:
 
 
 def _condensed_view_has_content() -> bool:
-    container = activity_feed_state.condensed_container
-    if not _element_alive(container):
-        return False
-    return _slot_child_count(container) > 0
+    return bool(_condensed_last_markup.strip())
 
 
 def _element_has_hidden_class(el: Any) -> bool:
@@ -235,7 +238,11 @@ def _feed_ui_is_on_screen() -> bool:
         from ..help_system.contextual_help import get_current_tab_context
 
         main_tab, _ = get_current_tab_context()
-        if main_tab and main_tab not in ("Activity Feed", "unknown"):
+        if (
+            main_tab
+            and main_tab not in ("Activity Feed", "unknown")
+            and "activity feed" not in str(main_tab).lower()
+        ):
             return False
     except Exception:
         pass
@@ -362,14 +369,25 @@ def _fallback_to_regular_feed(reason: str, *, disable_condense: bool = False) ->
     _ensure_regular_feed_populated(f"fallback:{reason}")
 
 
-def _abandon_condensed_view(reason: str) -> None:
+def _abandon_condensed_view(reason: str, *, reload: bool = True) -> None:
     """Leave condensed mode so Current/Previous and Condense stay usable.
 
     Condensed rebuilds that blow up Vue can delete in-tab chrome while leaving
     main app tabs intact. Disable condensed, restore the regular list, and
     reload so the user is not trapped without those buttons.
     """
+    global _condensed_last_markup, _last_condense_abandon_at
+    _condensed_last_markup = ""
     _fallback_to_regular_feed(reason, disable_condense=True)
+    if not reload:
+        return
+    now = time.monotonic()
+    if now - _last_condense_abandon_at < 8.0:
+        logger.warning(
+            "activity_feed: skip reload after abandon (%s) — cooldown", reason
+        )
+        return
+    _last_condense_abandon_at = now
     _escalate_page_reload("condensed_abandoned")
 
 
@@ -557,16 +575,19 @@ def _apply_dom_probe_result(reason: str, result: Dict[str, Any]) -> str:
         _dom_desync_failures = 0
         return "ok"
 
-    # Condensed HTML/Vue blow-ups can delete the in-tab chrome (condense
-    # toggle, Current/Previous) while leaving main app tabs intact.
-    if probe_reason == "toolbar_missing":
+    # Condensed rebuilds can delete in-tab chrome (and the feed containers)
+    # while leaving main app tabs intact. Python still holds live element
+    # refs, so "elements_missing" here is a wipe — not an off-screen tab.
+    if probe_reason in ("toolbar_missing", "panel_missing") or (
+        probe_reason == "elements_missing" and _feed_ui_is_on_screen()
+    ):
         _dom_desync_failures = 0
         logger.warning(
-            "activity_feed: feed chrome missing from DOM (%s) — leaving condensed mode",
+            "activity_feed: feed panel missing from DOM (%s, %s) — leaving condensed mode",
+            probe_reason,
             reason,
         )
-        _fallback_to_regular_feed("dom_toolbar_missing", disable_condense=True)
-        _escalate_page_reload("feed_toolbar_missing")
+        _abandon_condensed_view(f"dom_{probe_reason}")
         return "reload"
 
     # Hidden tab / tray / parent display:none is not a content desync.
@@ -647,6 +668,13 @@ async def _probe_feed_dom_async(reason: str) -> None:
     global _dom_desync_failures
 
     if not _feed_expects_visible_content() or not _feed_ui_is_on_screen():
+        if activity_feed_state.condense_list:
+            logger.warning(
+                "activity_feed: condensed probe skipped expects=%s on_screen=%s (%s)",
+                _feed_expects_visible_content(),
+                _feed_ui_is_on_screen(),
+                reason,
+            )
         _dom_desync_failures = 0
         return
     if _condensed_rebuild_running or _condensed_update_scheduled:
@@ -672,6 +700,12 @@ async def _probe_feed_dom_async(reason: str) -> None:
         logger.debug("activity_feed: dom probe failed (%s): %s", reason, exc)
         return
 
+    if not (isinstance(result, dict) and result.get("ok") and int(result.get("children") or 0) > 0):
+        logger.warning(
+            "activity_feed: dom probe (%s) result=%s",
+            reason,
+            result,
+        )
     _apply_dom_probe_result(reason, result)
 
 
@@ -1286,6 +1320,7 @@ class ActivityFeedState:
         self.condense_list: bool = False
         self.condense_toggle: Optional[ui.element] = None
         self.condensed_container: Optional[ui.element] = None
+        self.condensed_body: Optional[ui.element] = None
         self.alerts_muted: bool = False
         self.pause_btn: Optional[Any] = None
         self.mute_btn: Optional[Any] = None
@@ -2740,6 +2775,45 @@ def create_activity_feed_tab():
             color: rgba(115, 0, 255, 0.8);
             margin-right: 8px;
         }
+        /* Hide/show condensed without NiceGUI class patches on the card list.
+           Use descendants (not direct-child) — NiceGUI may wrap these nodes. */
+        .activity-feed-surfaces.condensed-mode .activity-feed-current {
+            display: none !important;
+        }
+        .activity-feed-surfaces:not(.condensed-mode) .activity-feed-condensed {
+            display: none !important;
+        }
+        .activity-feed-surfaces.condensed-mode {
+            min-height: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .activity-feed-surfaces.condensed-mode .activity-feed-condensed {
+            display: block !important;
+            flex: 1 1 auto;
+            min-height: 0;
+            max-height: 100%;
+            overflow-y: auto !important;
+        }
+        /* Body-level portal: Vue/Quasar tab panels do not paint in-tab condensed
+           HTML until a tab switch. This overlay lives outside the Vue tree. */
+        #mycelian-condensed-portal {
+            position: fixed;
+            z-index: 20;
+            overflow-y: auto;
+            box-sizing: border-box;
+            background: var(--color-bg-base, #121212);
+        }
+        html:not(.mycelian-af-condensed) #mycelian-condensed-portal {
+            display: none !important;
+        }
+        html.mycelian-af-condensed .activity-feed-current {
+            display: none !important;
+        }
+        html.mycelian-af-condensed .activity-feed-condensed {
+            visibility: hidden !important;
+        }
         /* Ensure action buttons container is positioned correctly */
         .action-buttons {
             position: absolute;
@@ -3020,7 +3094,7 @@ def create_activity_feed_tab():
             previous_tab_btn.props(_DOCK_BTN_PROPS)
 
         # Create a scrollable container for alert cards
-        with ui.element("div").classes("scroll-content grow"):
+        with ui.element("div").classes("scroll-content grow min-h-0"):
             # Add pagination controls container above the feed (only visible for previous alerts tab)
             activity_feed_state.pagination_container = ui.element("div").classes(
                 "w-full mb-2"
@@ -3029,22 +3103,21 @@ def create_activity_feed_tab():
             # Add tab container to store content based on active tab
             activity_feed_state.tab_container = ui.element("div").classes("w-full")
 
-            # Create separate containers for each tab
-            activity_feed_state.current_alerts_container = ui.element("div").classes(
-                "w-full activity-feed-current"
-            )
-            activity_feed_state.previous_alerts_container = ui.element("div").classes(
-                "w-full hidden activity-feed-previous"
-            )
-
-            # Create condensed view container (hidden by default). Enter the
-            # element so it owns an isolated slot — later rebuilds must not
-            # delete siblings of the scroll area (toolbar/tab buttons).
-            with ui.element("div").classes(
-                "w-full hidden condensed-view activity-feed-condensed overflow-y-auto"
-            ) as condensed_container:
-                pass
-            activity_feed_state.condensed_container = condensed_container
+            # Surfaces wrapper: condensed mode is a CSS class applied via
+            # JavaScript so Vue never remounts this tab's chrome.
+            with ui.element("div").classes("activity-feed-surfaces w-full min-h-0"):
+                activity_feed_state.current_alerts_container = ui.element("div").classes(
+                    "w-full activity-feed-current"
+                )
+                activity_feed_state.previous_alerts_container = ui.element("div").classes(
+                    "w-full hidden activity-feed-previous"
+                )
+                with ui.element("div").classes(
+                    "w-full condensed-view activity-feed-condensed overflow-y-auto"
+                ) as condensed_container:
+                    ui.element("div").classes("activity-feed-condensed-root w-full")
+                activity_feed_state.condensed_container = condensed_container
+                activity_feed_state.condensed_body = None
 
             # Set the main container reference (for backward compatibility)
             activity_feed_state.activity_feed_container = (
@@ -4283,102 +4356,324 @@ def _condensed_toolbar_alive() -> bool:
     )
 
 
-def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
-    """Render the condensed view from pre-fetched data (UI loop only).
+_CONDENSED_DOM_HELPERS_JS = """
+  function _afBox(el) {
+    if (!el) return {d: '', v: '', w: -1, h: -1, x: -1, y: -1};
+    var s = getComputedStyle(el);
+    var r = el.getBoundingClientRect();
+    return {
+      d: s.display,
+      v: s.visibility,
+      w: Math.round(r.width),
+      h: Math.round(r.height),
+      x: Math.round(r.left),
+      y: Math.round(r.top)
+    };
+  }
+  function _afEnsurePortal() {
+    var portal = document.getElementById('mycelian-condensed-portal');
+    if (portal) return portal;
+    portal = document.createElement('div');
+    portal.id = 'mycelian-condensed-portal';
+    portal.className = 'condensed-view';
+    document.body.appendChild(portal);
+    return portal;
+  }
+  function _afFeedVisible() {
+    var chrome = document.querySelector('.activity-feed-controls') ||
+                 document.querySelector('.activity-feed-tab-row');
+    if (!chrome) return false;
+    var r = chrome.getBoundingClientRect();
+    return r.height > 8 && r.width > 8;
+  }
+  function _afSyncPortal() {
+    var portal = document.getElementById('mycelian-condensed-portal');
+    if (!portal) return;
+    var on = document.documentElement.classList.contains('mycelian-af-condensed');
+    if (!on || !_afFeedVisible()) {
+      portal.style.display = 'none';
+      return;
+    }
+    portal.style.display = 'block';
+    var scroll = document.querySelector('.scroll-content');
+    if (!scroll) return;
+    var r = scroll.getBoundingClientRect();
+    portal.style.top = r.top + 'px';
+    portal.style.left = r.left + 'px';
+    portal.style.width = Math.max(0, r.width) + 'px';
+    portal.style.height = Math.max(0, r.height) + 'px';
+  }
+  function _afInstallPortalSync() {
+    if (window.__mycelianAfCondensedTimer) return;
+    window.__mycelianAfCondensedTimer = setInterval(_afSyncPortal, 250);
+    window.addEventListener('resize', _afSyncPortal);
+  }
+  function snap() {
+    var chrome = document.querySelector('.activity-feed-controls') ||
+                 document.querySelector('.activity-feed-tab-row') ||
+                 document.querySelector('.condense-toggle');
+    var root = document.querySelector('.activity-feed-condensed-root');
+    var condensed = document.querySelector('.activity-feed-condensed');
+    var current = document.querySelector('.activity-feed-current');
+    var surfaces = document.querySelector('.activity-feed-surfaces') ||
+                   (root ? root.closest('.activity-feed-surfaces') : null);
+    var scroll = document.querySelector('.scroll-content');
+    var tabSurface = document.querySelector('.tab-surface');
+    var portal = document.getElementById('mycelian-condensed-portal');
+    var cb = _afBox(chrome);
+    var tb = _afBox(tabSurface);
+    var sb = _afBox(scroll);
+    var cub = _afBox(current);
+    var cdb = _afBox(condensed);
+    var rb = _afBox(root);
+    var pb = _afBox(portal);
+    var text = '';
+    if (portal && portal.innerText) {
+      text = String(portal.innerText).replace(/\\s+/g, ' ').slice(0, 80);
+    } else if (root && root.innerText) {
+      text = String(root.innerText).replace(/\\s+/g, ' ').slice(0, 80);
+    }
+    return {
+      chrome: chrome ? 1 : 0,
+      mode: document.documentElement.classList.contains('mycelian-af-condensed') ? 1 : 0,
+      rootChildren: portal ? portal.children.length : (root ? root.children.length : 0),
+      rootText: text,
+      chromeDisp: cb.d, chromeW: cb.w, chromeH: cb.h,
+      tabW: tb.w, tabH: tb.h,
+      scrollW: sb.w, scrollH: sb.h, scrollY: sb.y,
+      currentDisp: cub.d, currentW: cub.w, currentH: cub.h,
+      condensedDisp: cdb.d, condensedW: cdb.w, condensedH: cdb.h,
+      rootDisp: rb.d, rootW: rb.w, rootH: rb.h,
+      portalDisp: pb.d, portalW: pb.w, portalH: pb.h, portalY: pb.y,
+      feedVisible: _afFeedVisible() ? 1 : 0
+    };
+  }
+"""
 
-    Builds into a staging child first, then removes previous siblings so the
-    visible condensed surface never flashes empty mid-rebuild. Uses NiceGUI
-    labels instead of a single innerHTML blob so a large/poison payload cannot
-    wipe the Activity Feed toolbar.
-    """
-    container = activity_feed_state.condensed_container
-    if not _element_alive(container):
-        return False
 
-    groups = build_data.get("groups")
-    if groups is None:
-        groups = serialize_condensed_groups(build_data.get("user_alerts") or {})
-    alert_count = int(build_data.get("alert_count") or 0)
-    hours = build_data.get("condense_historical_hours", 12)
-    historical_count = int(build_data.get("historical_count") or 0)
-    live_in_window = int(build_data.get("live_in_window") or 0)
-    visible_groups = list(groups or [])[:MAX_CONDENSED_GROUPS]
+_CONDENSED_DOM_SNAP_JS = (
+    "(function () {\n" + _CONDENSED_DOM_HELPERS_JS + "\n  return snap();\n})()"
+)
 
-    previous_children = _slot_child_count(container)
-    logger.warning(
-        "activity_feed: condensed render start (prev_children=%d users=%d alerts=%d)",
-        previous_children,
-        len(groups or []),
-        alert_count,
+
+def _summarize_condensed_snap(snap: Any) -> str:
+    """One-line snapshot for logs."""
+    if not isinstance(snap, dict):
+        return f"non-dict:{type(snap).__name__}={repr(snap)[:200]}"
+
+    if "condensedDisp" in snap or "chromeDisp" in snap:
+        return (
+            f"chrome={snap.get('chrome')} mode={snap.get('mode')} "
+            f"rootChildren={snap.get('rootChildren')} rootText={snap.get('rootText')!r} "
+            f"chrome[{snap.get('chromeDisp')} {snap.get('chromeW')}x{snap.get('chromeH')}] "
+            f"tab[{snap.get('tabW')}x{snap.get('tabH')}] "
+            f"scroll[{snap.get('scrollW')}x{snap.get('scrollH')}] "
+            f"current[{snap.get('currentDisp')} {snap.get('currentW')}x{snap.get('currentH')}] "
+            f"condensed[{snap.get('condensedDisp')} {snap.get('condensedW')}x{snap.get('condensedH')}] "
+            f"root[{snap.get('rootDisp')} {snap.get('rootW')}x{snap.get('rootH')}] "
+            f"portal[{snap.get('portalDisp')} {snap.get('portalW')}x{snap.get('portalH')} y={snap.get('portalY')} feedVis={snap.get('feedVisible')}]"
+        )
+
+    def box(key: str) -> str:
+        info = snap.get(key)
+        if not isinstance(info, dict):
+            return f"{key}=none"
+        return (
+            f"{key}[disp={info.get('display')} vis={info.get('visibility')} "
+            f"op={info.get('opacity')} {info.get('w')}x{info.get('h')} "
+            f"@{info.get('x')},{info.get('y')} cls={info.get('cls')!r}]"
+        )
+
+    return " ".join(
+        [
+            f"chrome={snap.get('chrome')}",
+            f"mode={snap.get('condensedMode')}",
+            f"rootChildren={snap.get('rootChildren')}",
+            f"rootText={snap.get('rootText')!r}",
+            box("chromeInfo"),
+            box("tabSurface"),
+            box("panel"),
+            box("scroll"),
+            box("surfaces"),
+            box("current"),
+            box("condensed"),
+            box("root"),
+        ]
     )
 
-    staging = None
+
+def _build_condensed_dom_js(*, show: bool, markup: Optional[str]) -> str:
+    """JS that writes condensed HTML and toggles CSS — no Vue component updates."""
+    html_json = json.dumps(markup if show and markup is not None else None)
+    show_json = json.dumps(bool(show))
+    return f"""
+(function () {{
+{_CONDENSED_DOM_HELPERS_JS}
+  var html = {html_json};
+  var show = {show_json};
+  var htmlEl = document.documentElement;
+  _afInstallPortalSync();
+  if (show) {{
+    var portal = _afEnsurePortal();
+    if (html !== null) {{
+      portal.innerHTML = html;
+    }}
+    htmlEl.classList.add('mycelian-af-condensed');
+  }} else {{
+    htmlEl.classList.remove('mycelian-af-condensed');
+  }}
+  _afSyncPortal();
+  return snap();
+}})()
+"""
+
+
+async def _apply_condensed_dom_async(
+    *, show: bool, markup: Optional[str] = None
+) -> Dict[str, Any]:
+    """Apply condensed content/visibility through the browser DOM only."""
+    global _condensed_last_markup
+
+    client = _get_feed_client() or _get_connected_client()
+    if client is None:
+        if show:
+            logger.warning("activity_feed: condensed DOM apply skipped (no client)")
+        else:
+            logger.debug("activity_feed: condensed hide skipped (no client)")
+        return {"ok": False, "reason": "no_client", "chrome": False, "children": 0}
+
+    js = _build_condensed_dom_js(show=show, markup=markup)
     try:
-        with container:
-            staging = ui.element("div").classes("condensed-staging w-full")
+        result = await client.run_javascript(js, timeout=5.0)
+    except Exception as exc:
+        logger.warning("activity_feed: condensed DOM apply failed: %s", exc)
+        return {"ok": False, "reason": "js_failed", "chrome": False, "children": 0}
 
-        with staging:
-            if not visible_groups:
-                ui.label(
-                    f"No alerts to condense in the last {hours} hours"
-                ).classes("no-alerts text-sm muted-text italic")
-            else:
-                if historical_count > 0 or live_in_window > 0:
-                    ui.label(
-                        f"Showing {alert_count} alerts from past {hours} hours"
-                    ).classes("text-xs muted-text mb-2 italic")
-                if len(groups or []) > MAX_CONDENSED_GROUPS:
-                    ui.label(
-                        f"Showing first {MAX_CONDENSED_GROUPS} of {len(groups)} users"
-                    ).classes("text-xs muted-text mb-2 italic")
-                for group in visible_groups:
-                    username = str(group.get("username") or "")
-                    with ui.element("div").classes("user-group mb-4"):
-                        ui.label(f"{username}:").classes("username font-semibold mb-1")
-                        with ui.element("div").classes("ml-4"):
-                            for line in group.get("lines") or []:
-                                ui.label(str(line)).classes(
-                                    "alert-item secondary-text text-sm mb-1"
-                                )
-
-        _delete_replaced_condensed_children(container, staging)
-
-        if not _condensed_toolbar_alive():
-            logger.error(
-                "activity_feed: condensed render removed in-tab chrome; aborting condensed mode"
-            )
-            return False
-
-        child_count = _slot_child_count(container)
+    # NiceGUI/pywebview often returns None when JS returns undefined
+    # (e.g. `return` + newline). The script still ran.
+    if result is None:
         logger.warning(
-            "activity_feed: condensed render end (children=%d)",
-            child_count,
+            "activity_feed: condensed DOM apply js returned None (treat as ran) show=%s",
+            show,
         )
-        return child_count > 0
+        if show and markup is not None:
+            _condensed_last_markup = markup
+        return {
+            "ok": True,
+            "reason": "js_no_return",
+            "chrome": True,
+            "children": -1,
+        }
+
+    if not isinstance(result, dict):
+        logger.warning(
+            "activity_feed: condensed DOM apply unexpected result: %s",
+            repr(result)[:300],
+        )
+        if show and markup is not None:
+            _condensed_last_markup = markup
+        return {
+            "ok": True,
+            "reason": "js_no_return",
+            "chrome": True,
+            "children": -1,
+        }
+    chrome = bool(result.get("chrome"))
+    result["ok"] = chrome
+    result["children"] = int(result.get("rootChildren") or result.get("children") or 0)
+    result["reason"] = "ok" if chrome else "panel_missing"
+    if show and chrome and markup is not None:
+        _condensed_last_markup = markup
+    logger.warning(
+        "activity_feed: condensed DOM apply show=%s %s",
+        show,
+        _summarize_condensed_snap(result),
+    )
+    return result
+
+
+def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
+    """Schedule a Vue-free condensed DOM update (sync fallback)."""
+    try:
+        markup = _build_condensed_html(build_data)
+        background_tasks.create(
+            _apply_condensed_dom_async(show=True, markup=markup),
+            name="activity_feed_condensed_dom",
+        )
+        return True
     except Exception as exc:
         logger.error(
-            "activity_feed: condensed staging render failed: %s", exc, exc_info=True
+            "activity_feed: condensed DOM schedule failed: %s", exc, exc_info=True
         )
-        if staging is not None:
-            try:
-                staging.delete()
-            except Exception:
-                pass
         return False
 
 
 def _apply_condensed_visibility(show_condensed: bool) -> None:
-    """Show condensed view and hide regular feed, or the reverse."""
-    if show_condensed:
-        if _element_alive(activity_feed_state.current_alerts_container):
-            activity_feed_state.current_alerts_container.classes(add="hidden")
-        if _element_alive(activity_feed_state.condensed_container):
-            activity_feed_state.condensed_container.classes(remove="hidden")
-    else:
-        if _element_alive(activity_feed_state.condensed_container):
-            activity_feed_state.condensed_container.classes(add="hidden")
-        if _element_alive(activity_feed_state.current_alerts_container):
-            activity_feed_state.current_alerts_container.classes(remove="hidden")
+    """Show condensed view via CSS class, without patching the card list."""
+    try:
+        background_tasks.create(
+            _apply_condensed_dom_async(show=show_condensed, markup=None),
+            name="activity_feed_condensed_visibility",
+        )
+    except Exception as exc:
+        logger.debug("activity_feed: condensed visibility JS failed: %s", exc)
+
+
+async def _followup_condensed_dom(markup: str) -> None:
+    """Re-read layout after Vue's next ticks; log why a 'successful' apply still looks blank."""
+    for delay in (0.05, 0.3, 1.0):
+        await asyncio.sleep(delay)
+        if not activity_feed_state.condense_list:
+            logger.warning(
+                "activity_feed: condensed followup t=%.2fs skipped (condense off)",
+                delay,
+            )
+            return
+        client = _get_feed_client() or _get_connected_client()
+        if client is None:
+            logger.warning(
+                "activity_feed: condensed followup t=%.2fs skipped (no client)",
+                delay,
+            )
+            return
+        try:
+            snap = await client.run_javascript(_CONDENSED_DOM_SNAP_JS, timeout=5.0)
+        except Exception as exc:
+            logger.warning(
+                "activity_feed: condensed followup t=%.2fs failed: %s", delay, exc
+            )
+            continue
+        logger.warning(
+            "activity_feed: condensed followup t=%.2fs %s",
+            delay,
+            _summarize_condensed_snap(snap),
+        )
+        if not isinstance(snap, dict):
+            continue
+        if not snap.get("chrome"):
+            logger.warning(
+                "activity_feed: condensed followup lost in-tab chrome; abandoning"
+            )
+            _abandon_condensed_view("followup_chrome_missing")
+            return
+        children = int(snap.get("rootChildren") or 0)
+        portal_h = int(snap.get("portalH") or 0)
+        if children == 0 and markup:
+            logger.warning(
+                "activity_feed: condensed followup children=0; re-applying"
+            )
+            await _apply_condensed_dom_async(show=True, markup=markup)
+        elif (
+            snap.get("mode")
+            and snap.get("feedVisible")
+            and portal_h <= 0
+            and markup
+        ):
+            logger.warning(
+                "activity_feed: condensed followup portal height=%s; re-syncing",
+                portal_h,
+            )
+            await _apply_condensed_dom_async(show=True, markup=markup)
 
 
 def _schedule_condensed_rebuild(reason: str) -> None:
@@ -4428,7 +4723,9 @@ async def _update_condensed_view_async(reason: str) -> None:
                 return
 
             try:
-                built = _render_condensed_view_ui(build_data)
+                markup = _build_condensed_html(build_data)
+                result = await _apply_condensed_dom_async(show=True, markup=markup)
+                built = bool(result.get("ok")) and result.get("reason") != "js_failed"
             except Exception as exc:
                 logger.error(
                     "activity_feed: condensed UI render failed (%s): %s",
@@ -4441,8 +4738,11 @@ async def _update_condensed_view_async(reason: str) -> None:
             if built:
                 _condensed_integrity_failures = 0
                 _dom_desync_failures = 0
-                _apply_condensed_visibility(True)
                 schedule_feed_integrity_check(f"condensed_show:{reason}")
+                background_tasks.create(
+                    _followup_condensed_dom(markup),
+                    name="activity_feed_condensed_followup",
+                )
             else:
                 _abandon_condensed_view(f"condensed_build_failed:{reason}")
 
@@ -4528,7 +4828,6 @@ def create_condensed_view() -> bool:
         build_data = _collect_condensed_build_data()
         if not _render_condensed_view_ui(build_data):
             return False
-        _apply_condensed_visibility(True)
         return True
     except Exception as e:
         logger.error(f"Error creating condensed view: {str(e)}", exc_info=True)
@@ -4789,8 +5088,7 @@ def switch_to_tab(tab_name):
                 activity_feed_state.previous_alerts_container.classes(remove="hidden")
 
             # Hide condensed view and toggle when switching to previous tab
-            if activity_feed_state.condensed_container:
-                activity_feed_state.condensed_container.classes(add="hidden")
+            _apply_condensed_visibility(False)
             if activity_feed_state.condense_toggle:
                 activity_feed_state.condense_toggle.classes(add="hidden")
 

@@ -84,10 +84,12 @@ class DomProbeResultTests(unittest.TestCase):
         recover.assert_not_called()
         self.assertEqual(feed._dom_desync_failures, 0)
 
-    def test_elements_missing_with_python_children_skips(self) -> None:
+    def test_elements_missing_offscreen_skips(self) -> None:
         with (
             patch.object(feed, "_python_feed_has_children", return_value=True),
+            patch.object(feed, "_feed_ui_is_on_screen", return_value=False),
             patch.object(feed, "recover_activity_feed_panel") as recover,
+            patch.object(feed, "_abandon_condensed_view") as abandon,
         ):
             action = feed._apply_dom_probe_result(
                 "regular_ok:rebuild",
@@ -95,6 +97,30 @@ class DomProbeResultTests(unittest.TestCase):
             )
         self.assertEqual(action, "skip_offscreen")
         recover.assert_not_called()
+        abandon.assert_not_called()
+
+    def test_elements_missing_on_screen_abandons_condensed(self) -> None:
+        feed.activity_feed_state.condense_list = True
+        with (
+            patch.object(feed, "_python_feed_has_children", return_value=True),
+            patch.object(feed, "_feed_ui_is_on_screen", return_value=True),
+            patch.object(feed, "_abandon_condensed_view") as abandon,
+        ):
+            action = feed._apply_dom_probe_result(
+                "after_condensed_render:test",
+                {"ok": False, "reason": "elements_missing", "children": 0},
+            )
+        self.assertEqual(action, "reload")
+        abandon.assert_called_once_with("dom_elements_missing")
+
+    def test_panel_missing_abandons_condensed(self) -> None:
+        with patch.object(feed, "_abandon_condensed_view") as abandon:
+            action = feed._apply_dom_probe_result(
+                "after_condensed_render:test",
+                {"ok": False, "reason": "panel_missing", "children": 0},
+            )
+        self.assertEqual(action, "reload")
+        abandon.assert_called_once_with("dom_panel_missing")
 
     def test_empty_visible_surface_recovers(self) -> None:
         with (
@@ -120,17 +146,13 @@ class DomProbeResultTests(unittest.TestCase):
 
     def test_toolbar_missing_disables_condense_and_reloads(self) -> None:
         feed.activity_feed_state.condense_list = True
-        with (
-            patch.object(feed, "_fallback_to_regular_feed") as fallback,
-            patch.object(feed, "_escalate_page_reload") as reload,
-        ):
+        with patch.object(feed, "_abandon_condensed_view") as abandon:
             action = feed._apply_dom_probe_result(
                 "condensed_ok:rebuild",
                 {"ok": False, "reason": "toolbar_missing", "children": 0},
             )
         self.assertEqual(action, "reload")
-        fallback.assert_called_once_with("dom_toolbar_missing", disable_condense=True)
-        reload.assert_called_once_with("feed_toolbar_missing")
+        abandon.assert_called_once_with("dom_toolbar_missing")
 
     def test_abandon_condensed_disables_and_reloads(self) -> None:
         with (
@@ -264,6 +286,84 @@ class CondensedViewSafetyTests(unittest.TestCase):
         feed._delete_replaced_condensed_children(container, keep)
         self.assertFalse(other.deleted)
         self.assertFalse(keep.deleted)
+
+    def test_render_script_embeds_escaped_markup(self) -> None:
+        js = feed._build_condensed_dom_js(
+            show=True,
+            markup='<div class="username">alice:</div>',
+        )
+        self.assertIn("alice", js)
+        self.assertIn("mycelian-af-condensed", js)
+        self.assertIn("mycelian-condensed-portal", js)
+        self.assertIn("return snap();", js)
+
+    def test_summarize_snap_includes_sizes(self) -> None:
+        text = feed._summarize_condensed_snap(
+            {
+                "chrome": True,
+                "condensedMode": True,
+                "rootChildren": 15,
+                "rootText": "alice: Followed!",
+                "condensed": {
+                    "display": "none",
+                    "visibility": "visible",
+                    "opacity": "1",
+                    "w": 800,
+                    "h": 0,
+                    "x": 0,
+                    "y": 80,
+                    "cls": "activity-feed-condensed",
+                },
+            }
+        )
+        self.assertIn("rootChildren=15", text)
+        self.assertIn("disp=none", text)
+        self.assertIn("800x0", text)
+
+    def test_summarize_flat_snap(self) -> None:
+        text = feed._summarize_condensed_snap(
+            {
+                "chrome": 1,
+                "mode": 1,
+                "rootChildren": 15,
+                "rootText": "alice: Followed!",
+                "condensedDisp": "none",
+                "condensedW": 800,
+                "condensedH": 0,
+                "chromeDisp": "flex",
+                "chromeW": 800,
+                "chromeH": 40,
+            }
+        )
+        self.assertIn("rootChildren=15", text)
+        self.assertIn("none", text)
+        self.assertIn("800x0", text)
+        text = feed._summarize_condensed_snap(
+            {
+                "chrome": True,
+                "condensedMode": True,
+                "rootChildren": 15,
+                "rootText": "alice: Followed!",
+                "condensed": {
+                    "display": "none",
+                    "visibility": "visible",
+                    "opacity": "1",
+                    "w": 800,
+                    "h": 0,
+                    "x": 0,
+                    "y": 80,
+                    "cls": "activity-feed-condensed",
+                },
+            }
+        )
+        self.assertIn("rootChildren=15", text)
+        self.assertIn("disp=none", text)
+        self.assertIn("800x0", text)
+
+    def test_hide_script_does_not_embed_markup(self) -> None:
+        js = feed._build_condensed_dom_js(show=False, markup="<script>x</script>")
+        self.assertNotIn("<script>", js)
+        self.assertIn("classList.remove('mycelian-af-condensed')", js)
 
 
 if __name__ == "__main__":
