@@ -1186,7 +1186,7 @@ class AlertStateManager:
     def _read_alert_storage_trim_settings(self) -> Dict[str, Any]:
         """Load stored-alert retention settings from AppSettings."""
         defaults = {
-            "enabled": True,
+            "enabled": False,
             "mode": "both",
             "keep_count": 500,
             "keep_days": 30,
@@ -1203,7 +1203,7 @@ class AlertStateManager:
             keep_count = int(getattr(settings, "alert_storage_keep_count", 500) or 500)
             keep_days = int(getattr(settings, "alert_storage_keep_days", 30) or 30)
             return {
-                "enabled": bool(getattr(settings, "alert_storage_auto_trim", True)),
+                "enabled": bool(getattr(settings, "alert_storage_auto_trim", False)),
                 "mode": mode,
                 "keep_count": max(1, keep_count),
                 "keep_days": max(1, keep_days),

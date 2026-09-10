@@ -66,7 +66,7 @@ def _create_default_data():
                 "auto_update": True,
                 "activity_feed_limit": 25,
                 "activity_feed_max_pages": 10,
-                "alert_storage_auto_trim": True,
+                "alert_storage_auto_trim": False,
                 "alert_storage_trim_mode": "both",
                 "alert_storage_keep_count": 500,
                 "alert_storage_keep_days": 30,

@@ -19,11 +19,11 @@ from modules.uiwindows import activity_feed as feed
 
 
 class AppSettingsTrimDefaultsTests(unittest.TestCase):
-    def test_auto_trim_defaults_on(self) -> None:
+    def test_auto_trim_defaults_off(self) -> None:
         from modules.dataobjects import AppSettings
 
         settings = AppSettings()
-        self.assertTrue(settings.alert_storage_auto_trim)
+        self.assertFalse(settings.alert_storage_auto_trim)
         self.assertEqual(settings.alert_storage_trim_mode, "both")
         self.assertEqual(settings.alert_storage_keep_count, 500)
         self.assertEqual(settings.alert_storage_keep_days, 30)
