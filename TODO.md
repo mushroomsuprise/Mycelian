@@ -6,7 +6,7 @@ Twitch:
 
 Chat Template:
     [] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.
-    [x] - Fix colorized usernames when a chatter does not have a specific global color picked out. It is currently making them all white.
+    [] - Fix colorized usernames when a chatter does not have a specific global color picked out. It is currently making them all white.
 
 Alerts: 
     [x] - Make stored alerts "repoll" the alert data so they get updated alert data when being replayed
