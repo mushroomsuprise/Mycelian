@@ -25,7 +25,6 @@ SOFTWARE.
 
 import asyncio
 import html
-import json
 import logging
 import math
 import threading
@@ -50,8 +49,6 @@ _integrity_check_scheduled = False
 _condensed_update_scheduled = False
 _condensed_rebuild_running = False
 _condensed_rebuild_rerun = False
-_condensed_last_markup = ""
-_last_condense_abandon_at = 0.0
 _condensed_integrity_failures = 0
 _ignore_condense_toggle_event = False
 _dom_desync_failures = 0
@@ -60,28 +57,298 @@ _FEED_WATCHDOG_INTERVAL_SEC = 30.0
 _DOM_DESYNC_RELOAD_THRESHOLD = 3
 _DOM_DESYNC_WARN_COOLDOWN_SEC = 30.0
 _last_dom_desync_warn_at = 0.0
+_UNPAINTED_WARN_COOLDOWN_SEC = 60.0
+_last_unpainted_warn_at = 0.0
 _stale_ui_skip_logged = False
 
 # Probe reasons that mean the feed exists but is not on screen (inactive Quasar
 # tab, tray about:blank, parent display:none). These are not content desyncs.
 _OFFSCREEN_PROBE_REASONS = frozenset({"offscreen", "no_visible_surface"})
 
+# Shared hit-test used by both the commit script and the watchdog probe so the
+# two can never disagree about what "painted" means.
+_CONDENSED_HITTEST_JS = """
+  function _afDescribe(el) {
+    if (!el) return null;
+    return {
+      tag: el.tagName || '',
+      id: el.id || '',
+      cls: (typeof el.className === 'string' ? el.className : '')
+    };
+  }
+  function _afViewport() {
+    return {
+      w: window.innerWidth || document.documentElement.clientWidth || 0,
+      h: window.innerHeight || document.documentElement.clientHeight || 0
+    };
+  }
+  function _afBox(r) {
+    if (!r) return null;
+    return {
+      l: Math.round(r.left), t: Math.round(r.top),
+      w: Math.round(r.width), h: Math.round(r.height)
+    };
+  }
+  function _afHasLayoutBox(r) {
+    return !!(r && r.width >= 2 && r.height >= 2);
+  }
+  function _afIntersect(a, b) {
+    if (!a) return null;
+    var left = a.left, right = a.right, top = a.top, bottom = a.bottom;
+    if (b) {
+      left = Math.max(left, b.left);
+      right = Math.min(right, b.right);
+      top = Math.max(top, b.top);
+      bottom = Math.min(bottom, b.bottom);
+    }
+    if (right - left < 2 || bottom - top < 2) return null;
+    return {left: left, right: right, top: top, bottom: bottom};
+  }
+  // elementFromPoint returns null outside the viewport, so every candidate is
+  // clamped in. A point is only usable if it lands inside the visible window.
+  function _afPoint(x, y) {
+    var v = _afViewport();
+    if (v.w < 2 || v.h < 2) return null;
+    if (x < 0 || y < 0 || x > v.w - 1 || y > v.h - 1) return null;
+    return {x: Math.round(x), y: Math.round(y)};
+  }
+  // Several candidates, because any single box can be degenerate: a child may
+  // render no box, and a long list can start or end outside the scroll port.
+  function _afSamplePoints(root, clip) {
+    var boxes = [];
+    for (var i = 0; i < root.children.length && i < 3; i++) {
+      boxes.push(_afIntersect(root.children[i].getBoundingClientRect(), clip));
+    }
+    boxes.push(_afIntersect(root.getBoundingClientRect(), clip));
+    boxes.push(_afIntersect(clip, null));
+    var pts = [];
+    var raw = [];
+    for (var j = 0; j < boxes.length; j++) {
+      var b = boxes[j];
+      if (!b) continue;
+      var mid = _afPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+      if (mid) pts.push(mid);
+      var near = _afPoint(b.left + 8, b.top + 8);
+      if (near) pts.push(near);
+      raw.push({
+        x: Math.round((b.left + b.right) / 2),
+        y: Math.round((b.top + b.bottom) / 2)
+      });
+    }
+    // A bogus viewport size would reject every clamped point, so fall back to
+    // the raw centres: elementFromPoint just returns null off-viewport, which
+    // the caller already skips.
+    return pts.length ? pts : raw;
+  }
+  // Geometry of every ancestor, so a collapsed or display:none parent can be
+  // named from the log instead of guessed at.
+  function _afAncestry(el) {
+    var out = [];
+    var node = el;
+    for (var i = 0; node && i < 14; i++) {
+      var r = node.getBoundingClientRect();
+      var s = getComputedStyle(node);
+      out.push({
+        tag: node.tagName || '',
+        cls: (typeof node.className === 'string' ? node.className.slice(0, 70) : ''),
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+        top: Math.round(r.top),
+        left: Math.round(r.left),
+        disp: s.display,
+        vis: s.visibility,
+        pos: s.position,
+        ovf: s.overflow,
+        op: s.opacity,
+        tf: (s.transform || 'none').slice(0, 40)
+      });
+      if (node === document.documentElement) break;
+      node = node.parentElement;
+    }
+    return out;
+  }
+  function _afFeedScope() {
+    var chrome = document.querySelector('.activity-feed-controls') ||
+                 document.querySelector('.activity-feed-tab-row') ||
+                 document.querySelector('.condense-toggle');
+    if (chrome && chrome.closest) {
+      return chrome.closest('.tab-surface') ||
+             chrome.closest('.q-tab-panel') ||
+             document;
+    }
+    return document;
+  }
+  function _afReseatFeed(el) {
+    var n = 0;
+    var shell = el.closest ? el.closest('.mycelian-main-tab-shell') : null;
+    var content = el.closest ? el.closest('.main-content') : null;
+    if (shell) {
+      try {
+        shell.style.setProperty('flex-direction', 'column', 'important');
+        shell.style.setProperty('flex-wrap', 'nowrap', 'important');
+        shell.style.setProperty('display', 'flex', 'important');
+        n += 1;
+      } catch (err) {}
+    }
+    if (content) {
+      try {
+        content.style.setProperty('margin-left', '0', 'important');
+        content.style.setProperty('left', 'auto', 'important');
+        content.style.setProperty('width', '100%', 'important');
+        content.style.setProperty('max-width', '100%', 'important');
+        content.style.setProperty('min-width', '0', 'important');
+        content.style.setProperty('flex', '1 1 auto', 'important');
+        content.style.setProperty('transform', 'none', 'important');
+        n += 1;
+      } catch (err) {}
+    }
+    if (shell && content) {
+      var sr = shell.getBoundingClientRect();
+      var cr = content.getBoundingClientRect();
+      // Still parked beside the tab strip (shell.left + shell.width).
+      if (cr.left > sr.left + 80) {
+        try {
+          content.style.setProperty(
+            'transform',
+            'translateX(' + Math.round(sr.left - cr.left) + 'px)',
+            'important'
+          );
+          n += 1;
+        } catch (err) {}
+      }
+    }
+    return n;
+  }
+  function _afUnswipe(el) {
+    var n = 0;
+    var node = el;
+    for (var i = 0; node && i < 16; i++) {
+      var cls = typeof node.className === 'string' ? node.className : '';
+      if (/\bq-panel\b/.test(cls) || /\bq-tab-panel\b/.test(cls)) {
+        try {
+          node.style.setProperty('transform', 'none', 'important');
+          node.style.setProperty('-webkit-transform', 'none', 'important');
+          node.style.setProperty('translate', 'none', 'important');
+          node.style.setProperty('left', '0px', 'important');
+          node.style.setProperty('animation', 'none', 'important');
+          node.style.setProperty('transition', 'none', 'important');
+          node.style.setProperty('z-index', '4', 'important');
+          n += 1;
+        } catch (err) {}
+      }
+      if (node === document.documentElement) break;
+      node = node.parentElement;
+    }
+    return n;
+  }
+  function _afHitTest(root) {
+    // Quasar tab panels swipe with translateX. A leftover swipe parks this
+    // panel one viewport to the right, which reads as a blank Activity Feed.
+    var unswiped = _afUnswipe(root);
+    var reseated = _afReseatFeed(root);
+    var con = root.closest ? root.closest('.activity-feed-condensed') : null;
+    var clip = con ? con.getBoundingClientRect() : null;
+    var v = _afViewport();
+    var metrics = {
+      vw: v.w,
+      vh: v.h,
+      unswiped: unswiped,
+      reseated: reseated,
+      root: _afBox(root.getBoundingClientRect()),
+      clip: _afBox(clip),
+      child0: root.children.length
+        ? _afBox(root.children[0].getBoundingClientRect())
+        : null,
+      kids: root.children.length
+    };
+    var pts = _afSamplePoints(root, clip);
+    metrics.points = pts.length;
+    var lastHit = null;
+    for (var i = 0; i < pts.length; i++) {
+      var hit = document.elementFromPoint(pts[i].x, pts[i].y);
+      if (!hit) continue;
+      lastHit = {point: pts[i], hit: hit};
+      // An ancestor of the root means nothing is covering the point; only
+      // document/body mean the surface itself never painted.
+      if (
+        root.contains(hit) ||
+        hit === root ||
+        (hit !== document.body &&
+         hit !== document.documentElement &&
+         hit.contains(root))
+      ) {
+        return {
+          verdict: 'ok',
+          reason: 'ok',
+          point: pts[i],
+          hit: _afDescribe(hit),
+          metrics: metrics
+        };
+      }
+    }
+    if (lastHit) {
+      return {
+        verdict: 'occluded',
+        reason: 'occluded',
+        point: lastHit.point,
+        hit: _afDescribe(lastHit.hit),
+        metrics: metrics,
+        chain: _afAncestry(root)
+      };
+    }
+    // After unswipe: a real layout box that intersects the viewport is
+    // painted. A box parked past innerWidth (leftover swipe) is not.
+    var view = {left: 0, top: 0, right: v.w, bottom: v.h};
+    var box = clip || root.getBoundingClientRect();
+    var vis = (v.w >= 2 && v.h >= 2)
+      ? _afIntersect(box, view)
+      : _afIntersect(box, null);
+    if (root.children.length > 0 && vis) {
+      metrics.via = 'geometry';
+      return {
+        verdict: 'ok',
+        reason: 'geometry',
+        point: null,
+        hit: null,
+        metrics: metrics
+      };
+    }
+    return {
+      verdict: 'offscreen',
+      reason: 'offscreen',
+      point: null,
+      hit: null,
+      metrics: metrics,
+      chain: _afAncestry(root)
+    };
+  }
+"""
+
 _FEED_DOM_PROBE_JS = """
 (function () {
+""" + _CONDENSED_HITTEST_JS + """
   function visible(el) {
     if (!el) return false;
     if (el.classList && el.classList.contains('hidden')) return false;
     var s = getComputedStyle(el);
     return s.display !== 'none' && s.visibility !== 'hidden';
   }
-  var cur = document.querySelector('.activity-feed-current');
-  var con = document.querySelector('.activity-feed-condensed');
-  var prev = document.querySelector('.activity-feed-previous');
+  var scope = _afFeedScope();
+  var surfaces = scope.querySelector('.activity-feed-surfaces') ||
+                 document.querySelector('.activity-feed-surfaces');
+  var condensedMode = !!(surfaces && surfaces.getAttribute('data-view') === 'condensed');
+  var cur = scope.querySelector('.activity-feed-current') ||
+            document.querySelector('.activity-feed-current');
+  var con = scope.querySelector('.activity-feed-condensed') ||
+            document.querySelector('.activity-feed-condensed');
+  var prev = scope.querySelector('.activity-feed-previous') ||
+             document.querySelector('.activity-feed-previous');
+  var root = scope.querySelector('.activity-feed-condensed-root') ||
+             document.querySelector('.activity-feed-condensed-root');
   var chrome = document.querySelector('.activity-feed-controls') ||
                document.querySelector('.activity-feed-tab-row') ||
                document.querySelector('.condense-toggle');
   var exists = !!(cur || con || prev);
-  var targets = [cur, con, prev].filter(visible);
   if (!chrome && !exists) {
     return {ok: false, reason: 'panel_missing', children: 0};
   }
@@ -91,14 +358,114 @@ _FEED_DOM_PROBE_JS = """
   if (!exists) {
     return {ok: false, reason: 'elements_missing', children: 0};
   }
+  if (condensedMode) {
+    if (!root || !visible(con)) {
+      return {ok: false, reason: 'offscreen', children: 0};
+    }
+    var condensedChildren = root.children.length;
+    if (condensedChildren <= 0) {
+      return {ok: false, reason: 'empty', children: 0};
+    }
+    var test = _afHitTest(root);
+    if (test.verdict !== 'ok') {
+      return {
+        ok: false,
+        reason: test.reason || test.verdict,
+        condensed: true,
+        children: condensedChildren,
+        point: test.point,
+        hit: test.hit,
+        metrics: test.metrics || null,
+        chain: test.chain || null
+      };
+    }
+    return {
+      ok: true,
+      reason: test.reason || 'ok',
+      condensed: true,
+      children: condensedChildren,
+      metrics: test.metrics || null
+    };
+  }
+  var targets = [cur, prev].filter(visible);
   if (!targets.length) {
-    return {ok: false, reason: 'offscreen', children: 0};
+    return {ok: false, reason: 'offscreen', condensed: false, children: 0};
   }
   var children = 0;
   for (var i = 0; i < targets.length; i++) {
     children += targets[i].children.length;
   }
-  return {ok: children > 0, reason: 'ok', children: children};
+  // getComputedStyle still reports display:block inside a display:none
+  // ancestor, so a painted-looking feed can occupy no area at all. Reported
+  // for diagnosis only — acting on it here risks reload loops.
+  var area = false;
+  for (var j = 0; j < targets.length; j++) {
+    var tr = targets[j].getBoundingClientRect();
+    if (tr.width >= 2 && tr.height >= 2) { area = true; break; }
+  }
+  return {
+    ok: children > 0,
+    reason: 'ok',
+    condensed: false,
+    children: children,
+    zeroArea: (children > 0 && !area),
+    chain: (children > 0 && !area) ? _afAncestry(targets[0]) : null
+  };
+})()
+"""
+
+# Commit condensed visibility only after a hit-test confirms the surface is
+# painted. Temporarily set data-view so the (otherwise display:none) root can
+# be measured; revert immediately if the hit-test fails.
+_CONDENSED_COMMIT_JS = """
+(function () {
+""" + _CONDENSED_HITTEST_JS + """
+  var portal = document.getElementById('mycelian-condensed-portal');
+  if (portal) portal.remove();
+  document.documentElement.classList.remove('mycelian-af-condensed');
+  var scope = _afFeedScope();
+  var surfaces = scope.querySelector('.activity-feed-surfaces') ||
+                 document.querySelector('.activity-feed-surfaces');
+  var root = scope.querySelector('.activity-feed-condensed-root') ||
+             document.querySelector('.activity-feed-condensed-root');
+  var chromeCount = document.querySelectorAll('.activity-feed-controls').length;
+  if (!surfaces || !root) {
+    return {ok: false, reason: 'root_missing', children: 0, chromeCount: chromeCount};
+  }
+  var children = root.children.length;
+  if (children <= 0) {
+    surfaces.removeAttribute('data-view');
+    return {ok: false, reason: 'empty', children: 0, chromeCount: chromeCount};
+  }
+  surfaces.setAttribute('data-view', 'condensed');
+  var test = _afHitTest(root);
+  // Only a verified paint may hide the regular feed. Anything else — occluded
+  // or unmeasurable — reverts, because the alternative is a blank panel.
+  if (test.verdict !== 'ok') {
+    surfaces.removeAttribute('data-view');
+  }
+  return {
+    ok: test.verdict === 'ok',
+    reason: test.reason || test.verdict,
+    children: children,
+    chromeCount: chromeCount,
+    point: test.point,
+    hit: test.hit,
+    metrics: test.metrics || null,
+    chain: test.chain || null
+  };
+})()
+"""
+
+_CONDENSED_HIDE_JS = """
+(function () {
+  var portal = document.getElementById('mycelian-condensed-portal');
+  if (portal) portal.remove();
+  document.documentElement.classList.remove('mycelian-af-condensed');
+  document.querySelectorAll('.activity-feed-surfaces').forEach(function (el) {
+    el.removeAttribute('data-view');
+  });
+  return {ok: true, reason: 'hidden', children: 0};
 })()
 """
 
@@ -178,29 +545,21 @@ def _trim_live_alerts() -> None:
 
 
 def _containers_alive() -> bool:
+    current_alive = _element_alive(activity_feed_state.current_alerts_container)
     if (
         activity_feed_state.condense_list
         and activity_feed_state.current_tab == "current"
     ):
-        return _element_alive(activity_feed_state.condensed_container)
-    return _element_alive(activity_feed_state.current_alerts_container)
+        return current_alive or _element_alive(activity_feed_state.condensed_container)
+    return current_alive
 
 
 def _condensed_view_has_content() -> bool:
-    return bool(_condensed_last_markup.strip())
-
-
-def _element_has_hidden_class(el: Any) -> bool:
-    """Return True when NiceGUI's class list includes ``hidden``."""
-    if not _element_alive(el):
-        return True
-    try:
-        classes = getattr(el, "_classes", None)
-        if classes is None:
-            return False
-        return "hidden" in classes
-    except Exception:
-        return False
+    """True when the in-tree condensed root still has rendered children."""
+    root = getattr(activity_feed_state, "condensed_root", None)
+    if _element_alive(root):
+        return _slot_child_count(root) > 0
+    return _slot_child_count(activity_feed_state.condensed_container) > 0
 
 
 def _count_rendered_live_alerts() -> int:
@@ -259,69 +618,6 @@ def _python_feed_has_children() -> bool:
     return _count_rendered_live_alerts() > 0
 
 
-def _fix_visibility_desync(reason: str) -> bool:
-    """Ensure a Current-tab surface is visible; return True if a fix was applied.
-
-    During condensed rebuilds the regular feed intentionally stays visible until
-    condensed content is ready — that is not treated as a desync.
-    """
-    if activity_feed_state.current_tab != "current":
-        return False
-
-    current = activity_feed_state.current_alerts_container
-    condensed = activity_feed_state.condensed_container
-    if not _element_alive(current) and not _element_alive(condensed):
-        return False
-
-    current_hidden = _element_has_hidden_class(current)
-    condensed_hidden = _element_has_hidden_class(condensed)
-    want_condensed = bool(activity_feed_state.condense_list)
-    rebuild_pending = _condensed_rebuild_running or _condensed_update_scheduled
-
-    both_hidden = current_hidden and condensed_hidden
-    regular_hidden_when_needed = (not want_condensed) and current_hidden
-    condensed_ready_but_hidden = (
-        want_condensed
-        and _condensed_view_has_content()
-        and condensed_hidden
-        and not rebuild_pending
-    )
-
-    if not (both_hidden or regular_hidden_when_needed or condensed_ready_but_hidden):
-        return False
-
-    logger.debug(
-        "activity_feed: visibility desync (%s) — "
-        "want_condensed=%s current_hidden=%s condensed_hidden=%s "
-        "both_hidden=%s ready_but_hidden=%s",
-        reason,
-        want_condensed,
-        current_hidden,
-        condensed_hidden,
-        both_hidden,
-        condensed_ready_but_hidden,
-    )
-
-    if both_hidden:
-        if want_condensed and _condensed_view_has_content():
-            _apply_condensed_visibility(True)
-        elif want_condensed and not rebuild_pending:
-            _fallback_to_regular_feed(f"visibility_desync:{reason}")
-        else:
-            _apply_condensed_visibility(False)
-            _ensure_regular_feed_populated(f"visibility_desync:{reason}")
-        return True
-
-    if condensed_ready_but_hidden:
-        _apply_condensed_visibility(True)
-        return True
-
-    # Regular mode but current surface hidden (condensed may still be showing).
-    _apply_condensed_visibility(False)
-    _ensure_regular_feed_populated(f"visibility_desync:{reason}")
-    return True
-
-
 def _ensure_regular_feed_populated(reason: str) -> None:
     """Rebuild the regular feed when rendered cards are missing or out of date.
 
@@ -365,30 +661,44 @@ def _fallback_to_regular_feed(reason: str, *, disable_condense: bool = False) ->
             finally:
                 _ignore_condense_toggle_event = False
 
-    _apply_condensed_visibility(False)
+    _hide_condensed_view()
     _ensure_regular_feed_populated(f"fallback:{reason}")
 
 
-def _abandon_condensed_view(reason: str, *, reload: bool = True) -> None:
-    """Leave condensed mode so Current/Previous and Condense stay usable.
+def _condensed_unavailable_text() -> str:
+    """Fail-open notice. One line for every case — condensed already includes
+    stored alerts, so this must not imply the view is session-only."""
+    return "Condensed view unavailable - showing full feed"
 
-    Condensed rebuilds that blow up Vue can delete in-tab chrome while leaving
-    main app tabs intact. Disable condensed, restore the regular list, and
-    reload so the user is not trapped without those buttons.
+
+def _set_condensed_unavailable_notice(visible: bool) -> None:
+    """Show or hide the fail-open notice above the regular feed."""
+    notice = getattr(activity_feed_state, "condensed_notice", None)
+    if not _element_alive(notice):
+        return
+    try:
+        if visible:
+            try:
+                notice.set_text(_condensed_unavailable_text())
+            except Exception:
+                pass
+            notice.classes(add="is-visible")
+        else:
+            notice.classes(remove="is-visible")
+    except Exception:
+        pass
+
+
+def _abandon_condensed_view(reason: str, *, reload: bool = True) -> None:
+    """Leave condensed mode; keep the regular feed on screen (fail open).
+
+    ``reload`` is accepted for call-site compatibility and ignored — a page
+    reload to recover a grouping view is what used to lose the live feed.
     """
-    global _condensed_last_markup, _last_condense_abandon_at
-    _condensed_last_markup = ""
+    logger.warning("activity_feed: abandoning condensed view (%s)", reason)
+    if activity_feed_state.condense_list:
+        _set_condensed_unavailable_notice(True)
     _fallback_to_regular_feed(reason, disable_condense=True)
-    if not reload:
-        return
-    now = time.monotonic()
-    if now - _last_condense_abandon_at < 8.0:
-        logger.warning(
-            "activity_feed: skip reload after abandon (%s) — cooldown", reason
-        )
-        return
-    _last_condense_abandon_at = now
-    _escalate_page_reload("condensed_abandoned")
 
 
 def _ensure_feed_integrity(reason: str) -> None:
@@ -400,11 +710,6 @@ def _ensure_feed_integrity(reason: str) -> None:
     if not _feed_ui_is_on_screen():
         return
     if not _containers_alive():
-        return
-
-    # Fix both-hidden / wrong-surface class races before content checks.
-    if _fix_visibility_desync(reason):
-        schedule_feed_dom_probe(f"after_visibility_fix:{reason}")
         return
 
     if activity_feed_state.condense_list:
@@ -561,7 +866,7 @@ def _get_feed_client() -> Any:
 
 def _apply_dom_probe_result(reason: str, result: Dict[str, Any]) -> str:
     """Handle a DOM probe payload. Returns the action taken (for tests)."""
-    global _dom_desync_failures, _last_dom_desync_warn_at
+    global _dom_desync_failures, _last_dom_desync_warn_at, _last_unpainted_warn_at
 
     if not isinstance(result, dict):
         return "ignored"
@@ -570,6 +875,29 @@ def _apply_dom_probe_result(reason: str, result: Dict[str, Any]) -> str:
     probe_reason = str(result.get("reason") or "unknown")
     children = int(result.get("children") or 0)
     expected = len(activity_feed_state.live_alerts)
+
+    if result.get("zeroArea") and _feed_ui_is_on_screen():
+        now = time.monotonic()
+        if now - _last_unpainted_warn_at >= _UNPAINTED_WARN_COOLDOWN_SEC:
+            _last_unpainted_warn_at = now
+            logger.warning(
+                "activity_feed: regular feed has children but no on-screen area "
+                "(%s) children=%d — panel is not painting",
+                reason,
+                children,
+            )
+            _log_condensed_ancestry(f"unpainted:{reason}", result)
+
+    # Condensed is on but the DOM never revealed it (a deferred commit, e.g.
+    # alerts landed while the app sat in the tray). Retry now that it is up.
+    if activity_feed_state.condense_list and result.get("condensed") is False:
+        logger.debug(
+            "activity_feed: condensed pending reveal (%s) — rebuilding", reason
+        )
+        _schedule_condensed_rebuild(f"commit_retry:{reason}")
+        if ok and children > 0:
+            _dom_desync_failures = 0
+            return "pending_reveal"
 
     if ok and children > 0:
         _dom_desync_failures = 0
@@ -588,7 +916,37 @@ def _apply_dom_probe_result(reason: str, result: Dict[str, Any]) -> str:
             reason,
         )
         _abandon_condensed_view(f"dom_{probe_reason}")
-        return "reload"
+        if not recover_activity_feed_panel():
+            _escalate_page_reload("feed_panel_missing")
+            return "reload"
+        return "abandon"
+
+    if probe_reason == "occluded" and activity_feed_state.condense_list:
+        _dom_desync_failures = 0
+        logger.warning(
+            "activity_feed: condensed surface occluded (%s) hit=%s — failing open",
+            reason,
+            result.get("hit"),
+        )
+        _abandon_condensed_view("dom_occluded")
+        return "abandon"
+
+    # A revealed condensed surface that cannot be measured while the feed is
+    # meant to be visible is a blank panel, not a hidden tab.
+    if (
+        probe_reason == "offscreen"
+        and bool(result.get("condensed"))
+        and _feed_ui_is_on_screen()
+    ):
+        _dom_desync_failures = 0
+        logger.warning(
+            "activity_feed: condensed surface unmeasurable (%s) point=%s — failing open",
+            reason,
+            result.get("point"),
+        )
+        _log_condensed_ancestry(reason, result)
+        _abandon_condensed_view("dom_condensed_offscreen")
+        return "abandon"
 
     # Hidden tab / tray / parent display:none is not a content desync.
     if probe_reason == "offscreen":
@@ -645,14 +1003,9 @@ def _apply_dom_probe_result(reason: str, result: Dict[str, Any]) -> str:
         _escalate_page_reload("feed_dom_desync")
         return "reload"
 
-    if probe_reason in ("no_visible_surface", "offscreen"):
-        if _fix_visibility_desync(f"dom:{reason}"):
-            schedule_feed_dom_probe(f"after_visibility:{reason}")
-            return "visibility_fix"
-
     if activity_feed_state.condense_list:
         _ensure_regular_feed_populated(f"dom_desync:{reason}")
-        _apply_condensed_visibility(False)
+        _hide_condensed_view()
         _schedule_condensed_rebuild(f"dom_desync:{reason}")
         schedule_feed_integrity_check(f"dom_desync:{reason}")
         return "recover"
@@ -850,7 +1203,7 @@ def recover_activity_feed_panel() -> bool:
             _schedule_condensed_rebuild("recover_activity_feed_panel")
             schedule_feed_integrity_check("recover_activity_feed_panel")
         else:
-            _apply_condensed_visibility(False)
+            _hide_condensed_view()
         update_alert_visibility()
         activity_feed_state.is_initialized = True
         _stale_ui_skip_logged = False
@@ -1321,6 +1674,9 @@ class ActivityFeedState:
         self.condense_toggle: Optional[ui.element] = None
         self.condensed_container: Optional[ui.element] = None
         self.condensed_body: Optional[ui.element] = None
+        self.condensed_root: Optional[ui.element] = None
+        self.condensed_notice: Optional[ui.element] = None
+        self.feed_surfaces: Optional[ui.element] = None
         self.alerts_muted: bool = False
         self.pause_btn: Optional[Any] = None
         self.mute_btn: Optional[Any] = None
@@ -2775,44 +3131,49 @@ def create_activity_feed_tab():
             color: rgba(115, 0, 255, 0.8);
             margin-right: 8px;
         }
-        /* Hide/show condensed without NiceGUI class patches on the card list.
-           Use descendants (not direct-child) — NiceGUI may wrap these nodes. */
-        .activity-feed-surfaces.condensed-mode .activity-feed-current {
+        /* One visibility switch: default and unknown states keep the regular
+           feed. Visibility only, no height or flex sizing — the condensed list
+           flows and scrolls in .scroll-content exactly like the regular feed,
+           which avoids depending on percentage heights resolving against an
+           indefinite flex parent. */
+        .activity-feed-surfaces[data-view="condensed"] .activity-feed-current {
             display: none !important;
         }
-        .activity-feed-surfaces:not(.condensed-mode) .activity-feed-condensed {
+        .activity-feed-surfaces:not([data-view="condensed"]) .activity-feed-condensed {
             display: none !important;
         }
-        .activity-feed-surfaces.condensed-mode {
-            min-height: 0;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-        .activity-feed-surfaces.condensed-mode .activity-feed-condensed {
+        .activity-feed-surfaces[data-view="condensed"] .activity-feed-condensed {
             display: block !important;
-            flex: 1 1 auto;
-            min-height: 0;
-            max-height: 100%;
-            overflow-y: auto !important;
+            position: relative;
+            z-index: 6;
         }
-        /* Body-level portal: Vue/Quasar tab panels do not paint in-tab condensed
-           HTML until a tab switch. This overlay lives outside the Vue tree. */
-        #mycelian-condensed-portal {
-            position: fixed;
-            z-index: 20;
-            overflow-y: auto;
-            box-sizing: border-box;
-            background: var(--color-bg-base, #121212);
+        .mycelian-main-tab-shell:has(.activity-feed-surfaces[data-view="condensed"]) {
+            flex-direction: column !important;
+            flex-wrap: nowrap !important;
         }
-        html:not(.mycelian-af-condensed) #mycelian-condensed-portal {
+        .mycelian-main-tab-shell:has(.activity-feed-surfaces[data-view="condensed"]) > .main-content {
+            left: auto !important;
+            margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+        }
+        .q-tab-panel:has(.activity-feed-surfaces[data-view="condensed"]),
+        .q-panel:has(.activity-feed-surfaces[data-view="condensed"]) {
+            transform: none !important;
+            translate: none !important;
+            animation: none !important;
+            transition: none !important;
+            z-index: 4 !important;
+        }
+        .activity-feed-condensed-notice {
             display: none !important;
         }
-        html.mycelian-af-condensed .activity-feed-current {
-            display: none !important;
+        .activity-feed-condensed-notice.is-visible {
+            display: block !important;
         }
-        html.mycelian-af-condensed .activity-feed-condensed {
-            visibility: hidden !important;
+        .activity-feed-surfaces[data-view="condensed"] .activity-feed-condensed-notice {
+            display: none !important;
         }
         /* Ensure action buttons container is positioned correctly */
         .action-buttons {
@@ -3103,9 +3464,15 @@ def create_activity_feed_tab():
             # Add tab container to store content based on active tab
             activity_feed_state.tab_container = ui.element("div").classes("w-full")
 
-            # Surfaces wrapper: condensed mode is a CSS class applied via
-            # JavaScript so Vue never remounts this tab's chrome.
-            with ui.element("div").classes("activity-feed-surfaces w-full min-h-0"):
+            # Surfaces wrapper: condensed mode is a data-view attribute applied
+            # via JavaScript only after the condensed root is verified painted.
+            with ui.element("div").classes("activity-feed-surfaces w-full min-h-0") as surfaces:
+                activity_feed_state.feed_surfaces = surfaces
+                activity_feed_state.condensed_notice = ui.label(
+                    "Condensed view unavailable - showing full feed"
+                ).classes(
+                    "activity-feed-condensed-notice text-xs muted-text italic mb-2"
+                )
                 activity_feed_state.current_alerts_container = ui.element("div").classes(
                     "w-full activity-feed-current"
                 )
@@ -3115,9 +3482,11 @@ def create_activity_feed_tab():
                 with ui.element("div").classes(
                     "w-full condensed-view activity-feed-condensed overflow-y-auto"
                 ) as condensed_container:
-                    ui.element("div").classes("activity-feed-condensed-root w-full")
+                    activity_feed_state.condensed_root = ui.element("div").classes(
+                        "activity-feed-condensed-root w-full"
+                    )
                 activity_feed_state.condensed_container = condensed_container
-                activity_feed_state.condensed_body = None
+                activity_feed_state.condensed_body = activity_feed_state.condensed_root
 
             # Set the main container reference (for backward compatibility)
             activity_feed_state.activity_feed_container = (
@@ -4181,8 +4550,12 @@ def serialize_condensed_groups(
     return groups
 
 
-def _build_condensed_html(build_data: Dict[str, Any]) -> str:
-    """Build one escaped HTML block for the condensed surface."""
+def _condensed_view_model(build_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Pure description of condensed UI: header, empty state, truncation, groups.
+
+    The renderer paints this model with NiceGUI labels. Tests pin the wording
+    and grouping without depending on DOM/HTML.
+    """
     hours = build_data.get("condense_historical_hours", 12)
     groups = build_data.get("groups")
     if groups is None:
@@ -4192,41 +4565,28 @@ def _build_condensed_html(build_data: Dict[str, Any]) -> str:
         alert_count = len(build_data.get("alerts_to_process") or [])
     historical_count = int(build_data.get("historical_count") or 0)
     live_in_window = int(build_data.get("live_in_window") or 0)
+    groups = list(groups or [])
 
     if not groups:
-        msg = html.escape(f"No alerts to condense in the last {hours} hours")
-        return f'<div class="no-alerts text-sm muted-text italic">{msg}</div>'
+        return {
+            "empty": f"No alerts to condense in the last {hours} hours",
+            "header": None,
+            "truncation": None,
+            "groups": [],
+        }
 
-    visible_groups = groups[:MAX_CONDENSED_GROUPS]
-    parts: List[str] = []
+    header = None
     if historical_count > 0 or live_in_window > 0:
-        indicator = html.escape(
-            f"Showing {alert_count} alerts from past {hours} hours"
-        )
-        parts.append(
-            f'<div class="text-xs muted-text mb-2 italic">{indicator}</div>'
-        )
+        header = f"Showing {alert_count} alerts from past {hours} hours"
+    truncation = None
     if len(groups) > MAX_CONDENSED_GROUPS:
-        parts.append(
-            '<div class="text-xs muted-text mb-2 italic">'
-            f"{html.escape(f'Showing first {MAX_CONDENSED_GROUPS} of {len(groups)} users')}"
-            "</div>"
-        )
-    for group in visible_groups:
-        username = html.escape(str(group.get("username") or ""))
-        lines_html = []
-        for line in group.get("lines") or []:
-            lines_html.append(
-                f'<div class="alert-item secondary-text text-sm mb-1">'
-                f"{html.escape(str(line))}</div>"
-            )
-        parts.append(
-            f'<div class="user-group mb-4">'
-            f'<div class="username font-semibold mb-1">{username}:</div>'
-            f'<div class="ml-4">{"".join(lines_html)}</div>'
-            f"</div>"
-        )
-    return "".join(parts)
+        truncation = f"Showing first {MAX_CONDENSED_GROUPS} of {len(groups)} users"
+    return {
+        "empty": None,
+        "header": header,
+        "truncation": truncation,
+        "groups": groups[:MAX_CONDENSED_GROUPS],
+    }
 
 
 def build_condensed_overlay_payload(
@@ -4349,331 +4709,189 @@ def _delete_replaced_condensed_children(container, keep) -> None:
             pass
 
 
-def _condensed_toolbar_alive() -> bool:
-    """True when in-tab chrome (toggle / pause) still belongs to a live client."""
-    return _element_alive(activity_feed_state.condense_toggle) and _element_alive(
-        activity_feed_state.pause_btn
-    )
-
-
-_CONDENSED_DOM_HELPERS_JS = """
-  function _afBox(el) {
-    if (!el) return {d: '', v: '', w: -1, h: -1, x: -1, y: -1};
-    var s = getComputedStyle(el);
-    var r = el.getBoundingClientRect();
-    return {
-      d: s.display,
-      v: s.visibility,
-      w: Math.round(r.width),
-      h: Math.round(r.height),
-      x: Math.round(r.left),
-      y: Math.round(r.top)
-    };
-  }
-  function _afEnsurePortal() {
-    var portal = document.getElementById('mycelian-condensed-portal');
-    if (portal) return portal;
-    portal = document.createElement('div');
-    portal.id = 'mycelian-condensed-portal';
-    portal.className = 'condensed-view';
-    document.body.appendChild(portal);
-    return portal;
-  }
-  function _afFeedVisible() {
-    var chrome = document.querySelector('.activity-feed-controls') ||
-                 document.querySelector('.activity-feed-tab-row');
-    if (!chrome) return false;
-    var r = chrome.getBoundingClientRect();
-    return r.height > 8 && r.width > 8;
-  }
-  function _afSyncPortal() {
-    var portal = document.getElementById('mycelian-condensed-portal');
-    if (!portal) return;
-    var on = document.documentElement.classList.contains('mycelian-af-condensed');
-    if (!on || !_afFeedVisible()) {
-      portal.style.display = 'none';
-      return;
-    }
-    portal.style.display = 'block';
-    var scroll = document.querySelector('.scroll-content');
-    if (!scroll) return;
-    var r = scroll.getBoundingClientRect();
-    portal.style.top = r.top + 'px';
-    portal.style.left = r.left + 'px';
-    portal.style.width = Math.max(0, r.width) + 'px';
-    portal.style.height = Math.max(0, r.height) + 'px';
-  }
-  function _afInstallPortalSync() {
-    if (window.__mycelianAfCondensedTimer) return;
-    window.__mycelianAfCondensedTimer = setInterval(_afSyncPortal, 250);
-    window.addEventListener('resize', _afSyncPortal);
-  }
-  function snap() {
-    var chrome = document.querySelector('.activity-feed-controls') ||
-                 document.querySelector('.activity-feed-tab-row') ||
-                 document.querySelector('.condense-toggle');
-    var root = document.querySelector('.activity-feed-condensed-root');
-    var condensed = document.querySelector('.activity-feed-condensed');
-    var current = document.querySelector('.activity-feed-current');
-    var surfaces = document.querySelector('.activity-feed-surfaces') ||
-                   (root ? root.closest('.activity-feed-surfaces') : null);
-    var scroll = document.querySelector('.scroll-content');
-    var tabSurface = document.querySelector('.tab-surface');
-    var portal = document.getElementById('mycelian-condensed-portal');
-    var cb = _afBox(chrome);
-    var tb = _afBox(tabSurface);
-    var sb = _afBox(scroll);
-    var cub = _afBox(current);
-    var cdb = _afBox(condensed);
-    var rb = _afBox(root);
-    var pb = _afBox(portal);
-    var text = '';
-    if (portal && portal.innerText) {
-      text = String(portal.innerText).replace(/\\s+/g, ' ').slice(0, 80);
-    } else if (root && root.innerText) {
-      text = String(root.innerText).replace(/\\s+/g, ' ').slice(0, 80);
-    }
-    return {
-      chrome: chrome ? 1 : 0,
-      mode: document.documentElement.classList.contains('mycelian-af-condensed') ? 1 : 0,
-      rootChildren: portal ? portal.children.length : (root ? root.children.length : 0),
-      rootText: text,
-      chromeDisp: cb.d, chromeW: cb.w, chromeH: cb.h,
-      tabW: tb.w, tabH: tb.h,
-      scrollW: sb.w, scrollH: sb.h, scrollY: sb.y,
-      currentDisp: cub.d, currentW: cub.w, currentH: cub.h,
-      condensedDisp: cdb.d, condensedW: cdb.w, condensedH: cdb.h,
-      rootDisp: rb.d, rootW: rb.w, rootH: rb.h,
-      portalDisp: pb.d, portalW: pb.w, portalH: pb.h, portalY: pb.y,
-      feedVisible: _afFeedVisible() ? 1 : 0
-    };
-  }
-"""
-
-
-_CONDENSED_DOM_SNAP_JS = (
-    "(function () {\n" + _CONDENSED_DOM_HELPERS_JS + "\n  return snap();\n})()"
-)
-
-
-def _summarize_condensed_snap(snap: Any) -> str:
-    """One-line snapshot for logs."""
-    if not isinstance(snap, dict):
-        return f"non-dict:{type(snap).__name__}={repr(snap)[:200]}"
-
-    if "condensedDisp" in snap or "chromeDisp" in snap:
-        return (
-            f"chrome={snap.get('chrome')} mode={snap.get('mode')} "
-            f"rootChildren={snap.get('rootChildren')} rootText={snap.get('rootText')!r} "
-            f"chrome[{snap.get('chromeDisp')} {snap.get('chromeW')}x{snap.get('chromeH')}] "
-            f"tab[{snap.get('tabW')}x{snap.get('tabH')}] "
-            f"scroll[{snap.get('scrollW')}x{snap.get('scrollH')}] "
-            f"current[{snap.get('currentDisp')} {snap.get('currentW')}x{snap.get('currentH')}] "
-            f"condensed[{snap.get('condensedDisp')} {snap.get('condensedW')}x{snap.get('condensedH')}] "
-            f"root[{snap.get('rootDisp')} {snap.get('rootW')}x{snap.get('rootH')}] "
-            f"portal[{snap.get('portalDisp')} {snap.get('portalW')}x{snap.get('portalH')} y={snap.get('portalY')} feedVis={snap.get('feedVisible')}]"
-        )
-
-    def box(key: str) -> str:
-        info = snap.get(key)
-        if not isinstance(info, dict):
-            return f"{key}=none"
-        return (
-            f"{key}[disp={info.get('display')} vis={info.get('visibility')} "
-            f"op={info.get('opacity')} {info.get('w')}x{info.get('h')} "
-            f"@{info.get('x')},{info.get('y')} cls={info.get('cls')!r}]"
-        )
-
-    return " ".join(
-        [
-            f"chrome={snap.get('chrome')}",
-            f"mode={snap.get('condensedMode')}",
-            f"rootChildren={snap.get('rootChildren')}",
-            f"rootText={snap.get('rootText')!r}",
-            box("chromeInfo"),
-            box("tabSurface"),
-            box("panel"),
-            box("scroll"),
-            box("surfaces"),
-            box("current"),
-            box("condensed"),
-            box("root"),
-        ]
-    )
-
-
-def _build_condensed_dom_js(*, show: bool, markup: Optional[str]) -> str:
-    """JS that writes condensed HTML and toggles CSS — no Vue component updates."""
-    html_json = json.dumps(markup if show and markup is not None else None)
-    show_json = json.dumps(bool(show))
-    return f"""
-(function () {{
-{_CONDENSED_DOM_HELPERS_JS}
-  var html = {html_json};
-  var show = {show_json};
-  var htmlEl = document.documentElement;
-  _afInstallPortalSync();
-  if (show) {{
-    var portal = _afEnsurePortal();
-    if (html !== null) {{
-      portal.innerHTML = html;
-    }}
-    htmlEl.classList.add('mycelian-af-condensed');
-  }} else {{
-    htmlEl.classList.remove('mycelian-af-condensed');
-  }}
-  _afSyncPortal();
-  return snap();
-}})()
-"""
-
-
-async def _apply_condensed_dom_async(
-    *, show: bool, markup: Optional[str] = None
-) -> Dict[str, Any]:
-    """Apply condensed content/visibility through the browser DOM only."""
-    global _condensed_last_markup
-
-    client = _get_feed_client() or _get_connected_client()
-    if client is None:
-        if show:
-            logger.warning("activity_feed: condensed DOM apply skipped (no client)")
-        else:
-            logger.debug("activity_feed: condensed hide skipped (no client)")
-        return {"ok": False, "reason": "no_client", "chrome": False, "children": 0}
-
-    js = _build_condensed_dom_js(show=show, markup=markup)
-    try:
-        result = await client.run_javascript(js, timeout=5.0)
-    except Exception as exc:
-        logger.warning("activity_feed: condensed DOM apply failed: %s", exc)
-        return {"ok": False, "reason": "js_failed", "chrome": False, "children": 0}
-
-    # NiceGUI/pywebview often returns None when JS returns undefined
-    # (e.g. `return` + newline). The script still ran.
-    if result is None:
-        logger.warning(
-            "activity_feed: condensed DOM apply js returned None (treat as ran) show=%s",
-            show,
-        )
-        if show and markup is not None:
-            _condensed_last_markup = markup
-        return {
-            "ok": True,
-            "reason": "js_no_return",
-            "chrome": True,
-            "children": -1,
-        }
-
-    if not isinstance(result, dict):
-        logger.warning(
-            "activity_feed: condensed DOM apply unexpected result: %s",
-            repr(result)[:300],
-        )
-        if show and markup is not None:
-            _condensed_last_markup = markup
-        return {
-            "ok": True,
-            "reason": "js_no_return",
-            "chrome": True,
-            "children": -1,
-        }
-    chrome = bool(result.get("chrome"))
-    result["ok"] = chrome
-    result["children"] = int(result.get("rootChildren") or result.get("children") or 0)
-    result["reason"] = "ok" if chrome else "panel_missing"
-    if show and chrome and markup is not None:
-        _condensed_last_markup = markup
-    logger.warning(
-        "activity_feed: condensed DOM apply show=%s %s",
-        show,
-        _summarize_condensed_snap(result),
-    )
-    return result
-
-
 def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
-    """Schedule a Vue-free condensed DOM update (sync fallback)."""
+    """Render condensed groups into an in-tree staging child, then swap it in."""
+    container = activity_feed_state.condensed_container
+    if not _element_alive(container):
+        return False
+
+    model = _condensed_view_model(build_data)
     try:
-        markup = _build_condensed_html(build_data)
-        background_tasks.create(
-            _apply_condensed_dom_async(show=True, markup=markup),
-            name="activity_feed_condensed_dom",
-        )
+        with container:
+            staging = ui.element("div").classes("activity-feed-condensed-root w-full")
+        with staging:
+            if model["empty"]:
+                ui.label(model["empty"]).classes("no-alerts text-sm muted-text italic")
+            else:
+                if model["header"]:
+                    ui.label(model["header"]).classes("text-xs muted-text mb-2 italic")
+                if model["truncation"]:
+                    ui.label(model["truncation"]).classes(
+                        "text-xs muted-text mb-2 italic"
+                    )
+                for group in model["groups"]:
+                    username = str(group.get("username") or "")
+                    with ui.element("div").classes("user-group mb-4"):
+                        ui.label(f"{username}:").classes("username font-semibold mb-1")
+                        with ui.element("div").classes("ml-4"):
+                            for line in group.get("lines") or []:
+                                ui.label(str(line)).classes(
+                                    "alert-item secondary-text text-sm mb-1"
+                                )
+        _delete_replaced_condensed_children(container, staging)
+        activity_feed_state.condensed_root = staging
+        activity_feed_state.condensed_body = staging
         return True
     except Exception as exc:
         logger.error(
-            "activity_feed: condensed DOM schedule failed: %s", exc, exc_info=True
+            "activity_feed: condensed in-tree render failed: %s", exc, exc_info=True
         )
         return False
 
 
-def _apply_condensed_visibility(show_condensed: bool) -> None:
-    """Show condensed view via CSS class, without patching the card list."""
+async def _await_on_ui(fn: Callable[[], Any]) -> Any:
+    """Run ``fn`` on the NiceGUI loop inside a live client, then return its result."""
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future = loop.create_future()
+
+    def _do() -> None:
+        try:
+            value = fn()
+        except Exception as exc:
+            if not fut.done():
+                loop.call_soon_threadsafe(fut.set_exception, exc)
+            return
+        if not fut.done():
+            loop.call_soon_threadsafe(fut.set_result, value)
+
+    _run_on_ui_loop(_do)
+    return await asyncio.wait_for(fut, timeout=8.0)
+
+
+async def _run_condensed_js(js: str) -> Dict[str, Any]:
+    """Run condensed visibility JS. None / non-dict results are failures."""
+    client = _get_feed_client() or _get_connected_client()
+    if client is None:
+        return {"ok": False, "reason": "no_client", "children": 0}
+    try:
+        result = await client.run_javascript(js, timeout=5.0)
+    except Exception as exc:
+        logger.warning("activity_feed: condensed JS failed: %s", exc)
+        return {"ok": False, "reason": "js_failed", "children": 0}
+    if not isinstance(result, dict):
+        logger.warning(
+            "activity_feed: condensed JS unexpected result: %s",
+            repr(result)[:300],
+        )
+        return {"ok": False, "reason": "js_no_return", "children": 0}
+    return result
+
+
+async def _commit_condensed_view_async() -> Dict[str, Any]:
+    """Verify the condensed root is painted, then keep data-view=condensed."""
+    if not _feed_ui_is_on_screen():
+        # Nothing can be verified in the tray or on another main tab, and
+        # guessing would either blank the panel or disable the user's toggle.
+        return {"ok": False, "reason": "deferred_offscreen", "children": 0}
+    return await _run_condensed_js(_CONDENSED_COMMIT_JS)
+
+
+async def _commit_and_handle_async(reason: str) -> str:
+    result = await _commit_condensed_view_async()
+    return _handle_condensed_commit_result(reason, result)
+
+
+async def _hide_condensed_view_async() -> Dict[str, Any]:
+    """Clear data-view so the regular feed is the visible surface."""
+    return await _run_condensed_js(_CONDENSED_HIDE_JS)
+
+
+def _hide_condensed_view() -> None:
+    """Schedule a JS hide; regular feed stays visible until/unless commit succeeds."""
     try:
         background_tasks.create(
-            _apply_condensed_dom_async(show=show_condensed, markup=None),
-            name="activity_feed_condensed_visibility",
+            _hide_condensed_view_async(),
+            name="activity_feed_condensed_hide",
         )
     except Exception as exc:
-        logger.debug("activity_feed: condensed visibility JS failed: %s", exc)
+        logger.debug("activity_feed: condensed hide schedule failed: %s", exc)
 
 
-async def _followup_condensed_dom(markup: str) -> None:
-    """Re-read layout after Vue's next ticks; log why a 'successful' apply still looks blank."""
-    for delay in (0.05, 0.3, 1.0):
-        await asyncio.sleep(delay)
-        if not activity_feed_state.condense_list:
-            logger.warning(
-                "activity_feed: condensed followup t=%.2fs skipped (condense off)",
-                delay,
-            )
-            return
-        client = _get_feed_client() or _get_connected_client()
-        if client is None:
-            logger.warning(
-                "activity_feed: condensed followup t=%.2fs skipped (no client)",
-                delay,
-            )
-            return
-        try:
-            snap = await client.run_javascript(_CONDENSED_DOM_SNAP_JS, timeout=5.0)
-        except Exception as exc:
-            logger.warning(
-                "activity_feed: condensed followup t=%.2fs failed: %s", delay, exc
-            )
+def _log_condensed_ancestry(reason: str, result: Dict[str, Any]) -> None:
+    """Log the ancestor chain that made the condensed surface unmeasurable."""
+    if not isinstance(result, dict):
+        return
+    metrics = result.get("metrics")
+    if isinstance(metrics, dict):
+        logger.warning(
+            "activity_feed: condensed metrics (%s) viewport=%sx%s root=%s clip=%s "
+            "child0=%s kids=%s candidate_points=%s",
+            reason,
+            metrics.get("vw"),
+            metrics.get("vh"),
+            metrics.get("root"),
+            metrics.get("clip"),
+            metrics.get("child0"),
+            metrics.get("kids"),
+            metrics.get("points"),
+        )
+    chain = result.get("chain")
+    if not isinstance(chain, list) or not chain:
+        return
+    for depth, node in enumerate(chain):
+        if not isinstance(node, dict):
             continue
         logger.warning(
-            "activity_feed: condensed followup t=%.2fs %s",
-            delay,
-            _summarize_condensed_snap(snap),
+            "activity_feed: condensed ancestry (%s) [%d] %s.%s "
+            "size=%sx%s top=%s display=%s visibility=%s position=%s "
+            "overflow=%s opacity=%s",
+            reason,
+            depth,
+            node.get("tag"),
+            node.get("cls"),
+            node.get("w"),
+            node.get("h"),
+            node.get("top"),
+            node.get("disp"),
+            node.get("vis"),
+            node.get("pos"),
+            node.get("ovf"),
+            node.get("op"),
         )
-        if not isinstance(snap, dict):
-            continue
-        if not snap.get("chrome"):
-            logger.warning(
-                "activity_feed: condensed followup lost in-tab chrome; abandoning"
-            )
-            _abandon_condensed_view("followup_chrome_missing")
-            return
-        children = int(snap.get("rootChildren") or 0)
-        portal_h = int(snap.get("portalH") or 0)
-        if children == 0 and markup:
-            logger.warning(
-                "activity_feed: condensed followup children=0; re-applying"
-            )
-            await _apply_condensed_dom_async(show=True, markup=markup)
-        elif (
-            snap.get("mode")
-            and snap.get("feedVisible")
-            and portal_h <= 0
-            and markup
-        ):
-            logger.warning(
-                "activity_feed: condensed followup portal height=%s; re-syncing",
-                portal_h,
-            )
-            await _apply_condensed_dom_async(show=True, markup=markup)
+
+
+def _handle_condensed_commit_result(reason: str, result: Dict[str, Any]) -> str:
+    """Apply a condensed commit verdict. Returns ok or abandon."""
+    global _condensed_integrity_failures, _dom_desync_failures
+
+    if isinstance(result, dict) and result.get("ok"):
+        _set_condensed_unavailable_notice(False)
+        _condensed_integrity_failures = 0
+        _dom_desync_failures = 0
+        schedule_feed_integrity_check(f"condensed_show:{reason}")
+        logger.debug(
+            "activity_feed: condensed commit ok (%s) children=%s",
+            reason,
+            result.get("children"),
+        )
+        return "ok"
+
+    probe_reason = str(result.get("reason") or "unknown") if isinstance(result, dict) else "unknown"
+
+    if probe_reason == "deferred_offscreen":
+        # Regular feed stays the visible surface; the watchdog re-commits once
+        # the panel is back on screen.
+        logger.debug("activity_feed: condensed commit deferred (%s)", reason)
+        return "defer"
+
+    logger.warning(
+        "activity_feed: condensed commit failed (%s) %s",
+        reason,
+        result,
+    )
+    _log_condensed_ancestry(reason, result)
+    _abandon_condensed_view(f"condensed_commit_failed:{reason}")
+    return "abandon"
 
 
 def _schedule_condensed_rebuild(reason: str) -> None:
@@ -4695,9 +4913,8 @@ def _schedule_condensed_rebuild(reason: str) -> None:
 
 
 async def _update_condensed_view_async(reason: str) -> None:
-    """Fetch condensed data off the UI loop, then render on the loop."""
+    """Fetch condensed data off the UI loop, render in-tree, then verify paint."""
     global _condensed_rebuild_running, _condensed_rebuild_rerun
-    global _condensed_integrity_failures, _dom_desync_failures
 
     _condensed_rebuild_running = True
     try:
@@ -4709,7 +4926,7 @@ async def _update_condensed_view_async(reason: str) -> None:
                 and activity_feed_state.condense_list
             ):
                 _ensure_regular_feed_populated(f"condensed_aborted:{reason}")
-                _apply_condensed_visibility(False)
+                _hide_condensed_view()
                 return
 
             build_data = await run.io_bound(_collect_condensed_build_data)
@@ -4719,13 +4936,13 @@ async def _update_condensed_view_async(reason: str) -> None:
                 and activity_feed_state.condense_list
             ):
                 _ensure_regular_feed_populated(f"condensed_aborted_after_io:{reason}")
-                _apply_condensed_visibility(False)
+                _hide_condensed_view()
                 return
 
             try:
-                markup = _build_condensed_html(build_data)
-                result = await _apply_condensed_dom_async(show=True, markup=markup)
-                built = bool(result.get("ok")) and result.get("reason") != "js_failed"
+                built = await _await_on_ui(
+                    lambda: _render_condensed_view_ui(build_data)
+                )
             except Exception as exc:
                 logger.error(
                     "activity_feed: condensed UI render failed (%s): %s",
@@ -4735,16 +4952,11 @@ async def _update_condensed_view_async(reason: str) -> None:
                 )
                 built = False
 
-            if built:
-                _condensed_integrity_failures = 0
-                _dom_desync_failures = 0
-                schedule_feed_integrity_check(f"condensed_show:{reason}")
-                background_tasks.create(
-                    _followup_condensed_dom(markup),
-                    name="activity_feed_condensed_followup",
-                )
-            else:
+            if not built:
                 _abandon_condensed_view(f"condensed_build_failed:{reason}")
+            else:
+                result = await _commit_condensed_view_async()
+                _handle_condensed_commit_result(reason, result)
 
             if not _condensed_rebuild_rerun:
                 break
@@ -4800,15 +5012,15 @@ def update_condensed_view() -> bool:
             # Data collection can hit the database/network, so it must not run on
             # the UI event loop (a long fetch stalls the websocket and the client
             # eventually gets deleted). Schedule an async rebuild instead; the
-            # regular feed stays visible until the condensed view is ready.
+            # regular feed stays visible until the condensed view is verified.
             logger.debug("Scheduling condensed view rebuild...")
             _schedule_condensed_rebuild("update_condensed_view")
-            # Scheduling is not confirmation that the surface is healthy.
             return True
 
         logger.debug("Showing regular alerts view...")
+        _set_condensed_unavailable_notice(False)
         _ensure_regular_feed_populated("update_condensed_view_regular")
-        _apply_condensed_visibility(False)
+        _hide_condensed_view()
         schedule_feed_integrity_check("update_condensed_view_regular")
         return True
 
@@ -4827,6 +5039,14 @@ def create_condensed_view() -> bool:
     try:
         build_data = _collect_condensed_build_data()
         if not _render_condensed_view_ui(build_data):
+            return False
+        try:
+            background_tasks.create(
+                _commit_and_handle_async("create_condensed_view"),
+                name="activity_feed_condensed_commit",
+            )
+        except Exception as exc:
+            logger.debug("activity_feed: condensed commit schedule failed: %s", exc)
             return False
         return True
     except Exception as e:
@@ -5088,7 +5308,8 @@ def switch_to_tab(tab_name):
                 activity_feed_state.previous_alerts_container.classes(remove="hidden")
 
             # Hide condensed view and toggle when switching to previous tab
-            _apply_condensed_visibility(False)
+            _hide_condensed_view()
+            _set_condensed_unavailable_notice(False)
             if activity_feed_state.condense_toggle:
                 activity_feed_state.condense_toggle.classes(add="hidden")
 

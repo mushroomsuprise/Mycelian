@@ -1502,7 +1502,7 @@ def create_ui_elements():
 
         # Connected main tabs + content card share one shell (matches sub-tab pattern)
         with ui.element("div").classes(
-            "mycelian-main-tab-shell flex-1 min-h-0 flex flex-col w-full min-w-0"
+            "mycelian-main-tab-shell flex-1 min-h-0 flex-col flex-nowrap w-full min-w-0"
         ):
             with ui.row().classes(
                 "main-tab-header-row w-full items-end gap-1 flex-nowrap shrink-0"

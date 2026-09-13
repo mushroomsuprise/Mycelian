@@ -532,7 +532,10 @@ body:not(.body--dark) .text-grey {
 
 .mycelian-main-tab-shell {
     display: flex;
-    flex-direction: column;
+    flex-direction: column !important;
+    /* Quasar .flex { flex-wrap: wrap } plus a tall child parks .main-content
+       in a second column at left ≈ innerWidth (blank condensed / fail-open). */
+    flex-wrap: nowrap !important;
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
@@ -563,6 +566,7 @@ body:not(.body--dark) .text-grey {
 .mycelian-sub-tab-shell {
     display: flex;
     flex-direction: column;
+    flex-wrap: nowrap !important;
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
@@ -646,8 +650,11 @@ body:not(.body--dark) .text-grey {
 /* Full frame; top segment under active tab is masked via ::before + JS-set CSS vars */
 .mycelian-main-tab-shell > .main-content,
 .mycelian-sub-tab-shell > .q-tab-panels {
-    flex: 1 1 auto;
+    flex: 1 1 0%;
     min-height: 0;
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
     border: 1px solid var(--color-border-accent) !important;
     border-radius: 10px;
     background: var(--color-bg-elevated) !important;
