@@ -1722,7 +1722,13 @@ class Twitch_API:
         )
         user_id = data.event.chatter_user_id
         twmsg_id = data.event.message_id
-        color = data.event.color
+        raw_color = getattr(data.event, "color", None)
+        if isinstance(raw_color, str):
+            color = raw_color.strip()
+        elif raw_color is None:
+            color = ""
+        else:
+            color = str(raw_color).strip()
         badges = data.event.badges
         fragments = data.event.message.fragments
         message_type = getattr(data.event, "message_type", "text")

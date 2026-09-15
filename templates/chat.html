@@ -854,7 +854,7 @@
             return suffix;
         }
 
-        // Username color randomization (Twitch default palette, hex so sanitizer accepts them)
+        // Twitch default name-color palette (used when EventSub sends no color)
         var randomUsernameColors = [
             "#FF0000",
             "#0000FF",
@@ -872,6 +872,23 @@
             "#8A2BE2",
             "#00FF7F"
         ];
+        var twitchNamedUsernameColors = {
+            red: "#FF0000",
+            blue: "#0000FF",
+            green: "#008000",
+            firebrick: "#B22222",
+            coral: "#FF7F50",
+            yellowgreen: "#9ACD32",
+            orangered: "#FF4500",
+            seagreen: "#2E8B57",
+            goldenrod: "#DAA520",
+            chocolate: "#D2691E",
+            cadetblue: "#5F9EA0",
+            dodgerblue: "#1E90FF",
+            hotpink: "#FF69B4",
+            blueviolet: "#8A2BE2",
+            springgreen: "#00FF7F"
+        };
         var usernameColorCache = {};
 
         // Emote and badge data caches
@@ -916,43 +933,70 @@
             return (username || '').toLowerCase();
         }
 
+        function fallbackPaletteUsernameColor() {
+            return randomUsernameColors[0];
+        }
+
+        function isMissingTwitchColor(color) {
+            if (color == null || color === false) {
+                return true;
+            }
+            if (typeof color === 'object') {
+                return true;
+            }
+            var c = String(color).trim().toLowerCase();
+            return !c || c === 'none' || c === 'null' || c === 'undefined' || c === 'transparent';
+        }
+
+        function pickPaletteUsernameColor(username) {
+            var name = String(username || '');
+            var n = 0;
+            if (name.length > 0) {
+                n = name.charCodeAt(0) + name.charCodeAt(name.length - 1);
+            }
+            var idx = n % randomUsernameColors.length;
+            return randomUsernameColors[idx] || fallbackPaletteUsernameColor();
+        }
+
         function getCachedUsernameColor(username) {
             return usernameColorCache[normalizeUsernameKey(username)] || null;
         }
 
         function getUsernameColor(username, twitchColor) {
             var cacheKey = normalizeUsernameKey(username);
-
-            // Check if we've already assigned a color for this user
-            if (usernameColorCache[cacheKey]) {
-                return sanitizeUsernameColor(usernameColorCache[cacheKey]) || '#ffffff';
-            }
-
-            var finalColor;
-
-            // If user has a Twitch-assigned color, use it (hex only)
             var safeTwitch = sanitizeUsernameColor(twitchColor);
+
             if (safeTwitch) {
-                finalColor = safeTwitch;
-                chatLog('Using Twitch color', finalColor, 'for username', username);
-            } else {
-                // Assign a random color from our list
-                var randomIndex = Math.floor(Math.random() * randomUsernameColors.length);
-                finalColor = sanitizeUsernameColor(randomUsernameColors[randomIndex]) || '#ffffff';
-                chatLog('Assigned random color', finalColor, 'to username', username);
+                usernameColorCache[cacheKey] = safeTwitch;
+                chatLog('Using Twitch color', safeTwitch, 'for username', username);
+                return safeTwitch;
             }
 
-            // Store the color assignment for consistency (both Twitch and random colors)
-            usernameColorCache[cacheKey] = finalColor;
+            if (usernameColorCache[cacheKey]) {
+                return usernameColorCache[cacheKey];
+            }
 
-            return finalColor;
+            var paletteColor = pickPaletteUsernameColor(username);
+            usernameColorCache[cacheKey] = paletteColor;
+            chatLog('Assigned palette color', paletteColor, 'to username', username);
+            return paletteColor;
         }
 
         function sanitizeUsernameColor(color) {
-            if (!color) { return ''; }
+            if (isMissingTwitchColor(color)) {
+                return '';
+            }
             var c = String(color).trim();
-            if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c)) {
-                return c;
+            var named = twitchNamedUsernameColors[c.toLowerCase()];
+            if (named) {
+                return named;
+            }
+            if (/^#?[0-9a-fA-F]{3}$/.test(c) || /^#?[0-9a-fA-F]{6}$/.test(c)) {
+                var hex = c.charAt(0) === '#' ? c.slice(1) : c;
+                if (hex.length === 3) {
+                    hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+                }
+                return '#' + hex.toUpperCase();
             }
             var rgbMatch = c.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*[\d.]+)?\s*\)$/i);
             if (rgbMatch) {
@@ -1937,7 +1981,7 @@
             }
 
             // Add username with color
-            var usernameColor = sanitizeUsernameColor(getUsernameColor(messageData.username, messageData.color)) || '#ffffff';
+            var usernameColor = getUsernameColor(messageData.username, messageData.color) || fallbackPaletteUsernameColor();
             var usernameSpan = '<span class="message-username" style="color: ' + usernameColor + '">' +
                 escapeHtml(messageData.username) + ':</span>';
             headerHTML += usernameSpan;
