@@ -304,6 +304,20 @@
             text-indent: 0;
         }
 
+        .chat-message.gif-message .message-header {
+            display: block;
+            margin-right: 0;
+        }
+
+        .chat-gif {
+            display: block;
+            width: {{ GifWidthPercent | default(100) }}%;
+            max-width: 100%;
+            height: auto;
+            object-fit: contain;
+            margin-top: 2px;
+        }
+
         /* Emotes: layout uses height (not transform scale) so inline flow matches visual size (~28px nominal) */
         .emote-img,
         .emote-base,
@@ -663,6 +677,7 @@
         var pointIconSize = {{ PointIconSize | tojson }};
         var filterUnknownSlashCommands = {{ FilterUnknownSlashCommands | tojson }};
         var enableEmotes = {{ EnableEmotes | tojson }};
+        var enableGifs = {{ EnableGifs | default(true) | tojson }};
         var enableBadges = {{ EnableBadges | tojson }};
         var alertShowActivitySummary = {{ AlertShowActivitySummary | tojson }};
         var alertShowTwitchChat = {{ AlertShowTwitchChat | tojson }};
@@ -1989,9 +2004,20 @@
             // Add header and content with proper structure for wrapping
             messageHTML += '<div class="message-header">' + headerHTML + '</div>';
 
+            var gifUrl = enableGifs ? extractChatGifUrl(messageData) : '';
+            var isGifMessage = !!gifUrl;
+            if (isGifMessage) {
+                messageElement.classList.add('gif-message');
+            }
+
             // Add message content with emote parsing and special ACTION handling
             var messageContent;
-            if (!enableEmotes) {
+            var contentClass = 'message-content';
+            if (isGifMessage) {
+                contentClass += ' message-content-block';
+                messageContent = '<img class="chat-gif" src="' + escapeHtml(gifUrl) + '" alt="' +
+                    escapeHtml(processedMessage) + '" onerror="handleChatGifError(this)">';
+            } else if (!enableEmotes) {
                 messageContent = isActionMessage
                     ? '<span style="color: ' + usernameColor + '">' + escapeHtml(processedMessage) + '</span>'
                     : escapeHtml(processedMessage);
@@ -2001,7 +2027,7 @@
                 messageContent = parseEmotes(processedMessage, messageData.emotes, replyStripOffset);
             }
 
-            if (messageData.message_type === 'power_ups_gigantified_emote') {
+            if (!isGifMessage && messageData.message_type === 'power_ups_gigantified_emote') {
                 chatLog('[gigantified] message branch', { messageId: messageData.id, enableEmotes: enableEmotes });
                 if (enableEmotes) {
                     var twitchTier10Re = /static-cdn\.jtvnw\.net\/emoticons\/v2\/[^/]+\/default\/(?:light|dark)\/1\.0/g;
@@ -2020,7 +2046,7 @@
                 }
             }
 
-            messageHTML += '<div class="message-content">' + messageContent + '</div>';
+            messageHTML += '<div class="' + contentClass + '">' + messageContent + '</div>';
 
             chatLog('Final message HTML:', messageHTML);
 
@@ -2187,6 +2213,47 @@
         }
 
 
+
+        function handleChatGifError(imgEl) {
+            if (!imgEl || imgEl.getAttribute('data-gif-fallback-applied') === '1') {
+                return;
+            }
+            imgEl.setAttribute('data-gif-fallback-applied', '1');
+            var fallback = imgEl.getAttribute('alt') || '';
+            var replacement = document.createTextNode(fallback);
+            if (imgEl.parentNode) {
+                imgEl.parentNode.replaceChild(replacement, imgEl);
+            }
+        }
+
+        function extractChatGifUrl(messageData) {
+            if (!messageData) {
+                return '';
+            }
+            var top = messageData.gif_url;
+            if (typeof top === 'string' && top) {
+                return top;
+            }
+            var frags = normalizeFragmentsList(messageData.fragments);
+            if (!frags) {
+                return '';
+            }
+            for (var i = 0; i < frags.length; i++) {
+                var f = frags[i];
+                if (!f) {
+                    continue;
+                }
+                var nested = (f.gif && typeof f.gif === 'object') ? f.gif : null;
+                var url = (nested && (nested.url || nested.gif_url)) || f.url || f.gif_url || '';
+                if (typeof url !== 'string' || !url) {
+                    continue;
+                }
+                if (f.type === 'gif' || nested) {
+                    return url;
+                }
+            }
+            return '';
+        }
 
         function handleEmoteImageError(imgEl) {
             if (!imgEl || imgEl.getAttribute('data-emote-fallback-applied') === '1') {
@@ -3415,6 +3482,7 @@
                 filterUnknownSlashCommands = settings.filterUnknownSlashCommands;
             }
             if (settings.enableEmotes !== undefined) enableEmotes = settings.enableEmotes;
+            if (settings.enableGifs !== undefined) enableGifs = settings.enableGifs;
             if (settings.enableBadges !== undefined) enableBadges = settings.enableBadges;
 
             // Update font randomization settings
@@ -3667,6 +3735,7 @@
             var alertUserEmoteScale = _chatCfg(config, 'AlertEventUserMessageEmoteScale', 1.4);
             var alertUserEmoteMargin = _chatCfg(config, 'AlertEventUserMessageEmoteMargin', 2);
             var gigScale = _chatCfg(config, 'GigantifiedTwitchDisplayScale', 2);
+            var gifWidthPercent = _chatCfg(config, 'GifWidthPercent', 100);
             var timestampSize = _chatCfg(config, 'TimestampSize', 11);
             var timestampColor = _chatCfg(config, 'TimestampColor', '#888888');
             var timestampMargin = _chatCfg(config, 'TimestampMargin', 4);
@@ -3733,6 +3802,8 @@
                 '.emote-img.gigantified-emote { margin: 0 ' + emoteMargin + 'px !important; }' +
                 '.chat-message.gigantified-message { line-height: calc(' + lineHeight + ' * (0.55 + ' + gigScale + ' * 0.35)); ' +
                 'padding: calc(' + messagePadding + 'px * (1 + ' + gigScale + ' * 0.2)) ' + messagePadding + 'px; }' +
+                '.chat-message.gif-message .message-header { display: block; margin-right: 0; }' +
+                '.chat-gif { display: block; width: ' + gifWidthPercent + '%; max-width: 100%; height: auto; object-fit: contain; margin-top: 2px; }' +
                 '.cheermote-container { margin: 0 ' + emoteMargin + 'px; }' +
                 '.cheermote-img { height: calc(28px * ' + emoteScale + '); }' +
                 '.timestamp { font-size: ' + timestampSize + 'px; color: ' + timestampColor + '; margin-right: ' + timestampMargin + 'px; opacity: ' + timestampOpacity + '; }' +
@@ -3761,6 +3832,7 @@
                 filterUnknownSlashCommands = !!config.FilterUnknownSlashCommands;
             }
             if (config.EnableEmotes !== undefined) { enableEmotes = !!config.EnableEmotes; }
+            if (config.EnableGifs !== undefined) { enableGifs = !!config.EnableGifs; }
             if (config.EnableBadges !== undefined) { enableBadges = !!config.EnableBadges; }
             if (config.AlertShowActivitySummary !== undefined) {
                 alertShowActivitySummary = !!config.AlertShowActivitySummary;
@@ -3804,6 +3876,7 @@
                 alertMediaScale: alertMediaScale,
                 filterUnknownSlashCommands: filterUnknownSlashCommands,
                 enableEmotes: enableEmotes,
+                enableGifs: enableGifs,
                 enableBadges: enableBadges,
                 enableMessageFontRandomization: enableMessageFontRandomization,
                 enableUsernameFontRandomization: enableUsernameFontRandomization,

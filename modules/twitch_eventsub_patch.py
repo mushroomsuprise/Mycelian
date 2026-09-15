@@ -11,9 +11,12 @@ Runtime patches for twitchAPI EventSub gaps:
 2. Hype Train EventSub v1 was withdrawn by Twitch (2026-01-15); twitchAPI 4.5.0
    on PyPI still subscribes with version ``1``. Patch listen methods to use ``2``
    and ensure v2 payload fields are annotated for deserialization.
+3. ChatMessageFragment omits Twitch's ``gif`` fragment metadata (added 2026-07-16),
+   so TwitchObject drops ``gif.url`` / ``gif_id`` during deserialization.
 
 https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
 https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelhype_trainbegin
+https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-message-event
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from twitchAPI.eventsub.base import EventSubBase
 from twitchAPI.object.base import TwitchObject
 from twitchAPI.object.eventsub import (
     ChannelChatNotificationData,
+    ChatMessageFragment,
     HypeTrainData,
     HypeTrainEndData,
     HypeTrainEndEvent,
@@ -35,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 _WATCH_STREAK_PATCH_ATTR = "__mycelian_watch_streak_field_patched__"
 _HYPE_TRAIN_V2_PATCH_ATTR = "__mycelian_hype_train_v2_patched__"
+_CHAT_GIF_PATCH_ATTR = "__mycelian_chat_message_gif_patched__"
 
 
 class WatchStreakNoticeData(TwitchObject):
@@ -50,6 +55,26 @@ class SharedTrainParticipants(TwitchObject):
     broadcaster_user_id: str
     broadcaster_user_login: str
     broadcaster_user_name: str
+
+
+class ChatMessageFragmentGifMetadata(TwitchObject):
+    """Twitch ``channel.chat.message`` GIF fragment metadata.
+
+    Changelog uses ``gif_id``; some EventSub tables document ``id``. Keep both.
+    """
+
+    url: str
+    gif_id: Optional[str]
+    id: Optional[str]
+
+
+# twitchAPI TwitchObject reads __annotations__ directly and cannot resolve
+# postponed (string) annotations from ``from __future__ import annotations``.
+ChatMessageFragmentGifMetadata.__annotations__ = {
+    "url": str,
+    "gif_id": Optional[str],
+    "id": Optional[str],
+}
 
 
 def ensure_channel_chat_notification_watch_streak_patch() -> None:
@@ -74,6 +99,31 @@ def ensure_channel_chat_notification_watch_streak_patch() -> None:
     setattr(ChannelChatNotificationData, _WATCH_STREAK_PATCH_ATTR, True)
     logger.debug(
         "Patched ChannelChatNotificationData.watch_streak for EventSub deserialization"
+    )
+
+
+def ensure_channel_chat_message_gif_patch() -> None:
+    """Force ``gif`` onto twitchAPI ``ChatMessageFragment``.
+
+    twitchAPI 4.5.x has no GIF fragment field, so TwitchObject drops the URL.
+    Always overwrites a missing/weak annotation so nested metadata is kept.
+    """
+    existing = getattr(ChatMessageFragment, "__annotations__", None) or {}
+    if not isinstance(existing, dict):
+        existing = {}
+    desired = Optional[ChatMessageFragmentGifMetadata]
+    if (
+        getattr(ChatMessageFragment, _CHAT_GIF_PATCH_ATTR, False)
+        and existing.get("gif") is desired
+    ):
+        return
+
+    merged = dict(existing)
+    merged["gif"] = desired
+    ChatMessageFragment.__annotations__ = merged
+    setattr(ChatMessageFragment, _CHAT_GIF_PATCH_ATTR, True)
+    logger.debug(
+        "Patched ChatMessageFragment.gif for EventSub GIF deserialization"
     )
 
 

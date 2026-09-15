@@ -76,6 +76,7 @@ from .chatbot_manager import get_manager as get_chatbot_manager
 from .template_config_parser import match_point_reward_dedicated_template
 from .text_safe import safe_console_str
 from .twitch_eventsub_patch import (
+    ensure_channel_chat_message_gif_patch,
     ensure_channel_chat_notification_watch_streak_patch,
     ensure_hype_train_v2_patch,
 )
@@ -101,6 +102,7 @@ from .uiwindows.activity_feed import (
 )
 
 ensure_channel_chat_notification_watch_streak_patch()
+ensure_channel_chat_message_gif_patch()
 ensure_hype_train_v2_patch()
 
 logger = logging.getLogger(__name__)
@@ -928,6 +930,84 @@ def subscription_emotes_to_json(emotes) -> Optional[list]:
             continue
         out.append({"begin": int(begin), "end": int(end), "id": str(emote_id)})
     return out if out else None
+
+
+def _fragment_attr(fragment: Any, name: str, default: Any = None) -> Any:
+    if isinstance(fragment, dict):
+        return fragment.get(name, default)
+    return getattr(fragment, name, default)
+
+
+def _nested_attr(obj: Any, *names: str) -> Any:
+    if obj is None:
+        return None
+    for name in names:
+        if isinstance(obj, dict):
+            value = obj.get(name)
+        else:
+            value = getattr(obj, name, None)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def serialize_chat_message_fragments(
+    fragments,
+) -> tuple[Optional[list], Optional[str]]:
+    """Serialize channel.chat.message fragments for the overlay.
+
+    Returns ``(fragments, gif_url)`` where ``gif_url`` is the first GIF asset
+    URL (unmodified). Missing/empty fragments yield ``(None, None)``.
+    """
+    if not fragments:
+        return None, None
+
+    result: list[dict[str, Any]] = []
+    gif_url: Optional[str] = None
+    for fragment in fragments:
+        text = _fragment_attr(fragment, "text", "") or ""
+        frag_type = _fragment_attr(fragment, "type", None) or "text"
+        entry: dict[str, Any] = {"text": text, "type": frag_type}
+
+        gif_obj = _fragment_attr(fragment, "gif")
+        url = _nested_attr(gif_obj, "url") or _fragment_attr(fragment, "url") or ""
+        if isinstance(url, str):
+            gif_asset_url = url
+        elif url:
+            gif_asset_url = str(url)
+        else:
+            gif_asset_url = ""
+
+        if frag_type == "gif" or gif_obj or gif_asset_url:
+            entry["type"] = "gif"
+            if gif_asset_url:
+                entry["url"] = gif_asset_url
+                if gif_url is None:
+                    gif_url = gif_asset_url
+            gif_id = _nested_attr(gif_obj, "gif_id", "id")
+            if gif_id not in (None, ""):
+                entry["gif_id"] = str(gif_id)
+        elif frag_type == "emote" or _fragment_attr(fragment, "emote"):
+            emote = _fragment_attr(fragment, "emote")
+            entry["type"] = "emote"
+            entry["emote_id"] = _nested_attr(emote, "id")
+            entry["emote_name"] = _nested_attr(emote, "name")
+        elif frag_type == "cheermote" or _fragment_attr(fragment, "cheermote"):
+            cheermote = _fragment_attr(fragment, "cheermote")
+            entry["type"] = "cheermote"
+            bits = _nested_attr(cheermote, "bits")
+            tier = _nested_attr(cheermote, "tier")
+            entry["bits"] = int(bits or 0)
+            entry["tier"] = int(tier or 1)
+        elif frag_type == "mention" or _fragment_attr(fragment, "mention"):
+            mention = _fragment_attr(fragment, "mention")
+            entry["type"] = "mention"
+            entry["user_id"] = _nested_attr(mention, "user_id")
+            entry["user_name"] = _nested_attr(mention, "user_name")
+
+        result.append(entry)
+
+    return result, gif_url
 
 
 def serialize_bits_message_fragments(fragments) -> list:
@@ -1782,69 +1862,27 @@ class Twitch_API:
             "timestamp": time.time(),
             "type": "chat",
             "message_type": message_type,
+            "gif_url": None,
         }
 
         # Convert fragments to JSON-serializable format
         if fragments:
             try:
-                serializable_fragments = []
-                for fragment in fragments:
-                    fragment_dict = {
-                        "text": fragment.text if hasattr(fragment, "text") else "",
-                        "type": "text",  # Default type
-                    }
-
-                    # Check if it's an emote fragment
-                    if hasattr(fragment, "emote") and fragment.emote:
-                        fragment_dict["type"] = "emote"
-                        fragment_dict["emote_id"] = (
-                            fragment.emote.id if hasattr(fragment.emote, "id") else None
-                        )
-                        fragment_dict["emote_name"] = (
-                            fragment.emote.name
-                            if hasattr(fragment.emote, "name")
-                            else None
-                        )
-
-                    # Check if it's a cheermote fragment
-                    elif hasattr(fragment, "cheermote") and fragment.cheermote:
-                        fragment_dict["type"] = "cheermote"
-                        fragment_dict["bits"] = (
-                            fragment.cheermote.bits
-                            if hasattr(fragment.cheermote, "bits")
-                            else 0
-                        )
-                        fragment_dict["tier"] = (
-                            fragment.cheermote.tier
-                            if hasattr(fragment.cheermote, "tier")
-                            else 1
-                        )
-
-                    # Check if it's a mention fragment
-                    elif hasattr(fragment, "mention") and fragment.mention:
-                        fragment_dict["type"] = "mention"
-                        fragment_dict["user_id"] = (
-                            fragment.mention.user_id
-                            if hasattr(fragment.mention, "user_id")
-                            else None
-                        )
-                        fragment_dict["user_name"] = (
-                            fragment.mention.user_name
-                            if hasattr(fragment.mention, "user_name")
-                            else None
-                        )
-
-                    serializable_fragments.append(fragment_dict)
-
+                serializable_fragments, gif_url = serialize_chat_message_fragments(
+                    fragments
+                )
                 msg_dict["fragments"] = serializable_fragments
+                msg_dict["gif_url"] = gif_url
                 logger.debug(
-                    f"Converted {len(serializable_fragments)} fragments to JSON-serializable format"
+                    "Converted %s fragments to JSON-serializable format",
+                    len(serializable_fragments or []),
                 )
             except Exception as e:
                 logger.warning(
                     f"Error converting fragments to JSON-serializable format: {str(e)}"
                 )
                 msg_dict["fragments"] = None  # Fall back to None if conversion fails
+                msg_dict["gif_url"] = None
 
         reply = getattr(data.event, "reply", None)
         if reply:
