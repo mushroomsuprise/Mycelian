@@ -1391,6 +1391,7 @@
             var chatContainer = document.getElementById('chat');
             chatContainer.appendChild(messageElement);
             scrollToBottom();
+            bindDeferredScrollForMedia(messageElement);
             messageCount++;
             if (messageCount > maxMessages) {
                 removeOldestMessage();
@@ -1914,7 +1915,6 @@
                 }
             }
 
-            var chatContainer = document.getElementById('chat');
             var messageElement = document.createElement('li');
             messageElement.className = 'chat-message';
             messageElement.id = 'msg-' + messageData.id;
@@ -2086,19 +2086,10 @@
                 });
             }
 
-            chatContainer.appendChild(messageElement);
+            appendChatMessageElement(messageElement);
 
             if (messageData.message_type === 'power_ups_gigantified_emote') {
                 logGigantifiedEmoteImageDiagnostics(messageElement, { messageId: messageData.id });
-            }
-
-            // Scroll to bottom
-            scrollToBottom();
-
-            // Manage message count
-            messageCount++;
-            if (messageCount > maxMessages) {
-                removeOldestMessage();
             }
         }
 
@@ -3426,6 +3417,41 @@
         function scrollToBottom() {
             var chatContainer = document.getElementById('chat');
             chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function scheduleScrollToBottom() {
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    scrollToBottom();
+                });
+            });
+        }
+
+        function bindDeferredScrollForMedia(rootEl) {
+            if (!rootEl) {
+                return;
+            }
+            var media = rootEl.querySelectorAll('img, video');
+            for (var i = 0; i < media.length; i++) {
+                (function (el) {
+                    var tag = el.tagName;
+                    if (tag === 'IMG') {
+                        if (el.complete) {
+                            scheduleScrollToBottom();
+                            return;
+                        }
+                        el.addEventListener('load', scheduleScrollToBottom);
+                        el.addEventListener('error', scheduleScrollToBottom);
+                    } else if (tag === 'VIDEO') {
+                        if (el.readyState >= 1) {
+                            scheduleScrollToBottom();
+                            return;
+                        }
+                        el.addEventListener('loadedmetadata', scheduleScrollToBottom);
+                        el.addEventListener('error', scheduleScrollToBottom);
+                    }
+                })(media[i]);
+            }
         }
 
         function clearChat() {
