@@ -61,6 +61,14 @@ _GITHUB_RELEASE_CACHE_TTL_SEC = 60.0
 _github_release_cache_lock = threading.Lock()
 _github_release_cache: Optional[Tuple[float, Optional[Dict[str, Any]]]] = None
 
+# Keep a reference so the installer helper is not GC'd before we exit.
+_installer_helper_proc: Optional[subprocess.Popen] = None
+
+# Windows CreateProcess flags (numeric fallbacks for non-Windows unit tests).
+_CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+_DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+_CREATE_BREAKAWAY_FROM_JOB = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000)
+
 # Ensure 'packaging' and 'aiohttp' libraries are installed: pip install packaging aiohttp
 
 def _compare_versions(current_v_str: str, new_v_str: str) -> bool:
@@ -309,6 +317,36 @@ async def download_update(download_url: str, progress_callback=None):
         logger.error(f"Error downloading update: {e}", exc_info=True)
         return None
 
+def _sanitized_installer_env() -> dict:
+    sanitized_env = os.environ.copy()
+    for var_name in ["_MEIPASS2", "PYTHONHOME", "PYTHONPATH", "_PYI_BOOTSTRAP"]:
+        sanitized_env.pop(var_name, None)
+    return sanitized_env
+
+
+def _windows_installer_creationflags(*, breakaway: bool = True) -> int:
+    flags = _CREATE_NEW_PROCESS_GROUP | _DETACHED_PROCESS
+    if breakaway:
+        flags |= _CREATE_BREAKAWAY_FROM_JOB
+    return flags
+
+
+def _installer_helper_running(proc: Optional[subprocess.Popen]) -> bool:
+    if proc is None:
+        return False
+    pid = getattr(proc, "pid", None)
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    poll = getattr(proc, "poll", None)
+    if callable(poll):
+        try:
+            if poll() is not None:
+                return False
+        except Exception:
+            return False
+    return True
+
+
 def run_installer_and_exit(installer_path: str):
     """
     Run the installer and exit the current application.
@@ -317,29 +355,41 @@ def run_installer_and_exit(installer_path: str):
     Args:
         installer_path (str): Path to the installer file
     """
+    global _installer_helper_proc
     try:
         logger.info(f"Running installer: {installer_path}")
         
         if sys.platform == "win32":
-            # Windows: Create a batch script to delay installer execution
-            _run_installer_windows_detached(installer_path)
+            proc = _run_installer_windows_detached(installer_path)
         elif sys.platform == "darwin":
-            # macOS: Use nohup to detach the process
-            _run_installer_macos_detached(installer_path)
+            proc = _run_installer_macos_detached(installer_path)
         else:
-            # Linux: Use nohup and background execution
-            _run_installer_linux_detached(installer_path)
-        
-        logger.info("Installer scheduled successfully. Exiting application.")
-        
-        # Force immediate exit without delay
+            proc = _run_installer_linux_detached(installer_path)
+
+        if not _installer_helper_running(proc):
+            logger.error(
+                "Installer helper failed to start (pid=%s returncode=%s); "
+                "not exiting so the current app can keep running",
+                getattr(proc, "pid", None),
+                getattr(proc, "returncode", None),
+            )
+            return
+
+        from .shutdown import protect_child_process_trees
+
+        _installer_helper_proc = proc
+        protect_child_process_trees([proc.pid])
+        logger.info(
+            "Installer helper started pid=%s. Exiting application.", proc.pid
+        )
+
         _force_application_exit()
         
     except Exception as e:
         logger.error(f"Error running installer: {e}", exc_info=True)
         raise
 
-def _run_installer_windows_detached(installer_path: str):
+def _run_installer_windows_detached(installer_path: str) -> subprocess.Popen:
     """
     Run installer on Windows with proper process detachment.
     Uses VBScript to avoid showing any console windows and properly wait for parent process exit.
@@ -398,21 +448,47 @@ End Function
     # "Failed to load Python DLL ... _MEIxxxx/python3xx.dll" errors.
     # To prevent this, launch the helper (wscript.exe) with a sanitized
     # environment that omits PyInstaller-related variables.
-    sanitized_env = os.environ.copy()
-    for var_name in ["_MEIPASS2", "PYTHONHOME", "PYTHONPATH", "_PYI_BOOTSTRAP"]:
-        sanitized_env.pop(var_name, None)
-
-    subprocess.Popen(
-        ["wscript.exe", vbs_path],
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+    sanitized_env = _sanitized_installer_env()
+    popen_kwargs = dict(
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         close_fds=True,
         env=sanitized_env,
     )
+    try:
+        proc = subprocess.Popen(
+            ["wscript.exe", vbs_path],
+            creationflags=_windows_installer_creationflags(breakaway=True),
+            **popen_kwargs,
+        )
+    except OSError:
+        logger.debug(
+            "CREATE_BREAKAWAY_FROM_JOB rejected; retrying installer helper without it"
+        )
+        proc = subprocess.Popen(
+            ["wscript.exe", vbs_path],
+            creationflags=_windows_installer_creationflags(breakaway=False),
+            **popen_kwargs,
+        )
+    logger.info("Windows installer helper started pid=%s", proc.pid)
+    return proc
 
-def _run_installer_macos_detached(installer_path: str):
+def _popen_unix_installer_helper(script_path: str) -> subprocess.Popen:
+    sanitized_env = _sanitized_installer_env()
+    popen_kwargs: Dict[str, Any] = dict(
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=sanitized_env,
+    )
+    if setsid_available:
+        popen_kwargs["preexec_fn"] = os.setsid
+    proc = subprocess.Popen(["nohup", script_path], **popen_kwargs)
+    logger.info("Unix installer helper started pid=%s", proc.pid)
+    return proc
+
+def _run_installer_macos_detached(installer_path: str) -> subprocess.Popen:
     """
     Run installer on macOS with proper process detachment.
     """
@@ -448,33 +524,9 @@ rm "$0"
     # Make script executable
     os.chmod(script_path, 0o755)
     
-    # Run script detached
-    try:
-        # Sanitize environment to prevent PyInstaller bootstrap variables from
-        # leaking into the installer and subsequently launched application.
-        sanitized_env = os.environ.copy()
-        for var_name in ["_MEIPASS2", "PYTHONHOME", "PYTHONPATH", "_PYI_BOOTSTRAP"]:
-            sanitized_env.pop(var_name, None)
+    return _popen_unix_installer_helper(script_path)
 
-        subprocess.Popen(
-            ['nohup', script_path],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            preexec_fn=os.setsid if setsid_available else None,  # type: ignore
-            env=sanitized_env,
-        )
-    except AttributeError:
-        # Fallback if setsid is not available
-        subprocess.Popen(
-            ['nohup', script_path],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=sanitized_env,
-        )
-
-def _run_installer_linux_detached(installer_path: str):
+def _run_installer_linux_detached(installer_path: str) -> subprocess.Popen:
     """
     Run installer on Linux with proper process detachment.
     """
@@ -525,31 +577,7 @@ rm "$0"
     # Make script executable
     os.chmod(script_path, 0o755)
     
-    # Run script detached
-    try:
-        # Sanitize environment to prevent PyInstaller bootstrap variables from
-        # leaking into the installer and subsequently launched application.
-        sanitized_env = os.environ.copy()
-        for var_name in ["_MEIPASS2", "PYTHONHOME", "PYTHONPATH", "_PYI_BOOTSTRAP"]:
-            sanitized_env.pop(var_name, None)
-
-        subprocess.Popen(
-            ['nohup', script_path],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            preexec_fn=os.setsid if setsid_available else None,  # type: ignore
-            env=sanitized_env,
-        )
-    except AttributeError:
-        # Fallback if setsid is not available
-        subprocess.Popen(
-            ['nohup', script_path],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=sanitized_env,
-        )
+    return _popen_unix_installer_helper(script_path)
 
 def _force_application_exit():
     """

@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable
+from typing import Callable, Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,8 @@ _shutdown_in_progress = False
 _shutdown_lock = threading.Lock()
 _native_close_registered = False
 _native_close_exit_started = False
+_protect_lock = threading.Lock()
+_protected_child_pids: set[int] = set()
 
 
 def is_shutdown_in_progress() -> bool:
@@ -426,9 +428,67 @@ def _taskkill_process_tree(pid: int) -> None:
         logger.debug("taskkill PID %s: %s", pid, e)
 
 
+def protect_child_process_trees(pids: Iterable[int]) -> None:
+    """Keep these PIDs (and their descendants) alive across reap_child_process_trees.
+
+    The auto-updater helper must outlive Mycelian so it can launch the installer
+    after this process exits. Normal quit still reaps every other child.
+    """
+    added: list[int] = []
+    with _protect_lock:
+        for pid in pids:
+            if isinstance(pid, int) and pid > 0:
+                if pid not in _protected_child_pids:
+                    _protected_child_pids.add(pid)
+                    added.append(pid)
+    if added:
+        logger.info("Protecting child process trees from reaping: %s", added)
+
+
+def _expanded_protected_pids() -> set[int]:
+    with _protect_lock:
+        roots = set(_protected_child_pids)
+    expanded = set(roots)
+    if not roots:
+        return expanded
+    try:
+        import psutil
+    except Exception:
+        return expanded
+    for pid in roots:
+        try:
+            for child in psutil.Process(pid).children(recursive=True):
+                try:
+                    expanded.add(int(child.pid))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    return expanded
+
+
+def _tree_contains_protected(pid: int, protected: set[int]) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if pid in protected:
+        return True
+    try:
+        import psutil
+
+        for child in psutil.Process(pid).children(recursive=True):
+            if int(child.pid) in protected:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def _kill_process_tree(pid: int) -> None:
     """Kill a Windows process tree without flashing a console window."""
     if sys.platform != "win32" or pid <= 0 or pid == os.getpid():
+        return
+    if _tree_contains_protected(pid, _expanded_protected_pids()):
+        logger.info("Skipping kill of protected process tree pid=%s", pid)
         return
     was_running = _pid_is_running(pid)
     if _kill_process_tree_psutil(pid):
@@ -446,9 +506,13 @@ def reap_child_process_trees() -> None:
     child is still alive; ``terminate()`` first would orphan WebView2 helpers.
     Trees are killed with psutil when possible so ``taskkill.exe`` does not flash
     a console in the windowed exe. Hidden ``taskkill /T /F`` is the fallback.
+
+    PIDs registered with ``protect_child_process_trees`` (and their descendants)
+    are left running so the updater helper can launch the installer after exit.
     """
     import multiprocessing
 
+    protected = _expanded_protected_pids()
     children = list(multiprocessing.active_children())
     if sys.platform == "win32":
         seen: set[int] = set()
@@ -456,6 +520,13 @@ def reap_child_process_trees() -> None:
             pid = getattr(child, "pid", None)
             if isinstance(pid, int) and pid > 0:
                 seen.add(pid)
+                if _tree_contains_protected(pid, protected):
+                    logger.info(
+                        "Skipping reap of protected spawn child %s (pid=%s)",
+                        getattr(child, "name", "?"),
+                        pid,
+                    )
+                    continue
                 logger.warning(
                     "Terminating surviving child process %s (pid=%s)",
                     getattr(child, "name", "?"),
@@ -468,12 +539,18 @@ def reap_child_process_trees() -> None:
             if pid not in seen and _pid_is_running(pid)
         ]
         for pid in _leftover_tree_roots(leftover):
+            if _tree_contains_protected(pid, protected):
+                logger.info("Skipping reap of protected leftover tree pid=%s", pid)
+                continue
             _kill_process_tree(pid)
         return
 
     for child in children:
         name = getattr(child, "name", "?")
         pid = getattr(child, "pid", None)
+        if isinstance(pid, int) and _tree_contains_protected(pid, protected):
+            logger.info("Skipping reap of protected spawn child %s (pid=%s)", name, pid)
+            continue
         logger.warning("Terminating surviving child process %s (pid=%s)", name, pid)
         try:
             if child.is_alive():
@@ -492,6 +569,9 @@ def reap_child_process_trees() -> None:
         import psutil
 
         for pid in remaining:
+            if _tree_contains_protected(pid, protected):
+                logger.info("Skipping reap of protected leftover pid=%s", pid)
+                continue
             try:
                 proc = psutil.Process(pid)
                 if proc.is_running():
