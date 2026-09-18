@@ -82,6 +82,13 @@ from .theme_manager import generate_css_variables, get_theme_manager
 
 logger = logging.getLogger(__name__)
 
+
+def _inject_served_overlay_scripts(html: str) -> str:
+    """Ensure overlay recovery, alert-queue handshake, and logger scripts on served HTML."""
+    from .spore_studio.overlay_recovery_inject import inject_overlay_recovery
+
+    return inject_template_logger(inject_overlay_recovery(html))
+
 # Flask / SocketIO / gevent are loaded in _ensure_server_deps() when WebEngine
 # is constructed. Importing them here would contend with NiceGUI on the GIL.
 Flask = None
@@ -694,6 +701,38 @@ def assign_next_alert_queue_seq() -> int:
         _alert_queue_seq += 1
         EXPECTED_ALERT_COMPLETE_SEQ = _alert_queue_seq
         return _alert_queue_seq
+
+
+def begin_alert_playback_session(
+    seq: int,
+    holders: list[str],
+    duration_sec: float,
+    delay_between_sec: float,
+):
+    """Start the holder handshake for this queue_seq."""
+    from .alert_playback_session import begin_session
+
+    global EXPECTED_ALERT_COMPLETE_SEQ
+    EXPECTED_ALERT_COMPLETE_SEQ = int(seq)
+    return begin_session(seq, holders, duration_sec, delay_between_sec)
+
+
+def abort_alert_playback(reason: str = "abort") -> None:
+    """Force-finish the current handshake and release the alert queue."""
+    from .alert_playback_session import abort_session
+
+    global EXPECTED_ALERT_COMPLETE_SEQ
+    abort_session(reason)
+    EXPECTED_ALERT_COMPLETE_SEQ = None
+    set_alert_playing(False)
+
+
+def _apply_playback_session_finished(newly_finished: bool) -> None:
+    if not newly_finished:
+        return
+    global EXPECTED_ALERT_COMPLETE_SEQ
+    EXPECTED_ALERT_COMPLETE_SEQ = None
+    set_alert_playing(False)
 
 
 # Global flag to track Web Engine status
@@ -3363,6 +3402,34 @@ class WebEngine:
                 return
             routes.pop(str(sid), None)
 
+    def _overlay_hello_route_for_sid(self, sid: str) -> Optional[str]:
+        if not sid:
+            return None
+        with self._socket_connected_lock:
+            routes = getattr(self, "_overlay_hello_routes", None) or {}
+            return routes.get(str(sid))
+
+    def _handshake_route_for_sid(self, sid: str, data: Any = None) -> Optional[str]:
+        """Prefer overlay_hello path; fall back to client-reported route."""
+        route = self._overlay_hello_route_for_sid(sid)
+        if route:
+            return route
+        if not isinstance(data, dict):
+            return None
+        raw = data.get("route") or data.get("path") or ""
+        if not raw:
+            return None
+        try:
+            from .obs_browser_source_match import overlay_template_route_from_path
+        except Exception:
+            overlay_template_route_from_path = None  # type: ignore[assignment]
+        text = str(raw)
+        if overlay_template_route_from_path is not None:
+            parsed = overlay_template_route_from_path(text)
+            if parsed:
+                return parsed
+        return text.strip().lstrip("/") or None
+
     def _record_http_latency(self, elapsed_ms: float, path: str) -> None:
         now = time.time()
         with self._http_latency_lock:
@@ -4974,7 +5041,7 @@ class WebEngine:
                                 mycelian_html_stem=str(template),
                                 mycelian_preview_mode=mycelian_preview_mode,
                             )
-                        html = inject_template_logger(html)
+                        html = _inject_served_overlay_scripts(html)
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
                             # MutationObserver). Try </body> first, then
@@ -4997,7 +5064,7 @@ class WebEngine:
                                 httponly=False,
                             )
                             return resp
-                        return inject_template_logger(html)
+                        return _inject_served_overlay_scripts(html)
                     except Exception as e:
                         logger.error(
                             f"Error rendering template {template}: {str(e)}",
@@ -5112,7 +5179,7 @@ class WebEngine:
                         mycelian_html_stem=str(template_name),
                         mycelian_preview_mode=mycelian_preview_mode,
                     )
-                html = inject_template_logger(html)
+                html = _inject_served_overlay_scripts(html)
                 if mycelian_preview_mode and preview_token:
                     if "</body>" in html:
                         html = html.replace(
@@ -5131,7 +5198,7 @@ class WebEngine:
                         httponly=False,
                     )
                     return resp
-                return inject_template_logger(html)
+                return _inject_served_overlay_scripts(html)
             except Exception as e:
                 logger.error(
                     "Template fallback render error for %s: %s",
@@ -5816,6 +5883,16 @@ class WebEngine:
             # sources reconnect constantly, so drop the entry instead.
             self._preview_demo_stop.pop(request.sid, None)
             self._unregister_preview_iframe_sid(request.sid)
+            try:
+                from .alert_playback_session import get_session
+
+                session = get_session()
+                if session is not None and not session.finished:
+                    _apply_playback_session_finished(
+                        session.note_disconnect(request.sid)
+                    )
+            except Exception:
+                pass
             self._unregister_overlay_hello(request.sid)
 
         @self.socketio.on("overlay_hello")
@@ -5827,6 +5904,8 @@ class WebEngine:
                 self._register_overlay_hello(request.sid, path)
             except Exception as e:
                 logger.debug("overlay_hello failed for %s: %s", request.sid, e)
+
+        @self.socketio.on("game_hook_command")
         def handle_game_hook_command(data):
             """Template → server commands for game hooks (e.g. clear boss list)."""
             try:
@@ -5840,37 +5919,108 @@ class WebEngine:
                     f"Error handling game_hook_command: {str(e)}", exc_info=True
                 )
 
-        @self.socketio.on("alert_complete")
-        def handle_alert_complete(data=None):
-            global ALERT_PLAYING, EXPECTED_ALERT_COMPLETE_SEQ
-            seq = None
-            if isinstance(data, dict):
-                seq = data.get("queue_seq")
+        def _parse_handshake_seq(data):
+            seq = data.get("queue_seq") if isinstance(data, dict) else None
             try:
                 seq = int(seq)
             except (TypeError, ValueError):
+                return None
+            return seq
+
+        def _active_handshake_session(seq):
+            from .alert_playback_session import get_session
+
+            global EXPECTED_ALERT_COMPLETE_SEQ
+            if seq is None:
+                return None
+            if seq < 0:
+                logger.debug("alert handshake ignored (preview seq=%s)", seq)
+                return None
+            session = get_session()
+            expected = EXPECTED_ALERT_COMPLETE_SEQ
+            if session is None or session.finished:
+                logger.debug("alert handshake ignored (no active session seq=%s)", seq)
+                return None
+            if expected is not None and seq != expected:
+                logger.debug(
+                    "alert handshake ignored (seq=%s, expected=%s)",
+                    seq,
+                    expected,
+                )
+                return None
+            if seq != session.seq:
+                logger.debug(
+                    "alert handshake ignored (seq=%s, session=%s)",
+                    seq,
+                    session.seq,
+                )
+                return None
+            return session
+
+        @self.socketio.on("alert_playing")
+        def handle_alert_playing(data=None):
+            seq = _parse_handshake_seq(data)
+            session = _active_handshake_session(seq)
+            if session is None:
+                return
+            sid = request.sid
+            is_preview = self._preview_iframe_has_sid(sid)
+            route = self._handshake_route_for_sid(sid, data)
+            session.note_playing(sid, route, is_preview=is_preview)
+            _apply_playback_session_finished(session.tick())
+
+        @self.socketio.on("alert_progress")
+        def handle_alert_progress(data=None):
+            seq = _parse_handshake_seq(data)
+            session = _active_handshake_session(seq)
+            if session is None:
+                return
+            sid = request.sid
+            is_preview = self._preview_iframe_has_sid(sid)
+            session.note_progress(sid, is_preview=is_preview)
+            _apply_playback_session_finished(session.tick())
+
+        def _emit_alert_complete_ack(sid, seq):
+            try:
+                self.socketio.emit("alert_complete_ack", {"queue_seq": seq}, to=sid)
+            except Exception as ack_exc:
+                logger.debug("alert_complete_ack failed: %s", ack_exc)
+
+        def _handshake_session_for_complete(seq):
+            from .alert_playback_session import get_session
+
+            if seq is None or seq < 0:
+                return None
+            session = get_session()
+            if session is None or seq != session.seq:
+                return None
+            return session
+
+        @self.socketio.on("alert_complete")
+        def handle_alert_complete(data=None):
+            seq = _parse_handshake_seq(data)
+            if seq is None:
                 logger.debug(
                     "alert_complete ignored (missing or invalid queue_seq): %s", data
                 )
                 return
-            if seq < 0:
-                logger.debug("alert_complete ignored (preview seq=%s)", seq)
+            session = _handshake_session_for_complete(seq)
+            if session is None:
+                session = _active_handshake_session(seq)
+            if session is None:
                 return
-            if EXPECTED_ALERT_COMPLETE_SEQ is None:
-                logger.debug("alert_complete ignored (no active expected queue_seq)")
+            sid = request.sid
+            if session.finished:
+                _emit_alert_complete_ack(sid, seq)
                 return
-            if seq != EXPECTED_ALERT_COMPLETE_SEQ:
-                logger.debug(
-                    "alert_complete ignored (seq=%s, expected=%s)",
-                    seq,
-                    EXPECTED_ALERT_COMPLETE_SEQ,
-                )
-                return
-            set_alert_playing(False)
-            logger.debug(
-                "Alert completed for queue_seq=%s, ALERT_PLAYING set to False",
-                seq,
+            is_preview = self._preview_iframe_has_sid(sid)
+            route = self._handshake_route_for_sid(sid, data)
+            accepted, newly_finished = session.note_complete(
+                sid, route, is_preview=is_preview
             )
+            if accepted:
+                _emit_alert_complete_ack(sid, seq)
+            _apply_playback_session_finished(newly_finished)
 
         @self.socketio.on("pause_alerts")
         def handle_pause_alerts():
@@ -7069,9 +7219,7 @@ class WebEngine:
             try:
                 payload = data if isinstance(data, dict) else {}
                 self.safe_emit("alerts_skip_alert", payload)
-                global EXPECTED_ALERT_COMPLETE_SEQ
-                set_alert_playing(False)
-                EXPECTED_ALERT_COMPLETE_SEQ = None
+                abort_alert_playback("skip")
             except Exception as e:
                 logger.error("Error handling skip_alert: %s", e, exc_info=True)
 

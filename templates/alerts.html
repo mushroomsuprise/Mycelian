@@ -8,6 +8,7 @@
         integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
         crossorigin="anonymous"></script>
     <script src="/assets/default_assets/overlay_recovery.js"></script>
+    <script src="/assets/default_assets/alert_queue.js"></script>
     <script src="/assets/default_assets/template_logger.js"></script>
     <script>MycelianLog.init({ templateName: 'alerts' });</script>
     <style>
@@ -667,6 +668,7 @@
                 }
             }
         });
+        var alertQueueClient = MycelianOverlay.alertQueue.attach(socket);
         var currentAlert = null;
         var alertTimeout = null;
         var animationTimeouts = [];
@@ -685,6 +687,10 @@
         var alertShowGeneration = 0; // Bumps per showAlert so stale complete/exit timers are ignored
         var audioResolvePending = false; // True while folder/static audio source is still being resolved
         var audioResolveGeneration = 0; // Bumps per startAlertPlayback so stale finally blocks cannot clear a newer resolve
+        var audioPlayPending = false; // True from play() until playing / error / reject
+        var audioPlaybackActive = false; // True after play() until ended/error/stop
+        var audioEndedOrFailed = false;
+        var alertProgressTimer = null;
         var audioFadeInterval = null;
         var audioFadeOutTimeout = null;
         var pointAlertSilentNoMedia = {{ PointAlertSilentNoMedia | default(false) | tojson }};
@@ -734,16 +740,102 @@
         }
 
         function emitQueueAlertComplete(seq) {
-            if (seq == null || seq === '') {
-                console.warn('alert_complete skipped: no queue_seq');
+            stopAlertProgressHeartbeats();
+            alertQueueClient.complete(seq);
+        }
+
+        function holderShouldHandshake(alertData) {
+            return MycelianOverlay.alertQueue.isAllowedHolder(alertData);
+        }
+
+        function emitQueueAlertPlaying(alertData) {
+            if (!holderShouldHandshake(alertData)) {
                 return;
             }
-            var n = parseInt(seq, 10);
-            if (Number.isNaN(n)) {
-                console.warn('alert_complete skipped: invalid queue_seq', seq);
+            var seq = MycelianOverlay.alertQueue.parseSeq(alertData && alertData.queue_seq);
+            if (seq == null) {
                 return;
             }
-            socket.emit('alert_complete', { queue_seq: n });
+            alertQueueClient.playing(seq);
+            if (alertData.queue_seq != null) {
+                pendingQueueCompletionSeq = seq;
+            }
+            startAlertProgressHeartbeats(seq);
+        }
+
+        function isAudioActive() {
+            if (audioResolvePending || audioPlayPending) {
+                return true;
+            }
+            if (audioEndedOrFailed) {
+                return false;
+            }
+            if (audioPlaybackActive) {
+                return true;
+            }
+            const audioElement = document.getElementById('alertAudio');
+            if (!audioElement || !audioElement.getAttribute('src')) {
+                return false;
+            }
+            if (audioElement.ended) {
+                return false;
+            }
+            return !audioElement.paused;
+        }
+
+        function audioRemainingMs() {
+            const audioElement = document.getElementById('alertAudio');
+            if (!isAudioActive()) {
+                return 0;
+            }
+            if (audioElement && audioElement.duration && isFinite(audioElement.duration) && audioElement.duration > 0) {
+                return Math.max(0, (audioElement.duration - (audioElement.currentTime || 0)) * 1000);
+            }
+            return 1000;
+        }
+
+        function stopAlertProgressHeartbeats() {
+            if (alertProgressTimer) {
+                clearInterval(alertProgressTimer);
+                alertProgressTimer = null;
+            }
+        }
+
+        function startAlertProgressHeartbeats(seq, gen) {
+            stopAlertProgressHeartbeats();
+            var n = MycelianOverlay.alertQueue.parseSeq(seq);
+            if (n == null) {
+                return;
+            }
+            function beat() {
+                var currentSeq = MycelianOverlay.alertQueue.parseSeq(pendingQueueCompletionSeq);
+                if (currentSeq !== n) {
+                    return;
+                }
+                if (gen != null && gen !== alertShowGeneration) {
+                    // still send heartbeats for this seq until complete; generation
+                    // is only used to ignore leftover timers from a replaced alert
+                    // when seq also changed.
+                    if (currentSeq !== n) {
+                        return;
+                    }
+                }
+                var display = document.getElementById('alertDisplay');
+                var visual = areVisualElementsVisible() || (display && display.style.display !== 'none' && display.style.display !== '');
+                var audio = isAudioActive();
+                var tts = isTtsPlaying();
+                var resolve = audioResolvePending || audioPlayPending;
+                var remaining = Math.max(getTimeRemaining(), audioRemainingMs(), tts ? 500 : 0, resolve ? 500 : 0);
+                alertQueueClient.progress(n, {
+                    visual: !!visual,
+                    audio: audio,
+                    tts: tts,
+                    resolve: resolve,
+                    remaining_ms: remaining
+                });
+            }
+            beat();
+            alertProgressTimer = setInterval(beat, 500);
         }
 
         function showHeaderRow() {
@@ -924,13 +1016,7 @@
 
         // Comprehensive alert state detection functions
         function isAudioPlaying() {
-            const audioElement = document.getElementById('alertAudio');
-            if (!audioElement || !audioElement.getAttribute('src')) {
-                return false;
-            }
-            // Treat !paused && !ended as playing even when currentTime is still 0
-            // (avoids a one-frame false "done" right after play()).
-            return !audioElement.paused && !audioElement.ended;
+            return isAudioActive();
         }
 
         function isTtsPlaying() {
@@ -1069,6 +1155,10 @@
         }
 
         function stopAlertMediaPlayback() {
+            audioPlayPending = false;
+            audioPlaybackActive = false;
+            audioEndedOrFailed = true;
+            clearAudioFades();
             const audioElement = document.getElementById('alertAudio');
             if (audioElement) {
                 audioElement.pause();
@@ -1262,51 +1352,20 @@
             }
             console.log('Checking if alert can be completed...');
 
-            // For randomized alerts, wait for both audio and visual elements to finish
-            if (isRandomizedAlert) {
-                const audioPlaying = isAudioPlaying();
-                const visualVisible = areVisualElementsVisible();
-                const ttsPlaying = isTtsPlaying();
+            // For all queued alerts, wait until duration, visuals, audio, and TTS are idle.
+            const audioPlaying = isAudioActive();
+            const visualVisible = areVisualElementsVisible();
+            const ttsPlaying = isTtsPlaying();
+            const timeRemaining = getTimeRemaining();
 
-                console.log(`Randomized alert status - Audio playing: ${audioPlaying}, TTS playing: ${ttsPlaying}, Visual visible: ${visualVisible}, Audio resolve pending: ${audioResolvePending}`);
+            console.log(`Alert status - Audio: ${audioPlaying}, TTS: ${ttsPlaying}, Visual: ${visualVisible}, Remaining: ${timeRemaining}ms, Resolve: ${audioResolvePending}, Play pending: ${audioPlayPending}`);
 
-                if (audioResolvePending || audioPlaying || ttsPlaying || visualVisible) {
-                    // Still waiting for elements to finish (or folder audio still resolving)
-                    setTimeout(function () {
-                        if (!stillCurrent()) { return; }
-                        checkAndSendAlertComplete();
-                    }, 100); // Check again in 100ms
-                    return;
-                }
-            }
-            // For regular alerts, respect the set duration but ensure exit animations complete
-            else {
-                const timeRemaining = getTimeRemaining();
-                const visualVisible = areVisualElementsVisible();
-                const ttsPlaying = isTtsPlaying();
-
-                if (timeRemaining > 0 && !visualVisible) {
-                    // Alert duration not finished and no visual elements showing, wait
-                    setTimeout(function () {
-                        if (!stillCurrent()) { return; }
-                        checkAndSendAlertComplete();
-                    }, Math.min(100, timeRemaining));
-                    return;
-                } else if (visualVisible) {
-                    // Visual elements still animating, wait for them to finish
-                    setTimeout(function () {
-                        if (!stillCurrent()) { return; }
-                        checkAndSendAlertComplete();
-                    }, 100);
-                    return;
-                } else if (ttsPlaying) {
-                    // Keep the queue paused while speech is still active.
-                    setTimeout(function () {
-                        if (!stillCurrent()) { return; }
-                        checkAndSendAlertComplete();
-                    }, 100);
-                    return;
-                }
+            if (audioResolvePending || audioPlayPending || audioPlaying || ttsPlaying || visualVisible || timeRemaining > 0) {
+                setTimeout(function () {
+                    if (!stillCurrent()) { return; }
+                    checkAndSendAlertComplete();
+                }, Math.min(100, timeRemaining > 0 ? timeRemaining : 100));
+                return;
             }
 
             // All conditions met, apply delay between alerts before sending completion signal
@@ -1453,6 +1512,8 @@
                 exitAnimationStartTime = null;
             }
 
+            emitQueueAlertPlaying(alertData);
+
             // Skip live follow alerts on main overlay (dedicated sources use instant_alert).
             // Allow is_test so Test Alert can preview follow settings on /alerts.
             if (alertType === 'follow' && !alertData.is_test) {
@@ -1507,37 +1568,37 @@
 
         socket.on('alerts_skip_alert', function (data) {
             console.log('Connector action: skip alert', data);
-            // Skip current alert if one is playing
-            if (currentAlert) {
-                clearPendingCompletionTimer();
-                alertShowGeneration += 1;
-                stopAlertMediaPlayback();
-                const wasSilentEmpty = isSilentEmptyPoint;
-                if (wasSilentEmpty || isHoldQueueOnly) {
-                    silentPointHoldId++;
-                    silentPointHoldStale = true;
-                }
-                // For skipped alerts, immediately hide and complete (ignore timing and delay)
-                hideAlert();
-                isRandomizedAlert = false; // Force immediate completion
-                // Bypass the delay and send completion immediately for skipped alerts
-                console.log('Alert skipped via connector action, sending immediate completion');
-                emitQueueAlertComplete(pendingQueueCompletionSeq);
-                pendingQueueCompletionSeq = null;
-                currentAlert = null;
-                alertStartTime = null;
-                exitAnimationStartTime = null;
-                isRandomizedAlert = false;
-                isSilentEmptyPoint = false;
-                isHoldQueueOnly = false;
-                console.log('Alert skipped via connector action');
+            if (!currentAlert && pendingQueueCompletionSeq == null) {
+                return;
             }
+            clearPendingCompletionTimer();
+            alertShowGeneration += 1;
+            stopAlertMediaPlayback();
+            const wasSilentEmpty = isSilentEmptyPoint;
+            if (wasSilentEmpty || isHoldQueueOnly) {
+                silentPointHoldId++;
+                silentPointHoldStale = true;
+            }
+            hideAlert();
+            isRandomizedAlert = false;
+            console.log('Alert skipped via connector action, sending immediate completion');
+            emitQueueAlertComplete(pendingQueueCompletionSeq);
+            pendingQueueCompletionSeq = null;
+            currentAlert = null;
+            alertStartTime = null;
+            exitAnimationStartTime = null;
+            isRandomizedAlert = false;
+            isSilentEmptyPoint = false;
+            isHoldQueueOnly = false;
         });
 
         async function showAlert(alertData) {
             alertShowGeneration += 1;
             var showGen = alertShowGeneration;
             clearPendingCompletionTimer();
+            audioEndedOrFailed = false;
+            audioPlayPending = false;
+            audioPlaybackActive = false;
             if (alertData && alertData.queue_seq != null && alertData.queue_seq !== '') {
                 var incomingSeq = Number(alertData.queue_seq);
                 if (!Number.isNaN(incomingSeq)) {
@@ -1559,6 +1620,7 @@
                 alertStartTime = Date.now();
                 exitAnimationDuration = 0;
                 alertDuration = (alertData.duration || 5) * 1000;
+                startAlertProgressHeartbeats(pendingQueueCompletionSeq, showGen);
                 console.log(
                     'hold_queue_only — dedicated template timing hold for',
                     alertDuration,
@@ -1593,6 +1655,7 @@
                     alertStartTime = Date.now();
                     exitAnimationDuration = 0;
                     alertDuration = getSilentPointDurationMs(alertData);
+                    startAlertProgressHeartbeats(pendingQueueCompletionSeq, showGen);
                     console.log('Silent empty point alert — no A/V, holding queue for', alertDuration, 'ms (or until next next_alert overrides)');
                     const selfAlert = alertData;
                     const checkSilent = function () {
@@ -1634,47 +1697,19 @@
             // Check if this is an audio-only alert
             if (alertData.audio_only) {
                 console.log('Audio-only alert detected, skipping visual elements');
-
-                // Await playback setup so folder-list resolution finishes before completion polling
+                startAlertProgressHeartbeats(pendingQueueCompletionSeq, showGen);
                 await startAlertPlayback(alertData);
-
-                // For audio-only alerts, use the new completion checking system
-                // Set up a periodic check to see when audio finishes
-                const checkAudioOnlyComplete = () => {
+                setTimeout(function () {
                     if (showGen !== alertShowGeneration) {
                         return;
                     }
-                    const ttsPlaying = isTtsPlaying();
-                    if (audioResolvePending) {
-                        setTimeout(checkAudioOnlyComplete, 100);
-                        return;
-                    }
-                    if (isRandomizedAlert) {
-                        // For randomized audio-only alerts, wait for audio to finish
-                        if (isAudioPlaying() || ttsPlaying) {
-                            setTimeout(checkAudioOnlyComplete, 100);
-                            return;
-                        }
-                    } else {
-                        // For regular audio-only alerts, respect duration
-                        const timeRemaining = getTimeRemaining();
-                        if (timeRemaining > 0 || ttsPlaying || isAudioPlaying()) {
-                            setTimeout(checkAudioOnlyComplete, Math.min(100, timeRemaining || 100));
-                            return;
-                        }
-                    }
-
-                    // Audio finished or duration elapsed
-                    console.log("Audio-only alert completed:", alertData.username);
                     checkAndSendAlertComplete();
-                };
-
-                // Start checking after a brief delay to let audio begin
-                setTimeout(checkAudioOnlyComplete, 100);
-                return; // Skip all visual rendering
+                }, 100);
+                return;
             }
 
             // Start audio and TTS together when possible (visual alerts).
+            startAlertProgressHeartbeats(pendingQueueCompletionSeq, showGen);
             startAlertPlayback(alertData);
 
 
@@ -1806,6 +1841,7 @@
         }
 
         function hideAlert() {
+            var hideGen = alertShowGeneration;
             if (videoFreezeTimeout) {
                 clearTimeout(videoFreezeTimeout);
                 videoFreezeTimeout = null;
@@ -1866,6 +1902,9 @@
 
         console.log("Setting timeout to hide alert at", maxDuration * 1000);
         setTimeout(() => {
+            if (hideGen !== alertShowGeneration) {
+                return;
+            }
             alertDisplay.style.display = 'none';
 
             // Clean up animation classes
@@ -1877,6 +1916,9 @@
 
             // Start checking for alert completion after animations finish
             setTimeout(() => {
+                if (hideGen !== alertShowGeneration) {
+                    return;
+                }
                 checkAndSendAlertComplete();
             }, 100); // Brief delay to ensure animations have started
         }, maxDuration * 1000);
@@ -2007,16 +2049,33 @@
                 audioElement.volume = targetVolume;
             }
             if (fadeOutMs > 0) {
-                var startAt = Math.max(0, alertDuration - fadeOutMs);
-                audioFadeOutTimeout = setTimeout(function () {
-                    fadeAudioVolume(audioElement, 0, fadeOutMs);
-                }, startAt);
+                var scheduleFadeOut = function () {
+                    var mediaMs = alertDuration;
+                    if (audioElement.duration && isFinite(audioElement.duration) && audioElement.duration > 0) {
+                        mediaMs = audioElement.duration * 1000;
+                    }
+                    var startAt = Math.max(0, mediaMs - fadeOutMs);
+                    audioFadeOutTimeout = setTimeout(function () {
+                        fadeAudioVolume(audioElement, 0, fadeOutMs);
+                    }, startAt);
+                };
+                if (audioElement.duration && isFinite(audioElement.duration) && audioElement.duration > 0) {
+                    scheduleFadeOut();
+                } else {
+                    audioElement.addEventListener('loadedmetadata', function onMeta() {
+                        audioElement.removeEventListener('loadedmetadata', onMeta);
+                        scheduleFadeOut();
+                    });
+                }
             }
         }
 
         async function startAlertPlayback(alertData) {
             const generation = ++audioResolveGeneration;
             audioResolvePending = true;
+            audioPlayPending = false;
+            audioPlaybackActive = false;
+            audioEndedOrFailed = false;
             clearAudioFades();
             try {
                 const audioElement = document.getElementById('alertAudio');
@@ -2049,7 +2108,14 @@
                         applyAlertAudioFades(audioElement, alertData, audioElement.volume);
                     }
 
+                    audioElement.onended = function () {
+                        audioPlaybackActive = false;
+                        audioPlayPending = false;
+                    };
                     audioElement.onerror = function () {
+                        audioPlaybackActive = false;
+                        audioPlayPending = false;
+                        audioEndedOrFailed = true;
                         var err = audioElement.error;
                         if (err) {
                             var codes = {
@@ -2065,18 +2131,28 @@
                     };
                     audioElement.load();
 
+                    audioPlayPending = true;
                     const playPromise = audioElement.play();
                     if (ttsEnabled) {
                         playAlertTts(alertData);
                     }
                     if (playPromise !== undefined) {
-                        playPromise.catch(error => {
+                        playPromise.then(function () {
+                            audioPlayPending = false;
+                            audioPlaybackActive = true;
+                        }).catch(error => {
+                            audioPlayPending = false;
+                            audioPlaybackActive = false;
+                            audioEndedOrFailed = true;
                             if (error.name === 'NotAllowedError') {
                                 console.warn('Audio autoplay was prevented by browser policy. User interaction required.');
                             } else {
                                 console.error('Error playing audio:', error);
                             }
                         });
+                    } else {
+                        audioPlayPending = false;
+                        audioPlaybackActive = !audioElement.paused;
                     }
                 } else if (ttsEnabled) {
                     console.log('No audio source determined for alert, starting TTS only');

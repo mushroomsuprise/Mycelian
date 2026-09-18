@@ -10,6 +10,9 @@ import re
 _OVERLAY_RECOVERY_SCRIPT = (
     '<script src="/assets/default_assets/overlay_recovery.js"></script>'
 )
+_ALERT_QUEUE_SCRIPT = (
+    '<script src="/assets/default_assets/alert_queue.js"></script>'
+)
 _TEMPLATE_LOGGER_SCRIPT = (
     '<script src="/assets/default_assets/template_logger.js"></script>'
 )
@@ -50,6 +53,13 @@ def inject_overlay_recovery(html: str) -> str:
         html, count = _SOCKET_IO_TAG.subn(_add_script, html, count=1)
         if count == 0 and "</head>" in html:
             html = html.replace("</head>", f"    {_OVERLAY_RECOVERY_SCRIPT}\n</head>", 1)
+
+    if "alert_queue.js" not in html and "overlay_recovery.js" in html:
+        html = html.replace(
+            _OVERLAY_RECOVERY_SCRIPT,
+            _OVERLAY_RECOVERY_SCRIPT + "\n    " + _ALERT_QUEUE_SCRIPT,
+            1,
+        )
 
     if "template_logger.js" not in html:
         if _OVERLAY_RECOVERY_SCRIPT in html:

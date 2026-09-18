@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import ParseResult, unquote, urlparse
 
 _LOCAL_HOSTS = frozenset(
     {
@@ -172,6 +172,10 @@ def is_mycelian_overlay_url(
 
 def overlay_template_route_from_path(path: str) -> Optional[str]:
     """Return the template route encoded in an overlay path, or ``None``."""
+    try:
+        path = unquote(str(path or ""))
+    except Exception:
+        path = str(path or "")
     if overlay_path_is_reserved(path):
         return None
     normalized = normalize_overlay_path(path)

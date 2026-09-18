@@ -10,6 +10,7 @@
     <title>Mycelian {{ TemplateTitle }}</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" crossorigin="anonymous"></script>
     <script src="/assets/default_assets/overlay_recovery.js"></script>
+    <script src="/assets/default_assets/alert_queue.js"></script>
     <script src="/assets/default_assets/template_logger.js"></script>
     <script>MycelianLog.init({ templateName: 'queue_alert' });</script>
     <style id="spore-studio-styles">
@@ -56,20 +57,126 @@
         var alertQueue = [];
         var sporeHoldTimeout = null;
         var sporeQueueDuration = {{ Duration | default(5) }};
+        var sporeHandshakeSeq = null;
+        var sporeHandshakeGen = 0;
+        var sporeProgressTimer = null;
+        var sporeMediaPollTimer = null;
+        var alertQueueClient = null;
 
         function sporeResetLocalQueue() {
             alertQueue = [];
             alertActive = false;
+            sporeHandshakeSeq = null;
+            sporeHandshakeGen += 1;
+            sporeStopLocalMedia();
+            if (sporeHoldTimeout) {
+                clearTimeout(sporeHoldTimeout);
+                sporeHoldTimeout = null;
+            }
+            if (sporeProgressTimer) {
+                clearInterval(sporeProgressTimer);
+                sporeProgressTimer = null;
+            }
+            if (sporeMediaPollTimer) {
+                clearTimeout(sporeMediaPollTimer);
+                sporeMediaPollTimer = null;
+            }
+            if (alertQueueClient && alertQueueClient.cancelComplete) {
+                alertQueueClient.cancelComplete();
+            }
+        }
+
+        function sporeStopLocalMedia() {
+            var root = document.getElementById('sporeRoot');
+            if (!root) {
+                return;
+            }
+            var nodes = root.querySelectorAll('audio, video');
+            var i;
+            for (i = 0; i < nodes.length; i++) {
+                try {
+                    nodes[i].pause();
+                    nodes[i].currentTime = 0;
+                } catch (errStop) {}
+            }
+        }
+
+        function sporeMediaActive() {
+            var root = document.getElementById('sporeRoot');
+            if (!root) {
+                return false;
+            }
+            var nodes = root.querySelectorAll('audio, video');
+            var i;
+            for (i = 0; i < nodes.length; i++) {
+                var media = nodes[i];
+                if (!media) {
+                    continue;
+                }
+                if (media.ended) {
+                    continue;
+                }
+                try {
+                    if (!media.paused && !media.ended) {
+                        return true;
+                    }
+                    if (media.readyState > 0 && media.currentTime > 0 && !media.ended && !media.paused) {
+                        return true;
+                    }
+                } catch (errMedia) {}
+            }
+            return false;
+        }
+
+        function sporeHolderFor(data) {
+            return MycelianOverlay.alertQueue.isAllowedHolder(data);
+        }
+
+        function sporeStopHandshakeTimers() {
+            if (sporeProgressTimer) {
+                clearInterval(sporeProgressTimer);
+                sporeProgressTimer = null;
+            }
+            if (sporeMediaPollTimer) {
+                clearTimeout(sporeMediaPollTimer);
+                sporeMediaPollTimer = null;
+            }
             if (sporeHoldTimeout) {
                 clearTimeout(sporeHoldTimeout);
                 sporeHoldTimeout = null;
             }
         }
 
+        function sporeStartProgress(seq, gen) {
+            if (sporeProgressTimer) {
+                clearInterval(sporeProgressTimer);
+                sporeProgressTimer = null;
+            }
+            function beat() {
+                if (gen !== sporeHandshakeGen) {
+                    return;
+                }
+                var remaining = 0;
+                if (sporeHoldTimeout) {
+                    remaining = 500;
+                }
+                alertQueueClient.progress(seq, {
+                    visual: sporeMediaActive(),
+                    audio: sporeMediaActive(),
+                    tts: false,
+                    resolve: false,
+                    remaining_ms: remaining
+                });
+            }
+            beat();
+            sporeProgressTimer = setInterval(beat, 500);
+        }
+
         var socket = MycelianOverlay.connect('http://' + document.domain + ':' + location.port, {
             onDisconnect: sporeResetLocalQueue,
             onRecovery: sporeResetLocalQueue
         });
+        alertQueueClient = MycelianOverlay.alertQueue.attach(socket);
 
         var SPORE_ANIM_CLASS_MAP = {
             fade: { in: 'spore-anim-fade-in', out: 'spore-anim-fade-out' },
@@ -339,11 +446,24 @@
             if (!alertActive) { sporeProcessNext(); }
         });
 
+        socket.on('alerts_skip_alert', function () {
+            sporeHandshakeGen += 1;
+            sporeStopHandshakeTimers();
+            sporeStopLocalMedia();
+            if (sporeHandshakeSeq != null) {
+                alertQueueClient.complete(sporeHandshakeSeq);
+                sporeHandshakeSeq = null;
+            }
+            alertActive = false;
+            sporeProcessNext();
+        });
+
         function sporeProcessNext() {
             if (alertActive) { return; }
             if (alertQueue.length === 0) { return; }
             alertActive = true;
             var data = alertQueue.shift();
+            var gen = ++sporeHandshakeGen;
             try {
                 console.log('[__TEMPLATE_NAME__] next_alert dequeue (debug)', data);
                 sporeApplyBindings('next_alert', data);
@@ -356,16 +476,38 @@
                 if (!isNaN(parsedHold)) { hold = parsedHold; }
             }
             if (typeof hold !== 'number' || isNaN(hold) || hold < 0) { hold = 5; }
-            sporeHoldTimeout = setTimeout(function () {
-                sporeHoldTimeout = null;
+            var isHolder = sporeHolderFor(data);
+            var seq = MycelianOverlay.alertQueue.parseSeq(data && data.queue_seq);
+            sporeHandshakeSeq = isHolder ? seq : null;
+            if (isHolder && seq != null) {
+                alertQueueClient.playing(seq);
+                sporeStartProgress(seq, gen);
+            }
+
+            var holdElapsed = false;
+            function finishIfIdle() {
+                if (gen !== sporeHandshakeGen) {
+                    return;
+                }
+                if (!holdElapsed || sporeMediaActive()) {
+                    sporeMediaPollTimer = setTimeout(finishIfIdle, 100);
+                    return;
+                }
+                sporeStopHandshakeTimers();
                 alertActive = false;
-                var seq = data && data.queue_seq != null ? parseInt(data.queue_seq, 10) : null;
-                if (seq != null && !Number.isNaN(seq)) {
-                    socket.emit('alert_complete', { queue_seq: seq });
-                } else {
-                    console.warn('[__TEMPLATE_NAME__] queue item had no queue_seq; emit alert_complete from Advanced JS when your overlay should release the server queue.');
+                if (isHolder && seq != null) {
+                    alertQueueClient.complete(seq);
+                }
+                if (sporeHandshakeSeq === seq) {
+                    sporeHandshakeSeq = null;
                 }
                 sporeProcessNext();
+            }
+
+            sporeHoldTimeout = setTimeout(function () {
+                sporeHoldTimeout = null;
+                holdElapsed = true;
+                finishIfIdle();
             }, hold * 1000);
         }
 

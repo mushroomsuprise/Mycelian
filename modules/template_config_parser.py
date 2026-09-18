@@ -626,6 +626,32 @@ def find_template_config_for_reward_title(
     """
     Match a Twitch reward title to a template JSON (config file stem or template_name).
     """
+    match = _match_template_for_reward_title(reward_title)
+    if match is None:
+        return None
+    return match[1]
+
+
+def find_matching_template_routes_for_reward_title(reward_title: str) -> List[str]:
+    """Overlay routes (config stem and template_name) for a matching reward title."""
+    match = _match_template_for_reward_title(reward_title)
+    if match is None:
+        return []
+    stem, cfg = match
+    routes: List[str] = []
+    if stem:
+        routes.append(str(stem))
+    tname = cfg.get("template_name") if isinstance(cfg, dict) else None
+    if tname:
+        name = str(tname).strip()
+        if name and name not in routes:
+            routes.append(name)
+    return routes
+
+
+def _match_template_for_reward_title(
+    reward_title: str,
+) -> Optional[Tuple[str, Dict[str, Any]]]:
     want = normalize_template_match_key(reward_title)
     if not want:
         return None
@@ -641,11 +667,26 @@ def find_template_config_for_reward_title(
         if not isinstance(cfg, dict):
             continue
         if normalize_template_match_key(stem) == want:
-            return cfg
+            return str(stem), cfg
         tn = cfg.get("template_name")
         if tn and normalize_template_match_key(tn) == want:
-            return cfg
+            return str(stem), cfg
     return None
+
+
+def delay_between_alerts_seconds() -> float:
+    """Alerts overlay DelayBetweenAlerts (seconds). Defaults to 0.5."""
+    try:
+        cfg = get_shared_parser().load_config(
+            "alerts", include_dynamic_controls=False, copy_result=False
+        )
+        raw = _config_element_value(cfg, "DelayBetweenAlerts")
+        if raw is None or raw == "":
+            return 0.5
+        return max(0.0, float(raw))
+    except Exception as e:
+        logger.debug("Could not read DelayBetweenAlerts: %s", e)
+        return 0.5
 
 
 def point_alert_silent_no_media_enabled() -> bool:

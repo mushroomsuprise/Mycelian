@@ -215,6 +215,10 @@ class ObsBrowserSourceMatchTests(unittest.TestCase):
         )
         self.assertIsNone(obs_match.overlay_template_route_from_path("/api/health"))
         self.assertIsNone(obs_match.overlay_template_route_from_path("/"))
+        self.assertEqual(
+            obs_match.overlay_template_route_from_path("/boo%20game"),
+            "boo game",
+        )
 
 
 if __name__ == "__main__":

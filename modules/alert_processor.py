@@ -160,83 +160,65 @@ def process_alert(alert: AlertObj):
         queue_seq = web_engine.assign_next_alert_queue_seq()
         alert_data["queue_seq"] = queue_seq
 
-        # Calculate dynamic timeout based on alert properties
-        alert_duration = alert_data.get(
-            "duration", 5
-        )  # Default to 5 seconds if not specified
-
-        # Check if this alert has audio that might extend completion time
-        has_audio = alert_data.get("randomized", False) or (
-            alert_data.get("single_audio_dir") and alert_data.get("single_audio_name")
+        from .alert_playback_session import (
+            coerce_duration_seconds,
+            delay_between_alerts_seconds,
+            get_session,
+            queue_holder_routes_for_alert,
         )
 
-        if alert_data.get("hold_queue_only"):
-            timeout_duration = (
-                float(alert_duration) + 5.0
-            )  # client delay + margin; no A/V in main overlay
-            logger.debug(
-                "hold_queue_only alert, using extended client-aligned timeout: %ss",
-                timeout_duration,
-            )
-        elif alert_data.get("randomized", False):
-            # Randomized alerts can take much longer due to audio completion + buffer
-            # Give them a generous timeout: max(duration * 3, duration + 30 seconds for audio)
-            timeout_duration = max(alert_duration * 3, alert_duration + 30)
-            logger.debug(
-                f"Randomized alert detected, using extended timeout: {timeout_duration}s"
-            )
-        elif has_audio:
-            # Non-randomized alerts with audio: wait for duration + audio completion
-            timeout_duration = (
-                alert_duration + 3
-            )  # 15 seconds should be enough for most audio
-            logger.debug(
-                f"Audio alert detected, using audio-aware timeout: {timeout_duration}s"
-            )
-        else:
-            # Standard timeout for alerts without audio
-            timeout_duration = alert_duration + 2
-            logger.debug(f"Standard alert timeout: {timeout_duration}s")
+        holders = queue_holder_routes_for_alert(alert)
+        alert_data["queue_holders"] = holders
+        alert_duration = coerce_duration_seconds(alert_data.get("duration"))
+        delay_between = delay_between_alerts_seconds()
 
-        start_time = time.time()
+        web_engine.begin_alert_playback_session(
+            queue_seq, holders, alert_duration, delay_between
+        )
 
         # Emit the alert data over the websocket
         engine = _overlay_engine()
         if engine is None:
             logger.error("No web engine instance; cannot process alert")
-            web_engine.set_alert_playing(False)
-            web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
-            return
-        if not engine.next_alert(alert_data):
-            logger.error("Failed to emit next_alert; not marking ALERT_PLAYING")
-            web_engine.set_alert_playing(False)
-            web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
+            web_engine.abort_alert_playback("no_engine")
             return
         web_engine.set_alert_playing(True)
+        if not engine.next_alert(alert_data):
+            logger.error("Failed to emit next_alert; not marking ALERT_PLAYING")
+            web_engine.abort_alert_playback("emit_failed")
+            return
+        session = get_session()
+        if session is None or session.seq != queue_seq or session.finished:
+            web_engine.set_alert_playing(False)
+            return
 
-        # Wait for alert completion with timeout protection
+        # Wait until holders complete (or watchdog/fallback/skip)
         while web_engine.ALERT_PLAYING:
             if is_shutdown_in_progress():
+                web_engine.abort_alert_playback("shutdown")
+                break
+            session = get_session()
+            if session is None or session.seq != queue_seq:
                 web_engine.set_alert_playing(False)
                 break
-            elapsed_time = time.time() - start_time
-            remaining = timeout_duration - elapsed_time
-            if remaining <= 0:
-                logger.warning(
-                    f"Alert timeout reached ({timeout_duration}s) for alert: {alert.alert_type}. "
-                    f"Template may have failed to send alert_complete callback. "
-                    f"Randomized: {alert_data.get('randomized', False)}, Has Audio: {has_audio}. "
-                    f"Forcing completion to prevent alert queue deadlock."
-                )
-                web_engine.set_alert_playing(False)
+            if session.tick():
+                reason = session.finish_reason
+                if reason in ("absolute_timeout", "no_ack_fallback"):
+                    logger.warning(
+                        "Alert handshake seq=%s finished via %s (type=%s holders=%s)",
+                        queue_seq,
+                        reason,
+                        alert.alert_type,
+                        holders,
+                    )
+                web_engine._apply_playback_session_finished(True)
                 break
-            _ALERT_COMPLETE.wait(timeout=remaining)
+            _ALERT_COMPLETE.wait(timeout=0.2)
 
         logger.debug(f"Processed alert: {alert_data}")
     except Exception as e:
         logger.error(f"Error processing alert: {str(e)}", exc_info=True)
-        web_engine.set_alert_playing(False)
-        web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
+        web_engine.abort_alert_playback("process_failed")
         notify_critical(
             "An alert failed to process. Check logs if this keeps happening.",
             dedupe_key="alert:process_failed",
@@ -285,17 +267,20 @@ def alert_queue():
                     remove_queued_alert(alert)
                     processed_stackable = True
                     continue
+
+            if web_engine.ALERT_PLAYING:
+                _ALERT_WAKE.wait(timeout=0.2)
+                _ALERT_WAKE.clear()
+                continue
+
+            queued = snapshot_alert_queue()
+            for alert in queued:
                 if alert.stackable:
                     logger.debug(f"Processing stackable alert: {alert.alert_type}")
                     if not remove_queued_alert(alert):
                         continue
                     process_alert(alert)
                     processed_stackable = True
-
-            if web_engine.ALERT_PLAYING:
-                _ALERT_WAKE.wait(timeout=0.2)
-                _ALERT_WAKE.clear()
-                continue
 
             with _ALERT_QUEUE_LOCK:
                 alert = ALERT_QUEUE.popleft() if ALERT_QUEUE else None

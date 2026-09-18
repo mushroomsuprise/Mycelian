@@ -45,15 +45,17 @@ _EVENTS: List[Dict[str, Any]] = [
         "alert_system": "queue",
         "description": (
             "Fired by the alert processor for queued alerts (follows, subs, "
-            "raids, donations, etc.). The main ``alerts.html`` overlay must "
-            "emit ``alert_complete`` with a ``queue_seq`` matching the payload "
-            "when finished; other queue-aware overlays must echo the same "
-            "``queue_seq`` if they are the sole completion source. Otherwise the "
-            "queue stalls."
+            "raids, donations, etc.). Only overlays listed in ``queue_holders`` "
+            "may emit ``alert_playing`` / ``alert_complete`` for that item "
+            "(typically ``alerts`` plus a matching Queued point-reward template). "
+            "Spectator overlays such as bars and counters must not handshake."
         ),
         "payload": [
             {"key": "queue_seq", "label": "Queue completion id", "type": "number",
              "examples": ["1", "2", "3"]},
+            {"key": "queue_holders", "label": "Overlay routes allowed to hold the queue",
+             "type": "array",
+             "examples": ["alerts", "boo game"]},
             {"key": "alert_type", "label": "Alert type", "type": "string",
              "examples": ["follow", "sub", "resub", "giftsub", "bit",
                           "donation", "raid", "hype_train", "point"]},

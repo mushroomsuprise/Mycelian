@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Alert queue overlay check</title>
+  <script src="../assets/default_assets/alert_queue.js?t=4"></script>
+</head>
+<body>
+  <pre id="out">running</pre>
+  <script>
+    var results = [];
+
+    function mockSocket() {
+      var emitted = [];
+      var handlers = {};
+      return {
+        emitted: emitted,
+        on: function (event, fn) {
+          (handlers[event] = handlers[event] || []).push(fn);
+        },
+        emit: function (event, payload) {
+          emitted.push({ event: event, payload: payload });
+        },
+        fire: function (event, payload) {
+          (handlers[event] || []).forEach(function (fn) { fn(payload); });
+        }
+      };
+    }
+
+    function checkHolder(pathname, holders, expect) {
+      history.replaceState({}, '', pathname);
+      var ok = MycelianOverlay.alertQueue.isAllowedHolder({ queue_holders: holders });
+      results.push({ name: 'holder ' + pathname, ok: ok === expect, detail: String(ok) });
+    }
+
+    var holders = ['alerts', 'boo game'];
+    checkHolder('/alerts', holders, true);
+    checkHolder('/boo%20game', holders, true);
+    checkHolder('/bitbar', holders, false);
+    checkHolder('/combobar', holders, false);
+
+    history.replaceState({}, '', '/alerts');
+    var alertsSock = mockSocket();
+    var alertsClient = MycelianOverlay.alertQueue.attach(alertsSock);
+    alertsSock.fire('next_alert', { queue_seq: 7, queue_holders: holders, hold_queue_only: true });
+    alertsClient.playing(7);
+    alertsClient.progress(7, { visual: false, audio: false, remaining_ms: 0 });
+    var alertsPlayed = alertsSock.emitted.some(function (e) { return e.event === 'alert_playing'; });
+    results.push({ name: 'alerts playing', ok: alertsPlayed, detail: JSON.stringify(alertsSock.emitted) });
+
+    history.replaceState({}, '', '/boo%20game');
+    var booSock = mockSocket();
+    var booClient = MycelianOverlay.alertQueue.attach(booSock);
+    booSock.fire('next_alert', { queue_seq: 7, queue_holders: holders });
+    booClient.playing(7);
+    var booPlayed = booSock.emitted.some(function (e) { return e.event === 'alert_playing'; });
+    results.push({ name: 'dedicated playing', ok: booPlayed, detail: JSON.stringify(booSock.emitted) });
+
+    history.replaceState({}, '', '/bitbar');
+    var barSock = mockSocket();
+    MycelianOverlay.alertQueue.guardHandshakeEmits(barSock);
+    barSock.fire('next_alert', { queue_seq: 7, queue_holders: holders });
+    barSock.emit('alert_playing', { queue_seq: 7 });
+    barSock.emit('alert_complete', { queue_seq: 7 });
+    var spectatorSilent = barSock.emitted.length === 0;
+    results.push({ name: 'spectator swallowed', ok: spectatorSilent, detail: JSON.stringify(barSock.emitted) });
+
+    history.replaceState({}, '', '/combobar');
+    var comboSock = mockSocket();
+    var comboClient = MycelianOverlay.alertQueue.attach(comboSock);
+    comboSock.fire('next_alert', { queue_seq: 7, queue_holders: holders });
+    comboClient.playing(7);
+    comboClient.complete(7);
+    var comboSilent = comboSock.emitted.length === 0;
+    results.push({ name: 'combobar spectator', ok: comboSilent, detail: JSON.stringify(comboSock.emitted) });
+
+    var pass = results.every(function (r) { return r.ok; });
+    var text = (pass ? 'PASS' : 'FAIL') + '\n' + results.map(function (r) {
+      return (r.ok ? 'ok' : 'FAIL') + ' ' + r.name + ' ' + r.detail;
+    }).join('\n');
+    document.getElementById('out').textContent = text;
+    document.title = pass ? 'PASS' : 'FAIL';
+  </script>
+</body>
+</html>

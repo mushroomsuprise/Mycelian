@@ -1824,8 +1824,7 @@ def skip_alert(alert_data):
             web_engine.web_engine_instance.safe_emit(
                 "alerts_skip_alert", clean_alert_data
             )
-            web_engine.set_alert_playing(False)
-            web_engine.EXPECTED_ALERT_COMPLETE_SEQ = None
+            web_engine.abort_alert_playback("skip")
             logger.debug(
                 f"Sent skip request via websocket for alert: {clean_alert_data.get('type', 'Unknown')}"
             )
