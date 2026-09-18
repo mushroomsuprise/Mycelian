@@ -398,7 +398,7 @@
 
         #panelEnemies .hp-cell.hp-ok .stat-val.hp-max { color: var(--ff7-text); }
 
-        /* Party row: per-stat colors (dead = name + both HP numbers red; warn = current HP + MP yellow only) */
+        /* Per-stat colors: dead = name + HP numbers + MP number red; warn = current HP + MP yellow only */
         .char-name.name-dead {
             color: var(--ff7-hp-red);
         }
@@ -406,6 +406,8 @@
         /* Beat .hp-ok .stat-val when party is in low-resource state */
         .hp-cell .stat-val.val-warn,
         .mp-cell .stat-val.val-warn { color: var(--ff7-hp-yellow); }
+        /* Beat .mp-cell .stat-val.val-warn if both classes ever land together */
+        .mp-cell .stat-val.val-dead { color: var(--ff7-hp-red); }
 
         /* --- Bar cell wrapper (LIMIT / TIME) --- */
         .bar-cell {
@@ -2121,6 +2123,11 @@
             return 'hp-ok';
         }
 
+        function ff7MpValClass(dead, mp, maxMp) {
+            var lowMp = !dead && maxMp > 0 && (mp / maxMp) < 0.25;
+            return 'stat-val mp-current' + (dead ? ' val-dead' : (lowMp ? ' val-warn' : ''));
+        }
+
         function ff7EnemiesDomKey(enemies) {
             if (!Array.isArray(enemies) || enemies.length === 0) return '';
             var parts = [];
@@ -2440,8 +2447,7 @@
                                 var mpDisp = mpVal._ff7DisplayVal != null
                                     ? Math.round(mpVal._ff7DisplayVal)
                                     : (parseInt(mpVal.textContent, 10) || 0);
-                                var lowMp = !dead && maxMp > 0 && (mpDisp / maxMp) < 0.25;
-                                mpVal.className = 'stat-val mp-current' + (lowMp ? ' val-warn' : '');
+                                mpVal.className = ff7MpValClass(dead, mpDisp, maxMp);
                             }
                         }
                     });
@@ -2461,9 +2467,8 @@
                                 ? Math.round(hpCurEl._ff7DisplayVal)
                                 : hp;
                             var dead = hpDisp <= 0;
-                            var lowMp = !dead && dispMaxMp > 0 && (dispMp / dispMaxMp) < 0.25;
                             if (mpVal) {
-                                mpVal.className = 'stat-val mp-current' + (lowMp ? ' val-warn' : '');
+                                mpVal.className = ff7MpValClass(dead, dispMp, dispMaxMp);
                             }
                         }
                     });
@@ -2485,8 +2490,13 @@
 
                 var nameWrap = row.querySelector('.char-name');
                 var hpCell = row.querySelector('.stat-cell.hp-cell');
+                var mpCell = row.querySelector('.stat-cell.mp-cell');
                 var hpCurEl = null;
                 var hpMaxEl = null;
+                var mpVal = null;
+                if (mpCell) {
+                    mpVal = mpCell.querySelector('.stat-val.mp-current') || mpCell.querySelector('.stat-val');
+                }
                 if (hpCell) {
                     var hpVals = hpCell.querySelectorAll('.stat-val');
                     if (hpVals.length >= 2) {
@@ -2517,12 +2527,16 @@
                             if (nameWrap) {
                                 nameWrap.className = 'char-name' + (dead ? ' name-dead' : '');
                             }
+                            if (mpVal) {
+                                var mpDisp = mpVal._ff7DisplayVal != null
+                                    ? Math.round(mpVal._ff7DisplayVal)
+                                    : (parseInt(mpVal.textContent, 10) || 0);
+                                mpVal.className = ff7MpValClass(dead, mpDisp, maxMp);
+                            }
                         }
                     });
                 }
-                var mpCell = row.querySelector('.stat-cell.mp-cell');
                 if (mpCell) {
-                    var mpVal = mpCell.querySelector('.stat-val');
                     var mpFill = mpCell.querySelector('.ff7-mpbar .fill');
                     var mpDrain = mpCell.querySelector('.ff7-mpbar .drain');
                     ff7TweenHpMp({
@@ -2531,7 +2545,15 @@
                         drainEl: mpDrain,
                         targetVal: mp,
                         maxVal: maxMp,
-                        colorFn: null
+                        colorFn: function (dispMp, dispMaxMp) {
+                            var hpDisp = hpCurEl && hpCurEl._ff7DisplayVal != null
+                                ? Math.round(hpCurEl._ff7DisplayVal)
+                                : hp;
+                            var dead = hpDisp <= 0;
+                            if (mpVal) {
+                                mpVal.className = ff7MpValClass(dead, dispMp, dispMaxMp);
+                            }
+                        }
                     });
                 }
             }
@@ -2645,12 +2667,11 @@
             var mpPctVal = maxMp > 0 ? hpPct(mp, maxMp) : 0;
             var dead = hp <= 0;
             var lowHp = !dead && maxHp > 0 && (hp / maxHp) < 0.25;
-            var lowMp = !dead && maxMp > 0 && (mp / maxMp) < 0.25;
             var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
 
             var hpCurrClass = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
             var hpMaxClass = 'stat-val hp-max' + (dead ? ' val-dead' : '');
-            var mpValClass = 'stat-val mp-current' + (lowMp ? ' val-warn' : '');
+            var mpValClass = ff7MpValClass(dead, mp, maxMp);
 
             var row = document.createElement('div');
             row.className = 'char-row';
@@ -2748,6 +2769,7 @@
             var hpCellClass = 'stat-cell hp-cell ' + (dead ? 'hp-dead' : 'hp-ok');
             var curCls = 'stat-val hp-current' + (dead ? ' val-dead' : (lowHp ? ' val-warn' : ''));
             var maxCls = 'stat-val hp-max' + (dead ? ' val-dead' : '');
+            var mpValClass = ff7MpValClass(dead, mp, maxMp);
 
             var row = document.createElement('div');
             row.className = 'char-row';
@@ -2775,7 +2797,7 @@
             mpCell.className = 'stat-cell mp-cell';
             mpCell.innerHTML =
                 '<div class="stat-values">' +
-                    '<span class="stat-val">' + mp + '</span>' +
+                    '<span class="' + mpValClass + '">' + mp + '</span>' +
                 '</div>' +
                 '<div class="ff7-mpbar"><div class="drain" style="width:' + mpPctVal + '%"></div><div class="fill" style="width:' + mpPctVal + '%"></div></div>';
             row.appendChild(mpCell);
