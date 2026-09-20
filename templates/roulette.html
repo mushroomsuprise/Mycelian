@@ -851,16 +851,26 @@
         var startAngle = 0;
         var arc = Math.PI / (rouletteData.options.length / 2);
         var spinTimeout = null;
+        var spinFrame = null;
+        var lastSpinTs = 0;
         var spinAngleStart = 10;
         var spinTime = 0;
         var spinTimeTotal = 0;
         var ctx;
-        var clickValues = [];
-        var lastClickIndex = -1;
+        var POINTER_ANGLE = -Math.PI / 2;
+        var CLICK_LOOKAHEAD_MS = 64;
+        var DEFAULT_CLICK_LATENCY_SEC = 0.028;
+        var MAX_CLICK_LATENCY_SEC = 0.08;
 
         // Audio objects
         var clickAudio = null;
         var resultAudio = null;
+        var clickAudioCtx = null;
+        var clickBuffer = null;
+        var clickGain = null;
+        var clickBufferOffset = 0;
+        var scheduledClickKeys = {};
+        var pendingClickSources = [];
 
         var resultHideTimeout = null;
         var wheelHideTimeout = null;
@@ -1021,9 +1031,21 @@
             }, delay);
         }
 
+        function stopSpinAnimation() {
+            if (spinFrame) {
+                cancelAnimationFrame(spinFrame);
+                spinFrame = null;
+            }
+            if (spinTimeout) {
+                clearTimeout(spinTimeout);
+                spinTimeout = null;
+            }
+            lastSpinTs = 0;
+        }
+
         function resetWheelToIdle() {
-            clearTimeout(spinTimeout);
-            spinTimeout = null;
+            stopSpinAnimation();
+            cancelFutureClicks();
             startAngle = 0;
             rouletteData.isSpinning = false;
             rouletteData.lastResult = null;
@@ -1178,6 +1200,221 @@
             display.textContent = '';
         }
 
+        function getClickAudioContext() {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return null;
+            if (!clickAudioCtx) {
+                clickAudioCtx = new Ctx();
+                clickGain = clickAudioCtx.createGain();
+                clickGain.gain.value = settings.clickSoundVolume;
+                clickGain.connect(clickAudioCtx.destination);
+            }
+            if (clickAudioCtx.state === 'suspended') {
+                clickAudioCtx.resume();
+            }
+            return clickAudioCtx;
+        }
+
+        function setClickSoundVolume(vol) {
+            settings.clickSoundVolume = vol;
+            if (clickGain) {
+                clickGain.gain.value = vol;
+            }
+            if (clickAudio) {
+                clickAudio.volume = vol;
+            }
+        }
+
+        function decodeClickBuffer(arrayBuffer) {
+            var ctx = getClickAudioContext();
+            if (!ctx) return Promise.resolve(null);
+            try {
+                var result = ctx.decodeAudioData(arrayBuffer);
+                if (result && typeof result.then === 'function') {
+                    return result;
+                }
+            } catch (e) {
+                // Older webkit decodeAudioData is callback-only and throws if used as a promise
+            }
+            return new Promise(function (resolve, reject) {
+                ctx.decodeAudioData(arrayBuffer, resolve, reject);
+            });
+        }
+
+        function trimClickBufferOffset(buffer) {
+            clickBufferOffset = 0;
+            if (!buffer || !buffer.length) return;
+            try {
+                var data = buffer.getChannelData(0);
+                var threshold = 0.02;
+                var i = 0;
+                while (i < data.length && Math.abs(data[i]) < threshold) {
+                    i++;
+                }
+                var offset = i / buffer.sampleRate;
+                if (offset > 0 && offset < 0.03) {
+                    clickBufferOffset = offset;
+                }
+            } catch (e) {
+                clickBufferOffset = 0;
+            }
+        }
+
+        function loadClickBuffer(url) {
+            fetch(url).then(function (response) {
+                if (!response.ok) throw new Error('click sound fetch failed');
+                return response.arrayBuffer();
+            }).then(function (buf) {
+                return decodeClickBuffer(buf);
+            }).then(function (decoded) {
+                if (decoded) {
+                    clickBuffer = decoded;
+                    trimClickBufferOffset(decoded);
+                }
+            }).catch(function (e) {
+                console.log('Error loading click buffer:', e);
+            });
+        }
+
+        function getClickOutputLatencySec(ctx) {
+            var latency = 0;
+            if (!ctx) return DEFAULT_CLICK_LATENCY_SEC;
+            if (typeof ctx.outputLatency === 'number' && ctx.outputLatency > 0) {
+                latency += ctx.outputLatency;
+            }
+            if (typeof ctx.baseLatency === 'number' && ctx.baseLatency > 0) {
+                latency += ctx.baseLatency;
+            }
+            if (latency <= 0) latency = DEFAULT_CLICK_LATENCY_SEC;
+            // Embedded preview browsers sometimes report Bluetooth-sized
+            // outputLatency (~200ms) even when playback is near-instant.
+            if (latency > MAX_CLICK_LATENCY_SEC) latency = DEFAULT_CLICK_LATENCY_SEC;
+            return latency;
+        }
+
+        function cancelFutureClicks() {
+            var now = clickAudioCtx ? clickAudioCtx.currentTime : 0;
+            for (var i = 0; i < pendingClickSources.length; i++) {
+                var item = pendingClickSources[i];
+                if (item && item.src && item.when > now + 0.001) {
+                    try { item.src.stop(); } catch (e) {}
+                }
+            }
+            pendingClickSources = [];
+            scheduledClickKeys = {};
+        }
+
+        function playClickFallback() {
+            if (!clickAudio) return;
+            try {
+                var node = clickAudio.cloneNode(true);
+                node.volume = settings.clickSoundVolume;
+                node.play().catch(function (err) {
+                    console.log('Could not play click sound:', err);
+                });
+            } catch (e) {
+                console.log('Error playing click sound:', e);
+            }
+        }
+
+        function scheduleClickSound(delayMs) {
+            if (!settings.enableSound) return;
+            try {
+                var ctx = getClickAudioContext();
+                if (ctx && clickBuffer && clickGain) {
+                    var src = ctx.createBufferSource();
+                    src.buffer = clickBuffer;
+                    src.connect(clickGain);
+                    var when = ctx.currentTime + (delayMs / 1000) - getClickOutputLatencySec(ctx);
+                    if (when < ctx.currentTime) when = ctx.currentTime;
+                    src.start(when, clickBufferOffset);
+                    pendingClickSources.push({ src: src, when: when });
+                    src.onended = function () {
+                        for (var i = 0; i < pendingClickSources.length; i++) {
+                            if (pendingClickSources[i] && pendingClickSources[i].src === src) {
+                                pendingClickSources.splice(i, 1);
+                                break;
+                            }
+                        }
+                    };
+                    return;
+                }
+            } catch (e) {
+                console.log('Error playing click sound:', e);
+            }
+            var fallbackDelay = Math.max(0, delayMs - DEFAULT_CLICK_LATENCY_SEC * 1000);
+            if (fallbackDelay < 16) {
+                playClickFallback();
+            } else {
+                setTimeout(playClickFallback, fallbackDelay);
+            }
+        }
+
+        function spinVelocityDeg(timeMs) {
+            return spinAngleStart - easeOut(timeMs, 0, spinAngleStart, spinTimeTotal);
+        }
+
+        function borderPhase(angle) {
+            if (!arc) return 0;
+            return (POINTER_ANGLE - angle) / arc;
+        }
+
+        function lastCrossedBorderAngle(prevAngle, newAngle) {
+            var p0 = borderPhase(prevAngle);
+            var p1 = borderPhase(newAngle);
+            if (!(p0 > p1)) return null;
+            var lastK = Math.floor(p0);
+            if (lastK <= Math.floor(p1)) return null;
+            return POINTER_ANGLE - lastK * arc;
+        }
+
+        function scheduleClicksAlong(prevAngle, nextAngle, durationMs, elapsedMs, armByMs) {
+            var p0 = borderPhase(prevAngle);
+            var p1 = borderPhase(nextAngle);
+            if (!(p0 > p1)) return;
+            var kStart = Math.floor(p1) + 1;
+            var kEnd = Math.floor(p0);
+            var span = p0 - p1;
+            if (span <= 0) return;
+            for (var k = kEnd; k >= kStart; k--) {
+                if (scheduledClickKeys[k]) continue;
+                var frac = (p0 - k) / span;
+                if (frac < 0) frac = 0;
+                if (frac > 1) frac = 1;
+                var delay = elapsedMs + frac * durationMs;
+                // Wait until the crossing is close so Euler prediction stays tight.
+                if (delay > armByMs) continue;
+                scheduledClickKeys[k] = true;
+                scheduleClickSound(delay);
+            }
+        }
+
+        function scheduleUpcomingClicks(frameDt) {
+            if (!settings.enableSound) return;
+            if (!arc || !rouletteData.options || !rouletteData.options.length) return;
+            if (frameDt <= 0) return;
+
+            var latencyMs = DEFAULT_CLICK_LATENCY_SEC * 1000;
+            try {
+                latencyMs = getClickOutputLatencySec(getClickAudioContext()) * 1000;
+            } catch (e) {}
+            var armByMs = latencyMs + frameDt;
+
+            var simTime = spinTime;
+            var simAngle = startAngle;
+            var elapsed = 0;
+            while (elapsed < CLICK_LOOKAHEAD_MS) {
+                var nextTime = simTime + frameDt;
+                if (nextTime >= spinTimeTotal) break;
+                var deltaDeg = spinVelocityDeg(nextTime) * (frameDt / 30);
+                var nextAngle = simAngle + (deltaDeg * Math.PI / 180);
+                scheduleClicksAlong(simAngle, nextAngle, frameDt, elapsed, armByMs);
+                simAngle = nextAngle;
+                simTime = nextTime;
+                elapsed += frameDt;
+            }
+        }
+
         // Initialize audio
         function initializeAudio() {
             if (!settings.enableSound) {
@@ -1186,8 +1423,10 @@
             try {
                 var clickFile = {{ ClickSoundFile | tojson }};
                 if (clickFile) {
-                    clickAudio = new Audio('/assets/roulette/' + clickFile);
+                    var clickUrl = '/assets/roulette/' + clickFile;
+                    clickAudio = new Audio(clickUrl);
                     clickAudio.volume = settings.clickSoundVolume;
+                    loadClickBuffer(clickUrl);
                 }
                 var resultFile = {{ ResultSoundFile | tojson }};
                 if (resultFile) {
@@ -1238,13 +1477,8 @@
 
         // Update arc size based on number of options
         function updateArcSize() {
-            arc = Math.PI / (rouletteData.options.length / 2);
-
-            // Recalculate click values for sound effects
-            clickValues = [];
-            for (var i = 0; i < 12000 / (360 / rouletteData.options.length); i++) {
-                clickValues.push(((360 / rouletteData.options.length) * i) - 90);
-            }
+            var count = rouletteData.options && rouletteData.options.length ? rouletteData.options.length : 1;
+            arc = Math.PI / (count / 2);
         }
 
         // Create particle effect with enhanced size and quantity
@@ -1532,57 +1766,49 @@
             var maxSpinTime = customData && customData.maxDuration ? customData.maxDuration : {{ MaxSpinDuration | tojson }};
             spinTimeTotal = (Math.floor(Math.random() * (maxSpinTime - minSpinTime)) + minSpinTime) * 1000;
 
-            clickValues = [];
-
             rouletteData.pendingLandIndex = resolveLandOnIndex(customData);
 
-            // Calculate click positions for sound
-            for (var i = 0; i < 12000 / (360 / rouletteData.options.length); i++) {
-                clickValues.push(((360 / rouletteData.options.length) * i) - 90);
+            stopSpinAnimation();
+            cancelFutureClicks();
+            if (settings.enableSound) {
+                getClickAudioContext();
             }
-
-            rotateWheel();
+            lastSpinTs = 0;
+            spinFrame = requestAnimationFrame(rotateWheel);
         }
 
         // Rotate wheel animation
-        function rotateWheel() {
-            spinTime += 30;
+        function rotateWheel(ts) {
+            if (!lastSpinTs) {
+                lastSpinTs = ts;
+                scheduleUpcomingClicks(16.67);
+                spinFrame = requestAnimationFrame(rotateWheel);
+                return;
+            }
+            var dt = ts - lastSpinTs;
+            lastSpinTs = ts;
+            if (dt < 0) dt = 0;
+            if (dt > 50) dt = 50;
+
+            scheduleUpcomingClicks(dt);
+
+            spinTime += dt;
 
             if (spinTime >= spinTimeTotal) {
                 stopRotateWheel();
                 return;
             }
 
-            var spinAngle = spinAngleStart - easeOut(spinTime, 0, spinAngleStart, spinTimeTotal);
-            var spinDegree = startAngle * 180 / Math.PI + 90;
-            startAngle += (spinAngle * Math.PI / 180);
+            var prevAngle = startAngle;
+            var deltaDeg = spinVelocityDeg(spinTime) * (dt / 30);
+            startAngle += (deltaDeg * Math.PI / 180);
 
-            // Check for click sound
-            checkForClick();
-
+            var snapAngle = lastCrossedBorderAngle(prevAngle, startAngle);
+            var savedAngle = startAngle;
+            if (snapAngle != null) startAngle = snapAngle;
             drawRouletteWheel();
-            spinTimeout = setTimeout(rotateWheel, 30);
-        }
-
-        // Check if we should play click sound
-        function checkForClick() {
-            if (!settings.enableSound || !clickAudio) return;
-
-            var currentDegree = (startAngle * 180 / Math.PI + 90) % 360;
-            var segmentSize = 360 / rouletteData.options.length;
-            var currentIndex = Math.floor(currentDegree / segmentSize);
-
-            if (currentIndex !== lastClickIndex) {
-                lastClickIndex = currentIndex;
-                try {
-                    clickAudio.currentTime = 0;
-                    clickAudio.play().catch(function (e) {
-                        console.log('Could not play click sound:', e);
-                    });
-                } catch (e) {
-                    console.log('Error playing click sound:', e);
-                }
-            }
+            startAngle = savedAngle;
+            spinFrame = requestAnimationFrame(rotateWheel);
         }
 
         function resolveLandOnIndex(customData) {
@@ -1605,7 +1831,7 @@
 
         // Stop wheel rotation and show result with enhanced effects
         function stopRotateWheel() {
-            clearTimeout(spinTimeout);
+            stopSpinAnimation();
             rouletteData.isSpinning = false;
 
             // Remove spinning class
@@ -1873,7 +2099,7 @@
             styleEl.textContent = buildRoulettePreviewCss(config);
 
             if (config.EnableSound !== undefined) { settings.enableSound = !!config.EnableSound; }
-            if (config.ClickSoundVolume !== undefined) { settings.clickSoundVolume = Number(config.ClickSoundVolume); }
+            if (config.ClickSoundVolume !== undefined) { setClickSoundVolume(Number(config.ClickSoundVolume)); }
             if (config.ResultSoundVolume !== undefined) { settings.resultSoundVolume = Number(config.ResultSoundVolume); }
             if (config.EnableGlow !== undefined) { settings.enableGlow = !!config.EnableGlow; }
             if (config.EnableResultOverlay !== undefined) { settings.enableResultOverlay = !!config.EnableResultOverlay; }
