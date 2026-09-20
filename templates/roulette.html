@@ -72,6 +72,18 @@
             box-shadow: {{ContainerHoverShadow}};
         }
 
+        #main.autohide-hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: none !important;
+        }
+
+        #main.autohide-animating {
+            transition: none !important;
+            pointer-events: none;
+        }
+
         .wheel-container {
             position: relative;
 
@@ -472,11 +484,84 @@
         .sharp-edges {
             clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
         }
+
+        /* Wheel auto-hide show/hide animations */
+        @keyframes slideInLeft {
+            0% { transform: translateX(-100%); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes slideInRight {
+            0% { transform: translateX(100%); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes slideInTop {
+            0% { transform: translateY(-100%); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        @keyframes slideInBottom {
+            0% { transform: translateY(100%); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        @keyframes slideOutLeft {
+            0% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(-100%); opacity: 0; }
+        }
+
+        @keyframes slideOutRight {
+            0% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(100%); opacity: 0; }
+        }
+
+        @keyframes slideOutTop {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-100%); opacity: 0; }
+        }
+
+        @keyframes slideOutBottom {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(100%); opacity: 0; }
+        }
+
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes bounceOut {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.3); opacity: 0; }
+        }
+
+        @keyframes zoomIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes zoomOut {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0); opacity: 0; }
+        }
     </style>
 </head>
 
 <body>
-    <div id="main">
+    <div id="main"{% if AutoHideWheel %} class="autohide-hidden"{% endif %}>
         <div class="wheel-container">
             <div class="wheel-glow" id="wheelGlow"></div>
             <canvas id="canvas" width="{{CanvasSize}}" height="{{CanvasSize}}"></canvas>
@@ -735,6 +820,13 @@
         enableResultOverlay: {{ EnableResultOverlay | tojson }},
         autoHideResult: {{ AutoHideResult | tojson }},
         resultDisplayDuration: {{ ResultDisplayDuration | tojson }} * 1000,
+        resultAnimationDuration: {{ ResultAnimationDuration | tojson }} * 1000,
+        autoHideWheel: {{ AutoHideWheel | tojson }},
+        wheelShowAnimation: {{ WheelShowAnimation | tojson }},
+        wheelHideAnimation: {{ WheelHideAnimation | tojson }},
+        wheelVisibilityAnimationDuration: {{ WheelVisibilityAnimationDuration | tojson }},
+        wheelVisibilityAnimationEasing: {{ WheelVisibilityAnimationEasing | tojson }},
+        autoHideWheelDelay: {{ AutoHideWheelDelay | tojson }} * 1000,
             enableParticles: {{ EnableParticles | tojson }},
         modernEffects: {{ ModernEffects | tojson }}
         };
@@ -770,6 +862,202 @@
         var clickAudio = null;
         var resultAudio = null;
 
+        var resultHideTimeout = null;
+        var wheelHideTimeout = null;
+        var wheelHideAfterResultTimeout = null;
+        var wheelVisibilityAnimTimeout = null;
+        var wheelVisibilityAnimating = false;
+        var WHEEL_SHOW_ANIMS = {
+            fadeIn: true,
+            slideInLeft: true,
+            slideInRight: true,
+            slideInTop: true,
+            slideInBottom: true,
+            zoomIn: true,
+            bounceIn: true
+        };
+        var WHEEL_HIDE_ANIMS = {
+            fadeOut: true,
+            slideOutLeft: true,
+            slideOutRight: true,
+            slideOutTop: true,
+            slideOutBottom: true,
+            zoomOut: true,
+            bounceOut: true
+        };
+
+        function getMainEl() {
+            return document.getElementById('main');
+        }
+
+        function clearWheelAutoHideTimers() {
+            if (wheelHideTimeout) {
+                clearTimeout(wheelHideTimeout);
+                wheelHideTimeout = null;
+            }
+            if (wheelHideAfterResultTimeout) {
+                clearTimeout(wheelHideAfterResultTimeout);
+                wheelHideAfterResultTimeout = null;
+            }
+        }
+
+        function finishWheelVisibilityAnimation(main) {
+            if (wheelVisibilityAnimTimeout) {
+                clearTimeout(wheelVisibilityAnimTimeout);
+                wheelVisibilityAnimTimeout = null;
+            }
+            if (!main) return;
+            main.style.animation = '';
+            main.classList.remove('autohide-animating');
+            wheelVisibilityAnimating = false;
+        }
+
+        function revealMainImmediate(main) {
+            if (!main) return;
+            finishWheelVisibilityAnimation(main);
+            main.classList.add('autohide-animating');
+            main.classList.remove('autohide-hidden');
+            void main.offsetHeight;
+            finishWheelVisibilityAnimation(main);
+        }
+
+        function showWheel() {
+            var main = getMainEl();
+            if (!main) return;
+            if (!settings.autoHideWheel) {
+                revealMainImmediate(main);
+                return;
+            }
+            var alreadyVisible = !main.classList.contains('autohide-hidden') && !wheelVisibilityAnimating;
+            if (alreadyVisible) return;
+
+            finishWheelVisibilityAnimation(main);
+
+            var anim = settings.wheelShowAnimation || 'fadeIn';
+            var dur = Number(settings.wheelVisibilityAnimationDuration);
+            if (isNaN(dur) || dur < 0) dur = 0.4;
+            var ease = settings.wheelVisibilityAnimationEasing || 'ease-in-out';
+            var useAnim = WHEEL_SHOW_ANIMS[anim] && dur > 0;
+
+            main.classList.add('autohide-animating');
+            main.classList.remove('autohide-hidden');
+            drawRouletteWheel();
+
+            if (!useAnim) {
+                finishWheelVisibilityAnimation(main);
+                return;
+            }
+
+            wheelVisibilityAnimating = true;
+            main.style.animation = anim + ' ' + dur + 's ' + ease + ' both';
+            wheelVisibilityAnimTimeout = setTimeout(function () {
+                finishWheelVisibilityAnimation(main);
+                drawRouletteWheel();
+            }, dur * 1000);
+        }
+
+        function hideWheel(immediate) {
+            var main = getMainEl();
+            if (!main) return;
+            if (!settings.autoHideWheel) {
+                revealMainImmediate(main);
+                return;
+            }
+            if (main.classList.contains('autohide-hidden') && !wheelVisibilityAnimating) return;
+
+            finishWheelVisibilityAnimation(main);
+
+            var anim = settings.wheelHideAnimation || 'fadeOut';
+            var dur = Number(settings.wheelVisibilityAnimationDuration);
+            if (isNaN(dur) || dur < 0) dur = 0.4;
+            var ease = settings.wheelVisibilityAnimationEasing || 'ease-in-out';
+
+            function applyHidden() {
+                main.classList.add('autohide-animating');
+                main.classList.add('autohide-hidden');
+                void main.offsetHeight;
+                finishWheelVisibilityAnimation(main);
+            }
+
+            main.classList.add('autohide-animating');
+
+            if (immediate || !WHEEL_HIDE_ANIMS[anim] || dur <= 0) {
+                applyHidden();
+                return;
+            }
+
+            wheelVisibilityAnimating = true;
+            main.style.animation = anim + ' ' + dur + 's ' + ease + ' both';
+            wheelVisibilityAnimTimeout = setTimeout(applyHidden, dur * 1000);
+        }
+
+        function beginWheelAutoHideSequence() {
+            if (!settings.autoHideWheel || rouletteData.isSpinning) return;
+
+            var display = document.getElementById('resultDisplay');
+            var resultShowing = display && display.classList.contains('show');
+            if (resultShowing) {
+                hideResult();
+                var resultDur = Number(settings.resultAnimationDuration);
+                if (isNaN(resultDur) || resultDur < 0) resultDur = 300;
+                wheelHideAfterResultTimeout = setTimeout(function () {
+                    wheelHideAfterResultTimeout = null;
+                    if (!settings.autoHideWheel || rouletteData.isSpinning) return;
+                    hideWheel(false);
+                }, resultDur);
+                return;
+            }
+            hideWheel(false);
+        }
+
+        function scheduleWheelAutoHide() {
+            if (!settings.autoHideWheel) return;
+            clearWheelAutoHideTimers();
+            var delay = Number(settings.autoHideWheelDelay);
+            if (isNaN(delay) || delay < 0) delay = 5000;
+            wheelHideTimeout = setTimeout(function () {
+                wheelHideTimeout = null;
+                beginWheelAutoHideSequence();
+            }, delay);
+        }
+
+        function resetWheelToIdle() {
+            clearTimeout(spinTimeout);
+            spinTimeout = null;
+            startAngle = 0;
+            rouletteData.isSpinning = false;
+            rouletteData.lastResult = null;
+            rouletteData.winningIndex = -1;
+            rouletteData.pendingLandIndex = -1;
+            hideResult();
+            var canvas = document.getElementById('canvas');
+            var glow = document.getElementById('wheelGlow');
+            if (canvas) canvas.classList.remove('wheel-spinning');
+            if (glow) glow.classList.remove('active');
+            drawRouletteWheel();
+            if (settings.autoHideWheel) {
+                hideWheel(false);
+            }
+        }
+
+        function syncIdleWheelVisibility() {
+            if (rouletteData.isSpinning) return;
+            var main = getMainEl();
+            if (!main) return;
+            if (!settings.autoHideWheel) {
+                clearWheelAutoHideTimers();
+                revealMainImmediate(main);
+                return;
+            }
+            var display = document.getElementById('resultDisplay');
+            var resultShowing = display && display.classList.contains('show');
+            if (resultShowing) {
+                scheduleWheelAutoHide();
+                return;
+            }
+            hideWheel(true);
+        }
+
         // Socket event listeners
         socket.on('connect', function () {
             console.log('Connected to roulette server');
@@ -795,21 +1083,7 @@
 
         socket.on('roulette_refresh', function (data) {
             console.log('Dynamic control refresh triggered:', data);
-            // Reset the wheel state and redraw
-            startAngle = 0;
-            rouletteData.isSpinning = false;
-            rouletteData.lastResult = null;
-            rouletteData.winningIndex = -1;
-
-            // Hide result display
-            hideResult();
-
-            // Remove spinning class and glow
-            document.getElementById('canvas').classList.remove('wheel-spinning');
-            document.getElementById('wheelGlow').classList.remove('active');
-
-            // Redraw wheel
-            drawRouletteWheel();
+            resetWheelToIdle();
         });
 
         socket.on('roulette_update', function (data) {
@@ -861,21 +1135,7 @@
         });
 
         socket.on('refresh', function () {
-            // Reset the wheel state and redraw
-            startAngle = 0;
-            rouletteData.isSpinning = false;
-            rouletteData.lastResult = null;
-            rouletteData.winningIndex = -1;
-
-            // Hide result display
-            hideResult();
-
-            // Remove spinning class and glow
-            document.getElementById('canvas').classList.remove('wheel-spinning');
-            document.getElementById('wheelGlow').classList.remove('active');
-
-            // Redraw wheel
-            drawRouletteWheel();
+            resetWheelToIdle();
         });
 
         socket.on('hide_result', function () {
@@ -907,7 +1167,12 @@
 
         // Helper function to hide result display
         function hideResult() {
+            if (resultHideTimeout) {
+                clearTimeout(resultHideTimeout);
+                resultHideTimeout = null;
+            }
             var display = document.getElementById('resultDisplay');
+            if (!display) return;
             display.classList.remove('show');
             display.classList.add('hidden');
             display.textContent = '';
@@ -940,11 +1205,13 @@
             updateArcSize();
             drawRouletteWheel();
 
-            // Add loading class initially
-            document.getElementById('main').classList.add('loading');
-            setTimeout(() => {
-                document.getElementById('main').classList.remove('loading');
-            }, 800);
+            if (!settings.autoHideWheel) {
+                document.getElementById('main').classList.add('loading');
+                setTimeout(function () {
+                    var main = getMainEl();
+                    if (main) main.classList.remove('loading');
+                }, 800);
+            }
         }
 
         // Update wheel with new options
@@ -1231,6 +1498,9 @@
             if (rouletteData.isSpinning) return;
 
             rouletteData.isSpinning = true;
+            clearWheelAutoHideTimers();
+            hideResult();
+            showWheel();
 
             // Add spinning class for visual enhancement
             document.getElementById('canvas').classList.add('wheel-spinning');
@@ -1377,7 +1647,10 @@
             }
 
             // Show result with enhanced animation
-            setTimeout(() => {
+            setTimeout(function () {
+                if (settings.autoHideWheel && (!settings.enableResultOverlay || !result)) {
+                    scheduleWheelAutoHide();
+                }
                 showResult(result);
             }, 600);
 
@@ -1403,6 +1676,10 @@
 
         // Enhanced result display with special animations
         function showResult(result) {
+            if (settings.autoHideWheel && settings.enableResultOverlay && result) {
+                scheduleWheelAutoHide();
+            }
+
             if (!settings.enableResultOverlay || !result) return;
 
             var display = document.getElementById('resultDisplay');
@@ -1424,9 +1701,12 @@
             }
 
             if (settings.autoHideResult) {
-                setTimeout(function () {
-                    display.classList.remove('show');
-                    display.classList.add('hidden');
+                if (resultHideTimeout) {
+                    clearTimeout(resultHideTimeout);
+                }
+                resultHideTimeout = setTimeout(function () {
+                    resultHideTimeout = null;
+                    hideResult();
                 }, settings.resultDisplayDuration);
             }
         }
@@ -1563,7 +1843,9 @@
                 'border: ' + resultBorder + 'px solid ' + resultBorderColor + '; box-shadow: ' + resultShadow + '; font-size: ' + resultFontSize + 'px; ' +
                 'font-weight: ' + resultFontWeight + '; text-shadow: ' + resultTextShadow + '; letter-spacing: ' + resultLetterSpacing + 'px; ' +
                 'transition: all ' + resultAnimDur + 's ' + resultAnimEase + '; }' +
-                '.result-display.show { opacity: ' + resultOpacity + '; }'
+                '.result-display.show { opacity: ' + resultOpacity + '; }' +
+                '#main.autohide-hidden { opacity: 0; visibility: hidden; pointer-events: none; transition: none !important; }' +
+                '#main.autohide-animating { transition: none !important; pointer-events: none; }'
             );
         }
 
@@ -1599,6 +1881,21 @@
             if (config.ResultDisplayDuration !== undefined) {
                 settings.resultDisplayDuration = Number(config.ResultDisplayDuration) * 1000;
             }
+            if (config.ResultAnimationDuration !== undefined) {
+                settings.resultAnimationDuration = Number(config.ResultAnimationDuration) * 1000;
+            }
+            if (config.AutoHideWheel !== undefined) { settings.autoHideWheel = !!config.AutoHideWheel; }
+            if (config.WheelShowAnimation !== undefined) { settings.wheelShowAnimation = config.WheelShowAnimation; }
+            if (config.WheelHideAnimation !== undefined) { settings.wheelHideAnimation = config.WheelHideAnimation; }
+            if (config.WheelVisibilityAnimationDuration !== undefined) {
+                settings.wheelVisibilityAnimationDuration = Number(config.WheelVisibilityAnimationDuration);
+            }
+            if (config.WheelVisibilityAnimationEasing !== undefined) {
+                settings.wheelVisibilityAnimationEasing = config.WheelVisibilityAnimationEasing;
+            }
+            if (config.AutoHideWheelDelay !== undefined) {
+                settings.autoHideWheelDelay = Number(config.AutoHideWheelDelay) * 1000;
+            }
             if (config.EnableParticles !== undefined) { settings.enableParticles = !!config.EnableParticles; }
             if (config.ModernEffects !== undefined) { settings.modernEffects = !!config.ModernEffects; }
 
@@ -1630,6 +1927,7 @@
             if (!rouletteData.isSpinning) {
                 drawRouletteWheel();
             }
+            syncIdleWheelVisibility();
         }
 
         async function loadTemplateConfig() {

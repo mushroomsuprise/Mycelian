@@ -702,6 +702,86 @@
         },
         {
             "type": "separator",
+            "label": "Wheel Auto Hide"
+        },
+        {
+            "type": "checkbox",
+            "id": "AutoHideWheel",
+            "label": "Auto Hide Wheel",
+            "value": true,
+            "description": "Hide the wheel when idle. It appears when you spin (Source Controls or Stream Deck), then hides again after the result"
+        },
+        {
+            "type": "select",
+            "id": "WheelShowAnimation",
+            "label": "Show Animation",
+            "value": "fadeIn",
+            "options": [
+                "none",
+                "fadeIn",
+                "slideInLeft",
+                "slideInRight",
+                "slideInTop",
+                "slideInBottom",
+                "zoomIn",
+                "bounceIn"
+            ],
+            "description": "Animation used when the wheel appears for a spin"
+        },
+        {
+            "type": "select",
+            "id": "WheelHideAnimation",
+            "label": "Hide Animation",
+            "value": "fadeOut",
+            "options": [
+                "none",
+                "fadeOut",
+                "slideOutLeft",
+                "slideOutRight",
+                "slideOutTop",
+                "slideOutBottom",
+                "zoomOut",
+                "bounceOut"
+            ],
+            "description": "Animation used when the wheel hides after the result"
+        },
+        {
+            "type": "number",
+            "id": "WheelVisibilityAnimationDuration",
+            "label": "Show/Hide Animation Duration",
+            "value": 0.4,
+            "min": 0,
+            "max": 3,
+            "step": 0.1,
+            "description": "Duration of the wheel show and hide animations in seconds"
+        },
+        {
+            "type": "select",
+            "id": "WheelVisibilityAnimationEasing",
+            "label": "Show/Hide Animation Easing",
+            "value": "ease-in-out",
+            "options": [
+                "linear",
+                "ease",
+                "ease-in",
+                "ease-out",
+                "ease-in-out",
+                "cubic-bezier(0.4, 0, 0.2, 1)"
+            ],
+            "description": "Easing function for wheel show and hide animations"
+        },
+        {
+            "type": "number",
+            "id": "AutoHideWheelDelay",
+            "label": "Hide After Results",
+            "value": 5,
+            "min": 0,
+            "max": 30,
+            "step": 0.5,
+            "description": "How long to keep the wheel visible after the result is shown, in seconds"
+        },
+        {
+            "type": "separator",
             "label": "Spin Duration Settings"
         },
         {
