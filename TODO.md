@@ -16,7 +16,7 @@ Alerts:
 General:
     [x] - Fix built-in activity feed still drawing a blank window. This seems to happen once a user is live and gets alerts past midnight, and persists between restarts until a long period of time happens. There has been many attempts to fix this with no success so far.
     [x] - Add in options to trim stored alert data automatically to the Settings>App Settings tab. There should be a toggle to turn on the auto-trim, the quantity of past alerts to keep, an timeframe to keep them, and an option to trim based on quantity or based on time or both.
-    [] - Add persistant storage of condensed feed list filters
+    [x] - Add persistant storage of condensed feed list filters
 
 YouTube Integration:
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system
