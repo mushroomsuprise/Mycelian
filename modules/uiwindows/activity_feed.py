@@ -1408,7 +1408,6 @@ class AlertEventHandler:
             elif should_display_new_alert:
                 if not create_alert_element(new_alert_data):
                     return
-                self._apply_filter_visibility(new_alert_data, alert_type)
                 element = new_alert_data.get("element")
                 if _element_alive(element):
                     element.update()
@@ -1420,52 +1419,6 @@ class AlertEventHandler:
                 logger.debug(
                     f"New alert {alert_type} added to state but not displayed - on {activity_feed_state.current_tab} tab"
                 )
-
-    def _apply_filter_visibility(
-        self, new_alert_data: Dict[str, Any], alert_type: str
-    ) -> None:
-        """Apply filter visibility to new alert"""
-        filter_key = None
-        if alert_type == "Points":
-            filter_key = "points"
-        elif alert_type == "Follow":
-            filter_key = "follows"
-        elif alert_type == "Bits":
-            filter_key = "bits"
-        elif alert_type == "Sub":
-            filter_key = "subs"
-        elif alert_type == "Resub":
-            filter_key = "resubs"
-        elif alert_type == "Giftsub":
-            filter_key = "giftsubs"
-        elif alert_type == "Donation":
-            filter_key = "donations"
-        elif alert_type == "Membership":
-            filter_key = "subs"
-        elif alert_type == "Member Milestone":
-            filter_key = "resubs"
-        elif alert_type == "Gift Membership":
-            filter_key = "giftsubs"
-        elif alert_type in ("Super Chat", "Super Sticker"):
-            filter_key = "donations"
-        elif alert_type == "Raid":
-            filter_key = "raids"
-        elif alert_type == "Streak":
-            filter_key = "streaks"
-        elif alert_type == "Hype Train":
-            filter_key = "hype_train"
-
-        logger.debug(
-            f"New alert of type {alert_type} mapped to filter key: {filter_key}"
-        )
-
-        if filter_key and not (
-            activity_feed_state.filter_state.get("all", True)
-            or activity_feed_state.filter_state.get(filter_key, True)
-        ):
-            element = new_alert_data.get("element")
-            if _element_alive(element):
-                element.classes(add="hidden")
 
     def _trigger_timestamp_update(self) -> None:
         """Trigger a timestamp update cycle instead of continuous polling"""
@@ -1820,6 +1773,7 @@ class ActivityFeedState:
         self.pause_breath_timer: Optional[ui.timer] = None
         # Filter dropdown reference
         self.filter_dropdown: Optional[ui.element] = None
+        self.filter_host: Optional[ui.element] = None
         # Timer for click-outside detection
         self.dropdown_timer: Optional[ui.timer] = None
         # Backdrop reference
@@ -2965,7 +2919,7 @@ def create_alert_element(alert_data) -> bool:
 
 
 def update_alert_visibility():
-    """Update the visibility of all alerts based on the current filter state"""
+    """Show every card. Event filters apply only to condensed rows."""
     # Store the current dropdown visibility state
     dropdown_was_visible = activity_feed_state.dropdown_visible
 
@@ -2988,50 +2942,15 @@ def update_alert_visibility():
         if not _element_alive(element):
             continue
 
-        alert_type = alert_data.get("type")
-
-        # Map alert type to filter key (optimized mapping)
-        filter_key_map = {
-            "Points": "points",
-            "Follow": "follows",
-            "Bits": "bits",
-            "Sub": "subs",
-            "Resub": "resubs",
-            "Giftsub": "giftsubs",
-            "Donation": "donations",
-            "Raid": "raids",
-            "Streak": "streaks",
-            "Hype Train": "hype_train",
-        }
-        filter_key = filter_key_map.get(alert_type)
-
-        # Show if either:
-        # 1. The "All Events" filter is enabled, or
-        # 2. The specific filter for this alert type is enabled
-        should_show = activity_feed_state.filter_state.get("all", True) or (
-            filter_key and activity_feed_state.filter_state.get(filter_key, True)
-        )
-
-        # Only update elements that need to change (performance optimization)
+        # Card lists always show every event. Filters apply to condensed rows.
         current_hidden = "hidden" in getattr(element, "_classes", [])
-        needs_update = (should_show and current_hidden) or (
-            not should_show and not current_hidden
-        )
+        if not current_hidden:
+            continue
 
-        if needs_update:
-            # Remove classes one at a time
-            element.classes(remove="hidden")
-            element.classes(remove="visible")
-
-            # Then add the appropriate class and style
-            if should_show:
-                element.classes(add="visible")
-                element.style("display: block")
-            else:
-                element.classes(add="hidden")
-                element.style("display: none")
-
-            updates_needed += 1
+        element.classes(remove="hidden")
+        element.classes(add="visible")
+        element.style("display: block")
+        updates_needed += 1
 
     # Only update UI if we actually made changes
     if updates_needed > 0:
@@ -3066,6 +2985,27 @@ def close_filter_dropdown():
         logger.debug("Closed filter dropdown via backdrop click")
     except Exception as e:
         logger.error(f"Error closing filter dropdown: {str(e)}", exc_info=True)
+
+
+def _condensed_filters_visible() -> bool:
+    """Filters belong to the condensed current-alerts feed only."""
+    return (
+        activity_feed_state.current_tab == "current"
+        and bool(activity_feed_state.condense_list)
+    )
+
+
+def _sync_filter_controls() -> None:
+    """Show the filter button only while the condensed feed is on screen."""
+    host = getattr(activity_feed_state, "filter_host", None)
+    visible = _condensed_filters_visible()
+    if _element_alive(host):
+        if visible:
+            host.classes(remove="hidden")
+        else:
+            host.classes(add="hidden")
+    if not visible:
+        close_filter_dropdown()
 
 
 def on_checkbox_change(key, value):
@@ -3611,8 +3551,14 @@ def create_activity_feed_tab():
                 getattr(activity_feed_state.condense_toggle, "id", None),
             )
 
-            # Filter dropdown lives outside the overflow-x cluster so it can float
-            with ui.element("div").classes("relative shrink-0 z-50"):
+            # Filter dropdown lives outside the overflow-x cluster so it can float.
+            # It is only offered while the condensed feed is showing.
+            filter_host_classes = "relative shrink-0 z-50"
+            if not _condensed_filters_visible():
+                filter_host_classes += " hidden"
+            filter_host = ui.element("div").classes(filter_host_classes)
+            activity_feed_state.filter_host = filter_host
+            with filter_host:
                 def toggle_filter_dropdown(e):
                     logger.debug(
                         f"Filter button clicked. Current state: {activity_feed_state.dropdown_visible}"
@@ -4430,45 +4376,6 @@ def add_restored_alert_to_feed(alert_data):
         # Create the alert element using the unified approach
         create_alert_element(alert_data)
 
-        # Apply visibility based on filter state
-        alert_type = alert_data.get("type")
-        filter_key = None
-        if alert_type == "Points":
-            filter_key = "points"
-        elif alert_type == "Follow":
-            filter_key = "follows"
-        elif alert_type == "Bits":
-            filter_key = "bits"
-        elif alert_type == "Sub":
-            filter_key = "subs"
-        elif alert_type == "Resub":
-            filter_key = "resubs"
-        elif alert_type == "Giftsub":
-            filter_key = "giftsubs"
-        elif alert_type == "Donation":
-            filter_key = "donations"
-        elif alert_type == "Membership":
-            filter_key = "subs"
-        elif alert_type == "Member Milestone":
-            filter_key = "resubs"
-        elif alert_type == "Gift Membership":
-            filter_key = "giftsubs"
-        elif alert_type in ("Super Chat", "Super Sticker"):
-            filter_key = "donations"
-        elif alert_type == "Raid":
-            filter_key = "raids"
-        elif alert_type == "Streak":
-            filter_key = "streaks"
-        elif alert_type == "Hype Train":
-            filter_key = "hype_train"
-
-        if filter_key and not (
-            activity_feed_state.filter_state.get("all", True)
-            or activity_feed_state.filter_state.get(filter_key, True)
-        ):
-            if alert_data.get("element"):
-                alert_data["element"].classes(add="hidden")
-
     except Exception as e:
         logger.error(f"Error adding restored alert to feed: {str(e)}", exc_info=True)
 
@@ -4670,6 +4577,7 @@ def _render_active_tab() -> None:
         _set_condensed_unavailable_notice(False)
         if _element_alive(activity_feed_state.condense_toggle):
             activity_feed_state.condense_toggle.classes(add="hidden")
+        _sync_filter_controls()
         refresh_restored_alerts()
         return
 
@@ -5503,6 +5411,7 @@ def update_condensed_view() -> bool:
 
         # Show/hide condense toggle based on current tab. A missing toggle means
         # the desktop tab is not built yet; the overlay still needs the rebuild.
+        _sync_filter_controls()
         if activity_feed_state.current_tab == "current":
             if _element_alive(activity_feed_state.condense_toggle):
                 activity_feed_state.condense_toggle.classes(remove="hidden")

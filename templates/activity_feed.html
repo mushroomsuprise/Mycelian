@@ -1048,8 +1048,8 @@
                     </label>
                 </div>
 
-                <!-- Filter dropdown -->
-                <div class="filter-container">
+                <!-- Filter dropdown: condensed feed only -->
+                <div id="filterContainer" class="filter-container" style="display: none;">
                     <button id="filterBtn" class="control-button">
                         <i class="material-icons">filter_list</i>
                         <span>FILTERS</span>
@@ -1311,20 +1311,6 @@
         var appliedViewRevision = null;
         var suppressViewEmit = false;
 
-        // Alert type to filter key mapping
-        var alertTypeToFilter = {
-            'Follow': 'follows',
-            'Sub': 'subs',
-            'Resub': 'resubs',
-            'Giftsub': 'giftsubs',
-            'Bits': 'bits',
-            'Points': 'points',
-            'Donation': 'donations',
-            'Raid': 'raids',
-            'Streak': 'streaks',
-            'Hype Train': 'hype_train'
-        };
-
         function formatWatchStreakMessage(username, streakCount, includeUsername) {
             var name = username || 'Someone';
             var count = parseInt(streakCount, 10);
@@ -1467,15 +1453,6 @@
             return (currentTime - coerceTimestamp(timestamp)) < 300; // 5 minutes
         }
 
-        function getFilterKeyForAlertType(alertType) {
-            return alertTypeToFilter[alertType] || null;
-        }
-
-        function shouldShowAlert(alertType) {
-            var filterKey = getFilterKeyForAlertType(alertType);
-            return activityFeedState.filterState.all || activityFeedState.filterState[filterKey];
-        }
-
         // Alert creation functions
         function createAlertElement(alertData) {
             var alertDiv = document.createElement('div');
@@ -1494,11 +1471,6 @@
             // Add text wrapping class if enabled
             if (window.enableTextWrapping) {
                 alertDiv.classList.add('text-wrapping-enabled');
-            }
-
-            // Apply visibility based on filter state
-            if (!shouldShowAlert(alertData.type)) {
-                alertDiv.classList.add('hidden');
             }
 
             // Create new badge
@@ -1704,6 +1676,27 @@
             activityFeedState.historicalAlerts = [];
         }
 
+        function condensedFiltersVisible() {
+            return activityFeedState.currentTab === "current" && activityFeedState.condenseList;
+        }
+
+        function syncFilterControls() {
+            var host = document.getElementById('filterContainer');
+            if (!host) {
+                return;
+            }
+            if (condensedFiltersVisible()) {
+                host.style.display = '';
+                return;
+            }
+            host.style.display = 'none';
+            filterDropdownVisible = false;
+            if (filterDropdown) {
+                filterDropdown.classList.remove('filter-dropdown-visible');
+                filterDropdown.classList.add('hidden');
+            }
+        }
+
         function updateAlertVisibility() {
             // Get the appropriate alert collection based on current tab
             var alertsToProcess = [];
@@ -1715,18 +1708,12 @@
             }
 
             alertsToProcess.forEach(function (alertData) {
-                if (alertData.element) {
-                    var shouldShow = shouldShowAlert(alertData.type);
-                    if (shouldShow) {
-                        alertData.element.classList.remove('hidden');
-                        alertData.element.classList.add('visible');
-                        alertData.element.style.display = 'flex';
-                    } else {
-                        alertData.element.classList.add('hidden');
-                        alertData.element.classList.remove('visible');
-                        alertData.element.style.display = 'none';
-                    }
+                if (!alertData.element) {
+                    return;
                 }
+                alertData.element.classList.remove('hidden');
+                alertData.element.classList.add('visible');
+                alertData.element.style.display = 'flex';
             });
         }
 
@@ -2008,6 +1995,7 @@
                 currentAlertsFeed.classList.add('hidden');
                 previousAlertsFeed.classList.remove('hidden');
                 paginationContainer.style.display = 'block';
+                syncFilterControls();
             } else {
                 currentTabBtn.classList.add('active');
                 previousTabBtn.classList.remove('active');
@@ -2021,6 +2009,7 @@
                     rebuildCurrentAlertsFeed();
                     updateAlertVisibility();
                 }
+                syncFilterControls();
             }
         }
 
@@ -2464,6 +2453,7 @@
             if (data.filters) {
                 updateAlertVisibility();
             }
+            syncFilterControls();
         }
 
         function toggleCondenseList() {
@@ -2482,6 +2472,7 @@
                     rebuildCurrentAlertsFeed();
                 }
             }
+            syncFilterControls();
         }
 
         // Event handlers
@@ -2813,6 +2804,7 @@
 
             // Hide condensed view initially
             condensedViewContainer.classList.add('hidden');
+            syncFilterControls();
 
             // Clear loading message
             currentAlertsFeed.innerHTML = '<div class="no-alerts">No alerts yet</div>';
