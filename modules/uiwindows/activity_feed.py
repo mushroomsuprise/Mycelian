@@ -51,6 +51,7 @@ _condensed_rebuild_running = False
 _condensed_rebuild_rerun = False
 _condensed_integrity_failures = 0
 _ignore_condense_toggle_event = False
+_ignore_view_apply = False
 _dom_desync_failures = 0
 _feed_watchdog_started = False
 _FEED_WATCHDOG_INTERVAL_SEC = 30.0
@@ -650,7 +651,11 @@ def _fallback_to_regular_feed(reason: str, *, disable_condense: bool = False) ->
     _condensed_integrity_failures = 0
 
     if disable_condense and activity_feed_state.condense_list:
-        activity_feed_state.condense_list = False
+        try:
+            view_manager.update({"condensed": False}, apply_desktop=False)
+        except Exception as exc:
+            logger.debug("activity_feed: could not sync condensed fallback: %s", exc)
+            activity_feed_state.condense_list = False
         toggle = activity_feed_state.condense_toggle
         if _element_alive(toggle) and getattr(toggle, "value", False):
             _ignore_condense_toggle_event = True
@@ -1378,6 +1383,11 @@ class AlertEventHandler:
                     or activity_feed_state.condensed_container is not None
                 ):
                     _handle_stale_client("apply_alert_on_ui")
+                if (
+                    activity_feed_state.condense_list
+                    and activity_feed_state.current_tab == "current"
+                ):
+                    schedule_condensed_view_update("apply_alert_on_ui_no_desktop")
                 return
 
             _stale_ui_skip_logged = False
@@ -1608,6 +1618,141 @@ def format_timestamp(timestamp):
         return f"{days}d ago"
 
 
+# Shared display state for the desktop window and the browser overlay.
+ACTIVITY_FEED_VIEW_PATH = "ActivityFeedView"
+FILTER_KEYS = (
+    "all",
+    "follows",
+    "subs",
+    "resubs",
+    "giftsubs",
+    "bits",
+    "points",
+    "donations",
+    "raids",
+    "streaks",
+    "hype_train",
+)
+_LIVE_ALERT_UI_KEYS = frozenset(
+    {
+        "element",
+        "new_badge",
+        "timestamp_label",
+        "newBadge",
+        "timestampLabel",
+    }
+)
+_JSON_DROP = object()
+
+
+def default_filter_state() -> Dict[str, bool]:
+    """All event filters on. This is the view used when nothing is saved."""
+    return {key: True for key in FILTER_KEYS}
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    """Coerce stored checkbox values without treating the string "false" as true."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off", ""}:
+            return False
+    return default
+
+
+def normalize_filter_state(raw: Any) -> Dict[str, bool]:
+    """Keep known filter keys only. Missing keys default to on."""
+    filters = default_filter_state()
+    if isinstance(raw, dict):
+        for key in FILTER_KEYS:
+            if key in raw:
+                filters[key] = _coerce_bool(raw[key], filters[key])
+    return filters
+
+
+def apply_filter_rules(
+    filters: Dict[str, bool], changed_key: Optional[str] = None
+) -> Dict[str, bool]:
+    """Apply the All Events checkbox rules used by both feeds."""
+    result = dict(filters)
+    if changed_key == "all" and result.get("all"):
+        for key in result:
+            result[key] = True
+    elif changed_key and changed_key != "all":
+        others_checked = all(
+            value for key, value in result.items() if key != "all" and key != changed_key
+        )
+        result["all"] = bool(result.get(changed_key) and others_checked)
+    return result
+
+
+def normalize_view(raw: Any) -> Dict[str, Any]:
+    """Fill a complete activity-feed view from a partial or invalid document."""
+    source = raw if isinstance(raw, dict) else {}
+    tab = source.get("tab", "current")
+    if tab not in ("current", "previous"):
+        tab = "current"
+    try:
+        page = int(source.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    if page < 1:
+        page = 1
+    return {
+        "filters": normalize_filter_state(source.get("filters")),
+        "condensed": _coerce_bool(source.get("condensed", False), False),
+        "tab": tab,
+        "page": page,
+    }
+
+
+def _json_ready(value: Any) -> Any:
+    """Return a JSON-safe copy, dropping NiceGUI elements and other live objects."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        ready: Dict[str, Any] = {}
+        for key, item in value.items():
+            if key in _LIVE_ALERT_UI_KEYS:
+                continue
+            converted = _json_ready(item)
+            if converted is _JSON_DROP:
+                continue
+            ready[str(key)] = converted
+        return ready
+    if isinstance(value, (list, tuple)):
+        items = []
+        for item in value:
+            converted = _json_ready(item)
+            if converted is _JSON_DROP:
+                continue
+            items.append(converted)
+        return items
+    return _JSON_DROP
+
+
+def serialize_live_alert(alert: Dict[str, Any]) -> Dict[str, Any]:
+    """Copy one live alert without UI element references."""
+    ready = _json_ready(alert)
+    if isinstance(ready, dict):
+        return ready
+    return {}
+
+
+def serialize_live_alerts(alerts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Copy the session feed for the overlay."""
+    serialized: List[Dict[str, Any]] = []
+    for alert in alerts:
+        if isinstance(alert, dict):
+            serialized.append(serialize_live_alert(alert))
+    return serialized
+
+
 # Create a class to store the reference to the activity feed container
 class ActivityFeedState:
     def __init__(self):
@@ -1626,19 +1771,10 @@ class ActivityFeedState:
             str, Any
         ] = {}  # Store references to timestamp labels for updating
         # Add filter state to track which event types are visible
-        self.filter_state: Dict[str, bool] = {
-            "all": True,
-            "follows": True,
-            "subs": True,
-            "resubs": True,
-            "giftsubs": True,
-            "bits": True,
-            "points": True,
-            "donations": True,
-            "raids": True,
-            "streaks": True,
-            "hype_train": True,
-        }
+        self.filter_state: Dict[str, bool] = default_filter_state()
+        self.filter_checkboxes: Dict[str, Any] = {}
+        self.current_tab_btn: Optional[Any] = None
+        self.previous_tab_btn: Optional[Any] = None
         # Map alert types to filter keys
         self.alert_type_to_filter: Dict[str, str] = {
             "Follow": "follows",
@@ -1692,6 +1828,196 @@ class ActivityFeedState:
 
 # Global instance
 activity_feed_state = ActivityFeedState()
+
+
+class ActivityFeedViewManager:
+    """Canonical display state for every activity-feed surface.
+
+    The desktop window and the browser overlay both read and write this view.
+    A revision stops an older echo from rolling the display backward.
+    """
+
+    def __init__(self) -> None:
+        self.revision = 0
+        self._loaded = False
+        self._view = normalize_view({})
+
+    def load(self) -> Dict[str, Any]:
+        """Read ActivityFeedView once per process. Failures keep the defaults."""
+        if self._loaded:
+            self._sync_state()
+            return self.snapshot()
+        self._loaded = True
+        try:
+            from ..database_manager import get_data
+
+            raw = get_data(ACTIVITY_FEED_VIEW_PATH) or {}
+            if not isinstance(raw, dict):
+                raise TypeError("ActivityFeedView document is not a dict")
+            self._view = normalize_view(raw)
+        except Exception as exc:
+            logger.warning(
+                "activity_feed: could not load saved view, using defaults: %s", exc
+            )
+            self._view = normalize_view({})
+        self._sync_state()
+        return self.snapshot()
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Return the live view plus its revision."""
+        view = self._view
+        return {
+            "revision": self.revision,
+            "filters": dict(view["filters"]),
+            "condensed": bool(view["condensed"]),
+            "tab": view["tab"],
+            "page": int(view["page"]),
+        }
+
+    def save(self) -> bool:
+        """Persist filters, condensed mode, tab, and page. Revision stays in memory."""
+        payload = {
+            "filters": dict(self._view["filters"]),
+            "condensed": bool(self._view["condensed"]),
+            "tab": self._view["tab"],
+            "page": int(self._view["page"]),
+        }
+        try:
+            from ..database_manager import set_data
+
+            return bool(set_data(ACTIVITY_FEED_VIEW_PATH, payload))
+        except Exception as exc:
+            logger.warning("activity_feed: could not save view: %s", exc)
+            return False
+
+    def update(
+        self,
+        patch: Optional[Dict[str, Any]] = None,
+        *,
+        apply_desktop: bool = True,
+        broadcast: bool = True,
+    ) -> Dict[str, Any]:
+        """Merge a partial change, save it, and push it to both surfaces."""
+        self.load()
+        changed = self._merge_patch(patch or {})
+        if not changed:
+            return self.snapshot()
+        self.revision += 1
+        self.save()
+        self._sync_state()
+        snapshot = self.snapshot()
+        if apply_desktop:
+            _run_on_ui_loop(lambda: _apply_view_to_desktop(changed))
+        if broadcast:
+            broadcast_activity_feed_view(snapshot)
+        return snapshot
+
+    def apply_snapshot(self, snapshot: Dict[str, Any]) -> bool:
+        """Adopt a newer snapshot. The same or an older revision does not save."""
+        self.load()
+        if not isinstance(snapshot, dict):
+            return False
+        try:
+            revision = int(snapshot.get("revision"))
+        except (TypeError, ValueError):
+            return False
+        if revision <= self.revision:
+            return False
+        self._view = normalize_view(snapshot)
+        self.revision = revision
+        self.save()
+        self._sync_state()
+        return True
+
+    def _merge_patch(self, patch: Dict[str, Any]) -> set:
+        """Apply one partial update. Returns the field names that changed."""
+        if not isinstance(patch, dict):
+            return set()
+        changed: set = set()
+        view = self._view
+
+        if "condensed" in patch:
+            condensed = _coerce_bool(patch.get("condensed"), bool(view["condensed"]))
+            if condensed != bool(view["condensed"]):
+                view["condensed"] = condensed
+                changed.add("condensed")
+
+        if "tab" in patch:
+            tab = patch.get("tab")
+            if tab in ("current", "previous") and tab != view["tab"]:
+                view["tab"] = tab
+                changed.add("tab")
+
+        if "page" in patch:
+            try:
+                page = int(patch.get("page"))
+            except (TypeError, ValueError):
+                page = int(view["page"])
+            if page < 1:
+                page = 1
+            if page != int(view["page"]):
+                view["page"] = page
+                changed.add("page")
+
+        incoming_filters = patch.get("filters")
+        if isinstance(incoming_filters, dict):
+            filters = dict(view["filters"])
+            known = [key for key in incoming_filters if key in FILTER_KEYS]
+            for key in known:
+                filters[key] = _coerce_bool(incoming_filters[key], filters[key])
+            if len(known) == 1:
+                filters = apply_filter_rules(filters, known[0])
+            else:
+                filters = normalize_filter_state(filters)
+            if filters != view["filters"]:
+                view["filters"] = filters
+                changed.add("filters")
+
+        return changed
+
+    def _sync_state(self) -> None:
+        """Copy the canonical view onto the fields the rest of the feed reads."""
+        activity_feed_state.filter_state.clear()
+        activity_feed_state.filter_state.update(self._view["filters"])
+        activity_feed_state.condense_list = bool(self._view["condensed"])
+        activity_feed_state.current_tab = self._view["tab"]
+        activity_feed_state.current_page = int(self._view["page"])
+
+
+view_manager = ActivityFeedViewManager()
+
+
+def broadcast_activity_feed_view(
+    snapshot: Dict[str, Any],
+    *,
+    to: Optional[str] = None,
+    include_live_alerts: bool = False,
+) -> bool:
+    """Push the shared view to overlay clients."""
+    payload = {
+        "revision": int(snapshot.get("revision", 0)),
+        "filters": dict(snapshot.get("filters") or {}),
+        "condensed": bool(snapshot.get("condensed", False)),
+        "tab": snapshot.get("tab", "current"),
+        "page": int(snapshot.get("page", 1) or 1),
+    }
+    if include_live_alerts:
+        payload["live_alerts"] = serialize_live_alerts(activity_feed_state.live_alerts)
+    return _emit_overlay_event("activity_feed_view", payload, to=to)
+
+
+def _emit_overlay_event(event: str, payload: Dict[str, Any], *, to: Optional[str] = None) -> bool:
+    """Emit one Socket.IO event if the overlay server is running."""
+    try:
+        from modules import web_engine
+
+        engine = getattr(web_engine, "web_engine_instance", None)
+        if engine is None:
+            return False
+        return bool(engine.safe_emit(event, payload, to=to))
+    except Exception as exc:
+        logger.debug("activity_feed: overlay emit %s failed: %s", event, exc)
+        return False
 
 
 def _animate_pause_button_border() -> None:
@@ -2383,9 +2709,8 @@ def add_alert_to_feed(
         alert_id (str, optional): The alert ID to look up stored alert data
         gift_qty (int, optional): Number of gift subs (giftsub alerts)
         recipient (str, optional): Gift recipient username (single gifts)
-        always_broadcast_html (bool): Also emit to the HTML activity feed when the
-            in-app feed tab is not Current. Used for chat notices that must reach
-            the browser-source feed.
+        always_broadcast_html (bool): Kept for callers. The overlay always receives
+            the alert so both feeds stay on the same list.
     """
     alert_data = build_activity_feed_alert_payload(
         alert_type,
@@ -2406,27 +2731,17 @@ def add_alert_to_feed(
     # Process the alert immediately using the event-based system
     alert_event_handler.process_alert_immediately(alert_data)
 
-    # The Python feed is updated above. The HTML browser source only receives the
-    # websocket when the in-app tab is Current, unless the caller forces a broadcast
-    # (watch streaks and modiversaries, which are not regular chat messages).
+    # Both surfaces share the live list, including while Previous Alerts is selected.
     try:
         from modules import web_engine
 
-        broadcast_html = always_broadcast_html or (
-            activity_feed_state.current_tab == "current"
-        )
         if (
             hasattr(web_engine, "web_engine_instance")
             and web_engine.web_engine_instance
-            and broadcast_html
         ):
             web_engine.web_engine_instance.activity_feed_alert(alert_data)
             logger.debug(
                 f"Sent alert to activity feed HTML template via websocket: {alert_type}"
-            )
-        else:
-            logger.debug(
-                f"Alert not sent to HTML template - current tab: {activity_feed_state.current_tab}"
             )
     except Exception as e:
         logger.error(
@@ -2755,47 +3070,18 @@ def close_filter_dropdown():
 
 def on_checkbox_change(key, value):
     """Handle checkbox state changes"""
+    if _ignore_view_apply:
+        return
     logger.debug(f"Checkbox changed: {key} = {value}")
-    activity_feed_state.filter_state[key] = value
-
-    # If "All Events" is checked, enable all filters
-    if key == "all" and value:
-        for k in activity_feed_state.filter_state:
-            activity_feed_state.filter_state[k] = True
-    # If "All Events" is unchecked, keep individual filter states
-    elif key == "all" and not value:
-        pass
-    # If an individual filter is changed and all others are checked, update "All Events"
-    elif key != "all":
-        all_others_checked = all(
-            v
-            for k, v in activity_feed_state.filter_state.items()
-            if k != "all" and k != key
-        )
-        if value and all_others_checked:
-            activity_feed_state.filter_state["all"] = True
-        else:
-            activity_feed_state.filter_state["all"] = False
-
-    logger.debug(f"Updated filter state: {activity_feed_state.filter_state}")
-
-    # Update alert visibility without affecting dropdown visibility
-    update_alert_visibility()
-
-    # Condensed rows are rebuilt labels (not per-alert cards), so rebuild when filters change
-    if (
-        activity_feed_state.condense_list
-        and activity_feed_state.current_tab == "current"
-    ):
-        schedule_condensed_view_update("filter_change")
+    view_manager.update({"filters": {key: bool(value)}})
 
 
 def create_activity_feed_tab():
     """Create the activity feed tab UI"""
     logger.debug("Creating activity feed tab...")
 
-    # Sync tab UI state with the module singleton (survives client reloads).
-    activity_feed_state.current_tab = "current"
+    # The shared view survives client reloads and is what both feeds open on.
+    view_manager.load()
     activity_feed_state.dropdown_visible = False
 
     # Add the hover CSS once at the top level
@@ -3310,14 +3596,10 @@ def create_activity_feed_tab():
             # Condense List toggle (only visible on Current Alerts tab)
             def toggle_condense_list(e):
                 global _ignore_condense_toggle_event
-                if _ignore_condense_toggle_event:
+                if _ignore_condense_toggle_event or _ignore_view_apply:
                     return
                 logger.debug(f"Condense list toggle changed: {e.value}")
-                activity_feed_state.condense_list = e.value
-                logger.debug(
-                    f"Updated activity_feed_state.condense_list to: {activity_feed_state.condense_list}"
-                )
-                update_condensed_view()
+                view_manager.update({"condensed": bool(e.value)})
 
             activity_feed_state.condense_toggle = ui.switch(
                 text="Condense List",
@@ -3443,7 +3725,7 @@ def create_activity_feed_tab():
                                             "Maintained dropdown visibility after checkbox change"
                                         )
 
-                                ui.checkbox(
+                                checkbox = ui.checkbox(
                                     text=label,
                                     value=activity_feed_state.filter_state.get(
                                         key, True
@@ -3452,6 +3734,7 @@ def create_activity_feed_tab():
                                 ).classes(
                                     "text-sm mb-1 w-full whitespace-nowrap filter-checkbox"
                                 )
+                                activity_feed_state.filter_checkboxes[key] = checkbox
 
                             # Create each checkbox with its own handler
                             create_checkbox("all", "All Events")
@@ -3478,15 +3761,27 @@ def create_activity_feed_tab():
                 previous_tab_btn.classes(add="active")
                 current_tab_btn.classes(remove="active")
 
+            current_active = (
+                "tab-button active"
+                if activity_feed_state.current_tab == "current"
+                else "tab-button"
+            )
+            previous_active = (
+                "tab-button active"
+                if activity_feed_state.current_tab == "previous"
+                else "tab-button"
+            )
             current_tab_btn = ui.button(
                 text="CURRENT ALERTS", on_click=on_current_tab
-            ).classes("tab-button active")
+            ).classes(current_active)
             current_tab_btn.props(_DOCK_BTN_PROPS)
+            activity_feed_state.current_tab_btn = current_tab_btn
 
             previous_tab_btn = ui.button(
                 text="PREVIOUS ALERTS", on_click=on_previous_tab
-            ).classes("tab-button")
+            ).classes(previous_active)
             previous_tab_btn.props(_DOCK_BTN_PROPS)
+            activity_feed_state.previous_tab_btn = previous_tab_btn
 
         # Create a scrollable container for alert cards
         with ui.element("div").classes("scroll-content grow min-h-0"):
@@ -3536,11 +3831,13 @@ def create_activity_feed_tab():
             # Event-based system doesn't need separate status updater thread
             logger.debug("Event-based system ready - status updates on-demand")
 
-            # Hide pagination initially (only show for previous alerts tab)
-            activity_feed_state.pagination_container.classes(add="hidden")
-
-            # Defer condensed-view setup so first paint is never blocked by storage I/O.
-            app_schedule(0, update_condensed_view, once=True)
+            # Open on the saved display. Previous loads its page; Current defers
+            # condensed setup so the first paint is not blocked by storage I/O.
+            if activity_feed_state.current_tab == "previous":
+                _render_active_tab()
+            else:
+                activity_feed_state.pagination_container.classes(add="hidden")
+                app_schedule(0, update_condensed_view, once=True)
 
             # Periodic DOM/integrity watchdog catches silent NiceGUI remount blanks.
             _start_feed_watchdog()
@@ -4189,6 +4486,15 @@ def refresh_restored_alerts():
         restored_alerts, pagination_info = load_restored_alerts(
             activity_feed_state.current_page
         )
+        loaded_page = pagination_info.get("page")
+        try:
+            loaded_page = int(loaded_page)
+        except (TypeError, ValueError):
+            loaded_page = None
+        if loaded_page and loaded_page >= 1 and loaded_page != view_manager._view.get("page"):
+            view_manager._view["page"] = loaded_page
+            activity_feed_state.current_page = loaded_page
+            view_manager.save()
 
         # Add restored alerts to feed
         for alert_data in restored_alerts:
@@ -4201,6 +4507,7 @@ def refresh_restored_alerts():
         update_pagination_ui(pagination_info)
 
         activity_feed_state.restored_alerts_loaded = True
+        _emit_stored_alerts_payload(restored_alerts, pagination_info)
         logger.debug(
             f"Refreshed restored alerts - page {activity_feed_state.current_page} of {activity_feed_state.total_pages}"
         )
@@ -4265,7 +4572,10 @@ def go_to_page(page):
     Args:
         page (int): Page number to navigate to
     """
+    if _ignore_view_apply:
+        return
     try:
+        page = int(page)
         # Get max pages setting to enforce limit
         from modules import dataobjects
 
@@ -4278,11 +4588,138 @@ def go_to_page(page):
         if page < 1 or page > max_allowed_page:
             return
 
-        activity_feed_state.current_page = page
-        refresh_restored_alerts()
+        view_manager.update({"page": page})
 
     except Exception as e:
         logger.error(f"Error navigating to page {page}: {str(e)}", exc_info=True)
+
+
+def _emit_stored_alerts_payload(
+    alerts: List[Dict[str, Any]],
+    pagination_info: Dict[str, Any],
+    *,
+    to: Optional[str] = None,
+) -> bool:
+    """Send one previous-alerts page to the overlay. Desktop already rendered it."""
+    response = {
+        "success": True,
+        "alerts": serialize_live_alerts(alerts),
+        "page": pagination_info.get("page", activity_feed_state.current_page),
+        "total_pages": pagination_info.get("total_pages", activity_feed_state.total_pages),
+        "total_count": pagination_info.get("total_count", 0),
+        "has_prev": bool(pagination_info.get("has_prev", False)),
+        "has_next": bool(pagination_info.get("has_next", False)),
+    }
+    return _emit_overlay_event("stored_alerts_paginated", response, to=to)
+
+
+def emit_stored_alerts_page(page: int, *, to: Optional[str] = None) -> None:
+    """Load one stored page and send that payload without repainting the desktop."""
+    try:
+        alerts, info = load_restored_alerts(page)
+        _emit_stored_alerts_payload(alerts, info, to=to)
+    except Exception as exc:
+        logger.error("activity_feed: could not emit stored page %s: %s", page, exc)
+
+
+def _sync_filter_checkboxes() -> None:
+    """Set desktop filter boxes from the shared view without echoing the change."""
+    boxes = getattr(activity_feed_state, "filter_checkboxes", None) or {}
+    for key, value in activity_feed_state.filter_state.items():
+        box = boxes.get(key)
+        if not _element_alive(box):
+            continue
+        if bool(getattr(box, "value", None)) == bool(value):
+            continue
+        try:
+            box.value = bool(value)
+        except Exception as exc:
+            logger.debug("activity_feed: could not sync filter %s: %s", key, exc)
+
+
+def _sync_tab_buttons(tab_name: str) -> None:
+    """Mark the active desktop tab button."""
+    current = activity_feed_state.current_tab_btn
+    previous = activity_feed_state.previous_tab_btn
+    if _element_alive(current):
+        if tab_name == "current":
+            current.classes(add="active")
+        else:
+            current.classes(remove="active")
+    if _element_alive(previous):
+        if tab_name == "previous":
+            previous.classes(add="active")
+        else:
+            previous.classes(remove="active")
+
+
+def _render_active_tab() -> None:
+    """Paint the tab already stored on the shared view."""
+    tab_name = activity_feed_state.current_tab
+    _sync_tab_buttons(tab_name)
+    if tab_name == "previous":
+        clear_restored_alerts()
+        activity_feed_state.restored_alerts_loaded = False
+        if activity_feed_state.pagination_container:
+            activity_feed_state.pagination_container.classes(remove="hidden")
+        if activity_feed_state.current_alerts_container:
+            activity_feed_state.current_alerts_container.classes(add="hidden")
+        if activity_feed_state.previous_alerts_container:
+            activity_feed_state.previous_alerts_container.classes(remove="hidden")
+        _hide_condensed_view()
+        _set_condensed_unavailable_notice(False)
+        if _element_alive(activity_feed_state.condense_toggle):
+            activity_feed_state.condense_toggle.classes(add="hidden")
+        refresh_restored_alerts()
+        return
+
+    if activity_feed_state.pagination_container:
+        activity_feed_state.pagination_container.classes(add="hidden")
+    if activity_feed_state.current_alerts_container:
+        activity_feed_state.current_alerts_container.classes(remove="hidden")
+    if activity_feed_state.previous_alerts_container:
+        activity_feed_state.previous_alerts_container.classes(add="hidden")
+    clear_restored_alerts()
+    activity_feed_state.restored_alerts_loaded = False
+    if _element_alive(activity_feed_state.condense_toggle):
+        activity_feed_state.condense_toggle.classes(remove="hidden")
+    rebuild_current_alerts_feed()
+    update_alert_visibility()
+    update_condensed_view()
+    schedule_feed_integrity_check("switch_to_tab_current")
+
+
+def _apply_view_to_desktop(changed: set) -> None:
+    """Move desktop widgets to the shared view. Widget events must not echo."""
+    global _ignore_view_apply
+    _ignore_view_apply = True
+    try:
+        if "tab" in changed:
+            _render_active_tab()
+        elif "page" in changed and activity_feed_state.current_tab == "previous":
+            refresh_restored_alerts()
+
+        if "condensed" in changed and "tab" not in changed:
+            toggle = activity_feed_state.condense_toggle
+            if _element_alive(toggle):
+                try:
+                    toggle.value = bool(activity_feed_state.condense_list)
+                except Exception as exc:
+                    logger.debug("activity_feed: could not sync condense toggle: %s", exc)
+            update_condensed_view()
+
+        if "filters" in changed:
+            _sync_filter_checkboxes()
+            update_alert_visibility()
+            if (
+                activity_feed_state.condense_list
+                and activity_feed_state.current_tab == "current"
+            ):
+                schedule_condensed_view_update("filter_change")
+    except Exception as exc:
+        logger.error("activity_feed: applying shared view failed: %s", exc, exc_info=True)
+    finally:
+        _ignore_view_apply = False
 
 
 def _load_condensed_historical_hours() -> int:
@@ -4663,6 +5100,44 @@ def build_condensed_overlay_payload(
     }
 
 
+def condensed_payload_from_build(build_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Match the overlay's condensed_view_alerts shape from a desktop rebuild."""
+    groups = list(build_data.get("groups") or [])
+    return {
+        "success": True,
+        "groups": groups,
+        "historical_count": int(build_data.get("historical_count") or 0),
+        "live_in_window": int(build_data.get("live_in_window") or 0),
+        "alert_count": int(build_data.get("alert_count") or 0),
+        "hours": build_data.get("condense_historical_hours", 12),
+        "user_count": len(groups),
+        "excluded_count": int(build_data.get("excluded_count") or 0),
+        "unknown_username_count": int(build_data.get("unknown_username_count") or 0),
+    }
+
+
+def _broadcast_condensed_groups(build_data: Dict[str, Any], *, to: Optional[str] = None) -> bool:
+    """Send the groups the desktop just built so the overlay paints the same rows."""
+    return _emit_overlay_event(
+        "condensed_view_alerts", condensed_payload_from_build(build_data), to=to
+    )
+
+
+def publish_activity_feed_view(*, to: Optional[str] = None) -> Dict[str, Any]:
+    """Send the saved view, the live alert list, and the active page or groups."""
+    snapshot = view_manager.load()
+    broadcast_activity_feed_view(snapshot, to=to, include_live_alerts=True)
+    if snapshot["tab"] == "previous":
+        emit_stored_alerts_page(int(snapshot["page"]), to=to)
+    elif snapshot["condensed"]:
+        payload = build_condensed_overlay_payload(
+            hours=_load_condensed_historical_hours(),
+            filter_state=snapshot["filters"],
+        )
+        _emit_overlay_event("condensed_view_alerts", payload, to=to)
+    return snapshot
+
+
 def _collect_condensed_build_data() -> Dict[str, Any]:
     """Collect all data needed to render the condensed view (blocking I/O)."""
     started = time.monotonic()
@@ -4973,24 +5448,29 @@ async def _update_condensed_view_async(reason: str) -> None:
                 _hide_condensed_view()
                 return
 
-            try:
-                built = await _await_on_ui(
-                    lambda: _render_condensed_view_ui(build_data)
-                )
-            except Exception as exc:
-                logger.error(
-                    "activity_feed: condensed UI render failed (%s): %s",
-                    reason,
-                    exc,
-                    exc_info=True,
-                )
-                built = False
-
-            if not built:
-                _abandon_condensed_view(f"condensed_build_failed:{reason}")
+            if not _element_alive(activity_feed_state.condensed_root):
+                # Overlay still needs the same groups when the desktop tab is closed.
+                _broadcast_condensed_groups(build_data)
             else:
-                result = await _commit_condensed_view_async()
-                _handle_condensed_commit_result(reason, result)
+                try:
+                    built = await _await_on_ui(
+                        lambda: _render_condensed_view_ui(build_data)
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "activity_feed: condensed UI render failed (%s): %s",
+                        reason,
+                        exc,
+                        exc_info=True,
+                    )
+                    built = False
+
+                if not built:
+                    _abandon_condensed_view(f"condensed_build_failed:{reason}")
+                else:
+                    _broadcast_condensed_groups(build_data)
+                    result = await _commit_condensed_view_async()
+                    _handle_condensed_commit_result(reason, result)
 
             if not _condensed_rebuild_rerun:
                 break
@@ -5021,11 +5501,8 @@ def update_condensed_view() -> bool:
             f"update_condensed_view called - current tab: {activity_feed_state.current_tab}, condense_list: {activity_feed_state.condense_list}"
         )
 
-        if not activity_feed_state.condense_toggle:
-            logger.debug("No condense toggle found, returning early")
-            return True
-
-        # Show/hide condense toggle based on current tab
+        # Show/hide condense toggle based on current tab. A missing toggle means
+        # the desktop tab is not built yet; the overlay still needs the rebuild.
         if activity_feed_state.current_tab == "current":
             if _element_alive(activity_feed_state.condense_toggle):
                 activity_feed_state.condense_toggle.classes(remove="hidden")
@@ -5313,74 +5790,22 @@ def create_condensed_alert_text(alert_data):
 
 def switch_to_tab(tab_name):
     """Switch to a specific tab (current or previous)"""
+    if _ignore_view_apply:
+        return
     try:
+        if tab_name not in ("current", "previous"):
+            return
         # Don't switch if we're already on this tab
         if activity_feed_state.current_tab == tab_name:
             logger.debug(f"Already on {tab_name} tab, skipping switch")
+            _sync_tab_buttons(tab_name)
             return
 
-        previous_tab = activity_feed_state.current_tab
-        activity_feed_state.current_tab = tab_name
-
+        patch: Dict[str, Any] = {"tab": tab_name}
         if tab_name == "previous":
-            # Switching to previous alerts tab
-            logger.debug(f"Switching from {previous_tab} to previous alerts tab")
-
-            # Clear any existing restored alerts to prevent accumulation
-            clear_restored_alerts()
-            activity_feed_state.current_page = 1  # Always start at page 1
-            activity_feed_state.restored_alerts_loaded = False
-
-            # Show pagination container
-            if activity_feed_state.pagination_container:
-                activity_feed_state.pagination_container.classes(remove="hidden")
-
-            # Hide current alerts container and show previous alerts container
-            if activity_feed_state.current_alerts_container:
-                activity_feed_state.current_alerts_container.classes(add="hidden")
-            if activity_feed_state.previous_alerts_container:
-                activity_feed_state.previous_alerts_container.classes(remove="hidden")
-
-            # Hide condensed view and toggle when switching to previous tab
-            _hide_condensed_view()
-            _set_condensed_unavailable_notice(False)
-            if activity_feed_state.condense_toggle:
-                activity_feed_state.condense_toggle.classes(add="hidden")
-
-            # Load the first page of restored alerts
-            refresh_restored_alerts()
-
-            logger.debug("Successfully switched to previous alerts tab")
-        else:
-            # Switching to current alerts tab
-            logger.debug(f"Switching from {previous_tab} to current alerts tab")
-
-            # Hide pagination container
-            if activity_feed_state.pagination_container:
-                activity_feed_state.pagination_container.classes(add="hidden")
-
-            # Show current alerts container and hide previous alerts container
-            if activity_feed_state.current_alerts_container:
-                activity_feed_state.current_alerts_container.classes(remove="hidden")
-            if activity_feed_state.previous_alerts_container:
-                activity_feed_state.previous_alerts_container.classes(add="hidden")
-
-            # Clear historical alerts from previous container to free memory
-            clear_restored_alerts()
-            activity_feed_state.restored_alerts_loaded = False
-
-            # Rebuild feed with only live alerts (including any that came in while on previous tab)
-            rebuild_current_alerts_feed()
-
-            # Apply filters to the current alerts
-            update_alert_visibility()
-
-            # Update condensed view visibility
-            update_condensed_view()
-
-            schedule_feed_integrity_check("switch_to_tab_current")
-
-            logger.debug("Successfully switched to current alerts tab")
+            patch["page"] = 1
+        view_manager.update(patch)
+        logger.debug("Switched activity feed tab to %s", tab_name)
 
     except Exception as e:
         logger.error(f"Error switching to {tab_name} tab: {str(e)}", exc_info=True)

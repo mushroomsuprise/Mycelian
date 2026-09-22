@@ -1094,6 +1094,10 @@
                                 <label for="filter-raids">Raids</label>
                             </div>
                             <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-streaks" checked>
+                                <label for="filter-streaks">Watch streaks</label>
+                            </div>
+                            <div class="filter-checkbox">
                                 <input type="checkbox" id="filter-hype_train" checked>
                                 <label for="filter-hype_train">Hype Train</label>
                             </div>
@@ -1260,21 +1264,15 @@
 
         // Connect to WebSocket
         function syncActivityFeedState() {
-            var wasCondensed = activityFeedState.condenseList;
             clearFeed();
-            activityFeedState.currentPage = 1;
-            activityFeedState.totalPages = 1;
             activityFeedState.restoredAlertsLoaded = false;
-            currentAlertsFeed.classList.remove('hidden');
-            condensedViewContainer.classList.add('hidden');
+            appliedViewRevision = null;
             setTimeout(function () {
                 socket.emit('get_pause_status');
                 socket.emit('get_mute_status');
                 socket.emit('get_current_theme');
-                console.log('Requested initial pause/mute status and theme from activity feed');
-                if (wasCondensed && activityFeedState.currentTab === "current") {
-                    updateCondensedView();
-                }
+                socket.emit('get_activity_feed_view');
+                console.log('Requested shared activity feed view');
             }, 150);
         }
 
@@ -1309,6 +1307,9 @@
             condenseList: false,  // Track condense list toggle state
             loadingForCondensedView: false  // Track if we're loading data for condensed view
         };
+        var LIVE_ALERTS_CAP = 500;
+        var appliedViewRevision = null;
+        var suppressViewEmit = false;
 
         // Alert type to filter key mapping
         var alertTypeToFilter = {
@@ -1602,7 +1603,6 @@
 
             // Always add to live alerts only
             activityFeedState.liveAlerts.unshift(enhancedAlertData);
-            var LIVE_ALERTS_CAP = 100;
             while (activityFeedState.liveAlerts.length > LIVE_ALERTS_CAP) {
                 var dropped = activityFeedState.liveAlerts.pop();
                 if (dropped && dropped.element && dropped.element.parentNode) {
@@ -1612,9 +1612,10 @@
 
             // Only visually display the alert if we're on the current alerts tab
             if (activityFeedState.currentTab === "current") {
-                // If condense list is enabled, update condensed view
+                // Condensed rows are pushed after the shared rebuild. Cards stay
+                // in state until that payload arrives.
                 if (activityFeedState.condenseList) {
-                    updateCondensedView();
+                    showCondensedFeedHideRegular();
                 } else {
                     // Create and add element to current alerts container
                     var alertElement = createAlertElement(enhancedAlertData);
@@ -1996,62 +1997,53 @@
             showNotification(newMuteState ? 'Muting alerts...' : 'Unmuting alerts...', 'info');
         }
 
-        function switchToTab(tabName) {
+        function applyTabChrome(tabName) {
             activityFeedState.currentTab = tabName;
 
             if (tabName === "previous") {
-                // Switching to previous alerts tab
                 previousTabBtn.classList.add('active');
                 currentTabBtn.classList.remove('active');
-
-                // Hide condense toggle and condensed view
                 condenseToggleContainer.style.display = 'none';
                 condensedViewContainer.classList.add('hidden');
-
-                // Show previous alerts container and hide current alerts container
                 currentAlertsFeed.classList.add('hidden');
                 previousAlertsFeed.classList.remove('hidden');
-
-                // Show pagination container
                 paginationContainer.style.display = 'block';
-
-                activityFeedState.currentPage = 1; // Always start at page 1
-                loadStoredAlerts();
-
-                // Apply filters after loading stored alerts
-                setTimeout(function () {
-                    updateAlertVisibility();
-                }, 100);
             } else {
-                // Switching to current alerts tab
                 currentTabBtn.classList.add('active');
                 previousTabBtn.classList.remove('active');
-
-                // Show condense toggle
                 condenseToggleContainer.style.display = 'flex';
-
-                // Keep regular feed visible until condensed content is ready
-                if (activityFeedState.condenseList) {
-                    currentAlertsFeed.classList.remove('hidden');
-                    condensedViewContainer.classList.add('hidden');
-                    updateCondensedView();
-                } else {
-                    currentAlertsFeed.classList.remove('hidden');
-                    condensedViewContainer.classList.add('hidden');
-                }
-
-                // Hide previous alerts container and pagination
                 previousAlertsFeed.classList.add('hidden');
                 paginationContainer.style.display = 'none';
-
-                clearRestoredAlerts();
-
-                // Keep regular cards populated as fallback while condensed loads
-                rebuildCurrentAlertsFeed();
-
-                // Apply filters to current alerts
-                updateAlertVisibility();
+                if (activityFeedState.condenseList) {
+                    showCondensedFeedHideRegular();
+                } else {
+                    showRegularFeedHideCondensed();
+                    rebuildCurrentAlertsFeed();
+                    updateAlertVisibility();
+                }
             }
+        }
+
+        function switchToTab(tabName) {
+            if (tabName !== "current" && tabName !== "previous") {
+                return;
+            }
+            if (!suppressViewEmit && activityFeedState.currentTab === tabName) {
+                return;
+            }
+            if (!suppressViewEmit) {
+                var patch = { tab: tabName };
+                if (tabName === "previous") {
+                    patch.page = 1;
+                    activityFeedState.currentPage = 1;
+                }
+                emitViewPatch(patch);
+            }
+            if (tabName === "previous") {
+                clearRestoredAlerts();
+                previousAlertsFeed.innerHTML = '<div class="loading">Loading activity feed...</div>';
+            }
+            applyTabChrome(tabName);
         }
 
         function clearRestoredAlerts() {
@@ -2123,18 +2115,18 @@
         }
 
         function goToPage(page) {
+            if (suppressViewEmit) {
+                return;
+            }
             if (page < 1 || page > activityFeedState.totalPages) {
                 console.log('Invalid page number:', page, 'Total pages:', activityFeedState.totalPages);
                 return;
             }
             console.log('Navigating to page:', page, 'of', activityFeedState.totalPages);
             activityFeedState.currentPage = page;
-            loadStoredAlerts(page);
-
-            // Apply filters after loading new page
-            setTimeout(function () {
-                updateAlertVisibility();
-            }, 100);
+            clearRestoredAlertsForPagination();
+            previousAlertsFeed.innerHTML = '<div class="loading">Loading activity feed...</div>';
+            emitViewPatch({ page: page });
         }
 
         // Condense view functions
@@ -2175,8 +2167,7 @@
             console.log('Loading alerts for condensed view from past', condenseHistoricalHours, 'hours...');
 
             socket.emit('get_condensed_view_alerts', {
-                hours: condenseHistoricalHours,
-                filters: activityFeedState.filterState
+                hours: condenseHistoricalHours
             });
         }
 
@@ -2406,16 +2397,89 @@
             }
         }
 
+        function emitViewPatch(patch) {
+            if (suppressViewEmit || !patch) {
+                return;
+            }
+            socket.emit('set_activity_feed_view', patch);
+        }
+
+        function replaceLiveAlerts(alerts) {
+            activityFeedState.liveAlerts = [];
+            (alerts || []).forEach(function (alertData) {
+                var copy = {};
+                Object.keys(alertData || {}).forEach(function (key) {
+                    if (key === 'element' || key === 'new_badge' || key === 'newBadge' ||
+                        key === 'timestamp_label' || key === 'timestampLabel') {
+                        return;
+                    }
+                    copy[key] = alertData[key];
+                });
+                copy.username = copy.username || extractUsernameFromMessage(copy.message || '');
+                copy.alert_type = copy.alert_type || (copy.type || '').toLowerCase();
+                copy.alert_id = copy.alert_id || ('generated_' + Date.now());
+                activityFeedState.liveAlerts.push(copy);
+            });
+            while (activityFeedState.liveAlerts.length > LIVE_ALERTS_CAP) {
+                activityFeedState.liveAlerts.pop();
+            }
+        }
+
+        function applySharedView(data) {
+            var nextTab = data.tab === 'previous' || data.tab === 'current' ? data.tab : activityFeedState.currentTab;
+            var nextPage = Number(data.page);
+            var tabChanged = nextTab !== activityFeedState.currentTab;
+            var pageChanged = !isNaN(nextPage) && nextPage !== Number(activityFeedState.currentPage);
+            var wasCondensed = activityFeedState.condenseList;
+
+            if (data.filters) {
+                Object.keys(data.filters).forEach(function (key) {
+                    activityFeedState.filterState[key] = !!data.filters[key];
+                    var box = document.getElementById('filter-' + key);
+                    if (box) {
+                        box.checked = !!data.filters[key];
+                    }
+                });
+            }
+            if (typeof data.condensed === 'boolean') {
+                activityFeedState.condenseList = data.condensed;
+                condenseToggle.checked = data.condensed;
+            }
+            var condensedChanged = typeof data.condensed === 'boolean' && data.condensed !== wasCondensed;
+            if (!isNaN(nextPage) && nextPage >= 1) {
+                activityFeedState.currentPage = nextPage;
+            }
+            if (data.live_alerts) {
+                replaceLiveAlerts(data.live_alerts);
+            }
+            if ((tabChanged || pageChanged) && nextTab === 'previous') {
+                clearRestoredAlerts();
+                previousAlertsFeed.innerHTML = '<div class="loading">Loading activity feed...</div>';
+            }
+            if (tabChanged || condensedChanged || data.live_alerts) {
+                applyTabChrome(nextTab);
+            } else if (nextTab === 'current' && activityFeedState.condenseList) {
+                showCondensedFeedHideRegular();
+            }
+            if (data.filters) {
+                updateAlertVisibility();
+            }
+        }
+
         function toggleCondenseList() {
+            if (suppressViewEmit) {
+                return;
+            }
             activityFeedState.condenseList = condenseToggle.checked;
+            emitViewPatch({ condensed: activityFeedState.condenseList });
 
             if (activityFeedState.currentTab === "current") {
                 if (activityFeedState.condenseList) {
-                    // Keep regular feed visible until grouped condensed HTML is ready
-                    updateCondensedView();
+                    showCondensedFeedHideRegular();
+                    condensedViewContainer.innerHTML = '<div class="no-alerts">Loading condensed view...</div>';
                 } else {
-                    currentAlertsFeed.classList.remove('hidden');
-                    condensedViewContainer.classList.add('hidden');
+                    showRegularFeedHideCondensed();
+                    rebuildCurrentAlertsFeed();
                 }
             }
         }
@@ -2487,11 +2551,9 @@
                     }
 
                     updateAlertVisibility();
-
-                    // Condensed rows are rebuilt labels (not per-alert cards), so rebuild when filters change
-                    if (activityFeedState.condenseList) {
-                        updateCondensedView();
-                    }
+                    var changedFilter = {};
+                    changedFilter[key] = activityFeedState.filterState[key];
+                    emitViewPatch({ filters: changedFilter });
                 });
             });
         }
@@ -2619,6 +2681,26 @@
         socket.on('condensed_view_alerts', function (data) {
             console.log('Received condensed view groups:', data);
             createCondensedViewWithData(data);
+        });
+
+        socket.on('activity_feed_view', function (data) {
+            if (!data || data.success === false || data.revision === undefined || data.revision === null) {
+                return;
+            }
+            var revision = Number(data.revision);
+            if (isNaN(revision)) {
+                return;
+            }
+            if (appliedViewRevision !== null && revision <= appliedViewRevision) {
+                return;
+            }
+            appliedViewRevision = revision;
+            suppressViewEmit = true;
+            try {
+                applySharedView(data);
+            } finally {
+                suppressViewEmit = false;
+            }
         });
 
         socket.on('stored_alerts_paginated', function (data) {

@@ -479,15 +479,24 @@ class CondensedViewContractTests(unittest.TestCase):
         self._tab = feed.activity_feed_state.current_tab
         self._filters = dict(feed.activity_feed_state.filter_state)
         self._toggle = feed.activity_feed_state.condense_toggle
+        self._manager_view = feed.normalize_view(feed.view_manager.snapshot())
+        self._manager_revision = feed.view_manager.revision
+        self._manager_loaded = feed.view_manager._loaded
+        feed.view_manager._loaded = True
+        feed.view_manager.revision = 0
+        feed.view_manager._view = feed.normalize_view({})
+        feed.view_manager._sync_state()
         feed.activity_feed_state.live_alerts = []
-        feed.activity_feed_state.condense_list = False
-        feed.activity_feed_state.current_tab = "current"
 
     def tearDown(self) -> None:
+        feed.view_manager._view = self._manager_view
+        feed.view_manager.revision = self._manager_revision
+        feed.view_manager._loaded = self._manager_loaded
         feed.activity_feed_state.live_alerts = self._alerts
         feed.activity_feed_state.condense_list = self._condense
         feed.activity_feed_state.current_tab = self._tab
-        feed.activity_feed_state.filter_state = self._filters
+        feed.activity_feed_state.filter_state.clear()
+        feed.activity_feed_state.filter_state.update(self._filters)
         feed.activity_feed_state.condense_toggle = self._toggle
 
     def test_empty_state_wording(self) -> None:
@@ -828,9 +837,12 @@ class CondensedViewContractTests(unittest.TestCase):
         self.assertEqual(payload["groups"][0]["lines"], ["Followed!"])
 
     def test_filter_change_schedules_condensed_rebuild(self) -> None:
-        feed.activity_feed_state.condense_list = True
-        feed.activity_feed_state.current_tab = "current"
+        feed.view_manager._view["condensed"] = True
+        feed.view_manager._view["tab"] = "current"
+        feed.view_manager._sync_state()
         with (
+            patch.object(feed.view_manager, "save", return_value=True),
+            patch.object(feed, "broadcast_activity_feed_view"),
             patch.object(feed, "update_alert_visibility"),
             patch.object(feed, "schedule_condensed_view_update") as sched,
         ):
@@ -838,8 +850,11 @@ class CondensedViewContractTests(unittest.TestCase):
         sched.assert_called_once_with("filter_change")
 
     def test_filter_change_skips_rebuild_when_condense_off(self) -> None:
-        feed.activity_feed_state.condense_list = False
+        feed.view_manager._view["condensed"] = False
+        feed.view_manager._sync_state()
         with (
+            patch.object(feed.view_manager, "save", return_value=True),
+            patch.object(feed, "broadcast_activity_feed_view"),
             patch.object(feed, "update_alert_visibility"),
             patch.object(feed, "schedule_condensed_view_update") as sched,
         ):
@@ -1194,6 +1209,104 @@ class CondensedHitTestJsTests(unittest.TestCase):
         self.assertEqual(results["shifted"]["verdict"], "offscreen")
         self.assertEqual(results["collapsed"]["verdict"], "offscreen")
         self.assertEqual(results["occluded"]["verdict"], "occluded")
+
+
+class ActivityFeedViewManagerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        state = feed.activity_feed_state
+        self._filters = dict(state.filter_state)
+        self._condense = state.condense_list
+        self._tab = state.current_tab
+        self._page = state.current_page
+
+    def tearDown(self) -> None:
+        state = feed.activity_feed_state
+        state.filter_state.clear()
+        state.filter_state.update(self._filters)
+        state.condense_list = self._condense
+        state.current_tab = self._tab
+        state.current_page = self._page
+
+    def test_normalize_defaults_dropped_keys_invalid_tab_and_page(self) -> None:
+        view = feed.normalize_view(
+            {
+                "tab": "sideways",
+                "page": -4,
+                "condensed": "false",
+                "filters": {"follows": 0, "bits": "yes", "not_a_filter": False},
+            }
+        )
+        self.assertEqual(view["tab"], "current")
+        self.assertEqual(view["page"], 1)
+        self.assertFalse(view["condensed"])
+        self.assertFalse(view["filters"]["follows"])
+        self.assertTrue(view["filters"]["bits"])
+        self.assertTrue(view["filters"]["streaks"])
+        self.assertNotIn("not_a_filter", view["filters"])
+        self.assertEqual(set(view["filters"]), set(feed.FILTER_KEYS))
+
+    def test_load_failure_falls_back_to_defaults(self) -> None:
+        manager = feed.ActivityFeedViewManager()
+        with patch(
+            "modules.database_manager.get_data", side_effect=RuntimeError("db down")
+        ):
+            snapshot = manager.load()
+        self.assertEqual(snapshot["revision"], 0)
+        self.assertEqual(snapshot["tab"], "current")
+        self.assertFalse(snapshot["condensed"])
+        self.assertEqual(snapshot["page"], 1)
+        self.assertTrue(all(snapshot["filters"].values()))
+
+    def test_save_writes_activity_feed_view(self) -> None:
+        manager = feed.ActivityFeedViewManager()
+        manager._loaded = True
+        manager._view = feed.normalize_view(
+            {
+                "condensed": True,
+                "tab": "previous",
+                "page": "3",
+                "filters": {"raids": False},
+            }
+        )
+        with patch("modules.database_manager.set_data", return_value=True) as set_data:
+            self.assertTrue(manager.save())
+        self.assertEqual(set_data.call_args.args[0], "ActivityFeedView")
+        payload = set_data.call_args.args[1]
+        self.assertTrue(payload["condensed"])
+        self.assertEqual(payload["tab"], "previous")
+        self.assertEqual(payload["page"], 3)
+        self.assertFalse(payload["filters"]["raids"])
+        self.assertNotIn("revision", payload)
+
+    def test_view_patches_save_and_broadcast_once(self) -> None:
+        for patch_body in (
+            {"condensed": True},
+            {"tab": "previous"},
+            {"page": 4},
+        ):
+            manager = feed.ActivityFeedViewManager()
+            manager._loaded = True
+            manager._view = feed.normalize_view({})
+            with (
+                patch.object(manager, "save", return_value=True) as save,
+                patch.object(feed, "broadcast_activity_feed_view") as broadcast,
+                patch.object(feed, "_apply_view_to_desktop"),
+            ):
+                before = manager.revision
+                manager.update(patch_body)
+            self.assertEqual(manager.revision, before + 1)
+            save.assert_called_once()
+            broadcast.assert_called_once()
+
+    def test_same_revision_does_not_save(self) -> None:
+        manager = feed.ActivityFeedViewManager()
+        manager._loaded = True
+        manager.revision = 4
+        snapshot = manager.snapshot()
+        with patch.object(manager, "save", return_value=True) as save:
+            self.assertFalse(manager.apply_snapshot(snapshot))
+        save.assert_not_called()
+        self.assertEqual(manager.revision, 4)
 
 
 if __name__ == "__main__":

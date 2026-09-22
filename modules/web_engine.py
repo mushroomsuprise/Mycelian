@@ -7097,12 +7097,11 @@ class WebEngine:
                 from modules.uiwindows.activity_feed import (
                     build_condensed_overlay_payload,
                     parse_condensed_historical_hours,
+                    view_manager,
                 )
 
                 hours = parse_condensed_historical_hours(data.get("hours", 12))
-                filters = data.get("filters")
-                if filters is not None and not isinstance(filters, dict):
-                    filters = None
+                filters = view_manager.load()["filters"]
 
                 logger.debug(
                     "Loading condensed view groups for past %s hours", hours
@@ -7136,6 +7135,46 @@ class WebEngine:
                     "condensed_view_alerts", error_response, to=request.sid
                 )
                 return error_response
+
+        @self.socketio.on("get_activity_feed_view")
+        def handle_get_activity_feed_view(data=None):
+            """Send the shared activity-feed view and the alerts that belong on it."""
+            logger.debug("Received get_activity_feed_view from %s", request.sid)
+            try:
+                from modules.uiwindows.activity_feed import publish_activity_feed_view
+
+                snapshot = publish_activity_feed_view(to=request.sid)
+                return {"success": True, "view": snapshot}
+            except Exception as exc:
+                logger.error(
+                    "Error handling get_activity_feed_view: %s", exc, exc_info=True
+                )
+                self.socketio.emit(
+                    "activity_feed_view",
+                    {"success": False, "error": str(exc)},
+                    to=request.sid,
+                )
+                return {"success": False, "error": str(exc)}
+
+        @self.socketio.on("set_activity_feed_view")
+        def handle_set_activity_feed_view(data):
+            """Apply a display change from the overlay to both feeds."""
+            logger.debug("Received set_activity_feed_view from %s", request.sid)
+            try:
+                if not isinstance(data, dict):
+                    return {
+                        "success": False,
+                        "error": "Invalid data format: dictionary required",
+                    }
+                from modules.uiwindows.activity_feed import view_manager
+
+                snapshot = view_manager.update(data)
+                return {"success": True, "view": snapshot}
+            except Exception as exc:
+                logger.error(
+                    "Error handling set_activity_feed_view: %s", exc, exc_info=True
+                )
+                return {"success": False, "error": str(exc)}
 
         @self.socketio.on("activity_feed_replay_alert")
         def handle_activity_feed_replay_alert(data):

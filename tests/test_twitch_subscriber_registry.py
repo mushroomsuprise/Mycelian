@@ -499,7 +499,7 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ActivityFeedBroadcastTests(unittest.TestCase):
-    def test_always_broadcast_html_when_tab_is_not_current(self) -> None:
+    def test_live_alerts_reach_overlay_when_tab_is_previous(self) -> None:
         from modules import web_engine
         from modules.uiwindows import activity_feed as feed
 
@@ -516,7 +516,6 @@ class ActivityFeedBroadcastTests(unittest.TestCase):
                     badge_type="streak",
                     always_broadcast_html=False,
                 )
-                engine.activity_feed_alert.assert_not_called()
                 feed.add_alert_to_feed(
                     "Modiversary",
                     "Moddy has been a moderator for 12 months!",
@@ -526,7 +525,7 @@ class ActivityFeedBroadcastTests(unittest.TestCase):
         finally:
             feed.activity_feed_state.current_tab = previous
 
-        engine.activity_feed_alert.assert_called_once()
+        self.assertEqual(engine.activity_feed_alert.call_count, 2)
         payload = engine.activity_feed_alert.call_args.args[0]
         self.assertEqual(payload["type"], "Modiversary")
         self.assertEqual(payload["badge_type"], "modiversary")
