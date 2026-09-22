@@ -6,8 +6,8 @@ MIT License — same as repository root.
 
 Runtime patches for twitchAPI EventSub gaps:
 
-1. ChannelChatNotificationData omits Twitch's ``watch_streak`` payload field, so
-   TwitchObject drops it during deserialization.
+1. ChannelChatNotificationData omits Twitch's ``watch_streak`` and ``modiversary``
+   payload fields, so TwitchObject drops them during deserialization.
 2. Hype Train EventSub v1 was withdrawn by Twitch (2026-01-15); twitchAPI 4.5.0
    on PyPI still subscribes with version ``1``. Patch listen methods to use ``2``
    and ensure v2 payload fields are annotated for deserialization.
@@ -38,6 +38,7 @@ from twitchAPI.object.eventsub import (
 logger = logging.getLogger(__name__)
 
 _WATCH_STREAK_PATCH_ATTR = "__mycelian_watch_streak_field_patched__"
+_MODIVERSARY_PATCH_ATTR = "__mycelian_modiversary_field_patched__"
 _HYPE_TRAIN_V2_PATCH_ATTR = "__mycelian_hype_train_v2_patched__"
 _CHAT_GIF_PATCH_ATTR = "__mycelian_chat_message_gif_patched__"
 
@@ -47,6 +48,17 @@ class WatchStreakNoticeData(TwitchObject):
 
     streak_count: int
     channel_points_awarded: int
+
+
+class ModiversaryNoticeData(TwitchObject):
+    """Subset of Twitch ``modiversary`` chat-notification notice payload."""
+
+    months: int
+
+
+# twitchAPI TwitchObject reads __annotations__ directly and cannot resolve
+# postponed (string) annotations from ``from __future__ import annotations``.
+ModiversaryNoticeData.__annotations__ = {"months": int}
 
 
 class SharedTrainParticipants(TwitchObject):
@@ -75,6 +87,30 @@ ChatMessageFragmentGifMetadata.__annotations__ = {
     "gif_id": Optional[str],
     "id": Optional[str],
 }
+
+
+def ensure_channel_chat_notification_modiversary_patch() -> None:
+    """Force ``modiversary`` onto twitchAPI as ``ModiversaryNoticeData``.
+
+    ``months`` is how long the chatter has been a moderator in this channel.
+    """
+    existing = getattr(ChannelChatNotificationData, "__annotations__", None) or {}
+    if not isinstance(existing, dict):
+        existing = {}
+    desired = Optional[ModiversaryNoticeData]
+    if (
+        getattr(ChannelChatNotificationData, _MODIVERSARY_PATCH_ATTR, False)
+        and existing.get("modiversary") is desired
+    ):
+        return
+
+    merged = dict(existing)
+    merged["modiversary"] = desired
+    ChannelChatNotificationData.__annotations__ = merged
+    setattr(ChannelChatNotificationData, _MODIVERSARY_PATCH_ATTR, True)
+    logger.debug(
+        "Patched ChannelChatNotificationData.modiversary for EventSub deserialization"
+    )
 
 
 def ensure_channel_chat_notification_watch_streak_patch() -> None:

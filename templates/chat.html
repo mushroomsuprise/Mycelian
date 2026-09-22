@@ -1778,8 +1778,20 @@
             appendChatMessageElement(messageElement);
         }
 
+        function isChatEventNoticeAlert(alertData) {
+            var t = normalizeChatAlertType(alertData);
+            var rawType = String(alertData.type || '').trim().toLowerCase().replace(/\s+/g, '');
+            return isWatchStreakAlertTypeName(t) || isWatchStreakAlertTypeName(rawType) ||
+                t === 'modiversary' || rawType === 'modiversary';
+        }
+
         function handleActivityFeedAlert(alertData) {
             if (!alertData) {
+                return;
+            }
+
+            // Watch streaks and modiversaries arrive as chat event lines.
+            if (isChatEventNoticeAlert(alertData)) {
                 return;
             }
 
@@ -1903,6 +1915,16 @@
 
             if (!alertShowTwitchChat && messageData.is_alert_user_message) {
                 chatLog('Suppressing alert user message (AlertShowTwitchChat disabled):', messageData.message);
+                return;
+            }
+
+            if (messageData.type === 'event') {
+                var eventElement = document.createElement('li');
+                eventElement.className = 'chat-message event-message';
+                eventElement.id = 'msg-' + (messageData.id || Date.now());
+                var eventBody = (messageData.message || messageData.text || messageData.message_text || '').trim();
+                eventElement.innerHTML = '<div class="message-content">' + escapeHtml(eventBody) + '</div>';
+                appendChatMessageElement(eventElement);
                 return;
             }
 

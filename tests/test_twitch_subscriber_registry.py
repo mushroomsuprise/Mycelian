@@ -280,7 +280,7 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         )
         return SimpleNamespace(event=event)
 
-    async def test_unknown_user_alerts_when_helix_not_ready(self) -> None:
+    async def test_non_gift_subscribe_does_not_alert(self) -> None:
         api = MagicMock()
         api._note_event_received = MagicMock()
         api._emit_verified_new_sub = AsyncMock()
@@ -290,18 +290,17 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         with patch(
             "modules.twitch_subscriber_registry.get_subscriber_registry",
             return_value=self.registry,
-        ), patch.object(twitch_module, "_NEW_SUB_DEBOUNCE_SECONDS", 0.05), patch.object(
-            twitch_module, "_record_known_subscriber"
-        ) as record_mock:
+        ), patch.object(twitch_module, "_record_known_subscriber") as record_mock:
             await twitch_module.Twitch_API.on_new_sub(api, data)
-            self.assertTrue(bool(self.registry._pending_tasks))
-            await asyncio.sleep(0.2)
-            api._emit_verified_new_sub.assert_awaited()
-            record_mock.assert_not_called()
 
-    async def test_suppress_known_user(self) -> None:
+        self.assertFalse(bool(self.registry._pending_tasks))
+        api._emit_verified_new_sub.assert_not_called()
+        record_mock.assert_not_called()
+
+    async def test_known_user_subscribe_does_not_alert(self) -> None:
         api = MagicMock()
         api._note_event_received = MagicMock()
+        api._emit_verified_new_sub = AsyncMock()
         self.registry.set_session_ready(False)
         self.registry.record(user_id="10", user_login="newbie", source="prior")
         data = self._make_event()
@@ -313,6 +312,7 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
             await twitch_module.Twitch_API.on_new_sub(api, data)
 
         self.assertFalse(bool(self.registry._pending_tasks))
+        api._emit_verified_new_sub.assert_not_called()
 
     async def test_gift_recipient_recorded_without_pending(self) -> None:
         api = MagicMock()
@@ -329,21 +329,208 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         record_mock.assert_called()
         self.assertFalse(bool(self.registry._pending_tasks))
 
-    async def test_unknown_user_schedules_debounce(self) -> None:
+    def _chat_notice(self, notice_type, **event_kwargs):
+        event = SimpleNamespace(
+            notice_type=notice_type,
+            chatter_user_id=event_kwargs.pop("chatter_user_id", "55"),
+            chatter_user_login=event_kwargs.pop("chatter_user_login", "fresh"),
+            chatter_user_name=event_kwargs.pop("chatter_user_name", "Fresh"),
+            message_id=event_kwargs.pop("message_id", "msg-1"),
+            system_message=event_kwargs.pop("system_message", ""),
+            message=event_kwargs.pop("message", None),
+            **event_kwargs,
+        )
+        return SimpleNamespace(event=event)
+
+    async def test_chat_sub_notice_emits_new_sub(self) -> None:
         api = MagicMock()
         api._note_event_received = MagicMock()
         api._emit_verified_new_sub = AsyncMock()
-        self.registry.set_session_ready(True)
-        data = self._make_event(user_id="55", login="fresh", name="Fresh")
+        api._emit_new_sub_from_chat_notice = (
+            twitch_module.Twitch_API._emit_new_sub_from_chat_notice.__get__(api)
+        )
+        data = self._chat_notice(
+            "sub",
+            sub=SimpleNamespace(sub_tier="2000", is_prime=False, duration_months=1),
+            message=SimpleNamespace(text=""),
+        )
 
         with patch(
             "modules.twitch_subscriber_registry.get_subscriber_registry",
             return_value=self.registry,
-        ), patch.object(twitch_module, "_NEW_SUB_DEBOUNCE_SECONDS", 0.05):
-            await twitch_module.Twitch_API.on_new_sub(api, data)
-            self.assertTrue(bool(self.registry._pending_tasks))
-            await asyncio.sleep(0.2)
-            api._emit_verified_new_sub.assert_awaited()
+        ):
+            await twitch_module.Twitch_API.on_chat_notification(api, data)
+
+        api._emit_verified_new_sub.assert_awaited_once()
+        kwargs = api._emit_verified_new_sub.await_args.kwargs
+        self.assertEqual(kwargs["username"], "Fresh")
+        self.assertEqual(kwargs["tier"], 2)
+        self.assertEqual(kwargs["user_id"], "55")
+
+    async def test_verified_new_sub_dedups_second_emit(self) -> None:
+        api = MagicMock()
+        alert = MagicMock()
+        with patch(
+            "modules.twitch_subscriber_registry.get_subscriber_registry",
+            return_value=self.registry,
+        ), patch.object(
+            twitch_module.alertutils, "fetch_sub_alert", return_value=alert
+        ), patch.object(
+            twitch_module, "_queue_twitch_alert"
+        ) as queue, patch.object(
+            twitch_module, "_send_twitch_instant_alert"
+        ), patch.object(
+            twitch_module, "_add_twitch_alert_to_feed"
+        ), patch.object(
+            twitch_module, "_emit_connector_new_sub", new=AsyncMock()
+        ), patch.object(
+            twitch_module,
+            "get_chatbot_manager",
+            return_value=MagicMock(process_event=MagicMock(return_value=None)),
+        ), patch.object(
+            twitch_module.statistics_manager,
+            "get_statistics_manager",
+            return_value=MagicMock(),
+        ), patch.object(twitch_module, "web_engine") as web:
+            web.web_engine_instance = None
+            await twitch_module.Twitch_API._emit_verified_new_sub(
+                api, username="Fresh", user_id="55", user_login="fresh", tier=1
+            )
+            await twitch_module.Twitch_API._emit_verified_new_sub(
+                api, username="Fresh", user_id="55", user_login="fresh", tier=1
+            )
+
+        queue.assert_called_once()
+
+    async def test_shared_chat_sub_does_not_alert(self) -> None:
+        api = MagicMock()
+        api._note_event_received = MagicMock()
+        api._emit_new_sub_from_chat_notice = AsyncMock()
+        data = self._chat_notice("shared_chat_sub", sub=None)
+
+        with patch(
+            "modules.twitch_subscriber_registry.get_subscriber_registry",
+            return_value=self.registry,
+        ):
+            await twitch_module.Twitch_API.on_chat_notification(api, data)
+
+        api._emit_new_sub_from_chat_notice.assert_not_called()
+
+    async def test_watch_streak_notice_sends_chat_line_and_feed(self) -> None:
+        api = MagicMock()
+        api._note_event_received = MagicMock()
+        data = self._chat_notice(
+            "watch_streak",
+            chatter_user_name="Viewer",
+            watch_streak=SimpleNamespace(streak_count=4, channel_points_awarded=10),
+            message=SimpleNamespace(text=""),
+        )
+
+        with patch.object(
+            twitch_module.alertutils, "fetch_streak_alert", return_value=None
+        ), patch.object(
+            twitch_module, "_twitch_alerts_enabled", return_value=False
+        ), patch.object(
+            twitch_module, "_send_chat_event_line"
+        ) as chat_line, patch.object(
+            twitch_module, "_add_twitch_alert_to_feed"
+        ) as feed, patch.object(
+            twitch_module.statistics_manager,
+            "get_statistics_manager",
+            return_value=MagicMock(),
+        ):
+            await twitch_module.Twitch_API.on_chat_notification(api, data)
+
+        expected = "Viewer has watched for 4 consecutive streams!"
+        chat_line.assert_called_once()
+        self.assertEqual(chat_line.call_args.args[0], expected)
+        feed.assert_called_once()
+        self.assertEqual(feed.call_args.kwargs["alert_type"], "Streak")
+        self.assertEqual(feed.call_args.kwargs["message"], expected)
+        self.assertEqual(feed.call_args.kwargs["streak_count"], 4)
+        self.assertTrue(feed.call_args.kwargs["always_broadcast_html"])
+
+    async def test_modiversary_notice_sends_chat_line_and_feed(self) -> None:
+        api = MagicMock()
+        api._note_event_received = MagicMock()
+        api._emit_modiversary_notice = (
+            twitch_module.Twitch_API._emit_modiversary_notice.__get__(api)
+        )
+        data = self._chat_notice(
+            "modiversary",
+            chatter_user_name="Moddy",
+            modiversary=SimpleNamespace(months=12),
+        )
+
+        with patch.object(
+            twitch_module, "_send_chat_event_line"
+        ) as chat_line, patch.object(
+            twitch_module, "_add_twitch_alert_to_feed"
+        ) as feed:
+            await twitch_module.Twitch_API.on_chat_notification(api, data)
+
+        expected = "Moddy has been a moderator for 12 months!"
+        chat_line.assert_called_once()
+        self.assertEqual(chat_line.call_args.args[0], expected)
+        feed.assert_called_once()
+        self.assertEqual(feed.call_args.kwargs["alert_type"], "Modiversary")
+        self.assertEqual(feed.call_args.kwargs["badge_type"], "modiversary")
+        self.assertEqual(feed.call_args.kwargs["message"], expected)
+        self.assertTrue(feed.call_args.kwargs["always_broadcast_html"])
+
+    def test_modiversary_singular_month(self) -> None:
+        from modules.uiwindows.activity_feed import format_modiversary_message
+
+        self.assertEqual(
+            format_modiversary_message("Ada", 1),
+            "Ada has been a moderator for 1 month!",
+        )
+
+    def test_modiversary_field_deserializes(self) -> None:
+        from twitchAPI.object.eventsub import ChannelChatNotificationData
+
+        from modules.twitch_eventsub_patch import (
+            ensure_channel_chat_notification_modiversary_patch,
+        )
+
+        ensure_channel_chat_notification_modiversary_patch()
+        note = ChannelChatNotificationData(modiversary={"months": 18})
+        self.assertEqual(note.modiversary.months, 18)
+
+
+class ActivityFeedBroadcastTests(unittest.TestCase):
+    def test_always_broadcast_html_when_tab_is_not_current(self) -> None:
+        from modules import web_engine
+        from modules.uiwindows import activity_feed as feed
+
+        previous = feed.activity_feed_state.current_tab
+        feed.activity_feed_state.current_tab = "previous"
+        engine = MagicMock()
+        try:
+            with patch.object(
+                feed.alert_event_handler, "process_alert_immediately"
+            ), patch.object(web_engine, "web_engine_instance", engine):
+                feed.add_alert_to_feed(
+                    "Streak",
+                    "Viewer has watched for 4 consecutive streams!",
+                    badge_type="streak",
+                    always_broadcast_html=False,
+                )
+                engine.activity_feed_alert.assert_not_called()
+                feed.add_alert_to_feed(
+                    "Modiversary",
+                    "Moddy has been a moderator for 12 months!",
+                    badge_type="modiversary",
+                    always_broadcast_html=True,
+                )
+        finally:
+            feed.activity_feed_state.current_tab = previous
+
+        engine.activity_feed_alert.assert_called_once()
+        payload = engine.activity_feed_alert.call_args.args[0]
+        self.assertEqual(payload["type"], "Modiversary")
+        self.assertEqual(payload["badge_type"], "modiversary")
+        self.assertIn("Moddy", payload["message"])
 
 
 if __name__ == "__main__":

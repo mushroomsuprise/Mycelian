@@ -1856,6 +1856,17 @@ def format_watch_streak_message(
     return f"Watched for {count} consecutive streams!"
 
 
+def format_modiversary_message(username: str, months: int) -> str:
+    """Format modiversary text for the chat template and both activity feeds."""
+    name = username or "Someone"
+    try:
+        count = int(months)
+    except (TypeError, ValueError):
+        count = 0
+    unit = "month" if count == 1 else "months"
+    return f"{name} has been a moderator for {count} {unit}!"
+
+
 def format_raid_activity_message(
     username: str, raider_count: int, game_name: Optional[str] = None
 ) -> str:
@@ -1895,6 +1906,7 @@ def build_activity_feed_alert_payload(
     hype_train_type=None,
     gift_qty=None,
     recipient=None,
+    streak_count=None,
 ):
     """
     Build the same dict that is sent over ``activity_feed_alert`` WebSocket events.
@@ -1942,6 +1954,12 @@ def build_activity_feed_alert_payload(
         recip = str(recipient).strip()
         if recip:
             alert_data["recipient"] = recip
+
+    if streak_count is not None:
+        try:
+            alert_data["streak_count"] = int(streak_count)
+        except (TypeError, ValueError):
+            pass
 
     if alert_id:
         try:
@@ -2350,6 +2368,8 @@ def add_alert_to_feed(
     hype_train_type=None,
     gift_qty=None,
     recipient=None,
+    always_broadcast_html=False,
+    streak_count=None,
 ):
     """Add a new alert card to the activity feed container.
 
@@ -2363,6 +2383,9 @@ def add_alert_to_feed(
         alert_id (str, optional): The alert ID to look up stored alert data
         gift_qty (int, optional): Number of gift subs (giftsub alerts)
         recipient (str, optional): Gift recipient username (single gifts)
+        always_broadcast_html (bool): Also emit to the HTML activity feed when the
+            in-app feed tab is not Current. Used for chat notices that must reach
+            the browser-source feed.
     """
     alert_data = build_activity_feed_alert_payload(
         alert_type,
@@ -2377,20 +2400,25 @@ def add_alert_to_feed(
         hype_train_type=hype_train_type,
         gift_qty=gift_qty,
         recipient=recipient,
+        streak_count=streak_count,
     )
 
     # Process the alert immediately using the event-based system
     alert_event_handler.process_alert_immediately(alert_data)
 
-    # Only send the alert via websocket to the HTML template if we're on the current alerts tab
-    # If not on current alerts tab, the alert will still be queued and processed by the Python thread
+    # The Python feed is updated above. The HTML browser source only receives the
+    # websocket when the in-app tab is Current, unless the caller forces a broadcast
+    # (watch streaks and modiversaries, which are not regular chat messages).
     try:
         from modules import web_engine
 
+        broadcast_html = always_broadcast_html or (
+            activity_feed_state.current_tab == "current"
+        )
         if (
             hasattr(web_engine, "web_engine_instance")
             and web_engine.web_engine_instance
-            and activity_feed_state.current_tab == "current"
+            and broadcast_html
         ):
             web_engine.web_engine_instance.activity_feed_alert(alert_data)
             logger.debug(
@@ -2919,6 +2947,13 @@ def create_activity_feed_tab():
             background: var(--color-primary);
             color: white;
             border-color: var(--color-primary);
+        }
+
+        /* Modiversary alerts */
+        .badge.modiversary {
+            background: #0369a1;
+            color: white;
+            border-color: #0ea5e9;
         }
         
         /* Bits alerts */

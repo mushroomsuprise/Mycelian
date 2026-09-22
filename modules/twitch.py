@@ -77,6 +77,7 @@ from .template_config_parser import match_point_reward_dedicated_template
 from .text_safe import safe_console_str
 from .twitch_eventsub_patch import (
     ensure_channel_chat_message_gif_patch,
+    ensure_channel_chat_notification_modiversary_patch,
     ensure_channel_chat_notification_watch_streak_patch,
     ensure_hype_train_v2_patch,
 )
@@ -97,11 +98,13 @@ from .twitch_token_auth import (
 )
 from .uiwindows.activity_feed import (
     add_alert_to_feed,
+    format_modiversary_message,
     format_raid_activity_message,
     format_watch_streak_message,
 )
 
 ensure_channel_chat_notification_watch_streak_patch()
+ensure_channel_chat_notification_modiversary_patch()
 ensure_channel_chat_message_gif_patch()
 ensure_hype_train_v2_patch()
 
@@ -178,6 +181,7 @@ def _add_twitch_alert_to_feed(*args, **kwargs) -> None:
 _WATCH_STREAK_COUNT_RE = re.compile(
     r"(\d+)\s*consecutive\s+streams", re.IGNORECASE
 )
+_MODIVERSARY_MONTHS_RE = re.compile(r"(\d+)\s+months?\b", re.IGNORECASE)
 
 
 def _normalize_chat_notice_type(notice_raw: Any) -> str:
@@ -232,6 +236,58 @@ def _streak_count_from_system_message(*texts: Any) -> int:
         except (TypeError, ValueError):
             continue
     return 0
+
+
+def _paid_tier_from_plan(raw: Any) -> int:
+    """Map a Twitch sub plan (``1000`` / ``2000`` / ``3000``) to tier 1, 2, or 3."""
+    text = str(raw or "").strip()
+    if text.endswith("000") and len(text) > 3 and text[:-3].isdigit():
+        return int(text[:-3]) or 1
+    if text.isdigit():
+        value = int(text)
+        if value in (1000, 2000, 3000):
+            return value // 1000
+        if value in (1, 2, 3):
+            return value
+    return 1
+
+
+def _modiversary_months_from_texts(*texts: Any) -> int:
+    """Parse moderator tenure from a Twitch system message when the field is missing."""
+    for text in texts:
+        if not text:
+            continue
+        match = _MODIVERSARY_MONTHS_RE.search(str(text))
+        if not match:
+            continue
+        try:
+            return int(match.group(1))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _send_chat_event_line(text: str, *, message_id: Optional[str] = None) -> None:
+    """Push a system event sentence into the chat template (no username prefix)."""
+    body = str(text or "").strip()
+    if not body:
+        return
+    try:
+        if (
+            hasattr(web_engine, "web_engine_instance")
+            and web_engine.web_engine_instance
+        ):
+            web_engine.web_engine_instance.new_message(
+                {
+                    "id": str(message_id) if message_id else f"event-{time.time_ns()}",
+                    "username": "",
+                    "message": body,
+                    "timestamp": time.time(),
+                    "type": "event",
+                }
+            )
+    except Exception as e:
+        logger.error("Error sending chat event line: %s", e, exc_info=True)
 
 
 def _chat_notification_message_text(ev: Any) -> Optional[str]:
@@ -798,24 +854,26 @@ def _record_known_subscriber(
         logger.debug("Failed to record known subscriber: %s", e)
 
 
-async def _emit_connector_new_sub(data) -> None:
+async def _emit_connector_new_sub(
+    *,
+    tier,
+    username: str,
+    message: str = "",
+    user_id=None,
+    is_gift: bool = False,
+) -> None:
     """Emit connector event for a confirmed new sub (on_new_sub is not wrapped)."""
     try:
         from .connector_core import EventData
         from .connector_manager import get_manager
 
-        event = data.event
-        message = ""
-        msg_obj = getattr(event, "message", None)
-        if msg_obj is not None:
-            message = getattr(msg_obj, "text", "") or ""
         event_data = EventData.from_twitch_sub(
-            tier=event.tier,
-            username=event.user_name,
-            message=message,
+            tier=tier,
+            username=username,
+            message=message or "",
             months=1,
-            user_id=event.user_id,
-            is_gift=bool(getattr(event, "is_gift", False)),
+            user_id=user_id,
+            is_gift=bool(is_gift),
         )
         await get_manager().add_event(event_data)
     except Exception as e:
@@ -2079,7 +2137,11 @@ class Twitch_API:
             )
 
     async def on_chat_notification(self, data: ChannelChatNotificationEvent):
-        """Handle channel chat notifications; only watch streaks trigger alerts."""
+        """Handle channel chat notifications.
+
+        New subs (``notice_type == sub``), watch streaks, and modiversaries are
+        handled here. Resubs stay on ``channel.subscription.message``.
+        """
         self._note_event_received()
         ev = data.event
 
@@ -2157,6 +2219,14 @@ class Twitch_API:
                 logger.debug(
                     "Chat notification subscriber harvest failed: %s", harvest_err
                 )
+
+        if notice_type_str == "sub":
+            await self._emit_new_sub_from_chat_notice(ev)
+            return
+
+        if notice_type_str == "modiversary":
+            self._emit_modiversary_notice(ev)
+            return
 
         if not _is_watch_streak_notice(notice_type_str):
             return
@@ -2249,13 +2319,20 @@ class Twitch_API:
                 alert_id, streak_storage
                 )
 
+        streak_line = format_watch_streak_message(username, streak_count)
+        _send_chat_event_line(
+            streak_line,
+            message_id=getattr(ev, "message_id", None),
+        )
         _add_twitch_alert_to_feed(
             alert_type="Streak",
-            message=format_watch_streak_message(username, streak_count),
+            message=streak_line,
             badge_type="streak",
             timestamp=str(int(current_timestamp)),
             user_message=user_msg or None,
             alert_id=alert_id,
+            always_broadcast_html=True,
+            streak_count=streak_count,
         )
 
         try:
@@ -2819,7 +2896,7 @@ class Twitch_API:
         )
 
     async def on_new_sub(self, data: ChannelSubscribeEvent):
-        """Handle channel.subscribe; alert only for first-time known-DB misses."""
+        """Record gift recipients. New-sub alerts come from chat notice_type sub."""
         self._note_event_received()
         event = data.event
         user_id = str(getattr(event, "user_id", "") or "") or None
@@ -2827,119 +2904,98 @@ class Twitch_API:
         username = event.user_name
         is_gift = bool(getattr(event, "is_gift", False))
 
-        from .twitch_subscriber_registry import get_subscriber_registry
-
-        registry = get_subscriber_registry()
-
-        already_known = registry.is_known(
-            user_id=user_id, user_login=user_login or username
-        )
-
-        if is_gift:
-            _record_known_subscriber(
-                user_id=user_id,
-                user_login=user_login or username,
-                source="channel.subscribe.gift",
-            )
-            gifter_id = getattr(event, "gifter_user_id", None) or getattr(
-                event, "gifter_id", None
-            )
-            note_gift_recipient(
-                username or user_login or "",
-                gifter_login=getattr(event, "gifter_user_login", None)
-                or getattr(event, "gifter_login", None),
-                gifter_id=str(gifter_id) if gifter_id else None,
-            )
+        if not is_gift:
             logger.debug(
-                "Skipping channel.subscribe alert for gift recipient %s",
+                "Ignoring channel.subscribe for %s; new subs alert from chat notification",
                 username,
             )
             return
 
-        if already_known:
-            _record_known_subscriber(
-                user_id=user_id,
-                user_login=user_login or username,
-                source="channel.subscribe.known",
-            )
-            logger.info(
-                "Suppressing channel.subscribe for %s: already in ever-subscribed registry",
-                username,
-            )
-            return
-
-        if registry.was_new_sub_alerted_recently(user_id):
-            _record_known_subscriber(
-                user_id=user_id,
-                user_login=user_login or username,
-                source="channel.subscribe.dedup",
-            )
-            logger.info(
-                "Suppressing channel.subscribe for %s: new-sub alert already emitted recently",
-                username,
-            )
-            return
-
-        # Debounce: wait for subscription.message / chat resub that may prove renewal.
-        if not user_id:
-            logger.info(
-                "Suppressing channel.subscribe for %s: missing user_id",
-                username,
-            )
-            _record_known_subscriber(
-                user_login=user_login or username,
-                source="channel.subscribe.missing_id",
-            )
-            return
-
-        async def _confirm_and_emit():
-            try:
-                await asyncio.sleep(_NEW_SUB_DEBOUNCE_SECONDS)
-            except asyncio.CancelledError:
-                logger.debug(
-                    "Pending new-sub alert for %s cancelled (likely message/resub path)",
-                    username,
-                )
-                raise
-
-            # Re-check after wait (on_sub / chat may have recorded or alerted).
-            if registry.was_new_sub_alerted_recently(user_id):
-                logger.info(
-                    "Skipping delayed channel.subscribe for %s: already alerted via message path",
-                    username,
-                )
-                _record_known_subscriber(
-                    user_id=user_id,
-                    user_login=user_login or username,
-                    source="channel.subscribe.after_wait_dedup",
-                )
-                return
-
-            if registry.is_known(user_id=user_id, user_login=user_login or username):
-                logger.info(
-                    "Skipping delayed channel.subscribe for %s: became known during debounce",
-                    username,
-                )
-                return
-
-            await self._emit_verified_new_sub(data)
-            registry.clear_pending(user_id)
-
-        task = asyncio.create_task(_confirm_and_emit())
-        registry.store_pending_task(user_id, task)
+        _record_known_subscriber(
+            user_id=user_id,
+            user_login=user_login or username,
+            source="channel.subscribe.gift",
+        )
+        gifter_id = getattr(event, "gifter_user_id", None) or getattr(
+            event, "gifter_id", None
+        )
+        note_gift_recipient(
+            username or user_login or "",
+            gifter_login=getattr(event, "gifter_user_login", None)
+            or getattr(event, "gifter_login", None),
+            gifter_id=str(gifter_id) if gifter_id else None,
+        )
         logger.debug(
-            "Debouncing channel.subscribe for %s (%.1fs)",
+            "Skipping channel.subscribe alert for gift recipient %s",
             username,
-            _NEW_SUB_DEBOUNCE_SECONDS,
         )
 
-    async def _emit_verified_new_sub(self, data: ChannelSubscribeEvent):
-        """Emit alert/feed/stats/chatbot/connector for a verified first-time sub."""
-        event = data.event
-        user_id = str(getattr(event, "user_id", "") or "") or None
-        user_login = getattr(event, "user_login", None)
-        username = event.user_name
+    async def _emit_new_sub_from_chat_notice(self, ev) -> None:
+        """Alert a first-time sub from ``channel.chat.notification`` notice_type sub."""
+        username = getattr(ev, "chatter_user_name", None) or "Someone"
+        user_id = str(getattr(ev, "chatter_user_id", "") or "") or None
+        user_login = getattr(ev, "chatter_user_login", None) or username
+        sub_meta = getattr(ev, "sub", None)
+        tier_raw = None
+        if sub_meta is not None:
+            if isinstance(sub_meta, dict):
+                tier_raw = sub_meta.get("sub_tier") or sub_meta.get("tier")
+            else:
+                tier_raw = getattr(sub_meta, "sub_tier", None) or getattr(
+                    sub_meta, "tier", None
+                )
+        message = getattr(ev, "message", None)
+        user_msg = _chat_notification_message_text(ev)
+        await self._emit_verified_new_sub(
+            username=username,
+            user_id=user_id,
+            user_login=user_login,
+            tier=_paid_tier_from_plan(tier_raw),
+            tier_raw=tier_raw,
+            user_msg=user_msg,
+            emotes=_subscription_message_emotes(message),
+        )
 
+    def _emit_modiversary_notice(self, ev) -> None:
+        """Show a modiversary in chat and both activity feeds. No overlay alert."""
+        username = getattr(ev, "chatter_user_name", None) or "Someone"
+        meta = getattr(ev, "modiversary", None)
+        months = _int_from_watch_field(meta, "months")
+        system_message = getattr(ev, "system_message", None) or ""
+        if months < 1:
+            months = _modiversary_months_from_texts(
+                system_message, _chat_notification_message_text(ev)
+            )
+        if months < 1:
+            logger.warning(
+                "Modiversary notice skipped for %s: missing months",
+                username,
+            )
+            return
+
+        line = format_modiversary_message(username, months)
+        logger.info("Modiversary for %s: %s months", username, months)
+        _send_chat_event_line(line, message_id=getattr(ev, "message_id", None))
+        _add_twitch_alert_to_feed(
+            alert_type="Modiversary",
+            message=line,
+            badge_type="modiversary",
+            timestamp=str(int(time.time())),
+            always_broadcast_html=True,
+        )
+
+    async def _emit_verified_new_sub(
+        self,
+        *,
+        username: str,
+        user_id: Optional[str] = None,
+        user_login: Optional[str] = None,
+        tier: int = 1,
+        tier_raw: Any = None,
+        user_msg: Optional[str] = None,
+        emotes=None,
+    ) -> None:
+        """Emit alert/feed/stats/chatbot/connector for a first-time sub."""
         from .twitch_subscriber_registry import get_subscriber_registry
 
         registry = get_subscriber_registry()
@@ -2950,21 +3006,17 @@ class Twitch_API:
             )
             return
 
-        # Mark known + alerted before emitting to collapse races.
+        # Mark known + alerted before emitting to collapse races with on_sub.
         _record_known_subscriber(
             user_id=user_id,
             user_login=user_login or username,
-            source="channel.subscribe.verified_new",
+            source="channel.chat.notification.sub",
         )
         registry.mark_new_sub_alerted(user_id)
 
-        tier_str = str(event.tier)
-        tier = int(tier_str[:-3]) if tier_str else 1
-        sub_message = getattr(event, "message", None)
-        user_msg = getattr(sub_message, "text", None) if sub_message else None
         current_timestamp = time.time()
 
-        logger.info("Verified new subscription from %s (channel.subscribe)", username)
+        logger.info("New subscription from %s (chat notification sub)", username)
         alert = alertutils.fetch_sub_alert(1)
         if alert is None:
             logger.warning("No sub alert configured, using default for %s", username)
@@ -2976,7 +3028,7 @@ class Twitch_API:
         alert.alert_id = f"Alert{round(current_timestamp)}"
         alert.timestamp = current_timestamp
         alert.message = user_msg or ""
-        alert.emotes = _subscription_message_emotes(sub_message)
+        alert.emotes = emotes
 
         _queue_twitch_alert(alert)
 
@@ -3042,7 +3094,13 @@ class Twitch_API:
             alert_id=alert.alert_id,
         )
 
-        await _emit_connector_new_sub(data)
+        await _emit_connector_new_sub(
+            tier=tier_raw if tier_raw is not None else tier,
+            username=username,
+            message=user_msg or "",
+            user_id=user_id,
+            is_gift=False,
+        )
 
 
     async def on_subscription_end(self, data: ChannelSubscriptionEndEvent):
@@ -4650,7 +4708,7 @@ class Twitch_API:
                     )
                     raise
 
-                # Subscribe to channel subscription events (filtered to true first-timers)
+                # Gift recipients only. New-sub alerts come from chat notice_type sub.
                 try:
                     await eventsub.listen_channel_subscribe(
                         self.user.id, self.on_new_sub
