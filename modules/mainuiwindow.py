@@ -651,6 +651,43 @@ ACTIVITY_FEED_CSS = """
     border: 1px solid rgba(255, 191, 128, 0.3) !important;
 }
 
+.badge.streak {
+    background-color: rgba(217, 119, 6, 0.2) !important;
+    color: #fbbf24 !important;
+    border: 1px solid rgba(245, 158, 11, 0.35) !important;
+}
+
+.badge.modiversary {
+    background-color: rgba(14, 165, 233, 0.2) !important;
+    color: #7dd3fc !important;
+    border: 1px solid rgba(14, 165, 233, 0.35) !important;
+}
+
+.badge.membership,
+.badge.member_milestone {
+    background-color: rgba(6, 182, 212, 0.2) !important;
+    color: #67e8f9 !important;
+    border: 1px solid rgba(34, 211, 238, 0.35) !important;
+}
+
+.badge.gift_membership {
+    background-color: rgba(219, 39, 119, 0.2) !important;
+    color: #f9a8d4 !important;
+    border: 1px solid rgba(236, 72, 153, 0.35) !important;
+}
+
+.badge.superchat {
+    background-color: rgba(5, 150, 105, 0.2) !important;
+    color: #6ee7b7 !important;
+    border: 1px solid rgba(16, 185, 129, 0.35) !important;
+}
+
+.badge.supersticker {
+    background-color: rgba(234, 88, 12, 0.2) !important;
+    color: #fdba74 !important;
+    border: 1px solid rgba(249, 115, 22, 0.35) !important;
+}
+
 .control-button.paused {
     background-color: var(--color-primary-light) !important;
     color: #b980ff !important;

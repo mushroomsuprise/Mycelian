@@ -2944,16 +2944,16 @@ def create_activity_feed_tab():
         
         /* Watch streak alerts */
         .badge.streak {
-            background: var(--color-primary);
-            color: white;
-            border-color: var(--color-primary);
+            background-color: rgba(217, 119, 6, 0.2) !important;
+            color: #fbbf24 !important;
+            border: 1px solid rgba(245, 158, 11, 0.35) !important;
         }
 
         /* Modiversary alerts */
         .badge.modiversary {
-            background: #0369a1;
-            color: white;
-            border-color: #0ea5e9;
+            background-color: rgba(14, 165, 233, 0.2) !important;
+            color: #7dd3fc !important;
+            border: 1px solid rgba(14, 165, 233, 0.35) !important;
         }
         
         /* Bits alerts */
