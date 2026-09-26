@@ -873,6 +873,7 @@
         var pendingClickSources = [];
 
         var resultHideTimeout = null;
+        var winningHighlightTimeout = null;
         var wheelHideTimeout = null;
         var wheelHideAfterResultTimeout = null;
         var wheelVisibilityAnimTimeout = null;
@@ -1043,9 +1044,30 @@
             lastSpinTs = 0;
         }
 
+        function cancelWinningHighlightTimeout() {
+            if (winningHighlightTimeout) {
+                clearTimeout(winningHighlightTimeout);
+                winningHighlightTimeout = null;
+            }
+        }
+
+        function scheduleWinningHighlightClear() {
+            cancelWinningHighlightTimeout();
+            var duration = Number(settings.resultDisplayDuration);
+            if (isNaN(duration) || duration < 0) duration = 5000;
+            winningHighlightTimeout = setTimeout(function () {
+                winningHighlightTimeout = null;
+                rouletteData.winningIndex = -1;
+                if (!rouletteData.isSpinning) {
+                    drawRouletteWheel();
+                }
+            }, duration);
+        }
+
         function resetWheelToIdle() {
             stopSpinAnimation();
             cancelFutureClicks();
+            cancelWinningHighlightTimeout();
             startAngle = 0;
             rouletteData.isSpinning = false;
             rouletteData.lastResult = null;
@@ -1732,6 +1754,8 @@
             if (rouletteData.isSpinning) return;
 
             rouletteData.isSpinning = true;
+            cancelWinningHighlightTimeout();
+            rouletteData.winningIndex = -1;
             clearWheelAutoHideTimers();
             hideResult();
             showWheel();
@@ -1878,6 +1902,9 @@
                     scheduleWheelAutoHide();
                 }
                 showResult(result);
+                if (!rouletteData.isSpinning) {
+                    scheduleWinningHighlightClear();
+                }
             }, 600);
 
             // Play result sound

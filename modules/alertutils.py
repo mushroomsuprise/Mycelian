@@ -2099,6 +2099,9 @@ class AlertObj:
 
     # Bit options:
     amt_cheered: int = 0
+    is_gigantified_emote: bool = False
+    gigantified_emote_id: str = ""
+    gigantified_emote_name: str = ""
 
     # Points options:
     twitch_reward_id: str = None
@@ -2583,6 +2586,9 @@ _REPLAY_EVENT_FIELDS = (
     "streak_count",
     "channel_points_awarded",
     "alert_type",
+    "is_gigantified_emote",
+    "gigantified_emote_id",
+    "gigantified_emote_name",
 )
 
 

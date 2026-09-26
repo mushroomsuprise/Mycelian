@@ -235,6 +235,12 @@
             margin: 0 {{ EmoteMargin | default(2) }}px;
         }
 
+        .alert-message.gigantified-message .emote-img.gigantified-emote,
+        .alert-message.gigantified-message .emote-base.gigantified-emote,
+        .alert-message.gigantified-message .emote-zw.gigantified-emote {
+            height: calc(28px * {{ EmoteScale | default(1.4) }} * {{ GigantifiedEmoteMessageScale | default(3) }});
+        }
+
         .alert-message .cheermote-container {
             display: inline-block;
             align-items: center;
@@ -698,6 +704,9 @@
         var showHeaderLineText = {{ EnableHeaderText | default(true) | tojson }};
         var showMessageText = {{ EnableMessageText | default(true) | tojson }};
         var enableEmotes = {{ EnableEmotes | default(true) | tojson }};
+        var useGigantifiedEmoteAsGif = {{ UseGigantifiedEmoteAsGif | default(false) | tojson }};
+        var enlargeGigantifiedEmoteInMessage = {{ EnlargeGigantifiedEmoteInMessage | default(false) | tojson }};
+        var gigantifiedEmoteMessageScale = {{ GigantifiedEmoteMessageScale | default(3) }};
         var enableGiftSubRecipientName = {{ EnableGiftSubRecipientName | default(true) | tojson }};
         var streamerID = null;
         var alertEmoteFetchInProgress = false;
@@ -1282,9 +1291,10 @@
             }
             alertGif.classList.remove('gif-animate-in', 'gif-animate-out');
             alertGif.style.removeProperty('opacity');
+            alertGif.onerror = null;
             alertHeader.classList.remove('header-animate-in', 'header-animate-out');
             alertHeader.style.removeProperty('opacity');
-            alertMessage.classList.remove('message-animate-in', 'message-animate-out');
+            alertMessage.classList.remove('message-animate-in', 'message-animate-out', 'gigantified-message');
             alertMessage.style.removeProperty('opacity');
         }
 
@@ -1736,14 +1746,38 @@
             alertMessage.innerHTML = formattedMessage
                 ? '<div class="alert-message-content">' + formattedMessage + '</div>'
                 : '';
+            if (formattedMessage && shouldEnlargeGigantifiedMessage(alertData)) {
+                alertMessage.classList.add('gigantified-message');
+                markGigantifiedTwitchEmotes(alertMessage);
+            }
 
             console.log('Alert content set - Username:', alertUsername.innerHTML, 'Text:', alertText.innerHTML, 'Message:', alertMessage.innerHTML);
 
             // Set background media if configured
             setupBackgroundMedia(alertBackground, alertBackgroundVideo);
 
-            // Set GIF source if available (non-randomized GIFs)
-            if (alertData.gif_dir && alertData.gif_name) {
+            // Gigantified emote power-ups can replace the configured bit GIF.
+            alertGif.onerror = null;
+            var gigantifiedGifUrl = '';
+            if (
+                useGigantifiedEmoteAsGif &&
+                isGigantifiedEmoteAlert(alertData) &&
+                alertData.gigantified_emote_id
+            ) {
+                gigantifiedGifUrl = gigantifiedEmoteAssetUrl(alertData.gigantified_emote_id, true);
+            }
+            if (gigantifiedGifUrl) {
+                var staticGigantifiedGifUrl = gigantifiedEmoteAssetUrl(alertData.gigantified_emote_id, false);
+                alertGif.onerror = function () {
+                    alertGif.onerror = null;
+                    if (staticGigantifiedGifUrl) {
+                        alertGif.src = staticGigantifiedGifUrl;
+                    }
+                };
+                alertGif.src = gigantifiedGifUrl;
+                alertGif.style.display = 'block';
+                console.log('Gigantified emote GIF set:', alertGif.src);
+            } else if (alertData.gif_dir && alertData.gif_name) {
                 // gif_dir and gif_name now contain full paths from the database
                 alertGif.src = `${alertData.gif_dir}/${alertData.gif_name}`;
                 alertGif.style.display = 'block';
@@ -2749,8 +2783,54 @@
             return applyAlertTextTemplate(template, alertData);
         }
 
+        function isGigantifiedEmoteAlert(alertData) {
+            return !!(alertData && alertData.is_gigantified_emote);
+        }
+
+        function shouldEnlargeGigantifiedMessage(alertData) {
+            return enlargeGigantifiedEmoteInMessage && isGigantifiedEmoteAlert(alertData);
+        }
+
+        function gigantifiedEmoteAssetUrl(emoteId, animated) {
+            var id = String(emoteId || '').replace(/[^A-Za-z0-9_]/g, '');
+            if (!id) {
+                return '';
+            }
+            var kind = animated ? 'animated' : 'default';
+            return 'https://static-cdn.jtvnw.net/emoticons/v2/' + id + '/' + kind + '/dark/3.0';
+        }
+
+        function upgradeTwitchEmoteUrlsForGigantified(html) {
+            if (!html || typeof html !== 'string') {
+                return html;
+            }
+            return html.replace(
+                /(https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/[^/]+\/default\/(?:light|dark)\/)1\.0/g,
+                function (_match, prefix) {
+                    return prefix + '3.0';
+                }
+            );
+        }
+
+        function markGigantifiedTwitchEmotes(root) {
+            if (!root) {
+                return;
+            }
+            var nodes = root.querySelectorAll('.emote-img, .emote-base, .emote-zw');
+            nodes.forEach(function (el) {
+                var src = el.getAttribute('src') || '';
+                if (src.indexOf('static-cdn.jtvnw.net/emoticons/') !== -1) {
+                    el.classList.add('gigantified-emote');
+                }
+            });
+        }
+
         function formatAlertMessage(alertData) {
-            return parseAlertMessage(alertData);
+            var html = parseAlertMessage(alertData);
+            if (!shouldEnlargeGigantifiedMessage(alertData) || !html) {
+                return html;
+            }
+            return upgradeTwitchEmoteUrlsForGigantified(html);
         }
 
         // Load template config directly from API
@@ -2848,14 +2928,23 @@
                 messageElements.forEach(el => el.style.color = config.MessageColor);
             }
 
+            if (config.GigantifiedEmoteMessageScale !== undefined) {
+                var parsedGigScale = Number(config.GigantifiedEmoteMessageScale);
+                if (!isNaN(parsedGigScale)) {
+                    gigantifiedEmoteMessageScale = parsedGigScale;
+                }
+            }
+
             // Live emote scale/margin/radius (same 28px × EmoteScale model as chat)
-            if (config.EmoteScale !== undefined || config.EmoteMargin !== undefined || config.EmoteRadius !== undefined) {
+            if (config.EmoteScale !== undefined || config.EmoteMargin !== undefined || config.EmoteRadius !== undefined || config.GigantifiedEmoteMessageScale !== undefined) {
                 var emoteScale = config.EmoteScale !== undefined ? Number(config.EmoteScale) : {{ EmoteScale | default(1.4) }};
                 var emoteMargin = config.EmoteMargin !== undefined ? Number(config.EmoteMargin) : {{ EmoteMargin | default(2) }};
                 var emoteRadius = config.EmoteRadius !== undefined ? Number(config.EmoteRadius) : {{ EmoteRadius | default(0) }};
+                var gigScale = Number(gigantifiedEmoteMessageScale);
                 if (isNaN(emoteScale)) { emoteScale = 1.4; }
                 if (isNaN(emoteMargin)) { emoteMargin = 2; }
                 if (isNaN(emoteRadius)) { emoteRadius = 0; }
+                if (isNaN(gigScale)) { gigScale = 3; }
                 var emoteStyleEl = document.getElementById('alerts-emote-runtime');
                 if (!emoteStyleEl) {
                     emoteStyleEl = document.createElement('style');
@@ -2868,7 +2957,11 @@
                     'border-radius: ' + emoteRadius + 'px; }' +
                     '.alert-message .emote-img, .alert-message .emote-zw { margin: 0 ' + emoteMargin + 'px; }' +
                     '.alert-message .emote-container, .alert-message .cheermote-container { margin: 0 ' + emoteMargin + 'px; }' +
-                    '.alert-message .emote-overlay { border-radius: ' + emoteRadius + 'px; }';
+                    '.alert-message .emote-overlay { border-radius: ' + emoteRadius + 'px; }' +
+                    '.alert-message.gigantified-message .emote-img.gigantified-emote, ' +
+                    '.alert-message.gigantified-message .emote-base.gigantified-emote, ' +
+                    '.alert-message.gigantified-message .emote-zw.gigantified-emote { ' +
+                    'height: calc(28px * ' + emoteScale + ' * ' + gigScale + '); }';
             }
 
             // Apply shadow effects
@@ -2930,6 +3023,12 @@
             }
             if (config.EnableEmotes !== undefined) {
                 enableEmotes = Boolean(config.EnableEmotes);
+            }
+            if (config.UseGigantifiedEmoteAsGif !== undefined) {
+                useGigantifiedEmoteAsGif = Boolean(config.UseGigantifiedEmoteAsGif);
+            }
+            if (config.EnlargeGigantifiedEmoteInMessage !== undefined) {
+                enlargeGigantifiedEmoteInMessage = Boolean(config.EnlargeGigantifiedEmoteInMessage);
             }
             if (config.EnableGiftSubRecipientName !== undefined) {
                 enableGiftSubRecipientName = Boolean(config.EnableGiftSubRecipientName);

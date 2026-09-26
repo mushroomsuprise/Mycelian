@@ -1176,6 +1176,86 @@ def _apply_bits_message_to_alert(alert, message_obj) -> None:
         alert.emotes = None
 
 
+def _power_up_type_token(power_up) -> str:
+    """Lowercase EventSub power-up type, including enum values."""
+    if power_up is None:
+        return ""
+    if isinstance(power_up, dict):
+        raw = power_up.get("type")
+    else:
+        raw = getattr(power_up, "type", None)
+    if raw is None:
+        return ""
+    value = getattr(raw, "value", None)
+    if isinstance(value, str) and value.strip():
+        raw = value
+    token = str(raw).strip().lower()
+    if "." in token:
+        token = token.rsplit(".", 1)[-1]
+    return token.replace("-", "_").replace(" ", "_")
+
+
+def _power_up_emote_identity(power_up) -> tuple[str, str]:
+    """Return (emote id, emote name) from a bits-use power-up."""
+    if power_up is None:
+        return "", ""
+    if isinstance(power_up, dict):
+        emote = power_up.get("emote")
+    else:
+        emote = getattr(power_up, "emote", None)
+    if isinstance(emote, dict):
+        return str(emote.get("id") or ""), str(emote.get("name") or "")
+    if emote is None:
+        return "", ""
+    return str(getattr(emote, "id", "") or ""), str(getattr(emote, "name", "") or "")
+
+
+def _fragments_include_emote_id(fragments, emote_id: str) -> bool:
+    if not emote_id or not isinstance(fragments, list):
+        return False
+    for frag in fragments:
+        if isinstance(frag, dict) and str(frag.get("emote_id") or "") == emote_id:
+            return True
+    return False
+
+
+def _apply_gigantified_emote_to_alert(alert, power_up) -> None:
+    """Flag gigantify_an_emote power-ups and ensure the emote is in the message.
+
+    Other power-ups and cheers stay ordinary bit alerts. If Twitch already
+    included this emote in the message fragments, that message is kept.
+    """
+    alert.is_gigantified_emote = False
+    alert.gigantified_emote_id = ""
+    alert.gigantified_emote_name = ""
+    if _power_up_type_token(power_up) != "gigantify_an_emote":
+        return
+    emote_id, emote_name = _power_up_emote_identity(power_up)
+    alert.is_gigantified_emote = True
+    alert.gigantified_emote_id = emote_id
+    alert.gigantified_emote_name = emote_name
+    if not emote_id:
+        return
+    if _fragments_include_emote_id(getattr(alert, "fragments", None), emote_id):
+        return
+    display_name = emote_name or emote_id
+    alert.message = display_name
+    alert.fragments = [
+        {
+            "type": "emote",
+            "text": display_name,
+            "emote_id": emote_id,
+        }
+    ]
+    alert.emotes = [
+        {
+            "begin": 0,
+            "end": max(len(display_name) - 1, 0),
+            "id": emote_id,
+        }
+    ]
+
+
 def _hype_train_type_from_event(event) -> Optional[str]:
     """Read Hype Train variant (regular, treasure, golden_kappa) from EventSub payload."""
     train_type = getattr(event, "type", None) or getattr(event, "type_", None)
@@ -3261,6 +3341,9 @@ class Twitch_API:
         alert.timestamp = time.time()
         if hasattr(data.event, "message") and data.event.message:
             _apply_bits_message_to_alert(alert, data.event.message)
+        _apply_gigantified_emote_to_alert(
+            alert, getattr(data.event, "power_up", None)
+        )
         if (
             hasattr(data.event, "power_up")
             and data.event.power_up
@@ -3288,6 +3371,9 @@ class Twitch_API:
                             "fragments": alert.fragments,
                             "emotes": alert.emotes,
                             "power_up_type": power_up_type,
+                            "is_gigantified_emote": alert.is_gigantified_emote,
+                            "gigantified_emote_id": alert.gigantified_emote_id,
+                            "gigantified_emote_name": alert.gigantified_emote_name,
                             "alert_id": alert.alert_id,
                             "timestamp": alert.timestamp,
                         }

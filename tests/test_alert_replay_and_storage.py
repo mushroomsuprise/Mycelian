@@ -66,6 +66,29 @@ class ReplayAlertTests(unittest.TestCase):
         self.assertEqual(replay.volume, 80)
         self.assertEqual(replay.fade_in, 250)
 
+    def test_replay_keeps_gigantified_emote_identity(self) -> None:
+        stored = {
+            "alert_type": "bit",
+            "username": "GigUser",
+            "amt_cheered": 100,
+            "message": "PogChamp",
+            "is_gigantified_emote": True,
+            "gigantified_emote_id": "emotesv2_123",
+            "gigantified_emote_name": "PogChamp",
+        }
+        config = alertutils.AlertObj()
+        config.alert_type = "bit"
+        config.is_gigantified_emote = False
+        config.gigantified_emote_id = ""
+        config.gigantified_emote_name = ""
+
+        with patch.object(alertutils, "fetch_bits_alert", return_value=config):
+            replay = alertutils.build_replay_alert(stored)
+
+        self.assertTrue(replay.is_gigantified_emote)
+        self.assertEqual(replay.gigantified_emote_id, "emotesv2_123")
+        self.assertEqual(replay.gigantified_emote_name, "PogChamp")
+
     def test_replay_falls_back_to_snapshot_when_config_missing(self) -> None:
         stored = {
             "alert_type": "follow",
