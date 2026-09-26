@@ -58,6 +58,10 @@ class ModiversaryNoticeData(TwitchObject):
 
 # twitchAPI TwitchObject reads __annotations__ directly and cannot resolve
 # postponed (string) annotations from ``from __future__ import annotations``.
+WatchStreakNoticeData.__annotations__ = {
+    "streak_count": int,
+    "channel_points_awarded": int,
+}
 ModiversaryNoticeData.__annotations__ = {"months": int}
 
 

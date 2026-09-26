@@ -416,7 +416,7 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
 
         api._emit_new_sub_from_chat_notice.assert_not_called()
 
-    async def test_watch_streak_notice_sends_chat_line_and_feed(self) -> None:
+    async def test_watch_streak_notice_sends_chat_line_when_alerts_disabled(self) -> None:
         api = MagicMock()
         api._note_event_received = MagicMock()
         data = self._chat_notice(
@@ -444,13 +444,44 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         expected = "Viewer has watched for 4 consecutive streams!"
         chat_line.assert_called_once()
         self.assertEqual(chat_line.call_args.args[0], expected)
+        feed.assert_not_called()
+
+    async def test_watch_streak_notice_sends_feed_when_alerts_enabled(self) -> None:
+        api = MagicMock()
+        api._note_event_received = MagicMock()
+        data = self._chat_notice(
+            "watch_streak",
+            chatter_user_name="Viewer",
+            watch_streak=SimpleNamespace(streak_count=4, channel_points_awarded=10),
+            message=SimpleNamespace(text=""),
+        )
+
+        with patch.object(
+            twitch_module.alertutils, "fetch_streak_alert", return_value=None
+        ), patch.object(
+            twitch_module.alertutils.alert_state_manager, "store_completed_alert"
+        ), patch.object(
+            twitch_module, "_twitch_alerts_enabled", return_value=True
+        ), patch.object(
+            twitch_module, "_send_chat_event_line"
+        ) as chat_line, patch.object(
+            twitch_module, "_add_twitch_alert_to_feed"
+        ) as feed, patch.object(
+            twitch_module.statistics_manager,
+            "get_statistics_manager",
+            return_value=MagicMock(),
+        ):
+            await twitch_module.Twitch_API.on_chat_notification(api, data)
+
+        expected = "Viewer has watched for 4 consecutive streams!"
+        chat_line.assert_not_called()
         feed.assert_called_once()
         self.assertEqual(feed.call_args.kwargs["alert_type"], "Streak")
         self.assertEqual(feed.call_args.kwargs["message"], expected)
         self.assertEqual(feed.call_args.kwargs["streak_count"], 4)
         self.assertTrue(feed.call_args.kwargs["always_broadcast_html"])
 
-    async def test_modiversary_notice_sends_chat_line_and_feed(self) -> None:
+    async def test_modiversary_notice_sends_chat_line_when_alerts_disabled(self) -> None:
         api = MagicMock()
         api._note_event_received = MagicMock()
         api._emit_modiversary_notice = (
@@ -463,6 +494,8 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch.object(
+            twitch_module, "_twitch_alerts_enabled", return_value=False
+        ), patch.object(
             twitch_module, "_send_chat_event_line"
         ) as chat_line, patch.object(
             twitch_module, "_add_twitch_alert_to_feed"
@@ -472,6 +505,32 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         expected = "Moddy has been a moderator for 12 months!"
         chat_line.assert_called_once()
         self.assertEqual(chat_line.call_args.args[0], expected)
+        self.assertEqual(chat_line.call_args.kwargs["event_kind"], "modiversary")
+        feed.assert_not_called()
+
+    async def test_modiversary_notice_sends_feed_when_alerts_enabled(self) -> None:
+        api = MagicMock()
+        api._note_event_received = MagicMock()
+        api._emit_modiversary_notice = (
+            twitch_module.Twitch_API._emit_modiversary_notice.__get__(api)
+        )
+        data = self._chat_notice(
+            "modiversary",
+            chatter_user_name="Moddy",
+            modiversary=SimpleNamespace(months=12),
+        )
+
+        with patch.object(
+            twitch_module, "_twitch_alerts_enabled", return_value=True
+        ), patch.object(
+            twitch_module, "_send_chat_event_line"
+        ) as chat_line, patch.object(
+            twitch_module, "_add_twitch_alert_to_feed"
+        ) as feed:
+            await twitch_module.Twitch_API.on_chat_notification(api, data)
+
+        expected = "Moddy has been a moderator for 12 months!"
+        chat_line.assert_not_called()
         feed.assert_called_once()
         self.assertEqual(feed.call_args.kwargs["alert_type"], "Modiversary")
         self.assertEqual(feed.call_args.kwargs["badge_type"], "modiversary")
@@ -496,6 +555,20 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         ensure_channel_chat_notification_modiversary_patch()
         note = ChannelChatNotificationData(modiversary={"months": 18})
         self.assertEqual(note.modiversary.months, 18)
+
+    def test_watch_streak_field_deserializes(self) -> None:
+        from twitchAPI.object.eventsub import ChannelChatNotificationData
+
+        from modules.twitch_eventsub_patch import (
+            ensure_channel_chat_notification_watch_streak_patch,
+        )
+
+        ensure_channel_chat_notification_watch_streak_patch()
+        note = ChannelChatNotificationData(
+            watch_streak={"streak_count": 4, "channel_points_awarded": 10}
+        )
+        self.assertEqual(note.watch_streak.streak_count, 4)
+        self.assertEqual(note.watch_streak.channel_points_awarded, 10)
 
 
 class ActivityFeedBroadcastTests(unittest.TestCase):

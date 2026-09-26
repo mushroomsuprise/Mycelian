@@ -634,6 +634,13 @@
             "description": "Show a media-rich alert event block with alert image/video and message text"
         },
         {
+            "type": "checkbox",
+            "id": "ShowModiversary",
+            "label": "Show Modiversary",
+            "value": true,
+            "description": "Show a text-only line when a moderator reaches a modiversary. These never use the media block."
+        },
+        {
             "type": "number",
             "id": "AlertMediaScale",
             "label": "Alert Media Size Scale",
@@ -1818,9 +1825,9 @@
         },
         {
             "event": "activity_feed_alert",
-            "label": "Alert: Streak (activity only)",
+            "label": "Alert: Streak",
             "alert_type": "streak",
-            "tooltip": "Watch streaks always use the activity summary line, never the media block"
+            "tooltip": "Uses configured watch streak alert media; falls back to simple text if none is configured"
         }
     ]
 }

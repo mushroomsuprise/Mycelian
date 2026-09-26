@@ -267,25 +267,32 @@ def _modiversary_months_from_texts(*texts: Any) -> int:
     return 0
 
 
-def _send_chat_event_line(text: str, *, message_id: Optional[str] = None) -> None:
+def _send_chat_event_line(
+    text: str,
+    *,
+    message_id: Optional[str] = None,
+    event_kind: Optional[str] = None,
+) -> None:
     """Push a system event sentence into the chat template (no username prefix)."""
     body = str(text or "").strip()
     if not body:
         return
+    payload = {
+        "id": str(message_id) if message_id else f"event-{time.time_ns()}",
+        "username": "",
+        "message": body,
+        "timestamp": time.time(),
+        "type": "event",
+    }
+    kind = str(event_kind or "").strip()
+    if kind:
+        payload["event_kind"] = kind
     try:
         if (
             hasattr(web_engine, "web_engine_instance")
             and web_engine.web_engine_instance
         ):
-            web_engine.web_engine_instance.new_message(
-                {
-                    "id": str(message_id) if message_id else f"event-{time.time_ns()}",
-                    "username": "",
-                    "message": body,
-                    "timestamp": time.time(),
-                    "type": "event",
-                }
-            )
+            web_engine.web_engine_instance.new_message(payload)
     except Exception as e:
         logger.error("Error sending chat event line: %s", e, exc_info=True)
 
@@ -2400,20 +2407,25 @@ class Twitch_API:
                 )
 
         streak_line = format_watch_streak_message(username, streak_count)
-        _send_chat_event_line(
-            streak_line,
-            message_id=getattr(ev, "message_id", None),
-        )
-        _add_twitch_alert_to_feed(
-            alert_type="Streak",
-            message=streak_line,
-            badge_type="streak",
-            timestamp=str(int(current_timestamp)),
-            user_message=user_msg or None,
-            alert_id=alert_id,
-            always_broadcast_html=True,
-            streak_count=streak_count,
-        )
+        # The activity-feed payload is what chat renders (media or text). A second
+        # event line would duplicate it. When alerts are off the feed is skipped,
+        # so chat still gets the text line.
+        if _twitch_alerts_enabled():
+            _add_twitch_alert_to_feed(
+                alert_type="Streak",
+                message=streak_line,
+                badge_type="streak",
+                timestamp=str(int(current_timestamp)),
+                user_message=user_msg or None,
+                alert_id=alert_id,
+                always_broadcast_html=True,
+                streak_count=streak_count,
+            )
+        else:
+            _send_chat_event_line(
+                streak_line,
+                message_id=getattr(ev, "message_id", None),
+            )
 
         try:
             stats_manager = statistics_manager.get_statistics_manager()
@@ -3055,14 +3067,23 @@ class Twitch_API:
 
         line = format_modiversary_message(username, months)
         logger.info("Modiversary for %s: %s months", username, months)
-        _send_chat_event_line(line, message_id=getattr(ev, "message_id", None))
-        _add_twitch_alert_to_feed(
-            alert_type="Modiversary",
-            message=line,
-            badge_type="modiversary",
-            timestamp=str(int(time.time())),
-            always_broadcast_html=True,
-        )
+        # Chat draws the feed copy as a text line. Skip the event line then so
+        # it is not shown twice. When alerts are off, the tagged event line is
+        # the only copy and the template can hide it.
+        if _twitch_alerts_enabled():
+            _add_twitch_alert_to_feed(
+                alert_type="Modiversary",
+                message=line,
+                badge_type="modiversary",
+                timestamp=str(int(time.time())),
+                always_broadcast_html=True,
+            )
+        else:
+            _send_chat_event_line(
+                line,
+                message_id=getattr(ev, "message_id", None),
+                event_kind="modiversary",
+            )
 
     async def _emit_verified_new_sub(
         self,

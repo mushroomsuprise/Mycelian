@@ -682,6 +682,7 @@
         var alertShowActivitySummary = {{ AlertShowActivitySummary | tojson }};
         var alertShowTwitchChat = {{ AlertShowTwitchChat | tojson }};
         var alertShowMediaEvent = {{ AlertShowMediaEvent | tojson }};
+        var showModiversary = {{ ShowModiversary | default(true) | tojson }};
         var eventFontSize = {{ EventFontSize | tojson }};
         var alertMediaScale = {{ AlertMediaScale | tojson }};
         var streamerID = null;
@@ -1643,7 +1644,7 @@
 
         function isChatActivityOnlyAlertType(alertData) {
             var t = normalizeChatAlertType(alertData);
-            return t === 'point' || t === 'points' || isWatchStreakAlertTypeName(t) ||
+            return t === 'point' || t === 'points' ||
                 t === 'hypetrain' || t === 'hype_train';
         }
 
@@ -1653,7 +1654,8 @@
             }
             var t = normalizeChatAlertType(alertData);
             return t === 'follow' || t === 'sub' || t === 'resub' || t === 'giftsub' ||
-                t === 'bit' || t === 'bits' || t === 'donation' || t === 'raid';
+                t === 'bit' || t === 'bits' || t === 'donation' || t === 'raid' ||
+                isWatchStreakAlertTypeName(t);
         }
 
         function resolveAlertMediaSource(alertData) {
@@ -1778,11 +1780,10 @@
             appendChatMessageElement(messageElement);
         }
 
-        function isChatEventNoticeAlert(alertData) {
+        function isModiversaryNotice(alertData) {
             var t = normalizeChatAlertType(alertData);
             var rawType = String(alertData.type || '').trim().toLowerCase().replace(/\s+/g, '');
-            return isWatchStreakAlertTypeName(t) || isWatchStreakAlertTypeName(rawType) ||
-                t === 'modiversary' || rawType === 'modiversary';
+            return t === 'modiversary' || rawType === 'modiversary';
         }
 
         function handleActivityFeedAlert(alertData) {
@@ -1790,8 +1791,11 @@
                 return;
             }
 
-            // Watch streaks and modiversaries arrive as chat event lines.
-            if (isChatEventNoticeAlert(alertData)) {
+            // Modiversaries are text-only and follow their own display toggle.
+            if (isModiversaryNotice(alertData)) {
+                if (showModiversary) {
+                    addActivityEventMessage(alertData);
+                }
                 return;
             }
 
@@ -1919,6 +1923,11 @@
             }
 
             if (messageData.type === 'event') {
+                var eventKind = String(messageData.event_kind || '').trim().toLowerCase();
+                if (eventKind === 'modiversary' && !showModiversary) {
+                    chatLog('Suppressing modiversary chat line (ShowModiversary disabled)');
+                    return;
+                }
                 var eventElement = document.createElement('li');
                 eventElement.className = 'chat-message event-message';
                 eventElement.id = 'msg-' + (messageData.id || Date.now());
@@ -3520,6 +3529,9 @@
             if (settings.alertShowMediaEvent !== undefined) {
                 alertShowMediaEvent = settings.alertShowMediaEvent;
             }
+            if (settings.showModiversary !== undefined) {
+                showModiversary = settings.showModiversary;
+            }
             if (settings.eventFontSize !== undefined) {
                 eventFontSize = Number(settings.eventFontSize);
             }
@@ -3891,6 +3903,9 @@
             if (config.AlertShowMediaEvent !== undefined) {
                 alertShowMediaEvent = !!config.AlertShowMediaEvent;
             }
+            if (config.ShowModiversary !== undefined) {
+                showModiversary = !!config.ShowModiversary;
+            }
             if (config.EventFontSize !== undefined) {
                 eventFontSize = Number(config.EventFontSize);
             }
@@ -3920,6 +3935,7 @@
                 alertShowActivitySummary: alertShowActivitySummary,
                 alertShowTwitchChat: alertShowTwitchChat,
                 alertShowMediaEvent: alertShowMediaEvent,
+                showModiversary: showModiversary,
                 eventFontSize: eventFontSize,
                 alertMediaScale: alertMediaScale,
                 filterUnknownSlashCommands: filterUnknownSlashCommands,

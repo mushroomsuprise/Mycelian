@@ -372,5 +372,39 @@ class FeedCardSkipTests(unittest.TestCase):
             feed.activity_feed_state.current_alerts_container = previous
 
 
+class ChatStreakMediaTests(unittest.TestCase):
+    def _resolve(self, alerts: dict, streak_count: int):
+        with (
+            patch.object(alertutils.alert_state_manager, "initialize"),
+            patch.object(
+                alertutils.alert_state_manager,
+                "get_alerts_by_type",
+                return_value=alerts,
+            ),
+        ):
+            return alertutils.resolve_chat_alert_media(
+                {"badge_type": "streak", "streak_count": streak_count}
+            )
+
+    def test_exact_streak_alert_provides_chat_media(self) -> None:
+        media = self._resolve(
+            {
+                "streaks4": {"gif_dir": "/alerts", "gif_name": "streak4.gif"},
+                "streaks1": {"gif_dir": "/alerts", "gif_name": "default.gif"},
+            },
+            4,
+        )
+        self.assertEqual(
+            media, {"gif_dir": "/alerts", "gif_name": "streak4.gif"}
+        )
+
+    def test_unmatched_streak_does_not_use_default_alert(self) -> None:
+        media = self._resolve(
+            {"streaks1": {"gif_dir": "/alerts", "gif_name": "default.gif"}},
+            4,
+        )
+        self.assertIsNone(media)
+
+
 if __name__ == "__main__":
     unittest.main()

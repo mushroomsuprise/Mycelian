@@ -2677,16 +2677,25 @@ _CHAT_ACTIVITY_ONLY_ALERT_TYPES = frozenset(
     {
         "point",
         "points",
-        "streak",
-        "streaks",
-        "watch_streak",
-        "watchstreak",
         "hype_train",
         "hypetrain",
     }
 )
 _CHAT_MEDIA_RICH_ALERT_TYPES = frozenset(
-    {"follow", "sub", "resub", "giftsub", "bit", "bits", "donation", "raid"}
+    {
+        "follow",
+        "sub",
+        "resub",
+        "giftsub",
+        "bit",
+        "bits",
+        "donation",
+        "raid",
+        "streak",
+        "streaks",
+        "watch_streak",
+        "watchstreak",
+    }
 )
 _CHAT_PREVIEW_PLACEHOLDER_DIR = "/assets/default_assets/images"
 _CHAT_PREVIEW_PLACEHOLDER_GIFS = (
@@ -2848,6 +2857,18 @@ def _fetch_raid_alert_exact(raider_count: int) -> Optional[AlertObj]:
     )
 
 
+def _fetch_streak_alert_exact(streak_count: int) -> Optional[AlertObj]:
+    """Exact streaks{N} or range match only — no default/fallback alerts."""
+    alert_state_manager.initialize()
+    alerts = alert_state_manager.get_alerts_by_type("streaks", include_ranges=True)
+    exact_key = "streaks" + str(streak_count)
+    if exact_key in alerts:
+        return _alert_obj_from_db(alerts[exact_key])
+    return _find_range_amount_alert(
+        alerts, streak_count, prefix="streaks", prefix_strip_len=7
+    )
+
+
 def _fetch_chat_alert_for_media(alert_type: str, alert_data: dict) -> Optional[AlertObj]:
     """
     Resolve alert config for chat media-rich blocks.
@@ -2905,6 +2926,15 @@ def _fetch_chat_alert_for_media(alert_type: str, alert_data: dict) -> Optional[A
         if count_int < 1:
             return None
         return _fetch_raid_alert_exact(count_int)
+    if at in ("streak", "streaks", "watch_streak", "watchstreak"):
+        count = _chat_alert_lookup(alert_data, "streak_count")
+        try:
+            count_int = int(count) if count is not None else 0
+        except (TypeError, ValueError):
+            count_int = 0
+        if count_int < 1:
+            return None
+        return _fetch_streak_alert_exact(count_int)
     return None
 
 
