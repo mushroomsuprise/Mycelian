@@ -5409,14 +5409,16 @@ _CHANNEL_POINTS_ICON_CACHE_TTL = 3600.0
 _channel_points_unlocked: bool | None = None
 _channel_points_fetch_lock = threading.Lock()
 
+# Twitch's website client id. gql.twitch.tv rejects third-party Helix client ids
+# and user tokens. The currency icon is public, so this call sends no Authorization.
+_TWITCH_GQL_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1igb"
+
 _CHANNEL_POINTS_ICON_GQL = """
 query ChannelPointsChannelSettings($channelID: ID!) {
   channel(id: $channelID) {
-    communityPoints {
-      settings {
-        image { url url2x url4x }
-        defaultImage { url url2x url4x }
-      }
+    communityPointsSettings {
+      image { url url2x url4x }
+      defaultImage { url url2x url4x }
     }
   }
 }
@@ -5437,6 +5439,36 @@ def _normalize_points_image(img: Optional[dict]) -> Optional[dict[str, str]]:
         "url_2x": url_2x or primary,
         "url_4x": url_4x or primary,
     }
+
+
+def _icon_from_channel_points_settings(
+    settings: Optional[dict],
+) -> Optional[dict[str, str]]:
+    """Prefer the channel's custom currency icon, then Twitch's default icon."""
+    if not settings or not isinstance(settings, dict):
+        return None
+    custom = _normalize_points_image(settings.get("image"))
+    if custom:
+        return custom
+    return _normalize_points_image(settings.get("defaultImage"))
+
+
+def _icon_from_channel_points_gql_response(data) -> Optional[dict[str, str]]:
+    """Parse a ChannelPointsChannelSettings GQL payload.
+
+    GraphQL errors are logged. An empty or missing ``data`` object is not an
+    icon. A null ``image`` falls through to ``defaultImage``.
+    """
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        return None
+    entry = data[0]
+    errors = entry.get("errors")
+    if errors:
+        logger.debug("Channel points GQL errors: %s", errors)
+    channel = (entry.get("data") or {}).get("channel") or {}
+    if not isinstance(channel, dict):
+        return None
+    return _icon_from_channel_points_settings(channel.get("communityPointsSettings"))
 
 
 def clear_channel_points_icon_cache(broadcaster_id: Optional[str] = None) -> None:
@@ -5477,50 +5509,37 @@ async def fetch_channel_points_currency_icon_async(
 
     icon_urls: Optional[dict[str, str]] = None
 
-    if twitch_api and twitch_api.auth_token and twitch_api.client_id:
-        payload = [
-            {
-                "operationName": "ChannelPointsChannelSettings",
-                "variables": {"channelID": cache_key},
-                "query": _CHANNEL_POINTS_ICON_GQL,
-            }
-        ]
-        headers = {
-            "Client-Id": twitch_api.client_id,
-            "Authorization": f"Bearer {twitch_api.auth_token}",
-            "Content-Type": "application/json",
+    payload = [
+        {
+            "operationName": "ChannelPointsChannelSettings",
+            "variables": {"channelID": cache_key},
+            "query": _CHANNEL_POINTS_ICON_GQL,
         }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://gql.twitch.tv/gql",
-                    json=payload,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=15),
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if isinstance(data, list) and data:
-                            channel = (
-                                (data[0].get("data") or {}).get("channel") or {}
-                            )
-                            settings = (
-                                (channel.get("communityPoints") or {}).get("settings")
-                                or {}
-                            )
-                            icon_urls = _normalize_points_image(settings.get("image"))
-                            if not icon_urls:
-                                icon_urls = _normalize_points_image(
-                                    settings.get("defaultImage")
-                                )
-                    else:
-                        logger.debug(
-                            "Channel points GQL returned HTTP %s", response.status
-                        )
-        except Exception as e:
-            logger.debug(
-                "Channel points currency icon GQL failed: %s", e, exc_info=True
-            )
+    ]
+    headers = {
+        "Client-Id": _TWITCH_GQL_CLIENT_ID,
+        "Content-Type": "application/json",
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://gql.twitch.tv/gql",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as response:
+                if response.status == 200:
+                    icon_urls = _icon_from_channel_points_gql_response(
+                        await response.json()
+                    )
+                else:
+                    logger.debug(
+                        "Channel points GQL returned HTTP %s", response.status
+                    )
+    except Exception as e:
+        logger.debug(
+            "Channel points currency icon GQL failed: %s", e, exc_info=True
+        )
 
     if not icon_urls:
         icon_urls = await _helix_fallback_channel_points_icon()
