@@ -17,7 +17,7 @@ Alerts:
     [x] - Add toggle setting to the alerts template that will let users switch the alert gif to be the "gigantified emote" when it comes from that reward (default off). Also add a setting toggle to display the gigantifed emote larger (default 3x larger) in the alert message chat (default off). We will need to set up a way that tells the template that it is a gigantified emote and not just a normal bit donation.
 
 Web Engine:
-    [] - Add a local-only filter for access to the served routes. Since we listen on all connections now, we should make sure any external addresses are blocked, and only local connections can be made.
+    [x] - Add a local-only filter for access to the served routes. Since we listen on all connections now, we should make sure any external addresses are blocked, and only local connections can be made.
 
 Containers:
     [] - Add a "container" system that will allow users to merge multiple templates into a single web route. This will need to be setup in Spore Studio. Note: this should not physically combine them into a single HTML file, but instead just load each HTML file into a single route. 

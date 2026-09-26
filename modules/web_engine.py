@@ -29,6 +29,7 @@ import dataclasses  # Added for converting PSNData to dict
 import errno
 import faulthandler
 import glob
+import ipaddress
 import json
 import logging
 import os
@@ -309,6 +310,76 @@ _TC_NO_COALESCE_MARKERS = (
 
 def _is_localhost_remote_addr(addr: Optional[str]) -> bool:
     return (addr or "").strip().lower() in _LOCALHOST_REMOTE_ADDRS
+
+
+# TCP peers allowed to load overlay routes. Public internet addresses are not
+# in this list. 100.64.0.0/10 is shared address space (Tailscale, CGNAT), not
+# a globally routable range.
+_LOCAL_CLIENT_NETWORKS = (
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+)
+_FORBIDDEN_BODY = b"Forbidden"
+
+
+def is_local_client_addr(addr: Optional[str]) -> bool:
+    """True when *addr* is loopback or another non-public local-network address.
+
+    *addr* is the TCP peer (``REMOTE_ADDR``), never a forwarded header.
+    Brackets and an IPv6 zone id are stripped, and IPv4-mapped IPv6 is
+    unwrapped. Empty or unparseable values are rejected.
+    """
+    raw = (addr or "").strip()
+    if not raw:
+        return False
+    if raw.startswith("[") and "]" in raw:
+        raw = raw[1 : raw.index("]")]
+    if "%" in raw:
+        raw = raw.split("%", 1)[0].strip()
+    try:
+        parsed = ipaddress.ip_address(raw)
+    except ValueError:
+        return False
+    mapped = getattr(parsed, "ipv4_mapped", None)
+    if mapped is not None:
+        parsed = mapped
+    for network in _LOCAL_CLIENT_NETWORKS:
+        if parsed.version == network.version and parsed in network:
+            return True
+    return False
+
+
+class LocalOnlyMiddleware:
+    """Reject overlay requests whose TCP peer is not a local-network address."""
+
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        addr = environ.get("REMOTE_ADDR") or ""
+        if is_local_client_addr(addr):
+            return self.app(environ, start_response)
+        path = environ.get("PATH_INFO") or ""
+        logger.warning(
+            "Rejected non-local client %s %s",
+            addr or "unknown",
+            path,
+        )
+        start_response(
+            "403 Forbidden",
+            [
+                ("Content-Type", "text/plain; charset=utf-8"),
+                ("Content-Length", str(len(_FORBIDDEN_BODY))),
+            ],
+        )
+        return [_FORBIDDEN_BODY]
 
 
 def _reject_non_localhost_socket() -> bool:
@@ -1120,6 +1191,9 @@ class WebEngine:
             logger=False,  # Disable engineio debug logging
             engineio_logger=False,
         )
+        # Outermost WSGI layer so /socket.io (which SocketIO handles before
+        # Flask) is filtered on the TCP peer, not X-Forwarded-For.
+        self.app.wsgi_app = LocalOnlyMiddleware(self.app.wsgi_app)
 
         # Throttle for the per-request maintenance hooks below (safety net for
         # the workers armed at startup in run()); only touched on the server
@@ -5706,6 +5780,10 @@ class WebEngine:
 
         @self.socketio.on("connect")
         def handle_connect():
+            peer = getattr(request, "remote_addr", None)
+            if not is_local_client_addr(peer):
+                logger.warning("Rejected Socket.IO connect from %s", peer)
+                return False
             connected = self._socket_client_connected()
             self._log_socket_lifecycle("connected", request.sid, connected)
 
