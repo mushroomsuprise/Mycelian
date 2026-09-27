@@ -1585,6 +1585,7 @@ FILTER_KEYS = (
     "donations",
     "raids",
     "streaks",
+    "modiversaries",
     "hype_train",
 )
 _LIVE_ALERT_UI_KEYS = frozenset(
@@ -1740,6 +1741,7 @@ class ActivityFeedState:
             "Donation": "donations",
             "Raid": "raids",
             "Streak": "streaks",
+            "Modiversary": "modiversaries",
             "Hype Train": "hype_train",
             # YouTube-native labels (map onto existing filter chips)
             "Membership": "subs",
@@ -3778,6 +3780,7 @@ def create_activity_feed_tab():
                             create_checkbox("donations", "Donations")
                             create_checkbox("raids", "Raids")
                             create_checkbox("streaks", "Watch streaks")
+                            create_checkbox("modiversaries", "Modiversaries")
                             create_checkbox("hype_train", "Hype Train")
 
         with ui.row().classes("tab-row activity-feed-tab-row"):
@@ -4062,6 +4065,7 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             "point": "Points",
             "raid": "Raid",
             "donation": "Donation",
+            "modiversary": "Modiversary",
             "hype_train_start": "Hype Train",
             "hype_train_progress": "Hype Train",
             "hype_train_end": "Hype Train",
@@ -4749,6 +4753,7 @@ def _accumulate_condensed_alert(
     user_alerts: Dict[str, Dict[str, Any]],
     filter_state: Dict[str, Any],
     type_to_filter: Dict[str, str],
+    search: Optional[str] = None,
 ) -> str:
     """Fold one alert into condensed grouping. Returns ok, excluded, or unknown."""
     import re
@@ -4767,7 +4772,11 @@ def _accumulate_condensed_alert(
         or (filter_key and filter_state.get(filter_key, True))
     ):
         return "excluded"
-    if not _alert_matches_search(alert_data):
+    if search is None:
+        search_match = _alert_matches_search(alert_data)
+    else:
+        search_match = _alert_matches_search(alert_data, str(search).strip().lower())
+    if not search_match:
         return "excluded"
 
     username = alert_data.get("username")
@@ -4953,6 +4962,7 @@ def _accumulate_condensed_alert(
 def _group_alerts_for_condensed(
     alerts_to_process: List[Dict[str, Any]],
     filter_state: Optional[Dict[str, Any]] = None,
+    search: Optional[str] = None,
 ):
     """Group alerts by user and type for the condensed view (CPU-only)."""
     user_alerts: Dict[str, Dict[str, Any]] = {}
@@ -4968,7 +4978,7 @@ def _group_alerts_for_condensed(
             continue
         try:
             result = _accumulate_condensed_alert(
-                alert_data, user_alerts, filter_state, type_to_filter
+                alert_data, user_alerts, filter_state, type_to_filter, search
             )
         except Exception as exc:
             excluded_count += 1
@@ -5058,6 +5068,7 @@ def _condensed_view_model(build_data: Dict[str, Any]) -> Dict[str, Any]:
 def build_condensed_overlay_payload(
     hours: Any = 12,
     filter_state: Optional[Dict[str, Any]] = None,
+    search: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Collect, group, and serialize condensed view data for the overlay."""
     parsed_hours = parse_condensed_historical_hours(hours)
@@ -5079,7 +5090,7 @@ def build_condensed_overlay_payload(
         live_in_window = 0
 
     user_alerts, excluded_count, unknown_username_count = _group_alerts_for_condensed(
-        alerts_to_process, filter_state=filter_state
+        alerts_to_process, filter_state=filter_state, search=search
     )
     groups = serialize_condensed_groups(user_alerts)
     return {
@@ -5092,6 +5103,7 @@ def build_condensed_overlay_payload(
         "user_count": len(groups),
         "excluded_count": excluded_count,
         "unknown_username_count": unknown_username_count,
+        "search": None if search is None else str(search),
     }
 
 

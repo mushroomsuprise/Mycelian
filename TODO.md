@@ -2,10 +2,10 @@ Legacy Templates:
     [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
 Twitch:
-    [] - Fix new sub filter logic. it appears all new subs are still not being played
+    [x] - Fix new sub filter logic. it appears all new subs are still not being played
 
 Chat Template:
-    [] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.
+    [x] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.
     [x] - Fix colorized usernames when a chatter does not have a specific global color picked out. It is currently making them all white.
     [x] - Fix stream streak event messages not being displayed
     [x] - Fix channel point icon so it displays the custom icon made by the user, and not the generic Twitch icon (unless no custom icon is set). Need to check the docs for where to get it.

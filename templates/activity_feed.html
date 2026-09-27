@@ -186,6 +186,21 @@
         }
 
         /* Filter dropdown styling */
+        .feed-search {
+            width: 11rem;
+            flex: 0 0 auto;
+            background: transparent;
+            border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.24));
+            border-radius: 4px;
+            color: var(--color-text-primary, rgba(255, 255, 255, 0.9));
+            padding: 4px 8px;
+            font-size: var(--control-font-size, 11px);
+        }
+
+        .feed-search::placeholder {
+            color: var(--color-text-muted, rgba(255, 255, 255, 0.45));
+        }
+
         .filter-container {
             position: relative;
         }
@@ -1039,6 +1054,11 @@
 
                 <div class="flex-grow"></div>
 
+                <input id="feedSearch" class="feed-search" type="search"
+                    placeholder="User or message"
+                    title="Show alerts whose username or message matches"
+                    autocomplete="off">
+
                 <!-- Condense List toggle (only visible on Current Alerts tab) -->
                 <div id="condenseToggleContainer" class="condense-toggle-container">
                     <label class="condense-toggle-label">
@@ -1048,8 +1068,8 @@
                     </label>
                 </div>
 
-                <!-- Filter dropdown: condensed feed only -->
-                <div id="filterContainer" class="filter-container" style="display: none;">
+                <!-- Type filters apply to card lists and the condensed feed -->
+                <div id="filterContainer" class="filter-container">
                     <button id="filterBtn" class="control-button">
                         <i class="material-icons">filter_list</i>
                         <span>FILTERS</span>
@@ -1096,6 +1116,10 @@
                             <div class="filter-checkbox">
                                 <input type="checkbox" id="filter-streaks" checked>
                                 <label for="filter-streaks">Watch streaks</label>
+                            </div>
+                            <div class="filter-checkbox">
+                                <input type="checkbox" id="filter-modiversaries" checked>
+                                <label for="filter-modiversaries">Modiversaries</label>
                             </div>
                             <div class="filter-checkbox">
                                 <input type="checkbox" id="filter-hype_train" checked>
@@ -1295,6 +1319,7 @@
                 donations: true,
                 raids: true,
                 streaks: true,
+                modiversaries: true,
                 hype_train: true
             },
             currentTab: "current",  // "current" or "previous"
@@ -1305,7 +1330,26 @@
             pauseStatus: false,
             muteStatus: false,
             condenseList: false,  // Track condense list toggle state
-            loadingForCondensedView: false  // Track if we're loading data for condensed view
+            loadingForCondensedView: false,  // Track if we're loading data for condensed view
+            searchText: ""
+        };
+        var ALERT_TYPE_TO_FILTER = {
+            "Follow": "follows",
+            "Sub": "subs",
+            "Resub": "resubs",
+            "Giftsub": "giftsubs",
+            "Bits": "bits",
+            "Points": "points",
+            "Donation": "donations",
+            "Raid": "raids",
+            "Streak": "streaks",
+            "Modiversary": "modiversaries",
+            "Hype Train": "hype_train",
+            "Membership": "subs",
+            "Member Milestone": "resubs",
+            "Gift Membership": "giftsubs",
+            "Super Chat": "donations",
+            "Super Sticker": "donations"
         };
         var LIVE_ALERTS_CAP = 500;
         var appliedViewRevision = null;
@@ -1410,6 +1454,7 @@
         var previousTabBtn = document.getElementById('previousTabBtn');
         var filterBtn = document.getElementById('filterBtn');
         var filterDropdown = document.getElementById('filterDropdown');
+        var feedSearch = document.getElementById('feedSearch');
         var currentAlertsFeed = document.getElementById('currentAlertsFeed');
         var previousAlertsFeed = document.getElementById('previousAlertsFeed');
         var paginationContainer = document.getElementById('paginationContainer');
@@ -1610,6 +1655,8 @@
                         }
                     }
 
+                    applyCardVisibility(enhancedAlertData);
+
                     while (currentAlertsFeed.children.length > LIVE_ALERTS_CAP) {
                         currentAlertsFeed.removeChild(currentAlertsFeed.lastChild);
                     }
@@ -1677,28 +1724,66 @@
         }
 
         function condensedFiltersVisible() {
-            return activityFeedState.currentTab === "current" && activityFeedState.condenseList;
+            return activityFeedState.currentTab === "current" || activityFeedState.currentTab === "previous";
         }
 
         function syncFilterControls() {
             var host = document.getElementById('filterContainer');
-            if (!host) {
+            var visible = condensedFiltersVisible();
+            if (host) {
+                host.style.display = visible ? '' : 'none';
+            }
+            if (feedSearch) {
+                feedSearch.style.display = visible ? '' : 'none';
+            }
+            if (!visible) {
+                filterDropdownVisible = false;
+                if (filterDropdown) {
+                    filterDropdown.classList.remove('filter-dropdown-visible');
+                    filterDropdown.classList.add('hidden');
+                }
+            }
+        }
+
+        function alertMatchesTypeFilter(alertData) {
+            var filters = activityFeedState.filterState || {};
+            var key = ALERT_TYPE_TO_FILTER[alertData.type || ""];
+            return !!(filters.all || (key && filters[key]));
+        }
+
+        function alertMatchesSearch(alertData) {
+            var query = (activityFeedState.searchText || "").trim().toLowerCase();
+            if (!query) {
+                return true;
+            }
+            var haystack = [
+                alertData.username || "",
+                alertData.message || "",
+                alertData.user_message || ""
+            ].join(" ").toLowerCase();
+            return haystack.indexOf(query) !== -1;
+        }
+
+        function cardShouldShow(alertData) {
+            return alertMatchesTypeFilter(alertData) && alertMatchesSearch(alertData);
+        }
+
+        function applyCardVisibility(alertData) {
+            if (!alertData || !alertData.element) {
                 return;
             }
-            if (condensedFiltersVisible()) {
-                host.style.display = '';
-                return;
-            }
-            host.style.display = 'none';
-            filterDropdownVisible = false;
-            if (filterDropdown) {
-                filterDropdown.classList.remove('filter-dropdown-visible');
-                filterDropdown.classList.add('hidden');
+            if (cardShouldShow(alertData)) {
+                alertData.element.classList.remove('hidden');
+                alertData.element.classList.add('visible');
+                alertData.element.style.display = 'flex';
+            } else {
+                alertData.element.classList.remove('visible');
+                alertData.element.classList.add('hidden');
+                alertData.element.style.display = 'none';
             }
         }
 
         function updateAlertVisibility() {
-            // Get the appropriate alert collection based on current tab
             var alertsToProcess = [];
 
             if (activityFeedState.currentTab === "current") {
@@ -1707,14 +1792,7 @@
                 alertsToProcess = activityFeedState.historicalAlerts;
             }
 
-            alertsToProcess.forEach(function (alertData) {
-                if (!alertData.element) {
-                    return;
-                }
-                alertData.element.classList.remove('hidden');
-                alertData.element.classList.add('visible');
-                alertData.element.style.display = 'flex';
-            });
+            alertsToProcess.forEach(applyCardVisibility);
         }
 
         function updateTimestamps() {
@@ -2093,6 +2171,7 @@
             activityFeedState.liveAlerts.forEach(function (alertData) {
                 var alertElement = createAlertElement(alertData);
                 currentAlertsFeed.appendChild(alertElement);
+                applyCardVisibility(alertData);
             });
 
             console.log('Rebuilt current alerts feed with', activityFeedState.liveAlerts.length, 'live alerts');
@@ -2156,7 +2235,9 @@
             console.log('Loading alerts for condensed view from past', condenseHistoricalHours, 'hours...');
 
             socket.emit('get_condensed_view_alerts', {
-                hours: condenseHistoricalHours
+                hours: condenseHistoricalHours,
+                filters: activityFeedState.filterState,
+                search: activityFeedState.searchText || ""
             });
         }
 
@@ -2470,6 +2551,7 @@
                 } else {
                     showRegularFeedHideCondensed();
                     rebuildCurrentAlertsFeed();
+                    updateAlertVisibility();
                 }
             }
             syncFilterControls();
@@ -2542,6 +2624,9 @@
                     }
 
                     updateAlertVisibility();
+                    if (activityFeedState.condenseList && activityFeedState.currentTab === "current") {
+                        updateCondensedView();
+                    }
                     var changedFilter = {};
                     changedFilter[key] = activityFeedState.filterState[key];
                     emitViewPatch({ filters: changedFilter });
@@ -2671,8 +2756,26 @@
         // New socket listener specifically for condensed view alerts
         socket.on('condensed_view_alerts', function (data) {
             console.log('Received condensed view groups:', data);
+            var localSearch = activityFeedState.searchText || "";
+            var payloadSearch = data && typeof data.search === "string" ? data.search : null;
+            if (localSearch && activityFeedState.condenseList &&
+                activityFeedState.currentTab === "current" &&
+                payloadSearch !== localSearch) {
+                updateCondensedView();
+                return;
+            }
             createCondensedViewWithData(data);
         });
+
+        if (feedSearch) {
+            feedSearch.addEventListener('input', function () {
+                activityFeedState.searchText = feedSearch.value || "";
+                updateAlertVisibility();
+                if (activityFeedState.condenseList && activityFeedState.currentTab === "current") {
+                    updateCondensedView();
+                }
+            });
+        }
 
         socket.on('activity_feed_view', function (data) {
             if (!data || data.success === false || data.revision === undefined || data.revision === null) {

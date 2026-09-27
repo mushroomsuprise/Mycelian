@@ -7536,19 +7536,27 @@ class WebEngine:
 
                 from modules.uiwindows.activity_feed import (
                     build_condensed_overlay_payload,
+                    normalize_filter_state,
                     parse_condensed_historical_hours,
                     view_manager,
                 )
 
                 hours = parse_condensed_historical_hours(data.get("hours", 12))
-                filters = view_manager.load()["filters"]
+                raw_filters = data.get("filters")
+                if isinstance(raw_filters, dict):
+                    filters = normalize_filter_state(raw_filters)
+                else:
+                    filters = view_manager.load()["filters"]
+                search = data.get("search")
+                if search is not None:
+                    search = str(search)
 
                 logger.debug(
                     "Loading condensed view groups for past %s hours", hours
                 )
 
                 response = build_condensed_overlay_payload(
-                    hours=hours, filter_state=filters
+                    hours=hours, filter_state=filters, search=search
                 )
 
                 self.socketio.emit("condensed_view_alerts", response, to=request.sid)
