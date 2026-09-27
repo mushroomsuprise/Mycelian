@@ -20,7 +20,7 @@ Web Engine:
     [x] - Add a local-only filter for access to the served routes. Since we listen on all connections now, we should make sure any external addresses are blocked, and only local connections can be made.
 
 OBS Integration:
-    [] - Add a button to the cards on the Settings>About page's template routes, to add them as browser sources to OBS. Clicking this button should either throw an error if OBS websocket is not configured and/or connected, or open a small dialog to allow the user to select what Scene to add the source to, its resolution values, and checkboxes for the 4 OBS options (Control audio via OBS, Use custom frame rate, Shutdown source when not visible, Refresh browser source when scene becomes active). Custom CSS should be empty for Mycelian sources.
+    [x] - Add a button to the cards on the Settings>About page's template routes, to add them as browser sources to OBS. Clicking this button should either throw an error if OBS websocket is not configured and/or connected, or open a small dialog to allow the user to select what Scene to add the source to, its resolution values, and checkboxes for the 4 OBS options (Control audio via OBS, Use custom frame rate, Shutdown source when not visible, Refresh browser source when scene becomes active). Custom CSS should be empty for Mycelian sources. "Add to OBS" button should be placed to the right of the copy URL button, and should just show the OBS icon instead of text
 
 Containers:
     [x] - Add a "container" system that will allow users to merge multiple templates into a single web route. This will need to be setup in Spore Studio. Note: this should not physically combine them into a single HTML file, but instead just load each HTML file into a single route. 

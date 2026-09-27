@@ -2341,6 +2341,39 @@ body:not(.body--dark) .notification-tray-badge {
     border: 1px solid var(--color-primary) !important;
 }
 
+.source-url-card .source-url-card-obs.q-btn {
+    height: 28px !important;
+    min-height: 28px !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    padding: 0 !important;
+    flex-shrink: 0;
+}
+
+.source-url-card .source-url-card-obs.q-btn--outline:before {
+    border: 1px solid var(--color-primary) !important;
+}
+
+.source-url-card .source-url-card-obs .q-btn__content {
+    padding: 0;
+    min-height: 0;
+}
+
+.source-url-card .source-url-card-obs-icon {
+    display: flex;
+    line-height: 0;
+}
+
+.source-url-card .source-url-card-obs-icon svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+}
+
+.source-url-card .source-url-card-obs-icon svg path {
+    fill: var(--color-primary) !important;
+}
+
 .source-url-card .q-field {
     width: 100%;
     margin-bottom: 0 !important;

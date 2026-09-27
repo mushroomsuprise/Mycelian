@@ -278,6 +278,8 @@ Browser sources allow you to display Mycelian overlays, [alerts](help:alerts_ove
 
 ## Adding a Browser Source
 
+From **Settings → About**, the OBS button on a source card creates the browser source when OBS WebSocket is connected.
+
 1. In OBS, right-click in the **Sources** panel
 2. Select **"Browser"** or **"Browser Source"**
 3. Configure the source:

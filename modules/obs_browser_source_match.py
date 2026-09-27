@@ -43,6 +43,50 @@ def normalize_overlay_path(path: str) -> str:
     return p or "/"
 
 
+def _browser_url_port(parsed: ParseResult) -> Optional[int]:
+    if parsed.port is not None:
+        return int(parsed.port)
+    scheme = (parsed.scheme or "").lower()
+    if scheme == "https":
+        return 443
+    if scheme == "http" or not scheme:
+        return 80
+    return None
+
+
+def browser_urls_same_template(left: Any, right: Any) -> bool:
+    """True when two browser-source URLs are the same template.
+
+    Compares path and port. ``localhost`` and ``127.0.0.1`` count as the same
+    host. Query strings and source names are ignored.
+    """
+    parsed_left = parse_browser_source_url(left)
+    parsed_right = parse_browser_source_url(right)
+    if parsed_left is None or parsed_right is None:
+        return False
+    left_path = normalize_overlay_path(parsed_left.path or "/").lower()
+    right_path = normalize_overlay_path(parsed_right.path or "/").lower()
+    if left_path != right_path:
+        return False
+    if _browser_url_port(parsed_left) != _browser_url_port(parsed_right):
+        return False
+    host_left = (parsed_left.hostname or "").strip().lower()
+    host_right = (parsed_right.hostname or "").strip().lower()
+    if not host_left or not host_right:
+        return False
+    if host_left == host_right:
+        return True
+    return is_local_overlay_host(host_left) and is_local_overlay_host(host_right)
+
+
+def scene_has_template_url(urls: Any, template_url: Any) -> bool:
+    """True when any URL in *urls* is the same template as *template_url*."""
+    for url in urls or []:
+        if browser_urls_same_template(url, template_url):
+            return True
+    return False
+
+
 def is_local_overlay_host(host: str) -> bool:
     h = (host or "").strip().lower().strip("[]")
     return h in _LOCAL_HOSTS

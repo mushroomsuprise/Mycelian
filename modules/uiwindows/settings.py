@@ -32,7 +32,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 import aiohttp
-from nicegui import ui
+from nicegui import run, ui
 from ..notification_engine import notify
 from ..ui_buttons import outline_button
 from ..ui_timer import layout_schedule
@@ -50,8 +50,9 @@ from ..build_info import resolve_build_number
 from ..log_parser import get_actionable_errors, get_log_dir
 from ..path_utils import get_working_directory, reveal_in_file_manager
 from ..startup_profiler import StartupTimer, log_startup_summary
+from ..ui_form_controls import form_input, form_number, form_select
 from ..ui_settings_layout import settings_header, settings_section, settings_surface
-from .service_brand_icons import service_tab_icon
+from .service_brand_icons import SERVICE_BRAND_SVG, service_tab_icon
 
 # from ..psnapi import PSNClient # No longer needed here for status display
 
@@ -3468,6 +3469,21 @@ class SettingsUI:
                                             copy_btn.tooltip(
                                                 "Copy URL to clipboard"
                                             )
+                                            obs_btn = ui.button(
+                                                "",
+                                                on_click=lambda _=None, info=url_info: self._prompt_add_source_to_obs(
+                                                    info
+                                                ),
+                                            ).props(
+                                                "size=sm outline color=primary"
+                                            ).classes("source-url-card-obs")
+                                            with obs_btn:
+                                                ui.html(
+                                                    SERVICE_BRAND_SVG["obs"],
+                                                    tag="span",
+                                                    sanitize=False,
+                                                ).classes("source-url-card-obs-icon")
+                                            obs_btn.tooltip("Add to OBS")
 
                                         url_input = ui.input(
                                             value=url_info["url"]
@@ -3605,6 +3621,301 @@ class SettingsUI:
                 type="warning",
                 timeout=4000,
             )
+
+    def _prompt_add_source_to_obs(self, url_info: dict) -> None:
+        """Open the add-to-OBS dialog, or notify when WebSocket is unavailable."""
+        from ..obs_service import obs_service
+
+        if not obs_service.is_enabled():
+            notify(
+                "OBS WebSocket is not enabled. Turn it on in Settings → OBS.",
+                type="negative",
+            )
+            return
+        if not obs_service.is_connected():
+            notify("OBS WebSocket is not connected.", type="negative")
+            return
+
+        async def _open() -> None:
+            ok, err = await run.io_bound(obs_service.refresh_snapshot_blocking, 12.0)
+            if not obs_service.is_connected():
+                notify("OBS WebSocket is not connected.", type="negative")
+                return
+            if not ok:
+                notify(
+                    f"Could not load OBS scenes: {err or 'snapshot failed'}",
+                    type="negative",
+                )
+                return
+            snap = obs_service.get_connector_snapshot()
+            scenes = [
+                str(name)
+                for name in (snap.get("scene_names") or [])
+                if str(name).strip()
+            ]
+            if not scenes:
+                notify("OBS has no scenes to add a source to.", type="negative")
+                return
+            scan_ok, scan = await run.io_bound(
+                obs_service.list_scene_browser_urls_blocking, 12.0
+            )
+            if not scan_ok:
+                scan = {
+                    "taken_names": list(snap.get("input_names") or []) + list(scenes),
+                    "urls_by_scene": {},
+                }
+            self._show_add_to_obs_dialog(url_info, snap, scenes, scan)
+
+        layout_schedule(0, _open, once=True)
+
+    def _show_add_to_obs_dialog(
+        self, url_info: dict, snap: dict, scenes: List[str], scan: dict
+    ) -> None:
+        """Scene, source name, resolution, and the four OBS browser-source options."""
+        from functools import partial
+
+        from ..obs_browser_source_match import scene_has_template_url
+        from ..obs_service import adjusted_obs_input_name, obs_service
+
+        title = url_info.get("title") or self._format_source_url_title(
+            str(url_info.get("name") or "")
+        )
+        url = str(url_info.get("url") or "")
+        current = str(snap.get("current_program_scene_name") or "")
+        selected = current if current in scenes else scenes[0]
+        scene_options = {name: name for name in scenes}
+        taken_names = [
+            str(name)
+            for name in (scan.get("taken_names") or [])
+            if str(name).strip()
+        ]
+        if not taken_names:
+            taken_names = [
+                str(name)
+                for name in (snap.get("input_names") or [])
+                if str(name).strip()
+            ]
+            taken_names.extend(scenes)
+        urls_by_scene = scan.get("urls_by_scene") or {}
+        default_name, _default_reason = adjusted_obs_input_name(title, taken_names)
+        name_adjustment = {
+            "from": title if default_name != title else "",
+            "to": default_name if default_name != title else "",
+        }
+
+        with ui.dialog() as dialog, ui.card().classes("w-[420px] max-w-[92vw] p-4"):
+            ui.label("Add to OBS").classes("text-lg font-bold mb-1")
+            ui.label(title).classes("secondary-text text-sm mb-3")
+
+            scene_select = form_select(
+                tooltip="Scene to add the browser source to",
+                options=scene_options,
+                label="Scene",
+                value=selected,
+            ).classes("w-full")
+            scene_warn = ui.label("").classes(
+                "text-theme-warning text-sm break-words mt-1 mb-2"
+            )
+
+            def _sync_scene_warning(*_args: object) -> None:
+                scene_name = str(scene_select.value or "").strip()
+                urls = urls_by_scene.get(scene_name) or []
+                if scene_name and scene_has_template_url(urls, url):
+                    scene_warn.set_text(
+                        f'This template is already a browser source on "{scene_name}".'
+                    )
+                    scene_warn.set_visibility(True)
+                else:
+                    scene_warn.set_text("")
+                    scene_warn.set_visibility(False)
+
+            scene_select.on_value_change(_sync_scene_warning)
+            _sync_scene_warning()
+
+            name_input = form_input(
+                tooltip="Name of the new OBS source",
+                label="Source name",
+                value=default_name,
+            ).classes("w-full")
+            name_note = ui.label("").classes(
+                "text-theme-warning text-sm break-words mt-1 mb-2"
+            )
+
+            def _sync_name_note(*_args: object) -> None:
+                current_name = str(name_input.value or "").strip()
+                if not current_name:
+                    name_note.set_text("")
+                    name_note.set_visibility(False)
+                    return
+                chosen_name, _explanation = adjusted_obs_input_name(
+                    current_name, taken_names
+                )
+                if chosen_name != current_name:
+                    name_note.set_text(
+                        f'A source named "{current_name}" already exists in OBS.'
+                    )
+                    name_note.set_visibility(True)
+                    return
+                origin = str(name_adjustment.get("from") or "")
+                renamed = str(name_adjustment.get("to") or "")
+                if origin and current_name == renamed:
+                    name_note.set_text(
+                        f'A source named "{origin}" already exists in OBS, '
+                        f'so the name was changed to "{renamed}".'
+                    )
+                    name_note.set_visibility(True)
+                    return
+                name_note.set_text("")
+                name_note.set_visibility(False)
+
+            name_input.on_value_change(_sync_name_note)
+            _sync_name_note()
+
+            with ui.row().classes("w-full gap-2 mb-2"):
+                width_input = form_number(
+                    tooltip="Browser source width",
+                    label="Width",
+                    value=1920,
+                    min=1,
+                    step=1,
+                    classes="flex-1",
+                )
+                height_input = form_number(
+                    tooltip="Browser source height",
+                    label="Height",
+                    value=1080,
+                    min=1,
+                    step=1,
+                    classes="flex-1",
+                )
+
+            with ui.column().classes("w-full gap-1 mb-2"):
+                reroute_audio = ui.checkbox(
+                    "Control audio via OBS", value=False
+                ).classes("text-sm")
+                fps_custom = ui.checkbox(
+                    "Use custom frame rate", value=False
+                ).classes("text-sm")
+                fps_wrap = ui.column().classes("w-full pl-7")
+                with fps_wrap:
+                    fps_input = form_number(
+                        tooltip="Custom frame rate",
+                        label="FPS",
+                        value=60,
+                        min=1,
+                        max=1000,
+                        step=1,
+                        classes="w-full",
+                    )
+                fps_wrap.set_visibility(False)
+                fps_custom.on_value_change(
+                    lambda e: fps_wrap.set_visibility(bool(e.value))
+                )
+                shutdown_source = ui.checkbox(
+                    "Shutdown source when not visible", value=True
+                ).classes("text-sm")
+                restart_when_active = ui.checkbox(
+                    "Refresh browser source when scene becomes active",
+                    value=False,
+                ).classes("text-sm")
+
+            def _whole_number(
+                raw: object, label: str, minimum: int, maximum: Optional[int]
+            ):
+                if raw is None or raw == "":
+                    notify(f"{label} is required.", type="negative")
+                    return None
+                try:
+                    if isinstance(raw, float) and not raw.is_integer():
+                        raise ValueError
+                    value = int(raw)
+                except (TypeError, ValueError):
+                    notify(f"{label} must be a whole number.", type="negative")
+                    return None
+                if value < minimum or (maximum is not None and value > maximum):
+                    if maximum is None:
+                        notify(
+                            f"{label} must be at least {minimum}.",
+                            type="negative",
+                        )
+                    else:
+                        notify(
+                            f"{label} must be between {minimum} and {maximum}.",
+                            type="negative",
+                        )
+                    return None
+                return value
+
+            add_btn = None
+
+            def _submit() -> None:
+                scene = str(scene_select.value or "").strip()
+                if not scene or scene not in scenes:
+                    notify("Choose a scene.", type="negative")
+                    return
+                entered_name = str(name_input.value or "").strip()
+                if not entered_name:
+                    notify("Source name is required.", type="negative")
+                    return
+                chosen_name, _explanation = adjusted_obs_input_name(
+                    entered_name, taken_names
+                )
+                if chosen_name != entered_name:
+                    name_adjustment["from"] = entered_name
+                    name_adjustment["to"] = chosen_name
+                    name_input.value = chosen_name
+                    _sync_name_note()
+                    return
+                width = _whole_number(width_input.value, "Width", 1, None)
+                if width is None:
+                    return
+                height = _whole_number(height_input.value, "Height", 1, None)
+                if height is None:
+                    return
+                use_custom_fps = bool(fps_custom.value)
+                fps = None
+                if use_custom_fps:
+                    fps = _whole_number(fps_input.value, "FPS", 1, 1000)
+                    if fps is None:
+                        return
+                if add_btn is not None:
+                    add_btn.disable()
+
+                create = partial(
+                    obs_service.create_browser_source_blocking,
+                    scene_name=scene,
+                    input_name=entered_name,
+                    url=url,
+                    width=width,
+                    height=height,
+                    reroute_audio=bool(reroute_audio.value),
+                    fps_custom=use_custom_fps,
+                    fps=fps,
+                    shutdown=bool(shutdown_source.value),
+                    restart_when_active=bool(restart_when_active.value),
+                )
+
+                async def _create() -> None:
+                    try:
+                        ok, message = await run.io_bound(create)
+                    except Exception as e:
+                        logger.error("Add to OBS failed: %s", e, exc_info=True)
+                        ok, message = False, str(e) or "Could not add the browser source"
+                    if ok:
+                        notify(message, type="positive")
+                        dialog.close()
+                        return
+                    notify(message or "Could not add the browser source.", type="negative")
+                    if add_btn is not None:
+                        add_btn.enable()
+
+                layout_schedule(0, _create, once=True)
+
+            with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                ui.button("Cancel", on_click=dialog.close).props("outline")
+                add_btn = ui.button("Add", on_click=_submit).props("color=primary")
+
+            dialog.open()
 
     def check_for_updates_manual(self):
         """Manual update check triggers the centralized UpdateManager."""

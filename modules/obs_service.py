@@ -114,6 +114,66 @@ def _attr(data: Any, *names: str) -> Any:
     return None
 
 
+def unique_obs_input_name(base: str, existing: Any) -> str:
+    """Return ``base``, or ``base 2``, ``base 3``, … when that input name is taken.
+
+    OBS input names are global. Creating a source with a name that already
+    exists fails, so callers must pass the live input list.
+    """
+    taken = {str(name) for name in (existing or []) if str(name).strip()}
+    name = str(base or "").strip() or "Mycelian"
+    if name not in taken:
+        return name
+    for n in range(2, 10001):
+        candidate = f"{name} {n}"
+        if candidate not in taken:
+            return candidate
+    raise RuntimeError(f'OBS already has a source named "{name}"')
+
+
+def adjusted_obs_input_name(base: str, existing: Any) -> Tuple[str, str]:
+    """Return ``(name, explanation)``.
+
+    Explanation is empty when *base* is already free. Otherwise the name has
+    `` 2``, `` 3``, … appended and the explanation says why.
+    """
+    requested = str(base or "").strip()
+    chosen = unique_obs_input_name(requested, existing)
+    if not requested or chosen == requested:
+        return chosen, ""
+    return chosen, (
+        f'A source named "{requested}" already exists in OBS, '
+        f'so the name was changed to "{chosen}".'
+    )
+
+
+def browser_source_input_settings(
+    url: str,
+    width: int,
+    height: int,
+    *,
+    reroute_audio: bool = False,
+    fps_custom: bool = False,
+    fps: Optional[int] = None,
+    shutdown: bool = True,
+    restart_when_active: bool = False,
+) -> Dict[str, Any]:
+    """OBS browser_source inputSettings. Custom CSS is always empty."""
+    settings: Dict[str, Any] = {
+        "url": str(url or ""),
+        "width": int(width),
+        "height": int(height),
+        "css": "",
+        "reroute_audio": bool(reroute_audio),
+        "fps_custom": bool(fps_custom),
+        "shutdown": bool(shutdown),
+        "restart_when_active": bool(restart_when_active),
+    }
+    if fps_custom:
+        settings["fps"] = int(60 if fps is None else fps)
+    return settings
+
+
 def _gather_transform_overrides(obs_args: Dict[str, Any]) -> Dict[str, Any]:
     """Map catalog snake_case args to OBS sceneItemTransform keys (camelCase)."""
     out: Dict[str, Any] = {}
@@ -157,6 +217,7 @@ class ObsServiceImpl:
             "stream_output_state": "",
             "record_output_active": False,
             "record_output_state": "",
+            "current_program_scene_name": "",
         }
         self._req_client: Any = None
         self._ev_client: Any = None
@@ -252,6 +313,9 @@ class ObsServiceImpl:
                 "stream_output_state": str(self._snapshot.get("stream_output_state") or ""),
                 "record_output_active": bool(self._snapshot.get("record_output_active")),
                 "record_output_state": str(self._snapshot.get("record_output_state") or ""),
+                "current_program_scene_name": str(
+                    self._snapshot.get("current_program_scene_name") or ""
+                ),
             }
 
     def get_connection_phase(self) -> str:
@@ -387,6 +451,14 @@ class ObsServiceImpl:
                 if fut is not None:
                     fut.set_result((False, "OBS is not connected", None))
                 continue
+            if op == "__create_browser_source__":
+                if fut is not None:
+                    fut.set_result((False, "OBS is not connected", None))
+                continue
+            if op == "__scene_browser_urls__":
+                if fut is not None:
+                    fut.set_result((False, "OBS is not connected", None))
+                continue
             if fut is not None:
                 fut.set_result((False, "OBS is not connected", None))
 
@@ -467,6 +539,32 @@ class ObsServiceImpl:
                                 kw.get("port"),
                                 kw.get("template_routes") or [],
                             )
+                            if fut:
+                                fut.set_result((True, None, payload))
+                        except Exception as e:
+                            if fut:
+                                fut.set_result((False, str(e), None))
+                    continue
+                if op == "__create_browser_source__":
+                    if self._req_client is None:
+                        if fut:
+                            fut.set_result((False, "Not connected", None))
+                    else:
+                        try:
+                            payload = self._create_browser_source_locked(kw or {})
+                            if fut:
+                                fut.set_result((True, None, payload))
+                        except Exception as e:
+                            if fut:
+                                fut.set_result((False, str(e), None))
+                    continue
+                if op == "__scene_browser_urls__":
+                    if self._req_client is None:
+                        if fut:
+                            fut.set_result((False, "Not connected", None))
+                    else:
+                        try:
+                            payload = self._scene_browser_urls_locked()
                             if fut:
                                 fut.set_result((True, None, payload))
                         except Exception as e:
@@ -880,10 +978,13 @@ class ObsServiceImpl:
         except Exception:
             pass
 
+        current_program_scene_name = self._current_program_scene_name_locked()
+
         with self._cache_lock:
             self._snapshot["scene_names"] = sorted(set(scene_names), key=lambda x: x.lower())
             self._snapshot["input_names"] = sorted(set(input_names), key=lambda x: x.lower())
             self._snapshot["sources_by_scene"] = by_scene
+            self._snapshot["current_program_scene_name"] = current_program_scene_name
 
     def lookup_browser_source_size(
         self,
@@ -916,6 +1017,81 @@ class ObsServiceImpl:
             return None
         payload = raw[2] if len(raw) > 2 else None
         return payload if isinstance(payload, dict) else None
+
+    def create_browser_source_blocking(
+        self,
+        *,
+        scene_name: str,
+        input_name: str,
+        url: str,
+        width: int,
+        height: int,
+        reroute_audio: bool = False,
+        fps_custom: bool = False,
+        fps: Optional[int] = None,
+        shutdown: bool = True,
+        restart_when_active: bool = False,
+        timeout_s: float = 12.0,
+    ) -> Tuple[bool, str]:
+        """Create a browser source on the OBS worker thread.
+
+        Do not call from the NiceGUI main thread. Returns ``(ok, message)``.
+        The message names the input that was created, which may be suffixed
+        when ``input_name`` is already in use.
+        """
+        if not self.is_connected():
+            return False, "OBS is not connected"
+        fut = self.enqueue_obs_request(
+            "__create_browser_source__",
+            {
+                "scene_name": scene_name,
+                "input_name": input_name,
+                "url": url,
+                "width": width,
+                "height": height,
+                "reroute_audio": reroute_audio,
+                "fps_custom": fps_custom,
+                "fps": fps,
+                "shutdown": shutdown,
+                "restart_when_active": restart_when_active,
+            },
+        )
+        try:
+            raw = fut.result(timeout=timeout_s)
+        except Exception as e:
+            logger.debug("OBS create browser source failed: %s", e)
+            return False, str(e) or "Could not add the browser source"
+        if isinstance(raw, tuple) and raw and raw[0]:
+            payload = raw[2] if len(raw) > 2 and isinstance(raw[2], dict) else {}
+            created = str((payload or {}).get("input_name") or input_name)
+            scene = str((payload or {}).get("scene_name") or scene_name)
+            return True, f'Added "{created}" to "{scene}".'
+        msg = ""
+        if isinstance(raw, tuple) and len(raw) > 1 and raw[1]:
+            msg = str(raw[1])
+        return False, msg or "Could not add the browser source"
+
+    def list_scene_browser_urls_blocking(
+        self, timeout_s: float = 12.0
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Return taken input names and browser-source URLs grouped by scene.
+
+        Do not call from the NiceGUI main thread. The payload is
+        ``{"taken_names": [...], "urls_by_scene": {scene: [url, ...]}}``.
+        """
+        empty: Dict[str, Any] = {"taken_names": [], "urls_by_scene": {}}
+        if not self.is_connected():
+            return False, empty
+        fut = self.enqueue_obs_request("__scene_browser_urls__", {})
+        try:
+            raw = fut.result(timeout=timeout_s)
+        except Exception as e:
+            logger.debug("OBS scene browser URL scan failed: %s", e)
+            return False, empty
+        payload = raw[2] if isinstance(raw, tuple) and len(raw) > 2 else None
+        if isinstance(raw, tuple) and raw and raw[0] and isinstance(payload, dict):
+            return True, payload
+        return False, empty
 
     def enqueue_refresh_mycelian_browser_sources(
         self,
@@ -999,6 +1175,184 @@ class ObsServiceImpl:
             except Exception as e:
                 logger.debug("OBS get_input_list() fallback failed: %s", e)
         return inputs_list if isinstance(inputs_list, list) else []
+
+    def _current_program_scene_name_locked(self) -> str:
+        """Worker-thread: current program scene, or empty when OBS has none."""
+        cl = self._req_client
+        if cl is None:
+            return ""
+        getter = getattr(cl, "get_current_program_scene", None)
+        if not callable(getter):
+            return ""
+        try:
+            prog = getter()
+        except Exception:
+            logger.debug("OBS current program scene skipped", exc_info=True)
+            return ""
+        return str(
+            _attr(
+                prog,
+                "current_program_scene_name",
+                "currentProgramSceneName",
+                "scene_name",
+                "sceneName",
+            )
+            or ""
+        )
+
+    def _all_input_names_locked(self) -> List[str]:
+        """Worker-thread: every OBS input name, not only browser sources."""
+        cl = self._req_client
+        if cl is None:
+            raise RuntimeError("OBS is not connected")
+        inp = cl.get_input_list()
+        names: List[str] = []
+        inputs_list = _attr(inp, "inputs", None) or []
+        if isinstance(inputs_list, list):
+            for row in inputs_list:
+                nm = _attr(row, "input_name", "inputName")
+                if nm:
+                    names.append(str(nm))
+        return names
+
+    @staticmethod
+    def _call_create_input(
+        cl: Any, scene_name: str, input_name: str, settings: Dict[str, Any]
+    ) -> None:
+        """CreateInput for a browser source. Tries ReqClient then raw send."""
+        create = getattr(cl, "create_input", None)
+        if callable(create):
+            try:
+                create(scene_name, input_name, "browser_source", settings, True)
+                return
+            except TypeError:
+                try:
+                    create(
+                        sceneName=scene_name,
+                        inputName=input_name,
+                        inputKind="browser_source",
+                        inputSettings=settings,
+                        sceneItemEnabled=True,
+                    )
+                    return
+                except TypeError:
+                    pass
+        send = getattr(cl, "send", None)
+        if callable(send):
+            send(
+                "CreateInput",
+                {
+                    "sceneName": scene_name,
+                    "inputName": input_name,
+                    "inputKind": "browser_source",
+                    "inputSettings": settings,
+                    "sceneItemEnabled": True,
+                },
+            )
+            return
+        raise RuntimeError("OBS client cannot CreateInput")
+
+    def _create_browser_source_locked(self, kw: Dict[str, Any]) -> Dict[str, Any]:
+        """Worker-thread: CreateInput after confirming the name is free."""
+        cl = self._req_client
+        if cl is None:
+            raise RuntimeError("OBS is not connected")
+        scene_name = str(kw.get("scene_name") or "").strip()
+        if not scene_name:
+            raise ValueError("scene_name is required")
+        url = str(kw.get("url") or "").strip()
+        if not url:
+            raise ValueError("url is required")
+        try:
+            width = int(kw.get("width"))
+            height = int(kw.get("height"))
+        except (TypeError, ValueError) as e:
+            raise ValueError("width and height must be positive") from e
+        if width < 1 or height < 1:
+            raise ValueError("width and height must be positive")
+        fps_custom = bool(kw.get("fps_custom"))
+        fps_raw = kw.get("fps")
+        fps_value: Optional[int] = None
+        if fps_custom:
+            try:
+                if isinstance(fps_raw, float) and not fps_raw.is_integer():
+                    raise ValueError
+                fps_value = int(60 if fps_raw is None else fps_raw)
+            except (TypeError, ValueError) as e:
+                raise ValueError("fps must be between 1 and 1000") from e
+            if fps_value < 1 or fps_value > 1000:
+                raise ValueError("fps must be between 1 and 1000")
+        settings = browser_source_input_settings(
+            url,
+            width,
+            height,
+            reroute_audio=bool(kw.get("reroute_audio")),
+            fps_custom=fps_custom,
+            fps=fps_value,
+            shutdown=bool(kw.get("shutdown", True)),
+            restart_when_active=bool(kw.get("restart_when_active")),
+        )
+        existing = self._all_input_names_locked()
+        scene_list = getattr(cl, "get_scene_list", None)
+        if callable(scene_list):
+            try:
+                existing.extend(self._scene_names_from_resp(scene_list()))
+            except Exception as e:
+                logger.debug("OBS scene names for create skipped: %s", e)
+        input_name = unique_obs_input_name(str(kw.get("input_name") or ""), existing)
+        if input_name in set(existing):
+            raise RuntimeError(f'OBS already has a source named "{input_name}"')
+        self._call_create_input(cl, scene_name, input_name, settings)
+        return {"input_name": input_name, "scene_name": scene_name}
+
+    def _scene_browser_urls_locked(self) -> Dict[str, Any]:
+        """Worker-thread: input names and browser-source URLs on each scene."""
+        cl = self._req_client
+        if cl is None:
+            raise RuntimeError("OBS is not connected")
+        taken = self._all_input_names_locked()
+        scene_names: List[str] = []
+        try:
+            scene_names = self._scene_names_from_resp(cl.get_scene_list())
+        except Exception as e:
+            logger.debug("OBS scene list for add dialog skipped: %s", e)
+        taken_names = list(dict.fromkeys([*taken, *scene_names]))
+
+        url_by_input: Dict[str, str] = {}
+        for row in self._list_browser_source_input_rows_locked():
+            name = _attr(row, "input_name", "inputName")
+            if not name:
+                continue
+            source_name = str(name)
+            try:
+                settings_resp = cl.get_input_settings(source_name)
+            except Exception as e:
+                logger.debug("OBS browser URL skip %s: %s", source_name, e)
+                continue
+            settings = _attr(settings_resp, "input_settings", "inputSettings")
+            if not isinstance(settings, dict):
+                continue
+            raw_url = settings.get("url")
+            if raw_url:
+                url_by_input[source_name] = str(raw_url)
+
+        urls_by_scene: Dict[str, List[str]] = {}
+        for scene_name in scene_names:
+            urls: List[str] = []
+            lst: Any = []
+            try:
+                items = cl.get_scene_item_list(scene_name)
+                lst = _attr(items, "scene_items", "sceneItems") or []
+            except Exception as e:
+                logger.debug("OBS scene items skip %s: %s", scene_name, e)
+            if isinstance(lst, list):
+                for item in lst:
+                    src = _attr(item, "source_name", "sourceName")
+                    found = url_by_input.get(str(src or ""))
+                    if found:
+                        urls.append(found)
+            urls_by_scene[scene_name] = urls
+        return {"taken_names": taken_names, "urls_by_scene": urls_by_scene}
 
     def _refresh_mycelian_browser_sources_locked(
         self, port: Any, template_routes: Any
