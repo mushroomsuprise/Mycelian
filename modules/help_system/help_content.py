@@ -3121,6 +3121,7 @@ Quick walkthrough from blank canvas to OBS:
 | Stream Deck button mapping | [Stream Deck Actions in Spore Studio](help:spore_studio_streamdeck) |
 | Live stream control buttons | [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls) |
 | Preview, Advanced JS, legacy | [Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced) |
+| Combine templates on one URL | [Overlay Containers](help:spore_studio_containers) |
 | Step-by-step builds | [Spore Studio Examples & Recipes](help:spore_studio_examples) |
         """,
         keywords=[
@@ -3143,7 +3144,91 @@ Quick walkthrough from blank canvas to OBS:
             "spore_studio_data_sources",
             "spore_studio_streamdeck",
             "spore_studio_dynamic_controls",
+            "spore_studio_containers",
             "template_configuration",
+            "obs_setup",
+        ],
+        ui_context="spore_studio",
+    ),
+    "spore_studio_containers": HelpTopic(
+        id="spore_studio_containers",
+        title="Overlay Containers",
+        category=HelpCategory.TEMPLATES,
+        summary="Combine several templates on one browser-source URL",
+        content="""
+# Overlay Containers
+
+A container is one browser-source URL that shows several templates at once.
+Each template stays its own page and is loaded in a frame. Mycelian does not
+merge the HTML files.
+
+Open **Spore Studio** and switch the toolbar from **Templates** to **Containers**.
+
+## Create a container
+
+1. Click **+ New**.
+2. Give it a name and a route. The route is the path, such as `/game_layout`.
+3. Pick a resolution. This is the size of the OBS browser source.
+4. Drag templates from the left onto the canvas. Spore Studio templates,
+   built-in templates, and other HTML templates can all be placed.
+
+The route appears on **Settings → About** with a **Container** badge and a
+count of the templates inside it. Each template also keeps its own URL.
+
+## Position and size
+
+Slots are independent rectangles. A snap grid and alignment are only for
+placing them. A slot on the right can grow down through the same vertical
+band as a slot on the left without moving it.
+
+**Space between templates** is the slider in the container settings. You can
+also drag the bar between linked templates. Each template has its own
+**Padding**, as one value or per side.
+
+## Size links
+
+Turn on **Share leftover height** or **Share leftover width** for the slots
+that should split one axis of the canvas.
+
+- **Locked** keeps the size you set. That size is a maximum. If the template's
+  content only uses part of the box, the extra space is given to the flexible
+  slots. A 500px slot that only uses 350px leaves 150px for the others.
+- **Flexible** slots share whatever space is left, and they can grow past the
+  size you first gave them.
+- Minimum and maximum sizes can be set in pixels and as a percent of the canvas.
+  The larger minimum wins. The tighter maximum wins.
+
+Templates that are built to fill their whole frame keep the full size you set.
+
+## Audio and other slot options
+
+- **Mute** and **Volume** apply only inside the container. The template's own
+  URL is unchanged.
+- **Fit**: Native makes the template fill the slot. Scale fits a design size
+  into the slot.
+- **Visible**, **Opacity**, **Z-order**, **Lock position**, and **Click-through**
+  control that slot without removing it.
+- **Placeholders** in the toolbar shows names instead of live previews when
+  many templates are open.
+- **Preview** opens the saved route. **Save** writes
+  `templates/_containers/{route}.json`.
+
+> **Tip:** A container cannot contain another container. If you delete a
+> template that a container still uses, that slot stays empty and the editor
+> marks it missing.
+        """,
+        keywords=[
+            "container",
+            "overlay container",
+            "combine templates",
+            "browser source",
+            "layout",
+            "mute",
+            "spore studio",
+        ],
+        related_topics=[
+            "spore_studio_overview",
+            "templates_intro",
             "obs_setup",
         ],
         ui_context="spore_studio",

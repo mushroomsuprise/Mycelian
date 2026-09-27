@@ -90,6 +90,25 @@ def _inject_served_overlay_scripts(html: str) -> str:
 
     return inject_template_logger(inject_overlay_recovery(html))
 
+
+def _finalize_served_overlay_html(html: str) -> str:
+    """Inject overlay scripts, and mute/volume when the page is inside a container."""
+    html = _inject_served_overlay_scripts(html)
+    try:
+        if request is None or request.args.get("mycelian_embed") != "1":
+            return html
+        from .spore_studio.containers import inject_embed_audio
+
+        muted = request.args.get("mycelian_muted") == "1"
+        try:
+            volume = float(request.args.get("mycelian_volume", "100"))
+        except (TypeError, ValueError):
+            volume = 100.0
+        html = inject_embed_audio(html, volume=volume, muted=muted)
+    except Exception:
+        logger.debug("Container embed audio inject skipped", exc_info=True)
+    return html
+
 # Flask / SocketIO / gevent are loaded in _ensure_server_deps() when WebEngine
 # is constructed. Importing them here would contend with NiceGUI on the GIL.
 Flask = None
@@ -1638,6 +1657,155 @@ class WebEngine:
                 logger.error("Spore Studio templates endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
 
+        @self.app.route("/api/spore-studio/container-templates")
+        def serve_spore_studio_container_templates():
+            """List every template that can be placed in a container."""
+            try:
+                from .spore_studio.containers import list_member_templates
+
+                return (
+                    list_member_templates(),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Container template list error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/containers")
+        def serve_spore_studio_containers():
+            try:
+                from .spore_studio.containers import list_containers
+
+                return (
+                    {"containers": list_containers()},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Container list error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/containers/<route>")
+        def serve_spore_studio_container(route):
+            try:
+                from .spore_studio.containers import load_container
+
+                model = load_container(route)
+                if model is None:
+                    return (
+                        {"error": "Container not found."},
+                        404,
+                        {"Content-Type": "application/json"},
+                    )
+                return model, 200, {"Content-Type": "application/json"}
+            except Exception as e:
+                logger.error("Container load error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/containers/create", methods=["POST"])
+        def create_spore_studio_container():
+            try:
+                from .spore_studio.containers import ContainerError, create_container
+
+                payload = request.get_json(silent=True) or {}
+                try:
+                    model = create_container(
+                        payload.get("name") or "",
+                        payload.get("route") or None,
+                        width=int(payload.get("width") or 1920),
+                        height=int(payload.get("height") or 1080),
+                    )
+                except (ContainerError, TypeError, ValueError) as exc:
+                    return (
+                        {"error": str(exc)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                return {"ok": True, "container": model}, 200, {
+                    "Content-Type": "application/json"
+                }
+            except Exception as e:
+                logger.error("Container create error: %s", e, exc_info=True)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/containers/save", methods=["POST"])
+        def save_spore_studio_container():
+            try:
+                from .spore_studio.containers import ContainerError, save_container
+
+                payload = request.get_json(silent=True) or {}
+                model = payload.get("container")
+                if not isinstance(model, dict):
+                    return (
+                        {"error": "Request body must include a 'container' object."},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                try:
+                    saved = save_container(
+                        model, previous_route=payload.get("previous_route")
+                    )
+                except ContainerError as exc:
+                    return (
+                        {"error": str(exc)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                return {"ok": True, "container": saved}, 200, {
+                    "Content-Type": "application/json"
+                }
+            except Exception as e:
+                logger.error("Container save error: %s", e, exc_info=True)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/containers/delete", methods=["POST"])
+        def delete_spore_studio_container():
+            try:
+                from .spore_studio.containers import ContainerError, delete_container
+
+                payload = request.get_json(silent=True) or {}
+                try:
+                    delete_container(payload.get("route") or "")
+                except ContainerError as exc:
+                    return (
+                        {"error": str(exc)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                return {"ok": True}, 200, {"Content-Type": "application/json"}
+            except Exception as e:
+                logger.error("Container delete error: %s", e, exc_info=True)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/api/spore-studio/containers/duplicate", methods=["POST"])
+        def duplicate_spore_studio_container():
+            try:
+                from .spore_studio.containers import (
+                    ContainerError,
+                    duplicate_container,
+                )
+
+                payload = request.get_json(silent=True) or {}
+                try:
+                    model = duplicate_container(
+                        payload.get("route") or "",
+                        payload.get("name") or "",
+                        payload.get("new_route") or "",
+                    )
+                except ContainerError as exc:
+                    return (
+                        {"error": str(exc)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                return {"ok": True, "container": model}, 200, {
+                    "Content-Type": "application/json"
+                }
+            except Exception as e:
+                logger.error("Container duplicate error: %s", e, exc_info=True)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
         @self.app.route("/api/spore-studio/model/<template_name>")
         def serve_spore_studio_model(template_name):
             """Return the editor model (sidecar or legacy fallback) for a template."""
@@ -3014,6 +3182,8 @@ class WebEngine:
 
         # Register dynamic routes based on HTML templates
         self.register_routes()
+        self._registered_container_routes = set()
+        self.register_container_routes()
 
         # Register a catch-all template route AFTER all explicit routes so
         # templates created at runtime (Spore Studio "Create" or files
@@ -4031,7 +4201,7 @@ class WebEngine:
         """
         if _obs_browser_refresh_already_done():
             return True
-        routes = sorted(self._registered_template_routes)
+        routes = self.overlay_source_routes()
         if not routes:
             logger.info(
                 "WebEngine startup sync: skip OBS refresh (no template routes)"
@@ -4071,7 +4241,7 @@ class WebEngine:
         """
         if _obs_dock_reload_already_done():
             return True
-        routes = sorted(self._registered_template_routes)
+        routes = self.overlay_source_routes()
         if not routes:
             return False
         try:
@@ -5027,6 +5197,85 @@ class WebEngine:
             f"Template route registration complete. Total routes: {len(self._registered_template_routes)}"
         )
 
+    def overlay_source_routes(self):
+        """Template routes plus enabled container routes, for OBS matching."""
+        routes = set(self._registered_template_routes)
+        try:
+            from .spore_studio.containers import list_enabled_routes
+
+            routes.update(list_enabled_routes())
+        except Exception as exc:
+            logger.debug("Container route list skipped: %s", exc)
+        return sorted(routes)
+
+    def register_container_routes(self):
+        """Register exact routes for containers that already exist on disk."""
+        if not hasattr(self, "_registered_container_routes"):
+            self._registered_container_routes = set()
+        try:
+            from .spore_studio.containers import list_enabled_routes
+        except Exception as exc:
+            logger.debug("Container route registration skipped: %s", exc)
+            return
+        for route in list_enabled_routes():
+            if route in self._registered_template_routes:
+                logger.warning(
+                    "Container route /%s matches a template and was not registered",
+                    route,
+                )
+                continue
+            if route in self._registered_container_routes:
+                continue
+            self._register_container_route(route)
+
+    def _register_container_route(self, route):
+        try:
+            self._route_counter += 1
+            endpoint_name = f"container_{route}_{self._route_counter}"
+
+            def handler(container_route=route):
+                response = self._container_shell_response(container_route)
+                if response is None:
+                    return ("Not found", 404)
+                return response
+
+            self.app.add_url_rule(
+                f"/{route}", endpoint_name, handler, methods=["GET"]
+            )
+            self._registered_container_routes.add(route)
+            logger.debug("Registered container route /%s", route)
+        except AssertionError as exc:
+            logger.debug(
+                "Skipping explicit container route /%s (post-startup); "
+                "fallback route will serve it: %s",
+                route,
+                exc,
+            )
+        except Exception as exc:
+            logger.error(
+                "Error registering container route /%s: %s", route, exc, exc_info=True
+            )
+
+    def _container_shell_response(self, route):
+        """Return a shell response for an enabled container, or None."""
+        try:
+            from .spore_studio.containers import load_container, render_shell
+        except Exception as exc:
+            logger.debug("Container shell import failed: %s", exc)
+            return None
+        model = load_container(route)
+        if not model or not model.get("enabled", True):
+            return None
+        try:
+            html = render_shell(model)
+        except Exception as exc:
+            logger.error("Container shell render failed for %s: %s", route, exc)
+            return (f"Error loading container {route}: {exc}", 500)
+        response = make_response(html)
+        response.headers["Content-Type"] = "text/html; charset=utf-8"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     def _register_template_route(self, template_name):
         """Register a single template route"""
         try:
@@ -5115,7 +5364,7 @@ class WebEngine:
                                 mycelian_html_stem=str(template),
                                 mycelian_preview_mode=mycelian_preview_mode,
                             )
-                        html = _inject_served_overlay_scripts(html)
+                        html = _finalize_served_overlay_html(html)
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
                             # MutationObserver). Try </body> first, then
@@ -5138,7 +5387,7 @@ class WebEngine:
                                 httponly=False,
                             )
                             return resp
-                        return _inject_served_overlay_scripts(html)
+                        return html
                     except Exception as e:
                         logger.error(
                             f"Error rendering template {template}: {str(e)}",
@@ -5196,6 +5445,11 @@ class WebEngine:
                 return ("Not found", 404)
             html_path = os.path.join(self.template_dir, f"{template_name}.html")
             if not os.path.isfile(html_path):
+                container_response = engine_self._container_shell_response(
+                    template_name
+                )
+                if container_response is not None:
+                    return container_response
                 return ("Not found", 404)
             try:
                 preview_token = request.args.get("__preview_token")
@@ -5253,7 +5507,7 @@ class WebEngine:
                         mycelian_html_stem=str(template_name),
                         mycelian_preview_mode=mycelian_preview_mode,
                     )
-                html = _inject_served_overlay_scripts(html)
+                html = _finalize_served_overlay_html(html)
                 if mycelian_preview_mode and preview_token:
                     if "</body>" in html:
                         html = html.replace(
@@ -5272,7 +5526,7 @@ class WebEngine:
                         httponly=False,
                     )
                     return resp
-                return _inject_served_overlay_scripts(html)
+                return html
             except Exception as e:
                 logger.error(
                     "Template fallback render error for %s: %s",
@@ -10208,6 +10462,19 @@ class WebEngine:
                         logger.debug(
                             f"Found dynamic handlers for template not in routes: {template_name}"
                         )
+
+            try:
+                from .spore_studio.containers import (
+                    container_source_record,
+                    list_container_models,
+                )
+
+                for model in list_container_models():
+                    if not model.get("enabled", True):
+                        continue
+                    urls.append(container_source_record(model, base_url))
+            except Exception as exc:
+                logger.error("Could not list container source URLs: %s", exc)
 
             logger.debug(
                 f"Found {len(urls)} available source URLs (hidden templates excluded)"

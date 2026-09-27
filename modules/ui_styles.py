@@ -2307,7 +2307,6 @@ body:not(.body--dark) .notification-tray-badge {
     height: 28px;
     min-height: 28px;
     padding: 0 8px;
-    margin-left: auto;
     background: transparent !important;
     color: var(--color-text-primary) !important;
     border: 1px solid var(--color-primary) !important;
@@ -2317,6 +2316,16 @@ body:not(.body--dark) .notification-tray-badge {
     line-height: 1;
     white-space: nowrap;
     flex-shrink: 0;
+}
+
+.source-url-card .source-url-card-header-info .source-url-card-badge:last-child {
+    margin-left: auto;
+}
+
+.source-url-card .source-url-card-badge--container {
+    background: var(--color-primary) !important;
+    color: var(--color-text-inverse, #fff) !important;
+    border-color: var(--color-primary) !important;
 }
 
 .source-url-card .source-url-card-copy.q-btn {

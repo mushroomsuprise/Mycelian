@@ -19,14 +19,17 @@ Alerts:
 Web Engine:
     [x] - Add a local-only filter for access to the served routes. Since we listen on all connections now, we should make sure any external addresses are blocked, and only local connections can be made.
 
+OBS Integration:
+    [] - Add a button to the cards on the Settings>About page's template routes, to add them as browser sources to OBS. Clicking this button should either throw an error if OBS websocket is not configured and/or connected, or open a small dialog to allow the user to select what Scene to add the source to, its resolution values, and checkboxes for the 4 OBS options (Control audio via OBS, Use custom frame rate, Shutdown source when not visible, Refresh browser source when scene becomes active). Custom CSS should be empty for Mycelian sources.
+
 Containers:
-    [] - Add a "container" system that will allow users to merge multiple templates into a single web route. This will need to be setup in Spore Studio. Note: this should not physically combine them into a single HTML file, but instead just load each HTML file into a single route. 
-    [] - Templates should be placed in a grid layout. This should be a grid system for positioning only, not necessarily fixed perfect rows/columns due to the desired dynamic size adjustments. For example: template 2 is below template 1, template 3 is to the right of template 1, but template 3 can size change into the same "row" template 2 is in, without influencing the other template locations.
-    [] - Container system should allow "dynamic" adjustment of the nested templates. Example: if 2 templates are stacked one on top of the other and the container source has a vertical resolution of 1080, then if one template continually changes size it should shrink the other's vertical height to compensate and so on.
-    [] -  "dynamic" setup should be user selectable on which template takes size priority, as well as minimum sizes as percentages and pixels.
-    [] - The container route should be user definable for the path, and should appear in the Settings>About page the same way as the other routes do. This should have its own badge on those cards to denote that it is a container, and show the number of templates that are combined together.
-    [] - Any templates should be able to be containerized, not just spore studio templates.
-    [] - Add options to mute audio from specific templates when containerized.
+    [x] - Add a "container" system that will allow users to merge multiple templates into a single web route. This will need to be setup in Spore Studio. Note: this should not physically combine them into a single HTML file, but instead just load each HTML file into a single route. 
+    [x] - Templates should be placed in a grid layout. This should be a grid system for positioning only, not necessarily fixed perfect rows/columns due to the desired dynamic size adjustments. For example: template 2 is below template 1, template 3 is to the right of template 1, but template 3 can size change into the same "row" template 2 is in, without influencing the other template locations.
+    [x] - Container system should allow "dynamic" adjustment of the nested templates. Example: if 2 templates are stacked one on top of the other and the container source has a vertical resolution of 1080, then if one template continually changes size it should shrink the other's vertical height to compensate and so on.
+    [x] -  "dynamic" setup should be user selectable on which template takes size priority, as well as minimum sizes as percentages and pixels.
+    [x] - The container route should be user definable for the path, and should appear in the Settings>About page the same way as the other routes do. This should have its own badge on those cards to denote that it is a container, and show the number of templates that are combined together.
+    [x] - Any templates should be able to be containerized, not just spore studio templates.
+    [x] - Add options to mute audio from specific templates when containerized.
 
 
 General:

@@ -3372,6 +3372,10 @@ class SettingsUI:
 
     @staticmethod
     def _format_source_url_control_badge(url_info: dict) -> str:
+        if url_info.get("type") == "container":
+            count = int(url_info.get("template_count") or 0)
+            noun = "template" if count == 1 else "templates"
+            return f"{count} {noun}"
         if url_info.get("type") == "template":
             count = 0
         else:
@@ -3431,12 +3435,17 @@ class SettingsUI:
                                                 "bg-theme-surface"
                                             ):
                                                 ui.label(
-                                                    self._format_source_url_title(
+                                                    url_info.get("title")
+                                                    or self._format_source_url_title(
                                                         url_info["name"]
                                                     )
                                                 ).classes(
                                                     "text-sm font-semibold source-url-card-title"
                                                 )
+                                                if url_info.get("type") == "container":
+                                                    ui.label("Container").classes(
+                                                        "source-url-card-badge source-url-card-badge--container text-xs"
+                                                    )
                                                 ui.label(
                                                     self._format_source_url_control_badge(
                                                         url_info

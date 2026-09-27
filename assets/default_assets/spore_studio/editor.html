@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <title>Spore Studio</title>
     <link rel="stylesheet" href="/assets/default_assets/spore_studio/editor.css">
+    <link rel="stylesheet" href="/assets/default_assets/spore_studio/container_editor.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
             crossorigin="anonymous"></script>
     <script src="/assets/default_assets/overlay_recovery.js"></script>
@@ -13,35 +14,55 @@
 <body>
     <div id="ss-root">
         <div class="ss-toolbar">
-            <select id="ss-template-select" class="ss-toolbar__name"
+            <div class="ss-mode" role="tablist" aria-label="Editor mode">
+                <button type="button" class="ss-mode__btn is-active" id="ss-mode-templates"
+                        role="tab" aria-selected="true">Templates</button>
+                <button type="button" class="ss-mode__btn" id="ss-mode-containers"
+                        role="tab" aria-selected="false">Containers</button>
+            </div>
+            <select id="ss-template-select" class="ss-toolbar__name ss-template-only"
                     title="Active template"></select>
-            <button class="ss-btn" id="ss-btn-create">+ New</button>
-            <button class="ss-btn ss-btn--danger" id="ss-btn-delete"
+            <button class="ss-btn ss-template-only" id="ss-btn-create">+ New</button>
+            <button class="ss-btn ss-btn--danger ss-template-only" id="ss-btn-delete"
                     disabled title="Open a Spore template to delete">Delete</button>
-            <button class="ss-btn ss-btn--ghost" id="ss-btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo">
+            <button class="ss-btn ss-btn--ghost ss-template-only" id="ss-btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo">
                 <svg class="ss-toolbar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                     <path d="M3 10h10a5 5 0 0 1 5 5 0 0 1-5 5H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     <path d="M7 6 3 10l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
             </button>
-            <button class="ss-btn ss-btn--ghost" id="ss-btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
+            <button class="ss-btn ss-btn--ghost ss-template-only" id="ss-btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
                 <svg class="ss-toolbar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                     <path d="M21 10H11a5 5 0 0 0-5 5 0 0 0 5 5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     <path d="m17 6 4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
             </button>
+            <select id="mc-container-select" class="ss-toolbar__name ss-container-only"
+                    title="Active container"></select>
+            <button type="button" class="ss-btn ss-container-only" id="mc-btn-create">+ New</button>
+            <button type="button" class="ss-btn ss-container-only" id="mc-btn-duplicate"
+                    title="Duplicate this container">Duplicate</button>
+            <button type="button" class="ss-btn ss-btn--danger ss-container-only" id="mc-btn-delete">Delete</button>
+            <button type="button" class="ss-btn ss-btn--ghost ss-container-only" id="mc-btn-undo" title="Undo" aria-label="Undo container">Undo</button>
+            <button type="button" class="ss-btn ss-btn--ghost ss-container-only" id="mc-btn-redo" title="Redo" aria-label="Redo container">Redo</button>
             <span class="ss-spacer"></span>
-            <span id="ss-dirty-indicator" class="ss-dirty-indicator"></span>
+            <span id="ss-dirty-indicator" class="ss-dirty-indicator ss-template-only"></span>
+            <span id="mc-dirty" class="ss-dirty-indicator ss-container-only"></span>
             <button class="ss-btn ss-btn--ghost" id="ss-btn-reload"
                     title="Reload the editor">Reload editor</button>
             <button class="ss-btn ss-btn--ghost" id="ss-btn-open-external"
                     title="Open the editor in your default browser">Open externally</button>
-            <button class="ss-btn" id="ss-btn-preview"
+            <button class="ss-btn ss-template-only" id="ss-btn-preview"
                     title="Open live preview window">Preview</button>
-            <button class="ss-btn ss-btn--primary" id="ss-btn-save">Save</button>
+            <button class="ss-btn ss-btn--primary ss-template-only" id="ss-btn-save">Save</button>
+            <button type="button" class="ss-btn ss-container-only" id="mc-btn-placeholders"
+                    title="Show template names instead of live previews">Placeholders</button>
+            <button type="button" class="ss-btn ss-container-only" id="mc-btn-preview"
+                    title="Open the container route">Preview</button>
+            <button type="button" class="ss-btn ss-btn--primary ss-container-only" id="mc-btn-save">Save</button>
         </div>
 
-        <div class="ss-panel-blocks">
+        <div class="ss-panel-blocks ss-template-only">
             <div class="ss-section">
                 <h3>Blocks</h3>
                 <div id="ss-blocks-list"></div>
@@ -56,13 +77,13 @@
             </div>
         </div>
 
-        <div class="ss-panel-canvas">
+        <div class="ss-panel-canvas ss-template-only">
             <div class="ss-canvas-wrap">
                 <div id="ss-stage" class="ss-stage" tabindex="0"></div>
             </div>
         </div>
 
-        <div class="ss-panel-inspector">
+        <div class="ss-panel-inspector ss-template-only">
             <div id="ss-inspector-resize" class="ss-inspector-resize"
                  title="Drag to resize the inspector panel"></div>
             <div class="ss-tabs-wrap">
@@ -172,6 +193,27 @@
                         <label for="ss-queued">Queued</label>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div class="ss-panel-blocks ss-panel-container-blocks ss-container-only" id="mc-library">
+            <div class="ss-section">
+                <h3>Templates</h3>
+                <p class="mc-hint">Drag a template onto the canvas. Any template can be placed, including ones not made in Spore Studio.</p>
+                <input type="search" id="mc-template-search" placeholder="Search templates"
+                       aria-label="Search templates">
+                <div id="mc-template-list"></div>
+            </div>
+        </div>
+        <div class="ss-panel-canvas ss-panel-container-canvas ss-container-only" id="mc-stage-wrap">
+            <div id="mc-warnings" class="mc-warnings" hidden></div>
+            <div id="mc-canvas-scroll">
+                <div id="mc-canvas" tabindex="0"></div>
+            </div>
+        </div>
+        <div class="ss-panel-inspector ss-panel-container-inspector ss-container-only">
+            <div class="ss-section" id="mc-inspector-host">
+                <div class="ss-empty">Create a container to combine templates on one route.</div>
             </div>
         </div>
     </div>
@@ -286,6 +328,8 @@
         </div>
     </template>
 
+    <script src="/assets/default_assets/spore_studio/container_layout.js"></script>
     <script src="/assets/default_assets/spore_studio/editor.js"></script>
+    <script src="/assets/default_assets/spore_studio/container_editor.js"></script>
 </body>
 </html>

@@ -163,6 +163,10 @@ def _validate_name(name: str) -> str:
         raise SporeStudioError("Template name cannot start with '_'.")
     if cleaned.lower() in _RESERVED_TEMPLATE_NAMES:
         raise SporeStudioError(f"'{cleaned}' is reserved.")
+    from .containers import container_route_exists
+
+    if container_route_exists(cleaned):
+        raise SporeStudioError(f"'{cleaned}' is already a container route.")
     return cleaned
 
 

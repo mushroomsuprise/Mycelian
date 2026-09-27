@@ -6551,6 +6551,10 @@
 
     function setupKeyboard() {
         window.addEventListener("keydown", function (ev) {
+            var root = document.getElementById("ss-root");
+            if (root && root.classList.contains("ss-root--containers")) {
+                return;
+            }
             var meta = ev.ctrlKey || ev.metaKey;
             if (meta && ev.key === "z" && !ev.shiftKey) { ev.preventDefault(); undo(); }
             else if (meta && (ev.key === "Z" || (ev.key === "z" && ev.shiftKey))) { ev.preventDefault(); redo(); }
