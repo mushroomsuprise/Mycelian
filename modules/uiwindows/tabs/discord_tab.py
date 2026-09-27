@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 from typing import Any, Dict, List, Optional
@@ -72,25 +73,55 @@ class DiscordTab:
 
     def _load_from_state(self) -> None:
         raw = state_manager.get_discord_data()
-        self.buffer = DiscordData(
-            **{
-                f.name: getattr(raw, f.name)
-                for f in DiscordData.__dataclass_fields__.values()
-            }
-        )
+        values = {}
+        for field in DiscordData.__dataclass_fields__.values():
+            value = getattr(raw, field.name)
+            if isinstance(value, (list, dict)):
+                value = copy.deepcopy(value)
+            values[field.name] = value
+        self.buffer = DiscordData(**values)
         if self.buffer.go_live_channels is None:
             self.buffer.go_live_channels = []
+        self._saved_go_live_channels = self._go_live_signature()
         self._creds = {
             "bot_token": (getattr(self.buffer, "bot_token", "") or "").strip(),
         }
         self.dirty = False
+
+    def _go_live_signature(self) -> tuple:
+        items = []
+        if self.buffer is None:
+            return tuple()
+        for entry in self.buffer.go_live_channels or []:
+            if isinstance(entry, dict):
+                items.append(
+                    (
+                        str(entry.get("guild_id") or ""),
+                        str(entry.get("channel_id") or ""),
+                    )
+                )
+        return tuple(sorted(items))
+
+    def _go_live_is_dirty(self) -> bool:
+        return self._go_live_signature() != getattr(
+            self, "_saved_go_live_channels", tuple()
+        )
+
+    def _sync_go_live_dirty(self) -> None:
+        """Channel-chip edits are compared to the saved list at leave time."""
+        return
+
+    def has_unsaved_changes(self) -> bool:
+        """Token and switches use the dirty flag. Go-live channels are a chip list."""
+        return bool(self.dirty) or self._go_live_is_dirty()
 
     def _set(self, field: str, value: Any) -> None:
         if self.buffer is None:
             return
         if getattr(self.buffer, field) != value:
             setattr(self.buffer, field, value)
-            self.dirty = True
+            if not getattr(self, "_suppress_dirty", False):
+                self.dirty = True
 
     def _set_cred(self, field: str, value: str) -> None:
         text = (value or "").strip()
@@ -100,7 +131,8 @@ class DiscordTab:
             return
         if self._creds.get(field) != text:
             self._creds[field] = text
-            self.dirty = True
+            if not getattr(self, "_suppress_dirty", False):
+                self.dirty = True
 
     def _persist_credentials_to_state(self) -> None:
         """Write credential buffer into DiscordData state (Spotify-style)."""
@@ -277,7 +309,7 @@ class DiscordTab:
             return
         existing.append(entry)
         self.buffer.go_live_channels = existing
-        self.dirty = True
+        self._sync_go_live_dirty()
         self._rebuild_go_live_chips()
 
     def _remove_go_live_channel(self, key: str) -> None:
@@ -289,7 +321,7 @@ class DiscordTab:
             if isinstance(e, dict) and self._channel_key(e) != key
         ]
         self.buffer.go_live_channels = existing
-        self.dirty = True
+        self._sync_go_live_dirty()
         self._rebuild_go_live_chips()
 
     def _handle_connect(self) -> None:
@@ -563,6 +595,7 @@ class DiscordTab:
         if not self.buffer:
             return
         if self._save_settings_only():
+            self._saved_go_live_channels = self._go_live_signature()
             self.dirty = False
             if not silent:
                 notify("Discord settings saved", type="positive")
@@ -586,5 +619,10 @@ class DiscordTab:
                 or "Stream is live on {platform}! {url}"
             )
         self._rebuild_go_live_chips()
+        self.mark_clean()
+
+    def mark_clean(self) -> None:
+        """Treat the current go-live channel list as the saved baseline."""
+        self._saved_go_live_channels = self._go_live_signature()
         self.dirty = False
         self._refresh_status()

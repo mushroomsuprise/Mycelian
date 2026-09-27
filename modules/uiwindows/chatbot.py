@@ -2327,6 +2327,13 @@ def create_command_card(command_id: str, command: ChatCommand):
                 extra_classes="btn-secondary text-xs px-3 py-1 grow",
             )
 
+            themed_control_button(
+                "Duplicate",
+                lambda cid=command_id: duplicate_chatbot_item(cid, "command"),
+                icon="content_copy",
+                extra_classes="btn-secondary text-xs px-3 py-1 grow",
+            )
+
             if command.command_type == CommandType.COUNTER:
                 themed_control_button(
                     "Reset",
@@ -2431,6 +2438,13 @@ def create_event_card(event_id: str, event: ChatEvent):
             )
 
             themed_control_button(
+                "Duplicate",
+                lambda eid=event_id: duplicate_chatbot_item(eid, "event"),
+                icon="content_copy",
+                extra_classes="btn-secondary text-xs px-3 py-1 grow",
+            )
+
+            themed_control_button(
                 "Test",
                 lambda eid=event_id: test_chatbot_item(eid, "event"),
                 icon="play_arrow",
@@ -2467,6 +2481,13 @@ def create_quote_card(quote_id: str, quote):
                     "Edit",
                     lambda qid=quote_id: show_edit_quote_dialog(qid),
                     icon="edit",
+                    extra_classes="btn-secondary text-xs px-3 py-1",
+                )
+
+                themed_control_button(
+                    "Duplicate",
+                    lambda qid=quote_id: duplicate_chatbot_item(qid, "quote"),
+                    icon="content_copy",
                     extra_classes="btn-secondary text-xs px-3 py-1",
                 )
 
@@ -7562,6 +7583,106 @@ def reset_command_counter(command_id: str):
     except Exception as e:
         logger.error(f"Error resetting command counter: {e}", exc_info=True)
         notify(f"Error resetting counter: {str(e)}", type="negative")
+
+
+def _unique_copy_label(base: str, taken: set) -> str:
+    """Return a display name that is not already used, case-insensitively."""
+    root = (base or "Item").strip() or "Item"
+    candidate = f"{root} copy"
+    number = 2
+    taken_lower = {item.lower() for item in taken if item}
+    while candidate.lower() in taken_lower:
+        candidate = f"{root} copy {number}"
+        number += 1
+    return candidate
+
+
+def _unique_command_token(base: str, taken: set) -> str:
+    """Return a command name that does not collide with names or aliases."""
+    root = re.sub(r"\s+", "", (base or "command").strip()) or "command"
+    candidate = f"{root}_copy"
+    number = 2
+    taken_lower = {item.lower() for item in taken if item}
+    while candidate.lower() in taken_lower:
+        candidate = f"{root}_copy{number}"
+        number += 1
+    return candidate
+
+
+def duplicate_chatbot_item(item_id: str, item_type: str) -> None:
+    """Save a new command, event, or quote from an existing one."""
+    try:
+        manager = get_chatbot_manager()
+        if item_type == "command":
+            source = manager.commands.get(item_id)
+            if source is None:
+                notify("Command not found", type="negative")
+                return
+            data = source.to_dict()
+            taken = set()
+            for command in manager.commands.values():
+                if command.command_name:
+                    taken.add(command.command_name)
+                taken.update(command.aliases or [])
+            data["command_id"] = str(uuid.uuid4())
+            data["name"] = _unique_copy_label(
+                source.name, {command.name for command in manager.commands.values()}
+            )
+            data["command_name"] = _unique_command_token(source.command_name, taken)
+            data["aliases"] = []
+            data["usage_count"] = 0
+            data["last_used"] = 0
+            data["counter_value"] = 0
+            data["trigger_count"] = 0
+            data["last_triggered"] = 0
+            if not manager.add_command(ChatCommand.from_dict(data)):
+                notify("Could not duplicate command", type="negative")
+                return
+            notify(
+                f"Duplicated command as !{data['command_name']}. Aliases were cleared so both do not fire together.",
+                type="positive",
+            )
+            refresh_tab_content("commands")
+            return
+
+        if item_type == "event":
+            source = manager.events.get(item_id)
+            if source is None:
+                notify("Event not found", type="negative")
+                return
+            data = source.to_dict()
+            data["event_id"] = str(uuid.uuid4())
+            data["name"] = _unique_copy_label(
+                source.name, {event.name for event in manager.events.values()}
+            )
+            data["trigger_count"] = 0
+            data["last_triggered"] = 0
+            if not manager.add_event(ChatEvent.from_dict(data)):
+                notify("Could not duplicate event", type="negative")
+                return
+            notify(f"Duplicated event '{data['name']}'.", type="positive")
+            refresh_tab_content("events")
+            return
+
+        if item_type == "quote":
+            source = manager.quotes.get(item_id)
+            if source is None:
+                notify("Quote not found", type="negative")
+                return
+            success, error, number = manager.add_quote(
+                source.text, source.author, getattr(source, "added_by", "") or ""
+            )
+            if not success:
+                notify(error or "Could not duplicate quote", type="negative")
+                return
+            notify(f"Duplicated quote as #{number}.", type="positive")
+            refresh_tab_content("quotes")
+            return
+
+        notify("This item cannot be duplicated.", type="warning")
+    except Exception as exc:
+        logger.error("Error duplicating chatbot item: %s", exc, exc_info=True)
+        notify("Could not duplicate this item.", type="negative")
 
 
 def delete_chatbot_item(item_id: str, item_type: str):

@@ -23,6 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import copy
 import json
 import logging
 import time
@@ -1272,6 +1273,10 @@ def create_connector_card(
                     on_click=lambda cid=connector_id: show_edit_connector_dialog(cid),
                 ).props("flat dense round").tooltip("Edit connector")
                 ui.button(
+                    icon="content_copy",
+                    on_click=lambda cid=connector_id: duplicate_connector(cid),
+                ).props("flat dense round").tooltip("Duplicate connector")
+                ui.button(
                     icon="play_arrow",
                     on_click=lambda cid=connector_id: test_connector(cid),
                 ).props("flat dense round").tooltip("Test connector")
@@ -1474,6 +1479,111 @@ def get_action_display_name(action) -> str:
         return getattr(action, "name", "Unknown Action")
 
 
+_connector_dialog_dismiss = None
+
+
+def _unique_connector_name(base: str, taken: set) -> str:
+    root = (base or "Connector").strip() or "Connector"
+    candidate = f"{root} copy"
+    number = 2
+    taken_lower = {name.lower() for name in taken if name}
+    while candidate.lower() in taken_lower:
+        candidate = f"{root} copy {number}"
+        number += 1
+    return candidate
+
+
+def duplicate_connector(connector_id: str) -> None:
+    """Save a new connector with the same trigger and actions."""
+    try:
+        manager = connector_manager.get_manager()
+        existing = manager.get_connector(connector_id)
+        if existing is None:
+            notify("Connector not found", type="negative")
+            return
+        data = manager._serialize_connector(existing)
+        new_id = str(uuid.uuid4())
+        data["connector_id"] = new_id
+        data["name"] = _unique_connector_name(
+            existing.name,
+            {connector.name for connector in manager.get_all_connectors().values()},
+        )
+        data["created_at"] = time.time()
+        data["last_triggered"] = 0
+        data["trigger_count"] = 0
+        trigger = data.get("trigger")
+        if isinstance(trigger, dict):
+            trigger["trigger_id"] = str(uuid.uuid4())
+            trigger["last_triggered"] = 0
+            if "connector_id" in trigger:
+                trigger["connector_id"] = new_id
+        for action in data.get("actions") or []:
+            if isinstance(action, dict):
+                action["action_id"] = str(uuid.uuid4())
+        cloned = manager._deserialize_connector(data)
+        if cloned is None or not manager.add_connector(cloned):
+            notify("Could not duplicate connector", type="negative")
+            return
+        load_connectors()
+        update_search_visibility()
+        notify(f"Duplicated connector '{data['name']}'.", type="positive")
+    except Exception as exc:
+        logger.error("Error duplicating connector: %s", exc, exc_info=True)
+        notify("Could not duplicate connector", type="negative")
+
+
+def _request_close_connector_dialog() -> None:
+    """Close the connector editor, confirming when the form has unsaved edits."""
+    dismiss = _connector_dialog_dismiss
+    if callable(dismiss):
+        dismiss()
+        return
+    if create_dialog:
+        create_dialog.close()
+
+
+def _install_connector_close_guard(form_data: dict) -> None:
+    """Remember the form as opened so Cancel and close can detect edits."""
+    global _connector_dialog_dismiss
+    try:
+        baseline = copy.deepcopy(form_data)
+    except Exception:
+        baseline = None
+
+    def dismiss() -> None:
+        changed = True
+        if baseline is not None:
+            try:
+                changed = form_data != baseline
+            except Exception:
+                changed = True
+        if changed:
+            _confirm_discard_connector_dialog()
+            return
+        if create_dialog:
+            create_dialog.close()
+
+    _connector_dialog_dismiss = dismiss
+
+
+def _confirm_discard_connector_dialog() -> None:
+    with ui.dialog().props("persistent") as dialog, ui.card().classes("w-[460px] p-4"):
+        ui.label("Unsaved changes").classes("text-lg font-bold mb-2")
+        ui.label(
+            "Close this connector without saving? Your edits will be lost."
+        ).classes("secondary-text mb-4")
+
+        def discard() -> None:
+            dialog.close()
+            if create_dialog:
+                create_dialog.close()
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Stay", on_click=dialog.close).props("outline")
+            ui.button("Discard", on_click=discard).props("color=primary")
+        dialog.open()
+
+
 def show_create_connector_dialog():
     """Show the create connector dialog"""
     show_connector_dialog()
@@ -1481,7 +1591,8 @@ def show_create_connector_dialog():
 
 def show_connector_dialog(connector_id: str = None):
     """Show the create/edit connector dialog"""
-    global create_dialog
+    global create_dialog, _connector_dialog_dismiss
+    _connector_dialog_dismiss = None
 
     if create_dialog:
         create_dialog.close()  # Close existing dialog first
@@ -1501,9 +1612,9 @@ def show_connector_dialog(connector_id: str = None):
                     "w-full items-center justify-between p-4 border-b border-theme-subtle"
                 ):
                     ui.label(title).classes("text-xl font-semibold text-theme-primary")
-                    ui.button(icon="close", on_click=create_dialog.close).props(
-                        "flat round"
-                    ).classes("secondary-text")
+                    ui.button(
+                        icon="close", on_click=_request_close_connector_dialog
+                    ).props("flat round").classes("secondary-text")
 
                 # Dialog content
                 with ui.scroll_area().classes("grow p-4"):
@@ -1788,7 +1899,7 @@ def create_connector_form(connector_id: str = None):
         with ui.row().classes(
             "w-full items-center justify-end gap-2 mt-6 pt-4 border-t border-theme-subtle"
         ):
-            ui.button(text="Cancel", on_click=create_dialog.close).props(
+            ui.button(text="Cancel", on_click=_request_close_connector_dialog).props(
                 "flat"
             ).classes("secondary-text")
 
@@ -1822,6 +1933,8 @@ def create_connector_form(connector_id: str = None):
                 add_action_to_form_with_data_and_index(
                     form_data, actions_container, action_data, i
                 )
+
+    _install_connector_close_guard(form_data)
 
 
 def handle_trigger_type_change(

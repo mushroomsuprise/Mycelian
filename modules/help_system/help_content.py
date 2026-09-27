@@ -402,13 +402,13 @@ Each alert type can have:
 
 1. Go to **Alerts** tab
 2. Select the alert type (e.g., "Bits")
-3. Click **"Add Alert"**
+3. Open **Select Alert** and choose **+ Create New Alert**
 4. Configure:
    - **Amount/Range**: When this alert triggers
    - **GIF**: Visual element
    - **Audio**: Sound effect
    - **Duration**: Display time
-5. Click **Save**
+5. Click **Save Alert**
 
 ## Alert Priority
 
@@ -449,9 +449,10 @@ For a beginner walkthrough, see [Setting Up Your First Alert](help:first_alert_s
 
 ### Basic Alert Setup
 1. Navigate to the **Alerts** tab
-2. Select an alert type from the dropdown
-3. Click **"Add Alert"**
+2. Select an alert type tab (Bits, Subscriptions, and so on)
+3. Open **Select Alert** and choose **+ Create New Alert**, or pick an existing alert to edit
 4. Fill in the configuration fields
+5. Click **Save Alert**
 
 ### Configuration Fields
 
@@ -490,17 +491,20 @@ For special milestone sounds:
 ## Managing Alerts
 
 ### Editing Alerts
-- Click the edit icon next to any alert
+- Choose the alert from **Select Alert**
 - Modify settings as needed
-- Click **Save** to apply changes
+- Click **Save Alert** to apply changes
+- Leaving the alert or switching alert types asks you to save or discard unsaved edits
 
 ### Deleting Alerts
-- Click the delete icon next to the alert
+- Choose the alert from **Select Alert**
+- Click **Delete Alert**
 - Confirm deletion in the dialog
 
-### Reordering Alerts
-- Drag and drop alerts to change priority
-- Higher alerts override lower ones for the same trigger
+### Which Alert Plays
+- Mycelian matches the event amount to an exact alert, then to a range
+- Overlapping ranges use the most specific match
+- There is no drag-to-reorder list
 
 ### Testing Alerts
 - Use the **"Test"** button to preview alerts
@@ -675,7 +679,7 @@ Each [alert configuration](help:alert_configuration) has a **"Test"** button:
 - See [Audio Troubleshooting](help:troubleshooting_audio) for detailed solutions
 
 ### Wrong Alert Plays
-- Check alert ordering (drag to reorder)
+- Check which alert is selected for that amount or range
 - Verify amount ranges don't overlap
 - Test with exact amounts vs ranges
 

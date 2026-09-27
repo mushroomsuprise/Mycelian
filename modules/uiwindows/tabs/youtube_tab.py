@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import copy
 import logging
 from typing import Dict, Any, List, Optional
 
@@ -397,6 +398,7 @@ class YouTubeTab:
             return
         self._playlist_input.value = ""
         self._add_playlist_filter(name)
+        self._sync_playlist_dirty()
 
     def _add_playlist_filter(self, name: str) -> None:
         """Add a playlist name to the exclusion list and create its chip."""
@@ -406,7 +408,7 @@ class YouTubeTab:
             notify(f"'{name}' is already in the filter list", type="warning")
             return
         self.buffer.playlist_filter.append(name)
-        self.dirty = True
+        self._sync_playlist_dirty()
         self._create_chip(name)
 
     def _remove_playlist_filter(self, name: str) -> None:
@@ -415,7 +417,7 @@ class YouTubeTab:
             return
         if name in self.buffer.playlist_filter:
             self.buffer.playlist_filter.remove(name)
-            self.dirty = True
+        self._sync_playlist_dirty()
         self._rebuild_playlist_chips()
 
     def _create_chip(self, name: str) -> None:
@@ -493,6 +495,7 @@ class YouTubeTab:
                 self._playlist_input = form_sensitive_input(
                     tooltip="Playlist title to exclude from latest-video selection; press Enter to add",
                     placeholder="Playlist name",
+                    on_change=lambda e: self._sync_playlist_dirty(),
                 )
                 self._playlist_input.on("keydown.enter", self._on_playlist_input_enter)
 
@@ -598,12 +601,14 @@ class YouTubeTab:
 
     def _load_from_state(self) -> None:
         yt = state_manager.get_youtube_data()
-        self.buffer = dataobjects.YouTubeData(
-            **{
-                field.name: getattr(yt, field.name)
-                for field in YouTubeData.__dataclass_fields__.values()
-            }
-        )
+        values = {}
+        for field in YouTubeData.__dataclass_fields__.values():
+            value = getattr(yt, field.name)
+            if isinstance(value, (list, dict)):
+                value = copy.deepcopy(value)
+            values[field.name] = value
+        self.buffer = dataobjects.YouTubeData(**values)
+        self._saved_playlist_filter = list(self.buffer.playlist_filter or [])
         self._creds = dict(api_credentials_manager.get_youtube_credentials())
         # Prefer api_credentials; fall back to YouTubeData if credentials file empty
         if not (self._creds.get("client_id") or "").strip() and (
@@ -616,15 +621,38 @@ class YouTubeTab:
             self._creds["client_secret"] = self.buffer.oauth_client_secret
         self.dirty = False
 
+    def _playlist_is_dirty(self) -> bool:
+        """True when the chip list or uncommitted playlist text differs from saved."""
+        pending = ""
+        if self._playlist_input is not None:
+            pending = (self._playlist_input.value or "").strip()
+        if pending:
+            return True
+        if not self.buffer:
+            return False
+        return list(self.buffer.playlist_filter or []) != list(
+            getattr(self, "_saved_playlist_filter", [])
+        )
+
+    def _sync_playlist_dirty(self) -> None:
+        """Playlist edits are read from the chip list and input at leave time."""
+        return
+
+    def has_unsaved_changes(self) -> bool:
+        """API fields use the dirty flag. The playlist filter is a chip list."""
+        return bool(self.dirty) or self._playlist_is_dirty()
+
     def _set(self, field: str, value) -> None:
         if getattr(self.buffer, field) != value:
             setattr(self.buffer, field, value)
-            self.dirty = True
+            if not getattr(self, "_suppress_dirty", False):
+                self.dirty = True
 
     def _set_cred(self, field: str, value: str) -> None:
         if self._creds.get(field) != value:
             self._creds[field] = value
-            self.dirty = True
+            if not getattr(self, "_suppress_dirty", False):
+                self.dirty = True
 
     def save(self) -> None:
         if not self.buffer:
@@ -646,23 +674,38 @@ class YouTubeTab:
             except Exception:
                 pass
             notify("YouTube saved", type="positive")
+            self._saved_playlist_filter = list(self.buffer.playlist_filter or [])
             self.dirty = False
         else:
             notify("Error saving YouTube", type="negative")
 
     def discard(self) -> None:
-        self._load_from_state()
-        for key, element in self.ui_elements.items():
-            if key == "oauth_client_id" and hasattr(element, "value"):
-                element.value = self._creds.get("client_id", "")
-            elif key == "oauth_client_secret" and hasattr(element, "value"):
-                element.value = self._creds.get("client_secret", "")
-            elif key == "live_chat_enabled" and hasattr(element, "value"):
-                element.value = bool(
-                    getattr(self.buffer, "live_chat_enabled", True)
-                )
-            elif hasattr(element, "value") and hasattr(self.buffer, key):
-                val = getattr(self.buffer, key)
-                element.value = "" if val is None else val
-        self._rebuild_playlist_chips()
+        self._suppress_dirty = True
+        try:
+            self._load_from_state()
+            for key, element in self.ui_elements.items():
+                if key == "oauth_client_id" and hasattr(element, "value"):
+                    element.value = self._creds.get("client_id", "")
+                elif key == "oauth_client_secret" and hasattr(element, "value"):
+                    element.value = self._creds.get("client_secret", "")
+                elif key == "live_chat_enabled" and hasattr(element, "value"):
+                    element.value = bool(
+                        getattr(self.buffer, "live_chat_enabled", True)
+                    )
+                elif hasattr(element, "value") and hasattr(self.buffer, key):
+                    val = getattr(self.buffer, key)
+                    element.value = "" if val is None else val
+            if self._playlist_input is not None:
+                self._playlist_input.value = ""
+            self._rebuild_playlist_chips()
+        finally:
+            self._suppress_dirty = False
+        self.mark_clean()
+
+    def mark_clean(self) -> None:
+        """Treat the current buffer and playlist box as the saved baseline."""
+        if self._playlist_input is not None:
+            self._playlist_input.value = ""
+        if self.buffer is not None:
+            self._saved_playlist_filter = list(self.buffer.playlist_filter or [])
         self.dirty = False

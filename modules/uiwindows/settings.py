@@ -216,6 +216,9 @@ class SettingsUI:
         # Modular per-tab components
         self._tabs_by_name = {}
         self._active_tab_name = "Twitch"
+        self._unsaved_dialog_open = False
+        self._settings_switch_guard = False
+        self._accepted_settings_tab = "Twitch"
 
     def _load_database_settings_from_config(self) -> dataobjects.DatabaseSettings:
         """Load database settings from the external config manager"""
@@ -5425,6 +5428,7 @@ class SettingsUI:
                                         self._build_about_tab(container)
 
                                     self._settings_loaded_tabs.add(tab_name)
+                                    self._note_settings_tab_loaded(tab_name)
                                 except Exception as e:
                                     logger.error(
                                         f"Error loading settings tab {tab_name}: {e}",
@@ -5484,6 +5488,7 @@ class SettingsUI:
                                                         tab_name
                                                     ].build(container)
                                             self._settings_loaded_tabs.add(tab_name)
+                                            self._note_settings_tab_loaded(tab_name)
                                         else:
                                             spinner = (
                                                 ui.spinner("dots")
@@ -5548,38 +5553,77 @@ class SettingsUI:
                                 once=True,
                             )
 
-                # Unsaved-changes guard
+                # Unsaved-changes guard. Quasar reports the new tab through
+                # on_value_change; the timer covers a missed event.
                 from ..ui_tab_transitions import _tab_label
 
+                self._settings_tabs = tabs
+                self._accepted_settings_tab = (
+                    _tab_label(tabs.value) or self._active_tab_name
+                )
+
                 def on_tab_change(e):
+                    if self._settings_switch_guard:
+                        return
                     new_name = _tab_label(getattr(e, "value", None))
-                    prev_name = _tab_label(self._active_tab_name)
+                    prev_name = _tab_label(getattr(e, "previous_value", None)) or _tab_label(
+                        self._active_tab_name
+                    )
+                    if self._unsaved_dialog_open:
+                        if new_name and new_name != self._active_tab_name:
+                            self._settings_switch_guard = True
+                            try:
+                                tabs.value = self._active_tab_name
+                            finally:
+                                self._settings_switch_guard = False
+                        return
                     if not new_name or new_name == prev_name:
                         return
-                    current_tab = self._tabs_by_name.get(prev_name)
-                    if current_tab and getattr(current_tab, "dirty", False):
-                        self._show_unsaved_changes_dialog(tabs, prev_name, new_name)
-                        tabs.value = prev_name
+                    dirty_name = self._first_dirty_tab_name()
+                    # The tab being left is the one that matters. Fall back to any
+                    # dirty tab so a label mismatch still prompts.
+                    leaving_dirty = dirty_name if dirty_name and dirty_name != new_name else ""
+                    if prev_name and self._tab_is_dirty(prev_name):
+                        leaving_dirty = prev_name
+                    if leaving_dirty:
+                        self._unsaved_dialog_open = True
+                        self._active_tab_name = leaving_dirty
+                        tabs.value = leaving_dirty
+                        self._show_unsaved_changes_dialog(tabs, leaving_dirty, new_name)
                         return
+                    current_tab = self._tabs_by_name.get(prev_name)
                     if current_tab:
                         current_tab.on_exit()
                     next_tab = self._tabs_by_name.get(new_name)
                     if next_tab:
                         next_tab.on_enter()
+                        self._snapshot_tab_fields(next_tab)
                     self._active_tab_name = new_name
-
-                # Monitor sub-tab changes using a timer since tabs.on("change") may not work in native mode
-                previous_subtab = _tab_label(tabs.value)
+                    self._accepted_settings_tab = new_name
 
                 def check_subtab_changes():
-                    nonlocal previous_subtab
                     current_subtab = _tab_label(tabs.value)
-                    if current_subtab != previous_subtab:
-                        mock_event = type("MockEvent", (), {"value": current_subtab})()
-                        on_tab_change(mock_event)
-                        previous_subtab = _tab_label(tabs.value)
+                    if (
+                        not current_subtab
+                        or current_subtab == self._accepted_settings_tab
+                        or self._unsaved_dialog_open
+                        or self._settings_switch_guard
+                    ):
+                        return
+                    on_tab_change(
+                        type(
+                            "MockEvent",
+                            (),
+                            {
+                                "value": current_subtab,
+                                "previous_value": self._accepted_settings_tab,
+                            },
+                        )()
+                    )
 
-                layout_schedule(0.5, check_subtab_changes, active=True)  # Check every 500ms
+                tabs.on_value_change(on_tab_change)
+                tab_panels_container.on_value_change(on_tab_change)
+                layout_schedule(0.4, check_subtab_changes, active=True)
 
         ui.run_javascript(
             "window.mycelianInitSubTabSeams && window.mycelianInitSubTabSeams()"
@@ -5665,33 +5709,198 @@ class SettingsUI:
             )
             layout_schedule(0.1, lambda: self.refresh_source_urls(), once=True)
 
+    def _note_settings_tab_loaded(self, tab_name: str) -> None:
+        """Remember the field values just built so later edits can be detected."""
+        tab = self._tabs_by_name.get(tab_name)
+        if tab is None:
+            return
+        self._snapshot_tab_fields(tab)
+        tab.dirty = False
+
+    def _snapshot_tab_fields(self, tab) -> None:
+        snap = {}
+        for key, element in getattr(tab, "ui_elements", {}).items():
+            if not self._is_settings_field(element):
+                continue
+            try:
+                snap[key] = element.value
+            except Exception:
+                continue
+        tab._field_snapshot = snap
+
+    @staticmethod
+    def _is_settings_field(element) -> bool:
+        return element.__class__.__name__ in {
+            "Input",
+            "Textarea",
+            "Number",
+            "Select",
+            "Switch",
+            "Checkbox",
+            "Slider",
+            "Toggle",
+            "ColorInput",
+        }
+
+    @staticmethod
+    def _settings_values_equal(left, right) -> bool:
+        if left == right:
+            return True
+        if (left is None or left == "") and (right is None or right == ""):
+            return True
+        if (
+            isinstance(left, (int, float))
+            and isinstance(right, (int, float))
+            and not isinstance(left, bool)
+            and not isinstance(right, bool)
+        ):
+            try:
+                return float(left) == float(right)
+            except (TypeError, ValueError):
+                return False
+        return False
+
+    def _tab_is_dirty(self, tab_name: str) -> bool:
+        tab = self._tabs_by_name.get(tab_name)
+        if tab is None:
+            return False
+        checker = getattr(tab, "has_unsaved_changes", None)
+        if callable(checker):
+            try:
+                return bool(checker())
+            except Exception:
+                logger.debug(
+                    "Settings tab %s unsaved check failed", tab_name, exc_info=True
+                )
+        if getattr(tab, "dirty", False):
+            return True
+        snap = getattr(tab, "_field_snapshot", None)
+        if not snap:
+            return False
+        elements = getattr(tab, "ui_elements", {})
+        for key, old in snap.items():
+            element = elements.get(key)
+            if element is None:
+                continue
+            try:
+                current = element.value
+            except Exception:
+                continue
+            if not self._settings_values_equal(old, current):
+                return True
+        return False
+
+    def _first_dirty_tab_name(self) -> str:
+        for name in self._tabs_by_name:
+            if self._tab_is_dirty(name):
+                return name
+        return ""
+
+    def _complete_settings_tab_switch(
+        self, tabs_component, prev_name: str, next_name: str
+    ) -> None:
+        """Leave the previous settings tab and enter the next one."""
+        self._settings_switch_guard = True
+        try:
+            current_tab = self._tabs_by_name.get(prev_name)
+            if current_tab:
+                current_tab.on_exit()
+            next_tab = self._tabs_by_name.get(next_name)
+            if next_tab:
+                next_tab.on_enter()
+                self._snapshot_tab_fields(next_tab)
+                next_tab.dirty = False
+            self._active_tab_name = next_name
+            self._accepted_settings_tab = next_name
+            tabs_component.value = next_name
+        finally:
+            self._settings_switch_guard = False
+
     def _show_unsaved_changes_dialog(
         self, tabs_component, prev_name: str, next_name: str
     ) -> None:
-        """Prompt whether to discard or stay when leaving a dirty tab."""
-        with ui.dialog() as dialog, ui.card().classes("w-[420px] p-4"):
+        """Prompt to save, discard, or stay when leaving a dirty tab."""
+        from nicegui import context
+
+        with context.client.layout:
+            self._open_unsaved_settings_dialog(tabs_component, prev_name, next_name)
+
+    def _open_unsaved_settings_dialog(
+        self, tabs_component, prev_name: str, next_name: str
+    ) -> None:
+        with ui.dialog().props("persistent") as dialog, ui.card().classes(
+            "w-[460px] p-4"
+        ):
             ui.label("Unsaved changes").classes("text-lg font-bold mb-2")
             ui.label(
-                "You have unsaved changes on this tab. Do you want to discard them and switch tabs?"
+                "You have unsaved changes on this tab. Save them before switching?"
             ).classes("secondary-text mb-4")
 
+            def _release() -> None:
+                self._unsaved_dialog_open = False
+
+            def stay() -> None:
+                _release()
+                dialog.close()
+
             def confirm_switch():
+                self._settings_switch_guard = True
                 try:
                     current_tab = self._tabs_by_name.get(prev_name)
+                    if current_tab is not None:
+                        current_tab._suppress_dirty = True
+                        try:
+                            current_tab.discard()
+                            if hasattr(current_tab, "mark_clean"):
+                                current_tab.mark_clean()
+                        finally:
+                            current_tab._suppress_dirty = False
+                        self._snapshot_tab_fields(current_tab)
+                        current_tab.dirty = False
+                    self._complete_settings_tab_switch(
+                        tabs_component, prev_name, next_name
+                    )
+                finally:
+                    _release()
+                    dialog.close()
+
+            def save_and_switch():
+                current_tab = self._tabs_by_name.get(prev_name)
+                try:
                     if current_tab:
-                        current_tab.discard()
-                        current_tab.on_exit()
-                    next_tab = self._tabs_by_name.get(next_name)
-                    if next_tab:
-                        next_tab.on_enter()
-                    tabs_component.value = next_name
-                    self._active_tab_name = next_name
+                        current_tab.save()
+                except Exception as exc:
+                    logger.error(
+                        "Error saving settings tab %s: %s", prev_name, exc, exc_info=True
+                    )
+                    notify(
+                        "Could not save this tab. Your changes are still here.",
+                        type="warning",
+                    )
+                    return
+                if current_tab and self._tab_is_dirty(prev_name):
+                    notify(
+                        "Could not save this tab. Your changes are still here.",
+                        type="warning",
+                    )
+                    return
+                _release()
+                try:
+                    if current_tab:
+                        self._snapshot_tab_fields(current_tab)
+                        current_tab.dirty = False
+                    self._complete_settings_tab_switch(
+                        tabs_component, prev_name, next_name
+                    )
                 finally:
                     dialog.close()
 
             with ui.row().classes("w-full justify-end gap-2"):
-                ui.button("Stay", on_click=dialog.close).props("outline")
+                ui.button("Stay", on_click=stay).props("outline")
                 ui.button("Discard and switch", on_click=confirm_switch).props(
+                    "outline"
+                )
+                ui.button("Save and switch", on_click=save_and_switch).props(
                     "color=primary"
                 )
 
@@ -5701,11 +5910,7 @@ class SettingsUI:
         """Check if any settings tab has unsaved changes."""
         if not hasattr(self, "_tabs_by_name") or self._tabs_by_name is None:
             return False
-        return any(
-            getattr(tab, "dirty", False)
-            for tab in self._tabs_by_name.values()
-            if tab is not None
-        )
+        return bool(self._first_dirty_tab_name())
 
 
 # Create a singleton instance

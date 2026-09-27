@@ -45,6 +45,10 @@ _TAB_CSS = """
     color: var(--color-text-secondary);
     text-align: center;
 }
+.spore-studio-toolbar {
+    border-bottom: 1px solid var(--color-border-default);
+    background: var(--color-bg-surface);
+}
 """
 
 _INJECTED_CSS = {"injected": False}
@@ -86,6 +90,24 @@ def create_spore_studio_tab() -> None:
         "spore-studio-host w-full h-full min-h-0 flex flex-col"
     ) as container:
         state["container"] = container
+
+        with ui.row().classes(
+            "spore-studio-toolbar w-full items-center justify-end gap-1 px-2 py-1 shrink-0"
+        ):
+            ui.button(
+                "Reload editor",
+                icon="refresh",
+                on_click=lambda: _refresh_iframe(state),
+            ).props("dense flat").tooltip(
+                "Reload the editor after the overlay server restarts"
+            )
+            ui.button(
+                "Open externally",
+                icon="open_in_new",
+                on_click=_open_externally,
+            ).props("dense flat").tooltip(
+                "Open the editor in your default browser"
+            )
 
         body = ui.element("div").classes("w-full grow relative min-h-0")
         state["body"] = body

@@ -1414,6 +1414,7 @@ class AlertEventHandler:
                 logger.debug(
                     f"Displayed new alert: {alert_type} (current tab: {activity_feed_state.current_tab})"
                 )
+                update_alert_visibility()
                 schedule_feed_integrity_check("apply_alert_on_ui")
             else:
                 logger.debug(
@@ -1774,6 +1775,8 @@ class ActivityFeedState:
         # Filter dropdown reference
         self.filter_dropdown: Optional[ui.element] = None
         self.filter_host: Optional[ui.element] = None
+        self.search_input: Optional[ui.element] = None
+        self.search_text: str = ""
         # Timer for click-outside detection
         self.dropdown_timer: Optional[ui.timer] = None
         # Backdrop reference
@@ -2918,8 +2921,44 @@ def create_alert_element(alert_data) -> bool:
         return True
 
 
+def _alert_search_query() -> str:
+    """Lowercased username/message query for the activity feed. Empty shows all."""
+    return (getattr(activity_feed_state, "search_text", "") or "").strip().lower()
+
+
+def _alert_matches_type_filter(
+    alert_data: Dict[str, Any], filter_state: Optional[Dict[str, Any]] = None
+) -> bool:
+    """True when the event type is included by the feed filter checkboxes."""
+    if filter_state is None:
+        filter_state = activity_feed_state.filter_state
+    display_type = alert_data.get("type", "")
+    filter_key = activity_feed_state.alert_type_to_filter.get(display_type)
+    return bool(
+        filter_state.get("all", True)
+        or (filter_key and filter_state.get(filter_key, True))
+    )
+
+
+def _alert_matches_search(alert_data: Dict[str, Any], query: Optional[str] = None) -> bool:
+    """True when username, message, or the user's note contains the query."""
+    if query is None:
+        query = _alert_search_query()
+    if not query:
+        return True
+    haystack = " ".join(
+        str(alert_data.get(key) or "")
+        for key in ("username", "message", "user_message")
+    ).lower()
+    return query in haystack
+
+
+def _card_should_show(alert_data: Dict[str, Any]) -> bool:
+    return _alert_matches_type_filter(alert_data) and _alert_matches_search(alert_data)
+
+
 def update_alert_visibility():
-    """Show every card. Event filters apply only to condensed rows."""
+    """Show cards that match the event filters and the username/message search."""
     # Store the current dropdown visibility state
     dropdown_was_visible = activity_feed_state.dropdown_visible
 
@@ -2942,14 +2981,21 @@ def update_alert_visibility():
         if not _element_alive(element):
             continue
 
-        # Card lists always show every event. Filters apply to condensed rows.
+        should_show = _card_should_show(alert_data)
         current_hidden = "hidden" in getattr(element, "_classes", [])
-        if not current_hidden:
+        if should_show and not current_hidden:
+            continue
+        if not should_show and current_hidden:
             continue
 
-        element.classes(remove="hidden")
-        element.classes(add="visible")
-        element.style("display: block")
+        if should_show:
+            element.classes(remove="hidden")
+            element.classes(add="visible")
+            element.style("display: block")
+        else:
+            element.classes(remove="visible")
+            element.classes(add="hidden")
+            element.style("display: none")
         updates_needed += 1
 
     # Only update UI if we actually made changes
@@ -2988,24 +3034,37 @@ def close_filter_dropdown():
 
 
 def _condensed_filters_visible() -> bool:
-    """Filters belong to the condensed current-alerts feed only."""
-    return (
-        activity_feed_state.current_tab == "current"
-        and bool(activity_feed_state.condense_list)
-    )
+    """Event filters and search stay available on both card and condensed feeds."""
+    return activity_feed_state.current_tab in ("current", "previous")
 
 
 def _sync_filter_controls() -> None:
-    """Show the filter button only while the condensed feed is on screen."""
+    """Keep the filter and search controls on screen for the active feed."""
     host = getattr(activity_feed_state, "filter_host", None)
+    search = getattr(activity_feed_state, "search_input", None)
     visible = _condensed_filters_visible()
-    if _element_alive(host):
+    for element in (host, search):
+        if not _element_alive(element):
+            continue
         if visible:
-            host.classes(remove="hidden")
+            element.classes(remove="hidden")
         else:
-            host.classes(add="hidden")
+            element.classes(add="hidden")
     if not visible:
         close_filter_dropdown()
+
+
+def _on_feed_search_change(event) -> None:
+    """Filter cards and the condensed list by username or message."""
+    if _ignore_view_apply:
+        return
+    activity_feed_state.search_text = (getattr(event, "value", None) or "").strip()
+    update_alert_visibility()
+    if (
+        activity_feed_state.condense_list
+        and activity_feed_state.current_tab == "current"
+    ):
+        schedule_condensed_view_update("search")
 
 
 def on_checkbox_change(key, value):
@@ -3533,6 +3592,15 @@ def create_activity_feed_tab():
 
             ui.element("div").classes("grow")
 
+            search_input = (
+                ui.input(placeholder="User or message")
+                .props("dense outlined clearable")
+                .classes("w-44 shrink-0")
+            )
+            search_input.tooltip("Show alerts whose username or message matches")
+            activity_feed_state.search_input = search_input
+            search_input.on_value_change(_on_feed_search_change)
+
             # Condense List toggle (only visible on Current Alerts tab)
             def toggle_condense_list(e):
                 global _ignore_condense_toggle_event
@@ -3552,7 +3620,7 @@ def create_activity_feed_tab():
             )
 
             # Filter dropdown lives outside the overflow-x cluster so it can float.
-            # It is only offered while the condensed feed is showing.
+            # Type filters apply to card lists and the condensed feed.
             filter_host_classes = "relative shrink-0 z-50"
             if not _condensed_filters_visible():
                 filter_host_classes += " hidden"
@@ -4681,6 +4749,8 @@ def _accumulate_condensed_alert(
         filter_state.get("all", True)
         or (filter_key and filter_state.get(filter_key, True))
     ):
+        return "excluded"
+    if not _alert_matches_search(alert_data):
         return "excluded"
 
     username = alert_data.get("username")

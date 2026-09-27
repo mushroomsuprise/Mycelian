@@ -27,6 +27,7 @@ import logging
 import threading
 import time
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 from nicegui import ui
 from ..notification_engine import notify
@@ -133,6 +134,15 @@ class AlertSettingsState:
         self.current_tab = None
         # Skip selection on_change handlers during programmatic dropdown updates
         self.suppress_selection_handler_depth = 0
+        # Sub-tab chrome used by the unsaved-changes guard
+        self.tabs_component = None
+        self.active_tab_name = "Bits"
+        self.tab_switch_guard = False
+        self.unsaved_prompt_open = False
+        # Alert types whose forms differ from the last loaded or saved values
+        self.dirty_tabs = set()
+        # Alert id last loaded into each type's form
+        self.loaded_alert_ids = {}
 
     @property
     def suppress_selection_handler(self) -> bool:
@@ -157,6 +167,307 @@ class AlertSettingsState:
 
 # Create global state instance
 alert_settings_state = AlertSettingsState()
+
+ALERT_TAB_TO_TYPE = {
+    "Bits": "bits",
+    "Subscriptions": "subs",
+    "Streaks": "streaks",
+    "Gift Subs": "giftsubs",
+    "Donations": "donations",
+    "Raids": "raids",
+    "Follows": "follows",
+    "Channel Points": "points",
+}
+
+_ALERT_DIRTY_SKIP = {
+    "alert_select",
+    "delete_btn",
+    "save_btn",
+    "unsaved_label",
+    "channel_points_locked_banner",
+    "exact_input_row",
+    "range_input_row",
+}
+
+
+def _alert_values_differ(original, current) -> bool:
+    """True when a form field no longer matches the value last loaded or saved."""
+    if original == current:
+        return False
+    if (original is None or original == "") and (current is None or current == ""):
+        return False
+    if (
+        isinstance(original, (int, float))
+        and isinstance(current, (int, float))
+        and not isinstance(original, bool)
+        and not isinstance(current, bool)
+    ):
+        try:
+            return float(original) != float(current)
+        except (TypeError, ValueError):
+            return True
+    return True
+
+
+def alerts_have_unsaved_changes() -> bool:
+    """True when the open alert form, or any alert type, has unsaved edits."""
+    active = ALERT_TAB_TO_TYPE.get(alert_settings_state.active_tab_name or "")
+    if active and alert_form_is_dirty(active):
+        return True
+    return any(alert_form_is_dirty(tab_type) for tab_type in ALERT_TAB_TO_TYPE.values())
+
+
+def save_active_alert(done) -> None:
+    """Save the alert type currently on screen and report success to ``done``."""
+    active = ALERT_TAB_TO_TYPE.get(alert_settings_state.active_tab_name or "")
+    if not active:
+        done(True)
+        return
+    _save_alert_type(active, done)
+
+
+def discard_active_alert() -> None:
+    """Reload the alert type currently on screen from disk."""
+    active = ALERT_TAB_TO_TYPE.get(alert_settings_state.active_tab_name or "")
+    if active:
+        _discard_alert_form(active)
+
+
+def _alert_form_values_differ(tab_type: str) -> bool:
+    """True when a visible field no longer matches the last loaded or saved value."""
+    originals = alert_settings_state.get_original_values(tab_type)
+    if not originals:
+        return False
+    elements = alert_settings_state.get_elements(tab_type)
+    for name, element in elements.items():
+        if name in _ALERT_DIRTY_SKIP or not element or not hasattr(element, "value"):
+            continue
+        if name not in originals:
+            continue
+        if element.__class__.__name__ in {"Button", "Label", "Icon", "Card"}:
+            continue
+        if _alert_values_differ(originals.get(name), element.value):
+            return True
+    return False
+
+
+def alert_form_is_dirty(tab_type: str) -> bool:
+    """True when the alert form has edits that have not been saved."""
+    if tab_type in alert_settings_state.dirty_tabs:
+        return True
+    return _alert_form_values_differ(tab_type)
+
+
+def _refresh_alert_dirty_label(tab_type: str) -> None:
+    label = alert_settings_state.get_elements(tab_type).get("unsaved_label")
+    if not label:
+        return
+    try:
+        label.visible = alert_form_is_dirty(tab_type)
+    except Exception:
+        logger.debug("Could not refresh unsaved label for %s", tab_type, exc_info=True)
+
+
+def _mount_unsaved_label(alert_type: str) -> None:
+    label = ui.label("Unsaved changes").classes("text-sm self-center mr-auto")
+    label.style("color: var(--color-warning, #e6a817);")
+    label.visible = False
+    label.tooltip("These alert settings are not saved yet")
+    alert_settings_state.get_elements(alert_type)["unsaved_label"] = label
+
+
+def _remember_loaded_alert(tab_type: str) -> None:
+    select = alert_settings_state.get_elements(tab_type).get("alert_select")
+    if select is not None and hasattr(select, "value"):
+        alert_settings_state.loaded_alert_ids[tab_type] = select.value
+
+
+def _resolve_alert_tab_name(event) -> str:
+    tab_name = getattr(event, "value", None)
+    if not tab_name:
+        args = getattr(event, "args", None)
+        if isinstance(args, str):
+            tab_name = args
+        elif isinstance(args, dict):
+            tab_name = args.get("value")
+    if tab_name and not isinstance(tab_name, str):
+        from ..ui_tab_transitions import _tab_label
+
+        tab_name = _tab_label(tab_name)
+    return str(tab_name or "")
+
+
+def _activate_alert_tab(tab_name: str) -> None:
+    """Show an alert-type tab and reload its selected alert."""
+    if not tab_name:
+        return
+    alert_settings_state.active_tab_name = tab_name
+    tabs = alert_settings_state.tabs_component
+    alert_settings_state.tab_switch_guard = True
+    try:
+        if tabs is not None:
+            tabs.value = tab_name
+    finally:
+        alert_settings_state.tab_switch_guard = False
+    initialize_tab_values(tab_name)
+
+
+def _discard_alert_form(alert_type: str) -> None:
+    """Reload the current alert from disk so unsaved edits are dropped."""
+    elements = alert_settings_state.get_elements(alert_type)
+    select = elements.get("alert_select")
+    value = select.value if select is not None and hasattr(select, "value") else None
+    placeholders = POINTS_REWARD_SELECT_PLACEHOLDERS
+    if alert_type == "points":
+        if value and value != "new" and value not in placeholders:
+            load_point_reward_settings(alert_type, value)
+        else:
+            set_default_values_for_new_point_reward(alert_type)
+            store_original_values(alert_type)
+            clear_changed_styling(alert_type)
+    elif value and value != "new":
+        load_alert_settings(alert_type, value)
+    else:
+        set_default_values_for_new_alert(alert_type)
+        store_original_values(alert_type)
+        clear_changed_styling(alert_type)
+    alert_settings_state.dirty_tabs.discard(alert_type)
+    _refresh_alert_dirty_label(alert_type)
+
+
+def _save_alert_type(alert_type: str, done) -> None:
+    """Save the alert form and report success to ``done(ok)``."""
+    if alert_type == "points":
+        save_point_alert(on_complete=done)
+        return
+    try:
+        save_alert(alert_type)
+        done(not alert_form_is_dirty(alert_type))
+    except Exception:
+        logger.error("Error saving %s alert before switch", alert_type, exc_info=True)
+        done(False)
+
+
+def _prompt_unsaved_alert(alert_type: str, message: str, on_discard, on_saved) -> None:
+    """Stay, discard, or save before leaving an edited alert form."""
+    with ui.dialog().props("persistent") as dialog, ui.card().classes("w-[460px] p-4"):
+        ui.label("Unsaved changes").classes("text-lg font-bold mb-2")
+        ui.label(message).classes("secondary-text mb-4")
+        busy = {"value": False}
+
+        def stay() -> None:
+            if not busy["value"]:
+                alert_settings_state.unsaved_prompt_open = False
+                dialog.close()
+
+        def discard() -> None:
+            if busy["value"]:
+                return
+            dialog.close()
+            on_discard()
+
+        def save_and_continue() -> None:
+            if busy["value"]:
+                return
+            busy["value"] = True
+
+            def finished(ok: bool) -> None:
+                busy["value"] = False
+                if not ok:
+                    notify(
+                        "Could not save this alert. Your changes are still here.",
+                        type="warning",
+                    )
+                    return
+                dialog.close()
+                on_saved()
+
+            _save_alert_type(alert_type, finished)
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Stay", on_click=stay).props("outline")
+            ui.button("Discard and switch", on_click=discard).props("outline")
+            ui.button("Save and switch", on_click=save_and_continue).props(
+                "color=primary"
+            )
+        dialog.open()
+
+
+def request_alert_tab_change(tab_name: str) -> None:
+    """Switch alert-type tabs, prompting when the current form is dirty."""
+    if alert_settings_state.tab_switch_guard:
+        return
+    if alert_settings_state.unsaved_prompt_open:
+        tabs = alert_settings_state.tabs_component
+        if tabs is not None and tab_name != alert_settings_state.active_tab_name:
+            alert_settings_state.tab_switch_guard = True
+            try:
+                tabs.value = alert_settings_state.active_tab_name
+            finally:
+                alert_settings_state.tab_switch_guard = False
+        return
+    if not tab_name or tab_name == alert_settings_state.active_tab_name:
+        return
+    prev_name = alert_settings_state.active_tab_name
+    prev_type = ALERT_TAB_TO_TYPE.get(prev_name)
+    if prev_type and alert_form_is_dirty(prev_type):
+        alert_settings_state.unsaved_prompt_open = True
+        tabs = alert_settings_state.tabs_component
+        alert_settings_state.tab_switch_guard = True
+        try:
+            if tabs is not None:
+                tabs.value = prev_name
+        finally:
+            alert_settings_state.tab_switch_guard = False
+        def _finish_prompt() -> None:
+            alert_settings_state.unsaved_prompt_open = False
+
+        def _discard_and_switch() -> None:
+            alert_settings_state.ignore_field_dirty = True
+            alert_settings_state.tab_switch_guard = True
+            try:
+                _discard_alert_form(prev_type)
+                alert_settings_state.dirty_tabs.discard(prev_type)
+                _activate_alert_tab(tab_name)
+            finally:
+                alert_settings_state.ignore_field_dirty = False
+                alert_settings_state.unsaved_prompt_open = False
+                alert_settings_state.tab_switch_guard = False
+
+        def _save_and_switch() -> None:
+            _finish_prompt()
+            _activate_alert_tab(tab_name)
+
+        _prompt_unsaved_alert(
+            prev_type,
+            "You have unsaved changes on this alert tab. Save them before switching?",
+            on_discard=_discard_and_switch,
+            on_saved=_save_and_switch,
+        )
+        return
+    _activate_alert_tab(tab_name)
+
+
+def _guard_alert_selection(alert_type: str, new_value):
+    """Return True when the selection change should wait for a save prompt."""
+    if alert_type not in alert_settings_state.loaded_alert_ids:
+        return False
+    loaded = alert_settings_state.loaded_alert_ids.get(alert_type)
+    if new_value == loaded or not alert_form_is_dirty(alert_type):
+        return False
+    select = alert_settings_state.get_elements(alert_type).get("alert_select")
+    if select is not None:
+        with suppress_alert_selection_handler():
+            select.value = loaded
+    return True
+
+
+def _select_alert_programmatically(alert_type: str, new_value, handler) -> None:
+    select = alert_settings_state.get_elements(alert_type).get("alert_select")
+    if select is not None:
+        with suppress_alert_selection_handler():
+            select.value = new_value
+    handler(SimpleNamespace(value=new_value), alert_type)
 
 
 @contextmanager
@@ -369,36 +680,36 @@ def create_alert_settings_tab():
                 points_tab = ui.tab("Channel Points")
 
             set_alerts_ui_references(alert_tabs)
+            alert_settings_state.tabs_component = alert_tabs
+            alert_settings_state.active_tab_name = "Bits"
 
-            # Add an on_change handler to the tabs to initialize values when tab changes
+            # Quasar tabs emit update:model-value, which NiceGUI delivers as
+            # on_value_change. A DOM "change" listener does not fire here.
             def _on_alert_tab_change(e):
-                tab_name = getattr(e, "value", None)
-                if not tab_name:
-                    args = getattr(e, "args", None)
-                    if isinstance(args, str):
-                        tab_name = args
-                    elif isinstance(args, dict):
-                        tab_name = args.get("value")
+                tab_name = _resolve_alert_tab_name(e)
                 if tab_name:
-                    initialize_tab_values(tab_name)
+                    request_alert_tab_change(tab_name)
 
-            alert_tabs.on("change", _on_alert_tab_change)
+            alert_tabs.on_value_change(_on_alert_tab_change)
 
-            # Add a simple handler for Channel Points tab to load rewards immediately
-            def simple_tab_handler(e):
-                if e.value == "Channel Points":
-                    logger.debug("Channel Points tab selected, loading rewards immediately")
+            def check_alert_tab_changes():
+                if (
+                    alert_settings_state.unsaved_prompt_open
+                    or alert_settings_state.tab_switch_guard
+                    or alert_settings_state.ignore_field_dirty
+                ):
+                    return
+                current_alert_tab = _resolve_alert_tab_name(
+                    SimpleNamespace(value=alert_tabs.value)
+                )
+                if (
+                    not current_alert_tab
+                    or current_alert_tab == alert_settings_state.active_tab_name
+                ):
+                    return
+                request_alert_tab_change(current_alert_tab)
 
-                    # Simple direct load with short delay
-                    def direct_load():
-                        try:
-                            load_twitch_point_rewards()
-                        except Exception as load_err:
-                            logger.error(f"Error in direct load: {str(load_err)}")
-
-                    layout_schedule(0.1, direct_load, once=True)
-
-            alert_tabs.on("change", simple_tab_handler)
+            layout_schedule(0.4, check_alert_tab_changes, active=True)
 
             # Main content area with tab panels
             with ui.tab_panels(alert_tabs, value=bits_tab).classes(
@@ -610,6 +921,14 @@ def create_alert_type_panel(alert_type: str):
                             on_change=lambda e: handle_alert_selection(e, alert_type),
                         )
                     )
+                    duplicate_btn = ui.button(
+                        "Duplicate",
+                        icon="content_copy",
+                        on_click=lambda at=alert_type: duplicate_current_alert(at),
+                    ).props("dense outline").classes("text-sm")
+                    duplicate_btn.tooltip(
+                        "Copy this alert into a new unsaved alert"
+                    )
 
                 # Alert type specific settings
                 if alert_type in [
@@ -639,6 +958,9 @@ def create_alert_type_panel(alert_type: str):
                         exact_input_row = ui.row().classes(
                             "items-center range-input exact-input"
                         )
+                        alert_settings_state.get_elements(alert_type)[
+                            "exact_input_row"
+                        ] = exact_input_row
                         with exact_input_row:
                             # Determine label and suffix based on alert type
                             if alert_type == "subs":
@@ -684,6 +1006,9 @@ def create_alert_type_panel(alert_type: str):
                             "items-center gap-2 range-input range-inputs"
                         )
                         range_input_row.visible = False
+                        alert_settings_state.get_elements(alert_type)[
+                            "range_input_row"
+                        ] = range_input_row
                         with range_input_row:
                             with ui.row().classes("items-center"):
                                 # Determine tooltip text for range based on alert type
@@ -853,7 +1178,8 @@ def create_alert_type_panel(alert_type: str):
                         create_twitch_options_section(alert_type)
 
             # Save and Test buttons at the bottom
-            with ui.row().classes("w-full justify-end mt-2 gap-2"):
+            with ui.row().classes("w-full justify-end items-center mt-2 gap-2"):
+                _mount_unsaved_label(alert_type)
                 with ui.row().classes("items-center"):
                     _create_test_alert_button(alert_type)
 
@@ -1012,6 +1338,125 @@ def toggle_range_inputs(e, exact_row, range_row):
         range_row.visible = True
 
 
+_QUANTITY_ALERT_TYPES = {
+    "bits",
+    "subs",
+    "streaks",
+    "giftsubs",
+    "donations",
+    "raids",
+}
+
+
+def _shift_duplicate_amount(alert_type: str) -> None:
+    """Move the copied trigger so saving does not replace the original alert."""
+    if alert_type not in _QUANTITY_ALERT_TYPES:
+        return
+    elements = alert_settings_state.get_elements(alert_type)
+    existing = set(get_alerts_for_type(alert_type).keys())
+    range_toggle = elements.get("range_toggle")
+    if range_toggle is not None and getattr(range_toggle, "value", False):
+        try:
+            min_v = int(elements["min_input"].value or 0)
+            max_v = int(elements["max_input"].value or 0)
+        except (TypeError, ValueError):
+            return
+        span = max(0, max_v - min_v)
+        for _ in range(1000):
+            min_v = max_v + 1
+            max_v = min_v + span
+            if f"{alert_type}{min_v}-{max_v}" not in existing:
+                break
+        elements["min_input"].value = min_v
+        elements["max_input"].value = max_v
+        return
+    amount_input = elements.get("amount_input")
+    if amount_input is None:
+        return
+    try:
+        candidate = int(amount_input.value or 0) + 1
+    except (TypeError, ValueError):
+        candidate = 1
+    for _ in range(10000):
+        if f"{alert_type}{candidate}" not in existing:
+            break
+        candidate += 1
+    amount_input.value = candidate
+
+
+def duplicate_current_alert(alert_type: str) -> None:
+    """Copy the open alert into an unsaved new alert."""
+    elements = alert_settings_state.get_elements(alert_type)
+    select = elements.get("alert_select")
+    selected = getattr(select, "value", None) if select is not None else None
+    if (
+        not selected
+        or selected == "new"
+        or selected in POINTS_REWARD_SELECT_PLACEHOLDERS
+    ):
+        notify("Choose an existing alert to duplicate.", type="warning")
+        return
+
+    snapshot = {}
+    for name, element in elements.items():
+        if name in _ALERT_DIRTY_SKIP or not hasattr(element, "value"):
+            continue
+        if element.__class__.__name__ in {"Button", "Label", "Icon", "Card"}:
+            continue
+        snapshot[name] = element.value
+
+    with suppress_alert_selection_handler():
+        select.value = "new"
+        if alert_type == "points":
+            set_default_values_for_new_point_reward(alert_type)
+        else:
+            set_default_values_for_new_alert(alert_type)
+        store_original_values(alert_type)
+        for name, value in snapshot.items():
+            element = elements.get(name)
+            if element is None or not hasattr(element, "value"):
+                continue
+            if (
+                alert_type == "points"
+                and name == "twitch_title_input"
+                and isinstance(value, str)
+                and value.strip()
+            ):
+                value = f"{value} copy"
+            try:
+                element.value = value
+            except Exception:
+                logger.debug("Could not copy alert field %s", name, exc_info=True)
+        _shift_duplicate_amount(alert_type)
+        range_toggle = elements.get("range_toggle")
+        exact_row = elements.get("exact_input_row")
+        range_row = elements.get("range_input_row")
+        if range_toggle is not None and exact_row is not None and range_row is not None:
+            toggle_range_inputs(
+                SimpleNamespace(value=bool(range_toggle.value)),
+                exact_row,
+                range_row,
+            )
+        update_delete_button_visibility(alert_type)
+        _refresh_alert_dirty_label(alert_type)
+
+    if alert_type == "follows":
+        notify(
+            "Copied into a new follow alert. Saving replaces the existing follow alert, because follows use one slot.",
+            type="info",
+        )
+    elif alert_type == "points":
+        notify(
+            "Copied into a new reward. Review the title and cost, then Save Alert.",
+            type="info",
+        )
+    else:
+        notify(
+            "Copied into a new alert. The amount was shifted so saving does not replace the original.",
+            type="info",
+        )
+
+
 def handle_alert_selection(e, alert_type: str):
     """Handle when an alert is selected from the dropdown
 
@@ -1020,6 +1465,19 @@ def handle_alert_selection(e, alert_type: str):
         alert_type (str): The type of alert (bits, subs, etc.)
     """
     if alert_settings_state.suppress_selection_handler:
+        return
+    new_value = getattr(e, "value", None)
+    if _guard_alert_selection(alert_type, new_value):
+        _prompt_unsaved_alert(
+            alert_type,
+            "You have unsaved changes to this alert. Save them before switching?",
+            on_discard=lambda: _select_alert_programmatically(
+                alert_type, new_value, handle_alert_selection
+            ),
+            on_saved=lambda: _select_alert_programmatically(
+                alert_type, new_value, handle_alert_selection
+            ),
+        )
         return
     try:
         fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
@@ -2891,14 +3349,30 @@ def track_field_change(field_name, element, new_value, tab_type=None):
         # Handle null values in text fields
         if new_value is None and element.__class__.__name__ in ["Input", "TextField"]:
             new_value = ""
+        incoming = new_value
+        if hasattr(new_value, "value") and not isinstance(
+            new_value, (str, bytes, int, float, bool, list, dict)
+        ):
+            incoming = new_value.value
+
+        if getattr(alert_settings_state, "ignore_field_dirty", False):
+            return
 
         # Check if the value has changed from the original
-        if original_value != new_value:
+        if _alert_values_differ(original_value, incoming) or (
+            hasattr(element, "value")
+            and _alert_values_differ(original_value, element.value)
+        ):
+            alert_settings_state.dirty_tabs.add(current_tab)
             logger.debug(
-                f"Change detected in {field_name}: {original_value} → {new_value}"
+                f"Change detected in {field_name}: {original_value} → {incoming}"
             )
         else:
+            alert_settings_state.dirty_tabs.discard(current_tab)
+            if _alert_form_values_differ(current_tab):
+                alert_settings_state.dirty_tabs.add(current_tab)
             logger.debug(f"No change in {field_name}")
+        _refresh_alert_dirty_label(current_tab)
     except Exception as e:
         logger.error(f"Error tracking field change: {str(e)}", exc_info=True)
 
@@ -2932,6 +3406,7 @@ def update_all_fields_styling(tab_type: str):
             )
         else:
             logger.debug(f"Styling update: No change in {field_name}")
+    _refresh_alert_dirty_label(tab_type)
 
 
 def clear_changed_styling(tab_type: str):
@@ -2942,6 +3417,7 @@ def clear_changed_styling(tab_type: str):
     for field_name, element in alert_settings_state.get_elements(tab_type).items():
         if not element:
             continue
+    _refresh_alert_dirty_label(tab_type)
 
 
 def store_original_values(tab_type: str):
@@ -2969,6 +3445,9 @@ def store_original_values(tab_type: str):
 
         # Log stored values for debugging
         logger.debug(f"Stored original values: {original_values}")
+        alert_settings_state.dirty_tabs.discard(tab_type)
+        _remember_loaded_alert(tab_type)
+        _refresh_alert_dirty_label(tab_type)
     except Exception as e:
         logger.error(f"Error storing original values: {str(e)}", exc_info=True)
 
@@ -3036,6 +3515,14 @@ def create_points_alert_panel():
                                 e, alert_type
                             ),
                         )
+                    )
+                    duplicate_btn = ui.button(
+                        "Duplicate",
+                        icon="content_copy",
+                        on_click=lambda at=alert_type: duplicate_current_alert(at),
+                    ).props("dense outline").classes("text-sm")
+                    duplicate_btn.tooltip(
+                        "Copy this reward into a new unsaved reward"
                     )
 
                 with ui.row().classes("items-center gap-2"):
@@ -3144,7 +3631,8 @@ def create_points_alert_panel():
                     create_twitch_options_section(alert_type)
 
             # Save and Test buttons at the bottom
-            with ui.row().classes("w-full justify-end mt-2 gap-2"):
+            with ui.row().classes("w-full justify-end items-center mt-2 gap-2"):
+                _mount_unsaved_label(alert_type)
                 with ui.row().classes("items-center"):
                     _create_test_alert_button(alert_type)
 
@@ -3796,6 +4284,19 @@ def handle_point_reward_selection(e, alert_type: str):
     """
     if alert_settings_state.suppress_selection_handler:
         return
+    new_value = getattr(e, "value", None)
+    if _guard_alert_selection(alert_type, new_value):
+        _prompt_unsaved_alert(
+            alert_type,
+            "You have unsaved changes to this reward. Save them before switching?",
+            on_discard=lambda: _select_alert_programmatically(
+                alert_type, new_value, handle_point_reward_selection
+            ),
+            on_saved=lambda: _select_alert_programmatically(
+                alert_type, new_value, handle_point_reward_selection
+            ),
+        )
+        return
     try:
         # Validate the selection value - handle None and empty values gracefully
         if e.value is None:
@@ -4437,8 +4938,21 @@ def build_twitch_reward_payload_from_ui(alert_type: str) -> dict:
     return payload
 
 
-def save_point_alert():
+def save_point_alert(on_complete=None):
     """Save the current point alert settings (creates or updates Twitch reward when needed)."""
+    completed = {"done": False}
+
+    def finish(ok: bool) -> None:
+        if completed["done"]:
+            return
+        completed["done"] = True
+        if on_complete is None:
+            return
+        try:
+            on_complete(bool(ok))
+        except Exception:
+            logger.error("Point alert save callback failed", exc_info=True)
+
     try:
         from .. import twitch
 
@@ -4458,10 +4972,12 @@ def save_point_alert():
                     }
                 ],
             )
+            finish(False)
             return
 
         if selected in POINTS_REWARD_SELECT_PLACEHOLDERS and selected != "new":
             notify("Please select a valid point reward", type="warning")
+            finish(False)
             return
 
         create_new = selected == "new"
@@ -4474,10 +4990,12 @@ def save_point_alert():
                     "Please enter a reward title in Twitch Options.",
                     type="warning",
                 )
+                finish(False)
                 return
             cost_val = elements["twitch_cost_input"].value
             if cost_val is None or int(cost_val) < 1:
                 notify("Point cost must be at least 1.", type="warning")
+                finish(False)
                 return
             reward_payload = build_twitch_reward_payload_from_ui(alert_type)
             notify("Creating reward on Twitch...", type="info")
@@ -4555,6 +5073,11 @@ def save_point_alert():
 
             if success:
                 notify(f'Saved point alert: {alert_data["title"]}', type="positive")
+                if on_complete is not None:
+                    store_original_values(alert_type)
+                    clear_changed_styling(alert_type)
+                    finish(True)
+                    return
                 load_twitch_point_rewards()
                 rid = selected_reward_id
 
@@ -4580,23 +5103,27 @@ def save_point_alert():
                 layout_schedule(0.85, after_list_refresh, once=True)
             else:
                 notify("Error saving point alert settings", type="negative")
+                finish(False)
+
+        def _fail_on_ui(message: str, notice_type: str = "negative") -> None:
+            def _do() -> None:
+                notify(message, type=notice_type)
+                finish(False)
+
+            run_on_ui_loop(_do)
 
         def _worker() -> None:
             fetch = twitch.fetch_channel_point_rewards()
             if fetch["status"] == "not_unlocked":
-                run_on_ui_loop(
-                    lambda: notify(
-                        "Channel Points are not unlocked for this Twitch account.",
-                        type="warning",
-                    )
+                _fail_on_ui(
+                    "Channel Points are not unlocked for this Twitch account.",
+                    "warning",
                 )
                 return
             if fetch["status"] not in ("ok",):
-                run_on_ui_loop(
-                    lambda: notify(
-                        "Cannot reach Twitch Channel Points right now. Try Refresh Rewards.",
-                        type="warning",
-                    )
+                _fail_on_ui(
+                    "Cannot reach Twitch Channel Points right now. Try Refresh Rewards.",
+                    "warning",
                 )
                 return
 
@@ -4604,20 +5131,13 @@ def save_point_alert():
             if create_new:
                 new_reward = twitch.create_point_reward(reward_payload)
                 if not new_reward or not new_reward.get("id"):
-                    run_on_ui_loop(
-                        lambda: notify(
-                            "Failed to create reward on Twitch.", type="negative"
-                        )
-                    )
+                    _fail_on_ui("Failed to create reward on Twitch.")
                     return
                 selected_reward_id = new_reward["id"]
             elif update_twitch:
                 if not twitch.update_point_reward(selected_reward_id, reward_payload):
-                    run_on_ui_loop(
-                        lambda: notify(
-                            "Error updating Twitch point reward. Local alert was not saved.",
-                            type="negative",
-                        )
+                    _fail_on_ui(
+                        "Error updating Twitch point reward. Local alert was not saved."
                     )
                     return
             run_on_ui_loop(lambda rid=selected_reward_id: _persist_local(rid))
@@ -4627,6 +5147,7 @@ def save_point_alert():
     except Exception as e:
         logger.error(f"Error saving point alert: {str(e)}", exc_info=True)
         notify("Error saving point alert settings", type="negative")
+        finish(False)
 
 
 def show_delete_confirmation(alert_type: str):

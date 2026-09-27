@@ -1660,39 +1660,86 @@ def create_ui_elements():
                                 lazy_tabs[tab_name].spinner = spinner
 
                 # Add tab change handler for unsaved changes warning and lazy loading
+                def main_tab_name(tab) -> str:
+                    from .ui_tab_transitions import _tab_label
+
+                    label = _tab_label(tab)
+                    if label:
+                        return label
+                    known = {
+                        id(activity_tab): "Activity Feed",
+                        id(alerts_tab): "Alerts",
+                        id(source_settings_tab): "Source Settings",
+                        id(source_controls_tab): "Source Controls",
+                        id(connectors_tab): "Connectors",
+                        id(chatbot_tab): "Chatbot",
+                        id(spore_studio_tab): "Spore Studio",
+                        id(settings_tab): "Settings",
+                    }
+                    return known.get(id(tab), "")
+
+                main_unsaved_dialog_open = {"value": False}
+
                 def on_main_tab_change(e):
-                    new_tab = e.value
-                    current_tab = tabs.value
+                    new_tab = getattr(e, "value", None)
+                    leaving_tab = getattr(e, "previous_value", None)
+                    if leaving_tab is None:
+                        # Timer path reverts to the previous tab before calling this.
+                        leaving_tab = tabs.value
+                    leaving = main_tab_name(leaving_tab)
+                    arriving = main_tab_name(new_tab)
+                    if main_unsaved_dialog_open["value"]:
+                        if leaving_tab is not None:
+                            tabs.value = leaving_tab
+                        return
 
-                    # Check if leaving the Settings tab with unsaved changes
-                    # tabs.value may be a string or object, compare appropriately
-                    def is_settings_tab(tab):
-                        if isinstance(tab, str):
-                            return tab == "Settings"
-                        else:
-                            return (
-                                str(tab) == str(settings_tab)
-                                or getattr(tab, "text", "") == "Settings"
-                                or getattr(tab, "label", "") == "Settings"
-                                or getattr(tab, "name", "") == "Settings"
+                    if leaving and leaving != arriving:
+                        if leaving == "Settings":
+                            from .uiwindows.settings import settings_ui
+
+                            if settings_ui.has_unsaved_changes():
+                                show_unsaved_leave_dialog(
+                                    tabs,
+                                    new_tab,
+                                    "You have unsaved changes in Settings. Save them before leaving?",
+                                    save_settings_for_leave,
+                                    discard_settings_for_leave,
+                                )
+                                tabs.value = leaving_tab
+                                return
+                        elif leaving == "Alerts":
+                            from .uiwindows.alertsettings import (
+                                alerts_have_unsaved_changes,
                             )
 
-                    current_is_settings = is_settings_tab(current_tab)
-                    new_is_settings = is_settings_tab(new_tab)
-                    if current_is_settings and not new_is_settings:
-                        # Import here to avoid circular imports
-                        from .uiwindows.settings import settings_ui
+                            if alerts_have_unsaved_changes():
+                                show_unsaved_leave_dialog(
+                                    tabs,
+                                    new_tab,
+                                    "You have unsaved alert changes. Save them before leaving?",
+                                    save_alerts_for_leave,
+                                    discard_alerts_for_leave,
+                                )
+                                tabs.value = leaving_tab
+                                return
+                        elif leaving == "Source Settings":
+                            from .uiwindows.customsources import source_settings_is_dirty
 
-                        if settings_ui.has_unsaved_changes():
-                            show_settings_unsaved_dialog(
-                                tabs, tab_panels, current_tab, new_tab
-                            )
-                            # Prevent the tab switch by reverting the selection
-                            tabs.value = current_tab
-                            return
+                            if source_settings_is_dirty():
+                                show_unsaved_leave_dialog(
+                                    tabs,
+                                    new_tab,
+                                    "You have unsaved template changes. Save them before leaving?",
+                                    save_source_settings_for_leave,
+                                    discard_source_settings_for_leave,
+                                )
+                                tabs.value = leaving_tab
+                                return
 
-                    # Allow the tab switch - set tabs.value to the new tab
-                    tabs.value = new_tab
+                    # Allow the tab switch. Skip a redundant assignment so the
+                    # value-change handler does not call itself again.
+                    if main_tab_name(tabs.value) != arriving:
+                        tabs.value = new_tab
 
                     # Handle lazy loading for the new tab
                     def get_tab_name(tab):
@@ -1705,7 +1752,7 @@ def create_ui_elements():
                                 or str(tab)
                             )
 
-                    new_tab_name = get_tab_name(new_tab)
+                    new_tab_name = main_tab_name(new_tab) or get_tab_name(new_tab)
                     if new_tab_name in lazy_tabs:
                         lazy_tabs[new_tab_name].ensure_loaded()
 
@@ -1735,41 +1782,114 @@ def create_ui_elements():
                         # Update previous_tab to the current value
                         previous_tab = tabs.value
 
+                tabs.on_value_change(on_main_tab_change)
                 layout_schedule(
                     0.5, check_tab_changes, active=True
                 )  # Check every 500ms
 
                 start_service_watcher_timer()
 
-                def show_settings_unsaved_dialog(
-                    tabs_component, tab_panels_component, current_tab, target_tab
+                def discard_settings_for_leave() -> None:
+                    from .uiwindows.settings import settings_ui
+
+                    for tab in settings_ui._tabs_by_name.values():
+                        if tab is not None and getattr(tab, "dirty", False):
+                            tab.discard()
+
+                def save_settings_for_leave(done) -> None:
+                    from .uiwindows.settings import settings_ui
+
+                    try:
+                        for tab in settings_ui._tabs_by_name.values():
+                            if tab is not None and getattr(tab, "dirty", False):
+                                tab.save()
+                    except Exception as exc:
+                        logger.error(
+                            "Error saving settings before leaving: %s",
+                            exc,
+                            exc_info=True,
+                        )
+                        done(False)
+                        return
+                    done(not settings_ui.has_unsaved_changes())
+
+                def discard_alerts_for_leave() -> None:
+                    from .uiwindows.alertsettings import discard_active_alert
+
+                    discard_active_alert()
+
+                def save_alerts_for_leave(done) -> None:
+                    from .uiwindows.alertsettings import save_active_alert
+
+                    save_active_alert(done)
+
+                def discard_source_settings_for_leave() -> None:
+                    from .uiwindows.customsources import discard_open_source_settings
+
+                    discard_open_source_settings()
+
+                def save_source_settings_for_leave(done) -> None:
+                    from .uiwindows.customsources import save_open_source_settings
+
+                    done(bool(save_open_source_settings()))
+
+                def show_unsaved_leave_dialog(
+                    tabs_component,
+                    target_tab,
+                    message: str,
+                    on_save,
+                    on_discard,
                 ):
-                    """Show dialog when leaving settings tab with unsaved changes."""
-                    with ui.dialog() as dialog, ui.card().classes("w-[420px] p-4"):
+                    """Ask to save, discard, or stay before leaving a main tab."""
+                    from .notification_engine import notify as app_notify
+
+                    if main_unsaved_dialog_open["value"]:
+                        return
+                    main_unsaved_dialog_open["value"] = True
+
+                    with ui.dialog().props("persistent") as dialog, ui.card().classes(
+                        "w-[460px] p-4"
+                    ):
                         ui.label("Unsaved changes").classes("text-lg font-bold mb-2")
-                        ui.label(
-                            "You have unsaved changes in the Settings tab. Do you want to discard them and leave the Settings tab?"
-                        ).classes("secondary-text mb-4")
+                        ui.label(message).classes("secondary-text mb-4")
+
+                        def release() -> None:
+                            main_unsaved_dialog_open["value"] = False
+
+                        def stay() -> None:
+                            release()
+                            dialog.close()
 
                         def confirm_leave():
-                            # Import here to avoid circular imports
-                            from .uiwindows.settings import settings_ui
-
-                            # Discard all unsaved changes in settings tabs
-                            for tab in settings_ui._tabs_by_name.values():
-                                if hasattr(tab, "dirty") and tab.dirty:
-                                    tab.discard()
-                            # Switch to the target tab
+                            on_discard()
+                            release()
                             tabs_component.value = target_tab
                             dialog.close()
 
+                        def save_and_leave():
+                            def finished(ok: bool) -> None:
+                                if not ok:
+                                    app_notify(
+                                        "Could not save. Your changes are still here.",
+                                        type="warning",
+                                    )
+                                    return
+                                release()
+                                tabs_component.value = target_tab
+                                dialog.close()
+
+                            on_save(finished)
+
                         with ui.row().classes("w-full justify-end gap-2"):
-                            ui.button("Stay", on_click=dialog.close).props("outline")
+                            ui.button("Stay", on_click=stay).props("outline")
                             ui.button(
                                 "Discard and leave", on_click=confirm_leave
-                            ).props("color=primary")
+                            ).props("outline")
+                            ui.button("Save and leave", on_click=save_and_leave).props(
+                                "color=primary"
+                            )
 
-                        dialog.open()  # Explicitly open the dialog
+                        dialog.open()
 
         with StartupTimer("create_ui_elements.service_footer"):
             create_service_status_footer()

@@ -46,11 +46,20 @@ def _tab_label(tab: Any) -> str:
         return ""
     if isinstance(tab, str):
         return tab
+    props = getattr(tab, "_props", None)
+    if props is not None:
+        for key in ("label", "name"):
+            try:
+                val = props[key]
+            except Exception:
+                val = None
+            if val:
+                return str(val)
     for attr in ("text", "label", "name"):
         val = getattr(tab, attr, None)
-        if val:
+        if val and not callable(val):
             return str(val)
-    return str(tab)
+    return ""
 
 
 def apply_tab_slide_direction(

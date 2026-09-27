@@ -528,7 +528,8 @@ class PSNTab:
     def _set(self, field: str, value) -> None:
         if getattr(self.buffer, field) != value:
             setattr(self.buffer, field, value)
-            self.dirty = True
+            if not getattr(self, "_suppress_dirty", False):
+                self.dirty = True
 
     def _persist_psn_settings(self) -> Optional[bool]:
         """
@@ -587,10 +588,23 @@ class PSNTab:
         background_tasks.create(_run_service(), name="psn_save_settings_change")
 
     def discard(self) -> None:
-        self._load_from_state()
-        for key, element in self.ui_elements.items():
-            if hasattr(element, "value") and hasattr(self.buffer, key):
-                element.value = getattr(self.buffer, key) or ""
+        self._suppress_dirty = True
+        try:
+            self._load_from_state()
+            for key, element in self.ui_elements.items():
+                if hasattr(element, "value") and hasattr(self.buffer, key):
+                    element.value = getattr(self.buffer, key) or ""
+            self._game_cache_dirty = False
+            if self._selected_game:
+                self._populate_game_details()
+            self._adopt_cache_field_snapshot()
+        finally:
+            self._suppress_dirty = False
+        self.mark_clean()
+
+    def mark_clean(self) -> None:
+        """Drop unsaved account and game-cache edits."""
+        self._game_cache_dirty = False
         self.dirty = False
 
     def _refresh_status(self) -> None:
@@ -833,8 +847,9 @@ class PSNTab:
         if "game_details_container" in self.ui_elements:
             self.ui_elements["game_details_container"].set_visibility(True)
 
-        # Reset dirty state
+        # Selecting a game fills the fields. That is not an edit.
         self._game_cache_dirty = False
+        self._adopt_cache_field_snapshot()
         if "cache_save_btn" in self.ui_elements:
             self.ui_elements["cache_save_btn"].disable()
 
@@ -878,10 +893,26 @@ class PSNTab:
 
         if "cache_np_title_id" in self.ui_elements:
             self.ui_elements["cache_np_title_id"].value = game.get("np_title_id") or ""
+        self._adopt_cache_field_snapshot()
+
+    def _adopt_cache_field_snapshot(self) -> None:
+        """Treat the values just written into the cache form as the saved baseline."""
+        snap = getattr(self, "_field_snapshot", None)
+        if not isinstance(snap, dict):
+            return
+        for key in ("cache_presence_name", "cache_np_title_id"):
+            element = self.ui_elements.get(key)
+            if element is not None and hasattr(element, "value"):
+                snap[key] = element.value
+
+    def has_unsaved_changes(self) -> bool:
+        """Account fields use the dirty flag. Game-cache edits use their own flag."""
+        return bool(self.dirty or self._game_cache_dirty)
 
     def _on_cache_field_changed(self) -> None:
         """Handle changes to editable cache fields."""
         self._game_cache_dirty = True
+        self.dirty = True
         if "cache_save_btn" in self.ui_elements:
             self.ui_elements["cache_save_btn"].enable()
 

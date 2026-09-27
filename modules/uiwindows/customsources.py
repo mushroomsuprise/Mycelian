@@ -23,6 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import copy
 import json
 import logging
 import os
@@ -89,6 +90,10 @@ form_data_store = {}
 
 # Add a dictionary to store original values of fields
 original_values = {}
+# Values last loaded from disk or last successfully saved, keyed by config name.
+_disk_baselines: Dict[str, Dict[str, Any]] = {}
+_active_config_name: Optional[str] = None
+_suppress_config_change = False
 
 # Add global dictionary to store UI elements
 element_ui_map = {}
@@ -1318,6 +1323,8 @@ def _bind_split_divider_js() -> None:
 
 def _preview_values_differ(saved: Any, current: Any) -> bool:
     """Loose equality for dirty preview (align with update_form_data switch handling)."""
+    if (saved is None or saved == "") and (current is None or current == ""):
+        return False
     if isinstance(current, bool) and not isinstance(saved, bool):
         if isinstance(saved, str):
             saved = saved.lower() == "true"
@@ -1328,27 +1335,82 @@ def _preview_values_differ(saved: Any, current: Any) -> bool:
             current = current.lower() == "true"
         else:
             current = bool(current)
+    if (
+        isinstance(saved, (int, float))
+        and isinstance(current, (int, float))
+        and not isinstance(saved, bool)
+        and not isinstance(current, bool)
+    ):
+        try:
+            return float(saved) != float(current)
+        except (TypeError, ValueError):
+            pass
     try:
         return saved != current
     except Exception:
         return True
 
 
+def source_settings_is_dirty() -> bool:
+    """True when the template open in Source Settings has unsaved edits."""
+    return _config_is_dirty(_active_config_name)
+
+
+def save_open_source_settings() -> bool:
+    """Save the open template. Returns False when edits are still unsaved."""
+    ctx = _custom_sources_ctx
+    parser = ctx.get("config_parser")
+    select = ctx.get("config_select")
+    container = ctx.get("config_container")
+    if not parser or not select or not container or not getattr(select, "value", None):
+        return not source_settings_is_dirty()
+    save_config(parser, select, container)
+    return not _config_is_dirty(getattr(select, "value", None))
+
+
+def discard_open_source_settings() -> None:
+    """Reload the open template from disk."""
+    ctx = _custom_sources_ctx
+    name = _active_config_name
+    parser = ctx.get("config_parser")
+    container = ctx.get("config_container")
+    if name and parser and container:
+        _perform_config_reset(parser, name, container)
+
+
+def _config_is_dirty(config_name: Optional[str]) -> bool:
+    """True when in-memory edits differ from the last saved or loaded baseline."""
+    if not config_name:
+        return False
+    baseline = _disk_baselines.get(config_name)
+    if baseline is None:
+        return False
+    current = form_data_store.get(config_name, {})
+    keys = set(baseline) | set(current)
+    for key in keys:
+        if _preview_values_differ(baseline.get(key), current.get(key)):
+            return True
+    return False
+
+
+def _remember_disk_baseline(config_name: str, form_data: dict) -> None:
+    _disk_baselines[config_name] = copy.deepcopy(form_data)
+
+
 def _refresh_preview_dirty_label(config_name: str) -> None:
     label = _custom_sources_ctx.get("preview_dirty_label")
     if not label or not config_name:
         return
-    fd = form_data_store.get(config_name, {})
-    dirty = False
-    for eid, val in fd.items():
-        if _preview_values_differ(original_values.get(eid, val), val):
-            dirty = True
-            break
-    # label.text = (
-    #     "Unsaved changes reflected in preview"
-    #     if dirty
-    #     else "Preview matches saved file"
-    # )
+    dirty = _config_is_dirty(config_name)
+    label.text = (
+        "Unsaved changes reflected in preview"
+        if dirty
+        else "Preview matches saved file"
+    )
+    if dirty:
+        label.style("opacity: 1; color: var(--color-warning, #e6a817);")
+    else:
+        label.style("opacity: 0.7; color: inherit;")
 
 
 def _invalidate_preview_route_cache(config_name: Optional[str] = None) -> None:
@@ -1599,7 +1661,7 @@ def create_custom_sources_tab():
                     label=None,
                     classes="w-56 bg-theme-base",
                     on_change=lambda e: on_config_selected(
-                        e, config_parser, config_container
+                        e, config_parser, config_container, config_select
                     ),
                 )
 
@@ -1994,6 +2056,7 @@ def create_custom_sources_tab():
 
 def load_config_files(config_parser, config_select, config_container):
     """Load the config files into the select dropdown"""
+    global _active_config_name, _suppress_config_change
     _invalidate_preview_route_cache()
     configs = config_parser.get_non_hidden_config_files()
 
@@ -2003,15 +2066,38 @@ def load_config_files(config_parser, config_select, config_container):
 
         # Update the select options
         config_select.options = configs
-        config_select.value = configs[0]
+        target = configs[0]
+        previous = _active_config_name
+        if (
+            previous
+            and previous != target
+            and previous in configs
+            and _config_is_dirty(previous)
+        ):
+            _prompt_unsaved_config(
+                previous,
+                target,
+                config_parser,
+                config_select,
+                config_container,
+            )
+            return
 
-        # Load the first config
-        render_config_ui(config_parser, configs[0], config_container, "")
-        _flush_template_preview()
+        _suppress_config_change = True
+        try:
+            config_select.value = target
+        finally:
+            _suppress_config_change = False
+        _apply_config_selection(target, config_parser, config_container)
     else:
         # Clear the select options
         config_select.options = []
-        config_select.value = None
+        _suppress_config_change = True
+        try:
+            config_select.value = None
+        finally:
+            _suppress_config_change = False
+        _active_config_name = None
 
         # Clear the container
         config_container.clear()
@@ -2020,23 +2106,107 @@ def load_config_files(config_parser, config_select, config_container):
         _flush_template_preview()
 
 
-def on_config_selected(e, config_parser, config_container):
+def _apply_config_selection(config_name, config_parser, config_container):
+    """Render a template config and remember it as the active selection."""
+    global _active_config_name
+    if not config_name:
+        return
+    _active_config_name = config_name
+    _invalidate_preview_route_cache(config_name)
+    element_ui_map.clear()
+    roulette_expansions.clear()
+    render_config_ui(config_parser, config_name, config_container, "")
+    _flush_template_preview()
+
+
+def _discard_config_edits(config_name: str) -> None:
+    """Drop in-memory edits so the next render loads the saved file."""
+    form_data_store.pop(config_name, None)
+
+
+def _prompt_unsaved_config(
+    previous_name: str,
+    next_name: str,
+    config_parser,
+    config_select,
+    config_container,
+) -> None:
+    """Ask to save, discard, or stay before leaving a dirty template."""
+    with ui.dialog().props("persistent") as dialog, ui.card().classes("w-[460px] p-4"):
+        ui.label("Unsaved changes").classes("text-lg font-bold mb-2")
+        ui.label(
+            f"You have unsaved changes to {previous_name}. Save them before switching?"
+        ).classes("secondary-text mb-4")
+
+        def stay() -> None:
+            dialog.close()
+
+        def discard_and_switch() -> None:
+            _discard_config_edits(previous_name)
+            dialog.close()
+            _suppress_and_select(config_select, next_name)
+            _apply_config_selection(next_name, config_parser, config_container)
+
+        def save_and_switch() -> None:
+            _suppress_and_select(config_select, previous_name)
+            save_config(config_parser, config_select, config_container)
+            if _config_is_dirty(previous_name):
+                notify(
+                    "Could not save this template. Your changes are still here.",
+                    type="warning",
+                )
+                return
+            dialog.close()
+            _suppress_and_select(config_select, next_name)
+            _apply_config_selection(next_name, config_parser, config_container)
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Stay", on_click=stay).props("outline")
+            ui.button("Discard and switch", on_click=discard_and_switch).props(
+                "outline"
+            )
+            ui.button("Save and switch", on_click=save_and_switch).props(
+                "color=primary"
+            )
+        dialog.open()
+
+
+def _suppress_and_select(config_select, config_name) -> None:
+    global _suppress_config_change
+    _suppress_config_change = True
+    try:
+        config_select.value = config_name
+    finally:
+        _suppress_config_change = False
+
+
+def on_config_selected(e, config_parser, config_container, config_select=None):
     """Handle config selection"""
+    global _suppress_config_change
+    if _suppress_config_change:
+        return
     config_name = e.value
     if not config_name:
         return
 
-    _invalidate_preview_route_cache(config_name)
+    previous = _active_config_name
+    if (
+        previous
+        and previous != config_name
+        and _config_is_dirty(previous)
+        and config_select is not None
+    ):
+        _suppress_and_select(config_select, previous)
+        _prompt_unsaved_config(
+            previous,
+            config_name,
+            config_parser,
+            config_select,
+            config_container,
+        )
+        return
 
-    # Clear element_ui_map before loading a new config
-    element_ui_map.clear()
-
-    # Clear roulette expansions when switching configs
-    roulette_expansions.clear()
-
-    # Render the config UI
-    render_config_ui(config_parser, config_name, config_container, "")
-    _flush_template_preview()
+    _apply_config_selection(config_name, config_parser, config_container)
 
 
 def on_search_changed(e, config_parser, config_select, config_container):
@@ -2087,7 +2257,10 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
             # Scrollable content area - flexible height
             with ui.scroll_area().classes("w-full grow"):
                 # Preserve full form state even when search hides some controls
+                fresh_from_disk = config_name not in form_data_store
                 form_data = _build_form_data(config_name, config)
+                if fresh_from_disk and config_name not in _disk_baselines:
+                    _remember_disk_baseline(config_name, form_data)
 
                 # Filter elements based on search term
                 elements = config.get("elements", [])
@@ -2831,6 +3004,10 @@ def save_config(config_parser, config_select, config_container):
                     )
             # Reset original values to current values
             reset_original_values(config_name)
+            _remember_disk_baseline(
+                config_name, form_data_store.get(config_name, {})
+            )
+            _refresh_preview_dirty_label(config_name)
             _invalidate_preview_route_cache(config_name)
             _flush_template_preview()
         else:
@@ -2849,13 +3026,35 @@ def reset_config(config_parser, config_select, config_container):
         notify("No configuration selected.", type="negative")
         return
 
+    if not _config_is_dirty(config_name):
+        _perform_config_reset(config_parser, config_name, config_container)
+        return
+
+    with ui.dialog().props("persistent") as dialog, ui.card().classes("w-[460px] p-4"):
+        ui.label("Discard unsaved changes?").classes("text-lg font-bold mb-2")
+        ui.label(
+            f"Reset {config_name} to the last saved file? Unsaved edits will be lost."
+        ).classes("secondary-text mb-4")
+
+        def confirm_reset() -> None:
+            dialog.close()
+            _perform_config_reset(config_parser, config_name, config_container)
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Stay", on_click=dialog.close).props("outline")
+            ui.button("Discard changes", on_click=confirm_reset).props("color=primary")
+        dialog.open()
+
+
+def _perform_config_reset(config_parser, config_name, config_container) -> None:
+    """Reload a template from disk, dropping in-memory edits."""
     # Clear element_ui_map before re-rendering
     element_ui_map.clear()
 
     _invalidate_preview_route_cache(config_name)
 
     # Discard in-memory edits so re-render loads values from disk
-    form_data_store.pop(config_name, None)
+    _discard_config_edits(config_name)
 
     # Re-render the config UI
     render_config_ui(config_parser, config_name, config_container, "")
@@ -2916,12 +3115,24 @@ def create_config_action(name, config_parser, config_select, config_container, d
         notify(f"New configuration created: {name}", type="positive")
         dialog.close()
 
-        # Reload the config files
-        load_config_files(config_parser, config_select, config_container)
+        configs = sorted(config_parser.get_non_hidden_config_files())
+        config_select.options = configs
+        form_data_store.pop(name, None)
+        _disk_baselines.pop(name, None)
+        previous = _active_config_name
+        if previous and previous != name and _config_is_dirty(previous):
+            _suppress_and_select(config_select, previous)
+            _prompt_unsaved_config(
+                previous,
+                name,
+                config_parser,
+                config_select,
+                config_container,
+            )
+            return
 
-        # Select the new config
-        config_select.value = name
-        render_config_ui(config_parser, name, config_container, "")
+        _suppress_and_select(config_select, name)
+        _apply_config_selection(name, config_parser, config_container)
     else:
         notify(f"Failed to create configuration: {name}", type="negative")
 
@@ -2956,14 +3167,17 @@ def delete_config_action(
     config_name, config_parser, config_select, config_container, dialog
 ):
     """Handle the delete config action"""
+    global _active_config_name
     # Delete the config
     if config_parser.delete_config(config_name):
         notify(f"Configuration deleted for {config_name}.", type="positive")
         dialog.close()
 
         # Remove from form data store
-        if config_name in form_data_store:
-            del form_data_store[config_name]
+        form_data_store.pop(config_name, None)
+        _disk_baselines.pop(config_name, None)
+        if _active_config_name == config_name:
+            _active_config_name = None
 
         # Reload the config files
         load_config_files(config_parser, config_select, config_container)
