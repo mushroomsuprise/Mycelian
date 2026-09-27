@@ -28,6 +28,8 @@ from __future__ import annotations
 import logging
 import os
 import re
+import subprocess
+import sys
 import threading
 import time
 from typing import Any, Dict, List
@@ -109,6 +111,50 @@ def _scan_template(template_name: str) -> Dict[str, Any]:
         "files": files,
         "scanned_at": time.time(),
     }
+
+
+def _safe_asset_destination(template_name: str, rel_path: str) -> str:
+    folder = _validated_template_assets_dir(template_name)
+    rel = (rel_path or "").replace("\\", "/").lstrip("/")
+    if not rel or rel in (".", "..") or any(part in ("", ".", "..") for part in rel.split("/")):
+        raise ValueError("Invalid asset path")
+    dest = os.path.realpath(os.path.join(folder, rel))
+    root = os.path.realpath(folder)
+    if dest != root and not dest.startswith(root + os.sep):
+        raise ValueError("Invalid asset path")
+    return dest
+
+
+def save_uploaded_asset(template_name: str, filename: str, data: bytes) -> Dict[str, Any]:
+    """Write one file into ``assets/<template>/`` and return a fresh snapshot."""
+    name = os.path.basename(filename or "").strip()
+    dest = _safe_asset_destination(template_name, name)
+    folder = os.path.dirname(dest)
+    ensure_directory_exists(folder)
+    with open(dest, "wb") as handle:
+        handle.write(data)
+    return request_snapshot(template_name)
+
+
+def delete_asset(template_name: str, rel_path: str) -> Dict[str, Any]:
+    """Remove one asset file and return a fresh snapshot."""
+    dest = _safe_asset_destination(template_name, rel_path)
+    if os.path.isfile(dest):
+        os.remove(dest)
+    return request_snapshot(template_name)
+
+
+def reveal_assets_folder(template_name: str) -> str:
+    """Open the template asset folder in the system file manager."""
+    folder = _validated_template_assets_dir(template_name)
+    ensure_directory_exists(folder)
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", folder])
+    elif sys.platform == "win32":
+        os.startfile(folder)  # type: ignore[attr-defined]
+    else:
+        subprocess.Popen(["xdg-open", folder])
+    return folder
 
 
 def request_snapshot(template_name: str) -> Dict[str, Any]:

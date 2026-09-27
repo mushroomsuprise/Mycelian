@@ -9,7 +9,7 @@ from nicegui import ui
 
 from ...font_utils import SYSTEM_DEFAULT_LABEL, get_available_font_families
 from ...ui_buttons import primary_button
-from ...ui_font import apply_app_font
+from ...ui_font import apply_app_font, apply_ui_scale
 from ...ui_form_controls import form_number, form_select
 from ...ui_settings_layout import (
     settings_action_row,
@@ -149,6 +149,30 @@ class AppSettingsTab:
                                 self._font_from_value(e.value),
                             )
                         )
+                        scale_options = {
+                            str(step): f"{step}%"
+                            for step in (90, 95, 100, 105, 110, 115, 120, 125)
+                        }
+                        current_scale = str(
+                            int(getattr(self.buffer, "ui_scale_percent", 100) or 100)
+                        )
+                        if current_scale not in scale_options:
+                            current_scale = "100"
+                        self.ui_elements["ui_scale_percent"] = form_select(
+                            tooltip="Zoom the Mycelian window between 90% and 125%",
+                            label="UI scale",
+                            options=scale_options,
+                            value=current_scale,
+                            classes="w-full",
+                        )
+                        def on_scale_change(event) -> None:
+                            percent = int(event.value or 100)
+                            self._set("ui_scale_percent", percent)
+                            apply_ui_scale(percent)
+
+                        self.ui_elements["ui_scale_percent"].on_value_change(
+                            on_scale_change
+                        )
                         with ui.row().classes("items-center gap-2"):
                             self.ui_elements["notifications_enabled"] = (
                                 ui.switch(value=self.buffer.notifications_enabled)
@@ -195,6 +219,9 @@ class AppSettingsTab:
                             ui.label("Start maximized").classes("text-sm")
                         ui.label("Applies on next launch").classes(
                             "secondary-text text-sm self-center"
+                        )
+                        ui.label("Background").classes(
+                            "text-sm font-semibold col-span-3"
                         )
                         with ui.row().classes("items-center gap-2"):
                             self.ui_elements["minimize_to_tray"] = (
@@ -259,7 +286,10 @@ class AppSettingsTab:
                             )
 
                 with settings_inner_panel():
-                    ui.label("Activity feed").classes("text-base font-semibold")
+                    ui.label("Storage").classes("text-base font-semibold")
+                    ui.label(
+                        "Activity feed paging and stored-alert retention."
+                    ).classes("text-xs secondary-text mb-1")
                     with settings_form_grid(columns=2):
                         with ui.row().classes("items-center gap-2"):
                             ui.label("History limit").classes("text-sm shrink-0")
@@ -437,6 +467,7 @@ class AppSettingsTab:
             state_manager.update_app_setting(field, getattr(self.buffer, field))
         if state_manager.save_changes():
             apply_app_font(self.buffer.ui_font_family)
+            apply_ui_scale(self.buffer.ui_scale_percent)
             self._apply_background_settings()
             self._apply_alert_storage_trim()
             notify("Settings saved", type="positive")
@@ -481,6 +512,11 @@ class AppSettingsTab:
             if hasattr(element, "value") and hasattr(self.buffer, key):
                 if key == "ui_font_family":
                     element.value = self.buffer.ui_font_family or SYSTEM_DEFAULT_LABEL
+                elif key == "ui_scale_percent":
+                    element.value = str(
+                        int(getattr(self.buffer, "ui_scale_percent", 100) or 100)
+                    )
                 else:
                     element.value = getattr(self.buffer, key)
         self.dirty = False
+        apply_ui_scale(int(getattr(self.buffer, "ui_scale_percent", 100) or 100))

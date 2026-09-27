@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from nicegui import ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import form_sensitive_input
+from ...ui_form_controls import copy_text_button, form_sensitive_input
 from ...ui_timer import layout_schedule
 from ...ui_settings_layout import (
     settings_footer,
@@ -18,6 +18,8 @@ from ...ui_settings_layout import (
     settings_toolbar,
 )
 from ...api_credentials_manager import api_credentials_manager
+
+TWITCH_OAUTH_REDIRECT_URI = "http://localhost:17563"
 from ... import dataobjects
 from ...dataobjects import state_manager
 
@@ -230,6 +232,10 @@ class TwitchTab:
                     connect_handler,
                     icon="login",
                 )
+                copy_text_button(
+                    TWITCH_OAUTH_REDIRECT_URI,
+                    tooltip=f"Copy redirect URI {TWITCH_OAUTH_REDIRECT_URI}",
+                )
                 self.ui_elements[f"{prefix}_refresh_button"] = outline_button(
                     "Refresh",
                     refresh_handler,
@@ -267,25 +273,46 @@ class TwitchTab:
                     self.ui_elements[f"{prefix}_token_expires_at_label"] = ui.label(
                         "—"
                     ).classes("secondary-text text-xs")
-            with settings_form_grid(columns=2):
-                self.ui_elements[client_id_key] = form_sensitive_input(
-                    tooltip="Twitch application Client ID from the developer console",
-                    label="Client ID",
-                    value=self._creds.get(client_id_key, ""),
-                    placeholder=client_id_placeholder,
-                    on_change=lambda e, k=client_id_key: self._set_cred(
-                        k, "" if e.value is None else str(e.value)
-                    ),
+            with ui.expansion("Advanced", icon="vpn_key").classes("w-full").props(
+                "dense"
+            ):
+                ui.label(
+                    "Client ID and secret for a custom Twitch application. "
+                    "Connect still uses these values."
+                ).classes("text-xs secondary-text mb-2")
+                self._build_credential_fields(
+                    client_id_key,
+                    client_secret_key,
+                    client_id_placeholder,
+                    client_secret_placeholder,
                 )
-                self.ui_elements[client_secret_key] = form_sensitive_input(
-                    tooltip="Twitch application Client Secret (keep private)",
-                    label="Client Secret",
-                    value=self._creds.get(client_secret_key, ""),
-                    placeholder=client_secret_placeholder,
-                    on_change=lambda e, k=client_secret_key: self._set_cred(
-                        k, "" if e.value is None else str(e.value)
-                    ),
-                )
+
+    def _build_credential_fields(
+        self,
+        client_id_key: str,
+        client_secret_key: str,
+        client_id_placeholder: str,
+        client_secret_placeholder: str,
+    ) -> None:
+        with settings_form_grid(columns=2):
+            self.ui_elements[client_id_key] = form_sensitive_input(
+                tooltip="Twitch application Client ID from the developer console",
+                label="Client ID",
+                value=self._creds.get(client_id_key, ""),
+                placeholder=client_id_placeholder,
+                on_change=lambda e, k=client_id_key: self._set_cred(
+                    k, "" if e.value is None else str(e.value)
+                ),
+            )
+            self.ui_elements[client_secret_key] = form_sensitive_input(
+                tooltip="Twitch application Client Secret (keep private)",
+                label="Client Secret",
+                value=self._creds.get(client_secret_key, ""),
+                placeholder=client_secret_placeholder,
+                on_change=lambda e, k=client_secret_key: self._set_cred(
+                    k, "" if e.value is None else str(e.value)
+                ),
+            )
 
     def build(self, parent_container) -> None:
         self._load_from_state()

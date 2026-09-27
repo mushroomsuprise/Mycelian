@@ -1937,6 +1937,81 @@ def create_connector_form(connector_id: str = None):
     _install_connector_close_guard(form_data)
 
 
+def _hotkey_combo_from_event(event) -> str:
+    """Turn a NiceGUI keyboard event into a ctrl+shift+f style combination."""
+    action = getattr(event, "action", None)
+    if getattr(action, "keyup", False) or getattr(action, "repeat", False):
+        return ""
+    key = str(getattr(getattr(event, "key", None), "name", "") or "").lower()
+    if not key or key in ("control", "shift", "alt", "meta"):
+        return ""
+    modifiers = getattr(event, "modifiers", None)
+    parts = []
+    for name, enabled in (
+        ("ctrl", getattr(modifiers, "ctrl", False)),
+        ("alt", getattr(modifiers, "alt", False)),
+        ("shift", getattr(modifiers, "shift", False)),
+        ("meta", getattr(modifiers, "meta", False)),
+    ):
+        if enabled:
+            parts.append(name)
+    parts.append(key)
+    return "+".join(parts)
+
+
+def _refresh_hotkey_conflict(form_data: dict, conflict_label) -> None:
+    combo = str(form_data.get("trigger_config", {}).get("key_combination") or "").strip()
+    if not combo or conflict_label is None:
+        if conflict_label is not None:
+            conflict_label.set_text("")
+        return
+    current_id = form_data.get("connector_id")
+    names = []
+    try:
+        manager = connector_manager.get_manager()
+        for connector_id, connector in manager.get_all_connectors().items():
+            if current_id and connector_id == current_id:
+                continue
+            trigger = getattr(connector, "trigger", None)
+            other = str(getattr(trigger, "key_combination", "") or "").strip()
+            if other.lower() == combo.lower():
+                names.append(getattr(connector, "name", connector_id) or connector_id)
+    except Exception:
+        names = []
+    if names:
+        conflict_label.set_text("Also used by: " + ", ".join(names))
+    else:
+        conflict_label.set_text("")
+
+
+def _on_hotkey_typed(form_data: dict, hotkey_input, conflict_label, value) -> None:
+    form_data["trigger_config"]["key_combination"] = value or ""
+    if hotkey_input is not None and hotkey_input.value != form_data["trigger_config"]["key_combination"]:
+        hotkey_input.value = form_data["trigger_config"]["key_combination"]
+    _refresh_hotkey_conflict(form_data, conflict_label)
+
+
+def _open_hotkey_recorder(form_data: dict, hotkey_input, conflict_label) -> None:
+    with ui.dialog().props("persistent") as dialog, ui.card().classes("w-[420px] p-4"):
+        ui.label("Record hotkey").classes("text-lg font-bold mb-2")
+        preview = ui.label("Press a key combination").classes("secondary-text mb-2")
+        ui.label(
+            "The text field stays editable after you record. Matching combinations on other connectors also fire."
+        ).classes("text-xs secondary-text mb-3")
+
+        def on_key(event) -> None:
+            combo = _hotkey_combo_from_event(event)
+            if not combo:
+                return
+            _on_hotkey_typed(form_data, hotkey_input, conflict_label, combo)
+            preview.set_text(combo)
+            dialog.close()
+
+        ui.keyboard(on_key=on_key, ignore=[])
+        ui.button("Cancel", on_click=dialog.close).props("outline")
+    dialog.open()
+
+
 def handle_trigger_type_change(
     trigger_type: str, form_data: dict, trigger_config_container, conditions_container
 ):
@@ -1955,18 +2030,35 @@ def handle_trigger_type_change(
                 "text-sm font-medium secondary-text mb-2"
             )
 
-            # Key combination input
-            form_input(
-        tooltip="Key Combination",
+            # Key combination input. Free text stays available; Record fills it.
+            conflict_label = ui.label("").classes("text-xs text-theme-warning mb-1")
+            hotkey_holder: dict = {"input": None}
+
+            def on_hotkey_change(event, data=form_data, label=conflict_label):
+                _on_hotkey_typed(data, hotkey_holder["input"], label, event.value)
+
+            hotkey_input = form_input(
+                tooltip="Key Combination",
                 label="Key Combination",
                 placeholder="e.g., ctrl+shift+f, f12, alt+tab",
                 value=form_data["trigger_config"]["key_combination"],
-                on_change=lambda e: form_data["trigger_config"].update(
-                    {"key_combination": e.value}
-                ),
-            ).classes("w-full mb-3").props(
+                on_change=on_hotkey_change,
+            ).classes("w-full").props(
                 'hint="Use + to combine keys (ctrl+shift+f)"'
             )
+            hotkey_holder["input"] = hotkey_input
+
+            def record_hotkey() -> None:
+                _open_hotkey_recorder(form_data, hotkey_input, conflict_label)
+
+            with ui.row().classes("items-center gap-2 mb-3"):
+                ui.button("Record", icon="fiber_manual_record", on_click=record_hotkey).props(
+                    "dense outline"
+                )
+                ui.label(
+                    "Press a combination to fill the field. Matching combinations on other connectors also fire."
+                ).classes("text-xs secondary-text")
+            _refresh_hotkey_conflict(form_data, conflict_label)
 
             # Global hotkey checkbox
             ui.checkbox(
@@ -6130,16 +6222,14 @@ def delete_connector(connector_id: str):
 
 
 def refresh_connectors():
-    """Refresh the connectors display"""
-    global current_search, connector_cards, folder_cards, connector_parent_folder, folder_tile_title_labels
-    current_search = ""  # Clear search when refreshing
+    """Refresh the connectors display without clearing the search query."""
+    global connector_cards, folder_cards, connector_parent_folder, folder_tile_title_labels
     connector_cards.clear()
     folder_cards.clear()
     connector_parent_folder.clear()
     folder_tile_title_labels.clear()
-    if search_input:
-        search_input.value = ""
     load_connectors()
+    update_search_visibility()
 
 
 def on_search_change(event):

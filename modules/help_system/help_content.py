@@ -359,8 +359,40 @@ When you quit OBS with Mycelian still running, Mycelian retargets **only its own
 - See [Audio Troubleshooting](help:troubleshooting_audio) for solutions
         """,
         keywords=["obs", "browser source", "overlay", "stream", "setup", "dock", "activity feed"],
-        related_topics=["getting_started_intro", "templates_intro"],
+        related_topics=["getting_started_intro", "templates_intro", "obs_websocket"],
         ui_context="templates",
+    ),
+    "obs_websocket": HelpTopic(
+        id="obs_websocket",
+        title="OBS WebSocket Checklist",
+        category=HelpCategory.GETTING_STARTED,
+        summary="Connect Mycelian to OBS so it can refresh its own browser sources",
+        content="""
+# OBS WebSocket Checklist
+
+Mycelian talks to OBS through the built-in WebSocket server. That connection lets Mycelian refresh **its own** scene browser sources after it starts, and it powers the OBS buttons on source cards in Settings → About.
+
+## Checklist
+
+1. Open OBS.
+2. Go to **Tools → WebSocket Server Settings**.
+3. Enable the WebSocket server.
+4. Note the **port** (default `4455`) and **password**.
+5. In Mycelian, open **Settings → OBS**.
+6. Enter the host (`localhost` when OBS is on this computer), port, and password.
+7. Leave **Enable OBS integration** on, then **Save** and **Test**.
+
+## What this connection does
+
+- Refreshes Mycelian scene browser sources once after WebSocket connects.
+- Leaves other browser sources (StreamElements, YouTube, and the rest) alone.
+- Does not reload custom browser docks. Restart OBS for those. See [browser source setup](help:obs_setup).
+
+> **Tip:** If Test fails, confirm OBS is running, the server is enabled, and the password matches exactly.
+        """,
+        keywords=["obs", "websocket", "connection", "port", "password", "4455"],
+        related_topics=["obs_setup", "templates_intro"],
+        ui_context="settings",
     ),
     # =========================================
     # Alerts

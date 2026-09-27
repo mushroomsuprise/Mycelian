@@ -80,7 +80,7 @@ def run_tray(conn: Any, icon_path: str, minimized: bool) -> None:
 
     _set_macos_accessory_policy()
 
-    state = {"minimized": bool(minimized)}
+    state = {"minimized": bool(minimized), "update_available": False}
 
     def on_restore(_icon=None, _item=None) -> None:
         _send(conn, {"action": "restore"})
@@ -95,6 +95,11 @@ def run_tray(conn: Any, icon_path: str, minimized: bool) -> None:
             on_restore,
             default=True,
             enabled=lambda _item: state["minimized"],
+        ),
+        pystray.MenuItem(
+            "Update available",
+            on_restore,
+            visible=lambda _item: state["update_available"],
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit Mycelian", on_quit),
@@ -116,6 +121,12 @@ def run_tray(conn: Any, icon_path: str, minimized: bool) -> None:
                 break
             if command == "set_state":
                 state["minimized"] = bool(message.get("minimized", False))
+                try:
+                    icon.update_menu()
+                except Exception:
+                    pass
+            elif command == "set_update":
+                state["update_available"] = bool(message.get("available", False))
                 try:
                     icon.update_menu()
                 except Exception:

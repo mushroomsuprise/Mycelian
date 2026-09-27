@@ -219,6 +219,8 @@ class SettingsUI:
         self._unsaved_dialog_open = False
         self._settings_switch_guard = False
         self._accepted_settings_tab = "Twitch"
+        self._settings_jump = None
+        self._jump_sync = False
 
     def _load_database_settings_from_config(self) -> dataobjects.DatabaseSettings:
         """Load database settings from the external config manager"""
@@ -5322,6 +5324,12 @@ class SettingsUI:
                 "Database": database_tab,
                 "Statistics": statistics_tab,
             }
+            saved_settings = (
+                getattr(self.app_settings, "last_settings_tab", "") or "Twitch"
+            )
+            if saved_settings in self._tabs_by_name or saved_settings == "About":
+                self._active_tab_name = saved_settings
+                self._accepted_settings_tab = saved_settings
 
         # Add the custom CSS
         with StartupTimer("settings_css"):
@@ -5335,6 +5343,20 @@ class SettingsUI:
                 with ui.element("div").classes(
                     "mycelian-sub-tab-shell w-full flex-1 min-h-0 flex flex-col"
                 ):
+                    settings_tab_names = [
+                        "Twitch",
+                        "OBS",
+                        "PSN",
+                        "Spotify",
+                        "YouTube",
+                        "Discord",
+                        "Game Hooks",
+                        "Database",
+                        "Statistics",
+                        "Theme",
+                        "App Settings",
+                        "About",
+                    ]
                     with ui.tabs().classes("w-full settings-tabs mycelian-sub-tabs") as tabs:
                         ui.tab("Twitch", icon=service_tab_icon("twitch"))
                         ui.tab("OBS", icon=service_tab_icon("obs"))
@@ -5348,6 +5370,17 @@ class SettingsUI:
                         ui.tab("Theme", icon="palette")
                         ui.tab("App Settings", icon="tune")
                         ui.tab("About", icon="info")
+
+                    with ui.row().classes(
+                        "w-full items-center gap-2 px-1 pb-1"
+                    ).style("order: -1"):
+                        self._settings_jump = ui.select(
+                            options=settings_tab_names,
+                            value=self._active_tab_name,
+                            label="Jump to",
+                            with_input=True,
+                            on_change=lambda e: self._on_settings_jump(tabs, e.value),
+                        ).props("dense outlined options-dense").classes("w-56")
 
                     # Panels for each tab
                     with StartupTimer("settings_tab_panels"):
@@ -5589,6 +5622,7 @@ class SettingsUI:
                         self._unsaved_dialog_open = True
                         self._active_tab_name = leaving_dirty
                         tabs.value = leaving_dirty
+                        self._sync_settings_jump(leaving_dirty)
                         self._show_unsaved_changes_dialog(tabs, leaving_dirty, new_name)
                         return
                     current_tab = self._tabs_by_name.get(prev_name)
@@ -5600,6 +5634,8 @@ class SettingsUI:
                         self._snapshot_tab_fields(next_tab)
                     self._active_tab_name = new_name
                     self._accepted_settings_tab = new_name
+                    self._sync_settings_jump(new_name)
+                    self._remember_settings_tab(new_name)
 
                 def check_subtab_changes():
                     current_subtab = _tab_label(tabs.value)
@@ -5796,6 +5832,34 @@ class SettingsUI:
                 return name
         return ""
 
+    def _remember_settings_tab(self, name: str) -> None:
+        if not name:
+            return
+        try:
+            from ..mainuiwindow import remember_ui_pref
+
+            remember_ui_pref("last_settings_tab", name)
+        except Exception as exc:
+            logger.debug("Could not remember settings tab: %s", exc)
+
+    def _sync_settings_jump(self, name: str) -> None:
+        jump = self._settings_jump
+        if jump is None or not name:
+            return
+        self._jump_sync = True
+        try:
+            if jump.value != name:
+                jump.value = name
+        finally:
+            self._jump_sync = False
+
+    def _on_settings_jump(self, tabs_component, name: str) -> None:
+        if self._jump_sync or not name:
+            return
+        if name == self._active_tab_name:
+            return
+        tabs_component.value = name
+
     def _complete_settings_tab_switch(
         self, tabs_component, prev_name: str, next_name: str
     ) -> None:
@@ -5813,6 +5877,8 @@ class SettingsUI:
             self._active_tab_name = next_name
             self._accepted_settings_tab = next_name
             tabs_component.value = next_name
+            self._sync_settings_jump(next_name)
+            self._remember_settings_tab(next_name)
         finally:
             self._settings_switch_guard = False
 
@@ -5841,6 +5907,7 @@ class SettingsUI:
 
             def stay() -> None:
                 _release()
+                self._sync_settings_jump(prev_name)
                 dialog.close()
 
             def confirm_switch():

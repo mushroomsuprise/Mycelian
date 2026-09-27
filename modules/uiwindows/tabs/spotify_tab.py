@@ -7,7 +7,12 @@ from typing import Dict, Any, Optional
 from nicegui import run, ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import form_input, form_select, form_sensitive_input
+from ...ui_form_controls import (
+    copy_text_button,
+    form_input,
+    form_select,
+    form_sensitive_input,
+)
 from ...ui_timer import layout_schedule
 from ...ui_settings_layout import (
     settings_action_row,
@@ -19,6 +24,7 @@ from ...ui_settings_layout import (
 from ... import dataobjects
 from ...dataobjects import state_manager
 from ...api_credentials_manager import api_credentials_manager
+from ...spotify import SPOTIFY_OAUTH_REDIRECT_URI
 
 
 class SpotifyTab:
@@ -144,29 +150,37 @@ class SpotifyTab:
                 "GB": "GB",
                 "CA": "CA",
             }
+            with ui.expansion("Advanced", icon="vpn_key").classes("w-full").props(
+                "dense"
+            ):
+                ui.label(
+                    "Client ID and secret from the Spotify dashboard. "
+                    "Connect still uses these values."
+                ).classes("text-xs secondary-text mb-2")
+                with settings_form_grid(columns=2):
+                    self.ui_elements["client_id"] = form_sensitive_input(
+                        tooltip="Spotify application Client ID from the developer dashboard",
+                        label="Client ID",
+                        value=self._creds.get("client_id", ""),
+                        placeholder="Spotify API Client ID",
+                    )
+                    self.ui_elements["client_id"].on_value_change(
+                        lambda e: self._set_cred(
+                            "client_id", self._str_from_value_event(e)
+                        )
+                    )
+                    self.ui_elements["client_secret"] = form_sensitive_input(
+                        tooltip="Spotify application Client Secret",
+                        label="Client Secret",
+                        value=self._creds.get("client_secret", ""),
+                        placeholder="Spotify API Client Secret",
+                    )
+                    self.ui_elements["client_secret"].on_value_change(
+                        lambda e: self._set_cred(
+                            "client_secret", self._str_from_value_event(e)
+                        )
+                    )
             with settings_form_grid(columns=3):
-                self.ui_elements["client_id"] = form_sensitive_input(
-                    tooltip="Spotify application Client ID from the developer dashboard",
-                    label="Client ID",
-                    value=self._creds.get("client_id", ""),
-                    placeholder="Spotify API Client ID",
-                )
-                self.ui_elements["client_id"].on_value_change(
-                    lambda e: self._set_cred(
-                        "client_id", self._str_from_value_event(e)
-                    )
-                )
-                self.ui_elements["client_secret"] = form_sensitive_input(
-                    tooltip="Spotify application Client Secret",
-                    label="Client Secret",
-                    value=self._creds.get("client_secret", ""),
-                    placeholder="Spotify API Client Secret",
-                )
-                self.ui_elements["client_secret"].on_value_change(
-                    lambda e: self._set_cred(
-                        "client_secret", self._str_from_value_event(e)
-                    )
-                )
                 self.ui_elements["market_country"] = form_select(
                     tooltip="Market used for Spotify API requests (Auto uses your account region)",
                     label="Market country",
@@ -194,6 +208,10 @@ class SpotifyTab:
                 )
                 outline_button("Discard", self.discard)
                 primary_button("Save", self.save)
+                copy_text_button(
+                    SPOTIFY_OAUTH_REDIRECT_URI,
+                    tooltip=f"Copy redirect URI {SPOTIFY_OAUTH_REDIRECT_URI}",
+                )
                 self.ui_elements["connect_button"] = primary_button(
                     "Connect",
                     self._handle_oauth_connection,

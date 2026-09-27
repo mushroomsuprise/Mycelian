@@ -60,6 +60,37 @@ def _inject_css() -> None:
     ui.add_head_html(
         f"<style id='spore-studio-tab-css'>{_TAB_CSS}</style>", shared=True
     )
+    # The editor lives in a cross-origin iframe. A click that prevents default
+    # can leave keyboard focus on the main tab strip, so arrow keys move tabs
+    # instead of the selected element. Forward those keys into the editor.
+    ui.run_javascript(
+        """
+        if (!window.__mycelianSporeNudge) {
+            window.__mycelianSporeNudge = true;
+            document.addEventListener('keydown', function (ev) {
+                if (!ev.key || ev.key.indexOf('Arrow') !== 0) { return; }
+                var target = ev.target;
+                if (!target || !target.closest) { return; }
+                if (target.closest('input, textarea, select, [contenteditable="true"]')) {
+                    return;
+                }
+                if (!target.closest('.q-tab, .q-tabs')) { return; }
+                var host = document.querySelector('.spore-studio-host');
+                if (!host || host.offsetParent === null) { return; }
+                var iframe = host.querySelector('iframe');
+                if (!iframe || !iframe.contentWindow) { return; }
+                iframe.contentWindow.postMessage({
+                    source: 'mycelian-host',
+                    type: 'spore-nudge',
+                    key: ev.key,
+                    shiftKey: !!ev.shiftKey
+                }, '*');
+                ev.preventDefault();
+                ev.stopPropagation();
+            }, true);
+        }
+        """
+    )
     _INJECTED_CSS["injected"] = True
 
 
@@ -139,7 +170,14 @@ def create_spore_studio_tab() -> None:
                     on_click=lambda: _refresh_iframe(state),
                 ).props("dense").classes("mt-2")
 
-    layout_schedule(0.5, lambda: _refresh_iframe(state), once=True)
+    def _poll_editor(remaining: int = 40) -> None:
+        url = _editor_url()
+        _refresh_iframe(state)
+        if url or remaining <= 0:
+            return
+        layout_schedule(1.5, lambda: _poll_editor(remaining - 1), once=True)
+
+    layout_schedule(0.5, lambda: _poll_editor(), once=True)
 
 
 def _refresh_iframe(state: Dict[str, Any]) -> None:

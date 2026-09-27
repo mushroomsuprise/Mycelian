@@ -1660,6 +1660,7 @@ def create_custom_sources_tab():
                     options=[],
                     label=None,
                     classes="w-56 bg-theme-base",
+                    with_input=True,
                     on_change=lambda e: on_config_selected(
                         e, config_parser, config_container, config_select
                     ),

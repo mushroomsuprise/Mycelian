@@ -469,11 +469,11 @@ class DiscordTab:
 
             with settings_section(
                 "Connection",
-                subtitle="Bot token from the Developer Portal — see Help for setup steps",
+                subtitle="Connect, then invite, then pick channels.",
             ):
                 with ui.row().classes("w-full items-center justify-between gap-2 mb-1"):
                     ui.label(
-                        "Need a bot token? Open Help for the full Discord setup guide."
+                        "Connect, then invite the bot, then pick announcement channels."
                     ).classes("text-xs secondary-text")
                     help_button(
                         topic_id="integrations_discord",

@@ -558,6 +558,16 @@ def notify(
             del _history[: len(_history) - MAX_HISTORY_ITEMS]
         save_history()
     _trigger_history_refresh()
+    if ntype in ("negative", "warning"):
+        try:
+            from .tray_controller import is_minimized
+
+            if is_minimized():
+                from .system_notify import notify_async
+
+                notify_async(message, title="Mycelian")
+        except Exception:
+            pass
 
     if not skip_toast:
         opts = _build_toast_opts(
@@ -1379,6 +1389,7 @@ load_history()
 _history_last_read_ts: float = time.time()
 
 _history_column: Optional[Any] = None
+_history_type_filter: str = ""
 _history_scroll_area: Optional[Any] = None
 _notification_dialog: Optional[Any] = None
 _tray_badge_ref: Optional[Any] = None
@@ -1462,6 +1473,12 @@ def _scroll_history_to_top() -> None:
         logger.debug("history scroll-to-top failed: %s", e)
 
 
+def _set_history_type_filter(value: str) -> None:
+    global _history_type_filter
+    _history_type_filter = value or ""
+    _render_history_cards()
+
+
 def _render_history_cards() -> None:
     from nicegui import ui
 
@@ -1472,8 +1489,19 @@ def _render_history_cards() -> None:
     col.clear()
     with col:
         items = list(reversed(get_history()))
+        if _history_type_filter:
+            items = [
+                entry
+                for entry in items
+                if str(entry.get("type", "info") or "info") == _history_type_filter
+            ]
         if not items:
-            ui.label("No notifications yet").classes("text-sm secondary-text p-2")
+            if _history_type_filter and get_history():
+                ui.label("No notifications of this type").classes(
+                    "text-sm secondary-text p-2"
+                )
+            else:
+                ui.label("No notifications yet").classes("text-sm secondary-text p-2")
             return
         for entry in items:
             eid = entry.get("id", "")
@@ -1624,6 +1652,21 @@ def create_notification_tray_button() -> None:
         _notification_dialog = dlg
         with ui.row().classes("w-full items-center justify-between gap-2"):
             ui.label("Notifications").classes("text-lg font-bold")
+            ui.select(
+                {
+                    "": "All types",
+                    "info": "Info",
+                    "positive": "Success",
+                    "warning": "Warning",
+                    "negative": "Error",
+                    "ongoing": "Ongoing",
+                },
+                value="",
+                label="Type",
+                on_change=lambda e: _set_history_type_filter(
+                    "" if e.value is None else str(e.value)
+                ),
+            ).props("dense outlined options-dense").classes("w-36")
             with ui.row().classes("items-center gap-0"):
                 ui.button("Clear all", on_click=lambda: clear_history()).props(
                     "flat dense no-caps"

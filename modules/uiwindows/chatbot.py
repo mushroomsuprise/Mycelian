@@ -752,7 +752,12 @@ greetings_container = None
 giveaways_container = None
 
 # Global search term (shared across tabs)
-search_term = ""
+search_terms = {
+    "commands": "",
+    "events": "",
+    "quotes": "",
+    "greetings": "",
+}
 selected_chatbot_item = None
 create_dialog = None
 custom_variable_dialog = None  # Separate dialog for custom variable creation
@@ -1337,7 +1342,7 @@ def create_chatbot_tab():
                                     tooltip="Filter commands by name, alias, or description",
                                     label="🔍 Search commands",
                                     placeholder="Search by name, command, aliases, or description...",
-                                    value="",
+                                    value=search_terms["commands"],
                                 )
                                 .classes("w-full bg-theme-base")
                                 .props("clearable")
@@ -1345,8 +1350,7 @@ def create_chatbot_tab():
 
                             # Update search on input change for commands tab
                             def on_commands_search_change(event):
-                                global search_term
-                                search_term = event.value or ""
+                                search_terms["commands"] = event.value or ""
                                 refresh_tab_content("commands")
 
                             search_input_commands.on_value_change(on_commands_search_change)
@@ -1389,7 +1393,7 @@ def create_chatbot_tab():
                                     tooltip="Filter events by name or description",
                                     label="🔍 Search events",
                                     placeholder="Search by name, event type, or description...",
-                                    value="",
+                                    value=search_terms["events"],
                                 )
                                 .classes("w-full bg-theme-base")
                                 .props("clearable")
@@ -1397,8 +1401,7 @@ def create_chatbot_tab():
 
                             # Update search on input change for events tab
                             def on_events_search_change(event):
-                                global search_term
-                                search_term = event.value or ""
+                                search_terms["events"] = event.value or ""
                                 refresh_tab_content("events")
 
                             search_input_events.on_value_change(on_events_search_change)
@@ -1448,7 +1451,7 @@ def create_chatbot_tab():
                                     tooltip="Filter quotes by text or author",
                                     label="🔍 Search quotes",
                                     placeholder="Search by text, author, or ID...",
-                                    value="",
+                                    value=search_terms["quotes"],
                                 )
                                 .classes("w-full bg-theme-base")
                                 .props("clearable")
@@ -1456,8 +1459,7 @@ def create_chatbot_tab():
 
                             # Update search on input change for quotes tab
                             def on_quotes_search_change(event):
-                                global search_term
-                                search_term = event.value or ""
+                                search_terms["quotes"] = event.value or ""
                                 refresh_tab_content("quotes")
 
                             search_input_quotes.on_value_change(on_quotes_search_change)
@@ -1507,7 +1509,7 @@ def create_chatbot_tab():
                                     tooltip="Filter greetings by name or message",
                                     label="🔍 Search greetings",
                                     placeholder="Search by username or greeting text...",
-                                    value="",
+                                    value=search_terms["greetings"],
                                 )
                                 .classes("w-full bg-theme-base")
                                 .props("clearable")
@@ -1515,8 +1517,7 @@ def create_chatbot_tab():
 
                             # Update search on input change for greetings tab
                             def on_greetings_search_change(event):
-                                global search_term
-                                search_term = event.value or ""
+                                search_terms["greetings"] = event.value or ""
                                 refresh_tab_content("greetings")
 
                             search_input_greetings.on_value_change(
@@ -1871,7 +1872,7 @@ def render_giveaways_tab(container_el) -> None:
 
 def refresh_tab_content(tab_type: str):
     """Refresh the content of a specific tab"""
-    global search_term
+    search_term = search_terms.get(tab_type, "")
 
     # Get the appropriate container based on tab type
     container = get_container_for_tab(tab_type)
@@ -1950,8 +1951,9 @@ def refresh_tab_content(tab_type: str):
 
             elif tab_type == "greetings":
                 for item_id, item in items.items():
-                    # Search in username
-                    if search_lower in item.username.lower():
+                    greeting_text = getattr(item, "greeting_text", "") or ""
+                    searchable_text = f"{item.username} {greeting_text}"
+                    if search_lower in searchable_text.lower():
                         filtered_items[item_id] = item
 
             items = filtered_items
@@ -7570,19 +7572,32 @@ def toggle_chatbot_item(item_id: str, enabled: bool):
 
 
 def reset_command_counter(command_id: str):
-    """Reset a command's counter"""
-    try:
-        manager = get_chatbot_manager()
-        success = manager.reset_command_counter(command_id)
+    """Ask before resetting a command's counter."""
 
-        if success:
-            notify("Command counter reset", type="positive")
-            refresh_chatbot_items()
-        else:
-            notify("Failed to reset counter", type="negative")
-    except Exception as e:
-        logger.error(f"Error resetting command counter: {e}", exc_info=True)
-        notify(f"Error resetting counter: {str(e)}", type="negative")
+    def do_reset() -> None:
+        dialog.close()
+        try:
+            manager = get_chatbot_manager()
+            success = manager.reset_command_counter(command_id)
+
+            if success:
+                notify("Command counter reset", type="positive")
+                refresh_chatbot_items()
+            else:
+                notify("Failed to reset counter", type="negative")
+        except Exception as e:
+            logger.error(f"Error resetting command counter: {e}", exc_info=True)
+            notify(f"Error resetting counter: {str(e)}", type="negative")
+
+    with ui.dialog().props("persistent") as dialog, ui.card().classes("w-[420px] p-4"):
+        ui.label("Reset command counter?").classes("text-lg font-bold mb-2")
+        ui.label(
+            "This sets the command's use count back to zero."
+        ).classes("secondary-text mb-4")
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("outline")
+            ui.button("Reset", on_click=do_reset).props("color=negative")
+    dialog.open()
 
 
 def _unique_copy_label(base: str, taken: set) -> str:

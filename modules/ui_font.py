@@ -36,6 +36,38 @@ body, .q-app, #app, .nicegui-content {{
 """
 
 
+def apply_ui_scale(percent: int | None = None) -> None:
+    """Zoom the app UI between 90% and 125% (requires an active client)."""
+    if percent is None:
+        try:
+            from .dataobjects import state_manager
+
+            percent = int(
+                getattr(state_manager.get_app_settings(), "ui_scale_percent", 100)
+                or 100
+            )
+        except Exception:
+            percent = 100
+    try:
+        percent = max(90, min(125, int(percent)))
+    except (TypeError, ValueError):
+        percent = 100
+    zoom = f"{percent / 100:.2f}"
+    js = (
+        "(function(){document.documentElement.style.zoom="
+        + repr(zoom)
+        + ";})();"
+    )
+    try:
+        from nicegui import context
+
+        if context.client is None:
+            return
+        ui.run_javascript(js)
+    except Exception as exc:
+        logger.debug("apply_ui_scale failed: %s", exc)
+
+
 def apply_app_font(family: str | None = None) -> None:
     """Update global font-family in the browser (requires an active client)."""
     css_block = get_app_font_css_block(family)
@@ -58,5 +90,6 @@ def apply_app_font(family: str | None = None) -> None:
             logger.debug("apply_app_font skipped: no UI client yet")
             return
         ui.run_javascript(js)
+        apply_ui_scale()
     except Exception as exc:
         logger.debug("apply_app_font failed: %s", exc)

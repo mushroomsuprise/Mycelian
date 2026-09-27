@@ -3249,6 +3249,7 @@
             ev.stopPropagation();
             state.selectedId = modelEl.id;
             renderInspector();
+            focusCanvas();
             $$(".ss-element", $("#ss-stage")).forEach(function (n) {
                 n.classList.toggle("selected", n.dataset.sporeId === modelEl.id);
             });
@@ -5374,8 +5375,9 @@
         grid.innerHTML = "";
         if (!snapshot || !snapshot.files || snapshot.files.length === 0) {
             grid.innerHTML = '<div class="ss-empty" style="grid-column:span 2;">' +
-                'Drop files into assets/' + (state.model ? state.model.template_name : "") +
-                ' to populate.</div>';
+                'Upload files or drop them into assets/' +
+                (state.model ? state.model.template_name : "") +
+                '.</div>';
             return;
         }
         snapshot.files.forEach(function (file) {
@@ -5386,6 +5388,17 @@
             card.innerHTML =
                 '<div>' + escapeHtml(file.name) + '</div>' +
                 '<div class="ss-asset__kind">' + (file.kind || "?") + '</div>';
+            var remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "ss-btn ss-btn--ghost";
+            remove.textContent = "Delete";
+            remove.title = "Delete " + file.name;
+            remove.addEventListener("click", function (clickEv) {
+                clickEv.stopPropagation();
+                clickEv.preventDefault();
+                deleteAsset(file);
+            });
+            card.appendChild(remove);
             card.addEventListener("dragstart", function (ev) {
                 ev.dataTransfer.setData("text/spore-asset", file.url);
                 ev.dataTransfer.setData("text/spore-asset-kind", file.kind || "image");
@@ -5491,6 +5504,14 @@
                     refreshPreview();
                 });
                 setDirty(false);
+                try {
+                    if (state.model && state.model.template_name) {
+                        localStorage.setItem(
+                            "mycelian-spore-last-template",
+                            state.model.template_name
+                        );
+                    }
+                } catch (err) {}
                 if (model.legacy) {
                     toast("Legacy template (advanced mode)", "info");
                 }
@@ -6249,6 +6270,7 @@
                 row.addEventListener("click", function () {
                     state.selectedId = el.id;
                     renderInspector();
+                    focusCanvas();
                     renderOutline();
                     $$(".ss-element", $("#ss-stage")).forEach(function (n) {
                         n.classList.toggle(
@@ -6549,7 +6571,148 @@
             });
     }
 
+    function deleteAsset(file) {
+        if (!state.model || !file) { return; }
+        if (!confirm("Delete " + file.name + " from this template's assets?")) { return; }
+        fetch("/api/spore-studio/assets/" + encodeURIComponent(state.model.template_name) + "/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rel_path: file.rel_path || file.name })
+        })
+            .then(function (r) {
+                return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+            })
+            .then(function (res) {
+                if (!res.ok) {
+                    throw new Error((res.data && res.data.error) || "Delete failed");
+                }
+                renderAssets(res.data);
+            })
+            .catch(function (err) {
+                toast("Delete failed: " + err.message, "error");
+            });
+    }
+
+    function setupAssetTools() {
+        var fileInput = $("#ss-asset-file");
+        var upload = $("#ss-asset-upload");
+        var reveal = $("#ss-asset-reveal");
+        if (!fileInput || !upload || !reveal) { return; }
+        upload.addEventListener("click", function () {
+            if (!state.model) {
+                toast("Open a template first.", "error");
+                return;
+            }
+            fileInput.click();
+        });
+        fileInput.addEventListener("change", function () {
+            var files = Array.prototype.slice.call(fileInput.files || []);
+            fileInput.value = "";
+            if (!state.model || !files.length) { return; }
+            var name = state.model.template_name;
+            var chain = Promise.resolve();
+            files.forEach(function (file) {
+                chain = chain.then(function () {
+                    var body = new FormData();
+                    body.append("file", file, file.name);
+                    return fetch("/api/spore-studio/assets/" + encodeURIComponent(name) + "/upload", {
+                        method: "POST",
+                        body: body
+                    }).then(function (r) {
+                        return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+                    }).then(function (res) {
+                        if (!res.ok) {
+                            throw new Error((res.data && res.data.error) || "Upload failed");
+                        }
+                        renderAssets(res.data);
+                    });
+                });
+            });
+            chain.catch(function (err) { toast(err.message, "error"); });
+        });
+        reveal.addEventListener("click", function () {
+            if (!state.model) {
+                toast("Open a template first.", "error");
+                return;
+            }
+            fetch("/api/spore-studio/assets/" + encodeURIComponent(state.model.template_name) + "/reveal", {
+                method: "POST"
+            }).catch(function (err) { toast(err.message, "error"); });
+        });
+    }
+
+    function focusCanvas() {
+        try { window.focus(); } catch (err) {}
+        var stage = document.getElementById("ss-stage");
+        if (!stage) { return; }
+        try { stage.focus({ preventScroll: true }); }
+        catch (err) { stage.focus(); }
+    }
+
+    function nudgeFromKey(key, shiftKey) {
+        if (!state.selectedId) { return false; }
+        var step = shiftKey ? 10 : 1;
+        var dx = key === "ArrowLeft" ? -step : (key === "ArrowRight" ? step : 0);
+        var dy = key === "ArrowUp" ? -step : (key === "ArrowDown" ? step : 0);
+        if (!dx && !dy) { return false; }
+        nudgeSelected(dx, dy);
+        return true;
+    }
+
+    function nudgeSelected(dx, dy) {
+        var el = selectedElement();
+        if (!el) { return; }
+        var parent = pidNorm(el.parent_id) ? elementByIdFromModel(el.parent_id) : null;
+        if (parent && (parent.type || "container") === "container") {
+            // Nested elements are redrawn from placement offsets, so the
+            // offsets have to move or the next render snaps them back.
+            ensurePlacementDefaults(el);
+            el.placement.offset_x = (Number(el.placement.offset_x) || 0) + dx;
+            el.placement.offset_y = (Number(el.placement.offset_y) || 0) + dy;
+            applyPlacementToPosition(el, parent);
+        } else {
+            el.position = el.position || { x: 0, y: 0 };
+            el.position.x = Math.max(0, (parseInt(el.position.x, 10) || 0) + dx);
+            el.position.y = Math.max(0, (parseInt(el.position.y, 10) || 0) + dy);
+        }
+        renderStage();
+        renderInspector();
+        pushHistoryDebounced();
+        modelTouch();
+    }
+
+    function duplicateSelected() {
+        var el = selectedElement();
+        if (!el || !state.model) { return; }
+        var copy = JSON.parse(JSON.stringify(el));
+        copy.id = uniqueElementId(el.type || "el");
+        copy.position = copy.position || { x: 0, y: 0 };
+        copy.position.x = (parseInt(copy.position.x, 10) || 0) + 16;
+        copy.position.y = (parseInt(copy.position.y, 10) || 0) + 16;
+        state.model.elements = state.model.elements || [];
+        state.model.elements.push(copy);
+        state.selectedId = copy.id;
+        pushHistory();
+        renderAll();
+        modelTouch();
+    }
+
+    function typingTarget(target) {
+        if (!target || !target.tagName) { return false; }
+        var tag = target.tagName;
+        return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+    }
+
     function setupKeyboard() {
+        window.addEventListener("message", function (ev) {
+            var data = ev.data || {};
+            if (data.source !== "mycelian-host" || data.type !== "spore-nudge") { return; }
+            var root = document.getElementById("ss-root");
+            if (root && root.classList.contains("ss-root--containers")) { return; }
+            if (!state.selectedId) { return; }
+            focusCanvas();
+            nudgeFromKey(data.key, !!data.shiftKey);
+        });
         window.addEventListener("keydown", function (ev) {
             var root = document.getElementById("ss-root");
             if (root && root.classList.contains("ss-root--containers")) {
@@ -6560,6 +6723,18 @@
             else if (meta && (ev.key === "Z" || (ev.key === "z" && ev.shiftKey))) { ev.preventDefault(); redo(); }
             else if (meta && ev.key === "y") { ev.preventDefault(); redo(); }
             else if (meta && ev.key === "s") { ev.preventDefault(); saveCurrent(); }
+            else if (meta && (ev.key === "d" || ev.key === "D")) {
+                if (typingTarget(ev.target)) { return; }
+                ev.preventDefault();
+                duplicateSelected();
+            }
+            else if (ev.key === "ArrowLeft" || ev.key === "ArrowRight" || ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+                if (typingTarget(ev.target)) { return; }
+                if (!state.selectedId) { return; }
+                ev.preventDefault();
+                ev.stopPropagation();
+                nudgeFromKey(ev.key, ev.shiftKey);
+            }
             else if (ev.key === "Delete" || ev.key === "Backspace") {
                 if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA" || ev.target.tagName === "SELECT")) { return; }
                 if (!state.selectedId) { return; }
@@ -6570,7 +6745,7 @@
                 renderAll();
                 modelTouch();
             }
-        });
+        }, true);
     }
 
     function setupToolbar() {
@@ -6579,6 +6754,7 @@
                 ev.target.value = state.model ? state.model.template_name : "";
                 return;
             }
+            try { localStorage.setItem("mycelian-spore-last-template", ev.target.value); } catch (err) {}
             loadTemplate(ev.target.value);
         });
         $("#ss-btn-create").addEventListener("click", openCreateDialog);
@@ -6610,7 +6786,13 @@
         setupBlockPaletteDnD();
         setupPreviewDialog();
         setupKeyboard();
+        setupAssetTools();
         setupSocket();
+        window.addEventListener("beforeunload", function (ev) {
+            if (!state.dirty) { return; }
+            ev.preventDefault();
+            ev.returnValue = "";
+        });
 
         Promise.all([
             fetch("/api/spore-studio/events").then(function (r) { return r.json(); }),
@@ -6631,7 +6813,13 @@
             .then(function () {
                 var sel = $("#ss-template-select");
                 if (sel.options.length > 0) {
-                    sel.value = sel.options[0].value;
+                    var saved = "";
+                    try { saved = localStorage.getItem("mycelian-spore-last-template") || ""; } catch (err) {}
+                    var hasSaved = false;
+                    for (var i = 0; i < sel.options.length; i++) {
+                        if (sel.options[i].value === saved) { hasSaved = true; break; }
+                    }
+                    sel.value = hasSaved ? saved : sel.options[0].value;
                     loadTemplate(sel.value);
                 } else {
                     toast("No templates yet — click '+ New' to create one.", "info");

@@ -4,12 +4,31 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable, List, Optional, Union
 
 from nicegui import ui
 
 _DEFAULT_CLASSES = "w-full"
 _FIELD_PROPS = "outlined dense"
+
+
+def copy_text_button(text: str, *, tooltip: str = "Copy") -> Any:
+    """Copy a fixed string to the clipboard. Used for OAuth redirect URIs."""
+
+    def _copy() -> None:
+        from .notification_engine import notify
+
+        ui.run_javascript(
+            "navigator.clipboard.writeText(" + json.dumps(text) + ")"
+        )
+        notify("Redirect URI copied", type="positive")
+
+    return (
+        ui.button(icon="content_copy", on_click=_copy)
+        .props("dense flat")
+        .tooltip(tooltip)
+    )
 
 
 def _with_tooltip(element: Any, tooltip: str) -> Any:

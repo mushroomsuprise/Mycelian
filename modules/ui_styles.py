@@ -587,6 +587,8 @@ body:not(.body--dark) .text-grey {
     padding: 0;
     align-items: flex-end;
     background: transparent !important;
+    overflow-x: auto;
+    flex-wrap: nowrap;
 }
 
 /* Shared connected tab chrome (main + sub) */

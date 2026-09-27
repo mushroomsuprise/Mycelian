@@ -257,26 +257,44 @@ def load_source_controls():
     with source_controls_container:
         if not all_template_controls:
             with ui.column().classes("w-full h-full flex flex-col gap-2 p-2"):
+                ui.label("No source controls yet").classes("secondary-text")
                 ui.label(
-                    "No dynamic controls found in template configurations"
-                ).classes("secondary-text")
-                ui.label(
-                    "Add a 'dynamic_controls' section to your template config files to enable interactive controls"
+                    "Add controls from a template's Source Controls tab in Spore Studio, then reopen this page."
                 ).classes("text-caption muted-text mt-2")
                 ui.label(
-                    "Note: Both visible and hidden templates are checked for controls"
+                    "Hidden templates are included when they have controls."
                 ).classes("text-caption muted-text mt-1")
         else:
             sorted_templates = sorted(
                 all_template_controls.items(), key=_template_sort_key
             )
+            section_cards = []
+            search = (
+                ui.input(placeholder="Search templates")
+                .props("dense outlined clearable")
+                .classes("w-56 mb-2")
+            )
+
+            def apply_control_search(event=None) -> None:
+                query = ""
+                if event is not None:
+                    query = str(getattr(event, "value", "") or "")
+                else:
+                    query = str(search.value or "")
+                query = query.strip().lower()
+                for name, card in section_cards:
+                    card.set_visibility(not query or query in name)
+
+            search.on_value_change(apply_control_search)
             columns = _distribute_to_columns(sorted_templates)
             for col_items in columns:
                 with ui.element("div").classes("sc-masonry-col"):
                     for template_name, controls_config in col_items:
-                        create_template_control_section(
+                        card = create_template_control_section(
                             template_name, controls_config
                         )
+                        if card is not None:
+                            section_cards.append((template_name.lower(), card))
 
 
 def create_template_control_section(template_name, controls_config):
@@ -287,9 +305,10 @@ def create_template_control_section(template_name, controls_config):
 
     elements = controls_config.get("elements", [])
 
-    with ui.card().props("flat").classes(
+    card = ui.card().props("flat").classes(
         "content-card control-card source-controls-template-card w-full"
-    ):
+    )
+    with card:
         with ui.column().classes("w-full gap-2"):
             with ui.row().classes("w-full items-center justify-between mb-1"):
                 with ui.row().classes("items-center gap-2"):
@@ -317,6 +336,7 @@ def create_template_control_section(template_name, controls_config):
                         create_control_element(
                             template_name, element, _INNER_CONTROL_COLUMNS
                         )
+    return card
 
 
 def group_controls_by_type(elements):

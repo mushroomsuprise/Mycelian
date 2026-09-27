@@ -583,6 +583,11 @@ def notify_via_tray(title: str, message: str) -> bool:
     return _send_to_tray({"cmd": "notify", "title": title, "message": message})
 
 
+def set_tray_update_available(available: bool) -> bool:
+    """Show or hide the tray menu item for a waiting update."""
+    return _send_to_tray({"cmd": "set_update", "available": bool(available)})
+
+
 def _read_from_tray(conn: Any) -> None:
     """Drain tray actions until the child exits or the pipe closes."""
     global _tray_unavailable_reason

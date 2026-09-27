@@ -16,6 +16,7 @@ from ...ui_settings_layout import (
 from ...dataobjects import OBSData, state_manager
 from ...notification_engine import notify
 from ...obs_service import obs_service
+from ...help_system.contextual_help import help_button
 from ...ui_form_controls import form_sensitive_input, form_sensitive_number
 from ...ui_timer import layout_schedule
 
@@ -143,6 +144,24 @@ class ObsTab:
                     value=bool(getattr(self.buffer, "enabled", True)),
                     on_change=lambda e: self._set("enabled", bool(e.value)),
                 )
+
+            with ui.column().classes("w-full gap-1 mb-2"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.label("WebSocket checklist").classes("text-sm font-semibold")
+                    help_button(
+                        topic_id="obs_websocket",
+                        tooltip="OBS WebSocket setup",
+                        size="sm",
+                    )
+                ui.label(
+                    "1. In OBS, open Tools → WebSocket Server Settings."
+                ).classes("text-xs secondary-text")
+                ui.label(
+                    "2. Enable the server and note the port (default 4455) and password."
+                ).classes("text-xs secondary-text")
+                ui.label(
+                    "3. Enter those values here, Save, then Test."
+                ).classes("text-xs secondary-text")
 
             with settings_form_grid(columns=2):
                 self.ui_elements["host"] = form_sensitive_input(

@@ -1102,6 +1102,7 @@ class WebEngine:
         # Custom Sources iframe preview: token -> {template, overrides, ts}
         self._preview_sessions_lock = threading.Lock()
         self._preview_sessions: Dict[str, Dict[str, Any]] = {}
+        self._container_drafts: Dict[str, str] = {}
         # Custom Sources preview demo loops: sid -> stop flag (legacy —
         # the auto-demo loop has been removed in favour of manual mock
         # buttons in the Spore Studio preview dialog. Kept around so
@@ -1729,6 +1730,50 @@ class WebEngine:
                 logger.error("Container create error: %s", e, exc_info=True)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
 
+        @self.app.route("/api/spore-studio/containers/preview", methods=["POST"])
+        def preview_spore_studio_container():
+            """Serve an unsaved container shell. The live route still requires save."""
+            try:
+                import secrets
+
+                from .spore_studio.containers import ContainerError, render_shell
+
+                payload = request.get_json(silent=True) or {}
+                model = payload.get("container")
+                if not isinstance(model, dict):
+                    return (
+                        {"error": "Request body must include a 'container' object."},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                try:
+                    html = render_shell(model)
+                except ContainerError as exc:
+                    return (
+                        {"error": str(exc)},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                token = secrets.token_urlsafe(8)
+                if len(self._container_drafts) > 20:
+                    self._container_drafts.pop(next(iter(self._container_drafts)))
+                self._container_drafts[token] = html
+                return (
+                    {"ok": True, "url": f"/_spore_container_preview/{token}"},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Container preview error: %s", e, exc_info=True)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route("/_spore_container_preview/<token>")
+        def serve_spore_container_preview(token):
+            html = self._container_drafts.get(str(token))
+            if not html:
+                return ("Preview expired. Open it again from the container editor.", 404)
+            return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
         @self.app.route("/api/spore-studio/containers/save", methods=["POST"])
         def save_spore_studio_container():
             try:
@@ -1836,6 +1881,69 @@ class WebEngine:
                 )
             except Exception as e:
                 logger.error("Spore Studio fonts endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route(
+            "/api/spore-studio/assets/<template_name>/upload", methods=["POST"]
+        )
+        def upload_spore_studio_asset(template_name):
+            try:
+                from .spore_studio import assets_watcher as _aw
+
+                uploaded = request.files.get("file")
+                if uploaded is None or not uploaded.filename:
+                    return (
+                        {"error": "Choose a file to upload."},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                snapshot = _aw.save_uploaded_asset(
+                    template_name,
+                    uploaded.filename,
+                    uploaded.read(),
+                )
+                return snapshot, 200, {"Content-Type": "application/json"}
+            except ValueError as e:
+                return ({"error": str(e)}, 400, {"Content-Type": "application/json"})
+            except Exception as e:
+                logger.error("Spore Studio asset upload error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route(
+            "/api/spore-studio/assets/<template_name>/delete", methods=["POST"]
+        )
+        def delete_spore_studio_asset(template_name):
+            try:
+                from .spore_studio import assets_watcher as _aw
+
+                payload = request.get_json(silent=True) or {}
+                snapshot = _aw.delete_asset(
+                    template_name, str(payload.get("rel_path") or "")
+                )
+                return snapshot, 200, {"Content-Type": "application/json"}
+            except ValueError as e:
+                return ({"error": str(e)}, 400, {"Content-Type": "application/json"})
+            except Exception as e:
+                logger.error("Spore Studio asset delete error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
+        @self.app.route(
+            "/api/spore-studio/assets/<template_name>/reveal", methods=["POST"]
+        )
+        def reveal_spore_studio_assets(template_name):
+            try:
+                from .spore_studio import assets_watcher as _aw
+
+                folder = _aw.reveal_assets_folder(template_name)
+                return (
+                    {"ok": True, "folder": folder},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except ValueError as e:
+                return ({"error": str(e)}, 400, {"Content-Type": "application/json"})
+            except Exception as e:
+                logger.error("Spore Studio asset reveal error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
 
         @self.app.route("/api/spore-studio/assets/<template_name>")

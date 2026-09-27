@@ -1266,6 +1266,21 @@ def _start_overlay_engine_background() -> None:
     ).start()
 
 
+def remember_ui_pref(field: str, value) -> None:
+    """Persist a navigation or window preference without a settings-tab save."""
+    try:
+        from .dataobjects import state_manager
+
+        current = getattr(state_manager.get_app_settings(), field, None)
+        if current == value:
+            return
+        if not state_manager.update_app_setting(field, value):
+            return
+        state_manager.save_changes()
+    except Exception as exc:
+        logger.debug("Could not remember %s: %s", field, exc)
+
+
 def start_ui():
     """Start the NiceGUI server (blocking call)"""
     global _file_browser_qdialog_css_injected
@@ -1291,6 +1306,10 @@ def start_ui():
             maximized = bool(settings.start_maximized)
             start_minimized = bool(getattr(settings, "start_minimized", False))
             minimize_to_tray = bool(getattr(settings, "minimize_to_tray", False))
+            window_width = int(getattr(settings, "window_width", 0) or 0)
+            window_height = int(getattr(settings, "window_height", 0) or 0)
+            window_x = int(getattr(settings, "window_x", -1))
+            window_y = int(getattr(settings, "window_y", -1))
         except Exception as e:
             logger.warning(
                 "Could not read window settings from app settings; using defaults: %s",
@@ -1299,12 +1318,30 @@ def start_ui():
             maximized = True
             start_minimized = False
             minimize_to_tray = False
+            window_width = 0
+            window_height = 0
+            window_x = -1
+            window_y = -1
 
         app.native.window_args["maximized"] = maximized
         window_args = {
             "maximized": maximized,
             "min_size": [1400, 850],
         }
+        if (
+            not maximized
+            and window_width >= 1400
+            and window_height >= 850
+        ):
+            window_args["width"] = window_width
+            window_args["height"] = window_height
+            app.native.window_args["width"] = window_width
+            app.native.window_args["height"] = window_height
+            if window_x >= 0 and window_y >= 0:
+                window_args["x"] = window_x
+                window_args["y"] = window_y
+                app.native.window_args["x"] = window_x
+                app.native.window_args["y"] = window_y
         if start_minimized:
             # Create the window hidden and pointed at a blank page so the UI is never
             # built. ``window_kwargs`` spreads window_args after ``url``, so this
@@ -1555,18 +1592,32 @@ def create_ui_elements():
                         spore_studio_tab = ui.tab("Spore Studio")
                         settings_tab = ui.tab("Settings")
 
-                register_main_tabs(
-                    {
-                        "Activity Feed": activity_tab,
-                        "Alerts": alerts_tab,
-                        "Source Settings": source_settings_tab,
-                        "Source Controls": source_controls_tab,
-                        "Connectors": connectors_tab,
-                        "Chatbot": chatbot_tab,
-                        "Settings": settings_tab,
-                        "Spore Studio": spore_studio_tab,
-                    }
-                )
+                main_tabs_by_label = {
+                    "Activity Feed": activity_tab,
+                    "Alerts": alerts_tab,
+                    "Source Settings": source_settings_tab,
+                    "Source Controls": source_controls_tab,
+                    "Connectors": connectors_tab,
+                    "Chatbot": chatbot_tab,
+                    "Settings": settings_tab,
+                    "Spore Studio": spore_studio_tab,
+                }
+                register_main_tabs(main_tabs_by_label)
+                try:
+                    from .dataobjects import state_manager
+
+                    saved_main = (
+                        getattr(
+                            state_manager.get_app_settings(),
+                            "last_main_tab",
+                            "Activity Feed",
+                        )
+                        or "Activity Feed"
+                    )
+                except Exception:
+                    saved_main = "Activity Feed"
+                initial_main_tab = main_tabs_by_label.get(saved_main, activity_tab)
+                initial_main_label = saved_main if saved_main in main_tabs_by_label else "Activity Feed"
                 with ui.row().classes("items-center gap-0 shrink-0 self-end mb-1"):
                     help_button(tooltip="Help", size="sm")
                     create_notification_tray_button()
@@ -1576,7 +1627,7 @@ def create_ui_elements():
                 # Initialize lazy tabs dictionary
                 lazy_tabs = {}
 
-                with ui.tab_panels(tabs, value=activity_tab).classes(
+                with ui.tab_panels(tabs, value=initial_main_tab).classes(
                     "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
                 ) as tab_panels:
                     # Set references for help system context detection
@@ -1740,6 +1791,8 @@ def create_ui_elements():
                     # value-change handler does not call itself again.
                     if main_tab_name(tabs.value) != arriving:
                         tabs.value = new_tab
+                    if arriving:
+                        remember_ui_pref("last_main_tab", arriving)
 
                     # Handle lazy loading for the new tab
                     def get_tab_name(tab):
@@ -1786,6 +1839,51 @@ def create_ui_elements():
                 layout_schedule(
                     0.5, check_tab_changes, active=True
                 )  # Check every 500ms
+                if initial_main_label in lazy_tabs:
+                    lazy_tabs[initial_main_label].ensure_loaded()
+
+                async def remember_window_geometry() -> None:
+                    try:
+                        from .dataobjects import state_manager
+
+                        settings = state_manager.get_app_settings()
+                        if bool(getattr(settings, "start_maximized", True)):
+                            return
+                        box = await ui.run_javascript(
+                            "return [Math.round(window.outerWidth||0),"
+                            " Math.round(window.outerHeight||0),"
+                            " Math.round(window.screenX||0),"
+                            " Math.round(window.screenY||0)];"
+                        )
+                    except Exception:
+                        return
+                    if not isinstance(box, (list, tuple)) or len(box) < 4:
+                        return
+                    try:
+                        width, height, origin_x, origin_y = (
+                            int(box[0] or 0),
+                            int(box[1] or 0),
+                            int(box[2] or 0),
+                            int(box[3] or 0),
+                        )
+                    except (TypeError, ValueError):
+                        return
+                    if width < 1400 or height < 850:
+                        return
+                    changed = False
+                    for field, val in (
+                        ("window_width", width),
+                        ("window_height", height),
+                        ("window_x", origin_x),
+                        ("window_y", origin_y),
+                    ):
+                        if int(getattr(settings, field, 0) or 0) != val:
+                            if state_manager.update_app_setting(field, val):
+                                changed = True
+                    if changed:
+                        state_manager.save_changes()
+
+                ui.timer(15.0, remember_window_geometry)
 
                 start_service_watcher_timer()
 

@@ -1120,12 +1120,24 @@ class UpdateManager:
             f"Mycelian {version} is available. Open Mycelian to install it.",
             title="Update available",
         )
+        try:
+            from .tray_controller import set_tray_update_available
+
+            set_tray_update_available(True)
+        except Exception:
+            pass
 
     def flush_pending_prompt(self) -> None:
         """Show a deferred update prompt now that the UI is back."""
         update_info = self._pending_prompt
         if update_info is None:
             return
+        try:
+            from .tray_controller import set_tray_update_available
+
+            set_tray_update_available(False)
+        except Exception:
+            pass
 
         # The window has only just been told to reload, so poll for its socket rather
         # than assuming a client is already there.

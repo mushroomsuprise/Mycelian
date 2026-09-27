@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from nicegui import run, ui
 
 from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import form_sensitive_input
+from ...ui_form_controls import copy_text_button, form_sensitive_input
 from ...ui_settings_layout import (
     THEME_CHIP_CLASSES,
     settings_form_grid,
@@ -39,6 +39,9 @@ class YouTubeTab:
         self._creds: Dict[str, str] = {}
         self._playlist_chip_container: Optional[ui.row] = None
         self._playlist_input: Optional[ui.input] = None
+        self._channel_chip_container: Optional[ui.row] = None
+        self._channel_input: Optional[ui.input] = None
+        self._channel_ui_sync: bool = False
         self._status_timer: Optional[Any] = None
         self._oauth_in_progress: bool = False
         self._active_timers: List[Any] = []
@@ -436,6 +439,72 @@ class YouTubeTab:
                     on_click=lambda _e, n=name: self._remove_playlist_filter(n),
                 ).props("flat dense round size=xs")
 
+    def _channel_url_list(self) -> List[str]:
+        raw = "" if self.buffer is None else (self.buffer.channel_urls or "")
+        return [part.strip() for part in str(raw).split("|") if part.strip()]
+
+    def _write_channel_urls(self, urls: List[str]) -> None:
+        joined = "|".join(urls)
+        self._set("channel_urls", joined)
+        field = self.ui_elements.get("channel_urls")
+        if field is not None and (field.value or "") != joined:
+            self._channel_ui_sync = True
+            try:
+                field.value = joined
+            finally:
+                self._channel_ui_sync = False
+        self._rebuild_channel_chips()
+
+    def _on_channel_raw_change(self, event) -> None:
+        if self._channel_ui_sync:
+            return
+        self._set("channel_urls", "" if event.value is None else str(event.value))
+        self._rebuild_channel_chips()
+
+    def _add_channel_url(self, url: str) -> None:
+        cleaned = (url or "").strip()
+        if not cleaned:
+            return
+        urls = self._channel_url_list()
+        if cleaned in urls:
+            notify(f"'{cleaned}' is already listed", type="warning")
+            return
+        urls.append(cleaned)
+        self._write_channel_urls(urls)
+        if self._channel_input is not None:
+            self._channel_input.value = ""
+
+    def _remove_channel_url(self, url: str) -> None:
+        urls = [item for item in self._channel_url_list() if item != url]
+        self._write_channel_urls(urls)
+
+    def _on_channel_input_enter(self, _event=None) -> None:
+        if self._channel_input is None:
+            return
+        self._add_channel_url(str(self._channel_input.value or ""))
+
+    def _create_channel_chip(self, url: str) -> None:
+        if not self._channel_chip_container:
+            return
+        with self._channel_chip_container:
+            with (
+                ui.element("div")
+                .classes(THEME_CHIP_CLASSES)
+                .style("white-space: nowrap;")
+            ):
+                ui.label(url).classes("text-sm").style("white-space: nowrap;")
+                ui.button(
+                    icon="close",
+                    on_click=lambda _e, item=url: self._remove_channel_url(item),
+                ).props("flat dense round size=xs")
+
+    def _rebuild_channel_chips(self) -> None:
+        if not self._channel_chip_container:
+            return
+        self._channel_chip_container.clear()
+        for url in self._channel_url_list():
+            self._create_channel_chip(url)
+
     def _rebuild_playlist_chips(self) -> None:
         """Clear and recreate all playlist chips from the buffer."""
         if not self._playlist_chip_container:
@@ -476,15 +545,27 @@ class YouTubeTab:
                         "api_key", "" if e.value is None else str(e.value)
                     ),
                 )
-            self.ui_elements["channel_urls"] = form_sensitive_input(
-                tooltip="Pipe-separated YouTube channel URLs to monitor",
-                label="Channel URLs",
-                value=getattr(self.buffer, "channel_urls", ""),
-                placeholder="https://youtube.com/@Channel|https://...",
-                on_change=lambda e: self._set(
-                    "channel_urls", "" if e.value is None else str(e.value)
-                ),
+            ui.label("Channel URLs").classes("text-sm font-semibold mt-2")
+            ui.label("Press Enter to add a channel. Paste a pipe-separated list below.").classes(
+                "text-xs secondary-text"
             )
+            self._channel_chip_container = theme_chip_row()
+            self._rebuild_channel_chips()
+            self._channel_input = form_sensitive_input(
+                tooltip="YouTube channel URL to monitor; press Enter to add",
+                placeholder="https://youtube.com/@Channel",
+            )
+            self._channel_input.on("keydown.enter", self._on_channel_input_enter)
+            with ui.expansion("Raw channel URLs", icon="link").classes("w-full").props(
+                "dense"
+            ):
+                self.ui_elements["channel_urls"] = form_sensitive_input(
+                    tooltip="Pipe-separated YouTube channel URLs to monitor",
+                    label="Channel URLs",
+                    value=getattr(self.buffer, "channel_urls", ""),
+                    placeholder="https://youtube.com/@Channel|https://...",
+                    on_change=self._on_channel_raw_change,
+                )
 
             with settings_section(
                 "Playlist filter (exclude)",
@@ -513,8 +594,14 @@ class YouTubeTab:
                             "Not authorized"
                         ).classes("font-semibold text-sm")
 
-                with settings_form_grid(columns=2):
-                    self.ui_elements["oauth_client_id"] = form_sensitive_input(
+                with ui.expansion("Advanced", icon="vpn_key").classes("w-full").props(
+                    "dense"
+                ):
+                    ui.label(
+                        "OAuth client ID and secret. Connect still uses these values."
+                    ).classes("text-xs secondary-text mb-2")
+                    with settings_form_grid(columns=2):
+                        self.ui_elements["oauth_client_id"] = form_sensitive_input(
                         tooltip=(
                             "Google OAuth Client ID (Web application). "
                             "Stored in api_credentials.json like Spotify."
@@ -573,6 +660,10 @@ class YouTubeTab:
                         "Disconnect",
                         self._handle_oauth_disconnect,
                         icon="logout",
+                    )
+                    copy_text_button(
+                        YOUTUBE_OAUTH_REDIRECT_URI,
+                        tooltip=f"Copy redirect URI {YOUTUBE_OAUTH_REDIRECT_URI}",
                     )
                     self.ui_elements["connect_button"] = primary_button(
                         "Connect",
@@ -697,7 +788,10 @@ class YouTubeTab:
                     element.value = "" if val is None else val
             if self._playlist_input is not None:
                 self._playlist_input.value = ""
+            if self._channel_input is not None:
+                self._channel_input.value = ""
             self._rebuild_playlist_chips()
+            self._rebuild_channel_chips()
         finally:
             self._suppress_dirty = False
         self.mark_clean()

@@ -174,9 +174,16 @@ class AppSettings:
     alert_storage_keep_days: int = 30
     start_maximized: bool = True
     ui_font_family: str = ""
+    ui_scale_percent: int = 100
     minimize_to_tray: bool = False
     start_minimized: bool = False
     run_at_startup: bool = False
+    last_main_tab: str = "Activity Feed"
+    last_settings_tab: str = "Twitch"
+    window_width: int = 0
+    window_height: int = 0
+    window_x: int = -1
+    window_y: int = -1
 
     def __post_init__(self):
         """Log when a new AppSettings instance is created"""

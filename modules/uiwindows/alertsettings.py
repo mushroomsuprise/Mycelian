@@ -918,6 +918,7 @@ def create_alert_type_panel(alert_type: str):
                             options=alert_options,
                             label="Select Alert",
                             classes="w-64 bg-theme-base",
+                            with_input=True,
                             on_change=lambda e: handle_alert_selection(e, alert_type),
                         )
                     )
@@ -3511,6 +3512,7 @@ def create_points_alert_panel():
                             options={"loading": "Loading Twitch rewards..."},
                             label="Select Point Reward",
                             classes="w-64 bg-theme-base",
+                            with_input=True,
                             on_change=lambda e: handle_point_reward_selection(
                                 e, alert_type
                             ),

@@ -3590,6 +3590,23 @@ def create_activity_feed_tab():
                 ).classes("control-button")
                 skip_btn.props(_DOCK_BTN_PROPS)
 
+                def open_feed_storage() -> None:
+                    from modules.help_system.contextual_help import (
+                        navigate_to_settings_subtab,
+                    )
+
+                    navigate_to_settings_subtab("App Settings", main_tab="Settings")
+
+                storage_btn = ui.button(
+                    icon="inventory_2",
+                    text="FEED STORAGE",
+                    on_click=open_feed_storage,
+                ).classes("control-button")
+                storage_btn.props(_DOCK_BTN_PROPS)
+                storage_btn.tooltip(
+                    "Open Settings → App Settings → Storage for history and auto-trim"
+                )
+
             ui.element("div").classes("grow")
 
             search_input = (

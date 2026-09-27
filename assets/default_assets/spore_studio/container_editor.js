@@ -1340,10 +1340,16 @@
                 toast("Enable the container before previewing its route.", "error");
                 return;
             }
-            var open = function () { window.open("/" + state.model.route, "_blank"); };
-            if (!state.dirty) { open(); return; }
-            if (!confirm("Save this container and open its route?")) { return; }
-            saveCurrent().then(open);
+            api("/api/spore-studio/containers/preview", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ container: state.model })
+            }).then(function (body) {
+                window.open(body.url, "_blank");
+                if (state.dirty) {
+                    toast("Draft preview. Save to update the live route.", "info");
+                }
+            }).catch(function (err) { toast(err.message, "error"); });
         });
         $("mc-container-select").addEventListener("change", function (ev) {
             var route = ev.target.value;
