@@ -851,6 +851,41 @@
         },
         {
             "type": "separator",
+            "label": "Background Music"
+        },
+        {
+            "type": "text",
+            "id": "MusicTracks",
+            "label": "Music Tracks",
+            "value": "",
+            "description": "Background music files in the roulette assets folder. Enter one filename, or several separated by commas (for example theme.mp3, bonus.mp3). Leave blank to disable music."
+        },
+        {
+            "type": "number",
+            "id": "MusicVolume",
+            "label": "Music Volume",
+            "value": 0.3,
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "description": "Volume for background music (0 = muted, 1 = full volume)"
+        },
+        {
+            "type": "checkbox",
+            "id": "MusicLoop",
+            "label": "Repeat",
+            "value": true,
+            "description": "Repeat playback. A single track loops. Multiple tracks play through the list and then start over."
+        },
+        {
+            "type": "checkbox",
+            "id": "MusicShuffle",
+            "label": "Shuffle",
+            "value": false,
+            "description": "Play multiple tracks in random order. Has no effect when only one track is listed."
+        },
+        {
+            "type": "separator",
             "label": "Particle Effects"
         },
         {

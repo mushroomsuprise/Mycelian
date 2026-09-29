@@ -828,7 +828,11 @@
         wheelVisibilityAnimationEasing: {{ WheelVisibilityAnimationEasing | tojson }},
         autoHideWheelDelay: {{ AutoHideWheelDelay | tojson }} * 1000,
             enableParticles: {{ EnableParticles | tojson }},
-        modernEffects: {{ ModernEffects | tojson }}
+        modernEffects: {{ ModernEffects | tojson }},
+        musicTracks: {{ MusicTracks | tojson }},
+        musicVolume: {{ MusicVolume | tojson }},
+        musicLoop: {{ MusicLoop | tojson }},
+        musicShuffle: {{ MusicShuffle | tojson }}
         };
 
         var rouletteDrawParams = {
@@ -932,15 +936,257 @@
             finishWheelVisibilityAnimation(main);
         }
 
+        var musicAudio = null;
+        var musicPlaylistKey = '';
+        var musicTracks = [];
+        var musicOrder = [];
+        var musicOrderPos = 0;
+        var musicCurrentIndex = -1;
+        var musicFinished = false;
+
+        function parseMusicTracks(raw) {
+            return String(raw || '').split(',').map(function (part) {
+                return part.trim();
+            }).filter(function (part) {
+                return part.length > 0;
+            });
+        }
+
+        function clampMusicVolume(value) {
+            var vol = Number(value);
+            if (isNaN(vol)) vol = 0.3;
+            if (vol < 0) vol = 0;
+            if (vol > 1) vol = 1;
+            return vol;
+        }
+
+        function buildMusicOrder(avoidFirst) {
+            var order = [];
+            var n = musicTracks.length;
+            var j, k, tmp, swapWith, held;
+            for (var i = 0; i < n; i++) order.push(i);
+            if (!(settings.musicShuffle && n > 1)) return order;
+            for (j = n - 1; j > 0; j--) {
+                k = Math.floor(Math.random() * (j + 1));
+                tmp = order[j];
+                order[j] = order[k];
+                order[k] = tmp;
+            }
+            if (avoidFirst != null && order.length > 1 && order[0] === avoidFirst) {
+                swapWith = 1 + Math.floor(Math.random() * (order.length - 1));
+                held = order[0];
+                order[0] = order[swapWith];
+                order[swapWith] = held;
+            }
+            return order;
+        }
+
+        function retargetUpcomingMusicOrder() {
+            var rest, j, k, tmp, n;
+            if (!musicTracks.length) {
+                musicOrder = [];
+                musicOrderPos = 0;
+                return;
+            }
+            if (musicCurrentIndex < 0 || musicCurrentIndex >= musicTracks.length) {
+                musicOrder = buildMusicOrder(null);
+                musicOrderPos = 0;
+                return;
+            }
+            if (settings.musicShuffle && musicTracks.length > 1) {
+                rest = [];
+                for (n = 0; n < musicTracks.length; n++) {
+                    if (n !== musicCurrentIndex) rest.push(n);
+                }
+                for (j = rest.length - 1; j > 0; j--) {
+                    k = Math.floor(Math.random() * (j + 1));
+                    tmp = rest[j];
+                    rest[j] = rest[k];
+                    rest[k] = tmp;
+                }
+                musicOrder = [musicCurrentIndex].concat(rest);
+                musicOrderPos = 0;
+                return;
+            }
+            musicOrder = buildMusicOrder(null);
+            musicOrderPos = musicCurrentIndex;
+        }
+
+        function applyMusicElementFlags() {
+            if (!musicAudio) return;
+            musicAudio.loop = musicTracks.length === 1 && !!settings.musicLoop;
+            musicAudio.volume = clampMusicVolume(settings.musicVolume);
+        }
+
+        var musicSession = 0;
+
+        function ensureMusicAudio() {
+            if (musicAudio) return musicAudio;
+            musicAudio = new Audio();
+            musicAudio.preload = 'auto';
+            return musicAudio;
+        }
+
+        function loadAndPlayMusic(fromStart) {
+            var idx, track, audio, playPromise, session;
+            if (!musicOrder.length || musicOrderPos < 0 || musicOrderPos >= musicOrder.length) {
+                musicOrder = buildMusicOrder(null);
+                musicOrderPos = 0;
+            }
+            if (!musicOrder.length) return;
+            idx = musicOrder[musicOrderPos];
+            track = musicTracks[idx];
+            if (!track) return;
+            audio = ensureMusicAudio();
+            applyMusicElementFlags();
+            musicSession += 1;
+            session = musicSession;
+            audio.onended = null;
+            if (musicCurrentIndex !== idx || audio.getAttribute('data-track') !== track) {
+                musicCurrentIndex = idx;
+                audio.setAttribute('data-track', track);
+                audio.src = '/assets/roulette/' + track;
+                fromStart = true;
+            }
+            if (fromStart) {
+                try { audio.currentTime = 0; } catch (e) {}
+            }
+            audio.onended = function () {
+                if (session !== musicSession) return;
+                onMusicEnded();
+            };
+            playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+                playPromise.catch(function (err) {
+                    console.log('Could not play background music:', err);
+                });
+            }
+        }
+
+        function onMusicEnded() {
+            var lastIndex;
+            if (!musicTracks.length) return;
+            if (musicTracks.length === 1) {
+                if (settings.musicLoop) {
+                    loadAndPlayMusic(true);
+                    return;
+                }
+                musicFinished = true;
+                return;
+            }
+            lastIndex = musicCurrentIndex;
+            musicOrderPos += 1;
+            if (musicOrderPos >= musicOrder.length) {
+                if (!settings.musicLoop) {
+                    musicFinished = true;
+                    return;
+                }
+                musicOrder = buildMusicOrder(lastIndex);
+                musicOrderPos = 0;
+            }
+            loadAndPlayMusic(true);
+        }
+
+        function pauseMusic() {
+            if (musicAudio && !musicAudio.paused) musicAudio.pause();
+        }
+
+        function startOrResumeMusic(restartIfFinished) {
+            var playPromise;
+            if (!musicTracks.length) {
+                pauseMusic();
+                return;
+            }
+            if (musicFinished) {
+                if (!restartIfFinished) return;
+                musicFinished = false;
+                musicCurrentIndex = -1;
+                musicOrder = buildMusicOrder(null);
+                musicOrderPos = 0;
+                if (musicAudio) musicAudio.removeAttribute('data-track');
+                loadAndPlayMusic(true);
+                return;
+            }
+            if (musicCurrentIndex >= 0 && musicAudio && musicAudio.getAttribute('data-track')) {
+                applyMusicElementFlags();
+                playPromise = musicAudio.play();
+                if (playPromise && typeof playPromise.catch === 'function') {
+                    playPromise.catch(function (err) {
+                        console.log('Could not play background music:', err);
+                    });
+                }
+                return;
+            }
+            if (!musicOrder.length) {
+                musicOrder = buildMusicOrder(null);
+                musicOrderPos = 0;
+            }
+            loadAndPlayMusic(true);
+        }
+
+        function wheelMusicHidden() {
+            var main;
+            if (!settings.autoHideWheel) return false;
+            main = getMainEl();
+            return !main || main.classList.contains('autohide-hidden');
+        }
+
+        function syncMusicToVisibility() {
+            if (wheelMusicHidden() || !musicTracks.length) {
+                pauseMusic();
+                return;
+            }
+            startOrResumeMusic(false);
+        }
+
+        function noteWheelShown() {
+            if (!musicTracks.length) {
+                pauseMusic();
+                return;
+            }
+            startOrResumeMusic(true);
+        }
+
+        function noteWheelHidden() {
+            pauseMusic();
+        }
+
+        function replaceMusicPlaylist(raw) {
+            var nextKey = raw == null ? '' : String(raw);
+            settings.musicTracks = nextKey;
+            if (nextKey === musicPlaylistKey) return false;
+            musicPlaylistKey = nextKey;
+            musicTracks = parseMusicTracks(nextKey);
+            musicFinished = false;
+            musicCurrentIndex = -1;
+            musicOrder = buildMusicOrder(null);
+            musicOrderPos = 0;
+            musicSession += 1;
+            if (musicAudio) {
+                musicAudio.onended = null;
+                musicAudio.pause();
+                musicAudio.removeAttribute('data-track');
+            }
+            return true;
+        }
+
+        musicPlaylistKey = settings.musicTracks == null ? '' : String(settings.musicTracks);
+        musicTracks = parseMusicTracks(musicPlaylistKey);
+        musicOrder = buildMusicOrder(null);
+
         function showWheel() {
             var main = getMainEl();
             if (!main) return;
             if (!settings.autoHideWheel) {
                 revealMainImmediate(main);
+                syncMusicToVisibility();
                 return;
             }
             var alreadyVisible = !main.classList.contains('autohide-hidden') && !wheelVisibilityAnimating;
-            if (alreadyVisible) return;
+            if (alreadyVisible) {
+                syncMusicToVisibility();
+                return;
+            }
 
             finishWheelVisibilityAnimation(main);
 
@@ -952,6 +1198,7 @@
 
             main.classList.add('autohide-animating');
             main.classList.remove('autohide-hidden');
+            noteWheelShown();
             drawRouletteWheel();
 
             if (!useAnim) {
@@ -972,6 +1219,7 @@
             if (!main) return;
             if (!settings.autoHideWheel) {
                 revealMainImmediate(main);
+                syncMusicToVisibility();
                 return;
             }
             if (main.classList.contains('autohide-hidden') && !wheelVisibilityAnimating) return;
@@ -988,6 +1236,7 @@
                 main.classList.add('autohide-hidden');
                 void main.offsetHeight;
                 finishWheelVisibilityAnimation(main);
+                noteWheelHidden();
             }
 
             main.classList.add('autohide-animating');
@@ -1089,14 +1338,18 @@
             var main = getMainEl();
             if (!main) return;
             if (!settings.autoHideWheel) {
+                var wasHidden = main.classList.contains('autohide-hidden');
                 clearWheelAutoHideTimers();
                 revealMainImmediate(main);
+                if (wasHidden) noteWheelShown();
+                else syncMusicToVisibility();
                 return;
             }
             var display = document.getElementById('resultDisplay');
             var resultShowing = display && display.classList.contains('show');
             if (resultShowing) {
                 scheduleWheelAutoHide();
+                syncMusicToVisibility();
                 return;
             }
             hideWheel(true);
@@ -1473,6 +1726,7 @@
                     if (main) main.classList.remove('loading');
                 }, 800);
             }
+            syncMusicToVisibility();
         }
 
         // Update wheel with new options
@@ -2152,6 +2406,26 @@
             if (config.EnableParticles !== undefined) { settings.enableParticles = !!config.EnableParticles; }
             if (config.ModernEffects !== undefined) { settings.modernEffects = !!config.ModernEffects; }
 
+            var musicTracksChanged = false;
+            if (config.MusicTracks !== undefined) {
+                musicTracksChanged = replaceMusicPlaylist(config.MusicTracks);
+            }
+            if (config.MusicVolume !== undefined) {
+                settings.musicVolume = clampMusicVolume(config.MusicVolume);
+                applyMusicElementFlags();
+            }
+            if (config.MusicLoop !== undefined) {
+                settings.musicLoop = !!config.MusicLoop;
+                applyMusicElementFlags();
+            }
+            if (config.MusicShuffle !== undefined) {
+                var nextMusicShuffle = !!config.MusicShuffle;
+                if (nextMusicShuffle !== !!settings.musicShuffle) {
+                    settings.musicShuffle = nextMusicShuffle;
+                    if (!musicTracksChanged) retargetUpcomingMusicOrder();
+                }
+            }
+
             applyRouletteDrawParamsFromConfig(config);
             syncRouletteOptionsFromConfig(config);
 
@@ -2181,6 +2455,10 @@
                 drawRouletteWheel();
             }
             syncIdleWheelVisibility();
+            if (musicTracksChanged && rouletteData.isSpinning) {
+                if (wheelMusicHidden() || !musicTracks.length) pauseMusic();
+                else startOrResumeMusic(true);
+            }
         }
 
         async function loadTemplateConfig() {
