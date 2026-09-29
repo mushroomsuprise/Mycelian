@@ -92,19 +92,56 @@
             height: {{CanvasSize}}px;
         }
 
-        #canvas {
+        #wheelFace {
+            position: relative;
+            z-index: 1;
             width: {{CanvasSize}}px;
-
             height: {{CanvasSize}}px;
             border-radius: 50%;
-
             box-shadow: {{WheelShadow}};
-
             transition: all {{SpinTransitionDuration}}s {{SpinEasing}};
-
             background: {{WheelBackground}};
-            position: relative;
             overflow: hidden;
+        }
+
+        #canvas,
+        #arrowCanvas {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            transition: none;
+            display: block;
+        }
+
+        #canvas {
+            transform-origin: center center;
+            will-change: transform;
+        }
+
+        #arrowCanvas {
+            pointer-events: none;
+        }
+
+        .spin-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: {{CanvasSize}}px;
+            height: {{CanvasSize}}px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 1);
+            will-change: opacity;
+        }
+
+        .spin-ring.active {
+            animation: spinRingGlow 15s ease-in-out;
         }
 
         #canvas::before {
@@ -294,9 +331,15 @@
         }
         }
 
-        /* Spinning animation enhancement */
+        /* Scale stays on the face. Brightness stays on the cached disc.
+           The purple halo is a static blur with an opacity pulse, not a drop-shadow filter. */
         .wheel-spinning {
-            animation: spinEnhancement 0.3s ease-out, longSpinGlow 15s ease-in-out;
+            animation: spinEnhancement 0.3s ease-out;
+        }
+
+        #canvas.wheel-brightening,
+        #arrowCanvas.wheel-brightening {
+            animation: wheelBrightness 15s ease-in-out;
         }
 
         @keyframes spinEnhancement {
@@ -313,25 +356,47 @@
             }
         }
 
-        @keyframes longSpinGlow {
+        @keyframes wheelBrightness {
             0% {
                 filter: brightness(1);
             }
 
             20% {
-                filter: brightness(1.1) drop-shadow(0 0 10px rgba(147, 51, 234, 0.3));
+                filter: brightness(1.1);
             }
 
             50% {
-                filter: brightness(1.15) drop-shadow(0 0 15px rgba(147, 51, 234, 0.5));
+                filter: brightness(1.15);
             }
 
             80% {
-                filter: brightness(1.1) drop-shadow(0 0 10px rgba(147, 51, 234, 0.3));
+                filter: brightness(1.1);
             }
 
             100% {
                 filter: brightness(1);
+            }
+        }
+
+        @keyframes spinRingGlow {
+            0% {
+                opacity: 0;
+            }
+
+            20% {
+                opacity: 0.3;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+
+            80% {
+                opacity: 0.3;
+            }
+
+            100% {
+                opacity: 0;
             }
         }
 
@@ -423,10 +488,10 @@
         height: calc({{CanvasSize}}px * 0.85);
         }
 
-        #canvas {
+        #wheelFace,
+        .spin-ring {
             width: calc({{CanvasSize}}px * 0.85);
-
-        height: calc({{CanvasSize}}px * 0.85);
+            height: calc({{CanvasSize}}px * 0.85);
         }
 
         .result-display {
@@ -455,10 +520,10 @@
         height: calc({{CanvasSize}}px * 0.75);
         }
 
-        #canvas {
+        #wheelFace,
+        .spin-ring {
             width: calc({{CanvasSize}}px * 0.75);
-
-        height: calc({{CanvasSize}}px * 0.75);
+            height: calc({{CanvasSize}}px * 0.75);
         }
         }
 
@@ -564,7 +629,11 @@
     <div id="main"{% if AutoHideWheel %} class="autohide-hidden"{% endif %}>
         <div class="wheel-container">
             <div class="wheel-glow" id="wheelGlow"></div>
-            <canvas id="canvas" width="{{CanvasSize}}" height="{{CanvasSize}}"></canvas>
+            <div class="spin-ring" id="spinRing"></div>
+            <div id="wheelFace">
+                <canvas id="canvas" width="{{CanvasSize}}" height="{{CanvasSize}}"></canvas>
+                <canvas id="arrowCanvas" width="{{CanvasSize}}" height="{{CanvasSize}}"></canvas>
+            </div>
         </div>
         <div class="result-display hidden" id="resultDisplay">
         </div>
@@ -1293,6 +1362,23 @@
             lastSpinTs = 0;
         }
 
+        function setSpinningVisual(active) {
+            var face = document.getElementById('wheelFace');
+            var canvas = document.getElementById('canvas');
+            var arrow = document.getElementById('arrowCanvas');
+            var ring = document.getElementById('spinRing');
+            if (face) face.classList.toggle('wheel-spinning', !!active);
+            if (canvas) canvas.classList.toggle('wheel-brightening', !!active);
+            if (arrow) arrow.classList.toggle('wheel-brightening', !!active);
+            if (ring) ring.classList.toggle('active', !!active);
+        }
+
+        function setWheelRotation(angle) {
+            var canvas = document.getElementById('canvas');
+            if (!canvas) return;
+            canvas.style.transform = 'rotate(' + angle + 'rad)';
+        }
+
         function cancelWinningHighlightTimeout() {
             if (winningHighlightTimeout) {
                 clearTimeout(winningHighlightTimeout);
@@ -1323,9 +1409,8 @@
             rouletteData.winningIndex = -1;
             rouletteData.pendingLandIndex = -1;
             hideResult();
-            var canvas = document.getElementById('canvas');
             var glow = document.getElementById('wheelGlow');
-            if (canvas) canvas.classList.remove('wheel-spinning');
+            setSpinningVisual(false);
             if (glow) glow.classList.remove('active');
             drawRouletteWheel();
             if (settings.autoHideWheel) {
@@ -1777,22 +1862,33 @@
             }, 2500);
         }
 
-        // Enhanced wheel drawing with winning segment highlight
+        var WHEEL_SUPERSAMPLE = 2;
+
+        function prepareDiscContext(canvas, logicalSize) {
+            var px = Math.max(1, Math.round(logicalSize * WHEEL_SUPERSAMPLE));
+            if (canvas.width !== px || canvas.height !== px) {
+                canvas.width = px;
+                canvas.height = px;
+            }
+            var context = canvas.getContext('2d');
+            context.setTransform(WHEEL_SUPERSAMPLE, 0, 0, WHEEL_SUPERSAMPLE, 0, 0);
+            context.clearRect(0, 0, logicalSize, logicalSize);
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = 'high';
+            return context;
+        }
+
+        // Disc is rasterized once at angle 0. CSS rotation shows startAngle.
         function drawRouletteWheel() {
             var canvas = document.getElementById("canvas");
-            if (!canvas.getContext) return;
+            if (!canvas || !canvas.getContext) return;
 
             var canvasSize = rouletteDrawParams.canvasSize;
         var outsideRadius = rouletteDrawParams.outsideRadius;
         var textRadius = rouletteDrawParams.textRadius;
         var insideRadius = rouletteDrawParams.insideRadius;
 
-        ctx = canvas.getContext("2d");
-        ctx.clearRect(0, 0, canvasSize, canvasSize);
-
-        // Enable anti-aliasing and high quality rendering
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+        ctx = prepareDiscContext(canvas, canvasSize);
 
         // Draw subtle background glow if modern effects enabled
         if (settings.modernEffects) {
@@ -1805,7 +1901,7 @@
 
         // Draw wheel segments with sharp, modern styling
         for (var i = 0; i < rouletteData.options.length; i++) {
-            var angle = startAngle + i * arc;
+            var angle = i * arc;
             var baseColor = rouletteData.colors[i] || rouletteData.colors[i % rouletteData.colors.length];
             var isWinning = i === rouletteData.winningIndex;
 
@@ -1858,12 +1954,6 @@
         ctx.fillStyle = isWinning ? '#ffffff' : rouletteData.textColors[i];
         var fontString = rouletteData.textFontWeights[i] + ' ' + rouletteData.textFontSizes[i] + 'px Arial, sans-serif';
         ctx.font = fontString;
-        // Debug log to help identify font issues
-        if (i === 0) {
-            console.log('Font string for option ' + i + ':', fontString);
-            console.log('Measured text width:', ctx.measureText('Test').width);
-            console.log('Canvas width:', canvas.width, 'CSS width:', canvas.style.width);
-        }
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
@@ -1936,8 +2026,18 @@
                 }
             }
 
-        // Draw modern arrow
-        drawModernArrow();
+        renderArrowLayer();
+        setWheelRotation(startAngle);
+        }
+
+        function renderArrowLayer() {
+            var arrowCanvas = document.getElementById('arrowCanvas');
+            var canvasSize = rouletteDrawParams.canvasSize;
+            if (!arrowCanvas || !arrowCanvas.getContext) return;
+            var wheelCtx = ctx;
+            ctx = prepareDiscContext(arrowCanvas, canvasSize);
+            drawModernArrow();
+            ctx = wheelCtx;
         }
 
         // Enhanced arrow with modern styling
@@ -2014,8 +2114,8 @@
             hideResult();
             showWheel();
 
-            // Add spinning class for visual enhancement
-            document.getElementById('canvas').classList.add('wheel-spinning');
+            // Scale, brightness, and the halo start together. The disc itself only rotates.
+            setSpinningVisual(true);
 
             // Show glow effect
             if (settings.enableGlow) {
@@ -2024,7 +2124,8 @@
 
             // Create enhanced particle effects (more particles)
             if (settings.enableParticles) {
-                var canvasRect = document.getElementById('canvas').getBoundingClientRect();
+                var wheelFace = document.getElementById('wheelFace');
+                var canvasRect = (wheelFace || document.getElementById('canvas')).getBoundingClientRect();
                 for (var i = 0; i < 15; i++) { // Increased from 6 to 15
                     setTimeout(() => {
                         createParticle(
@@ -2082,10 +2183,7 @@
             startAngle += (deltaDeg * Math.PI / 180);
 
             var snapAngle = lastCrossedBorderAngle(prevAngle, startAngle);
-            var savedAngle = startAngle;
-            if (snapAngle != null) startAngle = snapAngle;
-            drawRouletteWheel();
-            startAngle = savedAngle;
+            setWheelRotation(snapAngle != null ? snapAngle : startAngle);
             spinFrame = requestAnimationFrame(rotateWheel);
         }
 
@@ -2112,8 +2210,8 @@
             stopSpinAnimation();
             rouletteData.isSpinning = false;
 
-            // Remove spinning class
-            document.getElementById('canvas').classList.remove('wheel-spinning');
+            // Remove spinning visuals. The landed angle is applied by the delayed redraw below.
+            setSpinningVisual(false);
 
             var arcd = arc * 180 / Math.PI;
             var landIndex = rouletteData.pendingLandIndex;
@@ -2196,7 +2294,8 @@
 
             // Create spectacular particle burst
             if (settings.enableParticles) {
-                var canvasRect = document.getElementById('canvas').getBoundingClientRect();
+                var wheelFace = document.getElementById('wheelFace');
+                var canvasRect = (wheelFace || document.getElementById('canvas')).getBoundingClientRect();
                 for (var i = 0; i < 20; i++) { // Increased from 12 to 20
                     setTimeout(() => {
                         createSpectacularParticle(
@@ -2342,8 +2441,9 @@
                 'background: ' + containerBg + '; backdrop-filter: ' + containerBackdrop + '; border: ' + containerBorderW + 'px solid ' + containerBorderC + '; ' +
                 'box-shadow: ' + containerShadow + '; max-width: calc(' + canvasSize + 'px + ' + containerPadding + 'px * 2); }' +
                 '#main:hover { transform: ' + containerHoverTransform + '; box-shadow: ' + containerHoverShadow + '; }' +
-                '.wheel-container, #canvas { width: ' + canvasSize + 'px; height: ' + canvasSize + 'px; }' +
-                '#canvas { box-shadow: ' + wheelShadow + '; transition: all ' + spinTransition + 's ' + spinEasing + '; background: ' + wheelBg + '; }' +
+                '.wheel-container, #wheelFace, .spin-ring { width: ' + canvasSize + 'px; height: ' + canvasSize + 'px; }' +
+                '#wheelFace { box-shadow: ' + wheelShadow + '; transition: all ' + spinTransition + 's ' + spinEasing + '; background: ' + wheelBg + '; }' +
+                '#canvas, #arrowCanvas { width: 100%; height: 100%; transition: none; }' +
                 '#canvas::before { background: ' + wheelOverlay + '; opacity: ' + wheelOverlayOp + '; }' +
                 '.result-display { min-height: ' + resultMinH + 'px; background: ' + resultBg + '; backdrop-filter: ' + resultBackdrop + '; ' +
                 'color: ' + resultTextColor + '; padding: ' + resultPadding + 'px; border-radius: ' + resultRadius + 'px; ' +
@@ -2429,14 +2529,27 @@
             applyRouletteDrawParamsFromConfig(config);
             syncRouletteOptionsFromConfig(config);
 
+            var face = document.getElementById('wheelFace');
+            var ring = document.getElementById('spinRing');
             var canvas = document.getElementById('canvas');
+            var arrowCanvas = document.getElementById('arrowCanvas');
             var wheelContainer = document.querySelector('.wheel-container');
             var sz = rouletteDrawParams.canvasSize;
+            if (face) {
+                face.style.width = sz + 'px';
+                face.style.height = sz + 'px';
+            }
+            if (ring) {
+                ring.style.width = sz + 'px';
+                ring.style.height = sz + 'px';
+            }
             if (canvas) {
-                canvas.width = sz;
-                canvas.height = sz;
-                canvas.style.width = sz + 'px';
-                canvas.style.height = sz + 'px';
+                canvas.style.width = '100%';
+                canvas.style.height = '100%';
+            }
+            if (arrowCanvas) {
+                arrowCanvas.style.width = '100%';
+                arrowCanvas.style.height = '100%';
             }
             if (wheelContainer) {
                 wheelContainer.style.width = sz + 'px';
