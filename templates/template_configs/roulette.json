@@ -885,6 +885,26 @@
             "description": "Play multiple tracks in random order. Has no effect when only one track is listed."
         },
         {
+            "type": "number",
+            "id": "MusicFadeIn",
+            "label": "Fade In",
+            "value": 0.4,
+            "min": 0,
+            "max": 10,
+            "step": 0.1,
+            "description": "Seconds to fade the music in. When Auto Hide Wheel is on and a show animation is playing, the fade uses that animation's duration so it finishes as the wheel appears. Set to 0 to start at full volume."
+        },
+        {
+            "type": "number",
+            "id": "MusicFadeOut",
+            "label": "Fade Out",
+            "value": 0.4,
+            "min": 0,
+            "max": 10,
+            "step": 0.1,
+            "description": "Seconds to fade the music out. When Auto Hide Wheel is on and a hide animation is playing, the fade uses that animation's duration so it finishes as the wheel disappears. Set to 0 to stop as soon as the wheel is hidden."
+        },
+        {
             "type": "separator",
             "label": "Particle Effects"
         },

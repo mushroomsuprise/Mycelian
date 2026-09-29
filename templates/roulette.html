@@ -9,7 +9,15 @@
         crossorigin="anonymous"></script>
     <script src="/assets/default_assets/overlay_recovery.js"></script>
     <script src="/assets/default_assets/template_logger.js"></script>
-    <script>MycelianLog.init({ templateName: 'roulette' });</script>
+    <script>
+        (function () {
+            var path = (location.pathname || '').replace(/^\/+|\/+$/g, '');
+            var name = path.split('/')[0] || 'roulette';
+            try { name = decodeURIComponent(name); } catch (e) {}
+            window.__rouletteTemplateName = name;
+            MycelianLog.init({ templateName: name });
+        })();
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
@@ -901,7 +909,9 @@
         musicTracks: {{ MusicTracks | tojson }},
         musicVolume: {{ MusicVolume | tojson }},
         musicLoop: {{ MusicLoop | tojson }},
-        musicShuffle: {{ MusicShuffle | tojson }}
+        musicShuffle: {{ MusicShuffle | tojson }},
+        musicFadeIn: {{ MusicFadeIn | tojson }},
+        musicFadeOut: {{ MusicFadeOut | tojson }}
         };
 
         var rouletteDrawParams = {
@@ -1084,7 +1094,125 @@
         function applyMusicElementFlags() {
             if (!musicAudio) return;
             musicAudio.loop = musicTracks.length === 1 && !!settings.musicLoop;
-            musicAudio.volume = clampMusicVolume(settings.musicVolume);
+        }
+
+        function musicTargetVolume() {
+            return clampMusicVolume(settings.musicVolume);
+        }
+
+        function clampFadeSeconds(value) {
+            var n = Number(value);
+            if (isNaN(n) || n < 0) return 0;
+            return n;
+        }
+
+        var musicFadeTimer = null;
+        var musicFadeToken = 0;
+        var musicFadingOut = false;
+        var musicFadeLockToShow = false;
+        var musicFadeLockToHide = false;
+
+        function stopMusicFade() {
+            musicFadeToken += 1;
+            if (musicFadeTimer) {
+                clearInterval(musicFadeTimer);
+                musicFadeTimer = null;
+            }
+        }
+
+        function fadeMusicVolume(durationSec, onDone) {
+            var audio, ms, startVol, start, token, timerId;
+            stopMusicFade();
+            audio = musicAudio;
+            if (!audio) {
+                if (onDone) onDone();
+                return;
+            }
+            ms = clampFadeSeconds(durationSec) * 1000;
+            if (!(ms > 0)) {
+                audio.volume = musicFadingOut ? 0 : musicTargetVolume();
+                if (onDone) onDone();
+                return;
+            }
+            startVol = audio.volume;
+            start = Date.now();
+            token = musicFadeToken;
+            timerId = setInterval(function () {
+                var goal, t;
+                if (token !== musicFadeToken || !musicAudio) {
+                    clearInterval(timerId);
+                    if (musicFadeTimer === timerId) musicFadeTimer = null;
+                    return;
+                }
+                goal = musicFadingOut ? 0 : musicTargetVolume();
+                t = Math.min(1, (Date.now() - start) / ms);
+                musicAudio.volume = startVol + (goal - startVol) * t;
+                if (t >= 1) {
+                    clearInterval(timerId);
+                    if (musicFadeTimer === timerId) musicFadeTimer = null;
+                    musicAudio.volume = goal;
+                    if (onDone) onDone();
+                }
+            }, 30);
+            musicFadeTimer = timerId;
+        }
+
+        function beginMusicFadeIn(fromSilence, seconds, lockToShow) {
+            var dur;
+            if (!musicAudio) return;
+            musicFadingOut = false;
+            musicFadeLockToHide = false;
+            dur = clampFadeSeconds(seconds);
+            musicFadeLockToShow = !!lockToShow && dur > 0;
+            if (fromSilence && dur > 0) musicAudio.volume = 0;
+            if (dur <= 0) {
+                stopMusicFade();
+                musicFadeLockToShow = false;
+                musicAudio.volume = musicTargetVolume();
+                return;
+            }
+            fadeMusicVolume(dur, function () {
+                musicFadeLockToShow = false;
+                if (musicAudio && !musicFadingOut) musicAudio.volume = musicTargetVolume();
+            });
+        }
+
+        function beginMusicFadeOut(seconds, lockToHide) {
+            var dur;
+            if (!musicAudio) return false;
+            dur = clampFadeSeconds(seconds);
+            if (dur <= 0) return false;
+            musicFadingOut = true;
+            musicFadeLockToShow = false;
+            musicFadeLockToHide = !!lockToHide;
+            fadeMusicVolume(dur, function () {
+                if (!musicFadingOut) return;
+                musicFadingOut = false;
+                musicFadeLockToHide = false;
+                if (!musicAudio) return;
+                musicAudio.volume = 0;
+                if (!musicAudio.paused) musicAudio.pause();
+            });
+            return true;
+        }
+
+        function finishLockedMusicFadeIn() {
+            if (!musicFadeLockToShow) return;
+            musicFadeLockToShow = false;
+            stopMusicFade();
+            if (musicAudio && !musicFadingOut && !musicAudio.paused) {
+                musicAudio.volume = musicTargetVolume();
+            }
+        }
+
+        function finishLockedMusicFadeOut() {
+            if (!musicFadeLockToHide) return;
+            musicFadeLockToHide = false;
+            musicFadingOut = false;
+            stopMusicFade();
+            if (!musicAudio) return;
+            musicAudio.volume = 0;
+            if (!musicAudio.paused) musicAudio.pause();
         }
 
         var musicSession = 0;
@@ -1157,6 +1285,10 @@
         }
 
         function pauseMusic() {
+            stopMusicFade();
+            musicFadingOut = false;
+            musicFadeLockToShow = false;
+            musicFadeLockToHide = false;
             if (musicAudio && !musicAudio.paused) musicAudio.pause();
         }
 
@@ -1201,22 +1333,45 @@
         }
 
         function syncMusicToVisibility() {
+            var already, dur, audio;
             if (wheelMusicHidden() || !musicTracks.length) {
+                if (musicFadingOut) return;
                 pauseMusic();
                 return;
             }
+            if (musicFinished && (!musicAudio || musicAudio.paused)) return;
+            already = musicAudio && !musicAudio.paused && !musicFadingOut && musicAudio.getAttribute('data-track');
+            if (!already) {
+                audio = ensureMusicAudio();
+                dur = clampFadeSeconds(settings.musicFadeIn);
+                if (dur > 0 && !musicFadingOut) audio.volume = 0;
+            }
             startOrResumeMusic(false);
+            if (musicFinished || !musicAudio || !musicAudio.getAttribute('data-track')) return;
+            if (!already) beginMusicFadeIn(!musicFadingOut, dur, false);
+            else if (!musicFadeTimer && !musicFadingOut) musicAudio.volume = musicTargetVolume();
         }
 
-        function noteWheelShown() {
+        function noteWheelShown(fadeSeconds, lockToShow) {
+            var fromSilence, dur, audio;
             if (!musicTracks.length) {
                 pauseMusic();
                 return;
             }
+            fromSilence = !musicFadingOut;
+            if (fadeSeconds == null) fadeSeconds = settings.musicFadeIn;
+            dur = clampFadeSeconds(fadeSeconds);
+            if (fromSilence && dur > 0) {
+                audio = ensureMusicAudio();
+                audio.volume = 0;
+            }
             startOrResumeMusic(true);
+            if (!musicAudio) return;
+            beginMusicFadeIn(fromSilence, dur, lockToShow);
         }
 
         function noteWheelHidden() {
+            if (musicFadeLockToHide || musicFadingOut) return;
             pauseMusic();
         }
 
@@ -1231,6 +1386,10 @@
             musicOrder = buildMusicOrder(null);
             musicOrderPos = 0;
             musicSession += 1;
+            stopMusicFade();
+            musicFadingOut = false;
+            musicFadeLockToShow = false;
+            musicFadeLockToHide = false;
             if (musicAudio) {
                 musicAudio.onended = null;
                 musicAudio.pause();
@@ -1267,7 +1426,7 @@
 
             main.classList.add('autohide-animating');
             main.classList.remove('autohide-hidden');
-            noteWheelShown();
+            noteWheelShown(useAnim ? dur : clampFadeSeconds(settings.musicFadeIn), useAnim);
             drawRouletteWheel();
 
             if (!useAnim) {
@@ -1279,6 +1438,7 @@
             main.style.animation = anim + ' ' + dur + 's ' + ease + ' both';
             wheelVisibilityAnimTimeout = setTimeout(function () {
                 finishWheelVisibilityAnimation(main);
+                finishLockedMusicFadeIn();
                 drawRouletteWheel();
             }, dur * 1000);
         }
@@ -1299,13 +1459,20 @@
             var dur = Number(settings.wheelVisibilityAnimationDuration);
             if (isNaN(dur) || dur < 0) dur = 0.4;
             var ease = settings.wheelVisibilityAnimationEasing || 'ease-in-out';
+            var useAnim = !immediate && WHEEL_HIDE_ANIMS[anim] && dur > 0;
+
+            if (musicAudio && musicTracks.length && (!musicAudio.paused || musicFadingOut)) {
+                if (useAnim) beginMusicFadeOut(dur, true);
+                else beginMusicFadeOut(clampFadeSeconds(settings.musicFadeOut), false);
+            }
 
             function applyHidden() {
                 main.classList.add('autohide-animating');
                 main.classList.add('autohide-hidden');
                 void main.offsetHeight;
                 finishWheelVisibilityAnimation(main);
-                noteWheelHidden();
+                if (musicFadeLockToHide) finishLockedMusicFadeOut();
+                else if (!musicFadingOut) noteWheelHidden();
             }
 
             main.classList.add('autohide-animating');
@@ -1440,35 +1607,32 @@
             hideWheel(true);
         }
 
+        // Page stem matches the HTML and JSON filename, so a copy only
+        // handles source-control events for that copy.
+        var rouletteTemplateName = window.__rouletteTemplateName || 'roulette';
+
+        function onRouletteTemplateEvent(action, handler) {
+            socket.on(rouletteTemplateName + '_' + action, handler);
+        }
+
         // Socket event listeners
         socket.on('connect', function () {
             console.log('Connected to roulette server');
             initializeWheel();
         });
 
-        socket.on('refresh-wheel', function () {
-            location.reload(true);
-        });
-
-        socket.on('spin-wheel', function (data) {
-            if (data && data.options) {
-                updateWheel(data.options, data.colors);
-            }
-            spin();
-        });
-
         // Dynamic control events
-        socket.on('roulette_spin', function (data) {
+        onRouletteTemplateEvent('spin', function (data) {
             console.log('Dynamic control spin triggered:', data);
             spin(data);
         });
 
-        socket.on('roulette_refresh', function (data) {
+        onRouletteTemplateEvent('refresh', function (data) {
             console.log('Dynamic control refresh triggered:', data);
             resetWheelToIdle();
         });
 
-        socket.on('roulette_update', function (data) {
+        onRouletteTemplateEvent('update', function (data) {
             if (data) {
                 // Update data if provided, otherwise rebuild from current config
                 if (data.options) rouletteData.options = data.options;
@@ -1498,31 +1662,15 @@
             }
         });
 
-        socket.on('roulette_spin', function (data) {
-            spin(data);
-        });
-
         // Connector action event listeners
-        socket.on('roulette_spin_wheel', function (data) {
+        onRouletteTemplateEvent('spin_wheel', function (data) {
             console.log('Connector action: spin wheel', data);
             spin(data);
         });
 
-        socket.on('roulette_land_on_option', function (data) {
+        onRouletteTemplateEvent('land_on_option', function (data) {
             console.log('Connector action: land on option', data);
             spin(data);
-        });
-        socket.on('land_on_option', function (data) {
-            spin(data);
-        });
-
-        socket.on('refresh', function () {
-            resetWheelToIdle();
-        });
-
-        socket.on('hide_result', function () {
-            // Hide the result display
-            hideResult();
         });
 
         function rouletteRebuildAfterConfigLoad() {
@@ -1537,13 +1685,8 @@
         }
 
         // Handle configuration changes that require wheel rebuild
-        socket.on('config_updated', function () {
-            console.log('Configuration updated, rebuilding wheel');
-            loadTemplateConfig().then(rouletteRebuildAfterConfigLoad);
-        });
-
         socket.on('template_config_updated', function (data) {
-            if (data && data.template && data.template !== 'roulette') return;
+            if (data && data.template && data.template !== rouletteTemplateName) return;
             loadTemplateConfig().then(rouletteRebuildAfterConfigLoad);
         });
 
@@ -2512,11 +2655,19 @@
             }
             if (config.MusicVolume !== undefined) {
                 settings.musicVolume = clampMusicVolume(config.MusicVolume);
-                applyMusicElementFlags();
+                if (musicAudio && !musicFadeTimer && !musicFadingOut) {
+                    musicAudio.volume = settings.musicVolume;
+                }
             }
             if (config.MusicLoop !== undefined) {
                 settings.musicLoop = !!config.MusicLoop;
                 applyMusicElementFlags();
+            }
+            if (config.MusicFadeIn !== undefined) {
+                settings.musicFadeIn = clampFadeSeconds(config.MusicFadeIn);
+            }
+            if (config.MusicFadeOut !== undefined) {
+                settings.musicFadeOut = clampFadeSeconds(config.MusicFadeOut);
             }
             if (config.MusicShuffle !== undefined) {
                 var nextMusicShuffle = !!config.MusicShuffle;
@@ -2570,20 +2721,23 @@
             syncIdleWheelVisibility();
             if (musicTracksChanged && rouletteData.isSpinning) {
                 if (wheelMusicHidden() || !musicTracks.length) pauseMusic();
-                else startOrResumeMusic(true);
+                else noteWheelShown(clampFadeSeconds(settings.musicFadeIn), false);
             }
         }
 
         async function loadTemplateConfig() {
             try {
-                var response = await fetch('/api/template-config/roulette', { credentials: 'same-origin' });
+                var response = await fetch(
+                    '/api/template-config/' + encodeURIComponent(rouletteTemplateName),
+                    { credentials: 'same-origin' }
+                );
                 if (!response.ok) {
                     console.error('Failed to load template configs:', response.status);
                     return;
                 }
                 var rlConfigData = await response.json();
                 if (!rlConfigData || !rlConfigData.elements) {
-                    console.warn('No roulette config found in response');
+                    console.warn('No config found for template:', rouletteTemplateName);
                     return;
                 }
                 var config = {};

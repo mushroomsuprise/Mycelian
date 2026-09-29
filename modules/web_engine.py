@@ -316,7 +316,9 @@ def _mimetype_for_asset_filename(filename: str) -> Optional[str]:
 _LOCALHOST_REMOTE_ADDRS = frozenset(
     {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
 )
-_RELAY_EVENT_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+# Template stems may include spaces and hyphens (copied filenames). The
+# registered-handler catalog remains the authorization check.
+_RELAY_EVENT_NAME_RE = re.compile(r"^[A-Za-z0-9_ -]+$")
 _TC_NO_COALESCE_MARKERS = (
     "increment",
     "decrement",
