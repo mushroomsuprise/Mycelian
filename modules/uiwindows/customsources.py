@@ -2691,6 +2691,15 @@ def render_form_element(
                 except (ValueError, TypeError):
                     slider_value = min_val
 
+                def slider_readout(value, step=step_val):
+                    try:
+                        number = float(value)
+                    except (TypeError, ValueError):
+                        return str(value)
+                    if step == int(step):
+                        return str(int(round(number)))
+                    return str(number)
+
                 # Create a row to show the current value
                 with ui.row().classes("w-full items-center gap-2"):
                     # Slider element
@@ -2699,21 +2708,18 @@ def render_form_element(
                         max=max_val,
                         step=step_val,
                         value=slider_value,
-                        on_change=lambda e, id=element_id: update_form_data(
-                            form_data, id, e.value
-                        ),
                     ).classes("grow")
 
                     # Value display
-                    value_label = ui.label(str(slider_value)).classes(
+                    value_label = ui.label(slider_readout(slider_value)).classes(
                         "text-sm font-mono min-w-[3rem] text-right"
                     )
 
-                    # Update value display when slider changes
-                    def update_slider_display(e, label=value_label):
-                        label.text = str(e.value)
+                    def handle_slider_change(e, id=element_id, label=value_label):
+                        update_form_data(form_data, id, e.value)
+                        label.text = slider_readout(e.value)
 
-                    input_element.on("change", update_slider_display)
+                    input_element.on_value_change(handle_slider_change)
 
                 element_ui_map[element_id] = input_element
             elif element_type == "checkbox":

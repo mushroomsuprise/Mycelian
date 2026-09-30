@@ -816,6 +816,33 @@
         {{ Option24TextRotation | tojson }},
         {{ Option25TextRotation | tojson }}
         ];
+        var optionSizes = [
+            {{ Option1Size | default(1) | tojson }},
+        {{ Option2Size | default(1) | tojson }},
+        {{ Option3Size | default(1) | tojson }},
+        {{ Option4Size | default(1) | tojson }},
+        {{ Option5Size | default(1) | tojson }},
+        {{ Option6Size | default(1) | tojson }},
+        {{ Option7Size | default(1) | tojson }},
+        {{ Option8Size | default(1) | tojson }},
+        {{ Option9Size | default(1) | tojson }},
+        {{ Option10Size | default(1) | tojson }},
+        {{ Option11Size | default(1) | tojson }},
+        {{ Option12Size | default(1) | tojson }},
+        {{ Option13Size | default(1) | tojson }},
+        {{ Option14Size | default(1) | tojson }},
+        {{ Option15Size | default(1) | tojson }},
+        {{ Option16Size | default(1) | tojson }},
+        {{ Option17Size | default(1) | tojson }},
+        {{ Option18Size | default(1) | tojson }},
+        {{ Option19Size | default(1) | tojson }},
+        {{ Option20Size | default(1) | tojson }},
+        {{ Option21Size | default(1) | tojson }},
+        {{ Option22Size | default(1) | tojson }},
+        {{ Option23Size | default(1) | tojson }},
+        {{ Option24Size | default(1) | tojson }},
+        {{ Option25Size | default(1) | tojson }}
+        ];
         var optionEnabled = [
             {{ Option1Enabled| tojson}},
         {{ Option2Enabled | tojson }},
@@ -852,6 +879,7 @@
             var enabledTextFontSizes = [];
             var enabledTextFontWeights = [];
             var enabledTextRotations = [];
+            var enabledSizes = [];
 
             for (var i = 0; i < optionNames.length; i++) {
                 if (optionEnabled[i]) {
@@ -861,6 +889,7 @@
                     enabledTextFontSizes.push(optionTextFontSizes[i]);
                     enabledTextFontWeights.push(optionTextFontWeights[i]);
                     enabledTextRotations.push(optionTextRotations[i]);
+                    enabledSizes.push(sliceWeight(optionSizes[i]));
                 }
             }
 
@@ -870,7 +899,8 @@
                 textColors: enabledTextColors,
                 textFontSizes: enabledTextFontSizes,
                 textFontWeights: enabledTextFontWeights,
-                textRotations: enabledTextRotations
+                textRotations: enabledTextRotations,
+                sizes: enabledSizes
             };
         }
 
@@ -888,6 +918,7 @@
         rouletteData.textFontSizes = enabledData.textFontSizes;
         rouletteData.textFontWeights = enabledData.textFontWeights;
         rouletteData.textRotations = enabledData.textRotations;
+        rouletteData.sizes = enabledData.sizes;
 
         var settings = {
             enableSound: {{ EnableSound| tojson}},
@@ -933,7 +964,9 @@
 
         // Wheel drawing variables
         var startAngle = 0;
-        var arc = Math.PI / (rouletteData.options.length / 2);
+        var segmentStarts = [];
+        var segmentArcs = [];
+        updateArcSize();
         var spinTimeout = null;
         var spinFrame = null;
         var lastSpinTs = 0;
@@ -1658,6 +1691,10 @@
                     rouletteData.textColors = enabledData.textColors;
                     rouletteData.textFontSizes = enabledData.textFontSizes;
                     rouletteData.textFontWeights = enabledData.textFontWeights;
+                    rouletteData.textRotations = enabledData.textRotations;
+                    rouletteData.sizes = enabledData.sizes;
+                } else if (data.options && (!rouletteData.sizes || rouletteData.sizes.length !== rouletteData.options.length)) {
+                    rouletteData.sizes = [];
                 }
 
                 updateWheel(rouletteData.options, rouletteData.colors);
@@ -1669,6 +1706,8 @@
                 rouletteData.textColors = enabledData.textColors;
                 rouletteData.textFontSizes = enabledData.textFontSizes;
                 rouletteData.textFontWeights = enabledData.textFontWeights;
+                rouletteData.textRotations = enabledData.textRotations;
+                rouletteData.sizes = enabledData.sizes;
                 updateArcSize();
                 drawRouletteWheel();
             }
@@ -1692,6 +1731,8 @@
             rouletteData.textColors = enabledData.textColors;
             rouletteData.textFontSizes = enabledData.textFontSizes;
             rouletteData.textFontWeights = enabledData.textFontWeights;
+            rouletteData.textRotations = enabledData.textRotations;
+            rouletteData.sizes = enabledData.sizes;
             updateArcSize();
             drawRouletteWheel();
         }
@@ -1869,44 +1910,79 @@
             return spinAngleStart - easeOut(timeMs, 0, spinAngleStart, spinTimeTotal);
         }
 
-        function borderPhase(angle) {
-            if (!arc) return 0;
-            return (POINTER_ANGLE - angle) / arc;
+        function sliceWeight(value) {
+            var w = Number(value);
+            if (!(w > 0)) return 1;
+            return w;
+        }
+
+        // Borders crossed as the wheel angle advances from prevAngle to nextAngle.
+        // Hits are ordered from the first boundary crossed to the last.
+        function collectBorderCrossings(prevAngle, nextAngle) {
+            var n = segmentStarts.length;
+            var hits = [];
+            if (!n) return hits;
+            var u0 = POINTER_ANGLE - prevAngle;
+            var u1 = POINTER_ANGLE - nextAngle;
+            if (!(u0 > u1)) return hits;
+            var twoPi = Math.PI * 2;
+            var eps = 1e-8;
+            for (var i = 0; i < n; i++) {
+                var bound = segmentStarts[i];
+                var lower = (bound - u0) / twoPi;
+                var upper = (bound - u1) / twoPi;
+                var rStart = Math.ceil(lower - eps);
+                var rEnd = Math.floor(upper - eps);
+                for (var r = rStart; r <= rEnd; r++) {
+                    var b = bound - twoPi * r;
+                    if (b <= u1 || b > u0) continue;
+                    hits.push({ b: b, key: r + ':' + i });
+                }
+            }
+            hits.sort(function (a, c) { return c.b - a.b; });
+            return hits;
         }
 
         function lastCrossedBorderAngle(prevAngle, newAngle) {
-            var p0 = borderPhase(prevAngle);
-            var p1 = borderPhase(newAngle);
-            if (!(p0 > p1)) return null;
-            var lastK = Math.floor(p0);
-            if (lastK <= Math.floor(p1)) return null;
-            return POINTER_ANGLE - lastK * arc;
+            var hits = collectBorderCrossings(prevAngle, newAngle);
+            if (!hits.length) return null;
+            // The frame paints the whole step at once, so rest on the peg just reached.
+            return POINTER_ANGLE - hits[hits.length - 1].b;
         }
 
         function scheduleClicksAlong(prevAngle, nextAngle, durationMs, elapsedMs, armByMs) {
-            var p0 = borderPhase(prevAngle);
-            var p1 = borderPhase(nextAngle);
-            if (!(p0 > p1)) return;
-            var kStart = Math.floor(p1) + 1;
-            var kEnd = Math.floor(p0);
-            var span = p0 - p1;
-            if (span <= 0) return;
-            for (var k = kEnd; k >= kStart; k--) {
-                if (scheduledClickKeys[k]) continue;
-                var frac = (p0 - k) / span;
+            var hits = collectBorderCrossings(prevAngle, nextAngle);
+            if (!hits.length) return;
+            // This step is painted at elapsedMs. Wait until that paint is close.
+            if (elapsedMs > armByMs) return;
+            var span = nextAngle - prevAngle;
+            if (!(span > 0)) return;
+            var fracs = [];
+            var i;
+            for (i = 0; i < hits.length; i++) {
+                var crossAngle = POINTER_ANGLE - hits[i].b;
+                var frac = (crossAngle - prevAngle) / span;
                 if (frac < 0) frac = 0;
                 if (frac > 1) frac = 1;
-                var delay = elapsedMs + frac * durationMs;
-                // Wait until the crossing is close so Euler prediction stays tight.
+                fracs.push(frac);
+            }
+            // This step is painted at elapsedMs. A frac offset would sound after the
+            // peg is already on screen, which is a whole slice when the wheel is fast.
+            var lastFrac = fracs[fracs.length - 1];
+            for (i = 0; i < hits.length; i++) {
+                var hit = hits[i];
+                if (scheduledClickKeys[hit.key]) continue;
+                var delay = elapsedMs - (lastFrac - fracs[i]) * durationMs;
+                if (delay < 0) delay = 0;
                 if (delay > armByMs) continue;
-                scheduledClickKeys[k] = true;
+                scheduledClickKeys[hit.key] = true;
                 scheduleClickSound(delay);
             }
         }
 
         function scheduleUpcomingClicks(frameDt) {
             if (!settings.enableSound) return;
-            if (!arc || !rouletteData.options || !rouletteData.options.length) return;
+            if (!segmentStarts.length || !rouletteData.options || !rouletteData.options.length) return;
             if (frameDt <= 0) return;
 
             var latencyMs = DEFAULT_CLICK_LATENCY_SEC * 1000;
@@ -1986,15 +2062,66 @@
                 rouletteData.textColors = enabledData.textColors;
                 rouletteData.textFontSizes = enabledData.textFontSizes;
                 rouletteData.textFontWeights = enabledData.textFontWeights;
+                rouletteData.textRotations = enabledData.textRotations;
+                rouletteData.sizes = enabledData.sizes;
                 updateArcSize();
                 drawRouletteWheel();
             }
         }
 
-        // Update arc size based on number of options
+        // Slice angles from relative sizes. Equal weights keep equal slices.
         function updateArcSize() {
-            var count = rouletteData.options && rouletteData.options.length ? rouletteData.options.length : 1;
-            arc = Math.PI / (count / 2);
+            var options = rouletteData.options || [];
+            var count = options.length;
+            var weights = [];
+            var total = 0;
+            var sizes = rouletteData.sizes || [];
+            var useSizes = sizes.length === count;
+            var i;
+            for (i = 0; i < count; i++) {
+                var w = useSizes ? sliceWeight(sizes[i]) : 1;
+                weights.push(w);
+                total += w;
+            }
+            if (!(total > 0)) total = count || 1;
+            segmentStarts = [];
+            segmentArcs = [];
+            var cursor = 0;
+            var twoPi = Math.PI * 2;
+            for (i = 0; i < count; i++) {
+                var sweep = twoPi * weights[i] / total;
+                if (i === count - 1) sweep = twoPi - cursor;
+                if (!(sweep > 0)) sweep = 0;
+                segmentStarts.push(cursor);
+                segmentArcs.push(sweep);
+                cursor += sweep;
+            }
+        }
+
+        function pointerLocalAngle(angle) {
+            var twoPi = Math.PI * 2;
+            var local = (POINTER_ANGLE - angle) % twoPi;
+            if (local < 0) local += twoPi;
+            return local;
+        }
+
+        function indexAtPointer(angle) {
+            var n = segmentStarts.length;
+            if (!n) return 0;
+            var local = pointerLocalAngle(angle);
+            var i;
+            for (i = 0; i < n; i++) {
+                var end = segmentStarts[i] + segmentArcs[i];
+                if (i === n - 1 || local < end) {
+                    if (local >= segmentStarts[i] - 1e-8) return i;
+                }
+            }
+            return n - 1;
+        }
+
+        function startAngleForSliceCenter(index) {
+            var center = segmentStarts[index] + segmentArcs[index] / 2;
+            return POINTER_ANGLE - center;
         }
 
         // Create particle effect with enhanced size and quantity
@@ -2033,6 +2160,69 @@
             return context;
         }
 
+        function wrapSliceText(ctx, text, maxWidth) {
+            if (ctx.measureText(text).width <= maxWidth) return [text];
+            var words = String(text).split(' ');
+            if (words.length < 2) return [text];
+            var lines = [];
+            var currentLine = words[0];
+            for (var j = 1; j < words.length; j++) {
+                var testLine = currentLine + ' ' + words[j];
+                if (ctx.measureText(testLine).width > maxWidth) {
+                    lines.push(currentLine);
+                    currentLine = words[j];
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            lines.push(currentLine);
+            return lines;
+        }
+
+        // Shrink the painted label so it stays inside this slice. The saved font size is unchanged.
+        function fitSliceLabel(ctx, text, preferredSize, weight, rotationDeg, sweep, textRadius, outsideRadius, insideRadius) {
+            var preferred = Number(preferredSize);
+            if (!(preferred > 0)) preferred = 18;
+            var rotRad = (Number(rotationDeg) || 0) * Math.PI / 180;
+            var radialRoom = Math.max(16, (outsideRadius - insideRadius) * 1.2);
+            var tangentialRoom = sweep >= Math.PI
+                ? Math.max(radialRoom, textRadius * 2)
+                : Math.max(8, 2 * textRadius * Math.sin(sweep / 2) * 0.82);
+            var tangW = Math.abs(Math.cos(rotRad));
+            var tangH = Math.abs(Math.sin(rotRad));
+            var radW = Math.abs(Math.sin(rotRad));
+            var radH = Math.abs(Math.cos(rotRad));
+            var size = preferred;
+            var minSize = 8;
+            var lines = [String(text)];
+            var lineHeight = size + 3;
+            for (var attempt = 0; attempt < 8; attempt++) {
+                ctx.font = weight + ' ' + size + 'px Arial, sans-serif';
+                var widthLimit = 1000000;
+                if (tangW > 0.02) widthLimit = Math.min(widthLimit, tangentialRoom / tangW);
+                if (radW > 0.02) widthLimit = Math.min(widthLimit, radialRoom / radW);
+                if (!(widthLimit > 8)) widthLimit = 8;
+                lines = wrapSliceText(ctx, text, widthLimit);
+                lineHeight = size + 3;
+                var blockH = Math.max(1, lines.length) * lineHeight;
+                var blockW = 0;
+                for (var li = 0; li < lines.length; li++) {
+                    blockW = Math.max(blockW, ctx.measureText(lines[li]).width);
+                }
+                var tangExtent = blockW * tangW + blockH * tangH;
+                var radExtent = blockW * radW + blockH * radH;
+                var tangScale = tangExtent > tangentialRoom ? tangentialRoom / tangExtent : 1;
+                var radScale = radExtent > radialRoom ? radialRoom / radExtent : 1;
+                var scale = Math.min(tangScale, radScale);
+                if (scale > 0.98 || size <= minSize) break;
+                var next = Math.max(minSize, Math.floor(size * scale));
+                if (next >= size) next = size - 1;
+                size = next;
+            }
+            ctx.font = weight + ' ' + size + 'px Arial, sans-serif';
+            return { size: size, lines: lines, lineHeight: lineHeight };
+        }
+
         // Disc is rasterized once at angle 0. CSS rotation shows startAngle.
         function drawRouletteWheel() {
             var canvas = document.getElementById("canvas");
@@ -2043,6 +2233,7 @@
         var textRadius = rouletteDrawParams.textRadius;
         var insideRadius = rouletteDrawParams.insideRadius;
 
+        updateArcSize();
         ctx = prepareDiscContext(canvas, canvasSize);
 
         // Draw subtle background glow if modern effects enabled
@@ -2056,7 +2247,8 @@
 
         // Draw wheel segments with sharp, modern styling
         for (var i = 0; i < rouletteData.options.length; i++) {
-            var angle = i * arc;
+            var sweep = segmentArcs[i] || 0;
+            var angle = segmentStarts[i] || 0;
             var baseColor = rouletteData.colors[i] || rouletteData.colors[i % rouletteData.colors.length];
             var isWinning = i === rouletteData.winningIndex;
 
@@ -2091,7 +2283,7 @@
 
         // Draw full segment (no center hole)
         ctx.beginPath();
-        ctx.arc(canvasSize / 2, canvasSize / 2, outsideRadius, angle, angle + arc, false);
+        ctx.arc(canvasSize / 2, canvasSize / 2, outsideRadius, angle, angle + sweep, false);
         ctx.lineTo(canvasSize / 2, canvasSize / 2);
         ctx.closePath();
         ctx.fill();
@@ -2107,8 +2299,6 @@
         // Draw text with modern styling
         ctx.save();
         ctx.fillStyle = isWinning ? '#ffffff' : rouletteData.textColors[i];
-        var fontString = rouletteData.textFontWeights[i] + ' ' + rouletteData.textFontSizes[i] + 'px Arial, sans-serif';
-        ctx.font = fontString;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
@@ -2120,7 +2310,7 @@
         ctx.shadowBlur = isWinning ? {{ TextShadowBlur | tojson }} + 2 : {{ TextShadowBlur | tojson }};
                 }
 
-        var textAngle = angle + arc / 2;
+        var textAngle = angle + sweep / 2;
         var textX = canvasSize / 2 + Math.cos(textAngle) * textRadius;
         var textY = canvasSize / 2 + Math.sin(textAngle) * textRadius;
 
@@ -2128,33 +2318,22 @@
         ctx.rotate(textAngle + Math.PI / 2 + (rouletteData.textRotations[i] * Math.PI / 180));
 
         var text = rouletteData.options[i];
-        var maxWidth = (outsideRadius - insideRadius) * 1.2;
-
-        // Enhanced word wrap with better spacing
-        if (ctx.measureText(text).width > maxWidth) {
-            var words = text.split(' ');
-            var lines = [];
-            var currentLine = words[0];
-
-            for (var j = 1; j < words.length; j++) {
-                var testLine = currentLine + ' ' + words[j];
-                if (ctx.measureText(testLine).width > maxWidth) {
-                    lines.push(currentLine);
-                    currentLine = words[j];
-                } else {
-                    currentLine = testLine;
-                }
-            }
-            lines.push(currentLine);
-
-            var lineHeight = rouletteData.textFontSizes[i] + 3;
-            var startY = -(lines.length - 1) * lineHeight / 2;
-
-            for (var k = 0; k < lines.length; k++) {
-                ctx.fillText(lines[k], 0, startY + k * lineHeight);
-            }
-        } else {
-            ctx.fillText(text, 0, 0);
+        var fitted = fitSliceLabel(
+            ctx,
+            text,
+            rouletteData.textFontSizes[i],
+            rouletteData.textFontWeights[i],
+            rouletteData.textRotations[i],
+            sweep,
+            textRadius,
+            outsideRadius,
+            insideRadius
+        );
+        var lines = fitted.lines;
+        var lineHeight = fitted.lineHeight;
+        var startY = -(lines.length - 1) * lineHeight / 2;
+        for (var k = 0; k < lines.length; k++) {
+            ctx.fillText(lines[k], 0, startY + k * lineHeight);
         }
 
         ctx.restore();
@@ -2262,6 +2441,7 @@
         function spin(customData) {
             if (rouletteData.isSpinning) return;
 
+            updateArcSize();
             rouletteData.isSpinning = true;
             cancelWinningHighlightTimeout();
             rouletteData.winningIndex = -1;
@@ -2369,21 +2549,17 @@
             // Remove spinning visuals. The landed angle is applied by the delayed redraw below.
             setSpinningVisual(false);
 
-            var arcd = arc * 180 / Math.PI;
             var landIndex = rouletteData.pendingLandIndex;
             rouletteData.pendingLandIndex = -1;
-            if (landIndex != null && landIndex >= 0 && rouletteData.options && landIndex < rouletteData.options.length) {
-                var desiredDegrees = 360 - (landIndex + 0.5) * arcd;
-                var targetStart = (desiredDegrees - 90) * Math.PI / 180;
+            if (landIndex != null && landIndex >= 0 && rouletteData.options && landIndex < rouletteData.options.length && segmentArcs[landIndex]) {
+                var targetStart = startAngleForSliceCenter(landIndex);
                 var twoPi = Math.PI * 2;
                 while (targetStart < startAngle - Math.PI) { targetStart += twoPi; }
                 while (targetStart > startAngle + Math.PI) { targetStart -= twoPi; }
                 startAngle = targetStart;
             }
 
-            var degrees = startAngle * 180 / Math.PI + 90;
-            var arcd = arc * 180 / Math.PI;
-            var index = Math.floor((360 - degrees % 360) / arcd);
+            var index = indexAtPointer(startAngle);
 
             // Ensure index is within bounds
             index = Math.max(0, Math.min(index, rouletteData.options.length - 1));
@@ -2543,6 +2719,7 @@
                 var fontWeightKey = 'Option' + n + 'TextFontWeight';
                 var rotationKey = 'Option' + n + 'TextRotation';
                 var enabledKey = 'Option' + n + 'Enabled';
+                var sizeKey = 'Option' + n + 'Size';
                 if (config[nameKey] !== undefined) { optionNames[i] = config[nameKey]; }
                 if (config[colorKey] !== undefined) { optionColors[i] = config[colorKey]; }
                 if (config[textColorKey] !== undefined) { optionTextColors[i] = config[textColorKey]; }
@@ -2550,6 +2727,7 @@
                 if (config[fontWeightKey] !== undefined) { optionTextFontWeights[i] = config[fontWeightKey]; }
                 if (config[rotationKey] !== undefined) { optionTextRotations[i] = Number(config[rotationKey]); }
                 if (config[enabledKey] !== undefined) { optionEnabled[i] = !!config[enabledKey]; }
+                if (config[sizeKey] !== undefined) { optionSizes[i] = sliceWeight(config[sizeKey]); }
             }
         }
 
@@ -2730,6 +2908,7 @@
             rouletteData.textFontSizes = enabledData.textFontSizes;
             rouletteData.textFontWeights = enabledData.textFontWeights;
             rouletteData.textRotations = enabledData.textRotations;
+            rouletteData.sizes = enabledData.sizes;
             updateArcSize();
             if (!rouletteData.isSpinning) {
                 drawRouletteWheel();

@@ -708,7 +708,7 @@
             "type": "checkbox",
             "id": "AutoHideWheel",
             "label": "Auto Hide Wheel",
-            "value": true,
+            "value": false,
             "description": "Hide the wheel when idle. It appears when you spin (Source Controls or Stream Deck), then hides again after the result"
         },
         {
@@ -964,6 +964,16 @@
             "description": "Text displayed for option 1"
         },
         {
+            "type": "slider",
+            "id": "Option1Size",
+            "label": "Option 1 Size",
+            "value": 7,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option1Color",
             "label": "Option 1 Color",
@@ -1064,6 +1074,16 @@
             "label": "Option 2 Name",
             "value": "Option 2",
             "description": "Text displayed for option 2"
+        },
+        {
+            "type": "slider",
+            "id": "Option2Size",
+            "label": "Option 2 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -1168,6 +1188,16 @@
             "description": "Text displayed for option 3"
         },
         {
+            "type": "slider",
+            "id": "Option3Size",
+            "label": "Option 3 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option3Color",
             "label": "Option 3 Color",
@@ -1268,6 +1298,16 @@
             "label": "Option 4 Name",
             "value": "Option 4",
             "description": "Text displayed for option 4"
+        },
+        {
+            "type": "slider",
+            "id": "Option4Size",
+            "label": "Option 4 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -1372,6 +1412,16 @@
             "description": "Text displayed for option 5"
         },
         {
+            "type": "slider",
+            "id": "Option5Size",
+            "label": "Option 5 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option5Color",
             "label": "Option 5 Color",
@@ -1472,6 +1522,16 @@
             "label": "Option 6 Name",
             "value": "Option 6",
             "description": "Text displayed for option 6"
+        },
+        {
+            "type": "slider",
+            "id": "Option6Size",
+            "label": "Option 6 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -1576,6 +1636,16 @@
             "description": "Text displayed for option 7"
         },
         {
+            "type": "slider",
+            "id": "Option7Size",
+            "label": "Option 7 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option7Color",
             "label": "Option 7 Color",
@@ -1676,6 +1746,16 @@
             "label": "Option 8 Name",
             "value": "Option 8",
             "description": "Text displayed for option 8"
+        },
+        {
+            "type": "slider",
+            "id": "Option8Size",
+            "label": "Option 8 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -1780,6 +1860,16 @@
             "description": "Text displayed for option 9"
         },
         {
+            "type": "slider",
+            "id": "Option9Size",
+            "label": "Option 9 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option9Color",
             "label": "Option 9 Color",
@@ -1880,6 +1970,16 @@
             "label": "Option 10 Name",
             "value": "Option 10",
             "description": "Text displayed for option 10"
+        },
+        {
+            "type": "slider",
+            "id": "Option10Size",
+            "label": "Option 10 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -1984,6 +2084,16 @@
             "description": "Text displayed for option 11"
         },
         {
+            "type": "slider",
+            "id": "Option11Size",
+            "label": "Option 11 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option11Color",
             "label": "Option 11 Color",
@@ -2084,6 +2194,16 @@
             "label": "Option 12 Name",
             "value": "Option 12",
             "description": "Text displayed for option 12"
+        },
+        {
+            "type": "slider",
+            "id": "Option12Size",
+            "label": "Option 12 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -2188,6 +2308,16 @@
             "description": "Text displayed for option 13"
         },
         {
+            "type": "slider",
+            "id": "Option13Size",
+            "label": "Option 13 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option13Color",
             "label": "Option 13 Color",
@@ -2288,6 +2418,16 @@
             "label": "Option 14 Name",
             "value": "Option 14",
             "description": "Text displayed for option 14"
+        },
+        {
+            "type": "slider",
+            "id": "Option14Size",
+            "label": "Option 14 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -2392,6 +2532,16 @@
             "description": "Text displayed for option 15"
         },
         {
+            "type": "slider",
+            "id": "Option15Size",
+            "label": "Option 15 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option15Color",
             "label": "Option 15 Color",
@@ -2492,6 +2642,16 @@
             "label": "Option 16 Name",
             "value": "Option 16",
             "description": "Text displayed for option 16"
+        },
+        {
+            "type": "slider",
+            "id": "Option16Size",
+            "label": "Option 16 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -2596,6 +2756,16 @@
             "description": "Text displayed for option 17"
         },
         {
+            "type": "slider",
+            "id": "Option17Size",
+            "label": "Option 17 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option17Color",
             "label": "Option 17 Color",
@@ -2696,6 +2866,16 @@
             "label": "Option 18 Name",
             "value": "Option 18",
             "description": "Text displayed for option 18"
+        },
+        {
+            "type": "slider",
+            "id": "Option18Size",
+            "label": "Option 18 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -2800,6 +2980,16 @@
             "description": "Text displayed for option 19"
         },
         {
+            "type": "slider",
+            "id": "Option19Size",
+            "label": "Option 19 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option19Color",
             "label": "Option 19 Color",
@@ -2900,6 +3090,16 @@
             "label": "Option 20 Name",
             "value": "Option 20",
             "description": "Text displayed for option 20"
+        },
+        {
+            "type": "slider",
+            "id": "Option20Size",
+            "label": "Option 20 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -3004,6 +3204,16 @@
             "description": "Text displayed for option 21"
         },
         {
+            "type": "slider",
+            "id": "Option21Size",
+            "label": "Option 21 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option21Color",
             "label": "Option 21 Color",
@@ -3104,6 +3314,16 @@
             "label": "Option 22 Name",
             "value": "Option 22",
             "description": "Text displayed for option 22"
+        },
+        {
+            "type": "slider",
+            "id": "Option22Size",
+            "label": "Option 22 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
@@ -3208,6 +3428,16 @@
             "description": "Text displayed for option 23"
         },
         {
+            "type": "slider",
+            "id": "Option23Size",
+            "label": "Option 23 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option23Color",
             "label": "Option 23 Color",
@@ -3310,6 +3540,16 @@
             "description": "Text displayed for option 24"
         },
         {
+            "type": "slider",
+            "id": "Option24Size",
+            "label": "Option 24 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
+        },
+        {
             "type": "color",
             "id": "Option24Color",
             "label": "Option 24 Color",
@@ -3410,6 +3650,16 @@
             "label": "Option 25 Name",
             "value": "Option 25",
             "description": "Text displayed for option 25"
+        },
+        {
+            "type": "slider",
+            "id": "Option25Size",
+            "label": "Option 25 Size",
+            "value": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": "Relative width of this slice. 1 is normal, 2 is twice as wide. Enabled slices are scaled to fill the wheel."
         },
         {
             "type": "color",
