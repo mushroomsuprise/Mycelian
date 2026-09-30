@@ -910,6 +910,7 @@
         musicVolume: {{ MusicVolume | tojson }},
         musicLoop: {{ MusicLoop | tojson }},
         musicShuffle: {{ MusicShuffle | tojson }},
+        musicOnSpin: {{ MusicOnSpin | tojson }},
         musicFadeIn: {{ MusicFadeIn | tojson }},
         musicFadeOut: {{ MusicFadeOut | tojson }}
         };
@@ -1282,6 +1283,17 @@
                 musicOrderPos = 0;
             }
             loadAndPlayMusic(true);
+        }
+
+        function musicRestartsOnSpin() {
+            return settings.musicOnSpin === 'Restart';
+        }
+
+        function rewindMusicForNextSpin() {
+            if (!musicRestartsOnSpin()) return;
+            if (!musicAudio || !musicAudio.getAttribute('data-track')) return;
+            musicFinished = false;
+            try { musicAudio.currentTime = 0; } catch (e) {}
         }
 
         function pauseMusic() {
@@ -2255,6 +2267,7 @@
             rouletteData.winningIndex = -1;
             clearWheelAutoHideTimers();
             hideResult();
+            rewindMusicForNextSpin();
             showWheel();
 
             // Scale, brightness, and the halo start together. The disc itself only rotates.
@@ -2668,6 +2681,9 @@
             }
             if (config.MusicFadeOut !== undefined) {
                 settings.musicFadeOut = clampFadeSeconds(config.MusicFadeOut);
+            }
+            if (config.MusicOnSpin !== undefined) {
+                settings.musicOnSpin = config.MusicOnSpin;
             }
             if (config.MusicShuffle !== undefined) {
                 var nextMusicShuffle = !!config.MusicShuffle;

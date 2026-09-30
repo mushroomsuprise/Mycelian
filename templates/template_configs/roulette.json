@@ -885,6 +885,17 @@
             "description": "Play multiple tracks in random order. Has no effect when only one track is listed."
         },
         {
+            "type": "select",
+            "id": "MusicOnSpin",
+            "label": "On Next Spin",
+            "value": "Pause and resume",
+            "options": [
+                "Pause and resume",
+                "Restart"
+            ],
+            "description": "Pause and resume keeps your place when the wheel hides and continues there on the next spin. Restart starts the current track from the beginning each time you spin."
+        },
+        {
             "type": "number",
             "id": "MusicFadeIn",
             "label": "Fade In",
