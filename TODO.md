@@ -40,8 +40,8 @@ General:
 YouTube Integration:
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system
 
-Donations:
-    [] - Add in ability to connect major cash services (like PayPal and Venmo) so the user can generate a "donations" link that Mycelian can get data from to use for alerts
+StreamLabs & StreamElements:
+    [] - Add in an easy "Migrate to Mycelian" option to both integrations. This will import alerts and such directly into Mycelian from the different services.
 
 Kik Integration:
     [] - Add in Kik integration service
