@@ -24,7 +24,7 @@ from ...streamlabs import (
     get_streamlabs_client,
     get_streamlabs_status,
 )
-from ...ui_buttons import outline_button, primary_button
+from ...ui_buttons import browser_link, outline_button, primary_button
 from ...ui_form_controls import copy_text_button, form_select, form_sensitive_input
 from ...ui_settings_layout import (
     settings_action_row,
@@ -146,22 +146,20 @@ class StreamlabsTab:
             ).classes("text-sm secondary-text")
             with ui.column().classes("gap-3"):
                 ui.label("1. Sign in to Streamlabs").classes("font-semibold")
-                ui.link("streamlabs.com/login", "https://streamlabs.com/login").classes(
-                    "text-theme-info"
-                )
+                browser_link("streamlabs.com/login", "https://streamlabs.com/login")
                 ui.label("2. Register an application").classes("font-semibold")
                 ui.label(
                     "Create an app named Mycelian from the apps page. "
                     "The written steps are in Streamlabs' register guide."
                 ).classes("text-sm")
-                ui.link(
+                browser_link(
                     "Register your application",
                     "https://dev.streamlabs.com/docs/register-your-application",
-                ).classes("text-theme-info")
-                ui.link(
+                )
+                browser_link(
                     "Streamlabs apps",
                     "https://streamlabs.com/dashboard#/apps",
-                ).classes("text-theme-info")
+                )
                 ui.label("3. Use this redirect URI exactly").classes("font-semibold")
                 ui.label(STREAMLABS_OAUTH_REDIRECT_URI).classes("text-sm font-mono")
                 copy_text_button(STREAMLABS_OAUTH_REDIRECT_URI, tooltip="Copy redirect URI")
@@ -179,10 +177,10 @@ class StreamlabsTab:
                 ui.label(
                     "Connect asks only for donations.read and socket.token."
                 ).classes("text-sm")
-                ui.link(
+                browser_link(
                     "Scope list",
                     "https://dev.streamlabs.com/docs/scopes",
-                ).classes("text-theme-info")
+                )
             outline_button("Close", dialog.close)
         dialog.open()
 

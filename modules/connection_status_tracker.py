@@ -428,6 +428,9 @@ def is_remote_service_disconnected(key: str) -> bool:
 
         if not discord_configured():
             return False
+        status = str(discord_service.discord_service.get_status().get("status") or "")
+        if status in {"Connecting", "Connected", "Reconnecting"}:
+            return False
         return not discord_service.discord_service.is_connected()
 
     if key == "chatbot":

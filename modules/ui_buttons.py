@@ -150,6 +150,17 @@ def warning_button(
     return _apply_btn_classes(btn, f"btn-warning {extra_classes}".strip())
 
 
+def browser_link(label: str, url: str) -> ui.button:
+    """Text link that opens in the system browser, not inside the app window."""
+    import webbrowser
+
+    btn = ui.button(label)
+    btn.props("flat dense no-caps align=left")
+    btn.classes("text-theme-info px-0")
+    btn.on_click(lambda u=url: webbrowser.open(u, new=2))
+    return btn
+
+
 def themed_control_button(
     label: str,
     on_click: Callable[..., Any],

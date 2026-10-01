@@ -551,8 +551,6 @@ class StreamElementsClient:
             delay = min(delay * 2, 30.0)
 
     def _connect_realtime(self, jwt: str) -> None:
-        ping_stop = threading.Event()
-
         def _send(payload: str) -> None:
             socket = self._realtime_ws
             if socket is None:
@@ -562,33 +560,15 @@ class StreamElementsClient:
             except Exception:
                 logger.debug("StreamElements realtime send failed", exc_info=True)
 
-        def _ping_loop(interval: float) -> None:
-            while not ping_stop.wait(interval):
-                _send("2")
-
-        ping_thread: dict[str, Optional[threading.Thread]] = {"thread": None}
-
         authenticated_sent = {"done": False}
 
         def on_message(_ws, raw: str) -> None:
             if not isinstance(raw, str) or not raw:
                 return
             if raw[0] == "0" and not raw.startswith("40"):
-                interval = 25.0
-                try:
-                    opened = json.loads(raw[1:] or "{}")
-                    interval = max(5.0, float(opened.get("pingInterval") or 25000) / 1000.0)
-                except (TypeError, ValueError):
-                    interval = 25.0
-                # Namespace connect only. Authenticating in the same turn
-                # makes this server close the socket.
+                # Engine.IO 4: the server sends pings. A client ping ("2")
+                # closes this socket. Only answer their ping with "3".
                 _send("40")
-                if ping_thread["thread"] is None:
-                    worker = threading.Thread(
-                        target=_ping_loop, args=(interval,), daemon=True
-                    )
-                    ping_thread["thread"] = worker
-                    worker.start()
                 return
             if raw.startswith("40") and not authenticated_sent["done"]:
                 authenticated_sent["done"] = True
@@ -645,7 +625,6 @@ class StreamElementsClient:
             logger.warning("StreamElements realtime socket error: %s", error)
 
         def on_close(_ws, status_code, _message) -> None:
-            ping_stop.set()
             self._realtime_authenticated = False
             logger.info(
                 "StreamElements realtime socket closed (%s)",
@@ -666,7 +645,6 @@ class StreamElementsClient:
         try:
             app.run_forever(ping_interval=0, ping_timeout=None, sslopt=sslopt)
         finally:
-            ping_stop.set()
             self._realtime_ws = None
 
 

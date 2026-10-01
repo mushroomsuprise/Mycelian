@@ -345,6 +345,16 @@ class DiscordService:
             self._set_status("Disconnected")
             return False
 
+        with self._lock:
+            same_token = self._token == token
+            thread_alive = bool(self._thread and self._thread.is_alive())
+            status = self._status
+        if thread_alive and same_token and status in {"Connecting", "Connected", "Reconnecting"}:
+            if not wait_for_ready:
+                return True
+            if self._ready.wait(timeout=_READY_TIMEOUT_SEC) and self.is_connected():
+                return True
+
         self.disconnect(join_timeout=8.0)
 
         with self._lock:

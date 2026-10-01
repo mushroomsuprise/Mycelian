@@ -18,7 +18,7 @@ from ...streamelements import (
     disconnect_streamelements,
     get_streamelements_status,
 )
-from ...ui_buttons import outline_button, primary_button
+from ...ui_buttons import browser_link, outline_button, primary_button
 from ...ui_form_controls import form_select, form_sensitive_input
 from ...ui_settings_layout import (
     settings_action_row,
@@ -137,10 +137,10 @@ class StreamElementsTab:
             ).classes("text-sm secondary-text")
             with ui.column().classes("gap-3"):
                 ui.label("1. Sign in").classes("font-semibold")
-                ui.link(
+                browser_link(
                     "streamelements.com/dashboard",
                     "https://streamelements.com/dashboard",
-                ).classes("text-theme-info")
+                )
                 ui.label("2. Select the channel that receives tips").classes(
                     "font-semibold"
                 )
@@ -149,20 +149,20 @@ class StreamElementsTab:
                     "in the top-right and choose the right channel. Each one has its own JWT."
                 ).classes("text-sm")
                 ui.label("3. Open Account, then Channels").classes("font-semibold")
-                ui.link(
+                browser_link(
                     "Account → Channels",
                     "https://streamelements.com/dashboard/account/channels",
-                ).classes("text-theme-info")
+                )
                 ui.label("4. Turn on Show secrets and copy the JWT token").classes(
                     "font-semibold"
                 )
                 ui.label(
                     "Copy the JWT, not the Account ID. The JWT is private."
                 ).classes("text-sm")
-                ui.link(
+                browser_link(
                     "How to locate your Account ID and JWT token",
                     "https://support.streamelements.com/hc/en-us/articles/10474949304466-How-to-Locate-Your-Account-ID-and-JWT-Token",
-                ).classes("text-theme-info")
+                )
             outline_button("Close", dialog.close)
         dialog.open()
 
