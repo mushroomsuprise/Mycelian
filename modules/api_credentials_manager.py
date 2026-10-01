@@ -71,6 +71,10 @@ class APICredentials:
     youtube_client_id: str = ""
     youtube_client_secret: str = ""
 
+    # Streamlabs OAuth credentials (donation alerts only)
+    streamlabs_client_id: str = ""
+    streamlabs_client_secret: str = ""
+
     # Configuration metadata
     config_version: str = "1.0"
     last_updated: str = ""
@@ -404,6 +408,45 @@ class APICredentialsManager:
 
         return True
 
+    def get_streamlabs_credentials(self) -> Dict[str, str]:
+        """Get Streamlabs OAuth client credentials (decrypted)"""
+        if not self._initialized:
+            self.initialize()
+
+        if not self._credentials:
+            return {"client_id": "", "client_secret": ""}
+
+        return {
+            "client_id": ensure_decrypted(self._credentials.streamlabs_client_id),
+            "client_secret": ensure_decrypted(self._credentials.streamlabs_client_secret),
+        }
+
+    def update_streamlabs_credentials(
+        self, client_id: str = None, client_secret: str = None
+    ) -> bool:
+        """Update Streamlabs OAuth client credentials"""
+        if not self._initialized:
+            self.initialize()
+
+        if not self._credentials:
+            logger.error("No credentials available to update")
+            return False
+
+        updated = False
+        if client_id is not None:
+            self._credentials.streamlabs_client_id = ensure_encrypted(client_id)
+            updated = True
+
+        if client_secret is not None and str(client_secret).strip():
+            self._credentials.streamlabs_client_secret = ensure_encrypted(client_secret)
+            updated = True
+
+        if updated:
+            logger.info("Updated Streamlabs credentials")
+            return self._save_credentials()
+
+        return True
+
     def export_credentials(self, export_path: str) -> bool:
         """Export credentials to a different file"""
         try:
@@ -499,6 +542,20 @@ def get_youtube_credentials() -> Dict[str, str]:
 def update_youtube_credentials(client_id: str = None, client_secret: str = None) -> bool:
     """Update YouTube OAuth client credentials"""
     return api_credentials_manager.update_youtube_credentials(
+        client_id=client_id, client_secret=client_secret
+    )
+
+
+def get_streamlabs_credentials() -> Dict[str, str]:
+    """Get Streamlabs OAuth client credentials"""
+    return api_credentials_manager.get_streamlabs_credentials()
+
+
+def update_streamlabs_credentials(
+    client_id: str = None, client_secret: str = None
+) -> bool:
+    """Update Streamlabs OAuth client credentials"""
+    return api_credentials_manager.update_streamlabs_credentials(
         client_id=client_id, client_secret=client_secret
     )
 

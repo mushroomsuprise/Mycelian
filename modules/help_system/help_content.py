@@ -5187,7 +5187,9 @@ Modern browsers block autoplay. Solutions:
 
 ## Donation alerts
 
-Configure how donation [alerts](help:alerts_overview) look and sound in the **Alerts** tab (donation alert types and thresholds).
+Configure how donation [alerts](help:alerts_overview) look and sound in the **Alerts** tab (donation alert types and thresholds). Those amounts are in the alert currency from **Settings → Streamlabs** or **Settings → StreamElements**.
+
+Connect [Streamlabs](help:integrations_streamlabs) or [StreamElements](help:integrations_streamelements) to receive cash tips. YouTube Super Chats use the same donation alerts.
 
 ## WebSocket Connection Issues
 
@@ -6153,5 +6155,70 @@ Placeholders: `{platform}`, `{title}`, `{url}`
         ],
         related_topics=["integrations_twitch", "integrations_youtube", "connector_actions"],
         ui_context="settings.discord",
+    ),
+    "integrations_streamlabs": HelpTopic(
+        id="integrations_streamlabs",
+        title="Streamlabs Donations",
+        category=HelpCategory.INTEGRATIONS,
+        summary="Show Streamlabs cash tips as Mycelian donation alerts",
+        content="""
+# Streamlabs Donations
+
+Mycelian reads Streamlabs donations only. Follows, subscriptions, and bits stay on the Twitch connection.
+
+## Get a client id and secret
+
+1. Sign in at [streamlabs.com/login](https://streamlabs.com/login) with the account that receives donations.
+2. Follow [Register your application](https://dev.streamlabs.com/docs/register-your-application) and create the app from [Streamlabs apps](https://streamlabs.com/dashboard#/apps). Name it Mycelian.
+3. Set the redirect URI to exactly `http://127.0.0.1:9975`. Mycelian shows this value with a copy button. A mismatch is why Connect returns to an error page.
+4. While the app is not approved, only whitelisted users can authorize it. Add your Streamlabs username. Public review is not required for personal use.
+5. Copy the **Client ID** and **Client Secret** into **Settings → Streamlabs**. The secret is stored encrypted.
+6. Click **Connect** and approve the prompt. Mycelian asks only for `donations.read` and `socket.token`. See the [scope list](https://dev.streamlabs.com/docs/scopes).
+
+## Alert currency
+
+Donation thresholds in **Alerts → Donations** are amounts in the alert currency on this tab. A tip in another currency is converted before Mycelian picks the alert. The alerts template can show the original amount with the converted amount in parentheses.
+
+## Status
+
+The bottom status bar shows Streamlabs once a client id is saved: Connected, Connecting, Disconnected, Expired, Auth Failed, or Error.
+        """,
+        keywords=["streamlabs", "donation", "tip", "oauth", "client id"],
+        related_topics=["alerts_overview", "integrations_streamelements"],
+        ui_context="settings.streamlabs",
+    ),
+    "integrations_streamelements": HelpTopic(
+        id="integrations_streamelements",
+        title="StreamElements Donations",
+        category=HelpCategory.INTEGRATIONS,
+        summary="Show StreamElements tips as Mycelian donation alerts",
+        content="""
+# StreamElements Donations
+
+Mycelian listens for StreamElements tips only. Follows and subscriptions stay on the Twitch connection.
+
+## Get the JWT
+
+1. Sign in at the [StreamElements dashboard](https://streamelements.com/dashboard).
+2. If more than one platform is linked, click the avatar in the top-right and select the channel that receives tips. Each channel has its own JWT.
+3. Open [Account → Channels](https://streamelements.com/dashboard/account/channels).
+4. Turn on **Show secrets**. Copy the **JWT token**, not the Account ID. The JWT is private.
+5. Paste it into **Settings → StreamElements** and click **Connect**.
+
+StreamElements also documents this on [How to locate your Account ID and JWT token](https://support.streamelements.com/hc/en-us/articles/10474949304466-How-to-Locate-Your-Account-ID-and-JWT-Token).
+
+Tips waiting for moderation alert after they are allowed. Rejected tips are ignored.
+
+## Alert currency
+
+The alert currency is shared with Streamlabs. Thresholds in **Alerts → Donations** use that currency. The alerts template can show the original amount with the converted amount in parentheses.
+
+## Status
+
+The bottom status bar shows StreamElements once a JWT is saved: Connected, Connecting, Disconnected, Expired, Auth Failed, or Error.
+        """,
+        keywords=["streamelements", "donation", "tip", "jwt"],
+        related_topics=["alerts_overview", "integrations_streamlabs"],
+        ui_context="settings.streamelements",
     ),
 }

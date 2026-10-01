@@ -15,7 +15,17 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-SERVICE_KEYS = ("twitch", "spotify", "youtube", "psn", "obs", "discord", "webengine")
+SERVICE_KEYS = (
+    "twitch",
+    "spotify",
+    "youtube",
+    "psn",
+    "obs",
+    "discord",
+    "webengine",
+    "streamlabs",
+    "streamelements",
+)
 
 
 def twitch_configured() -> bool:
@@ -98,6 +108,24 @@ def discord_configured() -> bool:
         return False
 
 
+def streamlabs_configured() -> bool:
+    try:
+        from .streamlabs import streamlabs_configured as _configured
+
+        return _configured()
+    except Exception:
+        return False
+
+
+def streamelements_configured() -> bool:
+    try:
+        from .streamelements import streamelements_configured as _configured
+
+        return _configured()
+    except Exception:
+        return False
+
+
 def service_configured(key: str) -> bool:
     if key == "twitch":
         return twitch_configured()
@@ -111,6 +139,10 @@ def service_configured(key: str) -> bool:
         return obs_configured()
     if key == "discord":
         return discord_configured()
+    if key == "streamlabs":
+        return streamlabs_configured()
+    if key == "streamelements":
+        return streamelements_configured()
     if key == "webengine":
         # The overlay server always runs (OBS sources / Stream Deck / alerts).
         return True
@@ -124,6 +156,8 @@ _PROBE_INTERVAL_SEC: Dict[str, float] = {
     "youtube": 30.0,
     "psn": 12.0,
     "discord": 15.0,
+    "streamlabs": 15.0,
+    "streamelements": 15.0,
     "webengine": 5.0,
 }
 
@@ -305,6 +339,16 @@ def get_connection_status(key: str) -> str:
                 if d
                 else "Unknown"
             )
+
+    elif key == "streamlabs":
+        from .streamlabs import get_streamlabs_status
+
+        base_status = str(get_streamlabs_status().get("status") or "Disconnected")
+
+    elif key == "streamelements":
+        from .streamelements import get_streamelements_status
+
+        base_status = str(get_streamelements_status().get("status") or "Disconnected")
 
     elif key == "webengine":
         from .web_engine import get_webengine_health

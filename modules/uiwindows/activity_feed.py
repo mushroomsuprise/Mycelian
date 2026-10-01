@@ -2287,6 +2287,12 @@ def build_activity_feed_alert_payload(
                         "amt_cheered",
                         "tier",
                         "recipient",
+                        "donation_amount",
+                        "currency",
+                        "original_amount",
+                        "original_currency",
+                        "donation_text",
+                        "donation_source",
                     ):
                         value = stored_alert_data.get(field)
                         if value is not None and field not in alert_data:

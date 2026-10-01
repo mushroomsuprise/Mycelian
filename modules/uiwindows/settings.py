@@ -5286,6 +5286,8 @@ class SettingsUI:
             from .tabs.theme_tab import ThemeTab
             from .tabs.twitch_tab import TwitchTab
             from .tabs.youtube_tab import YouTubeTab
+            from .tabs.streamlabs_tab import StreamlabsTab
+            from .tabs.streamelements_tab import StreamElementsTab
 
             # Time each tab object creation individually
             with StartupTimer("settings_tab_objects_app_settings"):
@@ -5300,6 +5302,10 @@ class SettingsUI:
                 spotify_tab = SpotifyTab()
             with StartupTimer("settings_tab_objects_youtube"):
                 youtube_tab = YouTubeTab()
+            with StartupTimer("settings_tab_objects_streamlabs"):
+                streamlabs_tab = StreamlabsTab()
+            with StartupTimer("settings_tab_objects_streamelements"):
+                streamelements_tab = StreamElementsTab()
             with StartupTimer("settings_tab_objects_discord"):
                 discord_tab = DiscordTab()
             with StartupTimer("settings_tab_objects_obs"):
@@ -5318,6 +5324,8 @@ class SettingsUI:
                 "PSN": psn_tab,
                 "Spotify": spotify_tab,
                 "YouTube": youtube_tab,
+                "Streamlabs": streamlabs_tab,
+                "StreamElements": streamelements_tab,
                 "Discord": discord_tab,
                 "OBS": obs_tab,
                 "Game Hooks": game_hooks_tab,
@@ -5349,6 +5357,8 @@ class SettingsUI:
                         "PSN",
                         "Spotify",
                         "YouTube",
+                        "Streamlabs",
+                        "StreamElements",
                         "Discord",
                         "Game Hooks",
                         "Database",
@@ -5363,6 +5373,8 @@ class SettingsUI:
                         ui.tab("PSN", icon=service_tab_icon("psn"))
                         ui.tab("Spotify", icon=service_tab_icon("spotify"))
                         ui.tab("YouTube", icon=service_tab_icon("youtube"))
+                        ui.tab("Streamlabs", icon=service_tab_icon("streamlabs"))
+                        ui.tab("StreamElements", icon=service_tab_icon("streamelements"))
                         ui.tab("Discord", icon=service_tab_icon("discord"))
                         ui.tab("Game Hooks", icon="memory")
                         ui.tab("Database", icon="storage")
@@ -5441,6 +5453,10 @@ class SettingsUI:
                                         self._tabs_by_name["Spotify"].build(container)
                                     elif tab_name == "YouTube":
                                         self._tabs_by_name["YouTube"].build(container)
+                                    elif tab_name == "Streamlabs":
+                                        self._tabs_by_name["Streamlabs"].build(container)
+                                    elif tab_name == "StreamElements":
+                                        self._tabs_by_name["StreamElements"].build(container)
                                     elif tab_name == "Discord":
                                         self._tabs_by_name["Discord"].build(container)
                                     elif tab_name == "OBS":
@@ -5482,6 +5498,8 @@ class SettingsUI:
                             "PSN",
                             "Spotify",
                             "YouTube",
+                            "Streamlabs",
+                            "StreamElements",
                             "Discord",
                             "Game Hooks",
                             "Database",

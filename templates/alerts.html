@@ -708,6 +708,7 @@
         var enlargeGigantifiedEmoteInMessage = {{ EnlargeGigantifiedEmoteInMessage | default(false) | tojson }};
         var gigantifiedEmoteMessageScale = {{ GigantifiedEmoteMessageScale | default(3) }};
         var enableGiftSubRecipientName = {{ EnableGiftSubRecipientName | default(true) | tojson }};
+        var showDonationOriginalAmount = {{ ShowDonationOriginalAmount | default(true) | tojson }};
         var streamerID = null;
         var alertEmoteFetchInProgress = false;
         var alertEmoteCache = {
@@ -732,7 +733,7 @@
             raid: {{ TextRaid | default('raided with {raider_count} viewers!') | tojson }},
             point: {{ TextPoint | default('redeemed: {title}!') | tojson }},
             pointWithCost: {{ TextPointWithCost | default('redeemed: {title} ({point_cost} points)!') | tojson }},
-            donation: {{ TextDonation | default('donated ${amount}!') | tojson }},
+            donation: {{ TextDonation | default('donated {donation_text}!') | tojson }},
             hypeTrainStart: {{ TextHypeTrainStart | default('Hype Train started!') | tojson }},
             hypeTrainProgress: {{ TextHypeTrainProgress | default('Hype Train Level {hype_train_level}!') | tojson }},
             hypeTrainEnd: {{ TextHypeTrainEnd | default('Hype Train ended at Level {hype_train_level}!') | tojson }},
@@ -2680,6 +2681,50 @@
             return processAlertTextForEmotes(raw);
         }
 
+        function donationCurrencySymbol(code) {
+            var symbols = {
+                USD: '$', EUR: '€', GBP: '£', CAD: '$', AUD: '$', NZD: '$',
+                SGD: '$', HKD: '$', MXN: '$', JPY: '¥', CNY: '¥', BRL: 'R$',
+                ZAR: 'R', INR: '₹', KRW: '₩', TRY: '₺', ILS: '₪', PHP: '₱', THB: '฿'
+            };
+            return symbols[String(code || '').toUpperCase()] || '';
+        }
+
+        function formatDonationMoney(amount, currency) {
+            var code = String(currency || 'USD').toUpperCase();
+            var number = Number(amount);
+            if (isNaN(number)) {
+                number = 0;
+            }
+            var text = number.toFixed(2);
+            var symbol = donationCurrencySymbol(code);
+            if (!symbol) {
+                return code + ' ' + text;
+            }
+            if (/^[A-Za-z]+$/.test(symbol)) {
+                return text + ' ' + symbol;
+            }
+            return symbol + text;
+        }
+
+        function donationAmountPhrase(alertData) {
+            var converted = alertData.donation_amount != null ? alertData.donation_amount : alertData.amount;
+            var convertedCurrency = alertData.currency || 'USD';
+            var originalCurrency = alertData.original_currency || convertedCurrency;
+            var original = alertData.original_amount != null ? alertData.original_amount : converted;
+            var convertedText = formatDonationMoney(converted, convertedCurrency);
+            if (!showDonationOriginalAmount) {
+                return convertedText;
+            }
+            if (alertData.donation_text && String(originalCurrency).toUpperCase() !== String(convertedCurrency).toUpperCase()) {
+                return String(alertData.donation_text);
+            }
+            if (String(originalCurrency).toUpperCase() === String(convertedCurrency).toUpperCase()) {
+                return convertedText;
+            }
+            return formatDonationMoney(original, originalCurrency) + ' (' + convertedText + ')';
+        }
+
         function applyAlertTextTemplate(template, alertData) {
             if (!template) {
                 return '';
@@ -2707,6 +2752,7 @@
                 .replace(/\{title\}/g, title)
                 .replace(/\{point_cost\}/g, escapeAlertHtml(String(alertData.point_cost != null ? alertData.point_cost : '')))
                 .replace(/\{amount\}/g, escapeAlertHtml(Number(amount).toFixed(2)))
+                .replace(/\{donation_text\}/g, escapeAlertHtml(donationAmountPhrase(alertData)))
                 .replace(/\{hype_train_level\}/g, escapeAlertHtml(String(alertData.hype_train_level != null ? alertData.hype_train_level : '')));
         }
 
@@ -2766,7 +2812,8 @@
                         : alertTextTemplates.point;
                     break;
                 case 'donation':
-                    template = alertTextTemplates.donation;
+                    template = String(alertTextTemplates.donation || '');
+                    template = template.replace(/\$\{amount\}/g, '{donation_text}');
                     break;
                 case 'hype_train_start':
                     template = alertTextTemplates.hypeTrainStart;
@@ -3032,6 +3079,9 @@
             }
             if (config.EnableGiftSubRecipientName !== undefined) {
                 enableGiftSubRecipientName = Boolean(config.EnableGiftSubRecipientName);
+            }
+            if (config.ShowDonationOriginalAmount !== undefined) {
+                showDonationOriginalAmount = Boolean(config.ShowDonationOriginalAmount);
             }
             var textTemplateKeys = [
                 'TextFollow', 'TextSub', 'TextSubTier', 'TextResub', 'TextStreakSingular',

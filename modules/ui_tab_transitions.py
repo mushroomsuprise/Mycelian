@@ -30,6 +30,8 @@ SETTINGS_TAB_ORDER: List[str] = [
     "PSN",
     "Spotify",
     "YouTube",
+    "Streamlabs",
+    "StreamElements",
     "Discord",
     "Game Hooks",
     "Database",

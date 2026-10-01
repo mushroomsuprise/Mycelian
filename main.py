@@ -436,9 +436,21 @@ if __name__ == "__main__":
 
                 youtube.start_youtube_service()
 
+            def _start_streamlabs():
+                from modules import streamlabs
+
+                streamlabs.start_streamlabs_service()
+
+            def _start_streamelements():
+                from modules import streamelements
+
+                streamelements.start_streamelements_service()
+
             service_manager.register("spotify", _start_spotify, priority=5)
             service_manager.register("psn", _start_psn, priority=6)
             service_manager.register("youtube", _start_youtube, priority=7)
+            service_manager.register("streamlabs", _start_streamlabs, priority=8)
+            service_manager.register("streamelements", _start_streamelements, priority=8)
 
             def _start_discord():
                 from modules import discord_service as discord_svc

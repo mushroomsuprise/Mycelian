@@ -1442,6 +1442,53 @@
             return username + ' gifted ' + qty + ' tier ' + tier + ' subs!';
         }
 
+        function formatDonationMessage(alertData, includeNote) {
+            var username = lookupChatAlertField(alertData, 'username') || extractUsernameFromMessage(alertData) || 'Someone';
+            var phrase = lookupChatAlertField(alertData, 'donation_text');
+            if (!phrase) {
+                var converted = lookupChatAlertField(alertData, 'donation_amount', 'amount');
+                var currency = lookupChatAlertField(alertData, 'currency') || 'USD';
+                var original = lookupChatAlertField(alertData, 'original_amount');
+                var originalCurrency = lookupChatAlertField(alertData, 'original_currency') || currency;
+                var convertedNumber = Number(converted);
+                if (isNaN(convertedNumber)) {
+                    convertedNumber = 0;
+                }
+                var originalNumber = original != null ? Number(original) : convertedNumber;
+                if (isNaN(originalNumber)) {
+                    originalNumber = convertedNumber;
+                }
+                var convertedText = formatChatDonationMoney(convertedNumber, currency);
+                if (String(originalCurrency).toUpperCase() !== String(currency).toUpperCase()) {
+                    phrase = formatChatDonationMoney(originalNumber, originalCurrency) + ' (' + convertedText + ')';
+                } else {
+                    phrase = convertedText;
+                }
+            }
+            var line = username + ' donated ' + phrase + '!';
+            if (includeNote && alertData.user_message && !resolveAlertMediaSource(alertData)) {
+                line += ' ' + alertData.user_message;
+            }
+            return line;
+        }
+
+        function formatChatDonationMoney(amount, currency) {
+            var symbols = {
+                USD: '$', EUR: '€', GBP: '£', CAD: '$', AUD: '$', JPY: '¥', CNY: '¥'
+            };
+            var code = String(currency || 'USD').toUpperCase();
+            var number = Number(amount);
+            if (isNaN(number)) {
+                number = 0;
+            }
+            var text = number.toFixed(2);
+            var symbol = symbols[code] || '';
+            if (!symbol) {
+                return code + ' ' + text;
+            }
+            return symbol + text;
+        }
+
         function formatBitsMessage(alertData) {
             var username = lookupChatAlertField(alertData, 'username') || extractUsernameFromMessage(alertData) || 'Someone';
             var amount = parseInt(lookupChatAlertField(alertData, 'amt_cheered', 'bits', 'amount'), 10) || 1;
@@ -1519,6 +1566,8 @@
                 eventText = formatGiftSubMessage(alertData);
             } else if (alertType === 'bits' || alertType === 'bit') {
                 eventText = formatBitsMessage(alertData);
+            } else if (alertType === 'donation') {
+                eventText = formatDonationMessage(alertData, true);
             } else if (alertType === 'resub') {
                 eventText = formatResubMessage(alertData);
             } else if (isHypeTrainAlertType(alertData)) {
@@ -1620,6 +1669,10 @@
 
             if (alertType === 'bit' || alertType === 'bits') {
                 return formatBitsMessage(alertData);
+            }
+
+            if (alertType === 'donation') {
+                return formatDonationMessage(alertData, false);
             }
 
             if (isWatchStreakAlertTypeName(alertType) || isWatchStreakAlertTypeName(alertData.badge_type)) {

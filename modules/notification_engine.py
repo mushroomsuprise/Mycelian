@@ -750,6 +750,12 @@ def _service_status_notify_type(service_key: str, status: str) -> str:
         if s == "connected":
             return "positive"
         return "warning"
+    if service_key in ("streamlabs", "streamelements"):
+        if s == "connected":
+            return "positive"
+        if "error" in s or "fail" in s or "expired" in s:
+            return "negative"
+        return "warning"
     if service_key == "webengine":
         s_lower = s.lower()
         if s_lower == "running":
@@ -772,7 +778,18 @@ def _service_status_notify_type(service_key: str, status: str) -> str:
     return "info"
 
 
-_SERVICE_KEYS = ("internet", "webengine", "twitch", "obs", "psn", "spotify", "youtube", "discord")
+_SERVICE_KEYS = (
+    "internet",
+    "webengine",
+    "twitch",
+    "obs",
+    "psn",
+    "spotify",
+    "youtube",
+    "discord",
+    "streamlabs",
+    "streamelements",
+)
 
 _SERVICE_LABELS: Dict[str, str] = {
     "internet": "Internet",
@@ -782,6 +799,8 @@ _SERVICE_LABELS: Dict[str, str] = {
     "psn": "PSN",
     "obs": "OBS",
     "discord": "Discord",
+    "streamlabs": "Streamlabs",
+    "streamelements": "StreamElements",
     "webengine": "Overlay Server",
 }
 
@@ -792,6 +811,8 @@ _SERVICE_SUBTABS: Dict[str, str] = {
     "psn": "PSN",
     "obs": "OBS",
     "discord": "Discord",
+    "streamlabs": "Streamlabs",
+    "streamelements": "StreamElements",
     "webengine": "App Settings",
 }
 

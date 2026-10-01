@@ -2119,6 +2119,10 @@ class AlertObj:
     # Donation options:
     donation_amount: float = 0.0
     currency: str = "USD"
+    original_amount: float = 0.0
+    original_currency: str = ""
+    donation_source: str = ""
+    donation_text: str = ""
 
     # Hype train options:
     hype_train_level: int = 0
@@ -2581,6 +2585,10 @@ _REPLAY_EVENT_FIELDS = (
     "game_name",
     "donation_amount",
     "currency",
+    "original_amount",
+    "original_currency",
+    "donation_source",
+    "donation_text",
     "hype_train_level",
     "hype_train_in_progress",
     "streak_count",
@@ -2916,7 +2924,7 @@ def _fetch_chat_alert_for_media(alert_type: str, alert_data: dict) -> Optional[A
             amount_val = 0.0
         if amount_val <= 0:
             return None
-        return _fetch_donation_alert_exact(amount_val)
+        return _fetch_donation_alert_exact(max(1, int(round(amount_val))))
     if at == "raid":
         count = _chat_alert_lookup(alert_data, "raider_count", "viewers")
         try:

@@ -1776,7 +1776,9 @@ class YouTubeClient:
             self._emit_membership_gift_alert(username, snippet)
             return
         if msg_type in ("superChatEvent", "superStickerEvent", "fanFundingEvent"):
-            self._emit_superchat_donation_alert(username, snippet, msg_type)
+            self._emit_superchat_donation_alert(
+                username, snippet, msg_type, event_id=str(item.get("id") or "")
+            )
             return
 
     def _alerts_enabled(self) -> bool:
@@ -2171,12 +2173,15 @@ class YouTubeClient:
         )
 
     def _emit_superchat_donation_alert(
-        self, username: str, snippet: Dict[str, Any], msg_type: str
+        self,
+        username: str,
+        snippet: Dict[str, Any],
+        msg_type: str,
+        event_id: str = "",
     ) -> None:
-        from . import alertutils
         from .chatbot_core import EventType
         from .connector_core import EventData
-        from .uiwindows.activity_feed import add_alert_to_feed
+        from .donation_alerts import emit_donation_alert
 
         if msg_type == "superChatEvent":
             details = snippet.get("superChatDetails") or {}
@@ -2232,64 +2237,14 @@ class YouTubeClient:
                 "source": "youtube",
             },
         )
-        self._process_chatbot_event(
-            EventType.DONATION,
-            {
-                "username": username,
-                "amount": amount,
-                "currency": currency,
-                "formatted_amount": display_amount,
-                "message": message,
-                "donation_message": message,
-                "timestamp": current_timestamp,
-                "source": "youtube",
-            },
-        )
-
-        quantity = max(1, int(round(amount))) if amount > 0 else 1
-        alert = alertutils.fetch_donation_alert(quantity)
-        if alert is None:
-            alert = alertutils.AlertObj()
-        alert.username = username
-        alert.alert_type = "donation"
-        alert.donation_amount = float(amount)
-        alert.currency = currency
-        alert.message = message
-        alert.alert_id = f"Alert{round(current_timestamp)}"
-        alert.timestamp = current_timestamp
-        try:
-            alert.is_supersticker = bool(is_sticker)
-            alert.display_amount = display_amount
-        except Exception:
-            pass
-        self._enqueue_alert(alert)
-        if not self._alerts_enabled():
-            return
-        self._send_instant_alert(
-            {
-                "type": "donation",
-                "username": username,
-                "donation_amount": alert.donation_amount,
-                "currency": currency,
-                "message": alert.message,
-                "alert_id": alert.alert_id,
-                "timestamp": alert.timestamp,
-                "source": "youtube",
-                "display_amount": display_amount,
-            }
-        )
-        if is_sticker:
-            feed_type, badge, label = "Super Sticker", "supersticker", "Super Sticker"
-        else:
-            feed_type, badge, label = "Super Chat", "superchat", "Super Chat"
-        add_alert_to_feed(
-            alert_type=feed_type,
-            message=f"{username} sent a {label} of {display_amount}!",
-            badge_type=badge,
-            timestamp=str(int(alert.timestamp)),
-            user_message=alert.message,
-            alert_id=alert.alert_id,
+        emit_donation_alert(
             username=username,
+            amount=amount,
+            currency=currency,
+            message=message,
+            source="youtube",
+            event_id=event_id,
+            enqueue=self._alerts_enabled(),
         )
 
     def _send_instant_alert(self, alert_data: Dict[str, Any]) -> None:

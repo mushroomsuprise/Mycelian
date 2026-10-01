@@ -139,6 +139,8 @@ class AlertSettingsState:
         self.active_tab_name = "Bits"
         self.tab_switch_guard = False
         self.unsaved_prompt_open = False
+        # Discard reloads the form and must not mark the tab dirty
+        self.ignore_field_dirty = False
         # Alert types whose forms differ from the last loaded or saved values
         self.dirty_tabs = set()
         # Alert id last loaded into each type's form

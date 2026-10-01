@@ -259,8 +259,15 @@
             "type": "text",
             "id": "TextDonation",
             "label": "Donation header text",
-            "value": "donated ${amount}!",
-            "description": "Header line for donations. Use {amount} for the formatted dollar amount."
+            "value": "donated {donation_text}!",
+            "description": "Header line for donations. Use {donation_text} for the amount. When Show original donation amount is on and the currencies differ, that is the sent amount plus the converted amount in parentheses."
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowDonationOriginalAmount",
+            "label": "Show original donation amount",
+            "value": true,
+            "description": "When on, a donation shows the amount as it was sent, with the converted amount in parentheses when the currency differs. When off, only the converted amount is shown."
         },
         {
             "type": "text",

@@ -1182,6 +1182,8 @@ class ThemeTab:
             ("brand", "psn", "PSN"),
             ("brand", "spotify", "Spotify"),
             ("brand", "youtube", "YouTube"),
+            ("brand", "streamlabs", "Streamlabs"),
+            ("brand", "streamelements", "StreamElements"),
             ("material", "memory", "Game Hooks"),
             ("material", "storage", "Database"),
             ("material", "analytics", "Statistics"),
@@ -1272,6 +1274,8 @@ class ThemeTab:
             ("psn", "Idle", "warning"),
             ("spotify", "Connected", "success"),
             ("youtube", "Connected", "success"),
+            ("streamlabs", "Connected", "success"),
+            ("streamelements", "Expired", "error"),
         )
         dot_tier = {
             "success": "connected",
