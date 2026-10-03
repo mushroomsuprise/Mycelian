@@ -750,6 +750,17 @@ SOURCE_CONTROLS_CSS = """
     box-sizing: border-box;
 }
 
+.source-controls-tab .sc-header-search.q-field--dense .q-field__control,
+.source-controls-tab .sc-header-search.q-field--dense .q-field__marginal {
+    height: 36px;
+    min-height: 36px;
+}
+
+.source-controls-tab .sc-header-refresh.q-btn {
+    min-height: 36px;
+    height: 36px;
+}
+
 .source-controls-tab .source-controls-scroll {
     width: 100% !important;
     align-self: stretch;

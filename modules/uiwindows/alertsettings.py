@@ -924,11 +924,12 @@ def create_alert_type_panel(alert_type: str):
                             on_change=lambda e: handle_alert_selection(e, alert_type),
                         )
                     )
-                    duplicate_btn = ui.button(
+                    duplicate_btn = outline_button(
                         "Duplicate",
+                        lambda at=alert_type: duplicate_current_alert(at),
                         icon="content_copy",
-                        on_click=lambda at=alert_type: duplicate_current_alert(at),
-                    ).props("dense outline").classes("text-sm")
+                        extra_classes="alert-duplicate-btn text-sm",
+                    )
                     duplicate_btn.tooltip(
                         "Copy this alert into a new unsaved alert"
                     )
@@ -3520,11 +3521,12 @@ def create_points_alert_panel():
                             ),
                         )
                     )
-                    duplicate_btn = ui.button(
+                    duplicate_btn = outline_button(
                         "Duplicate",
+                        lambda at=alert_type: duplicate_current_alert(at),
                         icon="content_copy",
-                        on_click=lambda at=alert_type: duplicate_current_alert(at),
-                    ).props("dense outline").classes("text-sm")
+                        extra_classes="alert-duplicate-btn text-sm",
+                    )
                     duplicate_btn.tooltip(
                         "Copy this reward into a new unsaved reward"
                     )

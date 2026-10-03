@@ -17,7 +17,7 @@ from ...ui_settings_layout import (
     settings_inner_panel,
     settings_surface,
 )
-from ...notification_engine import notify
+from ...notification_engine import notify, refresh_service_status_footer
 from ...streamdeck_plugin_utils import (
     PluginInstallError,
     PluginInstallState,
@@ -197,6 +197,23 @@ class AppSettingsTab:
                             ui.label("Show connection status footer").classes(
                                 "text-sm"
                             )
+                        with ui.row().classes("items-center gap-2"):
+                            self.ui_elements["status_footer_minimal"] = (
+                                ui.switch(
+                                    value=bool(
+                                        getattr(
+                                            self.buffer, "status_footer_minimal", False
+                                        )
+                                    )
+                                )
+                                .classes("q-switch")
+                                .on_value_change(
+                                    lambda e: self._set(
+                                        "status_footer_minimal", bool(e.value)
+                                    )
+                                )
+                            )
+                            ui.label("Minimal status badges").classes("text-sm")
                         with ui.row().classes("items-center gap-2"):
                             self.ui_elements["auto_update"] = (
                                 ui.switch(value=self.buffer.auto_update)
@@ -470,6 +487,10 @@ class AppSettingsTab:
             apply_ui_scale(self.buffer.ui_scale_percent)
             self._apply_background_settings()
             self._apply_alert_storage_trim()
+            try:
+                refresh_service_status_footer()
+            except Exception:
+                logger.debug("status footer refresh after save failed", exc_info=True)
             notify("Settings saved", type="positive")
             self.dirty = False
         else:

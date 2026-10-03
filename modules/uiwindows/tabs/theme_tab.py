@@ -1264,7 +1264,18 @@ class ThemeTab:
 
     def _build_mock_status_footer(self):
         """Mock connection status footer matching the real app footer."""
+        from ...dataobjects import state_manager
         from ...notification_engine import _SERVICE_LABELS
+
+        minimal = False
+        try:
+            settings = state_manager.get_app_settings()
+            minimal = bool(getattr(settings, "status_footer_minimal", False))
+        except Exception:
+            minimal = False
+        footer_classes = "service-status-footer w-full"
+        if minimal:
+            footer_classes += " service-status-footer--minimal"
 
         footer_items = (
             ("internet", "Online", "success"),
@@ -1283,11 +1294,13 @@ class ThemeTab:
             "error": "disconnected",
             "info": "connected",
         }
-        with ui.element("div").classes("service-status-footer w-full"):
+        with ui.element("div").classes(footer_classes):
             with ui.element("div").classes("service-status-footer-inner w-full"):
                 for key, badge_label, tier in footer_items:
                     svg = SERVICE_BRAND_SVG.get(key, "")
-                    with ui.element("div").classes("service-status-item"):
+                    with ui.element("div").classes(
+                        f"service-status-item service-status-tier-{tier}"
+                    ):
                         if svg:
                             ui.html(svg, tag="span", sanitize=False).classes(
                                 "service-status-brand-icon"

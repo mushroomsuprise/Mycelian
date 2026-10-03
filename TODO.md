@@ -36,6 +36,13 @@ General:
     [x] - Fix built-in activity feed still drawing a blank window. This seems to happen once a user is live and gets alerts past midnight, and persists between restarts until a long period of time happens. There has been many attempts to fix this with no success so far.
     [x] - Add in options to trim stored alert data automatically to the Settings>App Settings tab. There should be a toggle to turn on the auto-trim, the quantity of past alerts to keep, an timeframe to keep them, and an option to trim based on quantity or based on time or both.
     [x] - Add persistant storage of condensed feed list filters
+    [x] - Add settings to App Settings for "Minimal" footer badges (toggle switch). These minimal badges will just be the service icon, with a ring that matches the color scheme of the different status conditions. this ring will display the color of that service's status. This setting should persist and also reload its value between restarts.
+    [x] - Remove "New" button from the Source Settings UI
+    [x] - Add in a "Duplicate" button to the Source Settings UI. This will open a dialog that will allow the user to choose a new name for the duplicated template. This will then create a copy of the selected template's HTML file and JSON config file with the new name (also the Spore Studio sidecar file if present). Will need to refresh the options in the drop down file to show the new template.
+    [x] - Condense the Source Settings UI buttons/fields to be one row at the top. Currently the template drop down, and refresh button are above the delete/search/reset/save fields. this should all be in one row.
+    [x] - Remove the "Configuration: {name}" label from the Source Settings UI
+    [x] - Fix button styling of the "duplicate" in every sub tab for the Alerts tab. They are all in full caps and the icon appears too large
+    [x] - In the Source Controls UI, move the search option to be in the same row/height as the refresh button
 
 YouTube Integration:
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system

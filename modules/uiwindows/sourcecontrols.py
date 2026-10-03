@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 # Global reference to the source controls container
 source_controls_container = None
+_source_controls_search = None
+_source_controls_cards = []
 
 # Inner control grid columns — keep in sync with OBS .controls-grid (repeat(2, ...))
 _INNER_CONTROL_COLUMNS = 2
@@ -147,9 +149,24 @@ def _counter_tooltip(label: str, description: str) -> str:
     return description or label or "Increment or decrement the counter"
 
 
+def _apply_source_controls_search(event=None) -> None:
+    if event is not None:
+        query = str(getattr(event, "value", "") or "")
+    elif _source_controls_search is not None:
+        query = str(_source_controls_search.value or "")
+    else:
+        query = ""
+    query = query.strip().lower()
+    for name, card in _source_controls_cards:
+        try:
+            card.set_visibility(not query or query in name)
+        except Exception:
+            logger.debug("source control search update failed", exc_info=True)
+
+
 def create_source_controls_tab():
     """Create the Source Controls tab UI"""
-    global source_controls_container
+    global source_controls_container, _source_controls_search
 
     with ui.element("div").classes(
         "source-controls-tab tab-surface w-full h-full flex flex-col relative self-stretch p-4"
@@ -158,16 +175,25 @@ def create_source_controls_tab():
             with ui.column().classes("w-full gap-1"):
                 ui.label("Source Controls").classes("sc-header-title")
 
-                with ui.row().classes("w-full items-center justify-between"):
+                with ui.row().classes("w-full items-center justify-between gap-2"):
                     ui.label("Interactive controls for your templates").classes(
                         "text-xs opacity-75"
                     )
-                    outline_button(
-                        "Refresh",
-                        refresh_source_controls,
-                        icon="refresh",
-                        extra_classes="btn-primary text-xs px-2 py-1",
-                    )
+                    with ui.row().classes("items-center gap-2 shrink-0"):
+                        _source_controls_search = (
+                            ui.input(placeholder="Search templates")
+                            .props("dense outlined clearable")
+                            .classes("w-56 sc-header-search")
+                        )
+                        _source_controls_search.on_value_change(
+                            _apply_source_controls_search
+                        )
+                        outline_button(
+                            "Refresh",
+                            refresh_source_controls,
+                            icon="refresh",
+                            extra_classes="btn-primary text-xs sc-header-refresh",
+                        )
 
         with ui.element("div").classes("grow overflow-hidden min-h-0 w-full"):
             with ui.scroll_area().classes("source-controls-scroll w-full h-full"):
@@ -180,7 +206,9 @@ def create_source_controls_tab():
 
 def load_source_controls():
     """Load and display source controls from template configs"""
-    global source_controls_container
+    global source_controls_container, _source_controls_cards
+
+    _source_controls_cards = []
 
     if source_controls_container is None:
         logger.error("Source controls container not initialized")
@@ -269,23 +297,6 @@ def load_source_controls():
                 all_template_controls.items(), key=_template_sort_key
             )
             section_cards = []
-            search = (
-                ui.input(placeholder="Search templates")
-                .props("dense outlined clearable")
-                .classes("w-56 mb-2")
-            )
-
-            def apply_control_search(event=None) -> None:
-                query = ""
-                if event is not None:
-                    query = str(getattr(event, "value", "") or "")
-                else:
-                    query = str(search.value or "")
-                query = query.strip().lower()
-                for name, card in section_cards:
-                    card.set_visibility(not query or query in name)
-
-            search.on_value_change(apply_control_search)
             columns = _distribute_to_columns(sorted_templates)
             for col_items in columns:
                 with ui.element("div").classes("sc-masonry-col"):
@@ -295,6 +306,9 @@ def load_source_controls():
                         )
                         if card is not None:
                             section_cards.append((template_name.lower(), card))
+            _source_controls_cards = section_cards
+
+    _apply_source_controls_search()
 
 
 def create_template_control_section(template_name, controls_config):

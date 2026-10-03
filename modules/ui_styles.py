@@ -1542,6 +1542,17 @@ button.alert-save-btn:hover,
     background-color: rgb(21, 128, 61) !important;
 }
 
+.q-btn.alert-duplicate-btn,
+.q-btn.alert-duplicate-btn .q-btn__content {
+    text-transform: none !important;
+}
+
+.q-btn.alert-duplicate-btn .q-icon {
+    font-size: 16px !important;
+    width: 16px;
+    height: 16px;
+}
+
 /* Color grid for source settings */
 .color-grid {
     display: grid;
@@ -2099,7 +2110,8 @@ body:not(.body--dark) .notification-tray-badge {
     display: none !important;
 }
 
-.service-status-item--trim .service-status-badge-label {
+.service-status-item--trim .service-status-badge-label,
+.service-status-item--copy .service-status-badge-label {
     white-space: nowrap;
 }
 
@@ -2259,6 +2271,51 @@ body:not(.body--dark) .notification-tray-badge {
     font-weight: 600 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.3px !important;
+}
+
+/* Minimal footer: service icon plus a status-colored ring.
+   The ring color is a custom property on the item so it wins over the
+   more specific icon rule below (that rule used to keep every ring gray). */
+.service-status-footer--minimal .service-status-tier-success {
+    --service-status-ring: var(--color-success);
+}
+
+.service-status-footer--minimal .service-status-tier-warning {
+    --service-status-ring: var(--color-warning);
+}
+
+.service-status-footer--minimal .service-status-tier-error {
+    --service-status-ring: var(--color-error);
+}
+
+.service-status-footer--minimal .service-status-tier-info {
+    --service-status-ring: var(--color-info);
+}
+
+.service-status-footer--minimal .service-status-tier-muted {
+    --service-status-ring: var(--color-text-muted);
+}
+
+.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-name,
+.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-status-cluster {
+    display: none !important;
+}
+
+.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) {
+    gap: 0;
+    padding: 0 2px;
+}
+
+.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-brand-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    box-shadow: 0 0 0 2px var(--service-status-ring, var(--color-text-muted));
+}
+
+.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-brand-icon svg {
+    width: 14px;
+    height: 14px;
 }
 
 /* About tab — compact source URL card grid */

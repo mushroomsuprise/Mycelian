@@ -27,10 +27,12 @@ import copy
 import json
 import logging
 import os
+import shutil
 import sys
+import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from nicegui import ui
 
@@ -1653,13 +1655,23 @@ def create_custom_sources_tab():
                 else:
                     _open_popout_preview_dialog(popout_dialog_id)
 
-            # Row 1: configuration selector
-            with ui.row().classes("w-full items-center gap-2"):
+            with ui.row().classes(
+                "w-full items-center gap-2 flex-nowrap overflow-x-auto"
+            ):
+                outline_button(
+                    "",
+                    lambda: load_config_files(
+                        config_parser, config_select, config_container
+                    ),
+                    icon="refresh",
+                    extra_classes="p-2 shrink-0",
+                )
+
                 config_select = form_select(
                     tooltip="Choose which template configuration to edit",
                     options=[],
                     label=None,
-                    classes="w-56 bg-theme-base",
+                    classes="w-56 shrink-0 bg-theme-base",
                     with_input=True,
                     on_change=lambda e: on_config_selected(
                         e, config_parser, config_container, config_select
@@ -1667,22 +1679,21 @@ def create_custom_sources_tab():
                 )
 
                 outline_button(
-                    "",
-                    lambda: load_config_files(
+                    "Duplicate",
+                    lambda: duplicate_config(
                         config_parser, config_select, config_container
                     ),
-                    icon="refresh",
-                    extra_classes="p-2",
+                    icon="content_copy",
+                    extra_classes="shrink-0",
                 )
 
-            # Row 2: New, Delete, Search, Reset, Save
-            with ui.row().classes("w-full items-center gap-2"):
-                primary_button(
-                    "New",
-                    lambda: create_new_config(
+                outline_button(
+                    "Rename",
+                    lambda: rename_config(
                         config_parser, config_select, config_container
                     ),
-                    icon="add",
+                    icon="drive_file_rename_outline",
+                    extra_classes="shrink-0",
                 )
 
                 destructive_button(
@@ -1691,6 +1702,7 @@ def create_custom_sources_tab():
                         config_parser, config_select, config_container
                     ),
                     icon="delete",
+                    extra_classes="shrink-0",
                 )
 
                 search_input = form_input(
@@ -1710,6 +1722,7 @@ def create_custom_sources_tab():
                         config_parser, config_select, config_container
                     ),
                     icon="restart_alt",
+                    extra_classes="shrink-0",
                 )
 
                 primary_button(
@@ -1718,6 +1731,7 @@ def create_custom_sources_tab():
                         config_parser, config_select, config_container
                     ),
                     icon="save",
+                    extra_classes="shrink-0",
                 )
 
             # Row 3: preview controls (right-aligned, below action buttons)
@@ -2249,13 +2263,6 @@ def render_config_ui(config_parser, config_name, container, search_term=""):
     # Create a form for the config
     with container:
         with ui.column().classes("w-full h-full flex flex-col gap-2 p-2"):
-            # Title and description - fixed height section
-            with ui.column().classes("flex-none"):
-                ui.label(f"Configuration: {config_name}").classes(
-                    "text-lg font-medium mb-2 fade-in"
-                )
-
-            # Scrollable content area - flexible height
             with ui.scroll_area().classes("w-full grow"):
                 # Preserve full form state even when search hides some controls
                 fresh_from_disk = config_name not in form_data_store
@@ -3069,79 +3076,733 @@ def _perform_config_reset(config_parser, config_name, config_container) -> None:
     notify(f"Configuration reset for {config_name}.", type="positive")
 
 
-def create_new_config(config_parser, config_select, config_container):
-    """Create a new config"""
-    # Create a dialog for the new config name
-    with ui.dialog() as dialog, ui.card():
-        ui.label("New Configuration").classes("text-lg font-medium mb-4")
+def _spore_sidecar_file(template_name: str) -> str:
+    return get_template_path(os.path.join("_spore", f"{template_name}.spore.json"))
 
-        name_input = form_input(
-            tooltip="Name for the new template configuration file",
-            label="Configuration Name",
+
+def _template_assets_dir(template_name: str) -> str:
+    """Writable asset folder for a template (same root Spore Studio uses)."""
+    return os.path.join(get_assets_path(), template_name)
+
+
+def _template_name_is_taken(template_name: str, config_parser) -> bool:
+    if os.path.isfile(get_template_path(f"{template_name}.html")):
+        return True
+    try:
+        json_path = config_parser.get_config_path(template_name)
+    except ValueError:
+        return True
+    if os.path.isfile(json_path):
+        return True
+    if os.path.isfile(_spore_sidecar_file(template_name)):
+        return True
+    return os.path.isdir(_template_assets_dir(template_name))
+
+
+_template_copy_lock = threading.Lock()
+_template_copy_state: Dict[str, Any] = {
+    "active": False,
+    "phase": "idle",
+    "copied": 0,
+    "total": 0,
+    "label": "",
+    "title": "Copying",
+}
+
+
+def template_copy_is_active() -> bool:
+    with _template_copy_lock:
+        return bool(_template_copy_state["active"])
+
+
+def get_template_copy_progress() -> Dict[str, Any]:
+    with _template_copy_lock:
+        return dict(_template_copy_state)
+
+
+def format_template_copy_badge(
+    progress: Optional[Dict[str, Any]],
+) -> Optional[Tuple[str, str]]:
+    """Return (badge text, tier) while a template copy is running."""
+    if not progress or not progress.get("active"):
+        return None
+    phase = str(progress.get("phase") or "")
+    title = str(progress.get("title") or "Copying")
+    busy = "Deleting" if title == "Deleting" else "Copying"
+    tier = "error" if title == "Deleting" else "warning"
+    if phase == "preparing":
+        return ("Preparing", "info")
+    try:
+        copied = max(0, int(progress.get("copied") or 0))
+        total = max(0, int(progress.get("total") or 0))
+    except (TypeError, ValueError):
+        return (busy, tier)
+    if total <= 0:
+        return (busy, tier)
+    return (f"{copied} of {total}", tier)
+
+
+def _set_template_copy_state(**fields: Any) -> None:
+    with _template_copy_lock:
+        _template_copy_state.update(fields)
+
+
+def _mark_template_copy_idle() -> None:
+    _set_template_copy_state(
+        active=False,
+        phase="idle",
+        copied=0,
+        total=0,
+        label="",
+        title="Copying",
+    )
+
+
+def _refresh_template_copy_footer() -> None:
+    try:
+        from ..notification_engine import refresh_template_copy_footer
+
+        refresh_template_copy_footer()
+    except Exception:
+        logger.debug("template copy footer refresh failed", exc_info=True)
+
+
+def _invalidate_webengine_template_cache() -> None:
+    try:
+        inst = getattr(web_engine_module, "web_engine_instance", None)
+        if inst is not None and hasattr(inst, "invalidate_all_template_configs_cache"):
+            inst.invalidate_all_template_configs_cache()
+    except Exception:
+        logger.debug("template config cache refresh failed", exc_info=True)
+
+
+def _list_asset_files(root: str) -> List[str]:
+    if not os.path.isdir(root):
+        return []
+    found: List[str] = []
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for filename in filenames:
+            found.append(os.path.join(dirpath, filename))
+    found.sort()
+    return found
+
+
+def _mirror_asset_dirs(src: str, dst: str) -> None:
+    for dirpath, _dirnames, _filenames in os.walk(src):
+        rel = os.path.relpath(dirpath, src)
+        target = dst if rel == "." else os.path.join(dst, rel)
+        os.makedirs(target, exist_ok=True)
+
+
+def _cleanup_partial_copy(
+    written: List[str], dst_assets: str, made_assets: bool
+) -> None:
+    for path in written:
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    if made_assets and os.path.isdir(dst_assets):
+        shutil.rmtree(dst_assets, ignore_errors=True)
+
+
+def _copy_template_files(
+    source_name: str,
+    new_name: str,
+    config_parser,
+    on_progress: Optional[Callable[[str, int, int], None]] = None,
+) -> None:
+    """Copy HTML, JSON, the Spore sidecar, and the asset folder."""
+    from ..spore_studio import template_parser_back
+    from ..spore_studio.save_pipeline import SporeStudioError
+
+    def report(phase: str, copied: int, total: int) -> None:
+        if on_progress is not None:
+            on_progress(phase, copied, total)
+
+    src_json = config_parser.get_config_path(source_name)
+    if not os.path.isfile(src_json):
+        raise SporeStudioError(f"No configuration file for '{source_name}'.")
+    try:
+        with open(src_json, "r", encoding="utf-8") as fh:
+            config = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        raise SporeStudioError(f"Could not read '{source_name}': {e}") from e
+    if not isinstance(config, dict):
+        raise SporeStudioError(f"Configuration for '{source_name}' is not an object.")
+
+    html_text = None
+    src_html = get_template_path(f"{source_name}.html")
+    if os.path.isfile(src_html):
+        try:
+            with open(src_html, "r", encoding="utf-8") as fh:
+                html_text = fh.read()
+        except OSError as e:
+            raise SporeStudioError(f"Could not read '{source_name}.html': {e}") from e
+
+    sidecar = template_parser_back.load_sidecar(source_name)
+    config = _rewrite_template_tree(config, source_name, new_name)
+    config["template_name"] = new_name
+    if isinstance(sidecar, dict):
+        sidecar = _rewrite_template_tree(sidecar, source_name, new_name)
+        sidecar["template_name"] = new_name
+    if html_text is not None:
+        html_text = _rewrite_template_html(html_text, source_name, new_name)
+
+    src_assets = _template_assets_dir(source_name)
+    dst_assets = _template_assets_dir(new_name)
+    asset_files = _list_asset_files(src_assets)
+    report("preparing", 0, 0)
+
+    steps: List[Tuple[str, str]] = [
+        (
+            config_parser.get_config_path(new_name),
+            json.dumps(config, indent=4, ensure_ascii=False),
         )
+    ]
+    dst_html = get_template_path(f"{new_name}.html")
+    if html_text is not None:
+        steps.append((dst_html, html_text))
+    if isinstance(sidecar, dict):
+        steps.append(
+            (
+                _spore_sidecar_file(new_name),
+                json.dumps(sidecar, indent=2, ensure_ascii=False),
+            )
+        )
+
+    total = len(steps) + len(asset_files)
+    copied = 0
+    written: List[str] = []
+    made_assets = False
+    report("copying", copied, total)
+    try:
+        for path, text in steps:
+            _write_rename_text(path, text)
+            written.append(path)
+            copied += 1
+            report("copying", copied, total)
+        if os.path.isdir(src_assets):
+            _mirror_asset_dirs(src_assets, dst_assets)
+            made_assets = True
+            for src_file in asset_files:
+                rel = os.path.relpath(src_file, src_assets)
+                dest = os.path.join(dst_assets, rel)
+                parent = os.path.dirname(dest)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                shutil.copy2(src_file, dest)
+                copied += 1
+                report("copying", copied, total)
+    except Exception as e:
+        _cleanup_partial_copy(written, dst_assets, made_assets)
+        raise SporeStudioError(f"Could not copy '{source_name}': {e}") from e
+
+
+def _same_existing_file(src: str, dst: str) -> bool:
+    try:
+        return (
+            os.path.exists(src)
+            and os.path.exists(dst)
+            and os.path.samefile(src, dst)
+        )
+    except OSError:
+        return False
+
+
+def _path_blocks_rename(src: str, dst: str) -> bool:
+    """True when dst exists and is not the source path (case-only renames are ok)."""
+    if not os.path.exists(dst):
+        return False
+    return not _same_existing_file(src, dst)
+
+
+def _rewrite_template_tree(value: Any, old_name: str, new_name: str) -> Any:
+    old_asset = f"/assets/{old_name}/"
+    new_asset = f"/assets/{new_name}/"
+    old_counters = f"{old_name}/counters"
+    new_counters = f"{new_name}/counters"
+    if isinstance(value, dict):
+        return {
+            key: _rewrite_template_tree(item, old_name, new_name)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_rewrite_template_tree(item, old_name, new_name) for item in value]
+    if isinstance(value, str):
+        return value.replace(old_asset, new_asset).replace(old_counters, new_counters)
+    return value
+
+
+def _rewrite_template_html(text: str, old_name: str, new_name: str) -> str:
+    text = text.replace(f"/assets/{old_name}/", f"/assets/{new_name}/")
+    text = text.replace(f"{old_name}/counters", f"{new_name}/counters")
+    old_assign = f'window.__sporeTemplateName = "{old_name}"'
+    new_assign = f'window.__sporeTemplateName = "{new_name}"'
+    return text.replace(old_assign, new_assign)
+
+
+def _write_rename_text(path: str, text: str) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    tmp_path = path + ".rename-tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp_path, path)
+    except Exception:
+        if os.path.isfile(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
+def _publish_renamed_file(src: str, dst: str, text: str, created: List[str]) -> None:
+    _write_rename_text(dst, text)
+    if not _same_existing_file(src, dst):
+        created.append(dst)
+
+
+def _rename_template_files(source_name: str, raw_name: str, config_parser) -> str:
+    """Rename HTML, JSON config, and the Spore sidecar when one exists."""
+    from ..spore_studio import template_parser_back
+    from ..spore_studio.save_pipeline import (
+        SporeStudioError,
+        _refresh_web_engine_routes,
+        _validate_name,
+    )
+
+    new_name = _validate_name(raw_name or "")
+    if new_name == source_name:
+        raise SporeStudioError("Choose a different name.")
+
+    src_json = config_parser.get_config_path(source_name)
+    dst_json = config_parser.get_config_path(new_name)
+    src_html = get_template_path(f"{source_name}.html")
+    dst_html = get_template_path(f"{new_name}.html")
+    src_sidecar = _spore_sidecar_file(source_name)
+    dst_sidecar = _spore_sidecar_file(new_name)
+    src_assets = _template_assets_dir(source_name)
+    dst_assets = _template_assets_dir(new_name)
+
+    if not os.path.isfile(src_json):
+        raise SporeStudioError(f"No configuration file for '{source_name}'.")
+    if any(
+        _path_blocks_rename(src, dst)
+        for src, dst in (
+            (src_html, dst_html),
+            (src_json, dst_json),
+            (src_sidecar, dst_sidecar),
+            (src_assets, dst_assets),
+        )
+    ):
+        raise SporeStudioError(f"A template named '{new_name}' already exists.")
+
+    try:
+        with open(src_json, "r", encoding="utf-8") as fh:
+            config = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        raise SporeStudioError(f"Could not read '{source_name}': {e}") from e
+    if not isinstance(config, dict):
+        raise SporeStudioError(f"Configuration for '{source_name}' is not an object.")
+
+    html_text = None
+    if os.path.isfile(src_html):
+        try:
+            with open(src_html, "r", encoding="utf-8") as fh:
+                html_text = fh.read()
+        except OSError as e:
+            raise SporeStudioError(f"Could not read '{source_name}.html': {e}") from e
+
+    sidecar = template_parser_back.load_sidecar(source_name)
+    src_sidecar = _spore_sidecar_file(source_name)
+
+    config = _rewrite_template_tree(config, source_name, new_name)
+    config["template_name"] = new_name
+    if isinstance(sidecar, dict):
+        sidecar = _rewrite_template_tree(sidecar, source_name, new_name)
+        sidecar["template_name"] = new_name
+    if html_text is not None:
+        html_text = _rewrite_template_html(html_text, source_name, new_name)
+
+    created: List[str] = []
+    moved_assets = False
+    try:
+        if os.path.isdir(src_assets) and not _same_existing_file(
+            src_assets, dst_assets
+        ):
+            os.makedirs(os.path.dirname(dst_assets), exist_ok=True)
+            shutil.move(src_assets, dst_assets)
+            moved_assets = True
+        _publish_renamed_file(
+            src_json,
+            dst_json,
+            json.dumps(config, indent=4, ensure_ascii=False),
+            created,
+        )
+        if html_text is not None:
+            _publish_renamed_file(src_html, dst_html, html_text, created)
+        if isinstance(sidecar, dict):
+            _publish_renamed_file(
+                src_sidecar,
+                dst_sidecar,
+                json.dumps(sidecar, indent=2, ensure_ascii=False),
+                created,
+            )
+    except Exception as e:
+        if (
+            moved_assets
+            and os.path.isdir(dst_assets)
+            and not os.path.isdir(src_assets)
+        ):
+            try:
+                shutil.move(dst_assets, src_assets)
+            except OSError:
+                logger.warning(
+                    "Could not restore assets for %s after a failed rename",
+                    source_name,
+                    exc_info=True,
+                )
+        for path in created:
+            if os.path.isfile(path) and not _same_existing_file(path, src_json):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        raise SporeStudioError(f"Could not rename '{source_name}': {e}") from e
+
+    for src, dst in (
+        (src_json, dst_json),
+        (src_html, dst_html),
+        (src_sidecar, dst_sidecar),
+    ):
+        if os.path.isfile(src) and not _same_existing_file(src, dst):
+            try:
+                os.remove(src)
+            except OSError:
+                logger.warning(
+                    "Could not remove old template file %s", src, exc_info=True
+                )
+
+    config_parser.invalidate_cache()
+    _invalidate_preview_route_cache(source_name)
+    _invalidate_preview_route_cache(new_name)
+    _refresh_web_engine_routes()
+    _invalidate_webengine_template_cache()
+    return new_name
+
+
+def _show_duplicated_config(
+    name, config_parser, config_select, config_container
+) -> None:
+    configs = sorted(config_parser.get_non_hidden_config_files())
+    config_select.options = configs
+    form_data_store.pop(name, None)
+    _disk_baselines.pop(name, None)
+    if name not in configs:
+        notify(
+            f"Created {name}, but it is hidden from the template list.",
+            type="warning",
+        )
+        return
+    _suppress_and_select(config_select, name)
+    _apply_config_selection(name, config_parser, config_container)
+
+
+def duplicate_config(config_parser, config_select, config_container):
+    """Ask for a name, then copy the selected template's files."""
+    config_name = config_select.value
+    if not config_name:
+        notify("No configuration selected.", type="negative")
+        return
+    if _config_is_dirty(config_name):
+        notify("Save this template before duplicating.", type="warning")
+        return
+
+    with ui.dialog() as dialog, ui.card():
+        ui.label("Duplicate Template").classes("text-lg font-medium mb-4")
+        ui.label(
+            "Copies the HTML file, configuration, Spore Studio file, and asset folder."
+        ).classes("text-sm opacity-75 mb-2")
+        ui.label(f"Copy of {config_name}").classes("text-sm opacity-75 mb-2")
+        name_input = form_input(
+            tooltip="Name for the duplicated template",
+            label="Template Name",
+            value=f"{config_name}-copy",
+        )
+
+        def confirm_duplicate() -> None:
+            duplicate_config_action(
+                config_name,
+                name_input.value,
+                config_parser,
+                config_select,
+                config_container,
+                dialog,
+            )
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):
             ui.button("Cancel", on_click=dialog.close).classes("control-button")
-            ui.button(
-                "Create",
-                on_click=lambda: create_config_action(
-                    name_input.value,
-                    config_parser,
-                    config_select,
-                    config_container,
-                    dialog,
-                ),
-            ).classes("control-button")
+            ui.button("Duplicate", on_click=confirm_duplicate).classes(
+                "control-button"
+            )
 
     dialog.open()
 
 
-def create_config_action(name, config_parser, config_select, config_container, dialog):
-    """Handle the create config action"""
-    name = name.strip()
-    if not name:
-        notify("Please enter a name for the configuration.", type="negative")
+def _finish_template_copy(
+    error: Optional[BaseException],
+    source_name: str,
+    new_name: str,
+    config_parser,
+    config_select,
+    config_container,
+) -> None:
+    """UI-thread completion for a background template copy."""
+    from ..spore_studio.save_pipeline import (
+        SporeStudioError,
+        _refresh_web_engine_routes,
+    )
+
+    _mark_template_copy_idle()
+    _refresh_template_copy_footer()
+    if error is not None:
+        if isinstance(error, SporeStudioError):
+            notify(str(error), type="negative")
+        else:
+            logger.error(
+                "Failed to duplicate template %s", source_name, exc_info=error
+            )
+            notify(f"Failed to duplicate template: {error}", type="negative")
         return
 
-    # Create a default config structure
-    default_config = {
-        "template_name": name,
-        "elements": [
-            {
-                "type": "text",
-                "id": "title",
-                "label": "Title",
-                "value": "New Template",
-                "description": "The title of the template",
-            }
-        ],
-    }
+    config_parser.invalidate_cache()
+    _invalidate_preview_route_cache(source_name)
+    _invalidate_preview_route_cache(new_name)
+    _refresh_web_engine_routes()
+    _invalidate_webengine_template_cache()
+    notify(f"Duplicated {source_name} as {new_name}.", type="positive")
+    try:
+        _show_duplicated_config(
+            new_name, config_parser, config_select, config_container
+        )
+    except Exception:
+        logger.error(
+            "Copied %s but could not select it", new_name, exc_info=True
+        )
+        notify(
+            f"Copied {new_name}. Refresh the template list to open it.",
+            type="warning",
+        )
 
-    # Create the config
-    if config_parser.create_config(name, default_config):
-        notify(f"New configuration created: {name}", type="positive")
-        dialog.close()
 
-        configs = sorted(config_parser.get_non_hidden_config_files())
-        config_select.options = configs
-        form_data_store.pop(name, None)
-        _disk_baselines.pop(name, None)
-        previous = _active_config_name
-        if previous and previous != name and _config_is_dirty(previous):
-            _suppress_and_select(config_select, previous)
-            _prompt_unsaved_config(
-                previous,
-                name,
+def duplicate_config_action(
+    source_name, raw_name, config_parser, config_select, config_container, dialog
+):
+    """Validate the new name, then copy the template on a background thread."""
+    from ..spore_studio.save_pipeline import SporeStudioError, _validate_name
+
+    if _config_is_dirty(source_name):
+        notify("Save this template before duplicating.", type="warning")
+        return
+    if template_copy_is_active():
+        notify("A template copy or delete is already running.", type="warning")
+        return
+
+    try:
+        new_name = _validate_name(raw_name or "")
+        if new_name == source_name:
+            raise SporeStudioError("Choose a different name for the copy.")
+        if _template_name_is_taken(new_name, config_parser):
+            raise SporeStudioError(f"A template named '{new_name}' already exists.")
+        if not os.path.isfile(config_parser.get_config_path(source_name)):
+            raise SporeStudioError(f"No configuration file for '{source_name}'.")
+    except SporeStudioError as e:
+        notify(str(e), type="negative")
+        return
+
+    dialog.close()
+    _set_template_copy_state(
+        active=True,
+        phase="preparing",
+        copied=0,
+        total=0,
+        label=f"Copying {source_name} to {new_name}",
+        title="Copying",
+    )
+    _refresh_template_copy_footer()
+
+    def report(phase: str, copied: int, total: int) -> None:
+        _set_template_copy_state(
+            active=True,
+            phase=phase,
+            copied=copied,
+            total=total,
+            label=f"Copying {source_name} to {new_name}",
+            title="Copying",
+        )
+
+    def work() -> None:
+        error: Optional[BaseException] = None
+        try:
+            _copy_template_files(source_name, new_name, config_parser, report)
+        except Exception as exc:
+            error = exc
+        try:
+            run_on_ui_loop(
+                lambda err=error: _finish_template_copy(
+                    err,
+                    source_name,
+                    new_name,
+                    config_parser,
+                    config_select,
+                    config_container,
+                )
+            )
+        except Exception:
+            _mark_template_copy_idle()
+            logger.exception("Could not return template copy result to the UI")
+
+    threading.Thread(target=work, name="TemplateDuplicate", daemon=True).start()
+
+
+def rename_config(config_parser, config_select, config_container):
+    """Ask for a new name, then rename the selected template's files."""
+    config_name = config_select.value
+    if not config_name:
+        notify("No configuration selected.", type="negative")
+        return
+    if _config_is_dirty(config_name):
+        notify("Save this template before renaming.", type="warning")
+        return
+
+    with ui.dialog() as dialog, ui.card():
+        ui.label("Rename Template").classes("text-lg font-medium mb-4")
+        ui.label(
+            "Renames the HTML file, configuration, and Spore Studio file."
+        ).classes("text-sm opacity-75 mb-2")
+        name_input = form_input(
+            tooltip="New name for this template",
+            label="Template Name",
+            value=config_name,
+        )
+
+        def confirm_rename() -> None:
+            rename_config_action(
+                config_name,
+                name_input.value,
                 config_parser,
                 config_select,
                 config_container,
+                dialog,
             )
-            return
 
-        _suppress_and_select(config_select, name)
-        _apply_config_selection(name, config_parser, config_container)
-    else:
-        notify(f"Failed to create configuration: {name}", type="negative")
+        with ui.row().classes("w-full justify-end gap-2 mt-4"):
+            ui.button("Cancel", on_click=dialog.close).classes("control-button")
+            ui.button("Rename", on_click=confirm_rename).classes("control-button")
+
+    dialog.open()
+
+
+def rename_config_action(
+    source_name, raw_name, config_parser, config_select, config_container, dialog
+):
+    """Rename the selected template and select the new name."""
+    global _active_config_name
+    from ..spore_studio.save_pipeline import SporeStudioError
+
+    if _config_is_dirty(source_name):
+        notify("Save this template before renaming.", type="warning")
+        return
+
+    try:
+        new_name = _rename_template_files(source_name, raw_name, config_parser)
+    except SporeStudioError as e:
+        notify(str(e), type="negative")
+        return
+    except Exception as e:
+        logger.error("Failed to rename template %s", source_name, exc_info=True)
+        notify(f"Failed to rename template: {e}", type="negative")
+        return
+
+    form_data_store.pop(source_name, None)
+    _disk_baselines.pop(source_name, None)
+    if _active_config_name == source_name:
+        _active_config_name = None
+
+    notify(f"Renamed {source_name} to {new_name}.", type="positive")
+    dialog.close()
+    _show_duplicated_config(new_name, config_parser, config_select, config_container)
+
+
+def _legacy_sidecar_file(template_name: str) -> str:
+    return get_template_path(
+        os.path.join("template_configs", f"{template_name}.spore.json")
+    )
+
+
+def _delete_template_files(
+    config_name: str,
+    config_parser,
+    on_progress: Optional[Callable[[str, int, int], None]] = None,
+) -> None:
+    """Delete HTML, JSON, the Spore sidecar, and the asset folder."""
+    from ..spore_studio.save_pipeline import SporeStudioError
+
+    def report(phase: str, done: int, total: int) -> None:
+        if on_progress is not None:
+            on_progress(phase, done, total)
+
+    assets = _template_assets_dir(config_name)
+    asset_files = _list_asset_files(assets)
+    singles = [
+        path
+        for path in (
+            config_parser.get_config_path(config_name),
+            get_template_path(f"{config_name}.html"),
+            _spore_sidecar_file(config_name),
+            _legacy_sidecar_file(config_name),
+        )
+        if os.path.isfile(path)
+    ]
+    folder_step = 1 if os.path.isdir(assets) else 0
+    total = len(asset_files) + len(singles) + folder_step
+    done = 0
+    report("preparing", 0, total)
+    report("deleting", 0, total)
+    errors: List[str] = []
+
+    def remove_file(path: str) -> None:
+        try:
+            if os.path.isfile(path) or os.path.islink(path):
+                os.remove(path)
+        except OSError as exc:
+            errors.append(f"{path}: {exc}")
+
+    for path in asset_files:
+        remove_file(path)
+        done += 1
+        report("deleting", done, total)
+    if folder_step:
+        try:
+            if os.path.isdir(assets):
+                shutil.rmtree(assets)
+        except OSError as exc:
+            errors.append(f"{assets}: {exc}")
+        done += 1
+        report("deleting", done, total)
+    for path in singles:
+        remove_file(path)
+        done += 1
+        report("deleting", done, total)
+    if errors:
+        raise SporeStudioError(
+            f"Could not fully delete '{config_name}': {errors[0]}"
+        )
 
 
 def delete_config(config_parser, config_select, config_container):
@@ -3155,7 +3816,8 @@ def delete_config(config_parser, config_select, config_container):
     with ui.dialog() as dialog, ui.card():
         ui.label("Confirm Deletion").classes("text-lg font-medium mb-4")
         ui.label(
-            f"Are you sure you want to delete the configuration for {config_name}?"
+            f"Delete {config_name}? This removes its configuration, HTML file, "
+            "Spore Studio file, and asset folder when those exist."
         )
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):
@@ -3170,26 +3832,127 @@ def delete_config(config_parser, config_select, config_container):
     dialog.open()
 
 
+def _refresh_config_dropdown(
+    config_parser, config_select, config_container, *, skip: Optional[str] = None
+) -> None:
+    """Reload the template list from disk without discarding a different selection."""
+    global _active_config_name
+    config_parser.invalidate_cache()
+    configs = sorted(config_parser.get_non_hidden_config_files())
+    if skip:
+        configs = [name for name in configs if name != skip]
+    config_select.options = configs
+    current = config_select.value
+    if current in configs:
+        return
+    if configs:
+        _suppress_and_select(config_select, configs[0])
+        _apply_config_selection(configs[0], config_parser, config_container)
+        return
+    _active_config_name = None
+    _suppress_and_select(config_select, None)
+    config_container.clear()
+    with config_container:
+        ui.label("No configuration files found.").classes("text-sm opacity-75")
+    _flush_template_preview()
+
+
+def _finish_template_delete(
+    error: Optional[BaseException],
+    config_name: str,
+    config_parser,
+    config_select,
+    config_container,
+) -> None:
+    """UI-thread completion for a background template delete."""
+    from ..spore_studio.save_pipeline import (
+        SporeStudioError,
+        _refresh_web_engine_routes,
+    )
+
+    _mark_template_copy_idle()
+    _refresh_template_copy_footer()
+    _invalidate_preview_route_cache(config_name)
+    _refresh_web_engine_routes()
+    _invalidate_webengine_template_cache()
+    try:
+        _refresh_config_dropdown(config_parser, config_select, config_container)
+    except Exception:
+        logger.error(
+            "Deleted %s but could not refresh the list",
+            config_name,
+            exc_info=True,
+        )
+    if error is None:
+        notify(f"Deleted {config_name}.", type="positive")
+        return
+    if isinstance(error, SporeStudioError):
+        notify(str(error), type="negative")
+        return
+    logger.error("Failed to delete template %s", config_name, exc_info=error)
+    notify(f"Failed to delete template: {error}", type="negative")
+
+
 def delete_config_action(
     config_name, config_parser, config_select, config_container, dialog
 ):
-    """Handle the delete config action"""
+    """Delete the template files on a background thread, including its assets."""
     global _active_config_name
-    # Delete the config
-    if config_parser.delete_config(config_name):
-        notify(f"Configuration deleted for {config_name}.", type="positive")
-        dialog.close()
+    if template_copy_is_active():
+        notify("A template copy or delete is already running.", type="warning")
+        return
 
-        # Remove from form data store
-        form_data_store.pop(config_name, None)
-        _disk_baselines.pop(config_name, None)
-        if _active_config_name == config_name:
-            _active_config_name = None
+    dialog.close()
+    form_data_store.pop(config_name, None)
+    _disk_baselines.pop(config_name, None)
+    if _active_config_name == config_name:
+        _active_config_name = None
+    _refresh_config_dropdown(
+        config_parser, config_select, config_container, skip=config_name
+    )
 
-        # Reload the config files
-        load_config_files(config_parser, config_select, config_container)
-    else:
-        notify(f"Failed to delete configuration for {config_name}.", type="negative")
+    label = f"Deleting {config_name}"
+    _set_template_copy_state(
+        active=True,
+        phase="preparing",
+        copied=0,
+        total=0,
+        label=label,
+        title="Deleting",
+    )
+    _refresh_template_copy_footer()
+
+    def report(phase: str, done: int, total: int) -> None:
+        _set_template_copy_state(
+            active=True,
+            phase=phase,
+            copied=done,
+            total=total,
+            label=label,
+            title="Deleting",
+        )
+
+    def work() -> None:
+        error: Optional[BaseException] = None
+        try:
+            _delete_template_files(config_name, config_parser, report)
+        except Exception as exc:
+            error = exc
+        try:
+            run_on_ui_loop(
+                lambda err=error: _finish_template_delete(
+                    err,
+                    config_name,
+                    config_parser,
+                    config_select,
+                    config_container,
+                )
+            )
+        except Exception:
+            _mark_template_copy_idle()
+            logger.exception("Could not return template delete result to the UI")
+
+    threading.Thread(target=work, name="TemplateDelete", daemon=True).start()
 
 
 def track_element_change(element_id, element, value):

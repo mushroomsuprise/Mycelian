@@ -859,6 +859,76 @@ def _status_footer_enabled() -> bool:
         return True
 
 
+def _status_footer_minimal() -> bool:
+    try:
+        from .dataobjects import state_manager
+
+        s = state_manager.get_app_settings()
+        if s is None:
+            return False
+        return bool(getattr(s, "status_footer_minimal", False))
+    except Exception:
+        return False
+
+
+_FOOTER_TIERS = ("success", "warning", "error", "info", "muted")
+
+
+def _apply_footer_minimal_class() -> None:
+    if _footer_container is None:
+        return
+    try:
+        if _status_footer_minimal():
+            _footer_container.classes(add="service-status-footer--minimal")
+        else:
+            _footer_container.classes(remove="service-status-footer--minimal")
+    except Exception:
+        pass
+
+
+def _set_footer_item_tier(container, tier: str) -> None:
+    safe = tier if tier in _FOOTER_TIERS else "info"
+    try:
+        for name in _FOOTER_TIERS:
+            container.classes(remove=f"service-status-tier-{name}")
+        container.classes(add=f"service-status-tier-{safe}")
+    except Exception:
+        pass
+
+
+def _footer_item_tip(service_key: str, entry: "ServiceFooterEntry") -> str:
+    if service_key == "webengine":
+        try:
+            from .web_engine import get_webengine_health
+
+            detail = get_webengine_health().get("detail")
+            if detail:
+                return str(detail)
+        except Exception:
+            pass
+        if entry.status_raw:
+            return str(entry.status_raw)
+    return entry.display
+
+
+def _set_footer_item_tooltip(container, refs: Dict[str, Any], text: str) -> None:
+    if refs.get("tooltip_text") == text and refs.get("tooltip") is not None:
+        return
+    tip = refs.get("tooltip")
+    try:
+        if tip is None:
+            from nicegui.elements.tooltip import Tooltip
+
+            tip = Tooltip(text)
+            tip.props["target"] = f"#{container.html_id}"
+            refs["tooltip"] = tip
+        else:
+            tip.set_text(text)
+        refs["tooltip_text"] = text
+    except Exception:
+        logger.debug("footer tooltip update failed", exc_info=True)
+
+
 def footer_status_display(service_key: str, status_raw: str) -> str:
     """Short label for the status footer badge."""
     s = (status_raw or "").strip().lower()
@@ -1002,6 +1072,8 @@ _footer_item_refs: Dict[str, Dict[str, Any]] = {}
 _trim_footer_refs: Dict[str, Any] = {}
 _trim_footer_poll_started = False
 _trim_footer_last_signature: Optional[tuple] = None
+_copy_footer_refs: Dict[str, Any] = {}
+_copy_footer_last_signature: Optional[tuple] = None
 _footer_probe_scheduled = False
 _footer_probe_refresh_pending = False
 _footer_probe_running = False
@@ -1072,7 +1144,7 @@ def create_service_status_footer() -> None:
                     svg = SERVICE_BRAND_SVG.get(key, "")
                     with ui.element("div").classes(
                         "service-status-item service-status-item--hidden "
-                        "cursor-pointer select-none"
+                        "service-status-tier-info cursor-pointer select-none"
                     ) as item:
                         item.on(
                             "click",
@@ -1138,8 +1210,42 @@ def create_service_status_footer() -> None:
                     )
                     _trim_footer_last_signature = None
 
+                with ui.element("div").classes(
+                    "service-status-item service-status-item--hidden "
+                    "service-status-item--copy cursor-pointer select-none"
+                ) as copy_item:
+                    copy_item.on("click", _on_template_copy_footer_click)
+                    copy_name = ui.html(
+                        "Copying",
+                        tag="span",
+                        sanitize=False,
+                    ).classes("service-status-name")
+                    with ui.element("div").classes("service-status-status-cluster"):
+                        copy_dot = ui.element("span").classes(
+                            "service-status-dot muted"
+                        )
+                        copy_badge_wrap = ui.element("div").classes(
+                            "service-status-badge info"
+                        )
+                        with copy_badge_wrap:
+                            copy_badge_label = ui.html(
+                                "…", tag="span", sanitize=False
+                            ).classes("service-status-badge-label")
+                    _copy_footer_refs.update(
+                        {
+                            "container": copy_item,
+                            "name": copy_name,
+                            "dot": copy_dot,
+                            "badge": copy_badge_label,
+                            "badge_wrap": copy_badge_wrap,
+                        }
+                    )
+                    _copy_footer_last_signature = None
+
+    _apply_footer_minimal_class()
     start_alert_trim_footer_poll()
     refresh_alert_trim_footer()
+    refresh_template_copy_footer()
     schedule_service_status_probe(force=True)
 
 
@@ -1154,6 +1260,32 @@ def _on_footer_item_click(service_key: str) -> None:
             navigate_to_settings_subtab(sub, main_tab="Settings")
     except Exception:
         logger.debug("footer navigate failed for %s", service_key, exc_info=True)
+
+
+def _on_template_copy_footer_click(_e: Any = None) -> None:
+    try:
+        from .help_system.contextual_help import navigate_to_settings_subtab
+
+        navigate_to_settings_subtab("Source Settings", main_tab="Settings")
+    except Exception:
+        logger.debug("footer navigate failed for template copy", exc_info=True)
+
+
+def _template_copy_footer_is_active() -> bool:
+    try:
+        from .uiwindows.customsources import template_copy_is_active
+
+        return template_copy_is_active()
+    except Exception:
+        return False
+
+
+def _footer_should_stay_open() -> bool:
+    return (
+        _status_footer_enabled()
+        or _alert_trim_footer_is_active()
+        or _template_copy_footer_is_active()
+    )
 
 
 def _on_alert_trim_footer_click(_e: Any = None) -> None:
@@ -1224,7 +1356,7 @@ def refresh_alert_trim_footer() -> None:
             container.classes(add="service-status-item--hidden")
         except Exception:
             pass
-        if not _status_footer_enabled():
+        if not _footer_should_stay_open():
             _set_footer_container_hidden(True)
         return
 
@@ -1251,8 +1383,90 @@ def refresh_alert_trim_footer() -> None:
         pass
 
 
+def refresh_template_copy_footer() -> None:
+    """Show or hide the template-copy badge from shared progress (UI thread only)."""
+    global _copy_footer_last_signature
+    if not _copy_footer_refs:
+        return
+
+    formatted = None
+    progress: Dict[str, Any] = {
+        "active": False,
+        "phase": "idle",
+        "copied": 0,
+        "total": 0,
+    }
+    try:
+        from .uiwindows.customsources import (
+            format_template_copy_badge,
+            get_template_copy_progress,
+        )
+
+        progress = get_template_copy_progress()
+        formatted = format_template_copy_badge(progress)
+    except Exception:
+        formatted = None
+
+    try:
+        signature = (
+            bool(progress.get("active")),
+            str(progress.get("phase") or ""),
+            int(progress.get("copied") or 0),
+            int(progress.get("total") or 0),
+            str(progress.get("label") or ""),
+            str(progress.get("title") or ""),
+        )
+    except (TypeError, ValueError):
+        signature = (False, "idle", 0, 0, "", "")
+        formatted = None
+
+    if signature == _copy_footer_last_signature:
+        return
+    _copy_footer_last_signature = signature
+    container = _copy_footer_refs.get("container")
+    if container is None:
+        return
+
+    if formatted is None:
+        try:
+            container.classes(add="service-status-item--hidden")
+        except Exception:
+            pass
+        if not _footer_should_stay_open():
+            _set_footer_container_hidden(True)
+        return
+
+    badge_text, tier = formatted
+    try:
+        container.classes(remove="service-status-item--hidden")
+    except Exception:
+        pass
+    _set_footer_container_hidden(False)
+    try:
+        dot = _copy_footer_refs.get("dot")
+        if dot is not None:
+            dot.classes(replace=f"service-status-dot {tier}")
+    except Exception:
+        pass
+    try:
+        badge = _copy_footer_refs.get("badge")
+        if badge is not None:
+            badge.set_content(badge_text)
+        badge_wrap = _copy_footer_refs.get("badge_wrap")
+        if badge_wrap is not None:
+            badge_wrap.classes(replace=f"service-status-badge {tier}")
+        name_el = _copy_footer_refs.get("name")
+        if name_el is not None:
+            name_el.set_content(str(progress.get("title") or "Copying"))
+        tip = str(progress.get("label") or "Copying template")
+        _set_footer_item_tooltip(container, _copy_footer_refs, tip)
+    except Exception:
+        pass
+
+
 def poll_alert_trim_footer() -> None:
     refresh_alert_trim_footer()
+    refresh_template_copy_footer()
 
 
 def start_alert_trim_footer_poll() -> None:
@@ -1269,12 +1483,12 @@ def refresh_service_status_footer() -> None:
     if _footer_container is None:
         return
 
-    trim_active = _alert_trim_footer_is_active()
-    enabled = _status_footer_enabled()
-    _set_footer_container_hidden(not (enabled or trim_active))
+    _apply_footer_minimal_class()
+    _set_footer_container_hidden(not _footer_should_stay_open())
 
-    if not enabled:
+    if not _status_footer_enabled():
         refresh_alert_trim_footer()
+        refresh_template_copy_footer()
         return
 
     entries = {e.key: e for e in iter_service_footer_entries()}
@@ -1306,18 +1520,15 @@ def refresh_service_status_footer() -> None:
             badge_wrap = refs.get("badge_wrap")
             if badge_wrap is not None:
                 badge_wrap.classes(replace=f"service-status-badge {tier}")
-            if key == "webengine":
-                try:
-                    from .web_engine import get_webengine_health
-
-                    tip = get_webengine_health().get("detail") or entry.status_raw
-                    container.tooltip(tip)
-                except Exception:
-                    pass
+            _set_footer_item_tier(container, tier)
+            _set_footer_item_tooltip(
+                container, refs, _footer_item_tip(key, entry)
+            )
         except Exception:
             pass
 
     refresh_alert_trim_footer()
+    refresh_template_copy_footer()
 
 
 def poll_service_status_changes() -> None:

@@ -63,6 +63,7 @@ def _create_default_data():
                 "current_theme": "dark",
                 "notifications_enabled": True,
                 "status_footer_enabled": True,
+                "status_footer_minimal": False,
                 "auto_update": True,
                 "activity_feed_limit": 25,
                 "activity_feed_max_pages": 10,

@@ -165,6 +165,7 @@ class AppSettings:
     current_theme: str = "dark"
     notifications_enabled: bool = True
     status_footer_enabled: bool = True
+    status_footer_minimal: bool = False
     auto_update: bool = True
     activity_feed_limit: int = 20
     activity_feed_max_pages: int = 5
