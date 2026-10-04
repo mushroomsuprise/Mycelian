@@ -520,6 +520,39 @@ def _deliver_toast(message: str, opts: Dict[str, Any]) -> bool:
         return False
 
 
+_toast_flush_timer: Optional[Any] = None
+
+
+def _toast_flush_tick() -> None:
+    flush_pending_toasts()
+    timer = _toast_flush_timer
+    if timer is None:
+        return
+    with _history_lock:
+        still_pending = bool(_pending_toasts)
+    if not still_pending:
+        try:
+            timer.active = False
+        except Exception:
+            pass
+
+
+def _ensure_toast_flush_timer() -> None:
+    """Retry queued toasts until they deliver, then stop the timer."""
+    global _toast_flush_timer
+    timer = _toast_flush_timer
+    if timer is not None:
+        try:
+            timer.active = True
+            return
+        except Exception:
+            _toast_flush_timer = None
+    try:
+        _toast_flush_timer = _app_schedule(1.0, _toast_flush_tick, active=True)
+    except Exception:
+        _toast_flush_timer = None
+
+
 def flush_pending_toasts() -> None:
     """Retry toasts queued before the NiceGUI client was available."""
     with _history_lock:
@@ -534,6 +567,7 @@ def flush_pending_toasts() -> None:
     if still_pending:
         with _history_lock:
             _pending_toasts[:] = still_pending + list(_pending_toasts)
+        _ensure_toast_flush_timer()
 
 
 def notify(
@@ -603,6 +637,7 @@ def notify(
                 _pending_toasts.append((message, dict(opts)))
                 if len(_pending_toasts) > _MAX_PENDING_TOASTS:
                     del _pending_toasts[: len(_pending_toasts) - _MAX_PENDING_TOASTS]
+            _ensure_toast_flush_timer()
 
     return entry_id
 
@@ -1650,9 +1685,10 @@ def start_service_watcher_timer() -> None:
         return
     _service_watcher_started = True
     _app_schedule(2.0, poll_service_status_changes, active=True)
-    _app_schedule(1.0, flush_pending_toasts, active=True)
     start_alert_trim_footer_poll()
     flush_pending_toasts()
+    if _pending_toasts:
+        _ensure_toast_flush_timer()
 
 
 # Load persisted history at import (for non-UI code paths); UI registers refresh later

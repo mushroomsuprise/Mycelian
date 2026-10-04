@@ -5588,7 +5588,9 @@ class SettingsUI:
                                 previous_settings_tab = current_tab
 
                         # Check for tab changes every 200ms
-                        layout_schedule(2.0, check_settings_tab_changes, active=True)
+                        self._settings_tab_poll = layout_schedule(
+                            2.0, check_settings_tab_changes, active=True
+                        )
 
                         # Lazy-loaded default tab never fires a change event on first open
                         initial_settings_tab = (
@@ -5677,7 +5679,9 @@ class SettingsUI:
 
                 tabs.on_value_change(on_tab_change)
                 tab_panels_container.on_value_change(on_tab_change)
-                layout_schedule(2.0, check_subtab_changes, active=True)
+                self._settings_subtab_poll = layout_schedule(
+                    2.0, check_subtab_changes, active=True
+                )
 
         ui.run_javascript(
             "window.mycelianInitSubTabSeams && window.mycelianInitSubTabSeams()"
@@ -5991,6 +5995,50 @@ class SettingsUI:
 
             dialog.open()  # Explicitly open the dialog
 
+    def pause_background_work(self) -> None:
+        """Stop Settings polls and the visible service-tab timer."""
+        self._settings_background_paused = True
+        for timer in (
+            getattr(self, "_settings_tab_poll", None),
+            getattr(self, "_settings_subtab_poll", None),
+        ):
+            if timer is None:
+                continue
+            try:
+                timer.active = False
+            except Exception:
+                pass
+        tabs = getattr(self, "_tabs_by_name", None) or {}
+        tab = tabs.get(getattr(self, "_active_tab_name", "") or "")
+        if tab is not None and hasattr(tab, "on_exit"):
+            try:
+                tab.on_exit()
+            except Exception:
+                logger.debug("Settings tab on_exit failed", exc_info=True)
+
+    def resume_background_work(self) -> None:
+        """Restart Settings polls when the Settings tab is showing again."""
+        if not getattr(self, "_settings_background_paused", False):
+            return
+        self._settings_background_paused = False
+        for timer in (
+            getattr(self, "_settings_tab_poll", None),
+            getattr(self, "_settings_subtab_poll", None),
+        ):
+            if timer is None:
+                continue
+            try:
+                timer.active = True
+            except Exception:
+                pass
+        tabs = getattr(self, "_tabs_by_name", None) or {}
+        tab = tabs.get(getattr(self, "_active_tab_name", "") or "")
+        if tab is not None and hasattr(tab, "on_enter"):
+            try:
+                tab.on_enter()
+            except Exception:
+                logger.debug("Settings tab on_enter failed", exc_info=True)
+
     def has_unsaved_changes(self) -> bool:
         """Check if any settings tab has unsaved changes."""
         if not hasattr(self, "_tabs_by_name") or self._tabs_by_name is None:
@@ -5998,7 +6046,6 @@ class SettingsUI:
         return bool(self._first_dirty_tab_name())
 
 
-# Create a singleton instance
 settings_ui = SettingsUI()
 
 

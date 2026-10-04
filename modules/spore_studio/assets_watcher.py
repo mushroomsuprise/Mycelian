@@ -42,6 +42,7 @@ _TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 _POLL_INTERVAL_SECONDS = 1.5
+_IDLE_POLL_INTERVAL_SECONDS = 8.0
 _lock = threading.Lock()
 _poller_lock = threading.Lock()
 _poller_started = False
@@ -244,14 +245,19 @@ def _background_poll_loop(socketio: Any) -> None:
         logger.debug("Spore Studio assets watcher loop starting")
         _seed_baseline()
         while not _stop_event.is_set():
-            try:
-                _poll_once()
-            except Exception as e:
-                logger.warning("Spore Studio assets watcher poll failed: %s", e)
+            watched = _watched_templates()
+            if watched:
+                try:
+                    _poll_once()
+                except Exception as e:
+                    logger.warning("Spore Studio assets watcher poll failed: %s", e)
             if _stop_event.is_set():
                 break
+            delay = (
+                _POLL_INTERVAL_SECONDS if watched else _IDLE_POLL_INTERVAL_SECONDS
+            )
             try:
-                socketio.sleep(_POLL_INTERVAL_SECONDS)
+                socketio.sleep(delay)
             except Exception:
                 break
     finally:

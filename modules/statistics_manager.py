@@ -352,6 +352,7 @@ class StatisticsManager:
         self._event_batch: List[Tuple[Any, ...]] = []
         self._event_batch_lock = threading.Lock()
         self._event_batch_stop = threading.Event()
+        self._event_flush_wake = threading.Event()
         self._event_flush_thread: Optional[threading.Thread] = None
         self._username_backfill_stop = threading.Event()
         self._username_backfill_thread: Optional[threading.Thread] = None
@@ -822,6 +823,7 @@ class StatisticsManager:
     def _close_statistics_db(self):
         """Close all connections in the statistics database pool."""
         self._event_batch_stop.set()
+        self._event_flush_wake.set()
         self._username_backfill_stop.set()
         self._flush_pending_events()
         with self._stats_db_pool_lock:
@@ -859,6 +861,7 @@ class StatisticsManager:
             if len(self._event_batch) >= 50:
                 pending = self._event_batch
                 self._event_batch = []
+        self._event_flush_wake.set()
         if pending:
             self._flush_event_rows(pending)
 
@@ -870,7 +873,13 @@ class StatisticsManager:
             self._flush_event_rows(pending)
 
     def _event_flush_loop(self) -> None:
-        while not self._event_batch_stop.wait(1.0):
+        """Flush batched events. Idle until a record arrives, then within 1s."""
+        while not self._event_batch_stop.is_set():
+            self._event_flush_wake.wait()
+            if self._event_batch_stop.is_set():
+                break
+            self._event_batch_stop.wait(1.0)
+            self._event_flush_wake.clear()
             self._flush_pending_events()
         self._flush_pending_events()
 

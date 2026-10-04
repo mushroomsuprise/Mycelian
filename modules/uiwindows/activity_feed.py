@@ -41,7 +41,6 @@ from ..ui_timer import app_schedule, run_on_ui_loop
 
 logger = logging.getLogger(__name__)
 
-_pause_breath_timer_started = False
 _DOCK_BTN_PROPS = "flat no-caps dense"
 _recovery_scheduled = False
 _integrity_check_reason: Optional[str] = None
@@ -1979,6 +1978,46 @@ def _emit_overlay_event(event: str, payload: Dict[str, Any], *, to: Optional[str
         return False
 
 
+_pause_breath_timer = None
+
+
+def sync_pause_breath(playing: bool) -> None:
+    """Run the pause-button pulse only while an alert is playing."""
+    from ..ui_timer import run_on_ui_loop
+
+    run_on_ui_loop(lambda: _sync_pause_breath_ui(bool(playing)))
+
+
+def _sync_pause_breath_ui(playing: bool) -> None:
+    global _pause_breath_timer
+    btn = activity_feed_state.pause_btn
+    if not playing:
+        if _pause_breath_timer is not None:
+            try:
+                _pause_breath_timer.active = False
+            except Exception:
+                pass
+        if _element_alive(btn):
+            try:
+                btn.style("box-shadow: none")
+            except Exception:
+                pass
+        return
+    if not _element_alive(btn):
+        return
+    if _pause_breath_timer is None:
+        _pause_breath_timer = app_schedule(
+            0.5, _animate_pause_button_border, active=True
+        )
+    else:
+        try:
+            _pause_breath_timer.active = True
+        except Exception:
+            _pause_breath_timer = app_schedule(
+                0.5, _animate_pause_button_border, active=True
+            )
+
+
 def _animate_pause_button_border() -> None:
     """Drive the playing-state border breathe via inline inset ring (CSS animation blocked by Quasar)."""
     btn = activity_feed_state.pause_btn
@@ -3556,10 +3595,7 @@ def create_activity_feed_tab():
                     f"{_DOCK_BTN_PROPS} id=pause-alerts-btn"
                 )
                 activity_feed_state.pause_btn = pause_btn
-                global _pause_breath_timer_started
-                if not _pause_breath_timer_started:
-                    _pause_breath_timer_started = True
-                    app_schedule(0.5, _animate_pause_button_border, active=True)
+                _sync_pause_breath_ui(False)
 
                 try:
                     _apply_pause_button_state()

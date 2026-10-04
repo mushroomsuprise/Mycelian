@@ -80,6 +80,17 @@ def wake_alert_queue() -> None:
     _ALERT_WAKE.set()
 
 
+def wait_for_alert_queue(*, playing: bool, paused: bool) -> None:
+    """Block until the next alert event. Idle waits with no timeout."""
+    if paused:
+        _ALERT_WAKE.wait(timeout=0.5)
+    elif playing:
+        _ALERT_WAKE.wait(timeout=0.2)
+    else:
+        _ALERT_WAKE.wait()
+    _ALERT_WAKE.clear()
+
+
 def notify_alert_playing(playing: bool) -> None:
     """Signal alert_complete / skip so process_alert can stop waiting."""
     if playing:
@@ -244,8 +255,7 @@ def alert_queue():
                     logger.debug("Alert queue is paused - waiting for resume")
                     paused_state_logged = True
                 alert_queue_active = False
-                _ALERT_WAKE.wait(timeout=0.5)
-                _ALERT_WAKE.clear()
+                wait_for_alert_queue(playing=False, paused=True)
                 continue
             else:
                 # Reset paused state logging when we're no longer paused
@@ -269,8 +279,7 @@ def alert_queue():
                     continue
 
             if web_engine.ALERT_PLAYING:
-                _ALERT_WAKE.wait(timeout=0.2)
-                _ALERT_WAKE.clear()
+                wait_for_alert_queue(playing=True, paused=False)
                 continue
 
             queued = snapshot_alert_queue()
@@ -289,11 +298,16 @@ def alert_queue():
                 process_alert(alert)
                 alert_queue_active = True
             else:
-                # No alerts to process; wait until enqueue/pause/complete
+                # No alerts to process; wait until enqueue/pause/complete.
                 with _ALERT_QUEUE_LOCK:
                     alert_queue_active = len(ALERT_QUEUE) > 0
-                _ALERT_WAKE.wait(timeout=0.1 if processed_stackable else 0.5)
-                _ALERT_WAKE.clear()
+                if processed_stackable or web_engine.ALERT_PLAYING:
+                    wait_for_alert_queue(
+                        playing=bool(web_engine.ALERT_PLAYING),
+                        paused=False,
+                    )
+                else:
+                    wait_for_alert_queue(playing=False, paused=False)
 
         except Exception as e:
             logger.error(f"Error in alert queue processor: {str(e)}", exc_info=True)

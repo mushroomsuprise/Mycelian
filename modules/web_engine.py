@@ -752,6 +752,12 @@ def set_alert_playing(value: bool) -> None:
     global ALERT_PLAYING
     ALERT_PLAYING = bool(value)
     _notify_alert_processor(playing=ALERT_PLAYING)
+    try:
+        from .uiwindows.activity_feed import sync_pause_breath
+
+        sync_pause_breath(ALERT_PLAYING)
+    except Exception:
+        pass
 
 
 def set_alerts_paused(value: bool) -> None:
@@ -1186,6 +1192,7 @@ class WebEngine:
             maxsize=_SAFE_EMIT_QUEUE_MAX
         )
         self._safe_emit_queue: queue.Queue = queue.Queue(maxsize=_SAFE_EMIT_QUEUE_MAX)
+        self._open_emit_wake_pipe()
         self._persist_absence_cache: Dict[tuple, tuple] = {}
         self._runtime_path_index_cache = None
         self._template_config_generation = 0
@@ -9198,6 +9205,7 @@ class WebEngine:
             target_queue.put(item, timeout=30)
         except queue.Full:
             target_queue.put(item)
+        self._signal_emit_wake()
         return True
 
     # High-frequency producers (game hooks emit several times a second) mean a queue
@@ -9264,6 +9272,74 @@ class WebEngine:
                 logger.error(
                     "safe_emit drain failed for %s: %s", event_name, e, exc_info=True
                 )
+
+    def _open_emit_wake_pipe(self) -> None:
+        """Self-pipe so a foreign thread can wake the gevent drain without polling."""
+        try:
+            read_fd, write_fd = os.pipe()
+            os.set_blocking(read_fd, False)
+            os.set_blocking(write_fd, False)
+        except OSError as exc:
+            logger.debug("Emit wake pipe unavailable: %s", exc)
+            self._emit_wake_read = None
+            self._emit_wake_write = None
+            return
+        self._emit_wake_read = read_fd
+        self._emit_wake_write = write_fd
+
+    def _close_emit_wake_pipe(self) -> None:
+        for name in ("_emit_wake_read", "_emit_wake_write"):
+            fd = getattr(self, name, None)
+            if not isinstance(fd, int):
+                continue
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            setattr(self, name, None)
+
+    def _signal_emit_wake(self) -> None:
+        """Ask the overlay drain to run. Safe from any thread. Never blocks."""
+        write_fd = getattr(self, "_emit_wake_write", None)
+        if write_fd is None:
+            return
+        try:
+            os.write(write_fd, b"\x00")
+        except (BlockingIOError, OSError):
+            return
+
+    def _drain_emit_wake_pipe(self) -> None:
+        read_fd = getattr(self, "_emit_wake_read", None)
+        if read_fd is None:
+            return
+        try:
+            while os.read(read_fd, 1024):
+                pass
+        except (BlockingIOError, InterruptedError, OSError):
+            return
+
+    def _wait_for_emit_wake(self, timeout: float) -> bool:
+        """Cooperative wait on the wake pipe. Returns True if a wake byte arrived."""
+        read_fd = getattr(self, "_emit_wake_read", None)
+        if read_fd is None:
+            self.socketio.sleep(timeout)
+            return False
+        try:
+            from gevent.select import select as hub_select
+        except Exception:
+            hub_select = None
+        if hub_select is None:
+            self.socketio.sleep(timeout)
+            return False
+        try:
+            ready, _, _ = hub_select([read_fd], [], [], timeout)
+        except Exception:
+            self.socketio.sleep(timeout)
+            return False
+        if not ready:
+            return False
+        self._drain_emit_wake_pipe()
+        return True
 
     def ensure_template_control_emit_worker(self) -> None:
         """Start the gevent worker that drains cross-thread template control emits."""
@@ -9348,7 +9424,10 @@ class WebEngine:
 
                 try:
                     busy = bool(batch) or safe_emitted > 0
-                    self.socketio.sleep(0.016 if busy else 0.05)
+                    if busy:
+                        self.socketio.sleep(0.016)
+                    else:
+                        self._wait_for_emit_wake(1.0)
                 except Exception as exc:
                     if not self.is_running:
                         break
@@ -9401,6 +9480,7 @@ class WebEngine:
             self._template_control_queue.put_nowait(
                 (enqueued_at, event_name, event_data)
             )
+            self._signal_emit_wake()
             oldest_ms = self._queue_oldest_age_ms(self._tc_enqueue_times)
             _bottleneck_print(
                 f"tc_enqueue event={event_name} depth={self._template_control_queue.qsize()} "

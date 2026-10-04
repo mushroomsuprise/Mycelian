@@ -1820,6 +1820,15 @@ def create_ui_elements():
                     new_tab_name = main_tab_name(new_tab) or get_tab_name(new_tab)
                     if new_tab_name in lazy_tabs:
                         lazy_tabs[new_tab_name].ensure_loaded()
+                    try:
+                        from .uiwindows.settings import settings_ui
+
+                        if leaving == "Settings" and arriving != "Settings":
+                            settings_ui.pause_background_work()
+                        elif arriving == "Settings":
+                            settings_ui.resume_background_work()
+                    except Exception:
+                        pass
                     previous_tab = tabs.value
 
                 # Fallback if a native tab change does not emit value-change.
@@ -1850,24 +1859,18 @@ def create_ui_elements():
 
                 tabs.on_value_change(on_main_tab_change)
                 layout_schedule(
-                    0.5, check_tab_changes, active=True
-                )  # Check every 500ms
+                    5.0, check_tab_changes, active=True
+                )
                 if initial_main_label in lazy_tabs:
                     lazy_tabs[initial_main_label].ensure_loaded()
 
-                async def remember_window_geometry() -> None:
+                def remember_window_geometry(box) -> None:
                     try:
                         from .dataobjects import state_manager
 
                         settings = state_manager.get_app_settings()
                         if bool(getattr(settings, "start_maximized", True)):
                             return
-                        box = await ui.run_javascript(
-                            "return [Math.round(window.outerWidth||0),"
-                            " Math.round(window.outerHeight||0),"
-                            " Math.round(window.screenX||0),"
-                            " Math.round(window.screenY||0)];"
-                        )
                     except Exception:
                         return
                     if not isinstance(box, (list, tuple)) or len(box) < 4:
@@ -1896,7 +1899,36 @@ def create_ui_elements():
                     if changed:
                         state_manager.save_changes()
 
-                ui.timer(15.0, remember_window_geometry)
+                def _on_window_geometry(e) -> None:
+                    args = getattr(e, "args", None)
+                    remember_window_geometry(args)
+
+                ui.on("mycelian-window-geometry", _on_window_geometry)
+                ui.run_javascript(
+                    """
+                    if (!window.__mycelianGeomHook) {
+                      window.__mycelianGeomHook = true;
+                      let geomTimer = null;
+                      const sendGeom = () => {
+                        if (typeof emitEvent !== 'function') return;
+                        emitEvent('mycelian-window-geometry', [
+                          Math.round(window.outerWidth || 0),
+                          Math.round(window.outerHeight || 0),
+                          Math.round(window.screenX || 0),
+                          Math.round(window.screenY || 0)
+                        ]);
+                      };
+                      window.addEventListener('resize', () => {
+                        clearTimeout(geomTimer);
+                        geomTimer = setTimeout(sendGeom, 400);
+                      });
+                      document.addEventListener('visibilitychange', () => {
+                        if (document.hidden) sendGeom();
+                      });
+                      window.addEventListener('pagehide', sendGeom);
+                    }
+                    """
+                )
 
                 start_service_watcher_timer()
 
