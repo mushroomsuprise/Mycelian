@@ -621,7 +621,7 @@ def create_text_input_control(template_name, element, tooltip: str = ""):
                 {"text": text_payload},
             )
 
-        emit_timer["timer"] = layout_schedule(0.0, emit_now, once=True)
+        emit_timer["timer"] = layout_schedule(0.2, emit_now, once=True)
 
     text_input = form_input(
         tooltip=tooltip or placeholder or "Send text to the template control",
@@ -629,7 +629,7 @@ def create_text_input_control(template_name, element, tooltip: str = ""):
         classes="sc-stretch-field w-full text-xs",
         on_change=schedule_emit_current_text,
     )
-    text_input.props("debounce=0")
+    text_input.props("debounce=200")
 
 
 def create_number_input_control(template_name, element, tooltip: str = ""):

@@ -518,38 +518,6 @@ class StatisticsTab:
             # Occasionally do a full refresh to update dynamic content (top items/users)
             # This is done every 10th update to keep performance good while ensuring
             # the dynamic content stays current
-            if not hasattr(self, "_update_counter"):
-                self._update_counter = 0
-            self._update_counter += 1
-
-            interval = max(1, getattr(self, "_live_full_refresh_every_n", 36))
-            if self._update_counter % interval == 0:
-                print("Performing full statistics refresh for dynamic content")
-                # Clear the container and rebuild within proper context
-                if (
-                    hasattr(self, "statistics_container")
-                    and self.statistics_container
-                    and hasattr(self.statistics_container, "clear")
-                ):
-                    try:
-                        snap = self._snapshot_statistics_inputs()
-                        # Clean up existing references before rebuilding
-                        self._cleanup_live_updates()
-                        # Ensure container is properly cleared
-                        self.statistics_container.clear()
-                        # Verify container is empty before rebuilding
-                        print("Container cleared, preparing to rebuild")
-                        # Rebuild content within the container context
-                        with self.statistics_container:
-                            self._rebuild_statistics_content()
-                        self._restore_statistics_inputs(snap)
-                        print("Full statistics refresh completed successfully")
-                    except Exception as e:
-                        print(f"Error during full statistics refresh: {e}")
-                        # Reset counter to avoid repeated failures
-                        self._update_counter = 0
-                return
-
             # Update session duration and last save time
             try:
                 if (

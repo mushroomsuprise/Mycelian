@@ -196,32 +196,25 @@ class SubscriberRegistry:
                 cur = conn.cursor()
                 if uid:
                     cur.execute(
-                        "SELECT first_seen_at FROM known_subscribers WHERE user_id = ?",
-                        (uid,),
+                        """
+                        INSERT INTO known_subscribers
+                        (user_id, user_login, first_seen_at, last_seen_at,
+                         source, cumulative_months)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(user_id) DO UPDATE SET
+                            user_login = COALESCE(excluded.user_login, known_subscribers.user_login),
+                            last_seen_at = excluded.last_seen_at,
+                            source = CASE
+                                WHEN excluded.source != '' THEN excluded.source
+                                ELSE known_subscribers.source
+                            END,
+                            cumulative_months = COALESCE(
+                                excluded.cumulative_months,
+                                known_subscribers.cumulative_months
+                            )
+                        """,
+                        (uid, login, now, now, source, cumulative_months),
                     )
-                    row = cur.fetchone()
-                    if row:
-                        cur.execute(
-                            """
-                            UPDATE known_subscribers
-                            SET user_login = COALESCE(?, user_login),
-                                last_seen_at = ?,
-                                source = CASE WHEN ? != '' THEN ? ELSE source END,
-                                cumulative_months = COALESCE(?, cumulative_months)
-                            WHERE user_id = ?
-                            """,
-                            (login, now, source, source, cumulative_months, uid),
-                        )
-                    else:
-                        cur.execute(
-                            """
-                            INSERT INTO known_subscribers
-                            (user_id, user_login, first_seen_at, last_seen_at,
-                             source, cumulative_months)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                            """,
-                            (uid, login, now, now, source, cumulative_months),
-                        )
                     if login:
                         cur.execute(
                             "DELETE FROM known_subscriber_logins WHERE user_login = ?",
@@ -229,28 +222,19 @@ class SubscriberRegistry:
                         )
                 elif login:
                     cur.execute(
-                        "SELECT 1 FROM known_subscriber_logins WHERE user_login = ?",
-                        (login,),
+                        """
+                        INSERT INTO known_subscriber_logins
+                        (user_login, first_seen_at, last_seen_at, source)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(user_login) DO UPDATE SET
+                            last_seen_at = excluded.last_seen_at,
+                            source = CASE
+                                WHEN excluded.source != '' THEN excluded.source
+                                ELSE known_subscriber_logins.source
+                            END
+                        """,
+                        (login, now, now, source),
                     )
-                    if cur.fetchone():
-                        cur.execute(
-                            """
-                            UPDATE known_subscriber_logins
-                            SET last_seen_at = ?,
-                                source = CASE WHEN ? != '' THEN ? ELSE source END
-                            WHERE user_login = ?
-                            """,
-                            (now, source, source, login),
-                        )
-                    else:
-                        cur.execute(
-                            """
-                            INSERT INTO known_subscriber_logins
-                            (user_login, first_seen_at, last_seen_at, source)
-                            VALUES (?, ?, ?, ?)
-                            """,
-                            (login, now, now, source),
-                        )
                 conn.commit()
             finally:
                 conn.close()
@@ -262,6 +246,76 @@ class SubscriberRegistry:
                 e,
                 exc_info=True,
             )
+
+    def record_many(self, entries) -> None:
+        """Remember many subscribers in one transaction. Never deletes."""
+        now = time.time()
+        prepared = []
+        with self._lock:
+            for item in entries or []:
+                user_id, user_login, source, cumulative_months = item
+                uid = self._normalize_id(user_id)
+                login = self._normalize_login(user_login)
+                if not uid and not login:
+                    continue
+                if uid:
+                    self._user_ids.add(uid)
+                if login:
+                    self._user_logins.add(login)
+                prepared.append((uid, login, source or "", cumulative_months))
+        if not prepared:
+            return
+        try:
+            conn = self._connect()
+            try:
+                cur = conn.cursor()
+                for uid, login, source, cumulative_months in prepared:
+                    if uid:
+                        cur.execute(
+                            """
+                            INSERT INTO known_subscribers
+                            (user_id, user_login, first_seen_at, last_seen_at,
+                             source, cumulative_months)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(user_id) DO UPDATE SET
+                                user_login = COALESCE(excluded.user_login, known_subscribers.user_login),
+                                last_seen_at = excluded.last_seen_at,
+                                source = CASE
+                                    WHEN excluded.source != '' THEN excluded.source
+                                    ELSE known_subscribers.source
+                                END,
+                                cumulative_months = COALESCE(
+                                    excluded.cumulative_months,
+                                    known_subscribers.cumulative_months
+                                )
+                            """,
+                            (uid, login, now, now, source, cumulative_months),
+                        )
+                        if login:
+                            cur.execute(
+                                "DELETE FROM known_subscriber_logins WHERE user_login = ?",
+                                (login,),
+                            )
+                    elif login:
+                        cur.execute(
+                            """
+                            INSERT INTO known_subscriber_logins
+                            (user_login, first_seen_at, last_seen_at, source)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(user_login) DO UPDATE SET
+                                last_seen_at = excluded.last_seen_at,
+                                source = CASE
+                                    WHEN excluded.source != '' THEN excluded.source
+                                    ELSE known_subscriber_logins.source
+                                END
+                            """,
+                            (login, now, now, source),
+                        )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("Failed to persist subscriber batch: %s", e, exc_info=True)
 
     def mark_new_sub_alerted(self, user_id: Optional[str]) -> None:
         uid = self._normalize_id(user_id)
@@ -366,15 +420,17 @@ class SubscriberRegistry:
             finally:
                 conn.close()
 
+            pending = []
             count = 0
             for (username,) in rows:
                 login = self._normalize_login(username)
                 if not login:
                     continue
                 already = self.is_known(user_login=login)
-                self.record(user_login=login, source="statistics_seed")
+                pending.append((None, login, "statistics_seed", None))
                 if not already:
                     count += 1
+            self.record_many(pending)
             if count:
                 logger.info(
                     "Seeded subscriber registry with %d logins from statistics",
@@ -430,15 +486,20 @@ class SubscriberRegistry:
                 response = await api.generic_api_call(url, "GET", params=params)
                 if not response:
                     break
+                page_rows = []
                 for row in response.get("data") or []:
                     uid = row.get("user_id")
                     login = row.get("user_login") or row.get("user_name")
-                    self.record(
-                        user_id=str(uid) if uid else None,
-                        user_login=login,
-                        source="helix_snapshot",
+                    page_rows.append(
+                        (
+                            str(uid) if uid else None,
+                            login,
+                            "helix_snapshot",
+                            None,
+                        )
                     )
-                    total += 1
+                self.record_many(page_rows)
+                total += len(page_rows)
                 pagination = response.get("pagination") or {}
                 cursor = pagination.get("cursor")
                 if not cursor:

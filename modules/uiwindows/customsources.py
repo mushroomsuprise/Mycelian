@@ -2224,17 +2224,26 @@ def on_config_selected(e, config_parser, config_container, config_select=None):
     _apply_config_selection(config_name, config_parser, config_container)
 
 
+_search_render_generation = 0
+
+
 def on_search_changed(e, config_parser, config_select, config_container):
     """Handle search input changes"""
-    global current_search_term
+    global current_search_term, _search_render_generation
     current_search_term = e.value.lower() if e.value else ""
-
-    # Re-render the current config with the search filter
     config_name = config_select.value
-    if config_name:
-        render_config_ui(
-            config_parser, config_name, config_container, current_search_term
-        )
+    if not config_name:
+        return
+    _search_render_generation += 1
+    generation = _search_render_generation
+    term = current_search_term
+
+    def _render_search() -> None:
+        if generation != _search_render_generation:
+            return
+        render_config_ui(config_parser, config_name, config_container, term)
+
+    layout_schedule(0.2, _render_search, once=True)
 
 
 def _build_form_data(config_name: str, config: dict) -> dict:
@@ -3145,6 +3154,13 @@ def format_template_copy_badge(
 def _set_template_copy_state(**fields: Any) -> None:
     with _template_copy_lock:
         _template_copy_state.update(fields)
+    if fields.get("active"):
+        try:
+            from ..notification_engine import start_alert_trim_footer_poll
+
+            start_alert_trim_footer_poll()
+        except Exception:
+            pass
 
 
 def _mark_template_copy_idle() -> None:

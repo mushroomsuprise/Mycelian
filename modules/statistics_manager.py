@@ -353,6 +353,9 @@ class StatisticsManager:
         self._event_batch_lock = threading.Lock()
         self._event_batch_stop = threading.Event()
         self._event_flush_thread: Optional[threading.Thread] = None
+        self._username_backfill_stop = threading.Event()
+        self._username_backfill_thread: Optional[threading.Thread] = None
+        self._lifetime_resident: set = set()
 
         # Initialize the separate statistics database
         self._init_statistics_db()
@@ -393,6 +396,13 @@ class StatisticsManager:
                 name="StatsEventFlush",
             )
             self._event_flush_thread.start()
+            self._username_backfill_stop = threading.Event()
+            self._username_backfill_thread = threading.Thread(
+                target=self._backfill_username_lower_loop,
+                daemon=True,
+                name="StatsUsernameBackfill",
+            )
+            self._username_backfill_thread.start()
         except Exception as e:
             logger.error(f"Failed to initialize statistics database: {e}", exc_info=True)
             self._stats_db_initialized = False
@@ -432,6 +442,18 @@ class StatisticsManager:
             "CREATE INDEX IF NOT EXISTS idx_ue_type_ts "
             "ON user_events(event_type, timestamp)"
         )
+        self._ensure_username_lower_column(cursor)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_lifetime (
+                username_lower TEXT NOT NULL,
+                category TEXT NOT NULL,
+                username TEXT NOT NULL,
+                data_json TEXT NOT NULL,
+                PRIMARY KEY (username_lower, category)
+            )
+            """
+        )
 
         # Lifetime totals table (replaces database_manager storage)
         cursor.execute("""
@@ -453,6 +475,233 @@ class StatisticsManager:
         """)
 
         conn.commit()
+
+    def _ensure_username_lower_column(self, cursor: sqlite3.Cursor) -> None:
+        columns = {
+            row[1] for row in cursor.execute("PRAGMA table_info(user_events)").fetchall()
+        }
+        if "username_lower" not in columns:
+            cursor.execute("ALTER TABLE user_events ADD COLUMN username_lower TEXT")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ue_user_lower_type_ts "
+            "ON user_events(username_lower, event_type, timestamp)"
+        )
+
+    def _backfill_username_lower_loop(self) -> None:
+        """Fill username_lower in small batches so startup does not scan the event log."""
+        while not self._username_backfill_stop.is_set():
+            conn = None
+            try:
+                conn = self._get_stats_db_connection(flush_events=False)
+                if conn is None:
+                    return
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE user_events
+                    SET username_lower = lower(username)
+                    WHERE id IN (
+                        SELECT id FROM user_events
+                        WHERE username_lower IS NULL
+                        LIMIT 500
+                    )
+                    """
+                )
+                changed = cursor.rowcount
+                conn.commit()
+            except Exception as e:
+                logger.debug("username_lower backfill paused: %s", e)
+                return
+            finally:
+                self._return_stats_db_connection(conn)
+            if not changed:
+                return
+            if self._username_backfill_stop.wait(0.05):
+                return
+
+    def _username_match_clause(self, username: str) -> Tuple[str, List[Any]]:
+        """Indexed lookup that still matches rows waiting on backfill."""
+        lowered = str(username).lower()
+        return (
+            "(username_lower = ? OR (username_lower IS NULL AND lower(username) = ?))",
+            [lowered, lowered],
+        )
+
+    def _spill_raw_user_map(self, category: str, users: Dict[str, Any]) -> None:
+        """Write one category of per-user payloads. Does not keep them in memory."""
+        if not users or not self._stats_db_initialized:
+            return
+        rows = []
+        for username, payload in users.items():
+            if not isinstance(payload, dict):
+                continue
+            name = str(username)
+            rows.append((name.lower(), category, name, json.dumps(payload)))
+        if not rows:
+            return
+        conn = None
+        try:
+            conn = self._get_stats_db_connection(flush_events=False)
+            if conn is None:
+                return
+            conn.executemany(
+                """
+                INSERT INTO user_lifetime (username_lower, category, username, data_json)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(username_lower, category) DO UPDATE SET
+                    username = excluded.username,
+                    data_json = excluded.data_json
+                """,
+                rows,
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error("Error saving per-user lifetime rows: %s", e)
+        finally:
+            self._return_stats_db_connection(conn)
+
+    def _persist_user_maps(self, data: Dict[str, Any]) -> None:
+        """Move per-user maps out of the aggregate JSON and into user_lifetime."""
+        specs = (
+            ("alerts", "user_stats", "alerts.user_stats"),
+            ("connectors", "user_stats", "connectors.user_stats"),
+            ("connectors", "user_connector_stats", "connectors.user_connector_stats"),
+            ("chatbot", "user_stats", "chatbot.user_stats"),
+            ("chatbot", "user_command_stats", "chatbot.user_command_stats"),
+            ("chatbot", "user_event_stats", "chatbot.user_event_stats"),
+            ("quotes", "user_stats", "quotes.user_stats"),
+            ("chat", "user_stats", "chat.user_stats"),
+        )
+        for parent, key, category in specs:
+            block = data.get(parent)
+            if isinstance(block, dict) and isinstance(block.get(key), dict):
+                self._spill_raw_user_map(category, block.pop(key))
+        giveaways = data.get("giveaways")
+        if isinstance(giveaways, dict) and isinstance(giveaways.get("user_wins"), dict):
+            wins = giveaways.pop("user_wins")
+            self._spill_raw_user_map(
+                "giveaways.user_wins",
+                {str(name): {"wins": int(count)} for name, count in wins.items()},
+            )
+
+    def _take_user_map(self, container: Dict[str, Any], key: str, category: str) -> None:
+        raw = container.pop(key, None) if isinstance(container, dict) else None
+        if isinstance(raw, dict) and raw:
+            self._spill_raw_user_map(category, raw)
+
+    def _load_user_payload(self, category: str, username: str) -> Optional[Dict[str, Any]]:
+        if not self._stats_db_initialized or not username:
+            return None
+        conn = None
+        try:
+            conn = self._get_stats_db_connection(flush_events=False)
+            if conn is None:
+                return None
+            row = conn.execute(
+                """
+                SELECT username, data_json FROM user_lifetime
+                WHERE username_lower = ? AND category = ?
+                """,
+                (str(username).lower(), category),
+            ).fetchone()
+            if row is None:
+                return None
+            data = json.loads(row["data_json"])
+            if not isinstance(data, dict):
+                return None
+            return {"username": row["username"], "data": data}
+        except Exception as e:
+            logger.debug("Per-user lifetime read failed: %s", e)
+            return None
+        finally:
+            self._return_stats_db_connection(conn)
+
+    def _remember_user(self, mapping: Dict[str, Any], username: str, factory, category: str) -> None:
+        """Load one stored user into memory without creating a new row."""
+        if self._dict_key_case_insensitive(mapping, username) is not None:
+            return
+        payload = self._load_user_payload(category, username)
+        if not payload:
+            return
+        try:
+            mapping[payload["username"]] = factory(**payload["data"])
+        except TypeError:
+            return
+
+    def _user_record(self, mapping: Dict[str, Any], username: str, factory, category: str):
+        """Return the in-memory user row, loading that one user from SQLite when needed."""
+        key = self._dict_key_case_insensitive(mapping, username)
+        if key is not None:
+            return mapping[key]
+        payload = self._load_user_payload(category, username)
+        if payload:
+            try:
+                obj = factory(**payload["data"])
+            except TypeError:
+                obj = factory()
+            mapping[payload["username"]] = obj
+            return obj
+        obj = factory()
+        mapping[username] = obj
+        return obj
+
+    def _ensure_giveaway_wins_resident(self) -> None:
+        category = "giveaways.user_wins"
+        if category in self._lifetime_resident or not self._stats_db_initialized:
+            self._lifetime_resident.add(category)
+            return
+        conn = None
+        try:
+            conn = self._get_stats_db_connection(flush_events=False)
+            if conn is None:
+                return
+            rows = conn.execute(
+                "SELECT username, data_json FROM user_lifetime WHERE category = ?",
+                (category,),
+            ).fetchall()
+            for row in rows:
+                if row["username"] in self.data.giveaways.user_wins:
+                    continue
+                try:
+                    data = json.loads(row["data_json"])
+                    self.data.giveaways.user_wins[row["username"]] = int(
+                        (data or {}).get("wins") or 0
+                    )
+                except (TypeError, ValueError):
+                    continue
+            self._lifetime_resident.add(category)
+        except Exception as e:
+            logger.debug("Could not load giveaway wins: %s", e)
+        finally:
+            self._return_stats_db_connection(conn)
+
+    def _ensure_category_resident(self, mapping: Dict[str, Any], factory, category: str) -> None:
+        """Load a per-user category the first time a full ranking needs it."""
+        if category in self._lifetime_resident or not self._stats_db_initialized:
+            self._lifetime_resident.add(category)
+            return
+        conn = None
+        try:
+            conn = self._get_stats_db_connection(flush_events=False)
+            if conn is None:
+                return
+            rows = conn.execute(
+                "SELECT username, data_json FROM user_lifetime WHERE category = ?",
+                (category,),
+            ).fetchall()
+            for row in rows:
+                if self._dict_key_case_insensitive(mapping, row["username"]) is not None:
+                    continue
+                try:
+                    data = json.loads(row["data_json"])
+                    mapping[row["username"]] = factory(**data) if isinstance(data, dict) else factory()
+                except TypeError:
+                    mapping[row["username"]] = factory()
+            self._lifetime_resident.add(category)
+        except Exception as e:
+            logger.debug("Could not load lifetime category %s: %s", category, e)
+        finally:
+            self._return_stats_db_connection(conn)
 
     def _migrate_legacy_root_statistics_db_if_needed(self, conn: sqlite3.Connection) -> None:
         """Copy ``user_events`` from legacy ``<project>/statistics.db`` if ``data/statistics.db`` is empty.
@@ -573,6 +822,7 @@ class StatisticsManager:
     def _close_statistics_db(self):
         """Close all connections in the statistics database pool."""
         self._event_batch_stop.set()
+        self._username_backfill_stop.set()
         self._flush_pending_events()
         with self._stats_db_pool_lock:
             for conn in self._stats_db_pool:
@@ -636,9 +886,10 @@ class StatisticsManager:
                 return
             cursor = conn.cursor()
             cursor.executemany(
-                "INSERT INTO user_events (username, event_type, amount, alert_name, timestamp) "
-                "VALUES (?, ?, ?, ?, ?)",
-                rows,
+                "INSERT INTO user_events "
+                "(username, event_type, amount, alert_name, timestamp, username_lower) "
+                "VALUES (?, ?, ?, ?, ?, lower(?))",
+                [(*row, row[0]) for row in rows],
             )
             conn.commit()
         except Exception as e:
@@ -785,8 +1036,8 @@ class StatisticsManager:
             conn = self._get_stats_db_connection()
             if conn is None:
                 return []
-            query = "SELECT * FROM user_events WHERE lower(username) = lower(?)"
-            params: list = [username]
+            clause, params = self._username_match_clause(username)
+            query = f"SELECT * FROM user_events WHERE {clause}"
             if start_time is not None:
                 query += " AND timestamp >= ?"
                 params.append(start_time)
@@ -930,11 +1181,11 @@ class StatisticsManager:
             conn = self._get_stats_db_connection()
             if conn is None:
                 return 0
+            clause, params = self._username_match_clause(username)
             query = (
                 "SELECT COALESCE(MAX(amount), 0) FROM user_events "
-                "WHERE lower(username) = lower(?) AND event_type = 'watch_streak'"
+                f"WHERE {clause} AND event_type = 'watch_streak'"
             )
-            params: list = [username]
             if start_time is not None:
                 query += " AND timestamp >= ?"
                 params.append(start_time)
@@ -1023,7 +1274,7 @@ class StatisticsManager:
         logger.debug("[highlights] _compute_highlights_from_user_events start")
         highlights: Dict[str, Any] = {}
         ts_params = (start_time, end_time)
-        not_system = "lower(username) != ?"
+        not_system = "IFNULL(username_lower, lower(username)) != ?"
         sys_name = (self._STATS_SYSTEM_USERNAME.lower(),)
 
         def top_by_sum(event_type: str, limit: int = 5) -> List[Dict[str, Any]]:
@@ -1346,6 +1597,21 @@ class StatisticsManager:
         lifetime totals are available from ``self.data``.
         """
         sys_lower = self._STATS_SYSTEM_USERNAME.lower()
+        self._ensure_category_resident(
+            self.data.alerts.user_stats, UserAlertStatistics, "alerts.user_stats"
+        )
+        self._ensure_category_resident(
+            self.data.chat.user_stats, UserChatStatistics, "chat.user_stats"
+        )
+        self._ensure_category_resident(
+            self.data.connectors.user_stats,
+            UserConnectorStatistics,
+            "connectors.user_stats",
+        )
+        self._ensure_category_resident(
+            self.data.chatbot.user_stats, UserChatbotStatistics, "chatbot.user_stats"
+        )
+        self._ensure_giveaway_wins_resident()
         alerts = self.data.alerts
         chat = self.data.chat
         connectors = self.data.connectors
@@ -1955,11 +2221,11 @@ class StatisticsManager:
         if self._stats_db_initialized:
             conn = None
             try:
-                conn = self._get_stats_db_connection()
+                conn = self._get_stats_db_connection(flush_events=False)
                 if conn is not None:
                     cursor = conn.cursor()
                     cursor.execute(
-                        "SELECT DISTINCT username FROM user_events ORDER BY username"
+                        "SELECT DISTINCT username FROM user_lifetime ORDER BY username"
                     )
                     usernames.update(row[0] for row in cursor.fetchall())
             except Exception as e:
@@ -1985,12 +2251,9 @@ class StatisticsManager:
 
                 if "alerts" in data_dict:
                     alerts_dict = data_dict["alerts"]
-                    # Handle user statistics separately
+                    # Per-user rows live in user_lifetime, not in process memory.
+                    self._take_user_map(alerts_dict, "user_stats", "alerts.user_stats")
                     user_stats = {}
-                    if "user_stats" in alerts_dict:
-                        user_stats_dict = alerts_dict.pop("user_stats")
-                        for username, user_data in user_stats_dict.items():
-                            user_stats[username] = UserAlertStatistics(**user_data)
 
                     # Handle individual alert type stats
                     alert_type_stats = {}
@@ -2066,12 +2329,9 @@ class StatisticsManager:
 
                 if "alerts" in data_dict:
                     alerts_dict = data_dict["alerts"]
-                    # Handle user statistics separately
+                    # Per-user rows live in user_lifetime, not in process memory.
+                    self._take_user_map(alerts_dict, "user_stats", "alerts.user_stats")
                     user_stats = {}
-                    if "user_stats" in alerts_dict:
-                        user_stats_dict = alerts_dict.pop("user_stats")
-                        for username, user_data in user_stats_dict.items():
-                            user_stats[username] = UserAlertStatistics(**user_data)
 
                     # Handle individual alert type stats
                     alert_type_stats = {}
@@ -2153,23 +2413,14 @@ class StatisticsManager:
                         "total_triggers", 0
                     )
 
-                    # Handle user statistics separately
-                    user_stats = {}
-                    if "user_stats" in conn_dict:
-                        user_stats_dict = conn_dict["user_stats"]
-                        for username, user_data in user_stats_dict.items():
-                            user_stats[username] = UserConnectorStatistics(**user_data)
-                    self.data.connectors.user_stats = user_stats
-
-                    # Handle per-user individual connector stats
-                    user_connector_stats = {}
-                    if "user_connector_stats" in conn_dict:
-                        user_connector_stats_dict = conn_dict["user_connector_stats"]
-                        for username, user_data in user_connector_stats_dict.items():
-                            user_connector_stats[username] = UserConnectorStatistics(
-                                **user_data
-                            )
-                    self.data.connectors.user_connector_stats = user_connector_stats
+                    self._take_user_map(conn_dict, "user_stats", "connectors.user_stats")
+                    self._take_user_map(
+                        conn_dict,
+                        "user_connector_stats",
+                        "connectors.user_connector_stats",
+                    )
+                    self.data.connectors.user_stats = {}
+                    self.data.connectors.user_connector_stats = {}
 
                     # Handle individual connector stats
                     connector_stats = {}
@@ -2201,31 +2452,16 @@ class StatisticsManager:
                         "total_interactions", 0
                     )
 
-                    # Handle user statistics separately
-                    user_stats = {}
-                    if "user_stats" in bot_dict:
-                        user_stats_dict = bot_dict["user_stats"]
-                        for username, user_data in user_stats_dict.items():
-                            user_stats[username] = UserChatbotStatistics(**user_data)
-                    self.data.chatbot.user_stats = user_stats
-
-                    # Handle per-user individual command and event stats
-                    user_command_stats = {}
-                    user_event_stats = {}
-                    if "user_command_stats" in bot_dict:
-                        user_command_stats_dict = bot_dict["user_command_stats"]
-                        for username, user_data in user_command_stats_dict.items():
-                            user_command_stats[username] = UserCommandStatistics(
-                                **user_data
-                            )
-                    if "user_event_stats" in bot_dict:
-                        user_event_stats_dict = bot_dict["user_event_stats"]
-                        for username, user_data in user_event_stats_dict.items():
-                            user_event_stats[username] = UserEventStatistics(
-                                **user_data
-                            )
-                    self.data.chatbot.user_command_stats = user_command_stats
-                    self.data.chatbot.user_event_stats = user_event_stats
+                    self._take_user_map(bot_dict, "user_stats", "chatbot.user_stats")
+                    self._take_user_map(
+                        bot_dict, "user_command_stats", "chatbot.user_command_stats"
+                    )
+                    self._take_user_map(
+                        bot_dict, "user_event_stats", "chatbot.user_event_stats"
+                    )
+                    self.data.chatbot.user_stats = {}
+                    self.data.chatbot.user_command_stats = {}
+                    self.data.chatbot.user_event_stats = {}
 
                     # Handle individual command and event stats
                     command_stats = {}
@@ -2255,13 +2491,8 @@ class StatisticsManager:
                         "individual_quote_usage", {}
                     )
 
-                    # Handle user statistics separately
-                    user_stats = {}
-                    if "user_stats" in quotes_dict:
-                        user_stats_dict = quotes_dict["user_stats"]
-                        for username, user_data in user_stats_dict.items():
-                            user_stats[username] = UserQuoteStatistics(**user_data)
-                    self.data.quotes.user_stats = user_stats
+                    self._take_user_map(quotes_dict, "user_stats", "quotes.user_stats")
+                    self.data.quotes.user_stats = {}
 
                 if "giveaways" in data_dict:
                     gdict = data_dict["giveaways"]
@@ -2271,22 +2502,18 @@ class StatisticsManager:
                     self.data.giveaways.total_entry_events = int(
                         gdict.get("total_entry_events", 0) or 0
                     )
-                    uw = gdict.get("user_wins", {})
-                    if isinstance(uw, dict):
-                        self.data.giveaways.user_wins = {
-                            str(k): int(v) for k, v in uw.items()
-                        }
-                    else:
-                        self.data.giveaways.user_wins = {}
+                    uw = gdict.pop("user_wins", {}) if isinstance(gdict, dict) else {}
+                    if isinstance(uw, dict) and uw:
+                        self._spill_raw_user_map(
+                            "giveaways.user_wins",
+                            {str(k): {"wins": int(v)} for k, v in uw.items()},
+                        )
+                    self.data.giveaways.user_wins = {}
 
                 if "chat" in data_dict:
                     chat_dict = data_dict["chat"]
-                    # Handle user statistics separately
+                    self._take_user_map(chat_dict, "user_stats", "chat.user_stats")
                     user_stats = {}
-                    if "user_stats" in chat_dict:
-                        user_stats_dict = chat_dict.pop("user_stats")
-                        for username, user_data in user_stats_dict.items():
-                            user_stats[username] = UserChatStatistics(**user_data)
 
                     self.data.chat = ChatStatistics(**chat_dict)
                     self.data.chat.user_stats = user_stats
@@ -2515,6 +2742,7 @@ class StatisticsManager:
 
             # Save to the separate statistics database if available
             if self._stats_db_initialized:
+                self._persist_user_maps(data_dict.get("data") or {})
                 self._save_lifetime_totals_to_stats_db(data_dict["data"])
             else:
                 # Fallback to old database_manager
@@ -2530,10 +2758,12 @@ class StatisticsManager:
     @_stats_data_locked
     def _track_user_alert(self, username: str, alert_type: str):
         """Helper method to track per-user alert statistics"""
-        if username not in self.data.alerts.user_stats:
-            self.data.alerts.user_stats[username] = UserAlertStatistics()
-
-        user_stats = self.data.alerts.user_stats[username]
+        user_stats = self._user_record(
+            self.data.alerts.user_stats,
+            username,
+            UserAlertStatistics,
+            "alerts.user_stats",
+        )
         current_time = time.time()
 
         # Update the specific alert type
@@ -2772,12 +3002,14 @@ class StatisticsManager:
 
         # Track per-user statistics if username provided
         if username:
-            if username not in self.data.alerts.user_stats:
-                self.data.alerts.user_stats[username] = UserAlertStatistics()
-            self.data.alerts.user_stats[
-                username
-            ].channel_points_redeemed += points_amount
-            self.data.alerts.user_stats[username].last_seen = time.time()
+            user_row = self._user_record(
+                self.data.alerts.user_stats,
+                username,
+                UserAlertStatistics,
+                "alerts.user_stats",
+            )
+            user_row.channel_points_redeemed += points_amount
+            user_row.last_seen = time.time()
 
         logger.info(
             f"Channel points redeemed incremented by {points_amount} to: {self.data.alerts.total_channel_points_redeemed}"
@@ -2886,10 +3118,12 @@ class StatisticsManager:
     @_stats_data_locked
     def _track_user_chatbot(self, username: str, stat_type: str):
         """Helper method to track per-user chatbot statistics"""
-        if username not in self.data.chatbot.user_stats:
-            self.data.chatbot.user_stats[username] = UserChatbotStatistics()
-
-        user_stats = self.data.chatbot.user_stats[username]
+        user_stats = self._user_record(
+            self.data.chatbot.user_stats,
+            username,
+            UserChatbotStatistics,
+            "chatbot.user_stats",
+        )
         current_time = time.time()
 
         # Update the specific statistic
@@ -2945,10 +3179,12 @@ class StatisticsManager:
     @_stats_data_locked
     def _track_user_command(self, username: str, command_name: str):
         """Helper method to track per-user command usage"""
-        if username not in self.data.chatbot.user_command_stats:
-            self.data.chatbot.user_command_stats[username] = UserCommandStatistics()
-
-        user_stats = self.data.chatbot.user_command_stats[username]
+        user_stats = self._user_record(
+            self.data.chatbot.user_command_stats,
+            username,
+            UserCommandStatistics,
+            "chatbot.user_command_stats",
+        )
         current_time = time.time()
 
         # Update command usage
@@ -2966,10 +3202,12 @@ class StatisticsManager:
     @_stats_data_locked
     def _track_user_event(self, username: str, event_name: str):
         """Helper method to track per-user event usage"""
-        if username not in self.data.chatbot.user_event_stats:
-            self.data.chatbot.user_event_stats[username] = UserEventStatistics()
-
-        user_stats = self.data.chatbot.user_event_stats[username]
+        user_stats = self._user_record(
+            self.data.chatbot.user_event_stats,
+            username,
+            UserEventStatistics,
+            "chatbot.user_event_stats",
+        )
         current_time = time.time()
 
         # Update event usage
@@ -2987,9 +3225,12 @@ class StatisticsManager:
     @_stats_data_locked
     def _track_user_connector_aggregate(self, username: str, count: int = 1) -> None:
         """Increment connectors.user_stats (used by top-user connector_triggers)."""
-        if username not in self.data.connectors.user_stats:
-            self.data.connectors.user_stats[username] = UserConnectorStatistics()
-        user_stats = self.data.connectors.user_stats[username]
+        user_stats = self._user_record(
+            self.data.connectors.user_stats,
+            username,
+            UserConnectorStatistics,
+            "connectors.user_stats",
+        )
         current_time = time.time()
         user_stats.connectors_triggered += 1
         user_stats.total_triggers += int(count or 0)
@@ -3000,12 +3241,12 @@ class StatisticsManager:
     @_stats_data_locked
     def _track_user_connector(self, username: str, connector_name: str):
         """Helper method to track per-user connector usage"""
-        if username not in self.data.connectors.user_connector_stats:
-            self.data.connectors.user_connector_stats[username] = (
-                UserConnectorStatistics()
-            )
-
-        user_stats = self.data.connectors.user_connector_stats[username]
+        user_stats = self._user_record(
+            self.data.connectors.user_connector_stats,
+            username,
+            UserConnectorStatistics,
+            "connectors.user_connector_stats",
+        )
         current_time = time.time()
 
         # Update connector usage
@@ -3100,10 +3341,12 @@ class StatisticsManager:
     @_stats_data_locked
     def _track_user_quote(self, username: str, quote_id: str):
         """Helper method to track per-user quote statistics"""
-        if username not in self.data.quotes.user_stats:
-            self.data.quotes.user_stats[username] = UserQuoteStatistics()
-
-        user_stats = self.data.quotes.user_stats[username]
+        user_stats = self._user_record(
+            self.data.quotes.user_stats,
+            username,
+            UserQuoteStatistics,
+            "quotes.user_stats",
+        )
         current_time = time.time()
 
         # Update individual quote usage
@@ -3157,7 +3400,16 @@ class StatisticsManager:
         if not username:
             return
         d = self.data.giveaways.user_wins
-        d[username] = d.get(username, 0) + 1
+        key = self._dict_key_case_insensitive(d, username)
+        if key is None:
+            win = self._load_user_payload("giveaways.user_wins", username)
+            if win:
+                d[win["username"]] = int((win["data"] or {}).get("wins") or 0)
+                key = win["username"]
+            else:
+                key = username
+                d[key] = 0
+        d[key] = int(d.get(key, 0) or 0) + 1
         self._record_event(username, "giveaway_win", 1.0, "")
         logger.debug("Giveaway win recorded for %s", username)
 
@@ -3179,10 +3431,12 @@ class StatisticsManager:
     @_stats_data_locked
     def _track_user_chat(self, username: str):
         """Helper method to track per-user chat statistics"""
-        if username not in self.data.chat.user_stats:
-            self.data.chat.user_stats[username] = UserChatStatistics()
-
-        user_stats = self.data.chat.user_stats[username]
+        user_stats = self._user_record(
+            self.data.chat.user_stats,
+            username,
+            UserChatStatistics,
+            "chat.user_stats",
+        )
         current_time = time.time()
 
         # Update chat statistics
@@ -3656,6 +3910,51 @@ class StatisticsManager:
     def get_user_statistics(self, username: str) -> Dict[str, Any]:
         """Get all statistics for a specific user"""
         display_name = str(username).strip() if username else ""
+        if display_name:
+            self._remember_user(
+                self.data.alerts.user_stats, display_name, UserAlertStatistics, "alerts.user_stats"
+            )
+            self._remember_user(
+                self.data.connectors.user_stats,
+                display_name,
+                UserConnectorStatistics,
+                "connectors.user_stats",
+            )
+            self._remember_user(
+                self.data.connectors.user_connector_stats,
+                display_name,
+                UserConnectorStatistics,
+                "connectors.user_connector_stats",
+            )
+            self._remember_user(
+                self.data.chatbot.user_stats,
+                display_name,
+                UserChatbotStatistics,
+                "chatbot.user_stats",
+            )
+            self._remember_user(
+                self.data.chatbot.user_command_stats,
+                display_name,
+                UserCommandStatistics,
+                "chatbot.user_command_stats",
+            )
+            self._remember_user(
+                self.data.chatbot.user_event_stats,
+                display_name,
+                UserEventStatistics,
+                "chatbot.user_event_stats",
+            )
+            self._remember_user(
+                self.data.quotes.user_stats, display_name, UserQuoteStatistics, "quotes.user_stats"
+            )
+            self._remember_user(
+                self.data.chat.user_stats, display_name, UserChatStatistics, "chat.user_stats"
+            )
+            win = self._load_user_payload("giveaways.user_wins", display_name)
+            if win and win["username"] not in self.data.giveaways.user_wins:
+                self.data.giveaways.user_wins[win["username"]] = int(
+                    (win["data"] or {}).get("wins") or 0
+                )
         user_stats = {
             "username": display_name,
             "alerts": {},
@@ -3770,6 +4069,28 @@ class StatisticsManager:
         Returns:
             List of dictionaries with username and stat value, sorted by value descending
         """
+        self._ensure_category_resident(
+            self.data.alerts.user_stats, UserAlertStatistics, "alerts.user_stats"
+        )
+        self._ensure_category_resident(
+            self.data.chat.user_stats, UserChatStatistics, "chat.user_stats"
+        )
+        self._ensure_category_resident(
+            self.data.connectors.user_stats,
+            UserConnectorStatistics,
+            "connectors.user_stats",
+        )
+        self._ensure_category_resident(
+            self.data.connectors.user_connector_stats,
+            UserConnectorStatistics,
+            "connectors.user_connector_stats",
+        )
+        self._ensure_category_resident(
+            self.data.chatbot.user_stats, UserChatbotStatistics, "chatbot.user_stats"
+        )
+        self._ensure_category_resident(
+            self.data.quotes.user_stats, UserQuoteStatistics, "quotes.user_stats"
+        )
         users = []
 
         if stat_type == "total_alerts":

@@ -268,6 +268,9 @@ class ChatbotManager:
         self.flag_manager = GreetingFlagManager()
 
         self._lock = threading.RLock()
+        self._save_lock = threading.Lock()
+        self._save_dirty = False
+        self._save_thread: Optional[threading.Thread] = None
 
         # Command cooldown tracking
         self.command_cooldowns: Dict[str, float] = {}
@@ -497,7 +500,33 @@ class ChatbotManager:
                 actions=nav_actions_main_tab("Chatbot"),
             )
 
-    def _save_data(self):
+    def _save_data(self) -> None:
+        """Queue a save of commands and events. The latest snapshot is written."""
+        with self._save_lock:
+            self._save_dirty = True
+            thread = self._save_thread
+            if thread is not None and thread.is_alive():
+                return
+            self._save_thread = threading.Thread(
+                target=self._save_worker,
+                name="ChatbotSave",
+                daemon=True,
+            )
+            self._save_thread.start()
+
+    def _save_worker(self) -> None:
+        while True:
+            with self._save_lock:
+                if not self._save_dirty:
+                    self._save_thread = None
+                    return
+                self._save_dirty = False
+            try:
+                self._save_data_now()
+            except Exception:
+                logger.error("Chatbot save failed", exc_info=True)
+
+    def _save_data_now(self):
         """Save commands and events to database manager"""
         try:
             # Import database manager here to avoid circular imports

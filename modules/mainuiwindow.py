@@ -1743,6 +1743,7 @@ def create_ui_elements():
                 main_unsaved_dialog_open = {"value": False}
 
                 def on_main_tab_change(e):
+                    nonlocal previous_tab
                     new_tab = getattr(e, "value", None)
                     leaving_tab = getattr(e, "previous_value", None)
                     if leaving_tab is None:
@@ -1819,8 +1820,9 @@ def create_ui_elements():
                     new_tab_name = main_tab_name(new_tab) or get_tab_name(new_tab)
                     if new_tab_name in lazy_tabs:
                         lazy_tabs[new_tab_name].ensure_loaded()
+                    previous_tab = tabs.value
 
-                # Monitor tab changes using a timer since tabs.on("change") may not work in native mode
+                # Fallback if a native tab change does not emit value-change.
                 previous_tab = tabs.value
 
                 def check_tab_changes():

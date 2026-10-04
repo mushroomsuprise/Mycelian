@@ -1706,17 +1706,23 @@ def render_giveaways_tab(container_el) -> None:
                             "w-full flex-1 min-h-0"
                         )
 
+                        entrants_signature = {"value": None}
+
                         def _build_entrants_list():
                             try:
                                 if getattr(entrants_container, "is_deleted", False):
                                     return
                             except Exception:
                                 return
+                            names = get_giveaway_manager().get_pool_entries()
+                            signature = tuple(names)
+                            if signature == entrants_signature["value"]:
+                                return
+                            entrants_signature["value"] = signature
                             try:
                                 entrants_container.clear()
                             except Exception:
                                 return
-                            names = get_giveaway_manager().get_pool_entries()
                             with entrants_container:
                                 with (
                                     ui.scroll_area()

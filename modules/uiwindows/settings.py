@@ -5588,7 +5588,7 @@ class SettingsUI:
                                 previous_settings_tab = current_tab
 
                         # Check for tab changes every 200ms
-                        layout_schedule(0.2, check_settings_tab_changes, active=True)
+                        layout_schedule(2.0, check_settings_tab_changes, active=True)
 
                         # Lazy-loaded default tab never fires a change event on first open
                         initial_settings_tab = (
@@ -5677,7 +5677,7 @@ class SettingsUI:
 
                 tabs.on_value_change(on_tab_change)
                 tab_panels_container.on_value_change(on_tab_change)
-                layout_schedule(0.4, check_subtab_changes, active=True)
+                layout_schedule(2.0, check_subtab_changes, active=True)
 
         ui.run_javascript(
             "window.mycelianInitSubTabSeams && window.mycelianInitSubTabSeams()"

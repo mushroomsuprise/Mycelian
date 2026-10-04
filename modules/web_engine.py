@@ -429,11 +429,25 @@ def _is_twitch_helix_url(url: str) -> bool:
     )
 
 
+_ASSETS_RESOLVE_CACHE: Dict[str, Any] = {"root": None, "real": None, "files": {}}
+_SAFE_EMIT_QUEUE_MAX = 4000
+
+
 def _resolved_assets_file(filename: str) -> Optional[str]:
     """Return realpath of *filename* under the assets root, or None if unsafe/missing."""
-    assets_root = os.path.realpath(get_assets_path())
     if not filename or "\x00" in str(filename):
         return None
+    root = get_assets_path()
+    cache = _ASSETS_RESOLVE_CACHE
+    if cache["root"] != root:
+        cache["root"] = root
+        cache["real"] = os.path.realpath(root)
+        cache["files"] = {}
+    assets_root = cache["real"]
+    files = cache["files"]
+    cached_path = files.get(filename)
+    if cached_path and os.path.isfile(cached_path):
+        return cached_path
     full_path = os.path.realpath(os.path.join(assets_root, filename))
     try:
         if os.path.commonpath([assets_root, full_path]) != assets_root:
@@ -441,7 +455,11 @@ def _resolved_assets_file(filename: str) -> Optional[str]:
     except ValueError:
         return None
     if os.path.isfile(full_path):
+        if len(files) > 512:
+            files.clear()
+        files[filename] = full_path
         return full_path
+    files.pop(filename, None)
     return None
 
 
@@ -1163,9 +1181,15 @@ class WebEngine:
         # the hub), so foreign threads enqueue here and the gevent drain worker
         # performs the actual emit. Ordered, never coalesced (alerts must not
         # be dropped/merged).
-        # Unbounded: bursts wait instead of dropping overlay events (WE-03).
-        self._safe_emit_priority_queue: queue.Queue = queue.Queue()
-        self._safe_emit_queue: queue.Queue = queue.Queue()
+        # High ceiling: a full queue waits instead of dropping chat or alerts.
+        self._safe_emit_priority_queue: queue.Queue = queue.Queue(
+            maxsize=_SAFE_EMIT_QUEUE_MAX
+        )
+        self._safe_emit_queue: queue.Queue = queue.Queue(maxsize=_SAFE_EMIT_QUEUE_MAX)
+        self._persist_absence_cache: Dict[tuple, tuple] = {}
+        self._runtime_path_index_cache = None
+        self._template_config_generation = 0
+        self._overlay_html_cache: Dict[str, tuple] = {}
         # OS thread id of the thread running socketio.run (the gevent hub).
         self._server_thread_ident: Optional[int] = None
 
@@ -3574,6 +3598,12 @@ class WebEngine:
         with self._dynamic_controls_cache_lock:
             self._dynamic_controls_cache = None
         self.invalidate_template_queue_metadata_cache()
+        self._template_config_generation = getattr(self, "_template_config_generation", 0) + 1
+        self._persist_absence_cache = {}
+        self._runtime_path_index_cache = None
+        overlay_cache = getattr(self, "_overlay_html_cache", None)
+        if isinstance(overlay_cache, dict):
+            overlay_cache.clear()
 
     def broadcast_template_config_updated(self, template_name: str) -> None:
         """Notify overlays that a template JSON was saved (reload via single-config API)."""
@@ -5436,6 +5466,15 @@ class WebEngine:
                                 draft_html = dh
                                 draft_config = dc
 
+                        if (
+                            draft_html is None
+                            and not mycelian_preview_mode
+                            and not overrides
+                        ):
+                            cached_html = engine_self._cached_overlay_html(template)
+                            if cached_html is not None:
+                                return cached_html
+
                         if draft_html is not None and draft_config is not None:
                             template_config = copy.deepcopy(draft_config)
                         elif overrides or mycelian_preview_mode:
@@ -5475,6 +5514,12 @@ class WebEngine:
                                 mycelian_preview_mode=mycelian_preview_mode,
                             )
                         html = _finalize_served_overlay_html(html)
+                        if (
+                            draft_html is None
+                            and not mycelian_preview_mode
+                            and not overrides
+                        ):
+                            engine_self._store_overlay_html(template, html)
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
                             # MutationObserver). Try </body> first, then
@@ -8608,6 +8653,7 @@ class WebEngine:
             template_name,
             include_dynamic_controls=True,
             include_streamdeck_options=True,
+            copy_result=False,
         )
         self._streamdeck_config_cache[template_name] = {
             "mtime": mtime,
@@ -9143,10 +9189,15 @@ class WebEngine:
                 logger.error("safe_emit failed for %s: %s", event, e, exc_info=True)
                 return False
         item = (time.monotonic(), event, data, to)
-        if event in _SAFE_EMIT_PRIORITY_EVENTS:
-            self._safe_emit_priority_queue.put(item)
-        else:
-            self._safe_emit_queue.put(item)
+        target_queue = (
+            self._safe_emit_priority_queue
+            if event in _SAFE_EMIT_PRIORITY_EVENTS
+            else self._safe_emit_queue
+        )
+        try:
+            target_queue.put(item, timeout=30)
+        except queue.Full:
+            target_queue.put(item)
         return True
 
     # High-frequency producers (game hooks emit several times a second) mean a queue
@@ -9397,12 +9448,30 @@ class WebEngine:
             return
         try:
             parser = self.template_config_parser
-            config = parser.load_config(template_name, include_dynamic_controls=True)
+            config_path = parser.get_config_path(template_name)
+            try:
+                config_mtime = os.path.getmtime(config_path)
+            except OSError:
+                config_mtime = 0.0
+            absence_key = (template_name, action)
+            absence = self._persist_absence_cache.get(absence_key)
+            if absence and absence[0] == config_mtime and absence[1] is False:
+                return
+            config = parser.load_config(
+                template_name, include_dynamic_controls=True, copy_result=False
+            )
             ctrl = self._dynamic_control_element_for_action(config, action)
             if not ctrl:
                 return
-            persist = ctrl.get("persist")
+            persist = ctrl.get("persist") if isinstance(ctrl, dict) else None
             if not isinstance(persist, dict):
+                self._persist_absence_cache[absence_key] = (config_mtime, False)
+                return
+            config = copy.deepcopy(config)
+            ctrl = self._dynamic_control_element_for_action(config, action)
+            persist = ctrl.get("persist") if isinstance(ctrl, dict) else None
+            if not isinstance(persist, dict):
+                self._persist_absence_cache[absence_key] = (config_mtime, False)
                 return
             target_id = persist.get("target_element_id")
             if not target_id:
@@ -9432,6 +9501,7 @@ class WebEngine:
             if persist.get("sync_dynamic_value", True):
                 ctrl["value"] = coerced
             parser.save_config(template_name, config)
+            self._persist_absence_cache.pop(absence_key, None)
             self.invalidate_all_template_configs_cache()
             self._emit_source_controls_state_update(
                 reason="persisted_control_change",
@@ -9454,27 +9524,76 @@ class WebEngine:
                 exc_info=True,
             )
 
+    def _overlay_html_cache_key(self, template: str):
+        try:
+            html_mtime = os.path.getmtime(
+                os.path.join(self.template_dir, f"{template}.html")
+            )
+        except OSError:
+            html_mtime = 0.0
+        try:
+            config_mtime = os.path.getmtime(
+                self.template_config_parser.get_config_path(template)
+            )
+        except OSError:
+            config_mtime = 0.0
+        return (
+            html_mtime,
+            config_mtime,
+            getattr(self, "_template_config_generation", 0),
+        )
+
+    def _cached_overlay_html(self, template: str):
+        cache = getattr(self, "_overlay_html_cache", None)
+        if not isinstance(cache, dict):
+            return None
+        cached = cache.get(template)
+        if not cached:
+            return None
+        if cached[0] != self._overlay_html_cache_key(template):
+            return None
+        return cached[1]
+
+    def _store_overlay_html(self, template: str, html: str) -> None:
+        cache = getattr(self, "_overlay_html_cache", None)
+        if not isinstance(cache, dict):
+            return
+        if len(cache) >= 24 and template not in cache:
+            cache.pop(next(iter(cache)))
+        cache[template] = (self._overlay_html_cache_key(template), html)
+
+    def _runtime_path_index(self) -> Dict[str, List[str]]:
+        """Map runtime database paths to templates that mirror them."""
+        generation = getattr(self, "_template_config_generation", 0)
+        cached = getattr(self, "_runtime_path_index_cache", None)
+        if cached and cached[0] == generation:
+            return cached[1]
+        index: Dict[str, List[str]] = {}
+        parser = self.template_config_parser
+        for config_name in parser.get_config_files():
+            config = parser.load_config(
+                config_name, include_dynamic_controls=True, copy_result=False
+            )
+            dynamic_controls = (config or {}).get("dynamic_controls") or {}
+            for element in dynamic_controls.get("elements", []):
+                if not isinstance(element, dict):
+                    continue
+                persist = element.get("persist")
+                if not isinstance(persist, dict):
+                    continue
+                path = persist.get("runtime_database_path")
+                if isinstance(path, str) and path:
+                    index.setdefault(path, []).append(config_name)
+                    break
+        self._runtime_path_index_cache = (generation, index)
+        return index
+
     def _source_control_templates_for_runtime_path(self, db_path: str) -> List[str]:
         """Return template names whose dynamic controls mirror the given runtime DB path."""
         if not db_path or not isinstance(db_path, str):
             return []
         try:
-            matches = []
-            for config_name in self.template_config_parser.get_config_files():
-                config = self.template_config_parser.load_config(
-                    config_name, include_dynamic_controls=True
-                )
-                dynamic_controls = config.get("dynamic_controls") or {}
-                for element in dynamic_controls.get("elements", []):
-                    if not isinstance(element, dict):
-                        continue
-                    persist = element.get("persist")
-                    if not isinstance(persist, dict):
-                        continue
-                    if persist.get("runtime_database_path") == db_path:
-                        matches.append(config_name)
-                        break
-            return matches
+            return list(self._runtime_path_index().get(db_path, ()))
         except Exception as e:
             logger.debug(
                 "Unable to resolve source-control templates for %s: %s", db_path, e

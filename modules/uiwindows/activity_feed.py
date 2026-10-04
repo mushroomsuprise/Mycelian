@@ -1991,7 +1991,7 @@ def _animate_pause_button_border() -> None:
             btn.style("box-shadow: none")
             return
         activity_feed_state.pause_breath_phase = (
-            activity_feed_state.pause_breath_phase + 0.05
+            activity_feed_state.pause_breath_phase + 0.25
         ) % 3.0
         phase = activity_feed_state.pause_breath_phase / 3.0
         alpha = 0.2 + 0.8 * (0.5 - 0.5 * math.cos(phase * math.pi * 2))
@@ -3559,7 +3559,7 @@ def create_activity_feed_tab():
                 global _pause_breath_timer_started
                 if not _pause_breath_timer_started:
                     _pause_breath_timer_started = True
-                    app_schedule(0.1, _animate_pause_button_border, active=True)
+                    app_schedule(0.5, _animate_pause_button_border, active=True)
 
                 try:
                     _apply_pause_button_state()

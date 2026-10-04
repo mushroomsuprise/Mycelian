@@ -170,6 +170,16 @@ class AlertSettingsState:
 # Create global state instance
 alert_settings_state = AlertSettingsState()
 
+_LAZY_ALERT_PANEL_BUILDERS = {}
+
+
+def _ensure_lazy_alert_panel(tab_name: str) -> None:
+    """Build an alert-type form the first time that tab is shown."""
+    builder = _LAZY_ALERT_PANEL_BUILDERS.pop(tab_name, None)
+    if builder is not None:
+        builder()
+
+
 ALERT_TAB_TO_TYPE = {
     "Bits": "bits",
     "Subscriptions": "subs",
@@ -303,6 +313,7 @@ def _activate_alert_tab(tab_name: str) -> None:
     """Show an alert-type tab and reload its selected alert."""
     if not tab_name:
         return
+    _ensure_lazy_alert_panel(tab_name)
     alert_settings_state.active_tab_name = tab_name
     tabs = alert_settings_state.tabs_component
     alert_settings_state.tab_switch_guard = True
@@ -724,45 +735,68 @@ def create_alert_settings_tab():
                     create_alert_type_panel("bits")
 
                 # Subscription Alerts Tab
+                def _defer_alert_panel(tab_name, builder):
+                    holder = ui.column().classes(
+                        "w-full h-full min-h-0 flex flex-col"
+                    )
+
+                    def build(holder=holder, builder=builder):
+                        with holder:
+                            builder()
+
+                    _LAZY_ALERT_PANEL_BUILDERS[tab_name] = build
+
                 with ui.tab_panel(subs_tab).classes(
                     "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
                 ):
-                    create_alert_type_panel("subs")
+                    _defer_alert_panel(
+                        "Subscriptions", lambda: create_alert_type_panel("subs")
+                    )
 
                 with ui.tab_panel(streaks_tab).classes(
                     "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
                 ):
-                    create_alert_type_panel("streaks")
+                    _defer_alert_panel(
+                        "Streaks", lambda: create_alert_type_panel("streaks")
+                    )
 
                 # Gift Sub Alerts Tab
                 with ui.tab_panel(giftsubs_tab).classes(
                     "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
                 ):
-                    create_alert_type_panel("giftsubs")
+                    _defer_alert_panel(
+                        "Gift Subs", lambda: create_alert_type_panel("giftsubs")
+                    )
 
                 # Donation Alerts Tab
                 with ui.tab_panel(donations_tab).classes(
                     "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
                 ):
-                    create_alert_type_panel("donations")
+                    _defer_alert_panel(
+                        "Donations", lambda: create_alert_type_panel("donations")
+                    )
 
                 # Raid Alerts Tab
                 with ui.tab_panel(raids_tab).classes(
                     "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
                 ):
-                    create_alert_type_panel("raids")
+                    _defer_alert_panel(
+                        "Raids", lambda: create_alert_type_panel("raids")
+                    )
 
                 # Follow Alerts Tab
                 with ui.tab_panel(follows_tab).classes(
                     "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
                 ):
-                    create_alert_type_panel("follows")
+                    _defer_alert_panel(
+                        "Follows", lambda: create_alert_type_panel("follows")
+                    )
 
                 # Channel Points Tab
                 with ui.tab_panel(points_tab).classes(
                     "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
                 ):
-                    create_points_alert_panel()
+                    _defer_alert_panel("Channel Points", create_points_alert_panel)
 
                     # Add a simple visibility-based loader for points tab
                     def load_points_when_visible():
@@ -1848,7 +1882,7 @@ def load_alert_settings(alert_type: str, alert_id: str):
         # Multiple refresh attempts to ensure GIF inputs display properly
         def force_ui_refresh_multiple():
             try:
-                for attempt in range(3):  # Try 3 times
+                for attempt in range(1):
                     logger.debug(f"Force refresh attempt {attempt + 1}")
 
                     # Specifically refresh GIF inputs which seem to have display issues
@@ -1894,9 +1928,7 @@ def load_alert_settings(alert_type: str, alert_id: str):
                 logger.error(f"Error in force UI refresh: {str(refresh_err)}")
 
         # Schedule multiple refresh attempts with delays
-        layout_schedule(0.1, force_ui_refresh_multiple, once=True)
         layout_schedule(0.3, force_ui_refresh_multiple, once=True)
-        layout_schedule(0.5, force_ui_refresh_multiple, once=True)
 
         # Update range/exact inputs if applicable
         is_fallback = alert_id == alertutils.AlertSettings.FALLBACK_ALERT_ID

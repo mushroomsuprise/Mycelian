@@ -206,7 +206,10 @@ def _watched_templates() -> List[str]:
 
 
 def _poll_once() -> None:
-    for template_name in _watched_templates():
+    watched = _watched_templates()
+    if not watched:
+        return
+    for template_name in watched:
         try:
             snapshot = _scan_template(template_name)
         except ValueError:

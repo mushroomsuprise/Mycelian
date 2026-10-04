@@ -251,6 +251,9 @@ def load_history() -> None:
             _history = []
 
 
+_history_flush_timer: Optional[threading.Timer] = None
+
+
 def save_history() -> None:
     p = _history_path()
     try:
@@ -261,6 +264,24 @@ def save_history() -> None:
             json.dump(payload, f, indent=2)
     except Exception as e:
         logger.warning("Could not save notification history: %s", e)
+
+
+def _flush_history_soon() -> None:
+    """Write history off the toast path. A later toast replaces a pending flush."""
+    global _history_flush_timer
+
+    def _run() -> None:
+        global _history_flush_timer
+        _history_flush_timer = None
+        save_history()
+
+    with _history_lock:
+        timer = _history_flush_timer
+        if timer is not None:
+            return
+        _history_flush_timer = threading.Timer(1.0, _run)
+        _history_flush_timer.daemon = True
+        _history_flush_timer.start()
 
 
 def register_history_refresh(callback: Callable[[], None]) -> None:
@@ -556,7 +577,7 @@ def notify(
         _history.append(entry)
         if len(_history) > MAX_HISTORY_ITEMS:
             del _history[: len(_history) - MAX_HISTORY_ITEMS]
-        save_history()
+    _flush_history_soon()
     _trigger_history_refresh()
     if ntype in ("negative", "warning"):
         try:
@@ -1071,6 +1092,7 @@ _footer_container: Optional[Any] = None
 _footer_item_refs: Dict[str, Dict[str, Any]] = {}
 _trim_footer_refs: Dict[str, Any] = {}
 _trim_footer_poll_started = False
+_trim_footer_timer = None
 _trim_footer_last_signature: Optional[tuple] = None
 _copy_footer_refs: Dict[str, Any] = {}
 _copy_footer_last_signature: Optional[tuple] = None
@@ -1464,18 +1486,36 @@ def refresh_template_copy_footer() -> None:
         pass
 
 
+def _footer_progress_active() -> bool:
+    return _alert_trim_footer_is_active() or _template_copy_footer_is_active()
+
+
 def poll_alert_trim_footer() -> None:
+    if not _footer_progress_active():
+        timer = globals().get("_trim_footer_timer")
+        if timer is not None:
+            try:
+                timer.active = False
+            except Exception:
+                pass
+        return
     refresh_alert_trim_footer()
     refresh_template_copy_footer()
 
 
 def start_alert_trim_footer_poll() -> None:
-    """Poll trim progress on the UI loop; skip if already started."""
-    global _trim_footer_poll_started
+    """Poll trim/copy progress on the UI loop only while that work is active."""
+    global _trim_footer_poll_started, _trim_footer_timer
+    if _trim_footer_timer is not None:
+        try:
+            _trim_footer_timer.active = True
+        except Exception:
+            pass
+        return
     if _trim_footer_poll_started:
         return
     _trim_footer_poll_started = True
-    _app_schedule(0.25, poll_alert_trim_footer, active=True)
+    _trim_footer_timer = _app_schedule(0.25, poll_alert_trim_footer, active=True)
 
 
 def refresh_service_status_footer() -> None:

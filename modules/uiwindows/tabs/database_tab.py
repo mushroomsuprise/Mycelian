@@ -669,7 +669,17 @@ class DatabaseViewer:
         filter_text = (
             e.args if isinstance(e.args, str) else (e.args[0] if e.args else "")
         )
-        self._build_tree(filter_text)
+        self._filter_generation = getattr(self, "_filter_generation", 0) + 1
+        generation = self._filter_generation
+
+        def _apply() -> None:
+            if generation != getattr(self, "_filter_generation", 0):
+                return
+            self._build_tree(filter_text)
+
+        from ...ui_timer import layout_schedule
+
+        layout_schedule(0.2, _apply, once=True)
 
     def _toggle_folder(self, path: str) -> None:
         """Toggle folder expansion (placeholder for future enhancement)"""

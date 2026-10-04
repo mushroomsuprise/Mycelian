@@ -381,46 +381,12 @@ class AlertStateManager:
         """
         try:
             alert_storage: dict = {}
+            fetched = database_manager.database_manager.fetch_alert_storage(max_alerts)
+            if isinstance(fetched, dict):
+                return fetched
 
-            # For SQL database, query for all paths that start with Alerts/AlertStorage/
-            if hasattr(database_manager.database_manager, "_database") and hasattr(
-                database_manager.database_manager._database, "_connection"
-            ):
-                try:
-                    cursor = (
-                        database_manager.database_manager._database._connection.cursor()
-                    )
-                    limit_clause = ""
-                    params: list = ["Alerts/AlertStorage/%", "Alerts/AlertStorage"]
-                    if max_alerts and max_alerts > 0:
-                        limit_clause = (
-                            " ORDER BY json_extract(data_json, '$.timestamp') DESC "
-                            f"LIMIT {int(max_alerts)}"
-                        )
-                    cursor.execute(
-                        f"""
-                        SELECT data_path, data_json FROM app_data 
-                        WHERE data_path LIKE ? AND data_path != ?
-                        {limit_clause}
-                    """,
-                        tuple(params),
-                    )
-
-                    rows = cursor.fetchall()
-                    for row in rows:
-                        path = row["data_path"]
-                        alert_id = path.split("/")[-1]
-                        try:
-                            alert_data = json.loads(row["data_json"])
-                            alert_storage[alert_id] = alert_data
-                        except json.JSONDecodeError as e:
-                            logger.error(
-                                f"Error parsing JSON for stored alert {path}: {e}"
-                            )
-
-                except Exception as e:
-                    logger.error(f"Error querying stored alerts from SQL database: {e}")
-            elif self._is_firebase_backend() and max_alerts and max_alerts > 0:
+            # Backend not open yet: keep the previous collection read.
+            if self._is_firebase_backend() and max_alerts and max_alerts > 0:
                 collection_data = database_manager.get_alert_storage_limited(
                     max_alerts
                 )
@@ -434,7 +400,7 @@ class AlertStateManager:
                 collection_data = database_manager.get_data("Alerts/AlertStorage") or {}
                 if collection_data:
                     alert_storage = collection_data
-                    logger.debug(f"Loaded alert storage from collection format")
+                    logger.debug("Loaded alert storage from collection format")
 
             return alert_storage
 
@@ -1272,6 +1238,12 @@ class AlertStateManager:
             )
             self._trim_thread = thread
         thread.start()
+        try:
+            from .notification_engine import start_alert_trim_footer_poll
+
+            start_alert_trim_footer_poll()
+        except Exception:
+            pass
 
     def _trim_worker_loop(self) -> None:
         try:
@@ -1331,18 +1303,43 @@ class AlertStateManager:
         self._set_trim_progress(
             active=True, phase="calculating", to_delete=0, deleted=0
         )
+        try:
+            from .notification_engine import start_alert_trim_footer_poll
+
+            start_alert_trim_footer_poll()
+        except Exception:
+            pass
         if self._trim_cancel.is_set():
             self._reset_trim_progress()
             return 0
 
-        # Load only if the in-memory cache is empty; never hold _lock across IO.
-        self._ensure_alert_storage_loaded()
-
-        with self._lock:
-            rows = [
-                (alert_id, safe_alert_timestamp((alert_data or {}).get("timestamp")))
-                for alert_id, alert_data in self._alert_storage.items()
-            ]
+        # A complete in-memory cache is authoritative (including tests).
+        # Otherwise list timestamps from the backend so trim does not load every payload.
+        if self._alert_storage_loaded:
+            with self._lock:
+                rows = [
+                    (alert_id, safe_alert_timestamp((alert_data or {}).get("timestamp")))
+                    for alert_id, alert_data in self._alert_storage.items()
+                ]
+        else:
+            meta = None
+            try:
+                meta = database_manager.database_manager.list_alert_storage_meta()
+            except Exception as meta_error:
+                logger.debug("Alert storage meta list failed: %s", meta_error)
+                meta = None
+            if meta is None:
+                self._ensure_alert_storage_loaded()
+                with self._lock:
+                    rows = [
+                        (
+                            alert_id,
+                            safe_alert_timestamp((alert_data or {}).get("timestamp")),
+                        )
+                        for alert_id, alert_data in self._alert_storage.items()
+                    ]
+            else:
+                rows = list(meta)
 
         rows.sort(key=lambda item: item[1], reverse=True)
         to_delete = set()
@@ -1368,21 +1365,47 @@ class AlertStateManager:
 
         deleted = 0
         deleted_ids = []
-        for alert_id in to_delete:
-            if self._trim_cancel.is_set():
-                break
-            try:
-                database_manager.delete_data(f"Alerts/AlertStorage/{alert_id}")
-                deleted += 1
-                deleted_ids.append(alert_id)
-                self._set_trim_progress(deleted=deleted)
-            except Exception as e:
-                logger.error(
-                    "Error deleting stored alert %s during trim: %s",
-                    alert_id,
-                    e,
-                    exc_info=True,
-                )
+        backend = database_manager.database_manager
+        can_batch = bool(
+            getattr(backend, "_initialized", False)
+            and getattr(backend, "_database", None) is not None
+            and hasattr(getattr(backend, "_database", None), "delete_paths")
+        )
+        pending_ids = list(to_delete)
+        if can_batch:
+            chunk_size = 100
+            for offset in range(0, len(pending_ids), chunk_size):
+                if self._trim_cancel.is_set():
+                    break
+                chunk = pending_ids[offset : offset + chunk_size]
+                paths = [f"Alerts/AlertStorage/{alert_id}" for alert_id in chunk]
+                try:
+                    if backend.delete_paths(paths):
+                        deleted += len(chunk)
+                        deleted_ids.extend(chunk)
+                        self._set_trim_progress(deleted=deleted)
+                except Exception as e:
+                    logger.error(
+                        "Error batch-deleting stored alerts during trim: %s",
+                        e,
+                        exc_info=True,
+                    )
+        else:
+            for alert_id in pending_ids:
+                if self._trim_cancel.is_set():
+                    break
+                try:
+                    database_manager.delete_data(f"Alerts/AlertStorage/{alert_id}")
+                    deleted += 1
+                    deleted_ids.append(alert_id)
+                    self._set_trim_progress(deleted=deleted)
+                except Exception as e:
+                    logger.error(
+                        "Error deleting stored alert %s during trim: %s",
+                        alert_id,
+                        e,
+                        exc_info=True,
+                    )
 
         with self._lock:
             for alert_id in deleted_ids:
@@ -1502,6 +1525,37 @@ class AlertStateManager:
             # Return original data if normalization fails
             return copy.deepcopy(alert_data)
 
+    def _stored_alerts_page_result(
+        self, alerts: list, total_count: int, page: int, limit: int
+    ) -> dict:
+        total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
+        return {
+            "alerts": alerts,
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+        }
+
+    def _page_stored_alerts_memory(self, storage: dict, page: int, limit: int) -> dict:
+        alerts_list = []
+        for alert_id, alert_data in storage.items():
+            alert_copy = copy.deepcopy(alert_data)
+            alert_copy["alert_id"] = alert_id
+            alerts_list.append(alert_copy)
+        alerts_list.sort(
+            key=lambda item: safe_alert_timestamp(item.get("timestamp", 0)),
+            reverse=True,
+        )
+        total_count = len(alerts_list)
+        start_index = (page - 1) * limit
+        end_index = start_index + limit
+        return self._stored_alerts_page_result(
+            alerts_list[start_index:end_index], total_count, page, limit
+        )
+
     def get_stored_alerts(self) -> dict:
         """Get all stored completed alerts
 
@@ -1511,7 +1565,18 @@ class AlertStateManager:
         with self._lock:
             if not self._initialized:
                 self.initialize()
-
+            if self._alert_storage_loaded:
+                return copy.deepcopy(self._alert_storage)
+        fetched = None
+        try:
+            fetched = database_manager.database_manager.fetch_alert_storage(None)
+        except Exception as fetch_error:
+            logger.debug("Full alert storage fetch failed: %s", fetch_error)
+            fetched = None
+        if isinstance(fetched, dict):
+            return copy.deepcopy(fetched)
+        self._ensure_alert_storage_loaded()
+        with self._lock:
             return copy.deepcopy(self._alert_storage)
 
     def get_stored_alerts_paginated(self, page: int = 1, limit: int = 25) -> dict:
@@ -1531,61 +1596,46 @@ class AlertStateManager:
                 - has_next: Whether there's a next page
                 - has_prev: Whether there's a previous page
         """
-        with self._lock:
-            if not self._initialized:
-                self.initialize()
+        if not self._initialized:
+            with self._lock:
+                if not self._initialized:
+                    self.initialize()
+        page = max(1, int(page or 1))
+        limit = max(1, int(limit or 1))
 
-            try:
+        try:
+            with self._lock:
+                use_memory = self._alert_storage_loaded
+                memory_items = dict(self._alert_storage) if use_memory else None
+            if not use_memory:
+                queried = database_manager.database_manager.query_alert_storage_page(
+                    page, limit
+                )
+                if isinstance(queried, dict) and "alerts" in queried:
+                    return self._stored_alerts_page_result(
+                        list(queried.get("alerts") or []),
+                        int(queried.get("total_count") or 0),
+                        page,
+                        limit,
+                    )
                 self._ensure_alert_storage_loaded()
+                with self._lock:
+                    memory_items = dict(self._alert_storage)
+            return self._page_stored_alerts_memory(memory_items or {}, page, limit)
 
-                # Convert stored alerts to list and sort by timestamp (newest first)
-                alerts_list = []
-                for alert_id, alert_data in self._alert_storage.items():
-                    alert_copy = copy.deepcopy(alert_data)
-                    alert_copy["alert_id"] = alert_id  # Ensure alert_id is included
-                    alerts_list.append(alert_copy)
-
-                # Sort by timestamp (newest first)
-                alerts_list.sort(
-                    key=lambda x: safe_alert_timestamp(x.get("timestamp", 0)),
-                    reverse=True,
-                )
-
-                total_count = len(alerts_list)
-                total_pages = (
-                    (total_count + limit - 1) // limit if total_count > 0 else 1
-                )
-
-                # Calculate pagination boundaries
-                start_index = (page - 1) * limit
-                end_index = start_index + limit
-
-                # Get the page slice
-                page_alerts = alerts_list[start_index:end_index]
-
-                return {
-                    "alerts": page_alerts,
-                    "total_count": total_count,
-                    "page": page,
-                    "limit": limit,
-                    "total_pages": total_pages,
-                    "has_next": page < total_pages,
-                    "has_prev": page > 1,
-                }
-
-            except Exception as e:
-                logger.error(
-                    f"Error getting paginated stored alerts: {str(e)}", exc_info=True
-                )
-                return {
-                    "alerts": [],
-                    "total_count": 0,
-                    "page": page,
-                    "limit": limit,
-                    "total_pages": 1,
-                    "has_next": False,
-                    "has_prev": False,
-                }
+        except Exception as e:
+            logger.error(
+                f"Error getting paginated stored alerts: {str(e)}", exc_info=True
+            )
+            return {
+                "alerts": [],
+                "total_count": 0,
+                "page": page,
+                "limit": limit,
+                "total_pages": 1,
+                "has_next": False,
+                "has_prev": False,
+            }
 
     def get_recent_stored_alerts(self, limit: int = 25) -> list:
         """Get the most recent stored alerts
@@ -1633,9 +1683,8 @@ class AlertStateManager:
                     f"Alerts/AlertStorage/{alert_id}"
                 )
                 if isinstance(single, dict) and single:
-                    self._alert_storage[alert_id] = single
                     if not self._alert_storage_loaded:
-                        self._alert_storage_loaded = True
+                        self._alert_storage[alert_id] = single
                     return copy.deepcopy(single)
                 return None
             except Exception as e:
@@ -1680,8 +1729,11 @@ class AlertStateManager:
             fetched = self._fetch_alert_storage_from_database(max_alerts=max_alerts)
             with self._lock:
                 if not self._alert_storage_loaded:
+                    for alert_id, alert_data in self._alert_storage.items():
+                        fetched.setdefault(alert_id, alert_data)
                     self._alert_storage = fetched
-                    self._alert_storage_loaded = True
+                    if not max_alerts or len(fetched) < int(max_alerts):
+                        self._alert_storage_loaded = True
 
         try:
             with self._lock:

@@ -514,13 +514,10 @@
         // Load template config directly from API
         async function loadTemplateConfig() {
             try {
-                const response = await fetch('/api/all-template-configs');
+                const response = await fetch('/api/template-config/spotify');
                 if (response.ok) {
-                    const allConfigs = await response.json();
-                    console.log('Loaded all template configs:', Object.keys(allConfigs));
-                    
-                    // Get the spotify config specifically
-                    const spotifyConfigData = allConfigs.spotify;
+                    const spotifyConfigData = await response.json();
+                    console.log('Loaded spotify template config');
                     if (spotifyConfigData && spotifyConfigData.elements) {
                         console.log('Found spotify template config:', spotifyConfigData);
                         

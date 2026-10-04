@@ -214,6 +214,55 @@ class DatabaseInterface(ABC):
         pass
 
 
+# Matches safe_alert_timestamp for numeric and missing timestamps.
+_ALERT_TS_SQL = "COALESCE(CAST(json_extract(data_json, '$.timestamp') AS REAL), 0)"
+_SQL_IN_CHUNK = 400
+
+
+def _strip_db_path(path: str) -> str:
+    if path.startswith("/"):
+        return path[1:]
+    return path
+
+
+def _sorted_alert_records(storage: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Newest-first alert dicts with alert_id set. Does not mutate inputs."""
+    alerts = []
+    for alert_id, alert_data in storage.items():
+        if not isinstance(alert_data, dict):
+            continue
+        item = dict(alert_data)
+        item["alert_id"] = str(alert_id)
+        alerts.append(item)
+    alerts.sort(
+        key=lambda item: _coerce_alert_timestamp(item.get("timestamp")),
+        reverse=True,
+    )
+    return alerts
+
+
+def _alert_storage_prefix_query() -> Dict[str, Any]:
+    """Mongo range for Alerts/AlertStorage/{id}, excluding the parent path."""
+    return {
+        "data_path": {
+            "$gte": "Alerts/AlertStorage/",
+            "$lt": "Alerts/AlertStorage0",
+        }
+    }
+
+
+def _coerce_alert_timestamp(value: Any) -> float:
+    """Unix seconds for alert sort. Matches modules.alertutils.safe_alert_timestamp."""
+    if value is None or value == "":
+        return 0.0
+    if value == "now":
+        return time.time()
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 class SQLDatabase(DatabaseInterface):
     """SQLite database implementation"""
 
@@ -284,11 +333,22 @@ class SQLDatabase(DatabaseInterface):
             )
         """)
 
-        # Index for faster lookups
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_streamer_path 
-            ON app_data(streamer_name, data_path)
-        """)
+        # UNIQUE(streamer_name, data_path) already indexes that pair.
+        cursor.execute("DROP INDEX IF EXISTS idx_streamer_path")
+
+        # Sort stored alerts by the timestamp already inside the JSON document.
+        # The index does not rewrite alert payloads.
+        try:
+            cursor.execute(
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_alert_storage_ts
+                ON app_data(streamer_name, {_ALERT_TS_SQL})
+                WHERE data_path LIKE 'Alerts/AlertStorage/%'
+                  AND data_path != 'Alerts/AlertStorage'
+                """
+            )
+        except sqlite3.OperationalError as index_error:
+            logger.debug("Alert storage timestamp index unavailable: %s", index_error)
 
         # Trigger to update the updated_at timestamp
         cursor.execute("""
@@ -308,6 +368,9 @@ class SQLDatabase(DatabaseInterface):
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA busy_timeout=5000")
+            # A few megabytes. Negative cache_size is KiB. Do not mmap the file.
+            conn.execute("PRAGMA cache_size=-4096")
+            conn.execute("PRAGMA temp_store=MEMORY")
         except Exception:
             pass
 
@@ -388,18 +451,7 @@ class SQLDatabase(DatabaseInterface):
             if path.startswith("/"):
                 path = path[1:]
 
-            data_json = json.dumps(data, default=str)
-            etag = str(hash(data_json))
-
-            cursor.execute(
-                """
-                INSERT OR REPLACE INTO app_data
-                (streamer_name, data_path, data_json, etag, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-                (self.streamer_name, path, data_json, etag),
-            )
-
+            self._upsert_row(cursor, path, data)
             conn.commit()
             logger.debug(f"Successfully set data at SQLite path: {path}")
             return True
@@ -413,21 +465,56 @@ class SQLDatabase(DatabaseInterface):
             if conn:
                 self._return_connection(conn)
 
+    def _upsert_row(self, cursor, path: str, data: Dict[str, Any]) -> None:
+        """Insert or update one path in place. Preserves created_at on update."""
+        data_json = json.dumps(data, default=str)
+        etag = str(hash(data_json))
+        cursor.execute(
+            """
+            INSERT INTO app_data
+                (streamer_name, data_path, data_json, etag, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(streamer_name, data_path) DO UPDATE SET
+                data_json = excluded.data_json,
+                etag = excluded.etag,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (self.streamer_name, path, data_json, etag),
+        )
+
     def update_data(self, path: str, data: Dict[str, Any]) -> bool:
         """Update data in SQLite database"""
         if not self._initialized:
             self.initialize()
 
+        conn = None
         try:
-            existing_data = self.get_data(path)
-
-            if existing_data:
-                existing_data.update(data)
-                updated_data = existing_data
-            else:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            path = _strip_db_path(path)
+            cursor.execute(
+                """
+                SELECT data_json FROM app_data
+                WHERE streamer_name = ? AND data_path = ?
+                """,
+                (self.streamer_name, path),
+            )
+            row = cursor.fetchone()
+            if row is None:
                 updated_data = data
-
-            return self.set_data(path, updated_data)
+            else:
+                try:
+                    existing_data = json.loads(row["data_json"])
+                except json.JSONDecodeError as decode_error:
+                    raise DatabaseReadError(str(decode_error)) from decode_error
+                if existing_data:
+                    existing_data.update(data)
+                    updated_data = existing_data
+                else:
+                    updated_data = data
+            self._upsert_row(cursor, path, updated_data)
+            conn.commit()
+            return True
 
         except DatabaseReadError as e:
             logger.error(
@@ -439,6 +526,9 @@ class SQLDatabase(DatabaseInterface):
                 f"Error updating data in SQLite at {path}: {str(e)}", exc_info=True
             )
             return False
+        finally:
+            if conn:
+                self._return_connection(conn)
 
     def delete_data(self, path: str) -> bool:
         """Delete data from SQLite database"""
@@ -527,28 +617,60 @@ class SQLDatabase(DatabaseInterface):
             logger.error(f"SQLite connection test failed: {str(e)}")
             return False
 
+    def _get_multiple_data(self, paths: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Load many paths in chunked IN queries. Missing paths are {}."""
+        output: Dict[str, Dict[str, Any]] = {path: {} for path in paths}
+        if not paths:
+            return output
+        if not self._initialized:
+            self.initialize()
+
+        normalized: List[tuple] = []
+        for original in paths:
+            normalized.append((original, _strip_db_path(original)))
+
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            found: Dict[str, Any] = {}
+            unique_norms = list(dict.fromkeys(norm for _, norm in normalized))
+            for offset in range(0, len(unique_norms), _SQL_IN_CHUNK):
+                chunk = unique_norms[offset : offset + _SQL_IN_CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                cursor.execute(
+                    f"""
+                    SELECT data_path, data_json FROM app_data
+                    WHERE streamer_name = ? AND data_path IN ({placeholders})
+                    """,
+                    (self.streamer_name, *chunk),
+                )
+                for row in cursor.fetchall():
+                    try:
+                        found[row["data_path"]] = json.loads(row["data_json"])
+                    except json.JSONDecodeError as decode_error:
+                        logger.error(
+                            "Error parsing JSON for %s: %s",
+                            row["data_path"],
+                            decode_error,
+                        )
+                        found[row["data_path"]] = {}
+            for original, norm in normalized:
+                output[original] = found.get(norm) or {}
+            return output
+        except Exception as e:
+            logger.error(f"Error fetching multiple SQLite paths: {e}", exc_info=True)
+            return output
+        finally:
+            if conn:
+                self._return_connection(conn)
+
     async def get_multiple_data_async(
         self, paths: List[str]
     ) -> Dict[str, Dict[str, Any]]:
         """Get data from multiple paths asynchronously"""
         loop = asyncio.get_event_loop()
-
-        async def get_single_path(path):
-            return await loop.run_in_executor(None, self.get_data, path)
-
-        tasks = [get_single_path(path) for path in paths]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        output = {}
-        for i, path in enumerate(paths):
-            result = results[i]
-            if isinstance(result, Exception):
-                logger.error(f"Error fetching data from {path}: {str(result)}")
-                output[path] = {}
-            else:
-                output[path] = result or {}
-
-        return output
+        return await loop.run_in_executor(None, self._get_multiple_data, paths)
 
     def get_all_paths(self) -> List[str]:
         """Get all data paths stored in SQLite database"""
@@ -584,21 +706,185 @@ class SQLDatabase(DatabaseInterface):
         if not self._initialized:
             self.initialize()
 
+        conn = None
         try:
-            snapshot = {}
-            paths = self.get_all_paths()
-
-            for path in paths:
-                data = self.get_data(path)
-                # Include empty dicts so snapshot mirrors all rows (merged shape may
-                # still disagree with per-path documents for the explorer).
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT data_path, data_json FROM app_data
+                WHERE streamer_name = ?
+                """,
+                (self.streamer_name,),
+            )
+            snapshot: Dict[str, Any] = {}
+            for row in cursor.fetchall():
+                path = row["data_path"]
+                try:
+                    data = json.loads(row["data_json"])
+                except json.JSONDecodeError as decode_error:
+                    raise DatabaseReadError(
+                        f"Invalid JSON at {path}: {decode_error}"
+                    ) from decode_error
+                # Include empty dicts so snapshot mirrors all rows.
                 self._set_nested_value(snapshot, path, data)
-
             return snapshot
 
         except Exception as e:
             logger.error(f"Error getting snapshot from SQLite: {str(e)}", exc_info=True)
             return {}
+        finally:
+            if conn:
+                self._return_connection(conn)
+
+    def _alert_storage_rows(
+        self, cursor, *, max_alerts: Optional[int] = None, meta_only: bool = False
+    ):
+        columns = "data_path" if meta_only else "data_path, data_json"
+        if meta_only:
+            columns = f"data_path, {_ALERT_TS_SQL} AS alert_ts"
+        sql = f"""
+            SELECT {columns} FROM app_data
+            WHERE streamer_name = ?
+              AND data_path LIKE 'Alerts/AlertStorage/%'
+              AND data_path != 'Alerts/AlertStorage'
+        """
+        params: list = [self.streamer_name]
+        if max_alerts and max_alerts > 0:
+            sql += f" ORDER BY {_ALERT_TS_SQL} DESC LIMIT ?"
+            params.append(int(max_alerts))
+        elif meta_only:
+            sql += f" ORDER BY {_ALERT_TS_SQL} DESC"
+        cursor.execute(sql, tuple(params))
+        return cursor.fetchall()
+
+    def fetch_alert_storage(self, max_alerts: Optional[int] = None) -> Dict[str, Any]:
+        """Return alert_id -> alert JSON. Same documents, optional newest-N limit."""
+        if not self._initialized:
+            self.initialize()
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            rows = self._alert_storage_rows(cursor, max_alerts=max_alerts)
+            storage: Dict[str, Any] = {}
+            for row in rows:
+                path = row["data_path"]
+                alert_id = path.rsplit("/", 1)[-1]
+                try:
+                    storage[alert_id] = json.loads(row["data_json"])
+                except json.JSONDecodeError as decode_error:
+                    logger.error("Error parsing JSON for stored alert %s: %s", path, decode_error)
+            return storage
+        finally:
+            if conn:
+                self._return_connection(conn)
+
+    def list_alert_storage_meta(self) -> List[tuple]:
+        """Return (alert_id, timestamp) newest first, without the alert JSON."""
+        if not self._initialized:
+            self.initialize()
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            rows = self._alert_storage_rows(cursor, meta_only=True)
+            meta = []
+            for row in rows:
+                alert_id = row["data_path"].rsplit("/", 1)[-1]
+                try:
+                    ts = float(row["alert_ts"] or 0)
+                except (TypeError, ValueError):
+                    ts = 0.0
+                meta.append((alert_id, ts))
+            return meta
+        finally:
+            if conn:
+                self._return_connection(conn)
+
+    def query_alert_storage_page(self, page: int, limit: int) -> Dict[str, Any]:
+        """One page of stored alerts, newest first, plus the real total count."""
+        if not self._initialized:
+            self.initialize()
+        page = max(1, int(page or 1))
+        limit = max(1, int(limit or 1))
+        offset = (page - 1) * limit
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM app_data
+                WHERE streamer_name = ?
+                  AND data_path LIKE 'Alerts/AlertStorage/%'
+                  AND data_path != 'Alerts/AlertStorage'
+                """,
+                (self.streamer_name,),
+            )
+            total_count = int(cursor.fetchone()[0] or 0)
+            cursor.execute(
+                f"""
+                SELECT data_path, data_json FROM app_data
+                WHERE streamer_name = ?
+                  AND data_path LIKE 'Alerts/AlertStorage/%'
+                  AND data_path != 'Alerts/AlertStorage'
+                ORDER BY {_ALERT_TS_SQL} DESC
+                LIMIT ? OFFSET ?
+                """,
+                (self.streamer_name, limit, offset),
+            )
+            alerts = []
+            for row in cursor.fetchall():
+                alert_id = row["data_path"].rsplit("/", 1)[-1]
+                try:
+                    data = json.loads(row["data_json"])
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict):
+                    data = {}
+                item = dict(data)
+                item["alert_id"] = alert_id
+                alerts.append(item)
+            return {"alerts": alerts, "total_count": total_count}
+        finally:
+            if conn:
+                self._return_connection(conn)
+
+    def delete_paths(self, paths: List[str]) -> bool:
+        """Delete many paths in chunked transactions."""
+        if not paths:
+            return True
+        if not self._initialized:
+            self.initialize()
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            norms = [_strip_db_path(path) for path in paths]
+            for offset in range(0, len(norms), _SQL_IN_CHUNK):
+                chunk = norms[offset : offset + _SQL_IN_CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                cursor.execute(
+                    f"""
+                    DELETE FROM app_data
+                    WHERE streamer_name = ? AND data_path IN ({placeholders})
+                    """,
+                    (self.streamer_name, *chunk),
+                )
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error("Error batch-deleting SQLite paths: %s", e, exc_info=True)
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            return False
+        finally:
+            if conn:
+                self._return_connection(conn)
 
     def _set_nested_value(self, d: Dict[str, Any], path: str, value: Any) -> None:
         """Set a value in a nested dictionary using a path string"""
@@ -1136,6 +1422,83 @@ class FirebaseDatabase(DatabaseInterface):
 
         return self.get_data("Alerts/AlertStorage") or {}
 
+    def _alert_storage_ref(self):
+        if not self._initialized:
+            self.initialize()
+        if self._root_ref is None:
+            return None
+        return self._root_ref.child("Alerts/AlertStorage")
+
+    def _firebase_alert_count(self, storage_ref) -> int:
+        try:
+            shallow = storage_ref.get(shallow=True)
+            if isinstance(shallow, dict):
+                return len(shallow)
+        except TypeError:
+            pass
+        except Exception as e:
+            logger.debug("Firebase shallow AlertStorage count unavailable: %s", e)
+        data = self.get_data("Alerts/AlertStorage") or {}
+        return len(data) if isinstance(data, dict) else 0
+
+    def fetch_alert_storage(self, max_alerts: Optional[int] = None) -> Dict[str, Any]:
+        if max_alerts and max_alerts > 0:
+            return self.get_alert_storage_limited(int(max_alerts))
+        data = self.get_data("Alerts/AlertStorage") or {}
+        return data if isinstance(data, dict) else {}
+
+    def list_alert_storage_meta(self) -> List[tuple]:
+        data = self.fetch_alert_storage()
+        rows = []
+        for alert_id, alert_data in data.items():
+            if not isinstance(alert_data, dict):
+                continue
+            rows.append((str(alert_id), _coerce_alert_timestamp(alert_data.get("timestamp"))))
+        rows.sort(key=lambda item: item[1], reverse=True)
+        return rows
+
+    def query_alert_storage_page(self, page: int, limit: int) -> Dict[str, Any]:
+        page = max(1, int(page or 1))
+        limit = max(1, int(limit or 1))
+        storage_ref = self._alert_storage_ref()
+        if storage_ref is None:
+            return {"alerts": [], "total_count": 0}
+        total_count = self._firebase_alert_count(storage_ref)
+        need = page * limit
+        fetched: Dict[str, Any] = {}
+        try:
+            result = (
+                storage_ref.order_by_child("timestamp")
+                .limit_to_last(int(need))
+                .get()
+            )
+            if isinstance(result, dict):
+                fetched = result
+        except Exception as e:
+            logger.debug("Firebase alert page query fell back to full read: %s", e)
+            fetched = self.fetch_alert_storage()
+        alerts = _sorted_alert_records(fetched)
+        start = (page - 1) * limit
+        return {"alerts": alerts[start : start + limit], "total_count": total_count}
+
+    def delete_paths(self, paths: List[str]) -> bool:
+        if not paths:
+            return True
+        if not self._initialized:
+            self.initialize()
+        if self._root_ref is None:
+            return False
+        try:
+            for offset in range(0, len(paths), 100):
+                updates = {}
+                for path in paths[offset : offset + 100]:
+                    updates[_strip_db_path(path)] = None
+                self._root_ref.update(updates)
+            return True
+        except Exception as e:
+            logger.error("Error batch-deleting Firebase paths: %s", e, exc_info=True)
+            return False
+
 
 class MongoDatabase(DatabaseInterface):
     """MongoDB database implementation"""
@@ -1172,6 +1535,13 @@ class MongoDatabase(DatabaseInterface):
 
             # Create indexes for better performance
             self._collection.create_index([("data_path", 1)], unique=True)
+            try:
+                self._collection.create_index(
+                    [("data.timestamp", -1)],
+                    name="idx_data_timestamp",
+                )
+            except Exception as index_error:
+                logger.debug("MongoDB alert timestamp index unavailable: %s", index_error)
 
             self._initialized = True
             logger.info(
@@ -1354,28 +1724,36 @@ class MongoDatabase(DatabaseInterface):
             logger.error(f"MongoDB connection test failed: {str(e)}")
             return False
 
+    def _get_multiple_data(self, paths: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Load many paths with one $in query per chunk. Missing paths are {}."""
+        output: Dict[str, Dict[str, Any]] = {path: {} for path in paths}
+        if not paths:
+            return output
+        if not self._initialized:
+            self.initialize()
+        if self._collection is None:
+            return output
+        try:
+            normalized = [(original, _strip_db_path(original)) for original in paths]
+            unique_norms = list(dict.fromkeys(norm for _, norm in normalized))
+            found: Dict[str, Any] = {}
+            for offset in range(0, len(unique_norms), _SQL_IN_CHUNK):
+                chunk = unique_norms[offset : offset + _SQL_IN_CHUNK]
+                for doc in self._collection.find({"data_path": {"$in": chunk}}):
+                    found[doc.get("data_path", "")] = doc.get("data", {}) or {}
+            for original, norm in normalized:
+                output[original] = found.get(norm) or {}
+            return output
+        except Exception as e:
+            logger.error(f"Error fetching multiple MongoDB paths: {e}", exc_info=True)
+            return output
+
     async def get_multiple_data_async(
         self, paths: List[str]
     ) -> Dict[str, Dict[str, Any]]:
         """Get data from multiple MongoDB paths asynchronously"""
         loop = asyncio.get_event_loop()
-
-        async def get_single_path(path):
-            return await loop.run_in_executor(None, self.get_data, path)
-
-        tasks = [get_single_path(path) for path in paths]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        output = {}
-        for i, path in enumerate(paths):
-            result = results[i]
-            if isinstance(result, Exception):
-                logger.error(f"Error fetching data from {path}: {str(result)}")
-                output[path] = {}
-            else:
-                output[path] = result or {}
-
-        return output
+        return await loop.run_in_executor(None, self._get_multiple_data, paths)
 
     def get_all_paths(self) -> List[str]:
         """Get all data paths stored in MongoDB"""
@@ -1434,6 +1812,135 @@ class MongoDatabase(DatabaseInterface):
                 current[key] = {}
             current = current[key]
         current[keys[-1]] = value
+
+    def _collection_map(self, document: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Treat a parent Alerts/AlertStorage document as id -> alert, if it is one."""
+        if not document:
+            return {}
+        data = document.get("data")
+        if not isinstance(data, dict):
+            return {}
+        blob = {}
+        for key, value in data.items():
+            if isinstance(value, dict):
+                blob[str(key)] = value
+        return blob
+
+    def _iter_alert_child_docs(self, *, max_alerts: Optional[int] = None, projection=None):
+        prefix = _alert_storage_prefix_query()
+        cursor = self._collection.find(prefix, projection)
+        if max_alerts and max_alerts > 0:
+            cursor = cursor.sort([("data.timestamp", -1)]).limit(int(max_alerts))
+        return cursor
+
+    def fetch_alert_storage(self, max_alerts: Optional[int] = None) -> Dict[str, Any]:
+        if not self._initialized:
+            self.initialize()
+        if self._collection is None:
+            return {}
+        exact = self._collection.find_one({"data_path": "Alerts/AlertStorage"})
+        blob = self._collection_map(exact)
+        if blob:
+            storage = dict(blob)
+            for doc in self._collection.find(_alert_storage_prefix_query()):
+                path = str(doc.get("data_path") or "")
+                data = doc.get("data")
+                if isinstance(data, dict):
+                    storage[path.rsplit("/", 1)[-1]] = data
+            if max_alerts and max_alerts > 0 and len(storage) > max_alerts:
+                ordered = _sorted_alert_records(storage)[: int(max_alerts)]
+                return {
+                    item["alert_id"]: {k: v for k, v in item.items() if k != "alert_id"}
+                    for item in ordered
+                }
+            return storage
+        storage = {}
+        for doc in self._iter_alert_child_docs(max_alerts=max_alerts):
+            data = doc.get("data")
+            if not isinstance(data, dict):
+                continue
+            alert_id = str(doc.get("data_path") or "").rsplit("/", 1)[-1]
+            storage[alert_id] = data
+        return storage
+
+    def list_alert_storage_meta(self) -> List[tuple]:
+        if not self._initialized:
+            self.initialize()
+        if self._collection is None:
+            return []
+        rows = []
+        exact = self._collection.find_one({"data_path": "Alerts/AlertStorage"})
+        for alert_id, alert_data in self._collection_map(exact).items():
+            rows.append(
+                (alert_id, _coerce_alert_timestamp(alert_data.get("timestamp")))
+            )
+        for doc in self._collection.find(
+            _alert_storage_prefix_query(),
+            {"data_path": 1, "data.timestamp": 1},
+        ):
+            alert_id = str(doc.get("data_path") or "").rsplit("/", 1)[-1]
+            timestamp = None
+            data = doc.get("data")
+            if isinstance(data, dict):
+                timestamp = data.get("timestamp")
+            rows.append((alert_id, _coerce_alert_timestamp(timestamp)))
+        rows.sort(key=lambda item: item[1], reverse=True)
+        return rows
+
+    def query_alert_storage_page(self, page: int, limit: int) -> Dict[str, Any]:
+        if not self._initialized:
+            self.initialize()
+        if self._collection is None:
+            return {"alerts": [], "total_count": 0}
+        page = max(1, int(page or 1))
+        limit = max(1, int(limit or 1))
+        exact = self._collection.find_one({"data_path": "Alerts/AlertStorage"})
+        blob = self._collection_map(exact)
+        prefix = _alert_storage_prefix_query()
+        if blob:
+            merged = self.fetch_alert_storage()
+            alerts = _sorted_alert_records(merged)
+            total_count = len(alerts)
+            start = (page - 1) * limit
+            return {"alerts": alerts[start : start + limit], "total_count": total_count}
+        total_count = int(self._collection.count_documents(prefix))
+        skip = (page - 1) * limit
+        alerts = []
+        cursor = (
+            self._collection.find(prefix)
+            .sort([("data.timestamp", -1)])
+            .skip(skip)
+            .limit(limit)
+        )
+        for doc in cursor:
+            data = doc.get("data")
+            if not isinstance(data, dict):
+                data = {}
+            item = dict(data)
+            item["alert_id"] = str(doc.get("data_path") or "").rsplit("/", 1)[-1]
+            alerts.append(item)
+        alerts.sort(
+            key=lambda item: _coerce_alert_timestamp(item.get("timestamp")),
+            reverse=True,
+        )
+        return {"alerts": alerts, "total_count": total_count}
+
+    def delete_paths(self, paths: List[str]) -> bool:
+        if not paths:
+            return True
+        if not self._initialized:
+            self.initialize()
+        if self._collection is None:
+            return False
+        try:
+            norms = [_strip_db_path(path) for path in paths]
+            for offset in range(0, len(norms), _SQL_IN_CHUNK):
+                chunk = norms[offset : offset + _SQL_IN_CHUNK]
+                self._collection.delete_many({"data_path": {"$in": chunk}})
+            return True
+        except Exception as e:
+            logger.error("Error batch-deleting MongoDB paths: %s", e, exc_info=True)
+            return False
 
 
 class DatabaseManager:
@@ -1689,6 +2196,43 @@ class DatabaseManager:
                 invalidate_on_timeout=True,
             )
         )
+
+    def _alert_backend(self):
+        """Active backend once the app database is already open. Does not connect."""
+        if not self._initialized or self._database is None:
+            return None
+        return self._database
+
+    def fetch_alert_storage(self, max_alerts: Optional[int] = None):
+        backend = self._alert_backend()
+        if backend is None or not hasattr(backend, "fetch_alert_storage"):
+            return None
+        return backend.fetch_alert_storage(max_alerts)
+
+    def list_alert_storage_meta(self):
+        backend = self._alert_backend()
+        if backend is None or not hasattr(backend, "list_alert_storage_meta"):
+            return None
+        return backend.list_alert_storage_meta()
+
+    def query_alert_storage_page(self, page: int, limit: int):
+        backend = self._alert_backend()
+        if backend is None or not hasattr(backend, "query_alert_storage_page"):
+            return None
+        return backend.query_alert_storage_page(page, limit)
+
+    def delete_paths(self, paths: List[str]) -> bool:
+        """Batch-delete paths on the active backend."""
+        if not paths:
+            return True
+        backend = self._alert_backend()
+        if backend is not None and hasattr(backend, "delete_paths"):
+            return bool(backend.delete_paths(paths))
+        ok = True
+        for path in paths:
+            if not self.delete_data(path):
+                ok = False
+        return ok
 
     def get_connection_status(self) -> Dict[str, Any]:
         """Get the current database connection status"""

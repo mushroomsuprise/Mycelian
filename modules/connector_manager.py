@@ -40,6 +40,50 @@ from .notification_engine import nav_actions_main_tab, notify_critical
 
 logger = logging.getLogger(__name__)
 
+# Class name -> event_type. None means the trigger sees every event (AnyTrigger).
+_TRIGGER_EVENT_BY_CLASS = {
+    "TwitchBitsTrigger": "twitch_bits",
+    "TwitchSubTrigger": "twitch_sub",
+    "TwitchResubTrigger": "twitch_resub",
+    "TwitchGiftSubTrigger": "twitch_giftsub",
+    "TwitchFollowTrigger": "twitch_follow",
+    "TwitchRaidTrigger": "twitch_raid",
+    "TwitchPointsTrigger": "twitch_points",
+    "TwitchChatMessageTrigger": "twitch_chat_message",
+    "YouTubeChatMessageTrigger": "youtube_chat_message",
+    "YouTubeMemberTrigger": "youtube_member",
+    "YouTubeMemberMilestoneTrigger": "youtube_member_milestone",
+    "YouTubeGiftMembershipTrigger": "youtube_gift_membership",
+    "YouTubeSuperChatTrigger": "youtube_superchat",
+    "YouTubeSuperStickerTrigger": "youtube_supersticker",
+    "TwitchHypeTrainStartTrigger": "twitch_hype_train_start",
+    "TwitchHypeTrainEndTrigger": "twitch_hype_train_end",
+    "TwitchStreamOnlineTrigger": "twitch_stream_online",
+    "TwitchStreamOfflineTrigger": "twitch_stream_offline",
+    "DonationTrigger": "donation",
+    "TimerTrigger": "timer",
+    "ScheduleTrigger": "schedule",
+    "HotkeyTrigger": "hotkey",
+    "StreamdeckTrigger": "streamdeck",
+    "WebhookTrigger": "webhook",
+    "ObsSceneChangedTrigger": "obs_scene_changed",
+    "ObsStreamStateTrigger": "obs_stream_state",
+    "ObsRecordStateTrigger": "obs_record_state",
+    "ObsInputMuteTrigger": "obs_input_mute",
+    "AnyTrigger": None,
+}
+
+
+def _connector_listens_for(connector: Any, event_type: str) -> bool:
+    """Skip triggers that cannot match this event. Unknown triggers still run."""
+    trigger = getattr(connector, "trigger", None)
+    if trigger is None:
+        return False
+    expected = _TRIGGER_EVENT_BY_CLASS.get(type(trigger).__name__, "")
+    if expected is None or expected == "":
+        return True
+    return expected == event_type
+
 
 class ConnectorManager:
     """Manages connectors and processes events through the trigger-action system"""
@@ -354,10 +398,12 @@ class ConnectorManager:
         with self._lock:
             connectors = list(self.connectors.items())
 
-        # Process through all enabled connectors
+        # Process enabled connectors for this event, in the same order.
         for connector_id, connector in connectors:
             # Check if connector is enabled
             if not connector.enabled:
+                continue
+            if not _connector_listens_for(connector, event_type):
                 continue
 
             try:
