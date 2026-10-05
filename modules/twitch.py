@@ -96,13 +96,6 @@ from .twitch_token_auth import (
     twitch_has_user_auth,
     validate_access_token,
 )
-from .uiwindows.activity_feed import (
-    add_alert_to_feed,
-    format_modiversary_message,
-    format_raid_activity_message,
-    format_watch_streak_message,
-)
-
 ensure_channel_chat_notification_watch_streak_patch()
 ensure_channel_chat_notification_modiversary_patch()
 ensure_channel_chat_message_gif_patch()
@@ -175,6 +168,8 @@ def _send_twitch_instant_alert(alert_data: dict) -> None:
 def _add_twitch_alert_to_feed(*args, **kwargs) -> None:
     if not _twitch_alerts_enabled():
         return
+    from .uiwindows.activity_feed import add_alert_to_feed
+
     add_alert_to_feed(*args, **kwargs)
 
 
@@ -2406,6 +2401,8 @@ class Twitch_API:
                 alert_id, streak_storage
                 )
 
+        from .uiwindows.activity_feed import format_watch_streak_message
+
         streak_line = format_watch_streak_message(username, streak_count)
         # The activity-feed payload is what chat renders (media or text). A second
         # event line would duplicate it. When alerts are off the feed is skipped,
@@ -3065,6 +3062,8 @@ class Twitch_API:
             )
             return
 
+        from .uiwindows.activity_feed import format_modiversary_message
+
         line = format_modiversary_message(username, months)
         logger.info("Modiversary for %s: %s months", username, months)
         # Chat draws the feed copy as a text line. Skip the event line then so
@@ -3688,6 +3687,8 @@ class Twitch_API:
             )
 
         # Add to activity feed
+        from .uiwindows.activity_feed import format_raid_activity_message
+
         _add_twitch_alert_to_feed(
             alert_type="Raid",
             message=format_raid_activity_message(

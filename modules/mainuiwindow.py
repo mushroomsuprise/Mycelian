@@ -37,7 +37,6 @@ from typing import Any, Dict, List, Optional
 
 from nicegui import app, ui
 
-from modules import updater
 from modules.nicegui_outbox_patch import ensure_outbox_snapshot_patch
 
 # Make the NiceGUI per-client outbox loop resilient to the weakref/GC race that
@@ -77,10 +76,6 @@ _splash_status = None
 # deferred-services close thread fires before the client connects and the splash is
 # built in build_root_ui() (which would otherwise leave a splash that never closes).
 _splash_close_requested = False
-from modules.uiwindows.activity_feed import (
-    add_alert_to_feed,
-    create_activity_feed_tab,
-)
 
 from . import alertutils, database_manager, dataobjects, tray_controller
 from .theme_manager import get_theme_manager, generate_css_variables
@@ -202,9 +197,11 @@ def apply_theme(theme_name: str):
     global _base_css_injected
     theme_manager = get_theme_manager()
 
-    # Load themes if not already loaded
-    if not theme_manager._loaded_themes:
-        theme_manager.load_themes_from_directory()
+    # Load the active theme if it is not already in memory. The full catalog
+    # loads when the Theme tab asks for the list.
+    theme_manager.load_active_theme(
+        theme_name if isinstance(theme_name, str) else "dark"
+    )
 
     # Set current theme in manager
     theme_manager.set_theme(theme_name)
@@ -1110,6 +1107,8 @@ def _schedule_update_manager_init() -> None:
 
     def init_update_manager():
         try:
+            from modules import updater
+
             updater.update_manager.on_ui_ready()
             logger.info("Updater: UpdateManager scheduling initialized")
         except Exception as e:
@@ -1481,6 +1480,143 @@ class LazyTabPanel:
             logger.debug(f"Lazy loaded tab: {self.name}")
 
 
+_LAZY_PRELOAD_DELAY_SEC = 30.0
+_LAZY_PRELOAD_GAP_SEC = 1.0
+_LAZY_PRELOAD_STEP_TIMEOUT_SEC = 180.0
+_MAIN_TAB_PRELOAD_ORDER = (
+    "Alerts",
+    "Source Settings",
+    "Source Controls",
+    "Connectors",
+    "Chatbot",
+    "Spore Studio",
+    "Settings",
+)
+
+
+def _start_lazy_tab_preload(lazy_tabs: dict, tabs) -> None:
+    """Warm unloaded main tabs, then Settings subtabs, after the window is up.
+
+    The daemon thread only waits. Each panel is built on the client layout slot
+    so NiceGUI can create elements, with a gap so the UI loop stays responsive.
+    A new client (tray restore) changes ``_ui_client_id`` and this run stops.
+    """
+    from nicegui import context
+
+    from .ui_tab_transitions import _tab_label
+
+    client = context.client
+    client_id = client.id
+    layout = client.layout
+
+    def _still_current() -> bool:
+        try:
+            from .shutdown import is_shutdown_in_progress
+
+            if is_shutdown_in_progress():
+                return False
+        except Exception:
+            pass
+        return _ui_client_id == client_id and not client.is_deleted
+
+    def _run_on_layout(step) -> bool:
+        """Run ``step`` on this client's layout slot. False when the client is gone."""
+        if not _still_current():
+            return False
+        done = threading.Event()
+
+        def _finish() -> None:
+            try:
+                if _still_current():
+                    step()
+            except Exception as exc:
+                logger.error("Lazy preload step failed: %s", exc, exc_info=True)
+            finally:
+                done.set()
+
+        def _schedule() -> None:
+            try:
+                if not _still_current():
+                    done.set()
+                    return
+                with layout:
+                    layout_schedule(0, _finish, once=True)
+            except Exception as exc:
+                logger.error(
+                    "Could not schedule lazy preload step: %s", exc, exc_info=True
+                )
+                done.set()
+
+        run_on_ui_loop(_schedule)
+        if not done.wait(timeout=_LAZY_PRELOAD_STEP_TIMEOUT_SEC):
+            logger.warning("Lazy preload step timed out; stopping")
+            return False
+        return _still_current()
+
+    def _sleep_gap(seconds: float) -> bool:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if not _still_current():
+                return False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.5, remaining))
+        return _still_current()
+
+    def _worker() -> None:
+        if not _sleep_gap(_LAZY_PRELOAD_DELAY_SEC):
+            return
+        logger.info("Lazy tab preload starting for client %s", client_id)
+        for name in _MAIN_TAB_PRELOAD_ORDER:
+            if not _still_current():
+                return
+            panel = lazy_tabs.get(name)
+            if panel is None or panel.loaded:
+                continue
+
+            def _build(panel=panel, name=name) -> None:
+                panel.ensure_loaded()
+                if name != "Settings" or not panel.loaded:
+                    return
+                if _tab_label(tabs.value) == "Settings":
+                    return
+                try:
+                    from .uiwindows.settings import settings_ui
+
+                    settings_ui.pause_background_work()
+                except Exception as exc:
+                    logger.debug("Could not pause Settings polls after preload: %s", exc)
+
+            logger.info("Preloading main tab %s", name)
+            if not _run_on_layout(_build):
+                return
+            if not _sleep_gap(_LAZY_PRELOAD_GAP_SEC):
+                return
+
+        while _still_current():
+            built = {"ok": False}
+
+            def _next_settings_tab(built=built) -> None:
+                from .uiwindows.settings import settings_ui
+
+                built["ok"] = settings_ui.load_next_unloaded_settings_tab()
+
+            if not _run_on_layout(_next_settings_tab):
+                return
+            if not built["ok"]:
+                logger.info("Lazy tab preload finished for client %s", client_id)
+                return
+            if not _sleep_gap(_LAZY_PRELOAD_GAP_SEC):
+                return
+
+    threading.Thread(
+        target=_worker,
+        daemon=True,
+        name="LazyTabPreload",
+    ).start()
+
+
 def create_splash_screen():
     """Create splash screen shown during initialization"""
     global _splash_dialog, _splash_progress, _splash_status
@@ -1645,11 +1781,14 @@ def create_ui_elements():
                     from .help_system.contextual_help import set_main_ui_references
 
                     set_main_ui_references(tabs, tab_panels)
-                    # Activity Feed Tab - load immediately (it's the default view)
+                    # Activity Feed Tab - load immediately (it's the default view).
+                    # Import here so the module is not parsed before ui.run.
                     with StartupTimer("create_ui_elements.activity_feed"):
                         with ui.tab_panel(activity_tab).classes(
                             "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
                         ):
+                            from .uiwindows.activity_feed import create_activity_feed_tab
+
                             create_activity_feed_tab()
 
                     # Other tabs - lazy load
@@ -2040,6 +2179,10 @@ def create_ui_elements():
         # Re-apply saved font once the native client is connected (head CSS is static at theme inject)
         layout_schedule(0.5, lambda: apply_app_font(), once=True)
 
+        # Warm the other tabs after the window has been up for a bit. This does
+        # not run before first paint.
+        _start_lazy_tab_preload(lazy_tabs, tabs)
+
     # Mark UI elements as created
     _ui_elements_created = True
 
@@ -2047,6 +2190,8 @@ def create_ui_elements():
 def reschedule_periodic_update_timer():
     # Backward-compat shim; delegate to centralized manager
     try:
+        from modules import updater
+
         updater.update_manager.reschedule_periodic_timer()
     except Exception as e:
         logger.error(

@@ -778,6 +778,8 @@ def get_hidden_imports(current_os):
             "modules.tray_controller",
             # Spawn target for the tray child; nothing imports it at module scope.
             "modules.tray_process",
+            # Footer reads copy progress without importing customsources.
+            "modules.template_copy_progress",
         ]
     )
 

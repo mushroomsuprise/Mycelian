@@ -5412,6 +5412,7 @@ class SettingsUI:
 
                         # Initialize lazy loading state
                         self._settings_loaded_tabs = set()
+                        self._settings_preload_failed = set()
 
                         def load_tab_content(tab_name):
                             """Load content for a specific tab"""
@@ -5508,6 +5509,8 @@ class SettingsUI:
                             "App Settings",
                             "About",
                         ]
+                        self._load_settings_tab_content = load_tab_content
+                        self._settings_preload_order = list(settings_panel_order)
 
                         _TAB_PANEL_CLASSES = (
                             "tab-content w-full h-full min-h-0 flex flex-col"
@@ -5994,6 +5997,30 @@ class SettingsUI:
                 )
 
             dialog.open()  # Explicitly open the dialog
+
+    def load_next_unloaded_settings_tab(self) -> bool:
+        """Build one Settings subtab that is still a spinner.
+
+        Returns True when a subtab was attempted, False when none remain or the
+        Settings shell has not been built yet.
+        """
+        loader = getattr(self, "_load_settings_tab_content", None)
+        order = getattr(self, "_settings_preload_order", None)
+        loaded = getattr(self, "_settings_loaded_tabs", None)
+        if not callable(loader) or not order or loaded is None:
+            return False
+        failed = getattr(self, "_settings_preload_failed", None)
+        if failed is None:
+            failed = set()
+            self._settings_preload_failed = failed
+        for name in order:
+            if name in loaded or name in failed:
+                continue
+            loader(name)
+            if name not in loaded:
+                failed.add(name)
+            return True
+        return False
 
     def pause_background_work(self) -> None:
         """Stop Settings polls and the visible service-tab timer."""

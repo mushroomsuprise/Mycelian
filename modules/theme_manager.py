@@ -977,6 +977,7 @@ class ThemeManager:
     _instance = None
     _current_theme: str = "dark"
     _loaded_themes: Dict[str, ThemeColors] = {}
+    _catalog_loaded: bool = False
     _themes_dir: Optional[Path] = None
 
     def __init__(self):
@@ -1028,11 +1029,50 @@ class ThemeManager:
             except Exception as e:
                 logger.warning(f"Failed to load theme from {theme_file}: {e}")
 
+        self._catalog_loaded = True
+
         # Return sorted list of themes
         return [
             (name, theme.display_name)
             for name, theme in sorted(self._loaded_themes.items())
         ]
+
+    def load_active_theme(self, theme_name: str) -> Optional[ThemeColors]:
+        """Load the theme used for first paint without scanning every theme file.
+
+        The Theme tab still calls ``load_themes_from_directory`` so the full list
+        is unchanged when that tab opens. If the active name does not match a
+        filename, fall back to the full scan so first paint still resolves it.
+        """
+        if not isinstance(theme_name, str) or not theme_name.strip():
+            theme_name = "dark"
+        else:
+            theme_name = theme_name.strip()
+        if self._catalog_loaded:
+            return self._loaded_themes.get(theme_name) or self._loaded_themes.get(
+                "dark"
+            )
+        theme = self._loaded_themes.get(theme_name)
+        if theme is None:
+            theme = self._load_named_theme(theme_name)
+        if theme is None:
+            self.load_themes_from_directory()
+            return self._loaded_themes.get(theme_name) or self._loaded_themes.get(
+                "dark"
+            )
+        return theme
+
+    def _load_named_theme(self, theme_name: str) -> Optional[ThemeColors]:
+        """Load one theme file by its stored name. Does not mark the catalog complete."""
+        theme_file = self._find_theme_file(theme_name)
+        if theme_file is None:
+            return None
+        theme = self._load_theme_from_file(theme_file)
+        if theme is None or not theme.name:
+            return None
+        self._loaded_themes[theme.name] = theme
+        logger.info(f"Loaded theme: {theme.display_name} from {theme_file.name}")
+        return theme
 
     def _load_theme_from_file(self, theme_file: Path) -> Optional[ThemeColors]:
         """Load a single theme from JSON file.
@@ -1056,7 +1096,7 @@ class ThemeManager:
         Returns:
             List of (name, display_name) tuples
         """
-        if not self._loaded_themes:
+        if not self._catalog_loaded:
             self.load_themes_from_directory()
 
         return [
@@ -1071,6 +1111,8 @@ class ThemeManager:
             ThemeColors instance or dark theme as fallback
         """
         theme = self._loaded_themes.get(theme_name)
+        if theme is None and not self._catalog_loaded:
+            theme = self._load_named_theme(theme_name)
 
         if theme is None:
             logger.warning(f"Theme '{theme_name}' not found, falling back to 'dark'")
@@ -1110,7 +1152,14 @@ class ThemeManager:
 
     def set_theme(self, theme_name: str):
         """Set current theme by name"""
-        if not self._loaded_themes:
+        if not isinstance(theme_name, str) or not theme_name.strip():
+            theme_name = "dark"
+        else:
+            theme_name = theme_name.strip()
+        if theme_name not in self._loaded_themes and not self._catalog_loaded:
+            if self._load_named_theme(theme_name) is None:
+                self.load_themes_from_directory()
+        elif not self._loaded_themes:
             self.load_themes_from_directory()
 
         if theme_name not in self._loaded_themes:
@@ -1126,7 +1175,7 @@ class ThemeManager:
         Returns:
             True if theme name exists, False otherwise
         """
-        if not self._loaded_themes:
+        if not self._catalog_loaded:
             self.load_themes_from_directory()
         return theme_name in self._loaded_themes
 

@@ -41,6 +41,11 @@ from .. import web_engine as web_engine_module
 # Use proper relative import for template_config_parser
 from ..custom_sources_preview_mocks import get_mock_actions
 from ..notification_engine import notify
+from ..template_copy_progress import (
+    mark_template_copy_idle as _mark_template_copy_idle,
+    set_template_copy_state as _set_template_copy_state,
+    template_copy_is_active,
+)
 from ..path_utils import get_assets_path, get_template_path
 from ..template_config_parser import TemplateConfigParser
 from ..template_preview_settings import (
@@ -3106,72 +3111,6 @@ def _template_name_is_taken(template_name: str, config_parser) -> bool:
     if os.path.isfile(_spore_sidecar_file(template_name)):
         return True
     return os.path.isdir(_template_assets_dir(template_name))
-
-
-_template_copy_lock = threading.Lock()
-_template_copy_state: Dict[str, Any] = {
-    "active": False,
-    "phase": "idle",
-    "copied": 0,
-    "total": 0,
-    "label": "",
-    "title": "Copying",
-}
-
-
-def template_copy_is_active() -> bool:
-    with _template_copy_lock:
-        return bool(_template_copy_state["active"])
-
-
-def get_template_copy_progress() -> Dict[str, Any]:
-    with _template_copy_lock:
-        return dict(_template_copy_state)
-
-
-def format_template_copy_badge(
-    progress: Optional[Dict[str, Any]],
-) -> Optional[Tuple[str, str]]:
-    """Return (badge text, tier) while a template copy is running."""
-    if not progress or not progress.get("active"):
-        return None
-    phase = str(progress.get("phase") or "")
-    title = str(progress.get("title") or "Copying")
-    busy = "Deleting" if title == "Deleting" else "Copying"
-    tier = "error" if title == "Deleting" else "warning"
-    if phase == "preparing":
-        return ("Preparing", "info")
-    try:
-        copied = max(0, int(progress.get("copied") or 0))
-        total = max(0, int(progress.get("total") or 0))
-    except (TypeError, ValueError):
-        return (busy, tier)
-    if total <= 0:
-        return (busy, tier)
-    return (f"{copied} of {total}", tier)
-
-
-def _set_template_copy_state(**fields: Any) -> None:
-    with _template_copy_lock:
-        _template_copy_state.update(fields)
-    if fields.get("active"):
-        try:
-            from ..notification_engine import start_alert_trim_footer_poll
-
-            start_alert_trim_footer_poll()
-        except Exception:
-            pass
-
-
-def _mark_template_copy_idle() -> None:
-    _set_template_copy_state(
-        active=False,
-        phase="idle",
-        copied=0,
-        total=0,
-        label="",
-        title="Copying",
-    )
 
 
 def _refresh_template_copy_footer() -> None:

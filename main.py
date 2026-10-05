@@ -365,11 +365,27 @@ if __name__ == "__main__":
 
             from modules.theme_manager import get_theme_manager
 
-            with StartupTimer("theme_manager.load_themes_from_directory"):
+            with StartupTimer("theme_manager.load_active_theme"):
                 theme_manager = get_theme_manager()
-                theme_manager.load_themes_from_directory()
+                active_theme = "dark"
+                try:
+                    from modules import dataobjects
+
+                    settings = dataobjects.state_manager.get_app_settings()
+                    saved = (
+                        getattr(settings, "current_theme", None)
+                        if settings
+                        else None
+                    )
+                    if isinstance(saved, str) and saved.strip():
+                        active_theme = saved.strip()
+                except Exception:
+                    active_theme = "dark"
+                theme_manager.load_active_theme(active_theme)
                 logger.info(
-                    f"Theme manager initialized with {len(theme_manager._loaded_themes)} theme(s)"
+                    "Active theme '%s' loaded (%d in memory; remaining themes load with the Theme tab)",
+                    active_theme,
+                    len(theme_manager._loaded_themes),
                 )
 
             logger.info("UI shell ready")

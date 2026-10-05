@@ -192,6 +192,7 @@ _toast_nav_handler_registered = False
 
 _last_emit_monotonic: Dict[str, float] = {}
 _history: List[Dict[str, Any]] = []
+_history_loaded = False
 _history_refresh_callbacks: List[Callable[[], None]] = []
 _pending_toasts: List[tuple[str, Dict[str, Any]]] = []
 _history_lock = threading.RLock()
@@ -231,11 +232,12 @@ def _normalize_notify_type(notify_type: Optional[str]) -> str:
 
 
 def load_history() -> None:
-    global _history
+    global _history, _history_loaded
     p = _history_path()
     if not p.exists():
         with _history_lock:
             _history = []
+            _history_loaded = True
         return
     try:
         with open(p, "r", encoding="utf-8") as f:
@@ -245,10 +247,22 @@ def load_history() -> None:
                 _history = [x for x in data if isinstance(x, dict)]
             else:
                 _history = []
+            _history_loaded = True
     except Exception as e:
         logger.warning("Could not load notification history: %s", e)
         with _history_lock:
             _history = []
+            _history_loaded = True
+
+
+def _ensure_history_loaded() -> None:
+    """Read notification history on first use, not at import."""
+    if _history_loaded:
+        return
+    with _history_lock:
+        if _history_loaded:
+            return
+        load_history()
 
 
 _history_flush_timer: Optional[threading.Timer] = None
@@ -314,12 +328,14 @@ def _trigger_history_refresh() -> None:
 
 
 def get_history() -> List[Dict[str, Any]]:
+    _ensure_history_loaded()
     with _history_lock:
         return list(_history)
 
 
 def clear_history() -> None:
     global _history
+    _ensure_history_loaded()
     with _history_lock:
         _history = []
         save_history()
@@ -328,6 +344,7 @@ def clear_history() -> None:
 
 def remove_history_item(item_id: str) -> None:
     global _history
+    _ensure_history_loaded()
     with _history_lock:
         _history = [h for h in _history if h.get("id") != item_id]
         save_history()
@@ -607,6 +624,7 @@ def notify(
         "dedupe_key": dedupe_key,
         "actions": actions or [],
     }
+    _ensure_history_loaded()
     with _history_lock:
         _history.append(entry)
         if len(_history) > MAX_HISTORY_ITEMS:
@@ -1330,7 +1348,7 @@ def _on_template_copy_footer_click(_e: Any = None) -> None:
 
 def _template_copy_footer_is_active() -> bool:
     try:
-        from .uiwindows.customsources import template_copy_is_active
+        from .template_copy_progress import template_copy_is_active
 
         return template_copy_is_active()
     except Exception:
@@ -1454,7 +1472,7 @@ def refresh_template_copy_footer() -> None:
         "total": 0,
     }
     try:
-        from .uiwindows.customsources import (
+        from .template_copy_progress import (
             format_template_copy_badge,
             get_template_copy_progress,
         )
@@ -1691,9 +1709,6 @@ def start_service_watcher_timer() -> None:
         _ensure_toast_flush_timer()
 
 
-# Load persisted history at import (for non-UI code paths); UI registers refresh later
-load_history()
-
 _history_last_read_ts: float = time.time()
 
 _history_column: Optional[Any] = None
@@ -1718,6 +1733,7 @@ def _notification_panel_is_open() -> bool:
 def _compute_tray_badge_count() -> int:
     if _notification_panel_is_open():
         return 0
+    _ensure_history_loaded()
     cut = _history_last_read_ts
     with _history_lock:
         return sum(1 for e in _history if float(e.get("ts") or 0.0) > cut)
