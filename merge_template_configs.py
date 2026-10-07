@@ -265,6 +265,14 @@ def cleanup_backup(
             print(f"Warning: Error during backup cleanup: {e}")
 
 
+def _cleanup_temp_directory(temp_dir: Path, keep_temp: bool) -> None:
+    """Remove the temporary directory unless the caller asked to keep it."""
+    if keep_temp:
+        print("Keeping temporary directory.")
+        return
+    cleanup_temp_directory(temp_dir)
+
+
 def cleanup_temp_directory(temp_dir: Path) -> None:
     """Remove the temporary templates directory."""
     print("Cleaning up temporary directory...")
@@ -286,6 +294,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--final-dir", required=True, help="Path to final templates directory"
+    )
+    parser.add_argument(
+        "--keep-temp",
+        action="store_true",
+        help="Leave the temporary directory in place after a successful merge",
     )
 
     args = parser.parse_args()
@@ -312,7 +325,7 @@ def main() -> int:
             print(f"Error copying files: {e}")
             return 1
 
-        cleanup_temp_directory(temp_dir)
+        _cleanup_temp_directory(temp_dir, args.keep_temp)
         print("Template configuration migration complete.")
         return 0
 
@@ -363,7 +376,7 @@ def main() -> int:
     cleanup_backup(backup_dir, error_files)
 
     # Step 5: Remove temp directory
-    cleanup_temp_directory(temp_dir)
+    _cleanup_temp_directory(temp_dir, args.keep_temp)
 
     if error_files:
         print(

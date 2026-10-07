@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_ROOT="/Applications/Mycelian.app"
+MACOS="$APP_ROOT/Contents/MacOS"
+DEFAULTS="$MACOS/installer_defaults"
+
+if [[ -d "$DEFAULTS" ]]; then
+  while IFS= read -r -d '' src; do
+    rel="${src#"$DEFAULTS"/}"
+    dest="$MACOS/$rel"
+    if [[ ! -e "$dest" ]]; then
+      mkdir -p "$(dirname "$dest")"
+      cp -p "$src" "$dest"
+    fi
+  done < <(find "$DEFAULTS" -type f -print0)
+fi
+
+"$MACOS/merge_template_configs" \
+  --temp-dir "$MACOS/templates/template_configs_temp" \
+  --final-dir "$MACOS/templates/template_configs"
+
+console_user="$(stat -f %Su /dev/console || true)"
+if [[ -n "$console_user" && "$console_user" != "root" ]]; then
+  chown -R "${console_user}:staff" "$APP_ROOT"
+fi

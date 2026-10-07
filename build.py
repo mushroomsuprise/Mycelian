@@ -3,9 +3,13 @@
 # SPDX-License-Identifier: MIT
 """
 Improved PyInstaller build script for Mycelian
-Balances size optimization with proper NiceGUI and web engine support
+Balances size optimization with proper NiceGUI and web engine support.
+
+After a successful compile, copies the binary into the project folder and
+builds the installer for the OS it is running on.
 """
 
+import argparse
 import os
 import platform
 import shutil
@@ -52,7 +56,7 @@ class BuildProgress:
 
 
 # Global progress tracker
-progress = BuildProgress(total_steps=6)
+progress = BuildProgress(total_steps=7)
 
 
 def get_project_root():
@@ -98,8 +102,8 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.13.2"
-BUILD_DATE = "September 29th 2026"
+VERSION = "1.13.3"
+BUILD_DATE = "October 7th 2026"
 BUILD_NUMBER = "dev"
 
 # Stream Deck plugin version (manifest.json "Version"; Elgato semver, e.g. 0.2.2.0)
@@ -1260,14 +1264,14 @@ def build_executable():
                     total_size = sum(
                         f.stat().st_size for f in exe_path.rglob("*") if f.is_file()
                     ) / (1024 * 1024)
-                    progress.update(f"Output: {exe_path} ({total_size:.1f} MB)")
+                    progress.update(f"Compiled {exe_name} ({total_size:.1f} MB)")
                     progress.update(
                         "Note: Double-click in Finder to run without terminal"
                     )
                 else:
                     # Single file executable
                     size_mb = exe_path.stat().st_size / (1024 * 1024)
-                    progress.update(f"Output: {exe_path} ({size_mb:.1f} MB)")
+                    progress.update(f"Compiled {exe_name} ({size_mb:.1f} MB)")
                     if CURRENT_OS == "macos":
                         progress.update(
                             "Note: Double-click in Finder to run without terminal"
@@ -1321,7 +1325,6 @@ def post_build_tasks(dist_dir):
             f.stat().st_size for f in dist_dir.rglob("*") if f.is_file()
         ) / (1024 * 1024)
         progress.update(f"Total build size: {total_size:.1f} MB")
-        progress.update(f"Output location: {dist_dir}")
 
 
 def update_version_across_files():
@@ -1485,8 +1488,419 @@ def update_version_across_files():
         return False
 
 
+def app_binary_name(os_name=None):
+    """PyInstaller output name for the Mycelian application."""
+    os_name = os_name or CURRENT_OS
+    if os_name == "windows":
+        return "Mycelian.exe"
+    if os_name == "macos":
+        return "Mycelian.app"
+    return "Mycelian"
+
+
+def merge_helper_name(os_name=None):
+    """PyInstaller output name for the template config merge helper."""
+    os_name = os_name or CURRENT_OS
+    if os_name == "windows":
+        return "merge_template_configs.exe"
+    return "merge_template_configs"
+
+
+def _load_payload_module():
+    """Load packaging/payload.py without importing the third-party packaging package."""
+    import importlib.util
+
+    path = get_project_root() / "packaging" / "payload.py"
+    spec = importlib.util.spec_from_file_location("mycelian_install_payload", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load installer payload helper: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _copy_build_artifact(src: Path, dest: Path) -> None:
+    """Overwrite dest with a file or directory produced by PyInstaller."""
+    if not src.exists():
+        raise FileNotFoundError(f"Build output missing: {src}")
+    if src.is_dir():
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    if CURRENT_OS != "windows":
+        dest.chmod(dest.stat().st_mode | 0o755)
+
+
+def installer_output_dir(project_root: Path) -> Path:
+    """Folder Inno Setup already uses for finished installers."""
+    output_dir = project_root / "Output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
+def copy_binaries_to_project_root(project_root: Path, dist_dir: Path):
+    """Copy the app and merge helper into the project root, then remove the dist copies."""
+    app_dest = project_root / app_binary_name()
+    helper_dest = project_root / merge_helper_name()
+    _copy_build_artifact(dist_dir / app_binary_name(), app_dest)
+    _copy_build_artifact(dist_dir / merge_helper_name(), helper_dest)
+    for name in (app_binary_name(), merge_helper_name()):
+        src = dist_dir / name
+        dest = project_root / name
+        if not src.exists():
+            continue
+        try:
+            same_file = src.resolve() == dest.resolve()
+        except OSError:
+            same_file = False
+        if same_file:
+            continue
+        if src.is_dir():
+            shutil.rmtree(src)
+        else:
+            src.unlink()
+    return app_dest, helper_dest
+
+
+def build_merge_helper(project_root: Path, dist_dir: Path) -> bool:
+    """Build the template config merge tool as a one-file executable."""
+    work = project_root / "build" / "merge_template_configs"
+    work.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--onefile",
+        "--name",
+        "merge_template_configs",
+        "--distpath",
+        str(dist_dir),
+        "--workpath",
+        str(work),
+        "--specpath",
+        str(work),
+        str(project_root / "merge_template_configs.py"),
+    ]
+    result = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True)
+    helper = dist_dir / merge_helper_name()
+    if result.returncode != 0 or not helper.exists():
+        detail = (result.stderr or result.stdout or "").strip()
+        if detail:
+            progress.update(detail[-2000:])
+        return False
+    return True
+
+
+def find_iscc() -> Path:
+    """Locate the Inno Setup command-line compiler."""
+    found = shutil.which("ISCC") or shutil.which("iscc")
+    if found:
+        return Path(found)
+    candidates = []
+    for env_name in ("ProgramFiles(x86)", "ProgramFiles"):
+        root = os.environ.get(env_name)
+        if root:
+            candidates.append(Path(root) / "Inno Setup 6" / "ISCC.exe")
+    candidates.extend(
+        [
+            Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
+            Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
+        ]
+    )
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "Inno Setup compiler (ISCC.exe) was not found. "
+        "Install Inno Setup 6 and add ISCC.exe to PATH, "
+        "or install it in Program Files\\Inno Setup 6."
+    )
+
+
+def build_inno_setup(project_root: Path) -> Path:
+    """Compile Mycelian.iss. The script already runs the config merge helper."""
+    iscc = find_iscc()
+    output_dir = installer_output_dir(project_root)
+    iss_path = project_root / "Mycelian.iss"
+    if not iss_path.is_file():
+        raise FileNotFoundError(f"Inno Setup script not found: {iss_path}")
+    progress.update(f"Running {iscc}")
+    result = subprocess.run(
+        [str(iscc), f"/O{output_dir}", str(iss_path)],
+        cwd=project_root,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Inno Setup failed with exit code {result.returncode}")
+    installer = output_dir / f"Mycelian v{VERSION}.exe"
+    if not installer.is_file():
+        matches = sorted(output_dir.glob("Mycelian v*.exe"))
+        if not matches:
+            raise FileNotFoundError(
+                f"Inno Setup finished but no installer was found in {output_dir}"
+            )
+        installer = matches[-1]
+    return installer
+
+
+def _linux_is_arch() -> bool:
+    """True for Arch Linux and derivatives such as CachyOS."""
+    os_release = Path("/etc/os-release")
+    if not os_release.is_file():
+        return False
+    values = {}
+    for line in os_release.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    distro_id = values.get("ID", "")
+    like = values.get("ID_LIKE", "").split()
+    return distro_id in {"arch", "cachyos"} or "arch" in like
+
+
+def _arch_package_arch() -> str:
+    machine = platform.machine().lower()
+    return {
+        "x86_64": "x86_64",
+        "amd64": "x86_64",
+        "aarch64": "aarch64",
+        "arm64": "aarch64",
+        "i686": "i686",
+    }.get(machine, machine)
+
+
+def _replace_pkgbuild_line(text: str, key: str, new_line: str) -> str:
+    lines = []
+    found = False
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith(key):
+            ending = "\n" if line.endswith("\n") else ""
+            lines.append(new_line + ending)
+            found = True
+        else:
+            lines.append(line)
+    if not found:
+        raise RuntimeError(f"PKGBUILD is missing a {key!r} line")
+    return "".join(lines)
+
+
+def _normalize_lf(path: Path) -> None:
+    data = path.read_bytes()
+    normalized = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    if normalized != data:
+        path.write_bytes(normalized)
+
+
+def build_arch_package(project_root: Path) -> Path:
+    """Build a pacman package. Install it with ``sudo pacman -U``."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        raise RuntimeError(
+            "makepkg cannot be run as root. Re-run build.py as a normal user."
+        )
+    if not _linux_is_arch():
+        raise RuntimeError(
+            "Linux installers are built as an Arch pacman package. "
+            "This machine does not look like Arch or an Arch derivative."
+        )
+    makepkg = shutil.which("makepkg")
+    if makepkg is None:
+        raise RuntimeError(
+            "makepkg was not found. Install the base-devel package group."
+        )
+
+    arch_dir = project_root / "packaging" / "arch"
+    pkgbuild = arch_dir / "PKGBUILD"
+    text = pkgbuild.read_text(encoding="utf-8")
+    text = _replace_pkgbuild_line(text, "pkgver=", f"pkgver={VERSION}")
+    text = _replace_pkgbuild_line(
+        text, "arch=", f"arch=('{_arch_package_arch()}')"
+    )
+    pkgbuild.write_text(text, encoding="utf-8", newline="\n")
+    for script_name in ("PKGBUILD", "mycelian.install", "mycelian.sh"):
+        _normalize_lf(arch_dir / script_name)
+
+    payload = arch_dir / "payload"
+    if payload.exists():
+        shutil.rmtree(payload)
+    _load_payload_module().stage_install_payload(payload, project_root)
+    for name in (app_binary_name(), merge_helper_name()):
+        _copy_build_artifact(project_root / name, payload / name)
+
+    output_dir = installer_output_dir(project_root)
+    env = os.environ.copy()
+    env["PKGDEST"] = str(output_dir)
+    progress.update("Running makepkg")
+    result = subprocess.run(
+        [makepkg, "-f", "--noconfirm"],
+        cwd=arch_dir,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"makepkg failed with exit code {result.returncode}")
+
+    packages = sorted(
+        output_dir.glob(f"mycelian-{VERSION}-*.pkg.tar.*"),
+        key=lambda path: path.stat().st_mtime,
+    )
+    if not packages:
+        raise FileNotFoundError(
+            f"makepkg finished but no package was found in {output_dir}"
+        )
+    return packages[-1]
+
+
+def _macos_host_arch() -> str:
+    machine = platform.machine().lower()
+    if machine in {"arm64", "aarch64"}:
+        return "arm64"
+    return "x86_64"
+
+
+def build_macos_pkg(project_root: Path) -> Path:
+    """Build a .pkg that installs Mycelian.app to /Applications."""
+    pkgbuild = shutil.which("pkgbuild")
+    productbuild = shutil.which("productbuild")
+    if pkgbuild is None or productbuild is None:
+        raise RuntimeError(
+            "pkgbuild and productbuild were not found. "
+            "Install the Xcode command line tools."
+        )
+
+    builds_dir = project_root / "builds"
+    staging = builds_dir / "pkg-staging"
+    if staging.exists():
+        shutil.rmtree(staging)
+
+    app_dest = staging / "root" / "Applications" / "Mycelian.app"
+    shutil.copytree(project_root / "Mycelian.app", app_dest)
+    macos_dir = app_dest / "Contents" / "MacOS"
+    if not macos_dir.is_dir():
+        raise FileNotFoundError(f"App bundle is missing Contents/MacOS: {app_dest}")
+
+    _load_payload_module().stage_install_payload(macos_dir, project_root)
+    _copy_build_artifact(
+        project_root / merge_helper_name(),
+        macos_dir / merge_helper_name(),
+    )
+
+    scripts = staging / "scripts"
+    shutil.copytree(project_root / "packaging" / "macos" / "scripts", scripts)
+    postinstall = scripts / "postinstall"
+    _normalize_lf(postinstall)
+    postinstall.chmod(0o755)
+
+    host_arch = _macos_host_arch()
+    distribution = staging / "distribution.xml"
+    distribution.write_text(
+        "\n".join(
+            [
+                '<?xml version="1.0" encoding="utf-8"?>',
+                '<installer-gui-script minSpecVersion="2">',
+                "    <title>Mycelian</title>",
+                (
+                    "    <options customize=\"never\" require-scripts=\"false\" "
+                    f'hostArchitectures="{host_arch}"/>'
+                ),
+                "    <choices-outline>",
+                '        <line choice="mycelian"/>',
+                "    </choices-outline>",
+                '    <choice id="mycelian" title="Mycelian" '
+                'description="Install Mycelian">',
+                '        <pkg-ref id="com.mycelian.app"/>',
+                "    </choice>",
+                f'    <pkg-ref id="com.mycelian.app" version="{VERSION}" '
+                'auth="root">Mycelian-component.pkg</pkg-ref>',
+                "</installer-gui-script>",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    component = staging / "Mycelian-component.pkg"
+    progress.update("Running pkgbuild")
+    component_result = subprocess.run(
+        [
+            pkgbuild,
+            "--root",
+            str(staging / "root"),
+            "--identifier",
+            "com.mycelian.app",
+            "--version",
+            VERSION,
+            "--install-location",
+            "/",
+            "--scripts",
+            str(scripts),
+            str(component),
+        ],
+        cwd=staging,
+    )
+    if component_result.returncode != 0:
+        raise RuntimeError(
+            f"pkgbuild failed with exit code {component_result.returncode}"
+        )
+
+    installer = installer_output_dir(project_root) / f"Mycelian-{VERSION}.pkg"
+    progress.update("Running productbuild")
+    product_result = subprocess.run(
+        [
+            productbuild,
+            "--distribution",
+            str(distribution),
+            "--package-path",
+            str(staging),
+            str(installer),
+        ],
+        cwd=staging,
+    )
+    if product_result.returncode != 0:
+        raise RuntimeError(
+            f"productbuild failed with exit code {product_result.returncode}"
+        )
+    shutil.rmtree(staging, ignore_errors=True)
+    return installer
+
+
+def build_installer(project_root: Path) -> Path:
+    """Build the installer for the OS this script is running on."""
+    if CURRENT_OS == "windows":
+        return build_inno_setup(project_root)
+    if CURRENT_OS == "linux":
+        return build_arch_package(project_root)
+    if CURRENT_OS == "macos":
+        return build_macos_pkg(project_root)
+    raise RuntimeError(f"No installer is configured for {CURRENT_OS}")
+
+
+def _parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Build Mycelian and the installer for this operating system"
+    )
+    parser.add_argument(
+        "--skip-installer",
+        action="store_true",
+        help="Copy binaries into the project folder and skip the installer",
+    )
+    return parser.parse_args(argv)
+
+
 def main():
     """Main build function"""
+    args = _parse_args()
+    progress.total_steps = 6 if args.skip_installer else 7
+
     print(f"Mycelian Build Script v{VERSION} - {CURRENT_OS.upper()}")
     print("=" * 50)
 
@@ -1543,19 +1957,36 @@ def main():
             sys.exit(1)
         progress.success()
 
-        # Step 5: Build executable
+        # Step 5: Build executable and the template config merge helper
         progress.next_step("Building executable")
         success, dist_dir = build_executable()
-        if success:
-            # Step 6: Post-build tasks
-            progress.next_step("Finalizing build")
-            post_build_tasks(dist_dir)
-            progress.success()
-
-            progress.summary()
-        else:
+        if not success:
             progress.error("Build failed")
             sys.exit(1)
+        progress.update("Building template config merge helper")
+        if not build_merge_helper(project_root, dist_dir):
+            progress.error("merge_template_configs build failed")
+            sys.exit(1)
+        progress.success()
+
+        # Step 6: Copy binaries where the installers expect them
+        progress.next_step("Copying binaries into the project folder")
+        app_path, helper_path = copy_binaries_to_project_root(project_root, dist_dir)
+        progress.update(f"App: {app_path}")
+        progress.update(f"Merge helper: {helper_path}")
+        post_build_tasks(dist_dir)
+        progress.success()
+
+        # Step 7: OS installer
+        if args.skip_installer:
+            progress.update("Installer skipped (--skip-installer)")
+        else:
+            progress.next_step("Building installer")
+            installer_path = build_installer(project_root)
+            progress.update(f"Installer: {installer_path}")
+            progress.success()
+
+        progress.summary()
 
     except KeyboardInterrupt:
         progress.error("Build interrupted by user")

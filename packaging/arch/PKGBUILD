@@ -1,0 +1,20 @@
+# Maintainer: mushroomsuprise
+pkgname=mycelian
+pkgver=1.13.2
+pkgrel=1
+pkgdesc='Custom alert and browser source tool for Twitch streamers'
+arch=('x86_64')
+license=('MIT')
+depends=('glibc')
+options=('!strip' '!debug')
+install=mycelian.install
+
+package() {
+  local app="$pkgdir/opt/mycelian"
+  install -d "$app"
+  cp -a "$startdir/payload/." "$app/"
+  chmod 755 "$app/Mycelian" "$app/merge_template_configs"
+  install -Dm755 "$startdir/mycelian.sh" "$pkgdir/usr/bin/mycelian"
+  install -Dm644 "$startdir/mycelian.desktop" "$pkgdir/usr/share/applications/mycelian.desktop"
+  install -Dm644 "$startdir/mycelian.xml" "$pkgdir/usr/share/mime/packages/mycelian.xml"
+}

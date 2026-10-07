@@ -1,0 +1,48 @@
+copy_missing_defaults() {
+  local app="$1"
+  local defaults="$app/installer_defaults"
+  local src rel dest
+
+  [[ -d "$defaults" ]] || return 0
+
+  while IFS= read -r -d '' src; do
+    rel="${src#"$defaults"/}"
+    dest="$app/$rel"
+    if [[ ! -e "$dest" ]]; then
+      mkdir -p "$(dirname "$dest")" || return 1
+      if ! cp -a "$src" "$dest"; then
+        echo "Failed to install default file: $rel" >&2
+        return 1
+      fi
+    fi
+  done < <(find "$defaults" -type f -print0)
+}
+
+mycelian_after_install() {
+  local app=/opt/mycelian
+
+  if ! copy_missing_defaults "$app"; then
+    echo "Mycelian failed to install default themes or assets." >&2
+    return 1
+  fi
+
+  if ! "$app/merge_template_configs" \
+      --temp-dir "$app/templates/template_configs_temp" \
+      --final-dir "$app/templates/template_configs" \
+      --keep-temp; then
+    echo "Mycelian template config merge failed." >&2
+    return 1
+  fi
+
+  if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+    chown -R "$SUDO_USER:$SUDO_USER" "$app" || return 1
+  fi
+}
+
+post_install() {
+  mycelian_after_install
+}
+
+post_upgrade() {
+  mycelian_after_install
+}

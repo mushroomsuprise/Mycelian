@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mycelian
+Comment=Custom alert and browser source tool for Twitch streamers
+Exec=/usr/bin/mycelian
+Icon=/opt/mycelian/assets/default_assets/icons/Mycelian.ico
+Terminal=false
+Categories=AudioVideo;
+MimeType=application/x-mycelian-project;
+StartupNotify=true
