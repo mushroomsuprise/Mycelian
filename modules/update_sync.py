@@ -654,14 +654,26 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _windows_creationflags(*, breakaway: bool) -> int:
-    flags = _CREATE_NEW_PROCESS_GROUP | _DETACHED_PROCESS | _CREATE_NO_WINDOW
+    # DETACHED_PROCESS makes powershell.exe exit before -File runs, so the
+    # helper never writes its pid. CREATE_NO_WINDOW hides the console instead.
+    flags = _CREATE_NEW_PROCESS_GROUP | _CREATE_NO_WINDOW
     if breakaway:
         flags |= _CREATE_BREAKAWAY_FROM_JOB
     return flags
 
 
+def _powershell_executable() -> str:
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    candidate = os.path.join(
+        system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"
+    )
+    if os.path.isfile(candidate):
+        return candidate
+    return "powershell.exe"
+
+
 def _popen_hidden(args: list, log_path: Path) -> subprocess.Popen:
-    log_handle = open(log_path, "a", encoding="utf-8")
+    log_handle = open(log_path, "ab")
     try:
         kwargs: Dict[str, Any] = dict(
             stdin=subprocess.DEVNULL,
@@ -671,6 +683,10 @@ def _popen_hidden(args: list, log_path: Path) -> subprocess.Popen:
             close_fds=True,
         )
         if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = startupinfo
             try:
                 return subprocess.Popen(
                     args,
@@ -743,7 +759,7 @@ def launch_apply_helper(staging: Path, *, elevate: bool) -> int:
         else:
             _popen_hidden(
                 [
-                    "powershell.exe",
+                    _powershell_executable(),
                     "-NoProfile",
                     "-ExecutionPolicy",
                     "Bypass",

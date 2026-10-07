@@ -94,12 +94,12 @@ class UpdaterInstallerTests(unittest.TestCase):
     def test_windows_helper_creationflags_include_breakaway(self) -> None:
         flags = update_sync._windows_creationflags(breakaway=True)
         self.assertTrue(flags & update_sync._CREATE_NEW_PROCESS_GROUP)
-        self.assertTrue(flags & update_sync._DETACHED_PROCESS)
+        self.assertEqual(flags & update_sync._DETACHED_PROCESS, 0)
         self.assertTrue(flags & update_sync._CREATE_BREAKAWAY_FROM_JOB)
         self.assertTrue(flags & update_sync._CREATE_NO_WINDOW)
         without = update_sync._windows_creationflags(breakaway=False)
         self.assertEqual(without & update_sync._CREATE_BREAKAWAY_FROM_JOB, 0)
-        self.assertTrue(without & update_sync._DETACHED_PROCESS)
+        self.assertEqual(without & update_sync._DETACHED_PROCESS, 0)
 
     def test_windows_helper_passes_breakaway_flags(self) -> None:
         captured: dict = {}
@@ -120,7 +120,7 @@ class UpdaterInstallerTests(unittest.TestCase):
                     )
         self.assertIs(proc, fake)
         flags = captured["kwargs"]["creationflags"]
-        self.assertTrue(flags & update_sync._DETACHED_PROCESS)
+        self.assertEqual(flags & update_sync._DETACHED_PROCESS, 0)
         self.assertTrue(flags & update_sync._CREATE_NEW_PROCESS_GROUP)
         self.assertTrue(flags & update_sync._CREATE_BREAKAWAY_FROM_JOB)
         self.assertEqual(captured["args"][0][0], "powershell.exe")
@@ -150,7 +150,7 @@ class UpdaterInstallerTests(unittest.TestCase):
         self.assertEqual(len(flags_seen), 2)
         self.assertTrue(flags_seen[0] & update_sync._CREATE_BREAKAWAY_FROM_JOB)
         self.assertEqual(flags_seen[1] & update_sync._CREATE_BREAKAWAY_FROM_JOB, 0)
-        self.assertTrue(flags_seen[1] & update_sync._DETACHED_PROCESS)
+        self.assertEqual(flags_seen[1] & update_sync._DETACHED_PROCESS, 0)
 
     def test_finish_update_protects_helper_then_exits(self) -> None:
         exits: list[bool] = []
