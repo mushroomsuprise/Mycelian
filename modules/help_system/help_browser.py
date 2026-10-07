@@ -621,9 +621,10 @@ class HelpBrowser:
 
                 ui.separator().classes("help-separator-accent").style("margin: 8px 0 16px 0;")
 
-                # Markdown content
+                # Markdown content. Articles are first-party, so keep class
+                # attributes on the status-color swatches.
                 with ui.element("div").classes("help-markdown-content w-full"):
-                    ui.markdown(topic.content).classes("w-full")
+                    ui.markdown(topic.content, sanitize=False).classes("w-full")
 
                 # Prev/next navigation
                 prev_topic, next_topic = self.help_manager.get_adjacent_topics(topic.id)

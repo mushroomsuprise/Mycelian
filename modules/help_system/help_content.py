@@ -138,12 +138,16 @@ If you prefer to use your own Twitch application:
 
 ## Connection Status
 
+The bottom status bar uses these colors for Twitch. The full legend is in [Status Footer](help:status_footer).
+
 | Status | Meaning |
 |--------|---------|
-| 🟢 Connected | Twitch API is active and receiving events |
-| 🟡 Connecting | Authentication in progress |
-| 🔴 Disconnected | Not connected - click Connect to authenticate |
-| ⚠️ Error | Check logs for details |
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | Twitch is active and receiving events |
+| <span class="help-status-swatch help-status-swatch-warning"></span> Degraded | Signed in, but events have stopped or the session dropped |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Idle | Not set up yet, or waiting for you to sign in |
+| <span class="help-status-swatch help-status-swatch-error"></span> Error | The connection failed. Check the log |
+| <span class="help-status-swatch help-status-swatch-error"></span> No Internet | This computer cannot reach the network |
+| <span class="help-status-swatch help-status-swatch-error"></span> Unreachable | Twitch itself cannot be reached |
 
 ## Troubleshooting
 
@@ -162,6 +166,7 @@ If you prefer to use your own Twitch application:
             "getting_started_intro",
             "alerts_overview",
             "first_alert_setup",
+            "status_footer",
         ],
         ui_context="settings.twitch",
     ),
@@ -389,9 +394,20 @@ Mycelian talks to OBS through the built-in WebSocket server. That connection let
 - Does not reload custom browser docks. Restart OBS for those. See [browser source setup](help:obs_setup).
 
 > **Tip:** If Test fails, confirm OBS is running, the server is enabled, and the password matches exactly.
+
+## Status
+
+The bottom status bar uses these colors for OBS. The full legend is in [Status Footer](help:status_footer).
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | Mycelian is talking to OBS |
+| <span class="help-status-swatch help-status-swatch-info"></span> Connecting | The WebSocket connection is opening |
+| <span class="help-status-swatch help-status-swatch-info"></span> Disconnecting | The WebSocket connection is closing |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Disconnected | OBS is not connected. That is normal when OBS is closed |
         """,
         keywords=["obs", "websocket", "connection", "port", "password", "4455"],
-        related_topics=["obs_setup", "templates_intro"],
+        related_topics=["obs_setup", "templates_intro", "status_footer"],
         ui_context="settings",
     ),
     # =========================================
@@ -4810,12 +4826,16 @@ Mycelian requests these scopes:
 
 ## Connection Status
 
-| Status | Description | Action |
-|--------|-------------|--------|
-| 🟢 Connected | Active connection | None |
-| 🟡 Connecting | Establishing link | Wait |
-| 🔴 Disconnected | No connection | Click Connect |
-| ⚠️ Error | Connection failed | Check logs |
+The bottom status bar uses these colors for Twitch. The full legend is in [Status Footer](help:status_footer).
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | Twitch is active and receiving events |
+| <span class="help-status-swatch help-status-swatch-warning"></span> Degraded | Signed in, but events have stopped or the session dropped |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Idle | Not set up yet, or waiting for you to sign in |
+| <span class="help-status-swatch help-status-swatch-error"></span> Error | The connection failed. Check the log |
+| <span class="help-status-swatch help-status-swatch-error"></span> No Internet | This computer cannot reach the network |
+| <span class="help-status-swatch help-status-swatch-error"></span> Unreachable | Twitch itself cannot be reached |
 
 ## Troubleshooting
 
@@ -4873,7 +4893,7 @@ Mycelian requests these scopes:
 - Revoke access when needed
         """,
         keywords=["twitch", "integration", "oauth", "events", "webhooks"],
-        related_topics=["getting_started_intro", "alerts_overview"],
+        related_topics=["getting_started_intro", "alerts_overview", "status_footer"],
     ),
     # =========================================
     # Settings
@@ -4905,6 +4925,7 @@ Configure Mycelian to match your streaming setup and preferences.
 - **Theme**: Light/dark mode
 - **Layout**: Window preferences
 - **Notifications**: System alerts
+- **Status footer**: Colors on the bottom bar — see [Status Footer](help:status_footer)
 
 ## Accessing Settings
 
@@ -4957,7 +4978,75 @@ Settings are stored in:
 > **Tip:** If you're just getting started, follow the [Welcome to Mycelian](help:getting_started_intro) guide which walks through essential settings step by step.
         """,
         keywords=["settings", "configuration", "preferences", "setup"],
-        related_topics=["integrations_twitch", "getting_started_intro", "game_hooks"],
+        related_topics=["integrations_twitch", "getting_started_intro", "game_hooks", "status_footer"],
+    ),
+    "status_footer": HelpTopic(
+        id="status_footer",
+        title="Status Footer",
+        category=HelpCategory.SETTINGS,
+        summary="What the colored badges and icon rings on the bottom status bar mean",
+        content="""
+# Status Footer
+
+The bar at the bottom of the window shows each service Mycelian is watching. Click a service (other than Internet) to open its settings.
+
+Turn the bar on or off in **Settings → App Settings** with **Show connection status footer**. **Minimal status badges** hides the name and the status word and leaves the service icon with a colored ring. The ring uses the same color as the full badge.
+
+Hover a badge to read the status word. In minimal mode, that hover text is the only label.
+
+Colors come from the theme you have selected.
+
+## Colors
+
+| Color | Statuses | Meaning |
+|-------|----------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Green | Connected, Running, Online | Working. Nothing to do. |
+| <span class="help-status-swatch help-status-swatch-info"></span> Blue | Connecting, Disconnecting, Starting, Restarting, Reconnecting, Checking | In progress. Leave it alone. |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Gray | Disconnected, Idle, Unknown | Not connected, and that is normal. Idle means Mycelian is waiting for you to sign in, opening the browser, or the service is not set up yet. |
+| <span class="help-status-swatch help-status-swatch-warning"></span> Amber | Degraded, Stalled, Overloaded, Partial, Stopped, Offline | Up, but not healthy. PSN **Offline** means the linked account is simply not online. |
+| <span class="help-status-swatch help-status-swatch-error"></span> Red | Error, Crashed, Frozen, Expired, Auth Failed, No Internet, Unreachable | Needs you. Internet **Offline** is red. |
+
+## Internet
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Online | This computer can reach the network |
+| <span class="help-status-swatch help-status-swatch-info"></span> Checking | Mycelian is still testing the connection |
+| <span class="help-status-swatch help-status-swatch-error"></span> Offline | No network. Remote services will also show No Internet or Unreachable |
+
+## Overlay server
+
+The overlay server is the local page host for browser sources.
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Running | Overlays are being served |
+| <span class="help-status-swatch help-status-swatch-info"></span> Starting | The server is coming up |
+| <span class="help-status-swatch help-status-swatch-info"></span> Restarting | The server is restarting |
+| <span class="help-status-swatch help-status-swatch-warning"></span> Stopped | The server is not running |
+| <span class="help-status-swatch help-status-swatch-warning"></span> Stalled | The server stopped answering |
+| <span class="help-status-swatch help-status-swatch-warning"></span> Overloaded | The server is too busy to keep up |
+| <span class="help-status-swatch help-status-swatch-error"></span> Crashed | The server exited unexpectedly |
+| <span class="help-status-swatch help-status-swatch-error"></span> Frozen | The server is stuck |
+
+Each integration's help page lists the statuses for that service.
+        """,
+        keywords=[
+            "status",
+            "footer",
+            "badge",
+            "color",
+            "minimal",
+            "ring",
+            "connected",
+            "disconnected",
+        ],
+        related_topics=[
+            "settings_overview",
+            "integrations_twitch",
+            "obs_websocket",
+        ],
+        ui_context="settings.status_footer",
     ),
     "game_hooks": HelpTopic(
         id="game_hooks",
@@ -5715,6 +5804,18 @@ Use these steps when Mycelian should use **your** Spotify application credential
 - **Colors**: Custom accent colors
 - **Size**: Compact or expanded
 
+## Status
+
+The bottom status bar uses these colors for Spotify. The full legend is in [Status Footer](help:status_footer).
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | Spotify is signed in |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Idle | Waiting to sign in, opening the browser, or Spotify is not set up |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Disconnected | Spotify is not connected |
+| <span class="help-status-swatch help-status-swatch-error"></span> Expired | The token could not be refreshed. Connect again |
+| <span class="help-status-swatch help-status-swatch-error"></span> Auth Failed | Authorization was denied or timed out |
+
 ## Troubleshooting
 
 ### Connection Issues
@@ -5755,7 +5856,7 @@ Use these steps when Mycelian should use **your** Spotify application credential
 > **Tip:** Customize the widget appearance in [Template Configuration](help:template_configuration) to match your stream's style.
         """,
         keywords=["spotify", "music", "now playing", "song", "audio", "integration"],
-        related_topics=["templates_intro", "obs_setup"],
+        related_topics=["templates_intro", "obs_setup", "status_footer"],
         ui_context="settings.spotify",
     ),
     "integrations_psn": HelpTopic(
@@ -5822,6 +5923,20 @@ Each trophy alert includes:
 - Updates as you earn trophies
 - Customizable appearance
 
+## Status
+
+The bottom status bar uses these colors for PlayStation Network. The full legend is in [Status Footer](help:status_footer).
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | PSN is signed in |
+| <span class="help-status-swatch help-status-swatch-warning"></span> Offline | The account is linked, and the player is not online |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Idle | PSN is not set up yet |
+| <span class="help-status-swatch help-status-swatch-error"></span> Expired | The NPSSO token expired. Sign in again |
+| <span class="help-status-swatch help-status-swatch-error"></span> Auth Failed | PlayStation rejected the sign-in |
+| <span class="help-status-swatch help-status-swatch-error"></span> No Internet | This computer cannot reach the network |
+| <span class="help-status-swatch help-status-swatch-error"></span> Unreachable | PlayStation cannot be reached |
+
 ## Troubleshooting
 
 ### Connection Issues
@@ -5876,7 +5991,7 @@ On your PlayStation console:
             "ps4",
             "ps5",
         ],
-        related_topics=["alerts_overview", "templates_intro"],
+        related_topics=["alerts_overview", "templates_intro", "status_footer"],
         ui_context="settings.psn",
     ),
     "integrations_youtube": HelpTopic(
@@ -6016,6 +6131,18 @@ characters removed):
 - `{ChannelName_channel_url}` - Channel URL
 - `{ChannelName_last_updated}` - Last update timestamp
 
+## Status
+
+The bottom status bar uses these colors for YouTube. The full legend is in [Status Footer](help:status_footer).
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | YouTube channels are being read |
+| <span class="help-status-swatch help-status-swatch-warning"></span> Partial | Some channels connected and some did not |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Idle | An API key or channel URL is still required |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Disconnected | YouTube is not connected |
+| <span class="help-status-swatch help-status-swatch-error"></span> Error | Every channel failed, or the request failed |
+
 ## Troubleshooting
 
 ### Connection Issues
@@ -6089,7 +6216,7 @@ characters removed):
             "exclude",
             "api key",
         ],
-        related_topics=["templates_intro", "obs_setup"],
+        related_topics=["templates_intro", "obs_setup", "status_footer"],
         ui_context="settings.youtube",
     ),
     "integrations_discord": HelpTopic(
@@ -6137,6 +6264,19 @@ Placeholders: `{platform}`, `{title}`, `{url}`
 - **Chatbot**: pick Discord channels per command/event (separate from Twitch/YouTube reply targets)
 - **Connectors**: use the **Send Discord Message** action (not the Twitch/YouTube chat action)
 
+## Status
+
+The bottom status bar uses these colors for Discord. The full legend is in [Status Footer](help:status_footer).
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | The bot is online |
+| <span class="help-status-swatch help-status-swatch-info"></span> Connecting | The bot is signing in |
+| <span class="help-status-swatch help-status-swatch-info"></span> Reconnecting | The bot is trying again after a drop |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Disconnected | The bot is not connected |
+| <span class="help-status-swatch help-status-swatch-error"></span> Auth Failed | The bot token was rejected. Paste a new one |
+| <span class="help-status-swatch help-status-swatch-error"></span> Error | The connection failed |
+
 ## Troubleshooting
 
 - **Auth Failed**: regenerate the bot token in the Developer Portal and reconnect
@@ -6153,7 +6293,12 @@ Placeholders: `{platform}`, `{title}`, `{url}`
             "server",
             "guild",
         ],
-        related_topics=["integrations_twitch", "integrations_youtube", "connector_actions"],
+        related_topics=[
+            "integrations_twitch",
+            "integrations_youtube",
+            "connector_actions",
+            "status_footer",
+        ],
         ui_context="settings.discord",
     ),
     "integrations_streamlabs": HelpTopic(
@@ -6181,10 +6326,19 @@ Donation thresholds in **Alerts → Donations** are amounts in the alert currenc
 
 ## Status
 
-The bottom status bar shows Streamlabs once a client id is saved: Connected, Connecting, Disconnected, Expired, Auth Failed, or Error.
+The bottom status bar shows Streamlabs once a client id is saved. The full legend is in [Status Footer](help:status_footer).
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | Donations are being received |
+| <span class="help-status-swatch help-status-swatch-info"></span> Connecting | Signing in to Streamlabs |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Disconnected | Streamlabs is not connected |
+| <span class="help-status-swatch help-status-swatch-error"></span> Expired | The token expired. Connect again |
+| <span class="help-status-swatch help-status-swatch-error"></span> Auth Failed | Streamlabs rejected the sign-in |
+| <span class="help-status-swatch help-status-swatch-error"></span> Error | The connection failed |
         """,
         keywords=["streamlabs", "donation", "tip", "oauth", "client id"],
-        related_topics=["alerts_overview", "integrations_streamelements"],
+        related_topics=["alerts_overview", "integrations_streamelements", "status_footer"],
         ui_context="settings.streamlabs",
     ),
     "integrations_streamelements": HelpTopic(
@@ -6215,10 +6369,19 @@ The alert currency is shared with Streamlabs. Thresholds in **Alerts → Donatio
 
 ## Status
 
-The bottom status bar shows StreamElements once a JWT is saved: Connected, Connecting, Disconnected, Expired, Auth Failed, or Error.
+The bottom status bar shows StreamElements once a JWT is saved. The full legend is in [Status Footer](help:status_footer).
+
+| Status | Meaning |
+|--------|---------|
+| <span class="help-status-swatch help-status-swatch-success"></span> Connected | Tips are being received |
+| <span class="help-status-swatch help-status-swatch-info"></span> Connecting | Signing in to StreamElements |
+| <span class="help-status-swatch help-status-swatch-muted"></span> Disconnected | StreamElements is not connected |
+| <span class="help-status-swatch help-status-swatch-error"></span> Expired | The JWT expired. Paste a new one |
+| <span class="help-status-swatch help-status-swatch-error"></span> Auth Failed | StreamElements rejected the JWT |
+| <span class="help-status-swatch help-status-swatch-error"></span> Error | The connection failed |
         """,
         keywords=["streamelements", "donation", "tip", "jwt"],
-        related_topics=["alerts_overview", "integrations_streamlabs"],
+        related_topics=["alerts_overview", "integrations_streamlabs", "status_footer"],
         ui_context="settings.streamelements",
     ),
 }

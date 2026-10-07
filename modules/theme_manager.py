@@ -468,6 +468,41 @@ HELP_SYSTEM_CSS = """
     background: color-mix(in srgb, var(--color-primary-light) 30%, transparent) !important;
 }
 
+.help-markdown-content .help-status-swatch,
+.help-accordion-markdown .help-status-swatch {
+    display: inline-block !important;
+    width: 0.7rem !important;
+    height: 0.7rem !important;
+    margin-right: 0.35rem !important;
+    border-radius: 999px !important;
+    vertical-align: -1px !important;
+}
+
+.help-markdown-content .help-status-swatch-success,
+.help-accordion-markdown .help-status-swatch-success {
+    background: var(--color-success) !important;
+}
+
+.help-markdown-content .help-status-swatch-info,
+.help-accordion-markdown .help-status-swatch-info {
+    background: var(--color-info) !important;
+}
+
+.help-markdown-content .help-status-swatch-muted,
+.help-accordion-markdown .help-status-swatch-muted {
+    background: var(--color-text-secondary) !important;
+}
+
+.help-markdown-content .help-status-swatch-warning,
+.help-accordion-markdown .help-status-swatch-warning {
+    background: var(--color-warning) !important;
+}
+
+.help-markdown-content .help-status-swatch-error,
+.help-accordion-markdown .help-status-swatch-error {
+    background: var(--color-error) !important;
+}
+
 .help-markdown-content table,
 .help-accordion-markdown table {
     border-spacing: 0 !important;

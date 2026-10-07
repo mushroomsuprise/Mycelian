@@ -1004,7 +1004,11 @@ def _set_footer_item_tooltip(container, refs: Dict[str, Any], text: str) -> None
 
 
 def footer_status_display(service_key: str, status_raw: str) -> str:
-    """Short label for the status footer badge."""
+    """Short label for the status footer badge.
+
+    Failure phrases are matched before broad "authorization" / "disconnected"
+    buckets so a token or login problem is not labeled Idle.
+    """
     s = (status_raw or "").strip().lower()
     if not s:
         return "Unknown"
@@ -1021,48 +1025,64 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
         if s in webengine_labels:
             return webengine_labels[s]
     if "frozen" in s:
-        return "Stalled"
+        return "Frozen"
+    if "authenticated but" in s and "disconnected" in s:
+        return "Degraded"
     if "degraded" in s or "stale" in s or "no recent events" in s:
         return "Degraded"
-    if s == "connected" or s.startswith("connected") or s.startswith("partial"):
+    if s.startswith("partial"):
+        return "Partial"
+    if s == "connected" or s.startswith("connected"):
         return "Connected"
+    if "reconnecting" in s:
+        return "Reconnecting"
     if s in ("connecting", "disconnecting"):
         return status_raw.strip().title() or "Connecting"
     if "stopped" in s:
         return "Stopped"
     if "no internet" in s:
         return "No Internet"
-    if "service unreachable" in s:
+    if "unreachable" in s:
         return "Unreachable"
-    if "checking internet" in s:
+    if "checking" in s:
         return "Checking"
     if s == "online":
         return "Online"
     if s == "offline":
         return "Offline"
-    if "token expired" in s:
+    if "token expired" in s or (
+        "token refresh" in s and ("fail" in s or "error" in s)
+    ):
         return "Expired"
-    if "authentication failed" in s:
-        return "Auth Failed"
+    if "all channels failed" in s:
+        return "Error"
     if any(
         x in s
         for x in (
-            "disconnected",
+            "authentication failed",
+            "auth failed",
+            "authorization error",
+            "authorization timeout",
+        )
+    ):
+        return "Auth Failed"
+    if "disconnected" in s:
+        return "Disconnected"
+    if "token refresh" in s:
+        return "Connecting"
+    if any(
+        x in s
+        for x in (
             "not connected",
             "not configured",
             "not initialized",
-        )
-    ):
-        return "Disconnected"
-    if any(
-        x in s
-        for x in (
             "configured but",
-            "authenticated but",
+            "authorization required",
             "authorization",
             "awaiting",
             "opening browser",
-            "token refresh",
+            "api key",
+            "channel url",
         )
     ):
         return "Idle"
@@ -1074,26 +1094,34 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
 
 
 def footer_status_tier(service_key: str, status_raw: str) -> str:
-    """Map status to footer badge CSS tier: success, warning, error, info."""
+    """Map status to a footer color: success, info, muted, warning, or error.
+
+    Offline is red for Internet and amber for other services (PSN presence).
+    """
     display = footer_status_display(service_key, status_raw).lower()
-    if display == "connected":
+    if display in ("connected", "running", "online"):
         return "success"
-    if display == "running":
-        return "success"
-    if display in ("connecting", "disconnecting"):
-        return "warning"
-    if display in ("idle", "degraded", "offline"):
-        return "warning"
-    if display in ("stalled", "overloaded", "restarting", "starting"):
+    if display in (
+        "connecting",
+        "disconnecting",
+        "starting",
+        "restarting",
+        "reconnecting",
+        "checking",
+    ):
+        return "info"
+    if display in ("disconnected", "idle", "unknown"):
+        return "muted"
+    if display == "offline":
+        return "error" if service_key == "internet" else "warning"
+    if display in ("degraded", "stalled", "overloaded", "partial", "stopped"):
         return "warning"
     if display in (
-        "disconnected",
         "error",
+        "crashed",
+        "frozen",
         "expired",
         "auth failed",
-        "frozen",
-        "crashed",
-        "stopped",
         "no internet",
         "unreachable",
     ):

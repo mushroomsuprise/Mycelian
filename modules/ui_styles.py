@@ -2199,7 +2199,7 @@ body:not(.body--dark) .notification-tray-badge {
 }
 
 .service-status-dot.muted {
-    background: var(--color-text-muted);
+    background: var(--color-text-secondary);
 }
 
 .service-status-badge {
@@ -2240,6 +2240,12 @@ body:not(.body--dark) .notification-tray-badge {
     background: color-mix(in srgb, var(--color-info) 15%, transparent);
     color: var(--color-info);
     border: 1px solid color-mix(in srgb, var(--color-info) 25%, transparent);
+}
+
+.service-status-badge.muted {
+    background: color-mix(in srgb, var(--color-text-secondary) 15%, transparent);
+    color: var(--color-text-secondary);
+    border: 1px solid color-mix(in srgb, var(--color-text-secondary) 25%, transparent);
 }
 
 .service-status-badge .text-xs,
@@ -2293,7 +2299,7 @@ body:not(.body--dark) .notification-tray-badge {
 }
 
 .service-status-footer--minimal .service-status-tier-muted {
-    --service-status-ring: var(--color-text-muted);
+    --service-status-ring: var(--color-text-secondary);
 }
 
 .service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-name,

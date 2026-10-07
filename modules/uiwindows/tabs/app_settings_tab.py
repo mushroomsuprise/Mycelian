@@ -18,6 +18,7 @@ from ...ui_settings_layout import (
     settings_surface,
 )
 from ...notification_engine import notify, refresh_service_status_footer
+from ...help_system.contextual_help import help_button
 from ...streamdeck_plugin_utils import (
     PluginInstallError,
     PluginInstallState,
@@ -196,6 +197,11 @@ class AppSettingsTab:
                             )
                             ui.label("Show connection status footer").classes(
                                 "text-sm"
+                            )
+                            help_button(
+                                topic_id="status_footer",
+                                tooltip="Status footer colors",
+                                size="sm",
                             )
                         with ui.row().classes("items-center gap-2"):
                             self.ui_elements["status_footer_minimal"] = (

@@ -1265,7 +1265,11 @@ class ThemeTab:
     def _build_mock_status_footer(self):
         """Mock connection status footer matching the real app footer."""
         from ...dataobjects import state_manager
-        from ...notification_engine import _SERVICE_LABELS
+        from ...notification_engine import (
+            _SERVICE_LABELS,
+            footer_status_display,
+            footer_status_tier,
+        )
 
         minimal = False
         try:
@@ -1277,26 +1281,23 @@ class ThemeTab:
         if minimal:
             footer_classes += " service-status-footer--minimal"
 
-        footer_items = (
-            ("internet", "Online", "success"),
-            ("webengine", "Running", "info"),
-            ("twitch", "Connected", "success"),
-            ("obs", "Connected", "success"),
-            ("psn", "Idle", "warning"),
-            ("spotify", "Connected", "success"),
-            ("youtube", "Connected", "success"),
-            ("streamlabs", "Connected", "success"),
-            ("streamelements", "Expired", "error"),
+        # Raw statuses, so the preview uses the same labels and colors as the live footer.
+        footer_samples = (
+            ("internet", "Online"),
+            ("webengine", "Running"),
+            ("twitch", "Connected"),
+            ("obs", "Connecting"),
+            ("psn", "Offline"),
+            ("spotify", "Disconnected"),
+            ("youtube", "Partial (1/2 channels)"),
+            ("streamlabs", "Connected"),
+            ("streamelements", "Token expired"),
         )
-        dot_tier = {
-            "success": "connected",
-            "warning": "idle",
-            "error": "disconnected",
-            "info": "connected",
-        }
         with ui.element("div").classes(footer_classes):
             with ui.element("div").classes("service-status-footer-inner w-full"):
-                for key, badge_label, tier in footer_items:
+                for key, status_raw in footer_samples:
+                    badge_label = footer_status_display(key, status_raw)
+                    tier = footer_status_tier(key, status_raw)
                     svg = SERVICE_BRAND_SVG.get(key, "")
                     with ui.element("div").classes(
                         f"service-status-item service-status-tier-{tier}"
@@ -1314,7 +1315,7 @@ class ThemeTab:
                             "service-status-status-cluster"
                         ):
                             ui.element("span").classes(
-                                f"service-status-dot {dot_tier.get(tier, 'muted')}"
+                                f"service-status-dot {tier}"
                             )
                             with ui.element("div").classes(
                                 f"service-status-badge {tier}"
