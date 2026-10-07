@@ -156,7 +156,7 @@ class AppSettings:
     streamer_name: str = "mycelian"
     streamer_id: str = ""
     version: str = "1.13.3"
-    build_number: str = "2a588718e2a45ca446a6f29ea0f2ef032a716ff2"
+    build_number: str = "d0acda42de18c0574d8580322e519bb24782c457"
     build_date: str = "October 7th 2026"
     alert_volume: float = 0.5
     auto_reconnect: bool = True
