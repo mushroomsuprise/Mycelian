@@ -57,6 +57,10 @@ class UpdateSyncError(Exception):
     """A release could not be staged. The running app is left in place."""
 
 
+class MissingReleaseFile(UpdateSyncError):
+    """The release manifest names a path GitHub does not have."""
+
+
 class UpdateCancelled(UpdateSyncError):
     """The user cancelled before any installed file was changed."""
 
@@ -311,6 +315,13 @@ def merge_staged_templates(
         )
 
 
+def _is_application_binary(entry: Dict[str, Any]) -> bool:
+    install = str(entry.get("install") or "").replace("\\", "/")
+    if entry.get("bundle"):
+        return install == "Contents/MacOS/Mycelian"
+    return install in {"Mycelian.exe", "Mycelian"}
+
+
 def _staged_file(staging: Path, entry: Dict[str, Any]) -> Path:
     kind = "bundle" if entry.get("bundle") else "files"
     dest = staging / kind / safe_relative(str(entry["install"]))
@@ -331,6 +342,8 @@ async def _download_file(
     partial = dest.with_name(dest.name + ".partial")
     try:
         async with session.get(url) as response:
+            if response.status == 404:
+                raise MissingReleaseFile(dest.name)
             if response.status != 200:
                 body = await response.text()
                 detail = body.strip().splitlines()[0][:200] if body.strip() else ""
@@ -780,6 +793,8 @@ async def sync_release(
             window_start = time.perf_counter()
             window_bytes = 0
             speed = 0.0
+            fetched: List[Dict[str, Any]] = []
+            skipped_installs: set[str] = set()
             for index, entry in enumerate(downloads, start=1):
                 if _cancelled(cancel_event):
                     raise UpdateCancelled("Update cancelled.")
@@ -802,25 +817,54 @@ async def sync_release(
 
                 _report(state, "downloading", downloaded / total, speed, label)
                 dest = _staged_file(staging, entry)
-                await _download_file(
-                    session,
-                    release_file_url(owner, repo, tag, str(entry["path"])),
-                    dest,
-                    str(entry["sha256"]),
-                    on_chunk,
-                    cancel_event,
+                try:
+                    await _download_file(
+                        session,
+                        release_file_url(owner, repo, tag, str(entry["path"])),
+                        dest,
+                        str(entry["sha256"]),
+                        on_chunk,
+                        cancel_event,
+                    )
+                except MissingReleaseFile:
+                    if _is_application_binary(entry):
+                        raise UpdateSyncError(
+                            f"The release is missing the application ({entry['path']})."
+                        ) from None
+                    logger.warning(
+                        "Release file is not in the repository; skipping %s",
+                        entry["path"],
+                    )
+                    skipped_installs.add(str(entry["install"]))
+                    downloaded += int(entry["size"])
+                    continue
+                fetched.append(entry)
+
+            if not fetched and not planned["deletes"]:
+                shutil.rmtree(staging, ignore_errors=True)
+                _report(
+                    state,
+                    "current",
+                    1.0,
+                    0.0,
+                    "Installed files already match this release.",
                 )
+                return None
 
             _report(state, "merging", 1.0, 0.0, "Merging template configurations...")
             if _cancelled(cancel_event):
                 raise UpdateCancelled("Update cancelled.")
             await asyncio.to_thread(
-                merge_staged_templates, staging, downloads, data_root, bundle_root
+                merge_staged_templates, staging, fetched, data_root, bundle_root
             )
 
             record = {
                 "version": str(manifest.get("version") or ""),
-                "files": planned["files"],
+                "files": {
+                    install: meta
+                    for install, meta in planned["files"].items()
+                    if install not in skipped_installs
+                },
             }
             staged_manifest = staging / "update_manifest.json"
             staged_manifest.write_text(
@@ -830,7 +874,7 @@ async def sync_release(
             )
             copies = [
                 (_staged_file(staging, entry), destination_for(entry, data_root, bundle_root))
-                for entry in downloads
+                for entry in fetched
             ]
             copies.append((staged_manifest, local_manifest_path()))
             deletes: List[Path] = []

@@ -1658,13 +1658,39 @@ def _load_manifest_files(manifest_path: Path) -> list:
     return files if isinstance(files, list) else []
 
 
+def _tracked_repo_paths(project_root: Path) -> set[str] | None:
+    """Paths Git already tracks. Untracked files are not on GitHub, so the updater must not list them."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=project_root,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    text = result.stdout.decode("utf-8", errors="replace")
+    return {line.replace("\\", "/") for line in text.split("\0") if line}
+
+
 def write_update_manifest(project_root: Path) -> Path:
     """Rewrite ``packaged/manifest.json`` for this OS without dropping other platforms."""
     payload = _load_payload_module()
+    tracked = _tracked_repo_paths(project_root)
     entries = []
+    skipped = []
     for relative, action in payload.iter_payload_files(project_root):
+        if tracked is not None and relative not in tracked:
+            skipped.append(relative)
+            continue
         src = project_root / Path(relative)
         entries.append(_manifest_entry(src, relative, relative, action))
+    if skipped:
+        progress.update(
+            f"Skipping {len(skipped)} untracked files that are not in the repository"
+        )
     entries.extend(_binary_manifest_entries(project_root))
 
     manifest_path = project_root / "packaged" / "manifest.json"

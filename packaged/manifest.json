@@ -1227,76 +1227,6 @@
       "action": "replace"
     },
     {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.0.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.0.log",
-      "sha256": "40f9a440af24318b4c355b8dc2cda422cfb46c1cb0ab22800382af5bfb77358f",
-      "size": 32471,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.1.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.1.log",
-      "sha256": "55616b9f5ad44baafe0bcda386b04a26262b314a1ca43381ee18b518169d4afa",
-      "size": 34259,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.2.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.2.log",
-      "sha256": "90270a2f29c73548f36b7b4101424b3d8cc4705bab28b1cbfcc9900c75eb7e61",
-      "size": 297563,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.3.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.3.log",
-      "sha256": "8fb30fccc8a719ccfbe9f9bef65b350c625f1fcf977c1334cd0bdde9962f0983",
-      "size": 9422,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.4.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.4.log",
-      "sha256": "6cad9bd27da1c430a2e195ce8f152537285189516f7672850ba5666af59de673",
-      "size": 4311,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.5.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.5.log",
-      "sha256": "75bf5fe53b51e5cb68db5a8a8adb2d5a2181713a6732b2245b40b9cd08d479a3",
-      "size": 4311,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.6.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.6.log",
-      "sha256": "591ce92ff0ef1d6bd0037f60f89fc3f347959a56d509c9f42b56a5f3efb288f0",
-      "size": 11923,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.7.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.7.log",
-      "sha256": "86bdd6d8b4396f905a108c958bf582f129c3696534614648e73cdfe7cdbab7e2",
-      "size": 4311,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.8.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.8.log",
-      "sha256": "97bb087223a991d421c0604d08fdc38985ca64a91effc5cbfd98550cedc6332d",
-      "size": 549,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.9.log",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.9.log",
-      "sha256": "d6f634c4a281b67206ff7522be971dcdc5f13105108382b259be2fe442053e5b",
-      "size": 549,
-      "action": "replace"
-    },
-    {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/manifest.json",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/manifest.json",
       "sha256": "06554c6f85c7a3abdb599caae91e2f9261d56607dd4cb2a612ba0d4525862128",
@@ -1591,24 +1521,10 @@
       "action": "merge"
     },
     {
-      "path": "templates/template_configs/trophies.json",
-      "install": "templates/template_configs/trophies.json",
-      "sha256": "5142021d479792a7c5a6f0319cb493fc05a55ba5fd8eb45c9076ca8bb6b19df5",
-      "size": 37583,
-      "action": "merge"
-    },
-    {
       "path": "templates/title.html",
       "install": "templates/title.html",
       "sha256": "9c1448315e6b6f39e1e6b442e67817fd2b536f3daf034c6fbc6ca6223119504d",
       "size": 47806,
-      "action": "replace"
-    },
-    {
-      "path": "templates/trophies.html",
-      "install": "templates/trophies.html",
-      "sha256": "0b2c5c11293303ba9fa14acafd1f5cc6f8084ca1fb3c71e81c02ffaa6108da59",
-      "size": 43554,
       "action": "replace"
     },
     {

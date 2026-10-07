@@ -102,10 +102,19 @@ def iter_payload_files(project_root: Path):
         yield from _tree(root / relative, relative, "if-missing")
 
 
+def _runtime_junk(path: Path) -> bool:
+    """Local logs and caches are not part of a release."""
+    if path.name in _SKIP_NAMES or "__pycache__" in path.parts:
+        return True
+    if path.suffix.lower() == ".log" or "logs" in path.parts:
+        return True
+    return False
+
+
 def _one_file(src: Path, relative: str, action: str):
     if not src.is_file():
         raise FileNotFoundError(f"Installer payload file missing: {src}")
-    if src.name in _SKIP_NAMES or "__pycache__" in src.parts:
+    if _runtime_junk(src):
         return
     yield relative.replace("\\", "/"), action
 
@@ -115,7 +124,7 @@ def _tree(src_dir: Path, prefix: str, action: str):
         raise FileNotFoundError(f"Installer payload file missing: {src_dir}")
     prefix_path = PurePosixPath(prefix)
     for path in sorted(p for p in src_dir.rglob("*") if p.is_file()):
-        if path.name in _SKIP_NAMES or "__pycache__" in path.parts:
+        if _runtime_junk(path):
             continue
         rel = path.relative_to(src_dir).as_posix()
         install = prefix_path.as_posix() if not rel else f"{prefix_path.as_posix()}/{rel}"
